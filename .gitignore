@@ -143,3 +143,4 @@ vite.config.ts.timestamp-*
 
 # MCP configuration with secrets
 .mcp.json
+.vercel

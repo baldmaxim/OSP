@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS bsm_supply_rates (
     material_name TEXT NOT NULL,
     unit TEXT,
     supply_price DECIMAL(15, 2) NOT NULL,
+    applied_at DATE,  -- Дата применения расценки (необязательное поле)
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -42,4 +43,5 @@ COMMENT ON COLUMN bsm_supply_rates.object_id IS 'Ссылка на объект'
 COMMENT ON COLUMN bsm_supply_rates.material_name IS 'Наименование материала';
 COMMENT ON COLUMN bsm_supply_rates.unit IS 'Единица измерения';
 COMMENT ON COLUMN bsm_supply_rates.supply_price IS 'Актуальная цена от снабжения';
+COMMENT ON COLUMN bsm_supply_rates.applied_at IS 'Дата применения расценки';
 COMMENT ON COLUMN bsm_supply_rates.notes IS 'Примечания';

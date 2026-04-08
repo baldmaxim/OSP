@@ -1,8 +1,9 @@
 -- Таблица tender_estimate_items (Позиции сметы тендера)
--- Единая смета для каждого тендера
+-- Поддержка нескольких смет в одном тендере через estimate_name
 CREATE TABLE IF NOT EXISTS tender_estimate_items (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   tender_id UUID NOT NULL REFERENCES tenders(id) ON DELETE CASCADE,
+  estimate_name TEXT DEFAULT 'Основная смета',    -- Название сметы для группировки
   row_number INTEGER NOT NULL,                    -- № п/п
   code VARCHAR(50),                               -- КОД
   cost_type VARCHAR(255),                         -- Вид затрат
@@ -11,6 +12,8 @@ CREATE TABLE IF NOT EXISTS tender_estimate_items (
   unit VARCHAR(50),                               -- Ед. изм.
   work_volume DECIMAL(15, 4),                     -- Объем по виду работ
   material_consumption DECIMAL(15, 4),            -- Общий расход по материалу
+  is_section BOOLEAN DEFAULT FALSE,               -- Признак заголовка раздела
+  original_row_number VARCHAR(20),                -- Оригинальный номер строки из Excel
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(tender_id, row_number)
@@ -50,6 +53,7 @@ CREATE TABLE IF NOT EXISTS tender_proposal_files (
 -- Индексы
 CREATE INDEX IF NOT EXISTS idx_tender_estimate_items_tender_id ON tender_estimate_items(tender_id);
 CREATE INDEX IF NOT EXISTS idx_tender_estimate_items_row_number ON tender_estimate_items(tender_id, row_number);
+CREATE INDEX IF NOT EXISTS idx_tender_estimate_items_estimate_name ON tender_estimate_items(tender_id, estimate_name);
 
 CREATE INDEX IF NOT EXISTS idx_tender_counterparty_proposals_tender_id ON tender_counterparty_proposals(tender_id);
 CREATE INDEX IF NOT EXISTS idx_tender_counterparty_proposals_counterparty_id ON tender_counterparty_proposals(counterparty_id);
@@ -99,6 +103,7 @@ COMMENT ON TABLE tender_estimate_items IS 'Позиции единой смет�
 COMMENT ON TABLE tender_counterparty_proposals IS 'Ценовые предложения контрагентов по позициям сметы';
 COMMENT ON TABLE tender_proposal_files IS 'Загруженные Excel файлы с КП от контрагентов';
 
+COMMENT ON COLUMN tender_estimate_items.estimate_name IS 'Название сметы (для группировки нескольких смет в одном тендере)';
 COMMENT ON COLUMN tender_estimate_items.row_number IS '№ п/п';
 COMMENT ON COLUMN tender_estimate_items.code IS 'КОД позиции';
 COMMENT ON COLUMN tender_estimate_items.cost_type IS 'Вид затрат';

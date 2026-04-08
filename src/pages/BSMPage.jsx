@@ -41,6 +41,12 @@ function BSMPage() {
   const [comparisonData, setComparisonData] = useState([])
   const [comparisonStats, setComparisonStats] = useState(null)
 
+  // Для общего реестра расценок (все объекты)
+  const [globalRegistry, setGlobalRegistry] = useState([]) // все расценки из всех объектов
+  const [selectedObjectIds, setSelectedObjectIds] = useState([]) // выбранные объекты для сравнения
+  const [globalComparisonData, setGlobalComparisonData] = useState([])
+  const [globalComparisonStats, setGlobalComparisonStats] = useState(null)
+
   // Вспомогательная функция округления до сотых (2 знака после запятой)
   const round2 = (num) => Math.round((parseFloat(num) || 0) * 100) / 100
 
@@ -65,9 +71,10 @@ function BSMPage() {
     return isNaN(num) ? 0 : num
   }
 
-  // Загрузка объектов при монтировании
+  // Загрузка объектов и общего реестра при монтировании
   useEffect(() => {
     fetchObjects()
+    fetchGlobalRegistry()
   }, [])
 
   // Загрузка согласованных расценок при выборе объекта
@@ -81,12 +88,126 @@ function BSMPage() {
     }
   }, [selectedObjectId])
 
-  // Пересчёт сравнения при изменении данных материалов
+  // Пересчёт сравнения при изменении данных материалов или расценок
   useEffect(() => {
     if (materialsData.length > 0 && approvedRates.length > 0) {
-      calculateComparison()
+      // Создаём карту расценок от снабжения по названию материала
+      const ratesMap = {}
+      approvedRates.forEach(rate => {
+        const key = String(rate.material_name || '').trim().toLowerCase()
+        ratesMap[key] = round2(rate.supply_price)
+      })
+
+      // Сравниваем ВСЕ материалы из файла (даже без цен)
+      const comparison = []
+      let totalCurrentSum = 0      // Сумма по файлу
+      let totalApprovedSum = 0     // Сумма по снабжению
+      let totalDifference = 0      // Сумма разниц
+      let foundCount = 0           // Найдено в снабжении
+      let notFoundCount = 0        // Не найдено в снабжении
+      let matchedCount = 0         // Цены совпадают
+      let priceDiffCount = 0       // Цены различаются
+
+      // Используем ВСЕ материалы из файла
+      materialsData.forEach(item => {
+        const key = String(item.name || '').trim().toLowerCase()
+        const approvedPrice = ratesMap[key]
+        const currentPrice = round2(item.priceMaterials || 0)
+        const currentSum = round2(item.totalVolume * currentPrice)
+
+        let approvedSum = 0
+        let difference = 0
+        let status = 'not_found'
+
+        if (approvedPrice !== undefined) {
+          // Найдена расценка от снабжения
+          approvedSum = round2(item.totalVolume * approvedPrice)
+          foundCount++
+
+          // Если в файле есть цена - сравниваем
+          if (currentPrice > 0) {
+            difference = round2(approvedSum - currentSum)
+            totalCurrentSum = round2(totalCurrentSum + currentSum)
+            totalDifference = round2(totalDifference + difference)
+
+            if (Math.abs(currentPrice - approvedPrice) < 0.01) {
+              status = 'match'
+              matchedCount++
+            } else {
+              status = 'different'
+              priceDiffCount++
+            }
+          } else {
+            // В файле нет цены, но есть расценка от снабжения
+            status = 'found_no_file_price'
+          }
+
+          totalApprovedSum = round2(totalApprovedSum + approvedSum)
+        } else {
+          // Расценка не найдена в снабжении
+          notFoundCount++
+          if (currentPrice > 0) {
+            totalCurrentSum = round2(totalCurrentSum + currentSum)
+          }
+        }
+
+        comparison.push({
+          ...item,
+          price: currentPrice,
+          approvedPrice: approvedPrice,
+          currentSum: currentSum,
+          approvedSum: approvedSum,
+          difference: difference,
+          status: status
+        })
+      })
+
+      setComparisonData(comparison)
+      setComparisonStats({
+        totalCurrentSum,
+        totalApprovedSum,
+        totalDifference,
+        foundCount,
+        matchedCount,
+        priceDiffCount,
+        notFoundCount,
+        totalItems: materialsData.length
+      })
+    } else if (materialsData.length > 0 && approvedRates.length === 0 && selectedObjectId) {
+      // Если выбран объект, но расценок нет - показываем все позиции как не найденные
+      const comparison = materialsData.map(item => ({
+        ...item,
+        price: round2(item.priceMaterials || 0),
+        approvedPrice: undefined,
+        currentSum: round2(item.totalVolume * (item.priceMaterials || 0)),
+        approvedSum: 0,
+        difference: 0,
+        status: 'not_found'
+      }))
+      setComparisonData(comparison)
+      setComparisonStats({
+        totalCurrentSum: comparison.reduce((sum, item) => sum + item.currentSum, 0),
+        totalApprovedSum: 0,
+        totalDifference: 0,
+        foundCount: 0,
+        matchedCount: 0,
+        priceDiffCount: 0,
+        notFoundCount: materialsData.length,
+        totalItems: materialsData.length
+      })
+    } else if (!selectedObjectId) {
+      // Объект не выбран - очищаем
+      setComparisonData([])
+      setComparisonStats(null)
     }
-  }, [materialsData, approvedRates])
+  }, [materialsData, approvedRates, selectedObjectId])
+
+  // Пересчёт сравнения с общим реестром при изменении выбранных объектов
+  useEffect(() => {
+    if (materialsData.length > 0 && globalRegistry.length > 0) {
+      calculateGlobalComparison()
+    }
+  }, [materialsData, globalRegistry, selectedObjectIds])
 
   const fetchObjects = async () => {
     const { data, error } = await supabase
@@ -110,76 +231,149 @@ function BSMPage() {
     }
   }
 
-  const calculateComparison = () => {
-    // Создаём карту расценок от снабжения по названию материала
+  // Загрузка общего реестра (все расценки со всех объектов)
+  const fetchGlobalRegistry = async () => {
+    const { data, error } = await supabase
+      .from('bsm_supply_rates')
+      .select('*, objects(id, name)')
+      .order('material_name')
+
+    if (!error && data) {
+      setGlobalRegistry(data)
+    }
+  }
+
+  // Расчёт сравнения с общим реестром
+  const calculateGlobalComparison = () => {
+    // Фильтруем реестр по выбранным объектам (если выбраны)
+    const filteredRegistry = selectedObjectIds.length > 0
+      ? globalRegistry.filter(rate => selectedObjectIds.includes(rate.object_id))
+      : globalRegistry
+
+    if (filteredRegistry.length === 0) {
+      setGlobalComparisonData([])
+      setGlobalComparisonStats(null)
+      return
+    }
+
+    // Создаём карту расценок по названию материала с группировкой по объектам
     const ratesMap = {}
-    approvedRates.forEach(rate => {
-      const key = rate.material_name.trim().toLowerCase()
-      ratesMap[key] = round2(rate.supply_price)
-    })
-
-    // Сравниваем только материалы, у которых есть расценка в файле
-    const comparison = []
-    let totalCurrentSum = 0      // Сумма по файлу (только найденные в снабжении)
-    let totalApprovedSum = 0     // Сумма по снабжению
-    let totalDifference = 0      // Сумма разниц (удешевление/удорожание)
-    let matchedCount = 0
-    let notFoundCount = 0
-    let priceDiffCount = 0
-
-    // Используем только материалы с ненулевой ценой
-    const materialsWithPrice = materialsData.filter(item => item.priceMaterials > 0)
-
-    materialsWithPrice.forEach(item => {
-      const key = item.name.trim().toLowerCase()
-      const approvedPrice = ratesMap[key]
-      const currentPrice = round2(item.priceMaterials || 0)
-      const currentSum = round2(item.totalVolume * currentPrice)
-
-      let approvedSum = 0
-      let difference = 0
-      let status = 'not_found'
-
-      if (approvedPrice !== undefined) {
-        approvedSum = round2(item.totalVolume * approvedPrice)
-        // Разница = снабжение - файл (отрицательное = удешевление)
-        difference = round2(approvedSum - currentSum)
-
-        totalCurrentSum = round2(totalCurrentSum + currentSum)
-        totalApprovedSum = round2(totalApprovedSum + approvedSum)
-        totalDifference = round2(totalDifference + difference)
-
-        if (Math.abs(currentPrice - approvedPrice) < 0.01) {
-          status = 'match'
-          matchedCount++
-        } else {
-          status = 'different'
-          priceDiffCount++
+    filteredRegistry.forEach(rate => {
+      const key = String(rate.material_name || '').trim().toLowerCase()
+      if (!ratesMap[key]) {
+        ratesMap[key] = {
+          materialName: rate.material_name,
+          unit: rate.unit,
+          prices: [],
+          objectPrices: [] // массив {objectName, price}
         }
-      } else {
-        notFoundCount++
       }
-
-      comparison.push({
-        ...item,
-        price: currentPrice, // для совместимости с отображением
-        approvedPrice: approvedPrice,
-        currentSum: currentSum,
-        approvedSum: approvedSum,
-        difference: difference,
-        status: status
+      ratesMap[key].prices.push(round2(rate.supply_price))
+      ratesMap[key].objectPrices.push({
+        objectId: rate.object_id,
+        objectName: rate.objects?.name || 'Неизвестный объект',
+        price: round2(rate.supply_price),
+        appliedAt: rate.applied_at
       })
     })
 
-    setComparisonData(comparison)
-    setComparisonStats({
+    // Расчёт мин/макс/средней для каждого материала
+    Object.values(ratesMap).forEach(item => {
+      item.minPrice = Math.min(...item.prices)
+      item.maxPrice = Math.max(...item.prices)
+      item.avgPrice = round2(item.prices.reduce((a, b) => a + b, 0) / item.prices.length)
+      item.priceSpread = item.prices.length > 1 ? round2(item.maxPrice - item.minPrice) : 0
+    })
+
+    // Сравниваем материалы из файла с общим реестром
+    const comparison = []
+    let totalCurrentSum = 0
+    let totalMinSum = 0
+    let totalMaxSum = 0
+    let totalAvgSum = 0
+    let matchedCount = 0
+    let notFoundCount = 0
+    let cheaperCount = 0
+    let expensiveCount = 0
+
+    const materialsWithPrice = materialsData.filter(item => item.priceMaterials > 0)
+
+    materialsWithPrice.forEach(item => {
+      const key = String(item.name || '').trim().toLowerCase()
+      const registryData = ratesMap[key]
+      const currentPrice = round2(item.priceMaterials || 0)
+      const currentSum = round2(item.totalVolume * currentPrice)
+
+      let status = 'not_found'
+      let minSum = 0, maxSum = 0, avgSum = 0
+      let savings = 0
+
+      if (registryData) {
+        minSum = round2(item.totalVolume * registryData.minPrice)
+        maxSum = round2(item.totalVolume * registryData.maxPrice)
+        avgSum = round2(item.totalVolume * registryData.avgPrice)
+
+        totalCurrentSum = round2(totalCurrentSum + currentSum)
+        totalMinSum = round2(totalMinSum + minSum)
+        totalMaxSum = round2(totalMaxSum + maxSum)
+        totalAvgSum = round2(totalAvgSum + avgSum)
+
+        // Сравниваем с минимальной ценой из реестра
+        if (currentPrice <= registryData.minPrice + 0.01) {
+          status = 'cheapest'
+          cheaperCount++
+        } else if (currentPrice >= registryData.maxPrice - 0.01) {
+          status = 'expensive'
+          expensiveCount++
+        } else {
+          status = 'in_range'
+          matchedCount++
+        }
+
+        // Потенциальная экономия (если взять мин. цену)
+        savings = round2(currentSum - minSum)
+
+        comparison.push({
+          ...item,
+          price: currentPrice,
+          registryData: registryData,
+          minPrice: registryData.minPrice,
+          maxPrice: registryData.maxPrice,
+          avgPrice: registryData.avgPrice,
+          currentSum,
+          minSum,
+          maxSum,
+          avgSum,
+          savings,
+          status,
+          objectPrices: registryData.objectPrices
+        })
+      } else {
+        notFoundCount++
+        comparison.push({
+          ...item,
+          price: currentPrice,
+          registryData: null,
+          currentSum,
+          status: 'not_found'
+        })
+      }
+    })
+
+    setGlobalComparisonData(comparison)
+    setGlobalComparisonStats({
       totalCurrentSum,
-      totalApprovedSum,
-      totalDifference,
+      totalMinSum,
+      totalMaxSum,
+      totalAvgSum,
+      potentialSavings: round2(totalCurrentSum - totalMinSum),
       matchedCount,
-      priceDiffCount,
       notFoundCount,
-      totalItems: materialsWithPrice.length
+      cheaperCount,
+      expensiveCount,
+      totalItems: materialsWithPrice.length,
+      registryItemsCount: Object.keys(ratesMap).length,
+      selectedObjectsCount: selectedObjectIds.length || objects.length
     })
   }
 
@@ -206,7 +400,7 @@ function BSMPage() {
     const worksMap = {}
 
     rows.forEach(row => {
-      const name = (row.name || '').trim()
+      const name = String(row.name || '').trim()
       if (!name) return
 
       const priceMaterials = round2(row.priceMaterials)
@@ -388,8 +582,8 @@ function BSMPage() {
     const worksUnitsByName = {}
 
     rows.forEach(row => {
-      const name = (row.name || '').trim().toLowerCase()
-      const unit = (row.unit || '').trim()
+      const name = String(row.name || '').trim().toLowerCase()
+      const unit = String(row.unit || '').trim()
       const itemType = row.type || 'material'
       if (!name) return
 
@@ -1101,7 +1295,7 @@ function BSMPage() {
       // Создаём карту объемов по названию материала (суммируем все объемы для одного названия)
       const volumesByName = {}
       materialsData.forEach(item => {
-        const key = item.name.trim().toLowerCase()
+        const key = String(item.name || '').trim().toLowerCase()
         if (!volumesByName[key]) {
           volumesByName[key] = {
             name: item.name,
@@ -1117,7 +1311,7 @@ function BSMPage() {
       let bsmTotalSum = 0
 
       approvedRates.forEach((rate, idx) => {
-        const key = rate.material_name.trim().toLowerCase()
+        const key = String(rate.material_name || '').trim().toLowerCase()
         const volumeData = volumesByName[key]
         const volume = volumeData ? volumeData.totalVolume : 0
         const sum = round2(volume * (rate.supply_price || 0))
@@ -1399,6 +1593,17 @@ function BSMPage() {
                     <span className="tab-count">{comparisonStats.notFoundCount}</span>
                   )}
                 </button>
+                <button
+                  className={`tab ${activeTab === 'global_registry' ? 'active' : ''} ${globalComparisonStats && globalComparisonStats.potentialSavings > 0 ? 'compare' : ''}`}
+                  onClick={() => setActiveTab('global_registry')}
+                >
+                  Общий реестр
+                  {globalComparisonStats && (
+                    <span className={`tab-count ${globalComparisonStats.potentialSavings > 0 ? 'positive' : ''}`}>
+                      {globalRegistry.length}
+                    </span>
+                  )}
+                </button>
               </>
             )}
           </div>
@@ -1505,26 +1710,194 @@ function BSMPage() {
                 <>
                   <div className="comparison-summary">
                     <div className="summary-card">
-                      <span className="card-value">{formatNumber(comparisonStats.totalCurrentSum)}</span>
-                      <span className="card-label">Сумма по файлу</span>
+                      <span className="card-value">{comparisonStats.totalItems}</span>
+                      <span className="card-label">Всего в файле</span>
+                    </div>
+                    <div className="summary-card success">
+                      <span className="card-value">{comparisonStats.foundCount || 0}</span>
+                      <span className="card-label">Найдено в снабжении</span>
+                    </div>
+                    <div className="summary-card warning">
+                      <span className="card-value">{comparisonStats.notFoundCount}</span>
+                      <span className="card-label">Не найдено</span>
                     </div>
                     <div className="summary-card">
                       <span className="card-value">{formatNumber(comparisonStats.totalApprovedSum)}</span>
                       <span className="card-label">Сумма от снабжения</span>
                     </div>
-                    <div className={`summary-card ${comparisonStats.totalDifference < 0 ? 'positive' : comparisonStats.totalDifference > 0 ? 'negative' : ''}`}>
-                      <span className="card-value">
-                        {formatNumber(comparisonStats.totalDifference)}
-                      </span>
-                      <span className="card-label">Удешевление</span>
+                    {comparisonStats.totalCurrentSum > 0 && (
+                      <div className={`summary-card ${comparisonStats.totalDifference < 0 ? 'positive' : comparisonStats.totalDifference > 0 ? 'negative' : ''}`}>
+                        <span className="card-value">
+                          {formatNumber(comparisonStats.totalDifference)}
+                        </span>
+                        <span className="card-label">Разница</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {(comparisonStats.foundCount || 0) > 0 && (
+                    <div className="table-container">
+                      <table className="pivot-table comparison-table">
+                        <thead>
+                          <tr>
+                            <th>№</th>
+                            <th>Наименование</th>
+                            <th>Ед. изм.</th>
+                            <th>Объем</th>
+                            <th>Цена (файл)</th>
+                            <th>Цена (снабжение)</th>
+                            <th>Сумма (файл)</th>
+                            <th>Сумма (снабжение)</th>
+                            <th>Разница</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {comparisonData.filter(item => item.status !== 'not_found').map((item, idx) => (
+                            <tr key={idx} className={`comparison-row status-${item.status}`}>
+                              <td>{idx + 1}</td>
+                              <td className="col-name">{item.name}</td>
+                              <td>{item.unit}</td>
+                              <td className="col-volume">{formatNumber(item.totalVolume)}</td>
+                              <td className="col-price">{item.price > 0 ? formatNumber(item.price) : '—'}</td>
+                              <td className="col-price" style={{ fontWeight: '600', color: 'var(--success-color)' }}>
+                                {formatNumber(item.approvedPrice)}
+                              </td>
+                              <td className="col-total">{item.price > 0 ? formatNumber(item.currentSum) : '—'}</td>
+                              <td className="col-total" style={{ fontWeight: '600' }}>{formatNumber(item.approvedSum)}</td>
+                              <td className={`col-diff ${item.difference < 0 ? 'positive' : item.difference > 0 ? 'negative' : ''}`}>
+                                {item.price > 0 ? formatNumber(item.difference) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="total-row">
+                            <td colSpan="5" className="total-label">ИТОГО:</td>
+                            <td></td>
+                            <td className="col-total">{comparisonStats.totalCurrentSum > 0 ? formatNumber(comparisonStats.totalCurrentSum) : '—'}</td>
+                            <td className="col-total" style={{ fontWeight: '600' }}>{formatNumber(comparisonStats.totalApprovedSum)}</td>
+                            <td className={`col-diff ${comparisonStats.totalDifference < 0 ? 'positive' : comparisonStats.totalDifference > 0 ? 'negative' : ''}`}>
+                              {comparisonStats.totalCurrentSum > 0 ? formatNumber(comparisonStats.totalDifference) : '—'}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {comparisonStats && (comparisonStats.foundCount || 0) === 0 && (
+                <div className="empty-tab warning">
+                  Ни одна позиция из файла не найдена в расценках от снабжения.
+                  <br />
+                  <small>Проверьте, что названия материалов совпадают с расценками объекта.</small>
+                </div>
+              )}
+
+              {!selectedObjectId && (
+                <div className="empty-tab">Выберите объект для сравнения с расценками от снабжения</div>
+              )}
+
+              {selectedObjectId && !comparisonStats && materialsData.length === 0 && (
+                <div className="empty-tab">Загрузите файл для сравнения</div>
+              )}
+            </div>
+          ) : activeTab === 'global_registry' ? (
+            // Вкладка "Общий реестр" - сравнение со всеми расценками из всех объектов
+            <div className="compare-section">
+              <div className="compare-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%', flexWrap: 'wrap' }}>
+                  <label style={{ fontWeight: '600' }}>Фильтр по объектам:</label>
+                  <button
+                    className={`filter-btn ${selectedObjectIds.length === 0 ? 'active' : ''}`}
+                    onClick={() => setSelectedObjectIds([])}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      borderRadius: '6px',
+                      border: selectedObjectIds.length === 0 ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                      background: selectedObjectIds.length === 0 ? 'var(--primary-light)' : 'var(--bg-secondary)',
+                      cursor: 'pointer',
+                      fontWeight: selectedObjectIds.length === 0 ? '600' : '400'
+                    }}
+                  >
+                    Все объекты ({globalRegistry.length})
+                  </button>
+                  <span style={{ color: 'var(--text-secondary)' }}>или выберите:</span>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', maxHeight: '120px', overflowY: 'auto', width: '100%' }}>
+                  {objects.map(obj => {
+                    const isSelected = selectedObjectIds.includes(obj.id)
+                    const objectRatesCount = globalRegistry.filter(r => r.object_id === obj.id).length
+                    return (
+                      <label
+                        key={obj.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          padding: '0.4rem 0.75rem',
+                          borderRadius: '6px',
+                          border: isSelected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                          background: isSelected ? 'var(--primary-light)' : 'var(--bg-secondary)',
+                          cursor: 'pointer',
+                          fontSize: '0.875rem',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedObjectIds([...selectedObjectIds, obj.id])
+                            } else {
+                              setSelectedObjectIds(selectedObjectIds.filter(id => id !== obj.id))
+                            }
+                          }}
+                        />
+                        {obj.name}
+                        <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>({objectRatesCount})</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {globalRegistry.length === 0 ? (
+                <div className="empty-tab">Общий реестр пуст. Добавьте расценки в разделе "Расценки от снабжения"</div>
+              ) : materialsData.length === 0 ? (
+                <div className="empty-tab">Загрузите Excel файл с материалами для сравнения</div>
+              ) : globalComparisonStats && (
+                <>
+                  <div className="comparison-summary" style={{ marginBottom: '1rem' }}>
+                    <div className="summary-card">
+                      <span className="card-value">{globalComparisonStats.registryItemsCount}</span>
+                      <span className="card-label">Позиций в реестре</span>
+                    </div>
+                    <div className="summary-card">
+                      <span className="card-value">{formatNumber(globalComparisonStats.totalCurrentSum)}</span>
+                      <span className="card-label">Сумма по файлу</span>
+                    </div>
+                    <div className="summary-card">
+                      <span className="card-value">{formatNumber(globalComparisonStats.totalMinSum)}</span>
+                      <span className="card-label">Мин. сумма (реестр)</span>
+                    </div>
+                    <div className={`summary-card ${globalComparisonStats.potentialSavings > 0 ? 'positive' : ''}`}>
+                      <span className="card-value">{formatNumber(globalComparisonStats.potentialSavings)}</span>
+                      <span className="card-label">Возможная экономия</span>
                     </div>
                     <div className="summary-card success">
-                      <span className="card-value">{comparisonStats.matchedCount}</span>
-                      <span className="card-label">Совпадают</span>
+                      <span className="card-value">{globalComparisonStats.cheaperCount}</span>
+                      <span className="card-label">Дешевле мин.</span>
                     </div>
                     <div className="summary-card warning">
-                      <span className="card-value">{comparisonStats.priceDiffCount}</span>
-                      <span className="card-label">Разные цены</span>
+                      <span className="card-value">{globalComparisonStats.expensiveCount}</span>
+                      <span className="card-label">Дороже макс.</span>
+                    </div>
+                    <div className="summary-card error">
+                      <span className="card-value">{globalComparisonStats.notFoundCount}</span>
+                      <span className="card-label">Нет в реестре</span>
                     </div>
                   </div>
 
@@ -1534,55 +1907,92 @@ function BSMPage() {
                         <tr>
                           <th>№</th>
                           <th>Наименование</th>
-                          <th>Ед. изм.</th>
+                          <th>Ед.</th>
                           <th>Объем</th>
                           <th>Цена (файл)</th>
-                          <th>Цена (снабжение)</th>
+                          <th>Мин.</th>
+                          <th>Макс.</th>
+                          <th>Сред.</th>
                           <th>Сумма (файл)</th>
-                          <th>Сумма (снабжение)</th>
-                          <th>Удешевление</th>
+                          <th>Экономия</th>
+                          <th>Объекты</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {comparisonData.filter(item => item.status !== 'not_found').map((item, idx) => (
-                          <tr key={idx} className={`comparison-row status-${item.status}`}>
+                        {globalComparisonData.map((item, idx) => (
+                          <tr
+                            key={idx}
+                            className={`comparison-row status-${item.status}`}
+                            style={{
+                              background: item.status === 'not_found' ? 'var(--danger-light)' :
+                                         item.status === 'expensive' ? 'var(--warning-light)' :
+                                         item.status === 'cheapest' ? 'var(--success-light)' : ''
+                            }}
+                          >
                             <td>{idx + 1}</td>
                             <td className="col-name">{item.name}</td>
                             <td>{item.unit}</td>
                             <td className="col-volume">{formatNumber(item.totalVolume)}</td>
-                            <td className="col-price">{item.price ? formatNumber(item.price) : '—'}</td>
+                            <td className="col-price">{formatNumber(item.price)}</td>
+                            <td className="col-price" style={{ color: 'var(--success-color)' }}>
+                              {item.minPrice ? formatNumber(item.minPrice) : '—'}
+                            </td>
+                            <td className="col-price" style={{ color: 'var(--danger-color)' }}>
+                              {item.maxPrice ? formatNumber(item.maxPrice) : '—'}
+                            </td>
                             <td className="col-price">
-                              {formatNumber(item.approvedPrice)}
+                              {item.avgPrice ? formatNumber(item.avgPrice) : '—'}
                             </td>
                             <td className="col-total">{formatNumber(item.currentSum)}</td>
-                            <td className="col-total">{formatNumber(item.approvedSum)}</td>
-                            <td className={`col-diff ${item.difference < 0 ? 'positive' : item.difference > 0 ? 'negative' : ''}`}>
-                              {formatNumber(item.difference)}
+                            <td className={`col-diff ${item.savings > 0 ? 'positive' : ''}`}>
+                              {item.savings ? formatNumber(item.savings) : '—'}
+                            </td>
+                            <td style={{ fontSize: '0.75rem', maxWidth: '250px' }}>
+                              {item.objectPrices ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  {item.objectPrices.slice(0, 3).map((op, opIdx) => (
+                                    <span key={opIdx} style={{
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      background: item.price <= op.price + 0.01 ? 'var(--success-light)' : 'var(--warning-light)',
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis'
+                                    }}>
+                                      {op.objectName}: {formatNumber(op.price)}
+                                      {op.appliedAt && (
+                                        <span style={{ color: 'var(--text-tertiary)', marginLeft: '4px' }}>
+                                          ({new Date(op.appliedAt).toLocaleDateString('ru-RU')})
+                                        </span>
+                                      )}
+                                    </span>
+                                  ))}
+                                  {item.objectPrices.length > 3 && (
+                                    <span style={{ color: 'var(--text-tertiary)' }}>
+                                      +{item.objectPrices.length - 3} ещё
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                              )}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
                         <tr className="total-row">
-                          <td colSpan="6" className="total-label">ИТОГО:</td>
-                          <td className="col-total">{formatNumber(comparisonStats.totalCurrentSum)}</td>
-                          <td className="col-total">{formatNumber(comparisonStats.totalApprovedSum)}</td>
-                          <td className={`col-diff ${comparisonStats.totalDifference < 0 ? 'positive' : comparisonStats.totalDifference > 0 ? 'negative' : ''}`}>
-                            {formatNumber(comparisonStats.totalDifference)}
+                          <td colSpan="8" className="total-label">ИТОГО:</td>
+                          <td className="col-total">{formatNumber(globalComparisonStats.totalCurrentSum)}</td>
+                          <td className={`col-diff ${globalComparisonStats.potentialSavings > 0 ? 'positive' : ''}`}>
+                            {formatNumber(globalComparisonStats.potentialSavings)}
                           </td>
+                          <td></td>
                         </tr>
                       </tfoot>
                     </table>
                   </div>
                 </>
-              )}
-
-              {comparisonStats && comparisonStats.matchedCount === 0 && comparisonStats.priceDiffCount === 0 && (
-                <div className="empty-tab">Нет позиций для сравнения (все позиции отсутствуют в снабжении)</div>
-              )}
-
-              {!selectedObjectId && (
-                <div className="empty-tab">Выберите объект для сравнения с расценками от снабжения</div>
               )}
             </div>
           ) : activeTab === 'units' ? (
@@ -1641,7 +2051,7 @@ function BSMPage() {
                 {currentGroupedDifferentPrices.map((item, idx) => {
                   // Проверяем наличие расценки от снабжения (только для материалов)
                   const supplyRate = mainTab === 'materials' ? approvedRates.find(rate =>
-                    rate.material_name.trim().toLowerCase() === item.name.trim().toLowerCase()
+                    String(rate.material_name || '').trim().toLowerCase() === String(item.name || '').trim().toLowerCase()
                   ) : null
                   const hasSupplyRate = !!supplyRate
 

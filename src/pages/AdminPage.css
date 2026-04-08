@@ -1,0 +1,362 @@
+.admin-page {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 2rem);
+  overflow: hidden;
+}
+
+.admin-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-shrink: 0;
+}
+
+.admin-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  padding: 0.2rem;
+}
+
+.admin-tab {
+  padding: 0.375rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-tab:hover { color: var(--text-primary); }
+
+.admin-tab.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  background: #dc2626;
+  color: white;
+  border-radius: 9px;
+}
+
+.admin-content {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem 1.25rem;
+}
+
+.admin-loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.admin-empty {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: 2rem !important;
+}
+
+.admin-denied {
+  padding: 3rem;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 1rem;
+}
+
+/* Sections */
+.admin-section {
+  margin-bottom: 1.5rem;
+}
+
+.section-title {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pending-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #dc2626;
+}
+
+[data-theme='dark'] .pending-title {
+  color: #fca5a5;
+}
+
+.pending-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(220, 38, 38, 0.15);
+  color: #dc2626;
+  border-radius: 10px;
+}
+
+[data-theme='dark'] .pending-count {
+  background: rgba(220, 38, 38, 0.25);
+  color: #fca5a5;
+}
+
+/* Table */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.admin-table th {
+  padding: 0.5rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.admin-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  color: var(--text-primary);
+}
+
+.email-cell {
+  font-weight: 500;
+}
+
+.name-cell {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.name-cell .empty-cell,
+.phone-cell .empty-cell,
+.work-email-cell .empty-cell {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+  font-weight: 400;
+}
+
+.un-cell {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-weight: 700;
+  color: var(--primary-color);
+  text-align: center;
+  width: 40px;
+}
+
+.phone-cell,
+.work-email-cell {
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.date-cell {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.pending-row {
+  background: rgba(220, 38, 38, 0.04);
+}
+
+[data-theme='dark'] .pending-row {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.role-select {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* Action buttons */
+.action-btns {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.btn-approve {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 4px;
+  background: #16a34a;
+  color: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-approve:hover {
+  background: #15803d;
+}
+
+.btn-reject {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-reject:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.btn-block {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-block:hover {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.btn-delete-user {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-delete-user:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+/* Permissions table */
+.permissions-grid {
+  overflow-x: auto;
+}
+
+.permissions-table .role-header {
+  text-align: center;
+  font-size: 0.75rem;
+  padding: 0.5rem 0.25rem;
+  border-left: 1px solid var(--border-color);
+}
+
+.permissions-table .sub-header th {
+  border-bottom: 2px solid var(--border-color);
+  padding: 0.25rem;
+}
+
+.perm-sub {
+  text-align: center;
+  border-left: 1px solid var(--border-color);
+}
+
+.perm-sub-group {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.section-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.perm-cell {
+  text-align: center;
+  border-left: 1px solid var(--border-color);
+}
+
+.perm-checkboxes {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.perm-checkboxes input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+.perm-checkboxes input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.permissions-legend {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}

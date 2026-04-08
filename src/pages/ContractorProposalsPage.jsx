@@ -250,8 +250,8 @@ function ContractorProposalsPage() {
     return labels[status] || status
   }
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/login')
   }
 

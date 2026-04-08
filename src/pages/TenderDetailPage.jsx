@@ -35,6 +35,20 @@ function TenderDetailPage() {
   const [documentFormData, setDocumentFormData] = useState({ name: '', url: '' })
   const [savingDocument, setSavingDocument] = useState(false)
 
+  // Состояния для добавления участников
+  const [showAddParticipantModal, setShowAddParticipantModal] = useState(false)
+  const [availableCounterparties, setAvailableCounterparties] = useState([])
+  const [selectedParticipants, setSelectedParticipants] = useState(new Set())
+  const [loadingCounterparties, setLoadingCounterparties] = useState(false)
+  const [participantSearchQuery, setParticipantSearchQuery] = useState('')
+
+  // Полноэкранный режим для таблицы сравнения КП
+  const [isComparisonFullscreen, setIsComparisonFullscreen] = useState(false)
+  const [comparisonSubTab, setComparisonSubTab] = useState('all') // 'all' | 'materials'
+
+  // Полноэкранный режим для просмотра сметы
+  const [isEstimateFullscreen, setIsEstimateFullscreen] = useState(false)
+
   const [estimateFormData, setEstimateFormData] = useState({
     row_number: '',
     code: '',
@@ -51,6 +65,18 @@ function TenderDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
+
+  // Закрытие полноэкранного режима по Escape
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        if (isComparisonFullscreen) setIsComparisonFullscreen(false)
+        if (isEstimateFullscreen) setIsEstimateFullscreen(false)
+      }
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [isComparisonFullscreen, isEstimateFullscreen])
 
   const fetchTenderData = async () => {
     setLoading(true)
@@ -327,6 +353,100 @@ function TenderDetailPage() {
     }
   }
 
+  // Функции для добавления участников
+  const handleOpenAddParticipantModal = async () => {
+    setShowAddParticipantModal(true)
+    setSelectedParticipants(new Set())
+    setLoadingCounterparties(true)
+
+    try {
+      // Загружаем всех активных контрагентов
+      const { data, error } = await supabase
+        .from('counterparties')
+        .select('id, name, work_type, inn')
+        .eq('status', 'active')
+        .order('name')
+
+      if (error) throw error
+
+      // Исключаем уже добавленных участников
+      const existingIds = tenderCounterparties.map(tc => tc.counterparty_id)
+      const available = (data || []).filter(c => !existingIds.includes(c.id))
+
+      setAvailableCounterparties(available)
+    } catch (error) {
+      console.error('Ошибка загрузки контрагентов:', error)
+      alert('Ошибка загрузки списка контрагентов')
+    } finally {
+      setLoadingCounterparties(false)
+    }
+  }
+
+  const handleToggleParticipant = (counterpartyId) => {
+    setSelectedParticipants(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(counterpartyId)) {
+        newSet.delete(counterpartyId)
+      } else {
+        newSet.add(counterpartyId)
+      }
+      return newSet
+    })
+  }
+
+  const handleAddParticipants = async () => {
+    if (selectedParticipants.size === 0) {
+      alert('Выберите хотя бы одного контрагента')
+      return
+    }
+
+    try {
+      const participantsToAdd = Array.from(selectedParticipants).map(counterpartyId => ({
+        tender_id: tenderId,
+        counterparty_id: counterpartyId,
+        status: 'request_sent'
+      }))
+
+      const { error } = await supabase
+        .from('tender_counterparties')
+        .insert(participantsToAdd)
+
+      if (error) throw error
+
+      setShowAddParticipantModal(false)
+      setSelectedParticipants(new Set())
+      setParticipantSearchQuery('')
+      fetchTenderData()
+      alert(`Добавлено ${participantsToAdd.length} участников`)
+    } catch (error) {
+      console.error('Ошибка добавления участников:', error)
+      alert('Ошибка добавления: ' + error.message)
+    }
+  }
+
+  const handleUpdateParticipantStatus = async (tenderCounterpartyId, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('tender_counterparties')
+        .update({ status: newStatus })
+        .eq('id', tenderCounterpartyId)
+
+      if (error) throw error
+
+      // Обновляем локальное состояние без перезагрузки всех данных
+      setTenderCounterparties(prev =>
+        prev.map(tc =>
+          tc.id === tenderCounterpartyId
+            ? { ...tc, status: newStatus }
+            : tc
+        )
+      )
+    } catch (error) {
+      console.error('Ошибка обновления статуса:', error)
+      alert('Ошибка обновления статуса: ' + error.message)
+    }
+  }
+
   const getDocumentIcon = (url) => {
     if (url.includes('drive.google.com')) return '📁'
     if (url.includes('docs.google.com/spreadsheets')) return '📊'
@@ -444,39 +564,76 @@ function TenderDetailPage() {
 
   // Генерация упрощённого шаблона для заполнения расценок
   const handleDownloadPriceTemplate = () => {
-    const groupedItems = getGroupedEstimateItems()
+    // Фильтруем только материалы (код начинается с "мат." или тип затрат = Материалы)
+    const materialItems = estimateItems.filter(item => {
+      if (item.is_section) return false  // Пропускаем разделы
+      const code = (item.code || '').toLowerCase().trim()
+      const costType = (item.cost_type || '').toLowerCase()
+      return code.startsWith('мат') || code === 'мат.' || code === 'мат' || costType === 'материалы'
+    })
 
-    if (groupedItems.length === 0) {
-      alert('Сначала загрузите смету')
+    if (materialItems.length === 0) {
+      alert('Сначала загрузите смету с материалами (код "мат.")')
       return
     }
 
-    // Заголовки шаблона:
-    // №, Тип, Наименование, Ед.изм., Объём, Цена за ед., Позиции в смете
+    // Группируем по наименованию, суммируем объёмы, собираем позиции
+    const groupedItems = {}
+    materialItems.forEach(item => {
+      const name = (item.cost_name || '').trim()
+      if (!name) return
+
+      if (!groupedItems[name]) {
+        groupedItems[name] = {
+          cost_name: name,
+          unit: item.unit || '',
+          total_volume: 0,
+          positions: []
+        }
+      }
+
+      // Суммируем объём (берём material_consumption или work_volume)
+      const volume = parseFloat(item.material_consumption) || parseFloat(item.work_volume) || 0
+      groupedItems[name].total_volume += volume
+
+      // Добавляем позицию в список
+      const posNum = String(item.original_row_number || item.row_number || '')
+      if (posNum && !groupedItems[name].positions.includes(posNum)) {
+        groupedItems[name].positions.push(posNum)
+      }
+    })
+
+    // Преобразуем в массив и сортируем по наименованию
+    const sortedItems = Object.values(groupedItems).sort((a, b) =>
+      a.cost_name.localeCompare(b.cost_name, 'ru')
+    )
+
+    if (sortedItems.length === 0) {
+      alert('Не удалось сгруппировать позиции')
+      return
+    }
+
+    // Заголовки шаблона
     const headers = [
       '№ п/п',
-      'Тип',           // М = материал, Р = работа
-      'Наименование',
+      'Наименование затрат',
       'Ед. изм.',
-      'Объём',
-      'Цена за ед. (заполнить)',  // ЗАПОЛНЯЕТ ПОДРЯДЧИК
+      'Объем',
+      'Ед. расценка за материал с учетом НДС 22%',
+      'Ед. расценка за работы с учетом НДС 22%',
       'Позиции в смете'
     ]
 
-    // Данные - уникальные позиции со сводными объёмами
-    // Числа передаём как числа (не строки), чтобы Excel корректно работал с формулами
-    const dataRows = groupedItems.map((group, idx) => {
-      const typeLabel = group.itemType === 'material' ? 'М' : (group.itemType === 'work' ? 'Р' : '?')
-      return [
-        idx + 1,
-        typeLabel,
-        group.cost_name || '',
-        group.unit || '',
-        group.total_volume || 0,  // Число, не строка - Excel сам отформатирует
-        null, // Цена - ЗАПОЛНЯЕТ ПОДРЯДЧИК
-        group.rowNumbers.join(', ')
-      ]
-    })
+    // Данные
+    const dataRows = sortedItems.map((item, idx) => [
+      idx + 1,
+      item.cost_name,
+      item.unit,
+      item.total_volume || '',
+      '',  // Ед. расценка за материал - ЗАПОЛНЯЕТ ПОДРЯДЧИК
+      '',  // Ед. расценка за работы - ЗАПОЛНЯЕТ ПОДРЯДЧИК
+      item.positions.join(', ')
+    ])
 
     // Создаём Excel
     const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
@@ -484,12 +641,12 @@ function TenderDetailPage() {
     // Ширина колонок
     ws['!cols'] = [
       { wch: 8 },   // № п/п
-      { wch: 6 },   // Тип
-      { wch: 55 },  // Наименование
+      { wch: 55 },  // Наименование затрат
       { wch: 10 },  // Ед. изм.
-      { wch: 15 },  // Объём
-      { wch: 22 },  // Цена за ед.
-      { wch: 18 },  // Позиции в смете
+      { wch: 12 },  // Объем
+      { wch: 40 },  // Ед. расценка за материал
+      { wch: 40 },  // Ед. расценка за работы
+      { wch: 20 }   // Позиции в смете
     ]
 
     const wb = XLSX.utils.book_new()
@@ -515,28 +672,24 @@ function TenderDetailPage() {
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
 
           // Парсим расценки из шаблона
-          // Новая структура: 0-№, 1-Тип(М/Р), 2-Наименование, 3-Ед.изм., 4-Объем, 5-Цена, 6-Позиции
-          const priceMap = {} // key (наименование + тип) -> { price, type }
+          // Структура: 0-№ п/п, 1-Наименование затрат, 2-Ед.изм., 3-Объем, 4-Расценка материал, 5-Расценка работы, 6-Позиции в смете
+          const priceMap = {} // key (наименование) -> { priceMaterial, priceWork }
 
           for (let i = 1; i < jsonData.length; i++) {
             const row = jsonData[i]
-            if (!row || row.length < 6) continue
+            if (!row || row.length < 5) continue
 
-            const typeLabel = row[1]?.toString().trim().toUpperCase() // М или Р
-            const costName = row[2]?.toString().trim()
-            const price = parseFloat(row[5]) || 0
+            const costName = row[1]?.toString().trim()
+            const priceMaterial = parseFloat(row[4]) || 0
+            const priceWork = parseFloat(row[5]) || 0
 
-            if (!costName || price <= 0) continue
+            if (!costName || (priceMaterial <= 0 && priceWork <= 0)) continue
 
-            // Тип: М = материал, Р = работа
-            const itemType = typeLabel === 'М' ? 'material' : (typeLabel === 'Р' ? 'work' : 'unknown')
-            const key = `${costName}__${itemType}`
-
-            priceMap[key] = { price, itemType }
+            priceMap[costName] = { priceMaterial, priceWork }
           }
 
           if (Object.keys(priceMap).length === 0) {
-            alert('Не найдены расценки в файле. Заполните колонку «Цена за ед.»')
+            alert('Не найдены расценки в файле. Заполните колонки «Ед. расценка за материал» или «Ед. расценка за работы»')
             return
           }
 
@@ -544,33 +697,19 @@ function TenderDetailPage() {
           const proposalsToInsert = []
 
           estimateItems.forEach(item => {
-            const costName = item.cost_name?.trim() || ''
-            const code = item.code?.trim() || ''
-            const isMaterial = code.toLowerCase().startsWith('мат')
-            const isWork = code.toUpperCase().startsWith('Р')
-            const itemType = isMaterial ? 'material' : (isWork ? 'work' : 'unknown')
+            if (item.is_section) return // Пропускаем разделы
 
-            const key = `${costName}__${itemType}`
-            const priceData = priceMap[key]
+            const costName = item.cost_name?.trim() || ''
+            const priceData = priceMap[costName]
 
             if (priceData) {
               const workVolume = parseFloat(item.work_volume) || 0
               const materialConsumption = parseFloat(item.material_consumption) || 0
 
-              // Расчёт в зависимости от типа позиции
-              let unitPriceMaterials = 0
-              let unitPriceWorks = 0
-              let totalMaterials = 0
-              let totalWorks = 0
-
-              if (priceData.itemType === 'material') {
-                unitPriceMaterials = priceData.price
-                totalMaterials = priceData.price * materialConsumption
-              } else {
-                unitPriceWorks = priceData.price
-                totalWorks = priceData.price * workVolume
-              }
-
+              const unitPriceMaterials = priceData.priceMaterial
+              const unitPriceWorks = priceData.priceWork
+              const totalMaterials = unitPriceMaterials * materialConsumption
+              const totalWorks = unitPriceWorks * workVolume
               const totalCost = totalMaterials + totalWorks
 
               proposalsToInsert.push({
@@ -592,23 +731,36 @@ function TenderDetailPage() {
             return
           }
 
+          // Дедупликация по estimate_item_id (оставляем последнюю запись)
+          const uniqueProposals = Object.values(
+            proposalsToInsert.reduce((acc, proposal) => {
+              acc[proposal.estimate_item_id] = proposal
+              return acc
+            }, {})
+          )
+
           // Удаляем старые предложения этого контрагента для этого тендера
-          await supabase
+          const { error: deleteError } = await supabase
             .from('tender_counterparty_proposals')
             .delete()
             .eq('tender_id', tenderId)
             .eq('counterparty_id', selectedCounterpartyForUpload)
 
+          if (deleteError) {
+            console.error('Ошибка удаления старых предложений:', deleteError)
+            throw deleteError
+          }
+
           // Вставляем новые предложения
           const { error } = await supabase
             .from('tender_counterparty_proposals')
-            .insert(proposalsToInsert)
+            .insert(uniqueProposals)
 
           if (error) throw error
 
           setShowUploadModal(false)
           fetchTenderData()
-          alert(`Импортировано расценок для ${proposalsToInsert.length} из ${estimateItems.length} позиций`)
+          alert(`Импортировано расценок для ${uniqueProposals.length} из ${estimateItems.length} позиций`)
 
         } catch (parseError) {
           console.error('Ошибка парсинга:', parseError)
@@ -716,17 +868,30 @@ function TenderDetailPage() {
     }
 
     if (proposalsToInsert.length > 0) {
+      // Дедупликация по estimate_item_id (оставляем последнюю запись)
+      const uniqueProposals = Object.values(
+        proposalsToInsert.reduce((acc, proposal) => {
+          acc[proposal.estimate_item_id] = proposal
+          return acc
+        }, {})
+      )
+
       // Удаляем старые предложения этого контрагента
-      await supabase
+      const { error: deleteError } = await supabase
         .from('tender_counterparty_proposals')
         .delete()
         .eq('tender_id', tenderId)
         .eq('counterparty_id', counterpartyId)
 
+      if (deleteError) {
+        console.error('Ошибка удаления старых предложений:', deleteError)
+        throw deleteError
+      }
+
       // Вставляем новые
       const { error } = await supabase
         .from('tender_counterparty_proposals')
-        .insert(proposalsToInsert)
+        .insert(uniqueProposals)
 
       if (error) throw error
 
@@ -743,7 +908,40 @@ function TenderDetailPage() {
     }
   }
 
+  // Удаление загруженного КП
+  const handleDeleteProposalFile = async (file) => {
+    const counterpartyName = file.counterparties?.name || 'подрядчика'
+    if (!window.confirm(`Удалить КП от "${counterpartyName}"?\n\nВсе расценки от этого подрядчика будут удалены.`)) {
+      return
+    }
+
+    try {
+      // Удаляем предложения (расценки) этого подрядчика
+      await supabase
+        .from('tender_counterparty_proposals')
+        .delete()
+        .eq('tender_id', tenderId)
+        .eq('counterparty_id', file.counterparty_id)
+
+      // Удаляем запись о файле
+      const { error } = await supabase
+        .from('tender_proposal_files')
+        .delete()
+        .eq('id', file.id)
+
+      if (error) throw error
+
+      // Обновляем данные
+      fetchTenderData()
+    } catch (error) {
+      console.error('Ошибка удаления КП:', error)
+      alert('Ошибка удаления: ' + error.message)
+    }
+  }
+
   // Импорт сметы из Excel - название берётся из имени файла
+  // Структура: A=№ п/п, B=КОД, C=Наименование затрат, D=Ед.изм., E=Объем, F=Расход
+  // Разделы (заголовки секций) сохраняются как отдельные строки с is_section=true
   const handleImportEstimateFromExcel = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -771,6 +969,42 @@ function TenderDetailPage() {
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
 
           // Парсим смету из Excel
+          // Структура колонок:
+          // A (0) = № п/п
+          // B (1) = КОД
+          // C (2) = Наименование затрат
+          // D (3) = Ед. изм.
+          // E (4) = Объем по виду работ
+          // F (5) = Общий расход по материалу
+
+          // Ищем строку заголовка таблицы (начало таблицы)
+          // Таблица начинается там, где в колонке A есть "№ п/п" или в колонке B есть "КОД"
+          let headerRowIndex = -1
+          for (let i = 0; i < jsonData.length; i++) {
+            const row = jsonData[i]
+            if (!row || row.length === 0) continue
+
+            const colA = row[0]?.toString().trim().toLowerCase() || ''
+            const colB = row[1]?.toString().trim().toLowerCase() || ''
+            const colC = row[2]?.toString().trim().toLowerCase() || ''
+
+            // Проверяем, является ли это строкой заголовка таблицы
+            const isHeader = (colA.includes('№') && colA.includes('п/п')) ||
+                             colA === '№ п/п' ||
+                             colA === 'n п/п' ||
+                             colB === 'код' ||
+                             colB === 'code' ||
+                             (colC.includes('наименование') && colC.includes('затрат'))
+
+            if (isHeader) {
+              headerRowIndex = i
+              break
+            }
+          }
+
+          // Если заголовок не найден, начинаем с первой строки (предполагаем, что данные идут сразу)
+          const startRowIndex = headerRowIndex >= 0 ? headerRowIndex + 1 : 0
+
           const itemsToInsert = []
 
           // Находим максимальный row_number среди ВСЕХ существующих позиций тендера
@@ -786,34 +1020,136 @@ function TenderDetailPage() {
           // Нумерация новых позиций начинается после максимального существующего номера
           let nextRowNumber = maxExistingRowNumber + 1
 
-          for (let i = 1; i < jsonData.length; i++) {
+          for (let i = startRowIndex; i < jsonData.length; i++) {
             const row = jsonData[i]
             if (!row || row.length === 0) continue
 
-            const code = row[1]?.toString().trim()
-            if (!code) continue
+            // Читаем данные по колонкам A-F
+            const colA = row[0]?.toString().trim() || ''              // A: № п/п (оригинальный)
+            const colB = row[1]?.toString().trim() || ''              // B: КОД
+            const colC = row[2]?.toString().trim() || ''              // C: Наименование затрат
+            const unit = row[3]?.toString().trim() || ''              // D: Ед. изм.
+            const workVolume = row[4]                                  // E: Объем
+            const materialConsumption = row[5]                         // F: Расход
 
-            const costName = row[2]?.toString().trim()
-            const rowNumber = nextRowNumber++
+            // Определяем, является ли это объединённой ячейкой (часть/раздел)
+            // Объединённые ячейки: текст в колонке A или B, остальные колонки пустые
+            const hasNumericInRow = (parseFloat(workVolume) > 0) || (parseFloat(materialConsumption) > 0)
+            const isColANumber = /^\d+$/.test(colA) || colA === ''
+            const isStandardCode = colB.toUpperCase().startsWith('Р') ||
+                                   colB.toUpperCase().startsWith('P') ||
+                                   colB.toLowerCase().startsWith('мат')
 
+            // Если в колонке A есть текст (не число), B и C пустые, и нет числовых данных - это раздел
+            const isMergedSection = !isColANumber && colA !== '' && !colB && !colC && !hasNumericInRow
+            // Если в колонке B есть текст (не код), C пустая, и нет числовых данных - тоже раздел
+            const isMergedSectionB = !isStandardCode && colB !== '' && !colC && !hasNumericInRow && isColANumber
+
+            let originalRowNum, code, costName
+
+            if (isMergedSection) {
+              // Объединённая ячейка - название раздела в колонке A
+              originalRowNum = ''
+              code = ''
+              costName = colA
+            } else if (isMergedSectionB) {
+              // Объединённая ячейка - название раздела в колонке B
+              originalRowNum = colA.substring(0, 20)  // VARCHAR(20)
+              code = ''
+              costName = colB
+            } else {
+              // Обычная строка
+              originalRowNum = colA.substring(0, 20)   // VARCHAR(20)
+              code = colB.substring(0, 50)             // VARCHAR(50)
+              costName = colC
+            }
+
+            // Ограничиваем длину unit
+            const unitTrimmed = unit.substring(0, 50)  // VARCHAR(50)
+
+            // Пропускаем полностью пустые строки
+            if (!costName && !code) continue
+
+            // Проверяем, не достигли ли строки ИТОГО - после неё прекращаем импорт
+            const lowerCostName = costName.toLowerCase()
+            const lowerOriginalRow = originalRowNum.toLowerCase()
+            const lowerCode = code.toLowerCase()
+            const combinedText = (lowerCostName + ' ' + lowerOriginalRow + ' ' + lowerCode).toLowerCase()
+
+            // Если встретили ИТОГО - прекращаем импорт (все последующие строки игнорируются)
+            if (combinedText.includes('итого') || lowerCostName.startsWith('итого') || lowerOriginalRow.startsWith('итого')) {
+              break
+            }
+
+            // Пропускаем служебные строки (примечания, условия и т.д.)
+            const isFooterRow = combinedText.includes('авансирован') ||
+                                combinedText.includes('плательщик') ||
+                                combinedText.includes('ндс') ||
+                                combinedText.includes('гарантийн') ||
+                                combinedText.includes('приступить к работ') ||
+                                combinedText.includes('готовность') ||
+                                combinedText.includes('срок выполнения') ||
+                                combinedText.includes('срок поставки') ||
+                                combinedText.includes('срок исполнения') ||
+                                combinedText.includes('условия оплаты') ||
+                                combinedText.includes('примечание') ||
+                                combinedText.includes('всего:') ||
+                                combinedText.includes('подпись') ||
+                                combinedText.includes('печать') ||
+                                combinedText.includes('директор') ||
+                                combinedText.includes('генеральный') ||
+                                combinedText.includes('посещени') ||
+                                combinedText.includes('наличие сро') ||
+                                combinedText.includes('сро') && combinedText.includes('наличие') ||
+                                combinedText.includes('численность') ||
+                                combinedText.includes('дата регистрации') ||
+                                combinedText.includes('оборот за') ||
+                                combinedText.includes('сайт компании') ||
+                                combinedText.includes('контактное лицо') ||
+                                combinedText.includes('ткп претендента') ||
+                                combinedText.includes('предмета тендера')
+            if (isFooterRow) continue
+
+            // Определяем, является ли строка разделом (заголовком секции)
+            // Раздел - это строка, у которой:
+            // - есть наименование (costName)
+            // - НЕТ кода типа "Р-XXX" или "мат."
+            // - обычно нет единицы измерения, объёма и расхода
+            const isWorkCode = code.toUpperCase().startsWith('Р') || code.toUpperCase().startsWith('P')
+            const isMaterialCode = code.toLowerCase().startsWith('мат')
+            const hasStandardCode = isWorkCode || isMaterialCode
+
+            // Строка является разделом если:
+            // 1. Есть наименование
+            // 2. Нет стандартного кода (Р или мат.) ИЛИ код пустой
+            // 3. Нет числовых данных (объём и расход)
+            const hasNumericData = (parseFloat(workVolume) > 0) || (parseFloat(materialConsumption) > 0)
+            const isSection = Boolean(costName && !hasStandardCode && !hasNumericData)
+
+            // Определяем тип затрат
             let costType = null
-            if (code.toLowerCase().startsWith('мат') || code.toLowerCase() === 'мат.') {
+            if (isSection) {
+              costType = 'Раздел'
+            } else if (isMaterialCode) {
               costType = 'Материалы'
-            } else if (code.toUpperCase().startsWith('Р') || code.toUpperCase().startsWith('Р-')) {
+            } else if (isWorkCode) {
               costType = 'Работы'
             }
 
+            const rowNumber = nextRowNumber++
+
             itemsToInsert.push({
               tender_id: tenderId,
-              estimate_name: estimateName,  // Название сметы = имя файла
+              estimate_name: estimateName,
               row_number: rowNumber,
+              original_row_number: originalRowNum || null,
               code: code || null,
               cost_type: costType,
               cost_name: costName || '',
-              unit: row[3]?.toString().trim() || null,
-              work_volume: parseFloat(row[4]) || null,
-              material_consumption: parseFloat(row[5]) || null,
-              calculation_note: row[11]?.toString().trim() || null
+              unit: unitTrimmed || null,
+              work_volume: parseFloat(workVolume) || null,
+              material_consumption: parseFloat(materialConsumption) || null,
+              is_section: isSection
             })
           }
 
@@ -841,8 +1177,12 @@ function TenderDetailPage() {
             // Раскрываем добавленную смету
             setExpandedEstimates(prev => new Set([...prev, estimateName]))
 
+            // Подсчитываем статистику
+            const sectionsCount = itemsToInsert.filter(i => i.is_section).length
+            const itemsCount = itemsToInsert.length - sectionsCount
+
             fetchTenderData()
-            alert(`Импортировано ${itemsToInsert.length} позиций в смету "${estimateName}"`)
+            alert(`Импортировано в смету "${estimateName}":\n• ${sectionsCount} разделов\n• ${itemsCount} позиций`)
           } else {
             alert('Не найдено позиций для импорта. Проверьте структуру файла.')
           }
@@ -862,31 +1202,33 @@ function TenderDetailPage() {
   }
 
   const handleDownloadEstimateTemplate = () => {
-    // Создаем шаблон сметы - структура A-L
+    // Создаем шаблон сметы - структура A-F
+    // Включает пример раздела (секции) и позиций
     const templateData = [
-      ['№ п/п', 'КОД', 'Наименование затрат', 'Ед. изм.', 'Объем по виду работ', 'Общий расход по материалу', 'Материалы/оборудование', 'СМР, ПНР', 'Итого материалы', 'Итого СМР', 'Общая стоимость', 'ПРИМЕЧАНИЯ'],
-      ['', 'мат.', 'Пример: Кабель ВВГнг 3x2.5', 'м', '', 105, '', '', '', '', '', ''],
-      [1, 'Р-001', 'Пример: Монтаж кабеля', 'м', 100, '', '', '', '', '', '', ''],
-      ['', 'мат.', 'Пример: Кабель-канал 40x25', 'м', '', 50, '', '', '', '', '', ''],
-      [2, 'Р-002', 'Пример: Монтаж кабель-канала', 'м', 50, '', '', '', '', '', '', ''],
+      ['№ п/п', 'КОД', 'Наименование затрат', 'Ед. изм.', 'Объем по виду работ', 'Общий расход по материалу'],
+      // Пример раздела (секции) - строка без кода и без числовых данных
+      ['', '', '1. Электромонтажные работы', '', '', ''],
+      // Позиции раздела
+      ['', 'мат.', 'Кабель ВВГнг 3x2.5', 'м', '', 105],
+      [1, 'Р-001', 'Монтаж кабеля', 'м', 100, ''],
+      ['', 'мат.', 'Кабель-канал 40x25', 'м', '', 50],
+      [2, 'Р-002', 'Монтаж кабель-канала', 'м', 50, ''],
+      // Пример второго раздела
+      ['', '', '2. Отделочные работы', '', '', ''],
+      ['', 'мат.', 'Краска водоэмульсионная', 'кг', '', 25],
+      [3, 'Р-003', 'Покраска стен', 'м²', 120, ''],
     ]
 
     const ws = XLSX.utils.aoa_to_sheet(templateData)
 
-    // Устанавливаем ширину колонок (A-L)
+    // Устанавливаем ширину колонок (A-F)
     ws['!cols'] = [
       { wch: 8 },   // A: № п/п
       { wch: 12 },  // B: КОД
-      { wch: 40 },  // C: Наименование затрат
+      { wch: 45 },  // C: Наименование затрат
       { wch: 10 },  // D: Ед. изм.
-      { wch: 18 },  // E: Объем по виду работ
-      { wch: 22 },  // F: Общий расход по материалу
-      { wch: 20 },  // G: Материалы/оборудование (цена)
-      { wch: 18 },  // H: СМР, ПНР (цена)
-      { wch: 18 },  // I: Итого материалы
-      { wch: 15 },  // J: Итого СМР
-      { wch: 18 },  // K: Общая стоимость
-      { wch: 25 },  // L: ПРИМЕЧАНИЯ
+      { wch: 20 },  // E: Объем по виду работ
+      { wch: 25 },  // F: Общий расход по материалу
     ]
 
     const wb = XLSX.utils.book_new()
@@ -895,42 +1237,87 @@ function TenderDetailPage() {
   }
 
   const handleDownloadProposalTemplate = () => {
-    // Создаем шаблон КП на основе существующей сметы
-    // Структура согласно требованиям:
-    // A-H: базовые колонки сметы
-    // I-J: Цена за единицу (материалы/оборудование, СМР/ПНР)
-    // K: ИТОГО цена за единицу
-    // L-M: Стоимость ИТОГО (материалы/оборудование, СМР/ПНР)
-    // N: ИТОГО стоимость
-    // O: Общая стоимость
-    // P: Примечание участника
+    // Создаем шаблон расценок на основе существующей сметы
+    // Только позиции с кодом "материал" (мат.)
+    // Одинаковые позиции группируются, объёмы суммируются
+
+    console.log('All estimate items:', estimateItems.length, estimateItems)
+
+    // Фильтруем только материалы (код начинается с "мат." или тип затрат = Материалы)
+    const materialItems = estimateItems.filter(item => {
+      if (item.is_section) return false  // Пропускаем разделы
+      const code = (item.code || '').toLowerCase().trim()
+      const costType = (item.cost_type || '').toLowerCase()
+      return code.startsWith('мат') || code === 'мат.' || code === 'мат' || costType === 'материалы'
+    })
+
+    console.log('Filtered material items:', materialItems.length, materialItems)
+
+    if (materialItems.length === 0) {
+      alert('В смете нет позиций с кодом "материал" (мат.)\n\nВсего позиций в смете: ' + estimateItems.length)
+      return
+    }
+
+    // Группируем по наименованию, суммируем объёмы, собираем позиции
+    const groupedItems = {}
+    materialItems.forEach(item => {
+      const name = (item.cost_name || '').trim()
+      if (!name) return
+
+      if (!groupedItems[name]) {
+        groupedItems[name] = {
+          cost_name: name,
+          unit: item.unit || '',
+          total_volume: 0,
+          positions: []
+        }
+      }
+
+      // Суммируем объём (берём material_consumption или work_volume)
+      const volume = parseFloat(item.material_consumption) || parseFloat(item.work_volume) || 0
+      groupedItems[name].total_volume += volume
+
+      // Добавляем позицию в список (конвертируем в строку для корректного сравнения)
+      const posNum = String(item.original_row_number || item.row_number || '')
+      if (posNum && !groupedItems[name].positions.includes(posNum)) {
+        groupedItems[name].positions.push(posNum)
+      }
+    })
+
+    console.log('Material items found:', materialItems.length)
+    console.log('Grouped items:', Object.keys(groupedItems).length)
+
+    // Преобразуем в массив и сортируем по наименованию
+    const sortedItems = Object.values(groupedItems).sort((a, b) =>
+      a.cost_name.localeCompare(b.cost_name, 'ru')
+    )
+
+    if (sortedItems.length === 0) {
+      alert('Не удалось сгруппировать позиции. Проверьте данные сметы.')
+      return
+    }
+
+    console.log('Sorted items for export:', sortedItems)
+
     const headerRow = [
-      '№ п/п', 'КОД', 'Вид затрат', 'Наименование затрат', 'Примечание к расчету',
-      'Ед. изм.', 'Объем по виду работ', 'Общий расход по материалу',
-      'Цена за ед. Матер./Обор. с НДС', 'Цена за ед. СМР/ПНР с НДС',
-      'ИТОГО цена за ед. с НДС', 'Стоим. Матер./Обор. с НДС', 'Стоим. СМР/ПНР с НДС',
-      'ИТОГО стоимость с НДС', 'Общая стоимость с НДС', 'Примечание участника'
+      '№ п/п',
+      'Наименование затрат',
+      'Ед. изм.',
+      'Объем',
+      'Ед. расценка за материал с учетом НДС 22%',
+      'Ед. расценка за работы с учетом НДС 22%',
+      'Позиции в смете'
     ]
 
-    const dataRows = estimateItems.map((item, idx) => {
-      const rowNum = idx + 2 // Excel строка (1 - заголовок)
+    const dataRows = sortedItems.map((item, idx) => {
       return [
-        item.row_number,
-        item.code || '',
-        item.cost_type || '',
-        item.cost_name || '',
-        item.calculation_note || '',
-        item.unit || '',
-        item.work_volume || '',
-        item.material_consumption || '',
-        '', // I: Цена материалы - заполняет подрядчик
-        '', // J: Цена СМР/ПНР - заполняет подрядчик
-        { f: `I${rowNum}+J${rowNum}` }, // K: ИТОГО цена за ед. = I + J
-        { f: `I${rowNum}*G${rowNum}` }, // L: Стоимость материалы = цена * объем
-        { f: `J${rowNum}*G${rowNum}` }, // M: Стоимость СМР = цена * объем
-        { f: `L${rowNum}+M${rowNum}` }, // N: ИТОГО стоимость = L + M
-        { f: `N${rowNum}` }, // O: Общая стоимость (равна ИТОГО)
-        '', // P: Примечание участника - заполняет подрядчик
+        idx + 1,                                    // A: № п/п
+        item.cost_name,                             // B: Наименование затрат
+        item.unit,                                  // C: Ед. изм.
+        item.total_volume || '',                    // D: Объем (суммарный)
+        '',                                         // E: Ед. расценка за материал - заполняет подрядчик
+        '',                                         // F: Ед. расценка за работы - заполняет подрядчик
+        item.positions.join(', ')                   // G: Позиции в смете
       ]
     })
 
@@ -939,21 +1326,12 @@ function TenderDetailPage() {
     // Устанавливаем ширину колонок
     ws['!cols'] = [
       { wch: 8 },   // A: № п/п
-      { wch: 12 },  // B: КОД
-      { wch: 15 },  // C: Вид затрат
-      { wch: 40 },  // D: Наименование затрат
-      { wch: 25 },  // E: Примечание к расчету
-      { wch: 10 },  // F: Ед. изм.
-      { wch: 15 },  // G: Объем
-      { wch: 15 },  // H: Расход
-      { wch: 22 },  // I: Цена материалы
-      { wch: 20 },  // J: Цена СМР
-      { wch: 20 },  // K: ИТОГО цена
-      { wch: 20 },  // L: Стоимость мат
-      { wch: 20 },  // M: Стоимость СМР
-      { wch: 20 },  // N: ИТОГО стоимость
-      { wch: 20 },  // O: Общая стоимость
-      { wch: 25 },  // P: Примечание
+      { wch: 55 },  // B: Наименование затрат
+      { wch: 10 },  // C: Ед. изм.
+      { wch: 12 },  // D: Объем
+      { wch: 38 },  // E: Ед. расценка за материал
+      { wch: 38 },  // F: Ед. расценка за работы
+      { wch: 20 }   // G: Позиции в смете
     ]
 
     const wb = XLSX.utils.book_new()
@@ -988,15 +1366,6 @@ function TenderDetailPage() {
     return classes[status] || ''
   }
 
-  const getCounterpartyStatusLabel = (status) => {
-    const labels = {
-      'request_sent': 'Запрос отправлен',
-      'declined': 'Отказ',
-      'proposal_provided': 'КП предоставлено'
-    }
-    return labels[status] || status
-  }
-
   const getCounterpartyStatusColor = (status) => {
     const colors = {
       'request_sent': '#6366f1',
@@ -1007,19 +1376,89 @@ function TenderDetailPage() {
   }
 
   // Расчет итогов для сравнительной таблицы
-  const calculateTotals = (counterpartyId) => {
+  const calculateTotals = (counterpartyId, forAllItems = false) => {
     const cpProposals = proposals[counterpartyId] || {}
     let totalMaterials = 0
     let totalWorks = 0
     let totalCost = 0
 
-    Object.values(cpProposals).forEach(p => {
-      totalMaterials += p.total_materials || 0
-      totalWorks += p.total_works || 0
-      totalCost += p.total_cost || 0
+    // Фильтруем позиции в соответствии с текущей вкладкой (или берём все для сводки)
+    // Для materials/works вкладок показываем все позиции, т.к. расценки могут быть у любой
+    const filteredItems = forAllItems ? estimateItems : estimateItems.filter(item => {
+      if (comparisonSubTab === 'all' || comparisonSubTab === 'summary') return true
+      if (item.is_section) return false
+      // Для materials и works показываем все позиции
+      return true
+    })
+
+    filteredItems.forEach(item => {
+      const proposal = cpProposals[item.id]
+      if (proposal) {
+        // Определяем объём как в таблице
+        const code = (item.code || '').toLowerCase().trim()
+        const isMaterial = code.startsWith('мат') || code === 'мат.' || code === 'мат'
+        const volume = isMaterial
+          ? (parseFloat(item.material_consumption) || parseFloat(item.work_volume) || 0)
+          : (parseFloat(item.work_volume) || 0)
+
+        const matTotal = (proposal.unit_price_materials || 0) * volume
+        const workTotal = (proposal.unit_price_works || 0) * volume
+
+        totalMaterials += matTotal
+        totalWorks += workTotal
+        totalCost += matTotal + workTotal
+      }
     })
 
     return { totalMaterials, totalWorks, totalCost }
+  }
+
+  // Получить все итоги по подрядчикам для сводной таблицы
+  const getAllCounterpartyTotals = () => {
+    return tenderCounterparties.map(tc => {
+      const totals = calculateTotals(tc.counterparty_id, true)
+      return {
+        id: tc.counterparty_id,
+        name: tc.counterparties?.name || 'Неизвестный',
+        ...totals
+      }
+    }).sort((a, b) => a.totalCost - b.totalCost) // Сортируем по общей сумме
+  }
+
+  // Функция для определения класса цены (лучшая/худшая) на основе сравнения с другими подрядчиками
+  const getPriceComparisonClass = (itemId, priceType, currentPrice) => {
+    if (!currentPrice || currentPrice <= 0) return ''
+
+    // Собираем все цены для этой позиции от всех подрядчиков
+    const allPrices = tenderCounterparties
+      .map(tc => {
+        const proposal = proposals[tc.counterparty_id]?.[itemId]
+        if (!proposal) return null
+        return priceType === 'materials'
+          ? proposal.unit_price_materials
+          : proposal.unit_price_works
+      })
+      .filter(p => p && p > 0)
+
+    if (allPrices.length < 2) return '' // Нужно минимум 2 цены для сравнения
+
+    const minPrice = Math.min(...allPrices)
+    const maxPrice = Math.max(...allPrices)
+
+    if (minPrice === maxPrice) return '' // Все цены одинаковые
+
+    // Проверяем, является ли текущая цена лучшей (минимальной)
+    if (currentPrice === minPrice) {
+      return 'price-best'
+    }
+
+    // Проверяем, отличается ли от минимальной более чем на 5%
+    const diffPercent = ((currentPrice - minPrice) / minPrice) * 100
+    if (diffPercent >= 5) {
+      return 'price-worse'
+    }
+
+    return ''
   }
 
   if (loading) {
@@ -1121,55 +1560,6 @@ function TenderDetailPage() {
         {/* Вкладка Исходные данные */}
         {activeTab === 'source_data' && (
           <div className="source-data-section">
-            {/* Шаблон сметы */}
-            <div className="source-data-card">
-              <div className="source-data-card-header">
-                <h3>📊 Шаблон сметы (Excel)</h3>
-                <p className="source-data-description">
-                  Ссылка на шаблон сметы в Google Drive. Подрядчик скачивает, заполняет расценки и отправляет обратно.
-                </p>
-              </div>
-              <div className="source-data-card-content">
-                {estimateTemplate ? (
-                  <div className="template-info">
-                    <div className="template-file">
-                      <span className="file-icon">{getDocumentIcon(estimateTemplate.url)}</span>
-                      <div className="file-details">
-                        <span className="file-name">{estimateTemplate.name}</span>
-                        <span className="file-size file-url">{estimateTemplate.url}</span>
-                      </div>
-                      <div className="file-actions">
-                        <a
-                          href={estimateTemplate.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn-secondary"
-                        >
-                          Открыть
-                        </a>
-                        <button
-                          className="btn-danger"
-                          onClick={() => handleDeleteDocument(estimateTemplate)}
-                        >
-                          Удалить
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="no-template">
-                    <p>Ссылка на исходную смету не добавлена</p>
-                    <button
-                      className="btn-primary"
-                      onClick={() => handleOpenAddDocument('estimate_template')}
-                    >
-                      + Добавить ссылку на смету
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* Шаблон расценок для подрядчика */}
             <div className="source-data-card">
               <div className="source-data-card-header">
@@ -1287,7 +1677,7 @@ function TenderDetailPage() {
 
         {/* Вкладка Смета */}
         {activeTab === 'estimate' && (
-          <div className="estimate-section">
+          <div className={`estimate-section ${isEstimateFullscreen ? 'fullscreen' : ''}`}>
             <div className="section-header">
               <h3>Сметы тендера ({getEstimateNames().length} смет, {estimateItems.length} позиций)</h3>
               <div className="section-actions">
@@ -1301,6 +1691,13 @@ function TenderDetailPage() {
                 </button>
                 <button className="btn-primary" onClick={() => setShowImportEstimateModal(true)}>
                   📥 Импорт сметы
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => setIsEstimateFullscreen(!isEstimateFullscreen)}
+                  title={isEstimateFullscreen ? 'Свернуть (Esc)' : 'Развернуть на весь экран'}
+                >
+                  {isEstimateFullscreen ? '⬜ Свернуть' : '⛶ Развернуть'}
                 </button>
               </div>
             </div>
@@ -1361,6 +1758,7 @@ function TenderDetailPage() {
                                     title="Выбрать все в этой смете"
                                   />
                                 </th>
+                                <th>№ п/п</th>
                                 <th>№</th>
                                 <th>КОД</th>
                                 <th>Наименование</th>
@@ -1374,9 +1772,9 @@ function TenderDetailPage() {
                               {items.map(item => (
                                 <tr
                                   key={item.id}
-                                  className={selectedEstimateItems.has(item.id) ? 'selected-row' : ''}
+                                  className={`${selectedEstimateItems.has(item.id) ? 'selected-row' : ''} ${item.is_section ? 'section-row' : ''}`}
                                 >
-                                  <td className="center">
+                                  <td className="col-checkbox">
                                     <input
                                       type="checkbox"
                                       checked={selectedEstimateItems.has(item.id)}
@@ -1384,8 +1782,14 @@ function TenderDetailPage() {
                                     />
                                   </td>
                                   <td className="center">{item.row_number}</td>
+                                  <td className="center">
+                                    {item.original_row_number || '-'}
+                                  </td>
                                   <td>{item.code || '-'}</td>
-                                  <td className="col-name-compact">{item.cost_name}</td>
+                                  <td className={`col-name-compact ${item.is_section ? 'section-name' : ''}`}>
+                                    {item.is_section && <span className="section-icon">📁 </span>}
+                                    {item.cost_name}
+                                  </td>
                                   <td className="center">{item.unit || '-'}</td>
                                   <td className="right">{item.work_volume ?? '-'}</td>
                                   <td className="right">{item.material_consumption ?? '-'}</td>
@@ -1421,16 +1825,46 @@ function TenderDetailPage() {
 
         {/* Вкладка Сравнение КП */}
         {activeTab === 'comparison' && (
-          <div className="comparison-section">
+          <div className={`comparison-section ${isComparisonFullscreen ? 'fullscreen' : ''}`}>
             <div className="section-header">
               <h3>Сравнительная таблица коммерческих предложений</h3>
-              {estimateItems.length > 0 && (
-                <div className="section-actions">
-                  <button className="btn-secondary" onClick={handleDownloadProposalTemplate}>
-                    Скачать шаблон КП
-                  </button>
-                </div>
-              )}
+              <div className="section-actions">
+                <button
+                  className="btn-secondary"
+                  onClick={() => setIsComparisonFullscreen(!isComparisonFullscreen)}
+                  title={isComparisonFullscreen ? 'Свернуть' : 'Развернуть на весь экран'}
+                >
+                  {isComparisonFullscreen ? '⬜ Свернуть' : '⛶ Развернуть'}
+                </button>
+              </div>
+            </div>
+
+            {/* Под-вкладки для фильтрации */}
+            <div className="comparison-sub-tabs">
+              <button
+                className={`comparison-sub-tab ${comparisonSubTab === 'all' ? 'active' : ''}`}
+                onClick={() => setComparisonSubTab('all')}
+              >
+                Все позиции
+              </button>
+              <button
+                className={`comparison-sub-tab ${comparisonSubTab === 'materials' ? 'active' : ''}`}
+                onClick={() => setComparisonSubTab('materials')}
+              >
+                Материалы
+              </button>
+              <button
+                className={`comparison-sub-tab ${comparisonSubTab === 'works' ? 'active' : ''}`}
+                onClick={() => setComparisonSubTab('works')}
+              >
+                Работы
+              </button>
+              <button
+                className={`comparison-sub-tab ${comparisonSubTab === 'summary' ? 'active' : ''}`}
+                onClick={() => setComparisonSubTab('summary')}
+              >
+                Итоги по подрядчикам
+              </button>
             </div>
 
             {estimateItems.length === 0 ? (
@@ -1441,87 +1875,217 @@ function TenderDetailPage() {
               <div className="empty-state">
                 <p>Нет участников тендера для сравнения</p>
               </div>
+            ) : comparisonSubTab === 'summary' ? (
+              /* Сводная таблица итогов по подрядчикам */
+              <div className="comparison-summary-container">
+                <table className="summary-table">
+                  <thead>
+                    <tr>
+                      <th>№</th>
+                      <th>Подрядчик</th>
+                      <th>Материалы</th>
+                      <th>Работы</th>
+                      <th>Общая сумма</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getAllCounterpartyTotals().map((cp, index) => {
+                      const isLowest = index === 0 && cp.totalCost > 0
+                      return (
+                        <tr key={cp.id} className={isLowest ? 'best-price-row' : ''}>
+                          <td className="center">{index + 1}</td>
+                          <td>{cp.name}</td>
+                          <td className="right price-cell">{formatCurrency(cp.totalMaterials)}</td>
+                          <td className="right price-cell">{formatCurrency(cp.totalWorks)}</td>
+                          <td className={`right price-cell total-cell ${isLowest ? 'price-best' : ''}`}>
+                            {formatCurrency(cp.totalCost)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <div className="comparison-table-container">
                 <table className="comparison-table">
                   <thead>
-                    <tr>
+                    <tr className="header-row-1">
                       <th rowSpan="2" className="sticky-col">№</th>
                       <th rowSpan="2" className="sticky-col col-2">Наименование затрат</th>
                       <th rowSpan="2">Ед.</th>
                       <th rowSpan="2">Объем</th>
-                      {tenderCounterparties.map(tc => (
-                        <th key={tc.id} colSpan="4" className="counterparty-header">
-                          <div className="cp-name">{tc.counterparties?.name}</div>
-                          <div className="cp-actions">
-                            <button
-                              className="btn-upload-small"
-                              onClick={() => handleUploadClick(tc.counterparty_id)}
-                              title="Загрузить КП"
-                            >
-                              📤 Загрузить КП
-                            </button>
-                          </div>
-                        </th>
-                      ))}
+                      {tenderCounterparties.map((tc, cpIndex) => {
+                        const groupClass = cpIndex % 2 === 0 ? 'cp-group-odd' : 'cp-group-even'
+                        return (
+                          <th key={tc.id} colSpan={comparisonSubTab === 'materials' || comparisonSubTab === 'works' ? 2 : 5} className={`counterparty-header ${groupClass}`}>
+                            <div className="cp-name">{tc.counterparties?.name}</div>
+                            <div className="cp-actions">
+                              <button
+                                className="btn-upload-small"
+                                onClick={() => handleUploadClick(tc.counterparty_id)}
+                                title="Загрузить КП"
+                              >
+                                📤 Загрузить КП
+                              </button>
+                            </div>
+                          </th>
+                        )
+                      })}
                     </tr>
-                    <tr>
-                      {tenderCounterparties.map(tc => (
-                        <>
-                          <th key={`${tc.id}-mat`} className="sub-header">Материалы</th>
-                          <th key={`${tc.id}-work`} className="sub-header">СМР/ПНР</th>
-                          <th key={`${tc.id}-total`} className="sub-header">ИТОГО ед.</th>
-                          <th key={`${tc.id}-sum`} className="sub-header">Сумма</th>
-                        </>
-                      ))}
+                    <tr className="header-row-2">
+                      {tenderCounterparties.map((tc, cpIndex) => {
+                        const groupClass = cpIndex % 2 === 0 ? 'cp-group-odd' : 'cp-group-even'
+                        return (
+                          <>
+                            {comparisonSubTab !== 'works' && (
+                              <th key={`${tc.id}-mat-price`} className={`sub-header ${groupClass} cp-first`}>Ед. мат.</th>
+                            )}
+                            {comparisonSubTab !== 'materials' && (
+                              <th key={`${tc.id}-work-price`} className={`sub-header ${groupClass} ${comparisonSubTab === 'works' ? 'cp-first' : ''}`}>Ед. раб.</th>
+                            )}
+                            {comparisonSubTab !== 'works' && (
+                              <th key={`${tc.id}-mat-total`} className={`sub-header ${groupClass}`}>Итого мат.</th>
+                            )}
+                            {comparisonSubTab !== 'materials' && (
+                              <th key={`${tc.id}-work-total`} className={`sub-header ${groupClass}`}>Итого раб.</th>
+                            )}
+                            {comparisonSubTab === 'all' && (
+                              <th key={`${tc.id}-sum`} className={`sub-header ${groupClass}`}>Общее итого</th>
+                            )}
+                          </>
+                        )
+                      })}
                     </tr>
                   </thead>
                   <tbody>
-                    {estimateItems.map(item => (
+                    {estimateItems
+                      .filter(item => {
+                        if (comparisonSubTab === 'all') return true
+                        if (item.is_section) return false // Разделы не показываем в отфильтрованных вкладках
+
+                        // Проверяем есть ли расценки от хотя бы одного подрядчика
+                        const hasAnyProposal = tenderCounterparties.some(tc => {
+                          const proposal = proposals[tc.counterparty_id]?.[item.id]
+                          return proposal != null
+                        })
+
+                        if (comparisonSubTab === 'materials') {
+                          // Показываем все позиции (расценки на материалы могут быть у любой позиции)
+                          return true
+                        }
+                        if (comparisonSubTab === 'works') {
+                          // Показываем все позиции (расценки на работы могут быть у любой позиции)
+                          return true
+                        }
+                        return true
+                      })
+                      .map(item => {
+                        // Для материалов берём "Общий расход по материалу", для остальных - "Объем по виду работ"
+                        const code = (item.code || '').toLowerCase().trim()
+                        const isMaterial = code.startsWith('мат') || code === 'мат.' || code === 'мат'
+                        const volume = isMaterial
+                          ? (item.material_consumption || item.work_volume || '-')
+                          : (item.work_volume || '-')
+
+                        return (
                       <tr key={item.id}>
                         <td className="sticky-col center">{item.row_number}</td>
                         <td className="sticky-col col-2">{item.cost_name}</td>
                         <td className="center">{item.unit || '-'}</td>
-                        <td className="right">{item.work_volume || '-'}</td>
-                        {tenderCounterparties.map(tc => {
+                        <td className="right">{volume}</td>
+                        {tenderCounterparties.map((tc, cpIndex) => {
                           const proposal = proposals[tc.counterparty_id]?.[item.id]
+                          const numVolume = typeof volume === 'number' ? volume : parseFloat(volume) || 0
+
+                          // Для работ: если unit_price_works пустая, берём unit_price_materials
+                          // Для материалов: если unit_price_materials пустая, берём unit_price_works
+                          const effectiveMatPrice = proposal
+                            ? (proposal.unit_price_materials || proposal.unit_price_works || 0)
+                            : 0
+                          const effectiveWorkPrice = proposal
+                            ? (proposal.unit_price_works || proposal.unit_price_materials || 0)
+                            : 0
+
+                          const totalMaterials = effectiveMatPrice * numVolume
+                          const totalWorks = effectiveWorkPrice * numVolume
+                          const grandTotal = totalMaterials + totalWorks
+
+                          const groupClass = cpIndex % 2 === 0 ? 'cp-group-odd' : 'cp-group-even'
+                          const matPriceClass = proposal ? getPriceComparisonClass(item.id, 'materials', effectiveMatPrice) : ''
+                          const workPriceClass = proposal ? getPriceComparisonClass(item.id, 'works', effectiveWorkPrice) : ''
+
+                          // Проверяем отдельно материалы и работы
+                          const isMaterialUnpriced = !proposal || effectiveMatPrice === 0
+                          const isWorkUnpriced = !proposal || effectiveWorkPrice === 0
+                          const matUnpricedClass = isMaterialUnpriced ? 'unpriced' : ''
+                          const workUnpricedClass = isWorkUnpriced ? 'unpriced' : ''
+                          // Итого подсвечиваем если обе позиции не расценены
+                          const totalUnpricedClass = (isMaterialUnpriced && isWorkUnpriced) ? 'unpriced' : ''
+
                           return (
                             <>
-                              <td key={`${tc.id}-${item.id}-mat`} className="right price-cell">
-                                {proposal ? formatCurrency(proposal.unit_price_materials) : '-'}
-                              </td>
-                              <td key={`${tc.id}-${item.id}-work`} className="right price-cell">
-                                {proposal ? formatCurrency(proposal.unit_price_works) : '-'}
-                              </td>
-                              <td key={`${tc.id}-${item.id}-total`} className="right price-cell total">
-                                {proposal ? formatCurrency(proposal.total_unit_price) : '-'}
-                              </td>
-                              <td key={`${tc.id}-${item.id}-sum`} className="right price-cell sum">
-                                {proposal ? formatCurrency(proposal.total_cost) : '-'}
-                              </td>
+                              {comparisonSubTab !== 'works' && (
+                                <td key={`${tc.id}-${item.id}-mat-price`} className={`right price-cell ${groupClass} cp-first ${matPriceClass} ${matUnpricedClass}`}>
+                                  {proposal ? formatCurrency(effectiveMatPrice) : '-'}
+                                </td>
+                              )}
+                              {comparisonSubTab !== 'materials' && (
+                                <td key={`${tc.id}-${item.id}-work-price`} className={`right price-cell ${groupClass} ${comparisonSubTab === 'works' ? 'cp-first' : ''} ${workPriceClass} ${workUnpricedClass}`}>
+                                  {proposal ? formatCurrency(effectiveWorkPrice) : '-'}
+                                </td>
+                              )}
+                              {comparisonSubTab !== 'works' && (
+                                <td key={`${tc.id}-${item.id}-mat-total`} className={`right price-cell ${groupClass} ${matUnpricedClass}`}>
+                                  {proposal ? formatCurrency(totalMaterials) : '-'}
+                                </td>
+                              )}
+                              {comparisonSubTab !== 'materials' && (
+                                <td key={`${tc.id}-${item.id}-work-total`} className={`right price-cell ${groupClass} ${workUnpricedClass}`}>
+                                  {proposal ? formatCurrency(totalWorks) : '-'}
+                                </td>
+                              )}
+                              {comparisonSubTab === 'all' && (
+                                <td key={`${tc.id}-${item.id}-sum`} className={`right price-cell sum ${groupClass} ${totalUnpricedClass}`}>
+                                  {proposal ? formatCurrency(grandTotal) : '-'}
+                                </td>
+                              )}
                             </>
                           )
                         })}
                       </tr>
-                    ))}
+                        )
+                      })}
                   </tbody>
                   <tfoot>
                     <tr className="totals-row">
                       <td colSpan="4" className="sticky-col totals-label">ИТОГО:</td>
-                      {tenderCounterparties.map(tc => {
+                      {tenderCounterparties.map((tc, cpIndex) => {
                         const totals = calculateTotals(tc.counterparty_id)
+                        const groupClass = cpIndex % 2 === 0 ? 'cp-group-odd' : 'cp-group-even'
                         return (
                           <>
-                            <td key={`${tc.id}-total-mat`} className="right total-value">
-                              {formatCurrency(totals.totalMaterials)}
-                            </td>
-                            <td key={`${tc.id}-total-work`} className="right total-value">
-                              {formatCurrency(totals.totalWorks)}
-                            </td>
-                            <td key={`${tc.id}-total-unit`} className="right total-value">-</td>
-                            <td key={`${tc.id}-total-sum`} className="right total-value grand-total">
-                              {formatCurrency(totals.totalCost)}
-                            </td>
+                            {comparisonSubTab !== 'works' && (
+                              <td key={`${tc.id}-total-mat-price`} className={`right total-value ${groupClass} cp-first`}>-</td>
+                            )}
+                            {comparisonSubTab !== 'materials' && (
+                              <td key={`${tc.id}-total-work-price`} className={`right total-value ${groupClass} ${comparisonSubTab === 'works' ? 'cp-first' : ''}`}>-</td>
+                            )}
+                            {comparisonSubTab !== 'works' && (
+                              <td key={`${tc.id}-total-mat`} className={`right total-value ${groupClass}`}>
+                                {formatCurrency(totals.totalMaterials)}
+                              </td>
+                            )}
+                            {comparisonSubTab !== 'materials' && (
+                              <td key={`${tc.id}-total-work`} className={`right total-value ${groupClass}`}>
+                                {formatCurrency(totals.totalWorks)}
+                              </td>
+                            )}
+                            {comparisonSubTab === 'all' && (
+                              <td key={`${tc.id}-total-sum`} className={`right total-value grand-total ${groupClass}`}>
+                                {formatCurrency(totals.totalCost)}
+                              </td>
+                            )}
                           </>
                         )
                       })}
@@ -1538,10 +2102,19 @@ function TenderDetailPage() {
                 <ul>
                   {proposalFiles.map(file => (
                     <li key={file.id}>
-                      <span className="file-name">{file.file_name}</span>
-                      <span className="file-info">
-                        {file.counterparties?.name} — {formatDate(file.uploaded_at)}
-                      </span>
+                      <div className="file-details">
+                        <span className="file-name">{file.file_name}</span>
+                        <span className="file-info">
+                          {file.counterparties?.name} — {formatDate(file.uploaded_at)}
+                        </span>
+                      </div>
+                      <button
+                        className="btn-icon btn-delete-file"
+                        onClick={() => handleDeleteProposalFile(file)}
+                        title="Удалить КП"
+                      >
+                        🗑️
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -1555,11 +2128,20 @@ function TenderDetailPage() {
           <div className="participants-section">
             <div className="section-header">
               <h3>Участники тендера</h3>
+              <div className="section-actions">
+                <button
+                  className="btn-primary"
+                  onClick={handleOpenAddParticipantModal}
+                >
+                  + Пригласить участников
+                </button>
+              </div>
             </div>
 
             {tenderCounterparties.length === 0 ? (
               <div className="empty-state">
                 <p>Участники еще не добавлены</p>
+                <p className="hint">Нажмите «Пригласить участников» чтобы добавить контрагентов</p>
               </div>
             ) : (
               <div className="participants-grid">
@@ -1575,8 +2157,26 @@ function TenderDetailPage() {
                     {tc.counterparties?.inn && (
                       <div className="participant-inn">ИНН: {tc.counterparties.inn}</div>
                     )}
-                    <div className="participant-status" style={{ color: getCounterpartyStatusColor(tc.status) }}>
-                      {getCounterpartyStatusLabel(tc.status || 'request_sent')}
+                    <div className="participant-status-select">
+                      <select
+                        value={tc.status || 'request_sent'}
+                        onChange={(e) => handleUpdateParticipantStatus(tc.id, e.target.value)}
+                        style={{
+                          padding: '0.375rem 0.75rem',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-secondary)',
+                          color: getCounterpartyStatusColor(tc.status || 'request_sent'),
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                          cursor: 'pointer',
+                          width: '100%'
+                        }}
+                      >
+                        <option value="request_sent" style={{ color: '#6366f1' }}>Запрос отправлен</option>
+                        <option value="declined" style={{ color: '#b91c1c' }}>Отказ</option>
+                        <option value="proposal_provided" style={{ color: '#15803d' }}>КП предоставлено</option>
+                      </select>
                     </div>
                     {tc.counterparties?.counterparty_contacts?.length > 0 && (
                       <div className="participant-contacts">
@@ -1797,17 +2397,69 @@ function TenderDetailPage() {
                   <p className="upload-option-desc">
                     Excel с ценами для каждой строки сметы (старый формат).
                   </p>
-                  <label className="btn-secondary upload-btn">
-                    Выбрать файл
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={handleFileSelect}
-                      disabled={uploading}
-                      style={{ display: 'none' }}
-                    />
-                  </label>
+                  <div className="upload-format-info">
+                    <details className="format-details">
+                      <summary>Требования к формату файла</summary>
+                      <div className="format-details-content">
+                        <p>Строки сопоставляются со сметой по столбцу <strong>A (№ п/п)</strong>. Строки с номером, которого нет в смете, будут пропущены.</p>
+                        <table className="format-table">
+                          <thead>
+                            <tr>
+                              <th>Столбец</th>
+                              <th>Содержание</th>
+                              <th>Обязательный</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td><strong>A</strong></td>
+                              <td>№ п/п (номер строки сметы)</td>
+                              <td>Да</td>
+                            </tr>
+                            <tr className="format-row-skip">
+                              <td>B – H</td>
+                              <td>КОД, наименование, ед. изм. и т.д.</td>
+                              <td>Нет (не читаются)</td>
+                            </tr>
+                            <tr>
+                              <td><strong>I</strong></td>
+                              <td>Цена за ед. Матер./Обор. с НДС</td>
+                              <td>Да</td>
+                            </tr>
+                            <tr>
+                              <td><strong>J</strong></td>
+                              <td>Цена за ед. СМР/ПНР с НДС</td>
+                              <td>Да</td>
+                            </tr>
+                            <tr className="format-row-skip">
+                              <td>K – O</td>
+                              <td>Итого, стоимости</td>
+                              <td>Нет (рассчитываются)</td>
+                            </tr>
+                            <tr>
+                              <td><strong>P</strong></td>
+                              <td>Примечание участника</td>
+                              <td>Нет</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <p className="format-note">Первая строка считается заголовком и пропускается. Объёмы берутся из загруженной сметы, итоговые суммы рассчитываются автоматически.</p>
+                      </div>
+                    </details>
+                  </div>
+                  <div className="upload-option-actions">
+                    <label className="btn-secondary upload-btn">
+                      Выбрать файл
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={handleFileSelect}
+                        disabled={uploading}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                  </div>
                   {uploading && <div className="uploading-indicator">Загрузка...</div>}
                 </div>
               </div>
@@ -1875,20 +2527,22 @@ function TenderDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td>A</td><td>№ п/п</td><td>Порядковый номер (число)</td><td className="required">Да</td></tr>
-                      <tr><td>B</td><td>КОД</td><td>Код позиции</td><td>Нет</td></tr>
-                      <tr><td>C</td><td>Вид затрат</td><td>Материалы, Работы и т.д.</td><td>Нет</td></tr>
-                      <tr><td>D</td><td>Наименование затрат</td><td>Описание позиции</td><td className="required">Да</td></tr>
-                      <tr><td>E</td><td>Примечание к расчету</td><td>Доп. информация</td><td>Нет</td></tr>
-                      <tr><td>F</td><td>Ед. изм.</td><td>Единица измерения</td><td>Нет</td></tr>
-                      <tr><td>G</td><td>Объем по виду работ</td><td>Количество (число)</td><td>Нет</td></tr>
-                      <tr><td>H</td><td>Общий расход</td><td>Расход материала (число)</td><td>Нет</td></tr>
+                      <tr><td>A</td><td>№ п/п</td><td>Порядковый номер (сохраняется)</td><td>Нет</td></tr>
+                      <tr><td>B</td><td>КОД</td><td>Код позиции: Р-xxx (работы), мат. (материалы)</td><td>Нет</td></tr>
+                      <tr><td>C</td><td>Наименование затрат</td><td>Описание позиции или название раздела</td><td className="required">Да</td></tr>
+                      <tr><td>D</td><td>Ед. изм.</td><td>Единица измерения</td><td>Нет</td></tr>
+                      <tr><td>E</td><td>Объем по виду работ</td><td>Количество (число)</td><td>Нет</td></tr>
+                      <tr><td>F</td><td>Общий расход</td><td>Расход материала (число)</td><td>Нет</td></tr>
                     </tbody>
                   </table>
                 </div>
 
+                <div className="instruction-note">
+                  <strong>Разделы:</strong> Строки без кода (Р или мат.) и без числовых данных автоматически распознаются как заголовки разделов и выделяются в таблице.
+                </div>
+
                 <div className="instruction-note warning">
-                  <strong>Внимание:</strong> При импорте существующие позиции сметы будут заменены на новые из файла.
+                  <strong>Внимание:</strong> При импорте существующие позиции сметы с таким же названием будут заменены на новые из файла.
                 </div>
               </div>
 
@@ -1897,6 +2551,116 @@ function TenderDetailPage() {
                   Закрыть
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модал добавления участников */}
+      {showAddParticipantModal && (
+        <div className="modal-overlay" onClick={() => { setShowAddParticipantModal(false); setParticipantSearchQuery(''); }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <h3>Пригласить участников</h3>
+              <button className="modal-close" onClick={() => { setShowAddParticipantModal(false); setParticipantSearchQuery(''); }}>×</button>
+            </div>
+            <div className="modal-content">
+              {loadingCounterparties ? (
+                <div className="empty-state">
+                  <p>Загрузка списка контрагентов...</p>
+                </div>
+              ) : availableCounterparties.length === 0 ? (
+                <div className="empty-state">
+                  <p>Нет доступных контрагентов</p>
+                  <p className="hint">Все активные контрагенты уже добавлены в тендер</p>
+                </div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Поиск по названию, ИНН или виду работ..."
+                      value={participantSearchQuery}
+                      onChange={(e) => setParticipantSearchQuery(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.75rem 1rem',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        background: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.9375rem'
+                      }}
+                    />
+                  </div>
+                  <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
+                    Выберите контрагентов для приглашения в тендер:
+                  </p>
+                  <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                    {availableCounterparties
+                      .filter(cp => {
+                        if (!participantSearchQuery.trim()) return true
+                        const query = participantSearchQuery.toLowerCase().trim()
+                        return (
+                          (cp.name && cp.name.toLowerCase().includes(query)) ||
+                          (cp.inn && cp.inn.toLowerCase().includes(query)) ||
+                          (cp.work_type && cp.work_type.toLowerCase().includes(query))
+                        )
+                      })
+                      .map(cp => (
+                      <div
+                        key={cp.id}
+                        onClick={() => handleToggleParticipant(cp.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          padding: '0.75rem 1rem',
+                          marginBottom: '0.5rem',
+                          background: selectedParticipants.has(cp.id) ? 'rgba(8, 145, 178, 0.1)' : 'var(--bg-tertiary)',
+                          border: selectedParticipants.has(cp.id) ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedParticipants.has(cp.id)}
+                          onChange={() => {}}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{cp.name}</div>
+                          {cp.work_type && (
+                            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{cp.work_type}</div>
+                          )}
+                          {cp.inn && (
+                            <div style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>ИНН: {cp.inn}</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedParticipants.size > 0 && (
+                    <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(8, 145, 178, 0.1)', borderRadius: '8px' }}>
+                      Выбрано: {selectedParticipants.size} контрагент(ов)
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => { setShowAddParticipantModal(false); setParticipantSearchQuery(''); }}>
+                Отмена
+              </button>
+              <button
+                className="btn-primary"
+                onClick={handleAddParticipants}
+                disabled={selectedParticipants.size === 0}
+              >
+                Добавить выбранных
+              </button>
             </div>
           </div>
         </div>

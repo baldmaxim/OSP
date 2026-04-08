@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
+import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
 function CounterpartiesPage() {
@@ -40,9 +41,21 @@ function CounterpartiesPage() {
   // Контакты, которые добавляются при создании/редактировании контрагента
   const [tempContacts, setTempContacts] = useState([])
   const [editingTempContactIndex, setEditingTempContactIndex] = useState(null)
+  const [expandedRows, setExpandedRows] = useState(new Set())
+
+  // Виды работ (множественный выбор)
+  const [workTypes, setWorkTypes] = useState([])
+  const [newWorkType, setNewWorkType] = useState('')
+
+  // Связи между контрагентами
+  const [relations, setRelations] = useState([]) // [{counterparty_id, related_counterparty_id}]
+  const [showRelationModal, setShowRelationModal] = useState(false)
+  const [relationTargetId, setRelationTargetId] = useState(null) // для какого контрагента добавляем связь
+  const [relationSearchQuery, setRelationSearchQuery] = useState('')
 
   useEffect(() => {
     fetchCounterparties()
+    fetchRelations()
   }, [])
 
   const fetchCounterparties = async () => {
@@ -71,16 +84,90 @@ function CounterpartiesPage() {
     }
   }
 
+  const fetchRelations = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('counterparty_relations')
+        .select('id, counterparty_id, related_counterparty_id')
+
+      if (error) throw error
+      setRelations(data || [])
+    } catch (error) {
+      console.error('Ошибка загрузки связей:', error.message)
+    }
+  }
+
+  // Получить связанных контрагентов для данного id
+  const getRelatedCounterparties = (counterpartyId) => {
+    const relatedIds = new Set()
+    relations.forEach(r => {
+      if (r.counterparty_id === counterpartyId) relatedIds.add(r.related_counterparty_id)
+      if (r.related_counterparty_id === counterpartyId) relatedIds.add(r.counterparty_id)
+    })
+    return counterparties.filter(c => relatedIds.has(c.id))
+  }
+
+  const handleAddRelation = async (counterpartyId, relatedId) => {
+    try {
+      // Сохраняем в одном направлении (запрос в обе стороны делаем при чтении)
+      const { error } = await supabase
+        .from('counterparty_relations')
+        .insert([{ counterparty_id: counterpartyId, related_counterparty_id: relatedId }])
+
+      if (error) {
+        if (error.code === '23505') {
+          alert('Эта связь уже существует')
+          return
+        }
+        throw error
+      }
+      fetchRelations()
+      setShowRelationModal(false)
+      setRelationSearchQuery('')
+    } catch (error) {
+      console.error('Ошибка добавления связи:', error.message)
+      alert('Ошибка: ' + error.message)
+    }
+  }
+
+  const handleRemoveRelation = async (counterpartyId, relatedId) => {
+    try {
+      // Удаляем в обе стороны (связь могла быть создана в любом направлении)
+      const { error } = await supabase
+        .from('counterparty_relations')
+        .delete()
+        .or(`and(counterparty_id.eq.${counterpartyId},related_counterparty_id.eq.${relatedId}),and(counterparty_id.eq.${relatedId},related_counterparty_id.eq.${counterpartyId})`)
+
+      if (error) throw error
+      fetchRelations()
+    } catch (error) {
+      console.error('Ошибка удаления связи:', error.message)
+      alert('Ошибка: ' + error.message)
+    }
+  }
+
+  const openRelationModal = (counterpartyId) => {
+    setRelationTargetId(counterpartyId)
+    setRelationSearchQuery('')
+    setShowRelationModal(true)
+  }
+
   const handleCounterpartySubmit = async (e) => {
     e.preventDefault()
     try {
       let counterpartyId
 
+      // Объединяем виды работ в строку
+      const dataToSave = {
+        ...counterpartyFormData,
+        work_type: workTypes.join(', ')
+      }
+
       if (editingCounterparty) {
         // Обновление существующего контрагента
         const { error } = await supabase
           .from('counterparties')
-          .update(counterpartyFormData)
+          .update(dataToSave)
           .eq('id', editingCounterparty.id)
 
         if (error) throw error
@@ -98,7 +185,7 @@ function CounterpartiesPage() {
         // Создание нового контрагента
         const { data, error } = await supabase
           .from('counterparties')
-          .insert([counterpartyFormData])
+          .insert([dataToSave])
           .select()
 
         if (error) throw error
@@ -190,6 +277,12 @@ function CounterpartiesPage() {
       status: counterparty.status || 'active',
       notes: counterparty.notes || '',
     })
+    // Парсим виды работ из строки в массив
+    const parsedWorkTypes = counterparty.work_type
+      ? counterparty.work_type.split(',').map(wt => wt.trim()).filter(wt => wt)
+      : []
+    setWorkTypes(parsedWorkTypes)
+    setNewWorkType('')
     // Загружаем существующие контакты в tempContacts
     setTempContacts(counterparty.counterparty_contacts || [])
     setShowCounterpartyModal(true)
@@ -390,6 +483,8 @@ function CounterpartiesPage() {
       status: 'active',
       notes: '',
     })
+    setWorkTypes([])
+    setNewWorkType('')
     setTempContacts([])
     setContactFormData({
       full_name: '',
@@ -723,297 +818,311 @@ function CounterpartiesPage() {
     return (a.name || '').localeCompare(b.name || '', 'ru')
   })
 
+  const blacklistCount = counterparties.filter(c => c.status === 'blacklist').length
+
+  // Функция для раскрытия/скрытия строки
+  const toggleRowExpand = (id) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
   return (
-    <div className="general-info">
-      <div className="general-info-header">
-        <h2>Контрагенты</h2>
+    <div className="counterparties-page">
+      {/* Toolbar */}
+      <div className="counterparties-toolbar">
+        <div className="toolbar-row">
+          <div className="toolbar-left">
+            <h2 className="page-title">Контрагенты</h2>
+            <span className="counter-badge">{filteredCounterparties.length}</span>
+            {blacklistCount > 0 && (
+              <span className="counter-badge blacklist">{blacklistCount} ЧС</span>
+            )}
+          </div>
+
+          <div className="toolbar-center">
+            <div className="search-container">
+              <svg className="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input
+                type="text"
+                placeholder="Поиск..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+
+            <select
+              className={`filter-select ${workTypeFilter ? 'active' : ''}`}
+              value={workTypeFilter}
+              onChange={(e) => setWorkTypeFilter(e.target.value)}
+            >
+              <option value="">Все виды работ</option>
+              {uniqueWorkTypes.map(workType => (
+                <option key={workType} value={workType}>{workType}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="toolbar-actions">
+            <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
+            <button className="btn-import" onClick={handleImportClick} disabled={importing}>
+              {importing ? '...' : 'Импорт'}
+            </button>
+          </div>
+        </div>
+
+        {selectedCounterpartyIds.length > 0 && (
+          <div className="toolbar-selection">
+            <span>Выбрано: {selectedCounterpartyIds.length}</span>
+            <button className="btn-link" onClick={handleSelectAll}>
+              {selectedCounterpartyIds.length === filteredCounterparties.length ? 'Снять' : 'Выбрать все'}
+            </button>
+            <button className="btn-bulk-delete" onClick={handleBulkDelete}>Удалить</button>
+          </div>
+        )}
       </div>
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        onChange={handleFileImport}
+        style={{ display: 'none' }}
+      />
+
+      {/* Content */}
       {loading ? (
-        <div className="loading">Загрузка...</div>
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+        </div>
       ) : (
-        <div className="section-content">
-          <div className="section-actions">
-            <button className="btn-primary" onClick={handleAddNewCounterparty}>
-              + Добавить контрагента
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={handleImportClick}
-              disabled={importing}
-            >
-              {importing ? 'Импорт...' : '📥 Импорт из Excel'}
-            </button>
-            {selectedCounterpartyIds.length > 0 && (
-              <button
-                className="btn-delete"
-                onClick={handleBulkDelete}
-                style={{
-                  marginLeft: 'auto',
-                  backgroundColor: '#b91c1c',
-                  color: 'white',
-                  padding: '0.5rem 1rem',
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontWeight: '500'
-                }}
-              >
-                🗑️ Удалить выбранные ({selectedCounterpartyIds.length})
-              </button>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFileImport}
-              style={{ display: 'none' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <input
-              type="text"
-              placeholder="🔍 Поиск по всем полям..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.75rem 1rem',
-                fontSize: '1rem',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                backgroundColor: 'var(--bg-color)',
-                color: 'var(--text-color)'
-              }}
-            />
-          </div>
-
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '40px' }}>
-                    <input
-                      type="checkbox"
-                      checked={counterparties.length > 0 && selectedCounterpartyIds.length === counterparties.length}
-                      onChange={handleSelectAll}
-                      style={{ cursor: 'pointer' }}
-                    />
-                  </th>
-                  <th>Наименование</th>
-                  <th>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <span>Вид работ</span>
-                      <select
-                        value={workTypeFilter}
-                        onChange={(e) => setWorkTypeFilter(e.target.value)}
-                        style={{
-                          padding: '0.4rem 0.75rem',
-                          fontSize: '0.9rem',
-                          fontWeight: '500',
-                          border: '2px solid var(--primary-color)',
-                          borderRadius: '6px',
-                          backgroundColor: workTypeFilter ? 'var(--primary-color)' : '#ffffff',
-                          color: workTypeFilter ? 'white' : '#000000',
-                          cursor: 'pointer',
-                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-                          transition: 'all 0.2s ease',
-                          minWidth: '120px'
-                        }}
-                        onMouseOver={(e) => {
-                          e.target.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)'
-                          e.target.style.transform = 'translateY(-1px)'
-                        }}
-                        onMouseOut={(e) => {
-                          e.target.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)'
-                          e.target.style.transform = 'translateY(0)'
-                        }}
-                      >
-                        <option value="" style={{ backgroundColor: '#ffffff', color: '#000000', padding: '0.5rem' }}>
-                          🔍 Все
-                        </option>
-                        {uniqueWorkTypes.map(workType => (
-                          <option
-                            key={workType}
-                            value={workType}
-                            style={{ backgroundColor: '#ffffff', color: '#000000', padding: '0.5rem' }}
-                          >
-                            {workType}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </th>
-                  <th>ИНН</th>
-                  <th>Статус</th>
-                  <th>Примечание</th>
-                  <th>Ссылка на сайт</th>
-                  <th>Контактные данные</th>
-                  <th className="actions-column">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCounterparties.length === 0 ? (
+        <div className="counterparties-content">
+          {filteredCounterparties.length === 0 ? (
+            <div className="empty-state">
+              <p className="empty-title">
+                {searchQuery.trim() || workTypeFilter ? 'Ничего не найдено' : 'Нет контрагентов'}
+              </p>
+              {!searchQuery.trim() && !workTypeFilter && (
+                <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
+              )}
+            </div>
+          ) : (
+            <div className="table-wrapper">
+              <table className="compact-table">
+                <thead>
                   <tr>
-                    <td colSpan="9" className="no-data">
-                      {searchQuery.trim() ? 'Контрагенты не найдены' : 'Нет контрагентов. Добавьте первого контрагента.'}
-                    </td>
+                    <th className="col-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={filteredCounterparties.length > 0 && selectedCounterpartyIds.length === filteredCounterparties.length}
+                        onChange={handleSelectAll}
+                      />
+                    </th>
+                    <th className="col-name">Наименование</th>
+                    <th className="col-worktype">Вид работ</th>
+                    <th className="col-inn">ИНН / КПП</th>
+                    <th className="col-contact-name">Контакт</th>
+                    <th className="col-contact-phone">Телефон</th>
+                    <th className="col-contact-email">Email</th>
+                    <th className="col-website">Сайт</th>
+                    <th className="col-status">Статус</th>
+                    <th className="col-actions"></th>
                   </tr>
-                ) : (
-                  filteredCounterparties.map((counterparty) => (
-                    <tr key={counterparty.id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selectedCounterpartyIds.includes(counterparty.id)}
-                          onChange={() => handleSelectCounterparty(counterparty.id)}
-                          style={{ cursor: 'pointer' }}
-                        />
-                      </td>
-                      <td>{counterparty.name}</td>
-                      <td>{counterparty.work_type || '-'}</td>
-                      <td>{counterparty.inn || '-'}</td>
-                      <td>
-                        <select
-                          value={counterparty.status || 'active'}
-                          onChange={(e) => handleStatusChange(counterparty.id, e.target.value)}
-                          style={{
-                            padding: '0.4rem 0.75rem',
-                            fontSize: '0.875rem',
-                            fontWeight: '500',
-                            border: '1px solid',
-                            borderColor: counterparty.status === 'blacklist' ? '#fca5a5' : '#86efac',
-                            borderRadius: '6px',
-                            backgroundColor: counterparty.status === 'blacklist' ? '#fef2f2' : '#f0fdf4',
-                            color: counterparty.status === 'blacklist' ? '#b91c1c' : '#166534',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease'
-                          }}
+                </thead>
+                <tbody>
+                  {filteredCounterparties.map((counterparty) => {
+                    const isExpanded = expandedRows.has(counterparty.id)
+                    const contactsCount = counterparty.counterparty_contacts?.length || 0
+                    const firstContact = counterparty.counterparty_contacts?.[0]
+
+                    return (
+                      <React.Fragment key={counterparty.id}>
+                        <tr
+                          className={`table-row ${selectedCounterpartyIds.includes(counterparty.id) ? 'selected' : ''} ${counterparty.status === 'blacklist' ? 'blacklist' : ''} ${isExpanded ? 'expanded' : ''}`}
+                          onClick={() => toggleRowExpand(counterparty.id)}
                         >
-                          <option value="active" style={{ backgroundColor: '#ffffff', color: '#000000' }}>
-                            ✓ Действующий
-                          </option>
-                          <option value="blacklist" style={{ backgroundColor: '#ffffff', color: '#000000' }}>
-                            ✕ Черный список
-                          </option>
-                        </select>
-                      </td>
-                      <td style={{ maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {counterparty.notes || '-'}
-                      </td>
-                      <td>
-                        {counterparty.website ? (
-                          <a
-                            href={counterparty.website}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: 'var(--primary-color)', textDecoration: 'underline' }}
-                          >
-                            Ссылка на сайт
-                          </a>
-                        ) : '-'}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                          {counterparty.counterparty_contacts && counterparty.counterparty_contacts.length > 0 ? (
-                            <>
-                              {counterparty.counterparty_contacts.map((contact) => (
-                                <div
-                                  key={contact.id}
-                                  style={{
-                                    padding: '0.5rem',
-                                    backgroundColor: 'var(--bg-tertiary)',
-                                    borderRadius: '4px',
-                                    fontSize: '0.875rem',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'flex-start'
-                                  }}
-                                >
-                                  <div>
-                                    <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>
-                                      {contact.full_name}
-                                    </div>
-                                    {contact.position && (
-                                      <div style={{ color: 'var(--text-tertiary)' }}>
-                                        {contact.position}
-                                      </div>
-                                    )}
-                                    {contact.phone && (
-                                      <div style={{ marginTop: '0.25rem' }}>
-                                        📞 {contact.phone}
-                                      </div>
-                                    )}
-                                    {contact.email && (
-                                      <div>
-                                        ✉️ {contact.email}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div style={{ display: 'flex', gap: '0.25rem', marginLeft: '0.5rem' }}>
-                                    <button
-                                      className="btn-icon btn-edit"
-                                      onClick={() => handleEditContact(counterparty, contact)}
-                                      title="Редактировать контакт"
-                                      style={{ fontSize: '0.875rem', padding: '0.25rem' }}
-                                    >
-                                      ✏️
-                                    </button>
-                                    <button
-                                      className="btn-icon btn-delete"
-                                      onClick={() => handleDeleteContact(contact.id, contact.full_name)}
-                                      title="Удалить контакт"
-                                      style={{ fontSize: '0.875rem', padding: '0.25rem' }}
-                                    >
-                                      🗑️
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                              <button
-                                className="btn-secondary"
-                                onClick={() => handleAddContact(counterparty)}
-                                style={{ fontSize: '0.75rem', padding: '0.375rem 0.75rem', marginTop: '0.25rem' }}
-                              >
-                                + Добавить контакт
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              className="btn-primary"
-                              onClick={() => handleAddContact(counterparty)}
-                              style={{ fontSize: '0.75rem', padding: '0.375rem 0.75rem' }}
+                          <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedCounterpartyIds.includes(counterparty.id)}
+                              onChange={() => handleSelectCounterparty(counterparty.id)}
+                            />
+                          </td>
+                          <td className="col-name">
+                            <span className="company-name">{counterparty.name}</span>
+                            {counterparty.notes && (
+                              <span className="has-notes" title={counterparty.notes}>*</span>
+                            )}
+                          </td>
+                          <td className="col-worktype">
+                            {counterparty.work_type || <span className="empty-cell">--</span>}
+                          </td>
+                          <td className="col-inn">
+                            <span className="inn-value">{counterparty.inn || '--'}</span>
+                            {counterparty.kpp && (
+                              <span className="kpp-value"> / {counterparty.kpp}</span>
+                            )}
+                          </td>
+                          <td className="col-contact-name">
+                            {firstContact ? (
+                              <span>
+                                {firstContact.full_name}
+                                {contactsCount > 1 && <span className="contacts-more">+{contactsCount - 1}</span>}
+                              </span>
+                            ) : <span className="empty-cell">--</span>}
+                          </td>
+                          <td className="col-contact-phone" onClick={(e) => e.stopPropagation()}>
+                            {firstContact?.phone ? (
+                              <a href={`tel:${firstContact.phone}`} className="contact-link">{firstContact.phone}</a>
+                            ) : <span className="empty-cell">--</span>}
+                          </td>
+                          <td className="col-contact-email" onClick={(e) => e.stopPropagation()}>
+                            {firstContact?.email ? (
+                              <a href={`mailto:${firstContact.email}`} className="contact-link">{firstContact.email}</a>
+                            ) : <span className="empty-cell">--</span>}
+                          </td>
+                          <td className="col-website" onClick={(e) => e.stopPropagation()}>
+                            {counterparty.website ? (
+                              <a href={counterparty.website} target="_blank" rel="noopener noreferrer" className="contact-link">
+                                ссылка
+                              </a>
+                            ) : <span className="empty-cell">--</span>}
+                          </td>
+                          <td className="col-status" onClick={(e) => e.stopPropagation()}>
+                            <select
+                              className={`status-select-mini ${counterparty.status === 'blacklist' ? 'blacklist' : 'active'}`}
+                              value={counterparty.status || 'active'}
+                              onChange={(e) => handleStatusChange(counterparty.id, e.target.value)}
                             >
-                              + Добавить контакт
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                      <td className="actions-cell">
-                        <button
-                          className="btn-icon btn-edit"
-                          onClick={() => handleEditCounterparty(counterparty)}
-                          title="Редактировать"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          className="btn-icon btn-delete"
-                          onClick={() =>
-                            handleDeleteCounterparty(counterparty.id, counterparty.name)
-                          }
-                          title="Удалить"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                              <option value="active">Активный</option>
+                              <option value="blacklist">ЧС</option>
+                            </select>
+                          </td>
+                          <td className="col-actions" onClick={(e) => e.stopPropagation()}>
+                            <div className="actions-group">
+                              <button className="btn-action" onClick={() => handleEditCounterparty(counterparty)} title="Редактировать">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                              </button>
+                              <button className="btn-action delete" onClick={() => handleDeleteCounterparty(counterparty.id, counterparty.name)} title="Удалить">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {isExpanded && (
+                          <tr className="expanded-row">
+                            <td colSpan="10">
+                              <div className="expanded-content">
+                                <div className="expanded-details">
+                                  {counterparty.legal_address && (
+                                    <div className="detail-item">
+                                      <span className="detail-label">Юр. адрес:</span>
+                                      <span className="detail-value">{counterparty.legal_address}</span>
+                                    </div>
+                                  )}
+                                  {counterparty.actual_address && (
+                                    <div className="detail-item">
+                                      <span className="detail-label">Факт. адрес:</span>
+                                      <span className="detail-value">{counterparty.actual_address}</span>
+                                    </div>
+                                  )}
+                                  {counterparty.notes && (
+                                    <div className="detail-item">
+                                      <span className="detail-label">Примечание:</span>
+                                      <span className="detail-value">{counterparty.notes}</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {contactsCount > 1 && (
+                                  <div className="expanded-contacts">
+                                    <div className="contacts-header-row">
+                                      <span className="detail-label">Все контакты ({contactsCount})</span>
+                                      <button className="btn-link" onClick={() => handleAddContact(counterparty)}>+ Добавить</button>
+                                    </div>
+                                    <table className="contacts-subtable">
+                                      <tbody>
+                                        {counterparty.counterparty_contacts.map((contact) => (
+                                          <tr key={contact.id}>
+                                            <td>{contact.full_name}</td>
+                                            <td className="text-muted">{contact.position || '--'}</td>
+                                            <td>
+                                              {contact.phone ? (
+                                                <a href={`tel:${contact.phone}`} className="contact-link">{contact.phone}</a>
+                                              ) : '--'}
+                                            </td>
+                                            <td>
+                                              {contact.email ? (
+                                                <a href={`mailto:${contact.email}`} className="contact-link">{contact.email}</a>
+                                              ) : '--'}
+                                            </td>
+                                            <td className="contact-sub-actions">
+                                              <button onClick={() => handleEditContact(counterparty, contact)} title="Редактировать">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                              </button>
+                                              <button onClick={() => handleDeleteContact(contact.id, contact.full_name)} title="Удалить">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+
+                                {contactsCount <= 1 && (
+                                  <div className="expanded-contacts">
+                                    <button className="btn-link" onClick={() => handleAddContact(counterparty)}>+ Добавить контакт</button>
+                                  </div>
+                                )}
+
+                                {/* Связанные контрагенты */}
+                                {(() => {
+                                  const related = getRelatedCounterparties(counterparty.id)
+                                  return (
+                                    <div className="expanded-relations">
+                                      <div className="contacts-header-row">
+                                        <span className="detail-label">Связанные контрагенты{related.length > 0 ? ` (${related.length})` : ''}</span>
+                                        <button className="btn-link" onClick={() => openRelationModal(counterparty.id)}>+ Добавить связь</button>
+                                      </div>
+                                      {related.length > 0 && (
+                                        <div className="relations-list">
+                                          {related.map(rel => (
+                                            <span key={rel.id} className="relation-tag">
+                                              {rel.name}
+                                              <button
+                                                className="relation-tag-remove"
+                                                onClick={() => handleRemoveRelation(counterparty.id, rel.id)}
+                                                title="Убрать связь"
+                                              >
+                                                &times;
+                                              </button>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -1059,18 +1168,54 @@ function CounterpartiesPage() {
                 </div>
 
                 <div className="form-group full-width">
-                  <label>Вид работ</label>
-                  <input
-                    type="text"
-                    value={counterpartyFormData.work_type}
-                    onChange={(e) =>
-                      setCounterpartyFormData({
-                        ...counterpartyFormData,
-                        work_type: e.target.value,
-                      })
-                    }
-                    placeholder="Например: Строительно-монтажные работы, Электромонтажные работы и т.д."
-                  />
+                  <label>Виды работ</label>
+                  <div className="work-types-container">
+                    {workTypes.length > 0 && (
+                      <div className="work-types-tags">
+                        {workTypes.map((wt, index) => (
+                          <span key={index} className="work-type-tag">
+                            {wt}
+                            <button
+                              type="button"
+                              className="work-type-tag-remove"
+                              onClick={() => setWorkTypes(workTypes.filter((_, i) => i !== index))}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="work-type-input-row">
+                      <input
+                        type="text"
+                        value={newWorkType}
+                        onChange={(e) => setNewWorkType(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            if (newWorkType.trim() && !workTypes.includes(newWorkType.trim())) {
+                              setWorkTypes([...workTypes, newWorkType.trim()])
+                              setNewWorkType('')
+                            }
+                          }
+                        }}
+                        placeholder="Введите вид работ и нажмите Enter или +"
+                      />
+                      <button
+                        type="button"
+                        className="btn-add-work-type"
+                        onClick={() => {
+                          if (newWorkType.trim() && !workTypes.includes(newWorkType.trim())) {
+                            setWorkTypes([...workTypes, newWorkType.trim()])
+                            setNewWorkType('')
+                          }
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="form-group">
@@ -1475,6 +1620,64 @@ function CounterpartiesPage() {
       )}
 
       {/* Modal с инструкцией по импорту */}
+      {/* Modal для добавления связи между контрагентами */}
+      {showRelationModal && (
+        <div className="modal-overlay" onClick={() => { setShowRelationModal(false); setRelationSearchQuery('') }}>
+          <div className="modal relation-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Добавить связь</h3>
+              <button className="modal-close" onClick={() => { setShowRelationModal(false); setRelationSearchQuery('') }}>&times;</button>
+            </div>
+            <div className="relation-modal-body">
+              <input
+                type="text"
+                placeholder="Поиск контрагента..."
+                value={relationSearchQuery}
+                onChange={(e) => setRelationSearchQuery(e.target.value)}
+                autoFocus
+                className="relation-search-input"
+              />
+              <div className="relation-list">
+                {counterparties
+                  .filter(c => {
+                    if (c.id === relationTargetId) return false
+                    // Исключаем уже связанных
+                    const alreadyRelated = getRelatedCounterparties(relationTargetId)
+                    if (alreadyRelated.some(r => r.id === c.id)) return false
+                    if (!relationSearchQuery.trim()) return true
+                    const q = relationSearchQuery.toLowerCase()
+                    return (c.name && c.name.toLowerCase().includes(q)) ||
+                           (c.inn && c.inn.toLowerCase().includes(q))
+                  })
+                  .slice(0, 20)
+                  .map(c => (
+                    <div
+                      key={c.id}
+                      className="relation-option"
+                      onClick={() => handleAddRelation(relationTargetId, c.id)}
+                    >
+                      <span className="relation-option-name">{c.name}</span>
+                      {c.inn && <span className="relation-option-inn">ИНН: {c.inn}</span>}
+                      {c.work_type && <span className="relation-option-worktype">{c.work_type}</span>}
+                    </div>
+                  ))
+                }
+                {counterparties.filter(c => {
+                  if (c.id === relationTargetId) return false
+                  const alreadyRelated = getRelatedCounterparties(relationTargetId)
+                  if (alreadyRelated.some(r => r.id === c.id)) return false
+                  if (!relationSearchQuery.trim()) return true
+                  const q = relationSearchQuery.toLowerCase()
+                  return (c.name && c.name.toLowerCase().includes(q)) || (c.inn && c.inn.toLowerCase().includes(q))
+                }).length === 0 && (
+                  <div className="relation-empty">Нет доступных контрагентов</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showImportInstructionsModal && (
         <div className="modal-overlay" onClick={() => setShowImportInstructionsModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>

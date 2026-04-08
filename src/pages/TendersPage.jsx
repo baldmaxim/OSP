@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import '../components/Tenders.css'
@@ -8,6 +8,7 @@ function TendersPage({ department = 'construction' }) {
   const [tenders, setTenders] = useState([])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
+  const [responsibleContacts, setResponsibleContacts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [activeTab, setActiveTab] = useState('active') // 'active' or 'completed'
@@ -22,6 +23,9 @@ function TendersPage({ department = 'construction' }) {
   const [showWinnerModal, setShowWinnerModal] = useState(false)
   const [tenderForWinnerSelection, setTenderForWinnerSelection] = useState(null)
   const [selectedWinnerId, setSelectedWinnerId] = useState(null)
+  const [showLetterModal, setShowLetterModal] = useState(false)
+  const [generatedLetter, setGeneratedLetter] = useState('')
+  const [letterCopied, setLetterCopied] = useState(false)
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
@@ -29,6 +33,7 @@ function TendersPage({ department = 'construction' }) {
     start_date: '',
     end_date: '',
     tender_package_link: '',
+    responsible_contact_id: '',
   })
 
   // Определяем статус объекта в зависимости от отдела
@@ -50,9 +55,9 @@ function TendersPage({ department = 'construction' }) {
 
   const getCounterpartyStatusColor = (status) => {
     const colors = {
-      'request_sent': '#6366f1',
-      'declined': '#b91c1c',
-      'proposal_provided': '#15803d'
+      'request_sent': '#6b7a99',
+      'declined': '#9c6b6b',
+      'proposal_provided': '#5a8a72'
     }
     return colors[status] || '#64748b'
   }
@@ -61,6 +66,7 @@ function TendersPage({ department = 'construction' }) {
     fetchTenders()
     fetchObjects()
     fetchCounterparties()
+    fetchResponsibleContacts()
   }, [department])
 
   const fetchTenders = async () => {
@@ -111,6 +117,20 @@ function TendersPage({ department = 'construction' }) {
       setCounterparties(data || [])
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error.message)
+    }
+  }
+
+  const fetchResponsibleContacts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .order('full_name', { ascending: true })
+
+      if (error) throw error
+      setResponsibleContacts(data || [])
+    } catch (error) {
+      console.error('Ошибка загрузки сотрудников:', error.message)
     }
   }
 
@@ -244,6 +264,8 @@ function TendersPage({ department = 'construction' }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
+      const isNewTender = !editingTender
+
       if (editingTender) {
         // Update existing tender
         const { error } = await supabase
@@ -258,6 +280,16 @@ function TendersPage({ department = 'construction' }) {
         if (error) throw error
       }
 
+      // Генерируем письмо только для нового тендера
+      if (isNewTender) {
+        const selectedObject = objects.find(obj => obj.id === formData.object_id)
+        const objectName = selectedObject?.name || '[Объект не указан]'
+        const selectedContact = responsibleContacts.find(c => c.id === formData.responsible_contact_id)
+        const letter = generateRequestLetter(formData, objectName, selectedContact)
+        setGeneratedLetter(letter)
+        setShowLetterModal(true)
+      }
+
       setShowModal(false)
       setEditingTender(null)
       setFormData({
@@ -267,6 +299,7 @@ function TendersPage({ department = 'construction' }) {
         start_date: '',
         end_date: '',
         tender_package_link: '',
+        responsible_contact_id: '',
       })
       fetchTenders()
     } catch (error) {
@@ -284,6 +317,7 @@ function TendersPage({ department = 'construction' }) {
       start_date: tender.start_date || '',
       end_date: tender.end_date || '',
       tender_package_link: tender.tender_package_link || '',
+      responsible_contact_id: tender.responsible_contact_id || '',
     })
     setShowModal(true)
   }
@@ -313,6 +347,7 @@ function TendersPage({ department = 'construction' }) {
       start_date: '',
       end_date: '',
       tender_package_link: '',
+      responsible_contact_id: '',
     })
     setShowModal(true)
   }
@@ -399,6 +434,56 @@ function TendersPage({ department = 'construction' }) {
     return new Date(dateString).toLocaleDateString('ru-RU')
   }
 
+  const formatDateForLetter = (dateString) => {
+    if (!dateString) return ''
+    const date = new Date(dateString)
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    return `${day}.${month}.${year}`
+  }
+
+  const generateRequestLetter = (tenderData, objectName, employee) => {
+    const startDate = formatDateForLetter(tenderData.start_date)
+    const endDate = formatDateForLetter(tenderData.end_date)
+
+    const employeeName = employee?.full_name || '[ФИО не указано]'
+    const employeePosition = employee?.position || 'Сотрудник отдела сопровождения подрядчиков'
+    const employeePhone = employee?.phone || '[Телефон не указан]'
+    const employeeEmail = employee?.email || '[Email не указан]'
+
+    return `Уважаемые руководители!
+
+ООО «СУ-10» уведомляет о проведении тендера на выбор подрядчика на ${tenderData.work_description} для объекта: «${objectName}».
+
+В связи с этим, мы приглашаем вашу компанию принять участие в тендере и предоставить свои предложения для рассмотрения.
+Срок подачи заявок на участие в тендере: ${startDate}-${endDate} гг.🔺🔺🔺
+
+Для получения дополнительных разъяснений и уточнений вы можете связаться с нами по телефону ${employeePhone} или отправить запрос на электронную почту ${employeeEmail}, в теле письма указать по какому тендеру и объекту обращаетесь.
+
+Мы рассчитываем на плодотворное сотрудничество и надеемся на участие вашей компании в тендере.
+
+Приложение: ссылка на тендерную документацию:
+${tenderData.tender_package_link || '[Ссылка не указана]'}
+
+С уважением,
+${employeePosition} ООО "СУ-10"
+${employeeName}
+Телефон для связи: ${employeePhone}
+Почта: ${employeeEmail}`
+  }
+
+  const handleCopyLetter = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedLetter)
+      setLetterCopied(true)
+      setTimeout(() => setLetterCopied(false), 2000)
+    } catch (error) {
+      console.error('Ошибка копирования:', error)
+      alert('Не удалось скопировать текст')
+    }
+  }
+
   const getStatusBadgeClass = (status) => {
     const statusClasses = {
       'Не начат': 'status-not-started',
@@ -482,8 +567,8 @@ function TendersPage({ department = 'construction' }) {
               </tr>
             ) : (
               filteredByTab.map((tender) => (
-                <>
-                  <tr key={tender.id}>
+                <React.Fragment key={tender.id}>
+                  <tr>
                     <td>
                       <button
                         onClick={() => handleToggleTender(tender.id)}
@@ -612,7 +697,7 @@ function TendersPage({ department = 'construction' }) {
                     </td>
                   </tr>
                   {expandedTenderId === tender.id && (
-                    <tr key={`${tender.id}-counterparties`}>
+                    <tr>
                       <td colSpan={activeTab === 'completed' ? 9 : 8} style={{ padding: '1.5rem', backgroundColor: 'var(--card-bg)', borderTop: '2px solid var(--primary-color)' }}>
                         <div style={{ marginBottom: '1rem' }}>
                           <button
@@ -802,7 +887,7 @@ function TendersPage({ department = 'construction' }) {
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))
             )}
           </tbody>
@@ -896,6 +981,23 @@ function TendersPage({ department = 'construction' }) {
                     onChange={handleInputChange}
                     required
                   />
+                </div>
+
+                <div className="form-group full-width">
+                  <label>Ответственный сотрудник *</label>
+                  <select
+                    name="responsible_contact_id"
+                    value={formData.responsible_contact_id}
+                    onChange={handleInputChange}
+                    required
+                  >
+                    <option value="">Выберите сотрудника</option>
+                    {responsibleContacts.map((contact) => (
+                      <option key={contact.id} value={contact.id}>
+                        {contact.full_name} — {contact.position}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="form-group full-width">
@@ -1347,6 +1449,86 @@ function TendersPage({ department = 'construction' }) {
           </div>
         )
       })()}
+
+      {/* Модальное окно с шаблонным письмом */}
+      {showLetterModal && (
+        <div className="modal-overlay" onClick={() => {
+          setShowLetterModal(false)
+          setLetterCopied(false)
+        }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh' }}>
+            <div className="modal-header">
+              <h3>📧 Шаблон письма для запроса КП</h3>
+              <button
+                className="modal-close"
+                onClick={() => {
+                  setShowLetterModal(false)
+                  setLetterCopied(false)
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ padding: '1.5rem' }}>
+              <p style={{
+                color: 'var(--text-secondary)',
+                marginBottom: '1rem',
+                fontSize: '0.9rem'
+              }}>
+                Тендер успешно создан! Ниже готовое письмо для отправки контрагентам:
+              </p>
+
+              <div style={{
+                backgroundColor: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                padding: '1.5rem',
+                maxHeight: '400px',
+                overflowY: 'auto',
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'inherit',
+                fontSize: '0.9rem',
+                lineHeight: '1.6',
+                color: 'var(--text-primary)'
+              }}>
+                {generatedLetter}
+              </div>
+
+              <div style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '1rem',
+                marginTop: '1.5rem',
+                paddingTop: '1rem',
+                borderTop: '1px solid var(--border-color)'
+              }}>
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    setShowLetterModal(false)
+                    setLetterCopied(false)
+                  }}
+                >
+                  Закрыть
+                </button>
+                <button
+                  className="btn-primary"
+                  onClick={handleCopyLetter}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    backgroundColor: letterCopied ? '#16a34a' : undefined
+                  }}
+                >
+                  {letterCopied ? '✓ Скопировано!' : '📋 Копировать письмо'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -18,6 +18,8 @@ npm run preview      # Preview production build
 npm run lint         # Run ESLint (--max-warnings 0)
 ```
 
+**Note:** No test framework configured. Project relies on ESLint and manual testing.
+
 ## Environment Setup
 
 Create `.env.local` with:
@@ -32,16 +34,22 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 
 ```
 src/
-├── App.jsx           # Routes, nested EmployeeLayout, providers
+├── App.jsx               # Routes, nested EmployeeLayout, providers
 ├── contexts/
 │   ├── ThemeContext.jsx  # Light/dark theme (localStorage 'theme')
 │   └── RoleContext.jsx   # User roles (localStorage 'userRole')
 ├── components/
-│   └── Sidebar.jsx       # Navigation with 3-level collapsible sections
+│   ├── Sidebar.jsx       # Navigation with 3-level collapsible sections
+│   └── *.css             # Component/page styles (e.g., TenderDetail.css)
 ├── pages/                # Self-contained CRUD pages (no shared state)
 └── supabase/
+    ├── index.js          # Re-exports supabase client
     ├── client.js         # Supabase client init
     └── hooks.js          # Auth hooks (unused - roles via localStorage)
+
+supabase/                 # Database schemas (NOT in src/)
+├── schemas/              # Table definitions (preferred for reading)
+└── migrations/           # Chronological schema changes
 ```
 
 ### Data Flow Pattern
@@ -67,12 +75,15 @@ Contractor login also stores `contractorInfo` (id, name) for proposal filtering.
 
 - `/login` - Role selection
 - `/contractor/proposals` - Contractor portal
-- `/general/objects|contacts|counterparties` - General info (employees)
+- `/general` - General info hub (GeneralInfoPage)
+- `/general/objects|contacts|counterparties` - General info subpages (employees)
+- `/general/objects/:objectId` - Object detail (5 tabs: info, documents, warranty, warranty retentions, estimate)
 - `/tenders/construction|warranty` - Tender lists by department
-- `/tenders/:tenderId` - Tender detail with estimates
-- `/contracts/{department}/{status}` - Contract registry (department: construction|warranty, status: pending|signed)
+- `/tenders/:tenderId` - Tender detail with estimates, documents, and proposals
+- `/contracts` - Contract registry (ContractsPage)
+- `/analysis-kp` - КП analysis tool (BSMPage) - Excel import & pivot analysis
+- `/bsm` - Material management hub (BSMSelectionPage)
 - `/bsm/*` - Material management (БСМ):
-  - `/bsm/analysis` - Excel import & analysis (BSMPage) - main analysis tool
   - `/bsm/comparison` - Compare rates across sources (BSMComparisonPage)
   - `/bsm/contract-rates` - Agreed contract rates (BSMContractRatesPage)
   - `/bsm/supply-rates` - Supply department rates (BSMRatesPage)
@@ -94,7 +105,8 @@ CSS variables defined for `[data-theme="light"]` and `[data-theme="dark"]` in `i
 ### Client Usage
 
 ```javascript
-import { supabase } from './supabase'
+// From pages/ directory:
+import { supabase } from '../supabase'
 
 // Fetch with joins
 const { data } = await supabase
@@ -118,30 +130,37 @@ const { data } = await supabase
 | `counterparties` | Contractor directory | - |
 | `counterparty_contacts` | Contact persons | `counterparty_id` (CASCADE) |
 | `contracts` | Contract registry | `object_id`, `counterparty_id` |
-| `tenders` | Tender management | `object_id`, `winner_counterparty_id` |
+| `tenders` | Tender management | `object_id`, `winner_counterparty_id`, `responsible_contact_id` |
 | `tender_counterparties` | Tender participants | `tender_id`, `counterparty_id` (CASCADE) |
 | `tender_estimate_items` | Estimate line items | `tender_id` (CASCADE) |
 | `tender_counterparty_proposals` | Price proposals | `estimate_item_id`, `counterparty_id` |
+| `tender_documents` | Tender attachments (Google Drive links) | `tender_id` (CASCADE) |
+| `tender_proposal_files` | Uploaded Excel КП files from contractors | `tender_id`, `counterparty_id` (CASCADE) |
 | `bsm_contract_rates` | Agreed material rates | `object_id` (CASCADE) |
-| `bsm_supply_rates` | Supply dept rates | `object_id` (CASCADE) |
+| `bsm_supply_rates` | Supply dept rates (has `applied_at` date) | `object_id` (CASCADE) |
 | `bsm_contractor_rates` | Contractor-specific rates | `object_id`, `counterparty_id` (CASCADE) |
+| `object_documents` | Object documents (contracts, agreements, attachments) | `object_id`, `parent_document_id` (CASCADE) |
+| `object_cost_plan` | Cost plan items per object | `object_id` (CASCADE) |
+| `object_estimate_items` | Object estimate line items (imported from Excel) | `object_id` (CASCADE) |
+| `object_warranties` | Warranty periods per object (start date + duration in months) | `object_id` (CASCADE) |
+| `object_warranty_retentions` | Warranty retention terms (percentage + period) | `object_id` (CASCADE) |
 
 **Key ENUMs:**
 - `objects.status`: `'main_construction'` | `'warranty_service'`
 - `counterparties.status`: `'active'` | `'blacklist'`
 - `tender_counterparties.status`: `'request_sent'` | `'declined'` | `'proposal_provided'`
+- `tender_documents.document_type`: `'attachment'` | `'estimate_template'`
+- `tender_estimate_items.estimate_name`: Text field for grouping multiple estimates per tender (default: 'Основная смета')
+- `tenders.status`: `'Не начат'` | `'Идет тендерная процедура'` | `'Завершен'`
+- `object_documents.document_type` (ENUM `object_document_type`): `'general_contract'` | `'additional_agreement'` | `'attachment'`
 
 ### Schema Files
 
+**Note:** Schema files provide reference definitions, but migrations are the source of truth for the current database state.
+
 - `supabase/schemas/prod.sql` - Full production schema (large, includes all Supabase system tables)
-- `supabase/schemas/*.sql` - Individual table schemas (preferred for reading/editing):
-  - `general_info.sql` - objects, contacts tables
-  - `counterparties.sql`, `counterparty_contacts.sql` - Contractor directory
-  - `tenders.sql`, `tender_counterparties.sql`, `tender_estimates.sql` - Tender system
-  - `contracts.sql` - Contract registry
-  - `bsm_rates.sql` - Legacy rates schema
-  - `bsm_contract_rates.sql`, `bsm_supply_rates.sql`, `bsm_contractor_rates.sql` - Material rates (split)
-- `supabase/migrations/` - Chronological migrations for schema changes
+- `supabase/schemas/*.sql` - Individual table schemas (reference for reading/editing)
+- `supabase/migrations/` - Chronological migrations (authoritative for schema changes). Newer files use date prefix `YYYYMMDD_description.sql`; some early migrations use plain descriptive names (e.g., `add_status_to_objects.sql`). Check this directory for the latest schema state.
 
 ### Schema Change Workflow
 
@@ -167,7 +186,9 @@ XLSX.utils.book_append_sheet(wb, ws, 'Sheet1')
 XLSX.writeFile(wb, 'filename.xlsx')
 ```
 
-**Estimate columns:** № п/п, КОД, Вид затрат, Наименование затрат, Примечание к расчету, Ед. изм., Объем, Расход
+**Estimate columns (tender import):** A=№ п/п, B=КОД, C=Наименование затрат, D=Ед. изм., E=Объем по виду работ, F=Общий расход
+
+**Section detection:** Rows without code (Р or мат.) and without numeric data are automatically marked as sections (`is_section=true`). The `original_row_number` field preserves the original Excel row numbering. Sections display with highlighted styling as headers for groups of work items.
 
 ### Numeric Value Cleaning (BSMPage pattern)
 
@@ -194,18 +215,31 @@ Each page handles its own CRUD operations directly with Supabase. Pattern:
 3. Form handling with local state
 4. Direct Supabase calls for mutations
 
+**CSS Organization:** Pages with complex UI have dedicated CSS files (e.g., `BSMRatesPage.css`, `CounterpartiesPage.css`). Common styles in `GeneralInfo.css` are imported where needed. CSS files are in `src/components/` (shared) or `src/pages/` (page-specific).
+
+### Set-Based Selection Pattern
+
+Tables use `Set` for tracking expanded rows, multi-select, and toggle states. Used for `expandedRows` (CounterpartiesPage), `selectedEstimateItems` (TenderDetailPage), `selectedRates` (BSMRatesPage), `selectedParticipants` (TenderDetailPage). Toggle via copy-and-mutate: `new Set(prev)` then `.add(id)` / `.delete(id)`.
+
+### Fullscreen Mode Pattern
+
+Tables support fullscreen toggle with Escape key listener. See TenderDetailPage for implementation (`isComparisonFullscreen`, `isEstimateFullscreen`).
+
 ### Sidebar Navigation
 
-Collapsible sections with expand state initialized from current route:
-```javascript
-const [expanded, setExpanded] = useState(location.pathname.startsWith('/section'))
-```
+Collapsible sections with expand state initialized from current route path.
 
 ### Props-Based Filtering
 
-Several pages use props for filtering:
-- `TendersPage` - `department` prop ('construction' | 'warranty')
-- `ContractsPage` - `department` and `status` props
+`TendersPage` uses `department` prop ('construction' | 'warranty') for filtering by object status. The component maps this to `objectStatus`:
+- `'construction'` → `'main_construction'`
+- `'warranty'` → `'warranty_service'`
+
+`ContractsPage` uses internal state selectors for department and status (pending/signed).
+
+### Tab-Based Filtering
+
+Pages with tab navigation filter fetched data in memory rather than re-fetching from Supabase. See TendersPage (`active`/`completed` tabs) for the pattern.
 
 ### Protected Routes
 
@@ -213,21 +247,7 @@ Several pages use props for filtering:
 
 ### Multi-File Excel Accumulation (BSMPage)
 
-BSMPage supports loading multiple Excel files that accumulate into a single analysis:
-```javascript
-// Track loaded files and raw rows separately
-const [loadedFiles, setLoadedFiles] = useState([])     // [{name, rowCount}]
-const [allRawRows, setAllRawRows] = useState([])       // All parsed rows with sourceFile
-
-// Each row tracks its source for removal
-rows.push({ ...parsedData, sourceFile: file.name })
-
-// Remove single file: filter rows by sourceFile, recalculate pivot
-const handleRemoveFile = (fileName) => {
-  const newRows = allRawRows.filter(row => row.sourceFile !== fileName)
-  recalculateFromRows(newRows)
-}
-```
+BSMPage supports loading multiple Excel files that accumulate into a single analysis. Each parsed row tracks its `sourceFile` for per-file removal. Removing a file filters rows and recalculates the pivot.
 
 ### BSM Item Type Detection
 
@@ -247,6 +267,14 @@ BSMPage expects Excel files with this column structure:
 | E | Цена материалов (с НДС) |
 | F | Цена работ (с НДС) |
 
+### ObjectDetailPage Tabs
+
+Five tabs: Информация (object fields like dates, area, budget), Документы (hierarchical documents), Гарантия (warranty periods), Гарантийные удержания (retention percentages), Смета (estimate with materials/works pricing and VAT support).
+
+### Hierarchical Documents (ObjectDetailPage)
+
+`object_documents` supports parent-child relationships via `parent_document_id` self-reference. Documents are grouped by type (general contracts → additional agreements/attachments as children). The UI uses expandable rows to show nested documents.
+
 ### RLS Pattern (Supabase)
 
 All tables use Row Level Security with permissive policy for authenticated users:
@@ -257,11 +285,23 @@ CREATE POLICY "Allow all for authenticated users" ON table_name
     USING (true) WITH CHECK (true);
 ```
 
-### 3-Level Sidebar Navigation
+### Common PostgreSQL Error Handling
 
-The sidebar supports 3 levels of nesting (see `/contracts`):
-1. Parent section (collapsible button)
-2. Submenu (links or nested parents)
-3. Nested submenu (deepest links)
+Handle unique constraint violations (common in BSM rates and counterparties):
+```javascript
+if (error.code === '23505') {
+  alert('Запись с таким названием уже существует')  // Unique violation
+}
+```
 
-Each level tracks its own expanded state initialized from current route.
+### Multiple Estimates per Tender
+
+TenderDetailPage supports multiple named estimates per tender. Items are grouped by the `estimate_name` field (default: `'Основная смета'`). See TenderDetailPage for grouping logic.
+
+### Tender Documents (Google Drive Links)
+
+Documents are stored as URL references (typically Google Drive links), not uploaded files. Types: `'attachment'` (general) and `'estimate_template'`.
+
+### Excel Import with Conflict Resolution (BSMRatesPage pattern)
+
+BSM rate pages use a two-step import: (1) parse Excel and detect conflicts with existing data (`importReport` with `newItems` and `conflicts`), (2) user decides per-conflict (`'replace'` or `'skip'`), then apply. See BSMRatesPage for implementation.

@@ -10,7 +10,7 @@ function BSMRatesPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [editingRate, setEditingRate] = useState(null)
   const [showAddForm, setShowAddForm] = useState(false)
-  const [newRate, setNewRate] = useState({ material_name: '', unit: '', supply_price: '' })
+  const [newRate, setNewRate] = useState({ material_name: '', unit: '', supply_price: '', applied_at: '' })
   const [searchTerm, setSearchTerm] = useState('')
   const [showImportHelp, setShowImportHelp] = useState(false)
   const [selectedRates, setSelectedRates] = useState(new Set())
@@ -73,7 +73,8 @@ function BSMRatesPage() {
         object_id: selectedObjectId,
         material_name: newRate.material_name.trim(),
         unit: newRate.unit.trim(),
-        supply_price: parseFloat(newRate.supply_price)
+        supply_price: parseFloat(newRate.supply_price),
+        applied_at: newRate.applied_at || null
       })
 
     if (error) {
@@ -83,7 +84,7 @@ function BSMRatesPage() {
         alert('Ошибка при добавлении: ' + error.message)
       }
     } else {
-      setNewRate({ material_name: '', unit: '', supply_price: '' })
+      setNewRate({ material_name: '', unit: '', supply_price: '', applied_at: '' })
       setShowAddForm(false)
       fetchRates()
     }
@@ -166,6 +167,43 @@ function BSMRatesPage() {
     return parseFloat(strVal) || 0
   }
 
+  // Парсинг даты из Excel (может быть число или строка)
+  const parseExcelDate = (val) => {
+    if (val === null || val === undefined || val === '') return null
+
+    // Если это число (Excel serial date)
+    if (typeof val === 'number') {
+      // Excel хранит даты как количество дней с 1 января 1900
+      const excelEpoch = new Date(1899, 11, 30) // 30 декабря 1899
+      const date = new Date(excelEpoch.getTime() + val * 86400000)
+      return date.toISOString().split('T')[0] // формат YYYY-MM-DD
+    }
+
+    // Если строка
+    const strVal = String(val).trim()
+
+    // Формат ДД.ММ.ГГГГ
+    const ddmmyyyy = strVal.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/)
+    if (ddmmyyyy) {
+      const [, day, month, year] = ddmmyyyy
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+    }
+
+    // Формат ГГГГ-ММ-ДД (уже в нужном формате)
+    const yyyymmdd = strVal.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (yyyymmdd) {
+      return strVal
+    }
+
+    // Попробуем распарсить как Date
+    const parsed = new Date(strVal)
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0]
+    }
+
+    return null
+  }
+
   // Шаг 1: Анализ файла и формирование отчёта
   const handleImportExcel = async (e) => {
     const file = e.target.files[0]
@@ -201,14 +239,16 @@ function BSMRatesPage() {
 
           const materialName = String(row[0]).trim()
           const unit = row[1] ? String(row[1]).trim() : ''
-          const price = parsePrice(row[2]) || parsePrice(row[3]) || 0
+          const price = parsePrice(row[2]) || 0
+          const appliedAt = parseExcelDate(row[3])
 
           if (materialName && price > 0) {
             newRates.push({
               object_id: selectedObjectId,
               material_name: materialName,
               unit: unit,
-              supply_price: price
+              supply_price: price,
+              applied_at: appliedAt
             })
           }
         }
@@ -329,7 +369,8 @@ function BSMRatesPage() {
           .from('bsm_supply_rates')
           .update({
             unit: item.unit,
-            supply_price: item.supply_price
+            supply_price: item.supply_price,
+            applied_at: item.applied_at
           })
           .eq('id', item.existingId)
 
@@ -403,11 +444,12 @@ function BSMRatesPage() {
       'Наименование материала': rate.material_name,
       'Ед. изм.': rate.unit,
       'Цена от снабжения': rate.supply_price,
+      'Дата применения': rate.applied_at ? new Date(rate.applied_at).toLocaleDateString('ru-RU') : '',
       'Примечание': rate.notes || ''
     }))
 
     const ws = XLSX.utils.json_to_sheet(exportData)
-    ws['!cols'] = [{ wch: 5 }, { wch: 50 }, { wch: 10 }, { wch: 18 }, { wch: 30 }]
+    ws['!cols'] = [{ wch: 5 }, { wch: 50 }, { wch: 10 }, { wch: 18 }, { wch: 15 }, { wch: 30 }]
 
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Расценки от снабжения')
@@ -508,6 +550,7 @@ function BSMRatesPage() {
                       <th>Столбец A</th>
                       <th>Столбец B</th>
                       <th>Столбец C</th>
+                      <th>Столбец D</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -515,16 +558,19 @@ function BSMRatesPage() {
                       <td>Наименование материала *</td>
                       <td>Ед. изм.</td>
                       <td>Цена *</td>
+                      <td>Дата применения</td>
                     </tr>
                     <tr className="example-row">
                       <td>Кабель ВВГнг 3x2.5</td>
                       <td>м</td>
                       <td>125.50</td>
+                      <td>15.01.2025</td>
                     </tr>
                     <tr className="example-row">
                       <td>Труба ПНД 32</td>
                       <td>м</td>
                       <td>45.00</td>
+                      <td></td>
                     </tr>
                   </tbody>
                 </table>
@@ -535,7 +581,8 @@ function BSMRatesPage() {
                     <li>Система ищет заголовок со словом &quot;наименование&quot; или &quot;материал&quot;</li>
                     <li>Строки без названия или с нулевой ценой будут пропущены</li>
                     <li>При совпадении названия материала цена будет обновлена</li>
-                    <li>Если цена в столбце C пустая, система проверит столбец D</li>
+                    <li>Дата применения (столбец D) необязательна</li>
+                    <li>Дата может быть в формате ДД.ММ.ГГГГ или как дата Excel</li>
                   </ul>
                 </div>
               </div>
@@ -564,6 +611,13 @@ function BSMRatesPage() {
                   placeholder="Цена *"
                   value={newRate.supply_price}
                   onChange={(e) => setNewRate({ ...newRate, supply_price: e.target.value })}
+                />
+                <input
+                  type="date"
+                  placeholder="Дата применения"
+                  value={newRate.applied_at}
+                  onChange={(e) => setNewRate({ ...newRate, applied_at: e.target.value })}
+                  title="Дата применения расценки"
                 />
                 <button onClick={handleAddRate} className="btn-save">Сохранить</button>
                 <button onClick={() => setShowAddForm(false)} className="btn-cancel">Отмена</button>
@@ -610,6 +664,11 @@ function BSMRatesPage() {
                         <div key={idx} className="import-item new-item">
                           <span className="item-name">{item.material_name}</span>
                           <span className="item-price">{formatNumber(item.supply_price)}</span>
+                          {item.applied_at && (
+                            <span className="item-date" style={{ color: 'var(--text-tertiary)', fontSize: '0.85em', marginLeft: '8px' }}>
+                              ({new Date(item.applied_at).toLocaleDateString('ru-RU')})
+                            </span>
+                          )}
                         </div>
                       ))}
                       {importReport.newItems.length > 5 && (
@@ -640,6 +699,7 @@ function BSMRatesPage() {
                         <span className="col-old">Текущая цена</span>
                         <span className="col-new">Новая цена</span>
                         <span className="col-diff">Разница</span>
+                        <span className="col-date">Дата</span>
                         <span className="col-action">Действие</span>
                       </div>
                       {importReport.conflictItems.map((item, idx) => (
@@ -652,6 +712,9 @@ function BSMRatesPage() {
                           <span className={`col-diff ${item.difference > 0 ? 'up' : 'down'}`}>
                             {item.difference > 0 ? '+' : ''}{formatNumber(item.difference)}
                             <small>({item.percentDiff > 0 ? '+' : ''}{item.percentDiff.toFixed(1)}%)</small>
+                          </span>
+                          <span className="col-date" style={{ color: 'var(--text-tertiary)', fontSize: '0.85em' }}>
+                            {item.applied_at ? new Date(item.applied_at).toLocaleDateString('ru-RU') : '—'}
                           </span>
                           <span className="col-action">
                             <label className={`radio-option ${conflictDecisions[idx] === 'keep' ? 'selected' : ''}`}>
@@ -724,6 +787,7 @@ function BSMRatesPage() {
                     <th className="col-name">Наименование материала</th>
                     <th className="col-unit">Ед. изм.</th>
                     <th className="col-price">Цена от снабжения</th>
+                    <th className="col-date">Дата применения</th>
                     <th className="col-actions">Действия</th>
                   </tr>
                 </thead>
@@ -770,6 +834,17 @@ function BSMRatesPage() {
                           />
                         ) : (
                           formatNumber(rate.supply_price)
+                        )}
+                      </td>
+                      <td className="col-date">
+                        {editingRate === rate.id ? (
+                          <input
+                            type="date"
+                            defaultValue={rate.applied_at || ''}
+                            onBlur={(e) => handleUpdateRate(rate.id, { applied_at: e.target.value || null })}
+                          />
+                        ) : (
+                          rate.applied_at ? new Date(rate.applied_at).toLocaleDateString('ru-RU') : '—'
                         )}
                       </td>
                       <td className="col-actions">

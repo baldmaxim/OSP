@@ -5,6 +5,7 @@ import '../components/GeneralInfo.css'
 function ContactsPage() {
   const [contacts, setContacts] = useState([])
   const [objects, setObjects] = useState([])
+  const [userProfiles, setUserProfiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [showContactModal, setShowContactModal] = useState(false)
   const [editingContact, setEditingContact] = useState(null)
@@ -16,10 +17,20 @@ function ContactsPage() {
     email: '',
     object_id: '',
   })
+  const [isCustomPosition, setIsCustomPosition] = useState(false)
+
+  const defaultPositions = ['Руководитель', 'Экономист', 'Старший инженер', 'Инженер', 'Прораб']
+
+  // Собираем уникальные должности из существующих контактов + дефолтные
+  const allPositions = [...new Set([
+    ...defaultPositions,
+    ...contacts.map(c => c.position).filter(Boolean)
+  ])].sort()
 
   useEffect(() => {
     fetchContacts()
     fetchObjects()
+    fetchUserProfiles()
   }, [])
 
   const fetchContacts = async () => {
@@ -53,18 +64,46 @@ function ContactsPage() {
     }
   }
 
+  const fetchUserProfiles = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('full_name, role, work_phone, work_email, email, is_approved')
+        .eq('is_approved', true)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      setUserProfiles(data || [])
+    } catch (err) {
+      console.error('Ошибка загрузки профилей:', err.message)
+    }
+  }
+
+  const ROLE_LABELS = {
+    admin: 'Администратор',
+    engineer: 'Инженер ОСП',
+    economist: 'Экономист ОСП',
+    lawyer: 'Юрист ОСП'
+  }
+
   const handleContactSubmit = async (e) => {
     e.preventDefault()
     try {
+      // Преобразуем пустую строку в null для object_id
+      const dataToSave = {
+        ...contactFormData,
+        object_id: contactFormData.object_id || null
+      }
+
       if (editingContact) {
         const { error } = await supabase
           .from('contacts')
-          .update(contactFormData)
+          .update(dataToSave)
           .eq('id', editingContact.id)
 
         if (error) throw error
       } else {
-        const { error } = await supabase.from('contacts').insert([contactFormData])
+        const { error } = await supabase.from('contacts').insert([dataToSave])
         if (error) throw error
       }
 
@@ -86,6 +125,8 @@ function ContactsPage() {
 
   const handleEditContact = (contact) => {
     setEditingContact(contact)
+    const knownPosition = allPositions.includes(contact.position)
+    setIsCustomPosition(!knownPosition)
     setContactFormData({
       full_name: contact.full_name,
       position: contact.position,
@@ -111,6 +152,7 @@ function ContactsPage() {
 
   const handleAddNewContact = () => {
     setEditingContact(null)
+    setIsCustomPosition(false)
     setContactFormData({
       full_name: '',
       position: '',
@@ -131,7 +173,46 @@ function ContactsPage() {
         <div className="loading">Загрузка...</div>
       ) : (
         <div className="section-content">
-          <div className="section-actions">
+          {/* Сотрудники ОСП (из профилей) */}
+          {userProfiles.length > 0 && (
+            <>
+              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                Сотрудники ОСП ({userProfiles.length})
+              </h3>
+              <div className="table-container" style={{ marginBottom: '1.5rem' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>УН</th>
+                      <th>ФИО</th>
+                      <th>Должность</th>
+                      <th>Рабочий телефон</th>
+                      <th>Рабочая почта</th>
+                      <th>Email аккаунта</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userProfiles.map((profile, idx) => (
+                      <tr key={idx}>
+                        <td style={{ fontFamily: 'Consolas, Monaco, monospace', fontWeight: 700, color: 'var(--primary-color)', textAlign: 'center', width: '40px' }}>{idx + 1}</td>
+                        <td style={{ fontWeight: 500 }}>{profile.full_name || <span style={{ color: 'var(--text-tertiary)', opacity: 0.5 }}>Не указано</span>}</td>
+                        <td>{ROLE_LABELS[profile.role] || profile.role}</td>
+                        <td>{profile.work_phone || <span style={{ color: 'var(--text-tertiary)', opacity: 0.5 }}>—</span>}</td>
+                        <td>{profile.work_email || <span style={{ color: 'var(--text-tertiary)', opacity: 0.5 }}>—</span>}</td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{profile.email || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* Контакты на объектах */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+            <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Контакты на объектах ({contacts.length})
+            </h3>
             <button className="btn-primary" onClick={handleAddNewContact}>
               + Добавить контакт
             </button>
@@ -163,7 +244,7 @@ function ContactsPage() {
                       <td>{contact.position}</td>
                       <td>{contact.phone}</td>
                       <td>{contact.email}</td>
-                      <td>{contact.objects?.name || '-'}</td>
+                      <td>{contact.objects?.name || 'Офис'}</td>
                       <td className="actions-cell">
                         <button
                           className="btn-icon btn-edit"
@@ -227,23 +308,63 @@ function ContactsPage() {
 
                 <div className="form-group">
                   <label>Должность *</label>
-                  <select
-                    value={contactFormData.position}
-                    onChange={(e) =>
-                      setContactFormData({
-                        ...contactFormData,
-                        position: e.target.value,
-                      })
-                    }
-                    required
-                  >
-                    <option value="">Выберите должность</option>
-                    <option value="Руководитель">Руководитель</option>
-                    <option value="Экономист">Экономист</option>
-                    <option value="Старший инженер">Старший инженер</option>
-                    <option value="Инженер">Инженер</option>
-                    <option value="Прораб">Прораб</option>
-                  </select>
+                  {isCustomPosition ? (
+                    <div className="input-with-action">
+                      <input
+                        type="text"
+                        value={contactFormData.position}
+                        onChange={(e) =>
+                          setContactFormData({
+                            ...contactFormData,
+                            position: e.target.value,
+                          })
+                        }
+                        required
+                        placeholder="Введите должность"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        onClick={() => {
+                          setIsCustomPosition(false)
+                          setContactFormData({ ...contactFormData, position: '' })
+                        }}
+                        title="Выбрать из списка"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="input-with-action">
+                      <select
+                        value={contactFormData.position}
+                        onChange={(e) =>
+                          setContactFormData({
+                            ...contactFormData,
+                            position: e.target.value,
+                          })
+                        }
+                        required
+                      >
+                        <option value="">Выберите должность</option>
+                        {allPositions.map(pos => (
+                          <option key={pos} value={pos}>{pos}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        onClick={() => {
+                          setIsCustomPosition(true)
+                          setContactFormData({ ...contactFormData, position: '' })
+                        }}
+                        title="Добавить новую должность"
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -257,7 +378,7 @@ function ContactsPage() {
                       })
                     }
                   >
-                    <option value="">Не привязан к объекту</option>
+                    <option value="">Офис</option>
                     {objects.map((obj) => (
                       <option key={obj.id} value={obj.id}>
                         {obj.name}

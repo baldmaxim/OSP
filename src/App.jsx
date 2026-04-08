@@ -3,6 +3,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { RoleProvider, useRole } from './contexts/RoleContext'
 import Sidebar from './components/Sidebar'
 import ObjectsPage from './pages/ObjectsPage'
+import ObjectDetailPage from './pages/ObjectDetailPage'
 import ContactsPage from './pages/ContactsPage'
 import CounterpartiesPage from './pages/CounterpartiesPage'
 import TendersPage from './pages/TendersPage'
@@ -19,11 +20,18 @@ import BSMComparisonPage from './pages/BSMComparisonPage'
 import BSMContractorRatesPage from './pages/BSMContractorRatesPage'
 import GeneralInfoPage from './pages/GeneralInfoPage'
 import BSMSelectionPage from './pages/BSMSelectionPage'
+import AdminPage from './pages/AdminPage'
+import ProfilePage from './pages/ProfilePage'
 import './App.css'
 
 // Компонент для защищённых маршрутов сотрудника
 function EmployeeLayout() {
-  const { isEmployee, isLoggedIn } = useRole()
+  const { isEmployee, isLoggedIn, authLoading } = useRole()
+
+  // Ждём загрузку сессии
+  if (authLoading) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-tertiary)' }}>Загрузка...</div>
+  }
 
   // Если не авторизован - редирект на логин
   if (!isLoggedIn) {
@@ -43,6 +51,7 @@ function EmployeeLayout() {
           <Route path="/" element={<Navigate to="/general" replace />} />
           <Route path="/general" element={<GeneralInfoPage />} />
           <Route path="/general/objects" element={<ObjectsPage />} />
+          <Route path="/general/objects/:objectId" element={<ObjectDetailPage />} />
           <Route path="/general/contacts" element={<ContactsPage />} />
           <Route path="/general/counterparties" element={<CounterpartiesPage />} />
           <Route path="/tenders" element={<Navigate to="/tenders/construction" replace />} />
@@ -58,6 +67,8 @@ function EmployeeLayout() {
           <Route path="/bsm/contractor-rates" element={<BSMContractorRatesPage />} />
           <Route path="/acceptance" element={<AcceptancePage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/general" replace />} />
         </Routes>
       </main>
@@ -67,7 +78,11 @@ function EmployeeLayout() {
 
 // Компонент для маршрутов авторизации
 function AuthRoutes() {
-  const { isLoggedIn, isEmployee, isContractor } = useRole()
+  const { isLoggedIn, isEmployee, isContractor, authLoading } = useRole()
+
+  if (authLoading) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-tertiary)' }}>Загрузка...</div>
+  }
 
   return (
     <Routes>

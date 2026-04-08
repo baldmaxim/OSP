@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS objects (
   latitude DECIMAL(10, 8),
   longitude DECIMAL(11, 8),
   status object_status DEFAULT 'main_construction',
+  planned_start_date DATE,              -- Планируемая дата начала работ
+  planned_end_date DATE,                -- Планируемая дата окончания работ
+  total_area DECIMAL(12, 2),            -- Общая площадь объекта (м²)
+  budget DECIMAL(15, 2),                -- Бюджет объекта (руб.)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -104,6 +108,10 @@ COMMENT ON COLUMN objects.map_link IS 'Ссылка на карту (Google Maps
 COMMENT ON COLUMN objects.latitude IS 'Широта объекта (latitude) в десятичных градусах';
 COMMENT ON COLUMN objects.longitude IS 'Долгота объекта (longitude) в десятичных градусах';
 COMMENT ON COLUMN objects.status IS 'Статус объекта: основное строительство или гарантийное обслуживание';
+COMMENT ON COLUMN objects.planned_start_date IS 'Планируемая дата начала работ';
+COMMENT ON COLUMN objects.planned_end_date IS 'Планируемая дата окончания работ';
+COMMENT ON COLUMN objects.total_area IS 'Общая площадь объекта в м²';
+COMMENT ON COLUMN objects.budget IS 'Бюджет объекта в рублях';
 COMMENT ON COLUMN objects.created_at IS 'Дата и время создания записи';
 COMMENT ON COLUMN objects.updated_at IS 'Дата и время последнего обновления записи';
 

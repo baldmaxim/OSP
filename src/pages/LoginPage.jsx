@@ -6,61 +6,126 @@ import './LoginPage.css'
 
 function LoginPage() {
   const navigate = useNavigate()
-  const { loginAsEmployee, loginAsContractor, isLoggedIn } = useRole()
+  const { loginWithPassword, loginAsContractor, signUp, isLoggedIn, isEmployee } = useRole()
 
-  const [showContractorSelect, setShowContractorSelect] = useState(false)
+  const [mode, setMode] = useState('employee') // 'employee' | 'contractor' | 'register'
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
+
+  // Подрядчик — выбор организации
   const [counterparties, setCounterparties] = useState([])
   const [selectedCounterparty, setSelectedCounterparty] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loadingCounterparties, setLoadingCounterparties] = useState(false)
 
-  // Если уже авторизован, редиректим
   useEffect(() => {
     if (isLoggedIn) {
-      navigate('/')
+      navigate(isEmployee ? '/general/objects' : '/contractor/proposals')
     }
-  }, [isLoggedIn, navigate])
+  }, [isLoggedIn, isEmployee, navigate])
 
-  // Загружаем список контрагентов при открытии выбора
   useEffect(() => {
-    if (showContractorSelect) {
+    if (mode === 'contractor') {
       fetchCounterparties()
     }
-  }, [showContractorSelect])
+  }, [mode])
 
   const fetchCounterparties = async () => {
-    setLoading(true)
+    setLoadingCounterparties(true)
     try {
       const { data, error } = await supabase
         .from('counterparties')
         .select('id, name')
         .eq('status', 'active')
         .order('name')
-
       if (error) throw error
       setCounterparties(data || [])
-    } catch (error) {
-      console.error('Ошибка загрузки контрагентов:', error)
+    } catch (err) {
+      console.error('Ошибка загрузки контрагентов:', err)
+    } finally {
+      setLoadingCounterparties(false)
+    }
+  }
+
+  const handleEmployeeLogin = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccessMessage('')
+    setLoading(true)
+    try {
+      await loginWithPassword(email, password)
+      navigate('/general/objects')
+    } catch (err) {
+      if (err.message === 'PENDING_APPROVAL') {
+        setSuccessMessage('Ваша заявка отправлена. Ожидайте подтверждения администратором.')
+      } else {
+        setError(getErrorMessage(err))
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  const handleEmployeeLogin = () => {
-    loginAsEmployee()
-    navigate('/general/objects')
-  }
-
-  const handleContractorLogin = () => {
+  const handleContractorLogin = async (e) => {
+    e.preventDefault()
+    setError('')
     if (!selectedCounterparty) {
-      alert('Выберите организацию')
+      setError('Выберите организацию')
       return
     }
-
-    const counterparty = counterparties.find(c => c.id === selectedCounterparty)
-    if (counterparty) {
-      loginAsContractor(counterparty.id, counterparty.name)
+    setLoading(true)
+    try {
+      const cp = counterparties.find(c => c.id === selectedCounterparty)
+      await loginAsContractor(email, password, cp.id, cp.name)
       navigate('/contractor/proposals')
+    } catch (err) {
+      if (err.message === 'PENDING_APPROVAL') {
+        setSuccessMessage('Ваша заявка отправлена. Ожидайте подтверждения администратором.')
+      } else {
+        setError(getErrorMessage(err))
+      }
+    } finally {
+      setLoading(false)
     }
+  }
+
+  const handleSignUp = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccessMessage('')
+    if (password.length < 6) {
+      setError('Пароль должен быть не менее 6 символов')
+      return
+    }
+    setLoading(true)
+    try {
+      await signUp(email, password)
+      setSuccessMessage('Регистрация успешна! Теперь вы можете войти.')
+      setMode('employee')
+      setPassword('')
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getErrorMessage = (err) => {
+    const msg = err.message || ''
+    if (msg === 'PENDING_APPROVAL') return 'Ваша заявка отправлена. Ожидайте подтверждения администратором.'
+    if (msg.includes('Invalid login credentials')) return 'Неверный email или пароль'
+    if (msg.includes('Email not confirmed')) return 'Email не подтверждён'
+    if (msg.includes('User already registered')) return 'Пользователь уже зарегистрирован'
+    if (msg.includes('Password should be at least')) return 'Пароль слишком короткий'
+    return msg || 'Произошла ошибка'
+  }
+
+  const switchMode = (newMode) => {
+    setMode(newMode)
+    setError('')
+    setSuccessMessage('')
   }
 
   return (
@@ -71,68 +136,142 @@ function LoginPage() {
           <p>Отдел сопровождения подрядчиков</p>
         </div>
 
-        {!showContractorSelect ? (
-          <div className="login-options">
-            <button
-              className="login-option employee"
-              onClick={handleEmployeeLogin}
-            >
-              <div className="option-icon">👔</div>
-              <div className="option-content">
-                <h3>Сотрудник СУ-10</h3>
-                <p>Полный доступ к системе управления тендерами и договорами</p>
-              </div>
-            </button>
+        {/* Табы выбора режима */}
+        <div className="login-tabs">
+          <button
+            className={`login-tab ${mode === 'employee' ? 'active' : ''}`}
+            onClick={() => switchMode('employee')}
+          >
+            Сотрудник
+          </button>
+          <button
+            className={`login-tab ${mode === 'contractor' ? 'active' : ''}`}
+            onClick={() => switchMode('contractor')}
+          >
+            Подрядчик
+          </button>
+          <button
+            className={`login-tab ${mode === 'register' ? 'active' : ''}`}
+            onClick={() => switchMode('register')}
+          >
+            Регистрация
+          </button>
+        </div>
 
-            <button
-              className="login-option contractor"
-              onClick={() => setShowContractorSelect(true)}
-            >
-              <div className="option-icon">🏢</div>
-              <div className="option-content">
-                <h3>Подрядчик</h3>
-                <p>Загрузка коммерческих предложений по тендерам</p>
-              </div>
-            </button>
-          </div>
-        ) : (
-          <div className="contractor-select">
-            <button
-              className="back-button"
-              onClick={() => setShowContractorSelect(false)}
-            >
-              ← Назад
-            </button>
+        {successMessage && (
+          <div className="login-success">{successMessage}</div>
+        )}
 
-            <h2>Выберите организацию</h2>
+        {error && (
+          <div className="login-error">{error}</div>
+        )}
 
-            {loading ? (
-              <div className="loading">Загрузка списка организаций...</div>
-            ) : (
-              <>
+        {/* Форма входа сотрудника */}
+        {mode === 'employee' && (
+          <form onSubmit={handleEmployeeLogin} className="login-form">
+            <div className="form-field">
+              <label>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@example.com"
+                required
+                autoFocus
+              />
+            </div>
+            <div className="form-field">
+              <label>Пароль</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Введите пароль"
+                required
+              />
+            </div>
+            <button type="submit" className="login-button" disabled={loading}>
+              {loading ? 'Вход...' : 'Войти'}
+            </button>
+          </form>
+        )}
+
+        {/* Форма входа подрядчика */}
+        {mode === 'contractor' && (
+          <form onSubmit={handleContractorLogin} className="login-form">
+            <div className="form-field">
+              <label>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@example.com"
+                required
+                autoFocus
+              />
+            </div>
+            <div className="form-field">
+              <label>Пароль</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Введите пароль"
+                required
+              />
+            </div>
+            <div className="form-field">
+              <label>Организация</label>
+              {loadingCounterparties ? (
+                <div className="field-loading">Загрузка...</div>
+              ) : (
                 <select
                   value={selectedCounterparty}
                   onChange={(e) => setSelectedCounterparty(e.target.value)}
-                  className="counterparty-dropdown"
+                  required
                 >
                   <option value="">-- Выберите организацию --</option>
                   {counterparties.map(cp => (
-                    <option key={cp.id} value={cp.id}>
-                      {cp.name}
-                    </option>
+                    <option key={cp.id} value={cp.id}>{cp.name}</option>
                   ))}
                 </select>
+              )}
+            </div>
+            <button type="submit" className="login-button" disabled={loading}>
+              {loading ? 'Вход...' : 'Войти как подрядчик'}
+            </button>
+          </form>
+        )}
 
-                <button
-                  className="login-button"
-                  onClick={handleContractorLogin}
-                  disabled={!selectedCounterparty}
-                >
-                  Войти
-                </button>
-              </>
-            )}
-          </div>
+        {/* Форма регистрации */}
+        {mode === 'register' && (
+          <form onSubmit={handleSignUp} className="login-form">
+            <div className="form-field">
+              <label>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@example.com"
+                required
+                autoFocus
+              />
+            </div>
+            <div className="form-field">
+              <label>Пароль</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Минимум 6 символов"
+                required
+                minLength={6}
+              />
+            </div>
+            <button type="submit" className="login-button" disabled={loading}>
+              {loading ? 'Регистрация...' : 'Зарегистрироваться'}
+            </button>
+          </form>
         )}
       </div>
     </div>

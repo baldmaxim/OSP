@@ -92,39 +92,39 @@
 }
 
 .status-not-started {
-  background-color: #e0e7ff;
-  color: #3730a3;
-  border: 1px solid #a5b4fc;
+  background-color: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
 }
 
 .status-in-progress {
-  background-color: #fef3c7;
-  color: #92400e;
-  border: 1px solid #fcd34d;
+  background-color: #fef7ed;
+  color: #9a6b3a;
+  border: 1px solid #e8d5c0;
 }
 
 .status-completed {
-  background-color: #dcfce7;
-  color: #166534;
-  border: 1px solid #86efac;
+  background-color: #f0f7f4;
+  color: #3d6b56;
+  border: 1px solid #c2d9cf;
 }
 
 [data-theme='dark'] .status-not-started {
-  background-color: #312e81;
-  color: #c7d2fe;
-  border-color: #6366f1;
+  background-color: #334155;
+  color: #cbd5e1;
+  border-color: #475569;
 }
 
 [data-theme='dark'] .status-in-progress {
-  background-color: #78350f;
-  color: #fde68a;
-  border-color: #f59e0b;
+  background-color: #44382c;
+  color: #e2c9a8;
+  border-color: #8b7355;
 }
 
 [data-theme='dark'] .status-completed {
-  background-color: #14532d;
-  color: #bbf7d0;
-  border-color: #22c55e;
+  background-color: #2a4038;
+  color: #a8d4be;
+  border-color: #4a7a62;
 }
 
 /* Options в select для темной темы */

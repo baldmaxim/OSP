@@ -1,0 +1,2 @@
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS work_phone TEXT;
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS work_email TEXT;

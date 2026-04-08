@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import '../components/GeneralInfo.css'
@@ -7,6 +8,7 @@ import '../components/GeneralInfo.css'
 let mapInstance = null
 
 function ObjectsPage() {
+  const navigate = useNavigate()
   const [objects, setObjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -436,7 +438,25 @@ function ObjectsPage() {
                     .map((object, index) => (
                     <tr key={object.id}>
                       <td style={{ textAlign: 'center', fontWeight: '600' }}>{index + 1}</td>
-                      <td>{object.name}</td>
+                      <td>
+                        <button
+                          onClick={() => navigate(`/general/objects/${object.id}`)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--primary-color)',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            padding: 0,
+                            fontSize: 'inherit',
+                            fontWeight: '600',
+                            textDecoration: 'underline'
+                          }}
+                          title="Открыть карточку объекта"
+                        >
+                          {object.name}
+                        </button>
+                      </td>
                       <td>{object.address}</td>
                       <td>
                         {object.map_link ? (

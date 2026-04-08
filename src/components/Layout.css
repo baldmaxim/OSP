@@ -6,8 +6,9 @@
 
 .main-content {
   flex: 1;
-  padding: 2rem;
+  padding: 1rem;
   overflow-y: auto;
+  min-width: 0;
 }
 
 @media (max-width: 768px) {
