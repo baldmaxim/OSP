@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
+import { formatPhone } from '../utils/phoneFormat'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
@@ -22,6 +23,7 @@ function CounterpartiesPage() {
   const [counterpartyFormData, setCounterpartyFormData] = useState({
     name: '',
     work_type: '',
+    department: '',
     inn: '',
     kpp: '',
     legal_address: '',
@@ -30,6 +32,7 @@ function CounterpartiesPage() {
     status: 'active',
     notes: '',
   })
+  const [departmentFilter, setDepartmentFilter] = useState('')
 
   const [contactFormData, setContactFormData] = useState({
     full_name: '',
@@ -211,6 +214,7 @@ function CounterpartiesPage() {
       setCounterpartyFormData({
         name: '',
         work_type: '',
+        department: '',
         inn: '',
         kpp: '',
         legal_address: '',
@@ -269,6 +273,7 @@ function CounterpartiesPage() {
     setCounterpartyFormData({
       name: counterparty.name,
       work_type: counterparty.work_type || '',
+      department: counterparty.department || '',
       inn: counterparty.inn || '',
       kpp: counterparty.kpp || '',
       legal_address: counterparty.legal_address || '',
@@ -475,6 +480,7 @@ function CounterpartiesPage() {
     setCounterpartyFormData({
       name: '',
       work_type: '',
+      department: '',
       inn: '',
       kpp: '',
       legal_address: '',
@@ -808,18 +814,25 @@ function CounterpartiesPage() {
     }
   }
 
-  // Получить уникальные виды работ
+  // Получить уникальные виды работ (разделяем по запятой)
   const uniqueWorkTypes = [...new Set(
     counterparties
-      .map(c => c.work_type)
-      .filter(wt => wt && wt.trim() !== '')
-  )].sort()
+      .flatMap(c => (c.work_type || '').split(',').map(wt => wt.trim()))
+      .filter(wt => wt !== '')
+  )].sort((a, b) => a.localeCompare(b, 'ru'))
 
   // Функция фильтрации контрагентов
   const filteredCounterparties = counterparties.filter(counterparty => {
-    // Фильтр по виду работ
-    if (workTypeFilter && counterparty.work_type !== workTypeFilter) {
-      return false
+    // Фильтр по виду работ (проверяем каждый вид отдельно)
+    if (workTypeFilter) {
+      const types = (counterparty.work_type || '').split(',').map(wt => wt.trim())
+      if (!types.includes(workTypeFilter)) return false
+    }
+
+    // Фильтр по отделу
+    if (departmentFilter) {
+      const depts = (counterparty.department || '').split(',').map(d => d.trim())
+      if (!depts.includes(departmentFilter)) return false
     }
 
     // Поиск по всем полям
@@ -904,6 +917,16 @@ function CounterpartiesPage() {
                 <option key={workType} value={workType}>{workType}</option>
               ))}
             </select>
+
+            <select
+              className={`filter-select ${departmentFilter ? 'active' : ''}`}
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+            >
+              <option value="">Все отделы</option>
+              <option value="Основное строительство">Основное строительство</option>
+              <option value="Гарантийный отдел">Гарантийный отдел</option>
+            </select>
           </div>
 
           <div className="toolbar-actions">
@@ -962,6 +985,7 @@ function CounterpartiesPage() {
                       />
                     </th>
                     <th className="col-name">Наименование</th>
+                    <th className="col-department">Отдел</th>
                     <th className="col-worktype">Вид работ</th>
                     <th className="col-inn">ИНН / КПП</th>
                     <th className="col-contact-name">Контакт</th>
@@ -997,6 +1021,9 @@ function CounterpartiesPage() {
                               <span className="has-notes" title={counterparty.notes}>*</span>
                             )}
                           </td>
+                          <td className="col-department">
+                            {counterparty.department || <span className="empty-cell">--</span>}
+                          </td>
                           <td className="col-worktype">
                             {counterparty.work_type || <span className="empty-cell">--</span>}
                           </td>
@@ -1016,7 +1043,11 @@ function CounterpartiesPage() {
                           </td>
                           <td className="col-contact-phone" onClick={(e) => e.stopPropagation()}>
                             {firstContact?.phone ? (
-                              <a href={`tel:${firstContact.phone}`} className="contact-link">{firstContact.phone}</a>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                                {firstContact.phone.split(';').map((ph, i) => (
+                                  ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
+                                ))}
+                              </div>
                             ) : <span className="empty-cell">--</span>}
                           </td>
                           <td className="col-contact-email" onClick={(e) => e.stopPropagation()}>
@@ -1055,7 +1086,7 @@ function CounterpartiesPage() {
 
                         {isExpanded && (
                           <tr className="expanded-row">
-                            <td colSpan="10">
+                            <td colSpan="11">
                               <div className="expanded-content">
                                 <div className="expanded-details">
                                   {counterparty.legal_address && (
@@ -1092,7 +1123,11 @@ function CounterpartiesPage() {
                                             <td className="text-muted">{contact.position || '--'}</td>
                                             <td>
                                               {contact.phone ? (
-                                                <a href={`tel:${contact.phone}`} className="contact-link">{contact.phone}</a>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                                                  {contact.phone.split(';').map((ph, i) => (
+                                                    ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
+                                                  ))}
+                                                </div>
                                               ) : '--'}
                                             </td>
                                             <td>
@@ -1223,6 +1258,27 @@ function CounterpartiesPage() {
                         ))}
                       </div>
                     )}
+                    {/* Выбор из существующих */}
+                    {uniqueWorkTypes.filter(wt => !workTypes.includes(wt)).length > 0 && (
+                      <div className="work-type-input-row">
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value && !workTypes.includes(e.target.value)) {
+                              setWorkTypes([...workTypes, e.target.value])
+                            }
+                          }}
+                        >
+                          <option value="">Выбрать из существующих...</option>
+                          {uniqueWorkTypes
+                            .filter(wt => !workTypes.includes(wt))
+                            .map(wt => (
+                              <option key={wt} value={wt}>{wt}</option>
+                            ))}
+                        </select>
+                      </div>
+                    )}
+                    {/* Или добавить новый */}
                     <div className="work-type-input-row">
                       <input
                         type="text"
@@ -1237,7 +1293,7 @@ function CounterpartiesPage() {
                             }
                           }
                         }}
-                        placeholder="Введите вид работ и нажмите Enter или +"
+                        placeholder="Или введите новый вид работ"
                       />
                       <button
                         type="button"
@@ -1252,6 +1308,35 @@ function CounterpartiesPage() {
                         +
                       </button>
                     </div>
+                  </div>
+                </div>
+
+                <div className="form-group full-width">
+                  <label>Отдел</label>
+                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                    {['Основное строительство', 'Гарантийный отдел'].map(dept => {
+                      const depts = (counterpartyFormData.department || '').split(',').map(d => d.trim()).filter(d => d)
+                      const checked = depts.includes(dept)
+                      return (
+                        <label key={dept} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.875rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              const newDepts = checked
+                                ? depts.filter(d => d !== dept)
+                                : [...depts, dept]
+                              setCounterpartyFormData({
+                                ...counterpartyFormData,
+                                department: newDepts.join(', ')
+                              })
+                            }}
+                            style={{ width: '16px', height: '16px', accentColor: 'var(--primary-color)' }}
+                          />
+                          {dept}
+                        </label>
+                      )
+                    })}
                   </div>
                 </div>
 
@@ -1470,18 +1555,41 @@ function CounterpartiesPage() {
                     <label style={{ fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' }}>
                       Телефон
                     </label>
-                    <input
-                      type="tel"
-                      value={contactFormData.phone}
-                      onChange={(e) =>
-                        setContactFormData({
-                          ...contactFormData,
-                          phone: e.target.value,
-                        })
-                      }
-                      placeholder="+7 (999) 123-45-67"
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.875rem', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
-                    />
+                    {(contactFormData.phone || '').split(';').map((ph, phIdx, arr) => (
+                      <div key={phIdx} style={{ display: 'flex', gap: '0.25rem', marginBottom: phIdx < arr.length - 1 ? '0.25rem' : 0 }}>
+                        <input
+                          type="tel"
+                          value={ph.trim()}
+                          onChange={(e) => {
+                            const phones = (contactFormData.phone || '').split(';').map(p => p.trim())
+                            phones[phIdx] = formatPhone(e.target.value)
+                            setContactFormData({ ...contactFormData, phone: phones.join('; ') })
+                          }}
+                          placeholder="+7(916)712-69-10"
+                          style={{ flex: 1, padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.875rem', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                        />
+                        {arr.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const phones = (contactFormData.phone || '').split(';').map(p => p.trim()).filter((_, i) => i !== phIdx)
+                              setContactFormData({ ...contactFormData, phone: phones.join('; ') })
+                            }}
+                            style={{ padding: '0 0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.875rem' }}
+                            title="Удалить номер"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setContactFormData({ ...contactFormData, phone: (contactFormData.phone || '') + '; ' })}
+                      style={{ marginTop: '0.25rem', padding: '0.25rem 0.5rem', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem' }}
+                    >
+                      + Ещё номер
+                    </button>
                   </div>
                   <div style={{ gridColumn: '1 / -1' }}>
                     <label style={{ fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' }}>
@@ -1607,17 +1715,38 @@ function CounterpartiesPage() {
 
                 <div className="form-group">
                   <label>Телефон</label>
-                  <input
-                    type="tel"
-                    value={contactFormData.phone}
-                    onChange={(e) =>
-                      setContactFormData({
-                        ...contactFormData,
-                        phone: e.target.value,
-                      })
-                    }
-                    placeholder="+7 (999) 123-45-67"
-                  />
+                  {(contactFormData.phone || '').split(';').map((ph, phIdx, arr) => (
+                    <div key={phIdx} style={{ display: 'flex', gap: '0.25rem', marginBottom: phIdx < arr.length - 1 ? '0.25rem' : 0 }}>
+                      <input
+                        type="tel"
+                        value={ph.trim()}
+                        onChange={(e) => {
+                          const phones = (contactFormData.phone || '').split(';').map(p => p.trim())
+                          phones[phIdx] = formatPhone(e.target.value)
+                          setContactFormData({ ...contactFormData, phone: phones.join('; ') })
+                        }}
+                        placeholder="+7(916)712-69-10"
+                        style={{ flex: 1 }}
+                      />
+                      {arr.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const phones = (contactFormData.phone || '').split(';').map(p => p.trim()).filter((_, i) => i !== phIdx)
+                            setContactFormData({ ...contactFormData, phone: phones.join('; ') })
+                          }}
+                          style={{ padding: '0 0.5rem', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer' }}
+                        >×</button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setContactFormData({ ...contactFormData, phone: (contactFormData.phone || '') + '; ' })}
+                    style={{ marginTop: '0.25rem', padding: '0.25rem 0', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem', textAlign: 'left' }}
+                  >
+                    + Ещё номер
+                  </button>
                 </div>
 
                 <div className="form-group full-width">

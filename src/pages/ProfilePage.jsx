@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRole, ROLE_LABELS } from '../contexts/RoleContext'
 import { supabase } from '../supabase'
+import { formatPhone } from '../utils/phoneFormat'
 import './ProfilePage.css'
 
 function ProfilePage() {
@@ -102,8 +103,8 @@ function ProfilePage() {
             <input
               type="tel"
               value={workPhone}
-              onChange={(e) => setWorkPhone(e.target.value)}
-              placeholder="+7 (999) 123-45-67"
+              onChange={(e) => setWorkPhone(formatPhone(e.target.value))}
+              placeholder="+7(916)712-69-10"
             />
           </div>
 

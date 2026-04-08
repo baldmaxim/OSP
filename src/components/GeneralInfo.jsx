@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { formatPhone } from '../utils/phoneFormat'
 import './GeneralInfo.css'
 
 function GeneralInfo() {
@@ -380,10 +381,10 @@ function GeneralInfo() {
                     type="tel"
                     value={contactFormData.phone}
                     onChange={(e) =>
-                      setContactFormData({ ...contactFormData, phone: e.target.value })
+                      setContactFormData({ ...contactFormData, phone: formatPhone(e.target.value) })
                     }
                     required
-                    placeholder="+7 (999) 123-45-67"
+                    placeholder="+7(916)712-69-10"
                   />
                 </div>
 

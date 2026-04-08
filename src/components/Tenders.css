@@ -517,6 +517,27 @@
   background-color: #22c55e;
 }
 
+/* Просроченные тендеры */
+.overdue-row {
+  background-color: rgba(220, 38, 38, 0.06) !important;
+}
+
+.overdue-row td {
+  color: var(--text-primary);
+}
+
+.overdue-row:hover {
+  background-color: rgba(220, 38, 38, 0.1) !important;
+}
+
+[data-theme='dark'] .overdue-row {
+  background-color: rgba(220, 38, 38, 0.1) !important;
+}
+
+[data-theme='dark'] .overdue-row:hover {
+  background-color: rgba(220, 38, 38, 0.15) !important;
+}
+
 @media (max-width: 768px) {
   .tender-tabs {
     overflow-x: auto;

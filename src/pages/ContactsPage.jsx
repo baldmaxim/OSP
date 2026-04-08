@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { formatPhone } from '../utils/phoneFormat'
 import '../components/GeneralInfo.css'
 
 function ContactsPage() {
@@ -166,60 +167,29 @@ function ContactsPage() {
   return (
     <div className="general-info">
       <div className="general-info-header">
-        <h2>Контакты сотрудников</h2>
+        <h2>Контактные данные сотрудников</h2>
       </div>
 
       {loading ? (
         <div className="loading">Загрузка...</div>
       ) : (
         <div className="section-content">
-          {/* Сотрудники ОСП (из профилей) */}
-          {userProfiles.length > 0 && (
-            <>
-              <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                Сотрудники ОСП ({userProfiles.length})
-              </h3>
-              <div className="table-container" style={{ marginBottom: '1.5rem' }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>УН</th>
-                      <th>ФИО</th>
-                      <th>Должность</th>
-                      <th>Рабочий телефон</th>
-                      <th>Рабочая почта</th>
-                      <th>Email аккаунта</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {userProfiles.map((profile, idx) => (
-                      <tr key={idx}>
-                        <td style={{ fontFamily: 'Consolas, Monaco, monospace', fontWeight: 700, color: 'var(--primary-color)', textAlign: 'center', width: '40px' }}>{idx + 1}</td>
-                        <td style={{ fontWeight: 500 }}>{profile.full_name || <span style={{ color: 'var(--text-tertiary)', opacity: 0.5 }}>Не указано</span>}</td>
-                        <td>{ROLE_LABELS[profile.role] || profile.role}</td>
-                        <td>{profile.work_phone || <span style={{ color: 'var(--text-tertiary)', opacity: 0.5 }}>—</span>}</td>
-                        <td>{profile.work_email || <span style={{ color: 'var(--text-tertiary)', opacity: 0.5 }}>—</span>}</td>
-                        <td style={{ color: 'var(--text-secondary)' }}>{profile.email || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
-          {/* Контакты на объектах */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-            <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              Контакты на объектах ({contacts.length})
-            </h3>
+          <div className="section-actions">
             <button className="btn-primary" onClick={handleAddNewContact}>
               + Добавить контакт
             </button>
           </div>
 
           <div className="table-container">
-            <table className="data-table">
+            <table className="data-table" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '22%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '12%' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>ФИО</th>
@@ -231,38 +201,53 @@ function ContactsPage() {
                 </tr>
               </thead>
               <tbody>
-                {contacts.length === 0 ? (
+                {/* Профили из user_roles, которых нет в contacts */}
+                {userProfiles
+                  .filter(p => p.full_name && !contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase()))
+                  .map((profile, idx) => (
+                  <tr key={`profile-${idx}`}>
+                    <td>{profile.full_name}</td>
+                    <td>{ROLE_LABELS[profile.role] || profile.role}</td>
+                    <td>{profile.work_phone || '—'}</td>
+                    <td style={{ wordBreak: 'break-all' }}>{profile.work_email || profile.email || '—'}</td>
+                    <td>Офис</td>
+                    <td className="actions-cell"></td>
+                  </tr>
+                ))}
+                {/* Контакты из таблицы contacts (без дублей) */}
+                {contacts.filter((contact, index, self) =>
+                  index === self.findIndex(c => c.full_name?.toLowerCase() === contact.full_name?.toLowerCase())
+                ).map((contact) => (
+                  <tr key={contact.id}>
+                    <td>{contact.full_name}</td>
+                    <td>{contact.position}</td>
+                    <td>{contact.phone}</td>
+                    <td>{contact.email}</td>
+                    <td>{contact.objects?.name || 'Офис'}</td>
+                    <td className="actions-cell">
+                      <button
+                        className="btn-icon btn-edit"
+                        onClick={() => handleEditContact(contact)}
+                        title="Редактировать"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        className="btn-icon btn-delete"
+                        onClick={() => handleDeleteContact(contact.id, contact.full_name)}
+                        title="Удалить"
+                      >
+                        🗑️
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {userProfiles.length === 0 && contacts.length === 0 && (
                   <tr>
                     <td colSpan="6" className="no-data">
                       Нет контактов. Добавьте первый контакт.
                     </td>
                   </tr>
-                ) : (
-                  contacts.map((contact) => (
-                    <tr key={contact.id}>
-                      <td>{contact.full_name}</td>
-                      <td>{contact.position}</td>
-                      <td>{contact.phone}</td>
-                      <td>{contact.email}</td>
-                      <td>{contact.objects?.name || 'Офис'}</td>
-                      <td className="actions-cell">
-                        <button
-                          className="btn-icon btn-edit"
-                          onClick={() => handleEditContact(contact)}
-                          title="Редактировать"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          className="btn-icon btn-delete"
-                          onClick={() => handleDeleteContact(contact.id, contact.full_name)}
-                          title="Удалить"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  ))
                 )}
               </tbody>
             </table>
@@ -393,10 +378,10 @@ function ContactsPage() {
                     type="tel"
                     value={contactFormData.phone}
                     onChange={(e) =>
-                      setContactFormData({ ...contactFormData, phone: e.target.value })
+                      setContactFormData({ ...contactFormData, phone: formatPhone(e.target.value) })
                     }
                     required
-                    placeholder="+7 (999) 123-45-67"
+                    placeholder="+7(916)712-69-10"
                   />
                 </div>
 

@@ -26,6 +26,9 @@ function TendersPage({ department = 'construction' }) {
   const [showLetterModal, setShowLetterModal] = useState(false)
   const [generatedLetter, setGeneratedLetter] = useState('')
   const [letterCopied, setLetterCopied] = useState(false)
+  const [objectFilter, setObjectFilter] = useState('')
+  const [responsibleFilter, setResponsibleFilter] = useState('')
+  const [userProfiles, setUserProfiles] = useState([])
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
@@ -74,7 +77,7 @@ function TendersPage({ department = 'construction' }) {
       setLoading(true)
       const { data, error } = await supabase
         .from('tenders')
-        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name)')
+        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name)')
         .order('start_date', { ascending: false })
 
       if (error) throw error
@@ -120,6 +123,13 @@ function TendersPage({ department = 'construction' }) {
     }
   }
 
+  const ROLE_LABELS = {
+    admin: 'Администратор',
+    engineer: 'Инженер ОСП',
+    economist: 'Экономист ОСП',
+    lawyer: 'Юрист ОСП'
+  }
+
   const fetchResponsibleContacts = async () => {
     try {
       const { data, error } = await supabase
@@ -132,6 +142,12 @@ function TendersPage({ department = 'construction' }) {
     } catch (error) {
       console.error('Ошибка загрузки сотрудников:', error.message)
     }
+  }
+
+  // Найти имя ответственного по tender
+  const getResponsibleName = (tender) => {
+    if (tender.responsible_contact?.full_name) return tender.responsible_contact.full_name
+    return null
   }
 
   const fetchTenderCounterparties = async (tenderId) => {
@@ -497,18 +513,32 @@ ${employeeName}
     return <div className="loading">Загрузка...</div>
   }
 
-  // Фильтрация тендеров по активной вкладке
+  // Фильтрация тендеров по вкладке и объекту
   const filteredByTab = tenders.filter(tender => {
+    // Фильтр по вкладке
     if (activeTab === 'completed') {
-      return tender.status === 'Завершен'
+      if (tender.status !== 'Завершен') return false
     } else {
-      return tender.status !== 'Завершен'
+      if (tender.status === 'Завершен') return false
     }
+    // Фильтр по объекту
+    if (objectFilter && tender.object_id !== objectFilter) return false
+    // Фильтр по ответственному
+    if (responsibleFilter && tender.responsible_contact_id !== responsibleFilter) return false
+    return true
   })
 
   // Подсчет количества тендеров для каждой вкладки
   const activeTendersCount = tenders.filter(t => t.status !== 'Завершен').length
   const completedTendersCount = tenders.filter(t => t.status === 'Завершен').length
+
+  // Проверка просроченности
+  const today = new Date().toISOString().split('T')[0]
+  const isOverdue = (tender) => tender.end_date && tender.end_date < today && tender.status !== 'Завершен'
+
+  // Уникальные объекты из тендеров для фильтра
+  const tenderObjectIds = [...new Set(tenders.map(t => t.object_id).filter(Boolean))]
+  const tenderObjects = objects.filter(o => tenderObjectIds.includes(o.id))
 
   return (
     <div className="tenders-page">
@@ -541,6 +571,72 @@ ${employeeName}
         </button>
       </div>
 
+      {/* Фильтры */}
+      <div style={{ padding: '0.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Объект:</span>
+          <select
+            value={objectFilter}
+            onChange={(e) => setObjectFilter(e.target.value)}
+            style={{
+              padding: '0.375rem 1.5rem 0.375rem 0.5rem',
+              fontSize: '0.8125rem',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              appearance: 'none',
+              backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")",
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 0.375rem center'
+            }}
+          >
+            <option value="">Все объекты</option>
+            {tenderObjects.map(obj => (
+              <option key={obj.id} value={obj.id}>{obj.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Ответственный:</span>
+          <select
+            value={responsibleFilter}
+            onChange={(e) => setResponsibleFilter(e.target.value)}
+            style={{
+              padding: '0.375rem 1.5rem 0.375rem 0.5rem',
+              fontSize: '0.8125rem',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              appearance: 'none',
+              backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")",
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 0.375rem center'
+            }}
+          >
+            <option value="">Все ответственные</option>
+            {responsibleContacts
+              .filter(c => tenders.some(t => t.responsible_contact_id === c.id))
+              .map(c => (
+                <option key={c.id} value={c.id}>{c.full_name}</option>
+              ))}
+          </select>
+        </div>
+
+        {(objectFilter || responsibleFilter) && (
+          <button
+            onClick={() => { setObjectFilter(''); setResponsibleFilter('') }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
+          >
+            Сбросить все
+          </button>
+        )}
+      </div>
+
       <div className="table-container">
         <table className="data-table">
           <thead>
@@ -552,6 +648,7 @@ ${employeeName}
               {activeTab === 'completed' && <th>Победитель</th>}
               <th>Дата начала</th>
               <th>Дата окончания</th>
+              <th>Ответственный</th>
               <th>Тендерный пакет</th>
               <th className="actions-column">Действия</th>
             </tr>
@@ -559,7 +656,7 @@ ${employeeName}
           <tbody>
             {filteredByTab.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? 9 : 8} className="no-data">
+                <td colSpan={activeTab === 'completed' ? 10 : 9} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : 'Нет актуальных тендеров. Добавьте первый тендер.'}
@@ -568,7 +665,7 @@ ${employeeName}
             ) : (
               filteredByTab.map((tender) => (
                 <React.Fragment key={tender.id}>
-                  <tr>
+                  <tr className={isOverdue(tender) ? 'overdue-row' : ''}>
                     <td>
                       <button
                         onClick={() => handleToggleTender(tender.id)}
@@ -662,7 +759,11 @@ ${employeeName}
                       </td>
                     )}
                     <td>{formatDate(tender.start_date)}</td>
-                    <td>{formatDate(tender.end_date)}</td>
+                    <td style={isOverdue(tender) ? { color: '#dc2626', fontWeight: 600 } : {}}>
+                      {formatDate(tender.end_date)}
+                      {isOverdue(tender) && <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem' }} title="Срок истёк">!</span>}
+                    </td>
+                    <td>{getResponsibleName(tender) || <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>—</span>}</td>
                     <td>
                       {tender.tender_package_link ? (
                         <a
@@ -698,7 +799,7 @@ ${employeeName}
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? 9 : 8} style={{ padding: '1.5rem', backgroundColor: 'var(--card-bg)', borderTop: '2px solid var(--primary-color)' }}>
+                      <td colSpan={activeTab === 'completed' ? 10 : 9} style={{ padding: '1.5rem', backgroundColor: 'var(--card-bg)', borderTop: '2px solid var(--primary-color)' }}>
                         <div style={{ marginBottom: '1rem' }}>
                           <button
                             className="btn-primary"
@@ -994,7 +1095,7 @@ ${employeeName}
                     <option value="">Выберите сотрудника</option>
                     {responsibleContacts.map((contact) => (
                       <option key={contact.id} value={contact.id}>
-                        {contact.full_name} — {contact.position}
+                        {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
                       </option>
                     ))}
                   </select>

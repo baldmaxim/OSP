@@ -243,23 +243,28 @@
 }
 
 .compact-table th {
-  padding: 0.375rem 0.5rem;
+  padding: 0.3rem 0.375rem;
   text-align: left;
   font-weight: 600;
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-bottom: 1px solid var(--border-color);
   white-space: nowrap;
   user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .compact-table td {
-  padding: 0.375rem 0.5rem;
+  padding: 0.3rem 0.375rem;
   border-bottom: 1px solid var(--border-color);
   vertical-align: middle;
   color: var(--text-primary);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .compact-table tbody tr:last-child td {
@@ -267,16 +272,18 @@
 }
 
 /* Column sizing */
-.col-checkbox { width: 32px; text-align: center; }
-.col-name { min-width: 180px; }
-.col-worktype { max-width: 160px; }
-.col-inn { white-space: nowrap; }
-.col-contact-name { min-width: 140px; }
-.col-contact-phone { white-space: nowrap; }
-.col-contact-email { }
-.col-website { width: 60px; text-align: center; }
-.col-status { width: 90px; }
-.col-actions { width: 64px; text-align: center; }
+.compact-table { table-layout: fixed; }
+.col-checkbox { width: 28px; text-align: center; }
+.col-name { width: 16%; overflow: hidden; text-overflow: ellipsis; }
+.col-department { width: 8%; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; }
+.col-worktype { width: 10%; overflow: hidden; text-overflow: ellipsis; }
+.col-inn { width: 10%; font-size: 0.75rem; }
+.col-contact-name { width: 12%; overflow: hidden; text-overflow: ellipsis; }
+.col-contact-phone { width: 11%; font-size: 0.75rem; }
+.col-contact-email { width: 13%; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; }
+.col-website { width: 5%; text-align: center; }
+.col-status { width: 7%; }
+.col-actions { width: 5%; text-align: center; }
 
 /* Row states */
 .table-row {
@@ -367,8 +374,8 @@
 
 /* Status mini select */
 .status-select-mini {
-  padding: 0.125rem 1.25rem 0.125rem 0.375rem;
-  font-size: 0.75rem;
+  padding: 0.125rem 1rem 0.125rem 0.25rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   border: none;
   border-radius: 3px;
@@ -409,8 +416,8 @@
 }
 
 .btn-action {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -796,6 +803,22 @@
 .work-type-input-row {
   display: flex;
   gap: 0.375rem;
+}
+
+.work-type-input-row select {
+  flex: 1;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.work-type-input-row select:focus {
+  outline: none;
+  border-color: var(--primary-color);
 }
 
 .work-type-input-row input {
