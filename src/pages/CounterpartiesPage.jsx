@@ -505,6 +505,43 @@ function CounterpartiesPage() {
     fileInputRef.current?.click()
   }
 
+  const handleDownloadTemplate = () => {
+    const headers = [
+      'Наименование организации',
+      'Вид работ',
+      'ИНН',
+      'КПП',
+      'Юридический адрес',
+      'Фактический адрес',
+      'Ссылка на сайт',
+      'Статус',
+      'Примечание',
+      'ФИО контакта',
+      'Должность контакта',
+      'Телефон контакта',
+      'Email контакта'
+    ]
+
+    const exampleRows = [
+      ['ООО "Стройком"', 'Строительно-монтажные работы', '7728123456', '772801001', 'г. Москва, ул. Ленина, д. 1', 'г. Москва, ул. Ленина, д. 1', 'https://stroykom.ru', 'Действующий', '', 'Иванов Иван Иванович', 'Директор', '+7 (999) 123-45-67', 'ivanov@stroykom.ru'],
+      ['ООО "Стройком"', 'Строительно-монтажные работы', '7728123456', '772801001', '', '', '', '', '', 'Сидоров Сергей Петрович', 'Главный инженер', '+7 (999) 765-43-21', 'sidorov@stroykom.ru'],
+      ['ЗАО "Ремонт+"', 'Отделочные работы', '7729654321', '', 'г. Москва, ул. Мира, д. 5', '', '', 'Действующий', 'Надёжный подрядчик', 'Петров Пётр Петрович', 'Менеджер', '+7 (999) 111-22-33', 'petrov@remont.ru'],
+    ]
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...exampleRows])
+
+    // Ширина столбцов
+    ws['!cols'] = [
+      { wch: 30 }, { wch: 30 }, { wch: 14 }, { wch: 12 },
+      { wch: 35 }, { wch: 35 }, { wch: 25 }, { wch: 15 },
+      { wch: 25 }, { wch: 28 }, { wch: 22 }, { wch: 22 }, { wch: 25 }
+    ]
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Контрагенты')
+    XLSX.writeFile(wb, 'Шаблон_импорта_контрагентов.xlsx')
+  }
+
   const handleFileImport = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -1831,21 +1868,31 @@ function CounterpartiesPage() {
               </div>
             </div>
 
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
               <button
                 type="button"
                 className="btn-secondary"
-                onClick={() => setShowImportInstructionsModal(false)}
+                onClick={handleDownloadTemplate}
+                style={{ marginRight: 'auto' }}
               >
-                Отмена
+                Скачать шаблон (.xlsx)
               </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleProceedWithImport}
-              >
-                Выбрать файл
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setShowImportInstructionsModal(false)}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleProceedWithImport}
+                >
+                  Выбрать файл
+                </button>
+              </div>
             </div>
           </div>
         </div>
