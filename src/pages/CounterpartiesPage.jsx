@@ -61,6 +61,17 @@ function CounterpartiesPage() {
     fetchRelations()
   }, [])
 
+  // Блокируем скролл body при открытой модалке
+  const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showRelationModal
+  useEffect(() => {
+    if (anyModalOpen) {
+      document.body.classList.add('modal-open')
+    } else {
+      document.body.classList.remove('modal-open')
+    }
+    return () => document.body.classList.remove('modal-open')
+  }, [anyModalOpen])
+
   const fetchCounterparties = async () => {
     try {
       setLoading(true)
@@ -514,6 +525,7 @@ function CounterpartiesPage() {
   const handleDownloadTemplate = () => {
     const headers = [
       'Наименование организации',
+      'Категория работ',
       'Вид работ',
       'ИНН',
       'КПП',
@@ -529,16 +541,16 @@ function CounterpartiesPage() {
     ]
 
     const exampleRows = [
-      ['ООО "Стройком"', 'Строительно-монтажные работы', '7728123456', '772801001', 'г. Москва, ул. Ленина, д. 1', 'г. Москва, ул. Ленина, д. 1', 'https://stroykom.ru', 'Действующий', '', 'Иванов Иван Иванович', 'Директор', '+7 (999) 123-45-67', 'ivanov@stroykom.ru'],
-      ['ООО "Стройком"', 'Строительно-монтажные работы', '7728123456', '772801001', '', '', '', '', '', 'Сидоров Сергей Петрович', 'Главный инженер', '+7 (999) 765-43-21', 'sidorov@stroykom.ru'],
-      ['ЗАО "Ремонт+"', 'Отделочные работы', '7729654321', '', 'г. Москва, ул. Мира, д. 5', '', '', 'Действующий', 'Надёжный подрядчик', 'Петров Пётр Петрович', 'Менеджер', '+7 (999) 111-22-33', 'petrov@remont.ru'],
+      ['ООО "Стройком"', 'Основное строительство', 'Строительно-монтажные работы', '7728123456', '772801001', 'г. Москва, ул. Ленина, д. 1', 'г. Москва, ул. Ленина, д. 1', 'https://stroykom.ru', 'Действующий', '', 'Иванов Иван Иванович', 'Директор', '+7(999)123-45-67', 'ivanov@stroykom.ru'],
+      ['ООО "Стройком"', '', '', '7728123456', '772801001', '', '', '', '', '', 'Сидоров Сергей Петрович', 'Главный инженер', '+7(999)765-43-21', 'sidorov@stroykom.ru'],
+      ['ЗАО "Ремонт+"', 'Основное строительство, Гарантийный отдел', 'Отделочные работы', '7729654321', '', 'г. Москва, ул. Мира, д. 5', '', '', 'Действующий', 'Надёжный подрядчик', 'Петров Пётр Петрович', 'Менеджер', '+7(999)111-22-33', 'petrov@remont.ru'],
     ]
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...exampleRows])
 
     // Ширина столбцов
     ws['!cols'] = [
-      { wch: 30 }, { wch: 30 }, { wch: 14 }, { wch: 12 },
+      { wch: 30 }, { wch: 35 }, { wch: 30 }, { wch: 14 }, { wch: 12 },
       { wch: 35 }, { wch: 35 }, { wch: 25 }, { wch: 15 },
       { wch: 25 }, { wch: 28 }, { wch: 22 }, { wch: 22 }, { wch: 25 }
     ]
@@ -682,6 +694,7 @@ function CounterpartiesPage() {
 
           counterpartiesMap.set(counterpartyKey, {
             name: truncateString(counterpartyName, 255),
+            department: row['Категория работ'] ? String(row['Категория работ']).trim() : null,
             work_type: truncateString(row['Вид работ'] ? String(row['Вид работ']) : null, 255),
             inn: truncateString(counterpartyInn || null, 12),
             kpp: truncateString(row['КПП'] ? String(row['КПП']) : null, 9),
@@ -1865,8 +1878,8 @@ function CounterpartiesPage() {
       )}
 
       {showImportInstructionsModal && (
-        <div className="modal-overlay" onClick={() => setShowImportInstructionsModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
+        <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowImportInstructionsModal(false) }}>
+          <div className="modal" style={{ maxWidth: '800px' }}>
             <div className="modal-header">
               <h3>Инструкция по импорту контрагентов из Excel</h3>
               <button
@@ -1913,6 +1926,11 @@ function CounterpartiesPage() {
                         <span style={{ color: '#b91c1c', fontWeight: '600' }}>Да</span>
                       </td>
                       <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>ООО "Стройком"</td>
+                    </tr>
+                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Категория работ</td>
+                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
+                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>Основное строительство, Гарантийный отдел</td>
                     </tr>
                     <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
                       <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Вид работ</td>
