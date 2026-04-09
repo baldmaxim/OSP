@@ -923,7 +923,7 @@ function CounterpartiesPage() {
               value={departmentFilter}
               onChange={(e) => setDepartmentFilter(e.target.value)}
             >
-              <option value="">Все отделы</option>
+              <option value="">Все категории</option>
               <option value="Основное строительство">Основное строительство</option>
               <option value="Гарантийный отдел">Гарантийный отдел</option>
             </select>
@@ -985,7 +985,7 @@ function CounterpartiesPage() {
                       />
                     </th>
                     <th className="col-name">Наименование</th>
-                    <th className="col-department">Отдел</th>
+                    <th className="col-department">Категория работ</th>
                     <th className="col-worktype">Вид работ</th>
                     <th className="col-inn">ИНН / КПП</th>
                     <th className="col-contact-name">Контакт</th>
@@ -1022,10 +1022,28 @@ function CounterpartiesPage() {
                             )}
                           </td>
                           <td className="col-department">
-                            {counterparty.department || <span className="empty-cell">--</span>}
+                            {counterparty.department ? (
+                              <div className="department-list">
+                                {counterparty.department.split(',').map((d, i) => {
+                                  const dept = d.trim()
+                                  const isConstruction = dept === 'Основное строительство'
+                                  return (
+                                    <span key={i} className={`department-tag ${isConstruction ? 'construction' : 'warranty'}`}>
+                                      {isConstruction ? 'ОС' : 'ГО'}
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                            ) : <span className="empty-cell">--</span>}
                           </td>
                           <td className="col-worktype">
-                            {counterparty.work_type || <span className="empty-cell">--</span>}
+                            {counterparty.work_type ? (
+                              <div className="worktype-list">
+                                {counterparty.work_type.split(',').map((wt, i) => (
+                                  <span key={i} className="worktype-tag">{wt.trim()}</span>
+                                ))}
+                              </div>
+                            ) : <span className="empty-cell">--</span>}
                           </td>
                           <td className="col-inn">
                             <span className="inn-value">{counterparty.inn || '--'}</span>
@@ -1312,7 +1330,7 @@ function CounterpartiesPage() {
                 </div>
 
                 <div className="form-group full-width">
-                  <label>Отдел</label>
+                  <label>Категория работ</label>
                   <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                     {['Основное строительство', 'Гарантийный отдел'].map(dept => {
                       const depts = (counterpartyFormData.department || '').split(',').map(d => d.trim()).filter(d => d)

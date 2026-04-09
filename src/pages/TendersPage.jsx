@@ -19,6 +19,7 @@ function TendersPage({ department = 'construction' }) {
   const [selectedTenderForCounterparty, setSelectedTenderForCounterparty] = useState(null)
   const [counterpartySearchQuery, setCounterpartySearchQuery] = useState('')
   const [counterpartyWorkTypeFilter, setCounterpartyWorkTypeFilter] = useState('')
+  const [counterpartyDepartmentFilter, setCounterpartyDepartmentFilter] = useState('')
   const [selectedCounterpartyIds, setSelectedCounterpartyIds] = useState([])
   const [showWinnerModal, setShowWinnerModal] = useState(false)
   const [tenderForWinnerSelection, setTenderForWinnerSelection] = useState(null)
@@ -26,9 +27,33 @@ function TendersPage({ department = 'construction' }) {
   const [showLetterModal, setShowLetterModal] = useState(false)
   const [generatedLetter, setGeneratedLetter] = useState('')
   const [letterCopied, setLetterCopied] = useState(false)
+
+  const DEFAULT_LETTER_TEMPLATE = `Уважаемые руководители!
+
+ООО «СУ-10» уведомляет о проведении тендера на выбор подрядчика на {work_description} для объекта: «{object_name}».
+
+В связи с этим, мы приглашаем вашу компанию принять участие в тендере и предоставить свои предложения для рассмотрения.
+Срок подачи заявок на участие в тендере: {start_date}-{end_date} гг.
+
+Для получения дополнительных разъяснений и уточнений вы можете связаться с нами по телефону {employee_phone} или отправить запрос на электронную почту {employee_email}, в теле письма указать по какому тендеру и объекту обращаетесь.
+
+Мы рассчитываем на плодотворное сотрудничество и надеемся на участие вашей компании в тендере.
+
+Приложение: ссылка на тендерную документацию:
+{tender_package_link}
+
+С уважением,
+{employee_position} ООО "СУ-10"
+{employee_name}
+Телефон для связи: {employee_phone}
+Почта: {employee_email}`
+
+  const [letterTemplate, setLetterTemplate] = useState(() => {
+    return localStorage.getItem('letterTemplate') || DEFAULT_LETTER_TEMPLATE
+  })
+  const [templateSaved, setTemplateSaved] = useState(false)
   const [objectFilter, setObjectFilter] = useState('')
   const [responsibleFilter, setResponsibleFilter] = useState('')
-  const [userProfiles, setUserProfiles] = useState([])
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
@@ -121,13 +146,6 @@ function TendersPage({ department = 'construction' }) {
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error.message)
     }
-  }
-
-  const ROLE_LABELS = {
-    admin: 'Администратор',
-    engineer: 'Инженер ОСП',
-    economist: 'Экономист ОСП',
-    lawyer: 'Юрист ОСП'
   }
 
   const fetchResponsibleContacts = async () => {
@@ -460,33 +478,36 @@ function TendersPage({ department = 'construction' }) {
   }
 
   const generateRequestLetter = (tenderData, objectName, employee) => {
-    const startDate = formatDateForLetter(tenderData.start_date)
-    const endDate = formatDateForLetter(tenderData.end_date)
+    const replacements = {
+      '{work_description}': tenderData.work_description || '[Описание работ]',
+      '{object_name}': objectName || '[Объект не указан]',
+      '{start_date}': formatDateForLetter(tenderData.start_date),
+      '{end_date}': formatDateForLetter(tenderData.end_date),
+      '{employee_name}': employee?.full_name || '[ФИО не указано]',
+      '{employee_position}': employee?.position || 'Сотрудник отдела сопровождения подрядчиков',
+      '{employee_phone}': employee?.phone || '[Телефон не указан]',
+      '{employee_email}': employee?.email || '[Email не указан]',
+      '{tender_package_link}': tenderData.tender_package_link || '[Ссылка не указана]'
+    }
 
-    const employeeName = employee?.full_name || '[ФИО не указано]'
-    const employeePosition = employee?.position || 'Сотрудник отдела сопровождения подрядчиков'
-    const employeePhone = employee?.phone || '[Телефон не указан]'
-    const employeeEmail = employee?.email || '[Email не указан]'
+    let result = letterTemplate
+    for (const [key, value] of Object.entries(replacements)) {
+      result = result.replaceAll(key, value)
+    }
+    return result
+  }
 
-    return `Уважаемые руководители!
+  const handleSaveTemplate = () => {
+    localStorage.setItem('letterTemplate', letterTemplate)
+    setTemplateSaved(true)
+    setTimeout(() => setTemplateSaved(false), 2000)
+  }
 
-ООО «СУ-10» уведомляет о проведении тендера на выбор подрядчика на ${tenderData.work_description} для объекта: «${objectName}».
-
-В связи с этим, мы приглашаем вашу компанию принять участие в тендере и предоставить свои предложения для рассмотрения.
-Срок подачи заявок на участие в тендере: ${startDate}-${endDate} гг.🔺🔺🔺
-
-Для получения дополнительных разъяснений и уточнений вы можете связаться с нами по телефону ${employeePhone} или отправить запрос на электронную почту ${employeeEmail}, в теле письма указать по какому тендеру и объекту обращаетесь.
-
-Мы рассчитываем на плодотворное сотрудничество и надеемся на участие вашей компании в тендере.
-
-Приложение: ссылка на тендерную документацию:
-${tenderData.tender_package_link || '[Ссылка не указана]'}
-
-С уважением,
-${employeePosition} ООО "СУ-10"
-${employeeName}
-Телефон для связи: ${employeePhone}
-Почта: ${employeeEmail}`
+  const handleResetTemplate = () => {
+    if (window.confirm('Вернуть шаблон по умолчанию?')) {
+      setLetterTemplate(DEFAULT_LETTER_TEMPLATE)
+      localStorage.setItem('letterTemplate', DEFAULT_LETTER_TEMPLATE)
+    }
   }
 
   const handleCopyLetter = async () => {
@@ -569,9 +590,16 @@ ${employeeName}
             <span className="tender-tab-count completed">{completedTendersCount}</span>
           )}
         </button>
+        <button
+          className={`tender-tab ${activeTab === 'template' ? 'active' : ''}`}
+          onClick={() => setActiveTab('template')}
+        >
+          Шаблон письма
+        </button>
       </div>
 
-      {/* Фильтры */}
+      {/* Фильтры и таблица (скрываем на вкладке шаблона) */}
+      {activeTab !== 'template' && (<>
       <div style={{ padding: '0.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Объект:</span>
@@ -994,6 +1022,78 @@ ${employeeName}
           </tbody>
         </table>
       </div>
+      </>)}
+
+      {/* Вкладка шаблона письма */}
+      {activeTab === 'template' && (
+        <div style={{ padding: '1.5rem' }}>
+          <p style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
+            Редактируйте шаблон письма для запроса КП. Используйте переменные в фигурных скобках — они будут заменены реальными данными при создании тендера:
+          </p>
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '1rem'
+          }}>
+            {[
+              ['{work_description}', 'Описание работ'],
+              ['{object_name}', 'Название объекта'],
+              ['{start_date}', 'Дата начала'],
+              ['{end_date}', 'Дата окончания'],
+              ['{employee_name}', 'ФИО сотрудника'],
+              ['{employee_position}', 'Должность'],
+              ['{employee_phone}', 'Телефон сотрудника'],
+              ['{employee_email}', 'Email сотрудника'],
+              ['{tender_package_link}', 'Ссылка на тендерный пакет'],
+            ].map(([variable, label]) => (
+              <span
+                key={variable}
+                title={label}
+                onClick={() => navigator.clipboard.writeText(variable)}
+                style={{
+                  padding: '0.2rem 0.5rem',
+                  fontSize: '0.75rem',
+                  fontFamily: 'Consolas, Monaco, monospace',
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '3px',
+                  color: 'var(--primary-color)',
+                  cursor: 'pointer',
+                }}
+              >
+                {variable}
+              </span>
+            ))}
+          </div>
+          <textarea
+            value={letterTemplate}
+            onChange={(e) => setLetterTemplate(e.target.value)}
+            style={{
+              width: '100%',
+              minHeight: '400px',
+              padding: '1rem',
+              fontSize: '0.875rem',
+              lineHeight: '1.6',
+              fontFamily: 'inherit',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              background: 'var(--bg-tertiary)',
+              color: 'var(--text-primary)',
+              resize: 'vertical',
+              boxSizing: 'border-box',
+            }}
+          />
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
+            <button className="btn-primary" onClick={handleSaveTemplate}>
+              {templateSaved ? 'Сохранено!' : 'Сохранить шаблон'}
+            </button>
+            <button className="btn-secondary" onClick={handleResetTemplate}>
+              По умолчанию
+            </button>
+            {templateSaved && (
+              <span style={{ fontSize: '0.8125rem', color: '#16a34a' }}>Шаблон сохранён</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
@@ -1069,6 +1169,7 @@ ${employeeName}
                     name="start_date"
                     value={formData.start_date}
                     onChange={handleInputChange}
+                    min="2020-01-01"
                     required
                   />
                 </div>
@@ -1080,6 +1181,7 @@ ${employeeName}
                     name="end_date"
                     value={formData.end_date}
                     onChange={handleInputChange}
+                    min={formData.start_date || '2020-01-01'}
                     required
                   />
                 </div>
@@ -1137,29 +1239,33 @@ ${employeeName}
         const currentTenderCounterparties = tenderCounterparties[selectedTenderForCounterparty] || []
         const uniqueWorkTypes = [...new Set(
           counterparties
-            .map(c => c.work_type)
-            .filter(wt => wt && wt.trim() !== '')
-        )].sort()
+            .flatMap(c => (c.work_type || '').split(',').map(wt => wt.trim()))
+            .filter(wt => wt !== '')
+        )].sort((a, b) => a.localeCompare(b, 'ru'))
 
         const availableCounterparties = counterparties.filter(cp => {
-          // Исключаем уже добавленных
-          if (currentTenderCounterparties.some(tc => tc.counterparty_id === cp.id)) {
-            return false
+          if (currentTenderCounterparties.some(tc => tc.counterparty_id === cp.id)) return false
+
+          // Фильтр по категории работ
+          if (counterpartyDepartmentFilter) {
+            const depts = (cp.department || '').split(',').map(d => d.trim())
+            if (!depts.includes(counterpartyDepartmentFilter)) return false
           }
 
           // Фильтр по виду работ
-          if (counterpartyWorkTypeFilter && cp.work_type !== counterpartyWorkTypeFilter) {
-            return false
+          if (counterpartyWorkTypeFilter) {
+            const types = (cp.work_type || '').split(',').map(wt => wt.trim())
+            if (!types.includes(counterpartyWorkTypeFilter)) return false
           }
 
-          // Поиск по всем полям
+          // Поиск
           if (counterpartySearchQuery.trim()) {
             const query = counterpartySearchQuery.toLowerCase()
             return (
               (cp.name && cp.name.toLowerCase().includes(query)) ||
               (cp.work_type && cp.work_type.toLowerCase().includes(query)) ||
               (cp.inn && cp.inn.toLowerCase().includes(query)) ||
-              (cp.kpp && cp.kpp.toLowerCase().includes(query))
+              (cp.department && cp.department.toLowerCase().includes(query))
             )
           }
 
@@ -1171,6 +1277,7 @@ ${employeeName}
             setShowAddCounterpartyModal(false)
             setCounterpartySearchQuery('')
             setCounterpartyWorkTypeFilter('')
+            setCounterpartyDepartmentFilter('')
             setSelectedCounterpartyIds([])
           }}>
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '85vh' }}>
@@ -1209,32 +1316,53 @@ ${employeeName}
                     }}
                   />
 
-                  {uniqueWorkTypes.length > 0 && (
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <select
-                      value={counterpartyWorkTypeFilter}
-                      onChange={(e) => setCounterpartyWorkTypeFilter(e.target.value)}
+                      value={counterpartyDepartmentFilter}
+                      onChange={(e) => setCounterpartyDepartmentFilter(e.target.value)}
                       style={{
-                        padding: '0.5rem 1rem',
-                        fontSize: '0.9rem',
-                        fontWeight: '500',
-                        border: '2px solid var(--primary-color)',
-                        borderRadius: '6px',
-                        backgroundColor: counterpartyWorkTypeFilter ? 'var(--primary-color)' : '#ffffff',
-                        color: counterpartyWorkTypeFilter ? 'white' : '#000000',
+                        padding: '0.375rem 0.75rem',
+                        fontSize: '0.8125rem',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '4px',
+                        background: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
                         cursor: 'pointer',
-                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
                       }}
                     >
-                      <option value="" style={{ backgroundColor: '#ffffff', color: '#000000' }}>
-                        🔍 Все виды работ
-                      </option>
-                      {uniqueWorkTypes.map(workType => (
-                        <option key={workType} value={workType} style={{ backgroundColor: '#ffffff', color: '#000000' }}>
-                          {workType}
-                        </option>
-                      ))}
+                      <option value="">Все категории</option>
+                      <option value="Основное строительство">Основное строительство</option>
+                      <option value="Гарантийный отдел">Гарантийный отдел</option>
                     </select>
-                  )}
+
+                    {uniqueWorkTypes.length > 0 && (
+                      <select
+                        value={counterpartyWorkTypeFilter}
+                        onChange={(e) => setCounterpartyWorkTypeFilter(e.target.value)}
+                        style={{
+                          padding: '0.375rem 0.75rem',
+                          fontSize: '0.8125rem',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '4px',
+                          background: 'var(--bg-secondary)',
+                          color: 'var(--text-primary)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <option value="">Все виды работ</option>
+                        {uniqueWorkTypes.map(workType => (
+                          <option key={workType} value={workType}>{workType}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    {(counterpartyDepartmentFilter || counterpartyWorkTypeFilter) && (
+                      <button
+                        onClick={() => { setCounterpartyDepartmentFilter(''); setCounterpartyWorkTypeFilter('') }}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
+                      >Сбросить</button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Таблица контрагентов */}
@@ -1299,10 +1427,18 @@ ${employeeName}
                               position: 'sticky',
                               top: 0,
                               backgroundColor: 'var(--card-bg)',
-                              backdropFilter: 'blur(10px)',
                               zIndex: 11,
                               borderBottom: '2px solid var(--border-color)',
-                              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                              padding: '0.75rem',
+                              width: '80px',
+                              textAlign: 'center'
+                            }}>Категория</th>
+                            <th style={{
+                              position: 'sticky',
+                              top: 0,
+                              backgroundColor: 'var(--card-bg)',
+                              zIndex: 11,
+                              borderBottom: '2px solid var(--border-color)',
                               padding: '0.75rem'
                             }}>Вид работ</th>
                           </tr>
@@ -1335,8 +1471,45 @@ ${employeeName}
                                   style={{ cursor: 'pointer' }}
                                 />
                               </td>
-                              <td>{counterparty.name}</td>
-                              <td>{counterparty.work_type || '-'}</td>
+                              <td style={{ fontWeight: 500 }}>{counterparty.name}</td>
+                              <td style={{ textAlign: 'center' }}>
+                                {counterparty.department ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', alignItems: 'center' }}>
+                                    {counterparty.department.split(',').map((d, i) => {
+                                      const dept = d.trim()
+                                      const isCon = dept === 'Основное строительство'
+                                      return (
+                                        <span key={i} style={{
+                                          padding: '0.1rem 0.35rem',
+                                          fontSize: '0.6875rem',
+                                          fontWeight: 700,
+                                          borderRadius: '3px',
+                                          background: isCon ? 'rgba(37,99,235,0.12)' : 'rgba(234,88,12,0.12)',
+                                          color: isCon ? '#2563eb' : '#ea580c',
+                                          border: `1px solid ${isCon ? 'rgba(37,99,235,0.25)' : 'rgba(234,88,12,0.25)'}`,
+                                        }}>{isCon ? 'ОС' : 'ГО'}</span>
+                                      )
+                                    })}
+                                  </div>
+                                ) : '-'}
+                              </td>
+                              <td>
+                                {counterparty.work_type ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                    {counterparty.work_type.split(',').map((wt, i) => (
+                                      <span key={i} style={{
+                                        display: 'block',
+                                        padding: '0.1rem 0.35rem',
+                                        fontSize: '0.75rem',
+                                        background: 'var(--bg-tertiary)',
+                                        borderRadius: '3px',
+                                        borderLeft: '2px solid var(--primary-color)',
+                                        color: 'var(--text-secondary)',
+                                      }}>{wt.trim()}</span>
+                                    ))}
+                                  </div>
+                                ) : '-'}
+                              </td>
                             </tr>
                           ))}
                         </tbody>

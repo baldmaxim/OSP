@@ -251,10 +251,7 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-bottom: 1px solid var(--border-color);
-  white-space: nowrap;
   user-select: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .compact-table td {
@@ -275,12 +272,12 @@
 .compact-table { table-layout: fixed; }
 .col-checkbox { width: 28px; text-align: center; }
 .col-name { width: 16%; overflow: hidden; text-overflow: ellipsis; }
-.col-department { width: 8%; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; }
-.col-worktype { width: 10%; overflow: hidden; text-overflow: ellipsis; }
+.col-department { width: 6%; text-align: center; }
+.col-worktype { width: 13%; }
 .col-inn { width: 10%; font-size: 0.75rem; }
 .col-contact-name { width: 12%; overflow: hidden; text-overflow: ellipsis; }
 .col-contact-phone { width: 11%; font-size: 0.75rem; }
-.col-contact-email { width: 13%; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; }
+.col-contact-email { width: 11%; font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; }
 .col-website { width: 5%; text-align: center; }
 .col-status { width: 7%; }
 .col-actions { width: 5%; text-align: center; }
@@ -348,6 +345,67 @@
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.75rem;
   color: var(--text-tertiary);
+}
+
+/* Department tags */
+.department-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: center;
+}
+
+.department-tag {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  border-radius: 3px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.department-tag.construction {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+}
+
+.department-tag.warranty {
+  background: rgba(234, 88, 12, 0.12);
+  color: #ea580c;
+  border: 1px solid rgba(234, 88, 12, 0.25);
+}
+
+[data-theme='dark'] .department-tag.construction {
+  background: rgba(96, 165, 250, 0.15);
+  color: #93bbfd;
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+[data-theme='dark'] .department-tag.warranty {
+  background: rgba(251, 146, 60, 0.15);
+  color: #fdba74;
+  border-color: rgba(251, 146, 60, 0.3);
+}
+
+.worktype-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.worktype-tag {
+  display: block;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 2px solid var(--primary-color);
 }
 
 .empty-cell {
