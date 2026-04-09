@@ -1,8 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
+import Docxtemplater from 'docxtemplater'
+import PizZip from 'pizzip'
+import { saveAs } from 'file-saver'
 import '../components/ContractRegistry.css'
 
 function ContractRegistry() {
+  const navigate = useNavigate()
   // Состояние для выбора отдела и статуса
   const [department, setDepartment] = useState(null) // null = не выбран, 'construction' | 'warranty'
   const [status, setStatus] = useState('pending') // 'pending' | 'signed'
@@ -17,6 +22,12 @@ function ContractRegistry() {
   const [selectedTenderInfo, setSelectedTenderInfo] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState([])
   const [loadingTenderInfo, setLoadingTenderInfo] = useState(false)
+  const [showRequisitesModal, setShowRequisitesModal] = useState(false)
+  const [requisitesContract, setRequisitesContract] = useState(null)
+  const [requisitesCopied, setRequisitesCopied] = useState(false)
+  const [templateFile, setTemplateFile] = useState(null) // ArrayBuffer шаблона
+  const [templateName, setTemplateName] = useState(localStorage.getItem('contractTemplateName') || '')
+  const templateInputRef = useRef(null)
   const [formData, setFormData] = useState({
     contract_number: '',
     contract_date: '',
@@ -28,6 +39,7 @@ function ContractRegistry() {
     work_start_date: '',
     work_end_date: '',
     warranty_period: '',
+    document_link: '',
     status: 'pending',
   })
 
@@ -47,7 +59,7 @@ function ContractRegistry() {
       setLoading(true)
       const { data, error } = await supabase
         .from('contracts')
-        .select('*, objects(name, status), counterparties(name), tenders(work_description)')
+        .select('*, objects(name, status), counterparties(name, inn, kpp, legal_address), tenders(work_description)')
         .eq('status', status)
         .order('contract_date', { ascending: false })
 
@@ -94,6 +106,129 @@ function ContractRegistry() {
     }
   }
 
+  const formatContractDate = (dateStr) => {
+    if (!dateStr) return ''
+    return new Date(dateStr).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' })
+  }
+
+  const formatAmount = (amount) => {
+    if (!amount) return ''
+    return Number(amount).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
+  // Загрузка шаблона .docx
+  const handleTemplateUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setTemplateFile(ev.target.result)
+      setTemplateName(file.name)
+      localStorage.setItem('contractTemplateName', file.name)
+      // Сохраняем в localStorage как base64
+      const base64 = btoa(
+        new Uint8Array(ev.target.result).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      )
+      localStorage.setItem('contractTemplate', base64)
+    }
+    reader.readAsArrayBuffer(file)
+    e.target.value = ''
+  }
+
+  // Загрузить шаблон из localStorage при старте
+  useEffect(() => {
+    const saved = localStorage.getItem('contractTemplate')
+    if (saved) {
+      const binary = atob(saved)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      setTemplateFile(bytes.buffer)
+    }
+  }, [])
+
+  // Получить данные для подстановки
+  const getContractVariables = (contract) => {
+    const cp = contract.counterparties || {}
+    return {
+      contract_number: contract.contract_number || '',
+      contract_date: formatContractDate(contract.contract_date),
+      contract_date_raw: contract.contract_date || '',
+      counterparty_name: cp.name || '',
+      counterparty_inn: cp.inn || '',
+      counterparty_kpp: cp.kpp || '',
+      counterparty_address: cp.legal_address || '',
+      object_name: contract.objects?.name || '',
+      work_description: contract.tenders?.work_description || '',
+      contract_amount: formatAmount(contract.contract_amount),
+      contract_amount_raw: contract.contract_amount || '',
+      warranty_retention_percent: contract.warranty_retention_percent || '',
+      warranty_retention_period: contract.warranty_retention_period || '',
+      work_start_date: formatContractDate(contract.work_start_date),
+      work_end_date: formatContractDate(contract.work_end_date),
+      warranty_period: contract.warranty_period || '',
+    }
+  }
+
+  // Сформировать .docx из шаблона
+  const handleGenerateDocument = (contract) => {
+    if (!templateFile) {
+      alert('Сначала загрузите шаблон договора (.docx)')
+      return
+    }
+
+    try {
+      const zip = new PizZip(templateFile)
+      const doc = new Docxtemplater(zip, {
+        paragraphLoop: true,
+        linebreaks: true,
+        delimiters: { start: '{', end: '}' }
+      })
+
+      doc.render(getContractVariables(contract))
+
+      const output = doc.getZip().generate({
+        type: 'blob',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      })
+
+      const fileName = `Договор_${contract.contract_number || 'без_номера'}_${cp_short(contract)}.docx`
+      saveAs(output, fileName)
+    } catch (err) {
+      console.error('Ошибка генерации документа:', err)
+      alert('Ошибка при генерации документа: ' + (err.message || 'проверьте шаблон'))
+    }
+  }
+
+  const cp_short = (contract) => {
+    const name = contract.counterparties?.name || ''
+    return name.substring(0, 20).replace(/[^a-zA-Zа-яА-ЯёЁ0-9]/g, '_')
+  }
+
+  const handleShowRequisites = (contract) => {
+    setRequisitesContract(contract)
+    setShowRequisitesModal(true)
+    setRequisitesCopied(false)
+  }
+
+  // Список доступных переменных
+  const TEMPLATE_VARIABLES = [
+    ['{contract_number}', '№ договора'],
+    ['{contract_date}', 'Дата договора (текстом)'],
+    ['{counterparty_name}', 'Наименование контрагента'],
+    ['{counterparty_inn}', 'ИНН контрагента'],
+    ['{counterparty_kpp}', 'КПП контрагента'],
+    ['{counterparty_address}', 'Юридический адрес контрагента'],
+    ['{object_name}', 'Наименование объекта'],
+    ['{work_description}', 'Описание работ (из тендера)'],
+    ['{contract_amount}', 'Сумма договора'],
+    ['{warranty_retention_percent}', 'Гарантийное удержание (%)'],
+    ['{warranty_retention_period}', 'Срок гарантийного удержания'],
+    ['{work_start_date}', 'Начало работ'],
+    ['{work_end_date}', 'Окончание работ'],
+    ['{warranty_period}', 'Срок гарантии'],
+  ]
+
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
@@ -129,6 +264,7 @@ function ContractRegistry() {
         work_start_date: '',
         work_end_date: '',
         warranty_period: '',
+        document_link: '',
         status: status,
       })
       fetchContracts()
@@ -151,6 +287,7 @@ function ContractRegistry() {
       work_start_date: contract.work_start_date || '',
       work_end_date: contract.work_end_date || '',
       warranty_period: contract.warranty_period || '',
+      document_link: contract.document_link || '',
       status: contract.status || 'pending',
     })
     setShowModal(true)
@@ -185,6 +322,7 @@ function ContractRegistry() {
       work_start_date: '',
       work_end_date: '',
       warranty_period: '',
+      document_link: '',
       status: status,
     })
     setShowModal(true)
@@ -334,9 +472,27 @@ function ContractRegistry() {
           </button>
           <h2>Договоры — {departmentLabel}</h2>
         </div>
-        <button className="btn-primary" onClick={handleAddNew}>
-          + Добавить договор
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            onClick={() => templateInputRef.current?.click()}
+            style={{
+              padding: '0.375rem 0.75rem',
+              fontSize: '0.8125rem',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              background: 'transparent',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+            title="Загрузите .docx шаблон с переменными {contract_number}, {counterparty_name} и т.д."
+          >
+            {templateName ? `Шаблон: ${templateName}` : 'Загрузить шаблон .docx'}
+          </button>
+          <button className="btn-primary" onClick={handleAddNew}>
+            + Добавить договор
+          </button>
+        </div>
       </div>
 
       {/* Табы статуса */}
@@ -362,10 +518,12 @@ function ContractRegistry() {
         <table className="contracts-table">
           <thead>
             <tr>
-              <th style={{ width: '60px' }}>№ п/п</th>
+              <th style={{ width: '50px' }}>№ п/п</th>
+              <th>№ договора</th>
               <th>Наименование контрагента</th>
               <th>Объект</th>
-              <th>Наименование работ</th>
+              <th>Тендер</th>
+              <th>Документ</th>
               <th>Статус</th>
               <th className="actions-column">Действия</th>
             </tr>
@@ -373,7 +531,7 @@ function ContractRegistry() {
           <tbody>
             {contracts.length === 0 ? (
               <tr>
-                <td colSpan="6" className="no-data">
+                <td colSpan="8" className="no-data">
                   {status === 'pending'
                     ? 'Нет договоров на согласовании. Добавьте первый договор.'
                     : 'Нет заключенных договоров.'}
@@ -383,32 +541,74 @@ function ContractRegistry() {
               contracts.map((contract, index) => (
                 <tr key={contract.id}>
                   <td style={{ textAlign: 'center', fontWeight: '600' }}>{index + 1}</td>
+                  <td>
+                    <button
+                      onClick={() => navigate(`/contracts/${contract.id}`)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--primary-color)',
+                        cursor: 'pointer',
+                        padding: 0,
+                        fontSize: 'inherit',
+                        fontWeight: 600,
+                        textDecoration: 'underline',
+                      }}
+                      title="Открыть договор"
+                    >
+                      {contract.contract_number || '—'}
+                    </button>
+                  </td>
                   <td>{contract.counterparties?.name || '-'}</td>
                   <td>{contract.objects?.name || '-'}</td>
                   <td>
                     {contract.tender_id ? (
-                      <button
-                        onClick={() => handleViewTender(contract.tender_id)}
+                      <a
+                        href={`/tenders/${contract.tender_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         style={{
-                          background: 'none',
-                          border: 'none',
                           color: 'var(--primary-color)',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          padding: 0,
-                          fontSize: 'inherit',
                           textDecoration: 'underline',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem'
+                          fontSize: 'inherit',
                         }}
-                        title="Посмотреть информацию о тендере"
+                        title="Открыть тендер в новой вкладке"
                       >
                         {contract.tenders?.work_description || 'Тендер'}
-                      </button>
+                      </a>
                     ) : (
                       <span style={{ color: 'var(--text-tertiary)' }}>-</span>
                     )}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+                      {contract.document_link && (
+                        <a
+                          href={contract.document_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--primary-color)', textDecoration: 'underline', fontSize: '0.8125rem' }}
+                        >
+                          Открыть
+                        </a>
+                      )}
+                      <button
+                        onClick={() => handleGenerateDocument(contract)}
+                        style={{
+                          padding: '0.2rem 0.5rem',
+                          fontSize: '0.75rem',
+                          border: '1px solid var(--primary-color)',
+                          borderRadius: '3px',
+                          background: 'transparent',
+                          color: 'var(--primary-color)',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title="Сформировать договор из шаблона"
+                      >
+                        Скачать .docx
+                      </button>
+                    </div>
                   </td>
                   <td>
                     <select
@@ -589,6 +789,17 @@ function ContractRegistry() {
                     value={formData.warranty_period}
                     onChange={handleInputChange}
                     placeholder="Например: 24 месяца"
+                  />
+                </div>
+
+                <div className="form-group full-width">
+                  <label>Ссылка на документ (Google Drive)</label>
+                  <input
+                    type="url"
+                    name="document_link"
+                    value={formData.document_link}
+                    onChange={handleInputChange}
+                    placeholder="https://docs.google.com/document/d/..."
                   />
                 </div>
               </div>
@@ -864,6 +1075,14 @@ function ContractRegistry() {
           </div>
         </div>
       )}
+      {/* Скрытый input для загрузки шаблона */}
+      <input
+        ref={templateInputRef}
+        type="file"
+        accept=".docx"
+        onChange={handleTemplateUpload}
+        style={{ display: 'none' }}
+      />
     </div>
   )
 }

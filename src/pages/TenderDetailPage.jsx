@@ -447,6 +447,25 @@ function TenderDetailPage() {
     }
   }
 
+  const handleUpdateParticipantNotes = async (tenderCounterpartyId, notes) => {
+    try {
+      const { error } = await supabase
+        .from('tender_counterparties')
+        .update({ notes })
+        .eq('id', tenderCounterpartyId)
+
+      if (error) throw error
+
+      setTenderCounterparties(prev =>
+        prev.map(tc =>
+          tc.id === tenderCounterpartyId ? { ...tc, notes } : tc
+        )
+      )
+    } catch (error) {
+      console.error('Ошибка сохранения примечания:', error)
+    }
+  }
+
   const getDocumentIcon = (url) => {
     if (url.includes('drive.google.com')) return '📁'
     if (url.includes('docs.google.com/spreadsheets')) return '📊'
@@ -2144,68 +2163,124 @@ function TenderDetailPage() {
                 <p className="hint">Нажмите «Пригласить участников» чтобы добавить контрагентов</p>
               </div>
             ) : (
-              <div className="participants-grid">
-                {tenderCounterparties.map(tc => (
-                  <div key={tc.id} className={`participant-card ${tender.winner?.id === tc.counterparty_id ? 'winner' : ''}`}>
-                    {tender.winner?.id === tc.counterparty_id && (
-                      <div className="winner-badge">🏆 Победитель</div>
-                    )}
-                    <div className="participant-name">{tc.counterparties?.name}</div>
-                    {tc.counterparties?.work_type && (
-                      <div className="participant-work-type">{tc.counterparties.work_type}</div>
-                    )}
-                    {tc.counterparties?.inn && (
-                      <div className="participant-inn">ИНН: {tc.counterparties.inn}</div>
-                    )}
-                    <div className="participant-status-select">
-                      <select
-                        value={tc.status || 'request_sent'}
-                        onChange={(e) => handleUpdateParticipantStatus(tc.id, e.target.value)}
-                        style={{
-                          padding: '0.375rem 0.75rem',
-                          borderRadius: '6px',
-                          border: '1px solid var(--border-color)',
-                          background: 'var(--bg-secondary)',
-                          color: getCounterpartyStatusColor(tc.status || 'request_sent'),
-                          fontWeight: 600,
-                          fontSize: '0.875rem',
-                          cursor: 'pointer',
-                          width: '100%'
-                        }}
-                      >
-                        <option value="request_sent" style={{ color: '#6366f1' }}>Запрос отправлен</option>
-                        <option value="declined" style={{ color: '#b91c1c' }}>Отказ</option>
-                        <option value="proposal_provided" style={{ color: '#15803d' }}>КП предоставлено</option>
-                      </select>
-                    </div>
-                    {tc.counterparties?.counterparty_contacts?.length > 0 && (
-                      <div className="participant-contacts">
-                        {tc.counterparties.counterparty_contacts.map(contact => (
-                          <div key={contact.id} className="contact-item">
-                            <div className="contact-name">
-                              {contact.full_name}
-                              {contact.position && <span className="contact-position"> ({contact.position})</span>}
+              <div className="table-container">
+                <table className="data-table" style={{ fontSize: '0.8125rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px' }}>№</th>
+                      <th>Наименование контрагента</th>
+                      <th>Контакт</th>
+                      <th>Телефон</th>
+                      <th style={{ width: '190px' }}>Статус</th>
+                      <th style={{ minWidth: '350px', width: '35%' }}>Примечание</th>
+                      <th style={{ width: '80px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tenderCounterparties.map((tc, idx) => {
+                      const firstContact = tc.counterparties?.counterparty_contacts?.[0]
+                      const isWinner = tender.winner?.id === tc.counterparty_id
+                      return (
+                        <tr key={tc.id} style={isWinner ? { background: 'rgba(22, 163, 74, 0.08)' } : {}}>
+                          <td style={{ textAlign: 'center', fontWeight: 600, color: 'var(--text-tertiary)' }}>{idx + 1}</td>
+                          <td>
+                            <div style={{ fontWeight: 600 }}>
+                              {isWinner && <span title="Победитель" style={{ marginRight: '0.25rem' }}>🏆</span>}
+                              {tc.counterparties?.name}
                             </div>
-                            {contact.phone && (
-                              <a href={`tel:${contact.phone}`} className="contact-phone">{contact.phone}</a>
+                            {tc.counterparties?.work_type && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>{tc.counterparties.work_type}</div>
                             )}
-                            {contact.email && (
-                              <a href={`mailto:${contact.email}`} className="contact-email">{contact.email}</a>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="participant-actions">
-                      <button
-                        className="btn-secondary"
-                        onClick={() => handleUploadClick(tc.counterparty_id)}
-                      >
-                        📤 Загрузить КП
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                          </td>
+                          <td>
+                            {firstContact ? (
+                              <div>
+                                <div style={{ fontWeight: 500 }}>{firstContact.full_name}</div>
+                                {firstContact.position && <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{firstContact.position}</div>}
+                              </div>
+                            ) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                          </td>
+                          <td>
+                            {firstContact?.phone ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                                {firstContact.phone.split(';').map((ph, i) => (
+                                  ph.trim() && <a key={i} href={`tel:${ph.trim()}`} style={{ color: 'var(--primary-color)', textDecoration: 'none', fontSize: '0.8125rem' }}>{ph.trim()}</a>
+                                ))}
+                              </div>
+                            ) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                          </td>
+                          <td>
+                            <select
+                              value={tc.status || 'request_sent'}
+                              onChange={(e) => handleUpdateParticipantStatus(tc.id, e.target.value)}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '4px',
+                                border: '1px solid var(--border-color)',
+                                background: 'var(--bg-secondary)',
+                                color: getCounterpartyStatusColor(tc.status || 'request_sent'),
+                                fontWeight: 600,
+                                fontSize: '0.8125rem',
+                                cursor: 'pointer',
+                                width: '100%'
+                              }}
+                            >
+                              <option value="request_sent">Запрос отправлен</option>
+                              <option value="declined">Отказ</option>
+                              <option value="proposal_provided">КП предоставлено</option>
+                            </select>
+                          </td>
+                          <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
+                            <textarea
+                              value={tc.notes || ''}
+                              onChange={(e) => {
+                                setTenderCounterparties(prev =>
+                                  prev.map(item => item.id === tc.id ? { ...item, notes: e.target.value } : item)
+                                )
+                                // Авторасширение
+                                e.target.style.height = 'auto'
+                                e.target.style.height = e.target.scrollHeight + 'px'
+                              }}
+                              onBlur={(e) => handleUpdateParticipantNotes(tc.id, e.target.value)}
+                              ref={(el) => {
+                                // Авторасширение при первом рендере
+                                if (el && tc.notes) {
+                                  el.style.height = 'auto'
+                                  el.style.height = el.scrollHeight + 'px'
+                                }
+                              }}
+                              placeholder="Даты обзвонов, комментарии..."
+                              style={{
+                                width: '100%',
+                                minHeight: '60px',
+                                padding: '0.5rem',
+                                fontSize: '0.8125rem',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-primary)',
+                                resize: 'none',
+                                overflow: 'hidden',
+                                fontFamily: 'inherit',
+                                lineHeight: 1.5,
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <button
+                              className="btn-secondary"
+                              onClick={() => handleUploadClick(tc.counterparty_id)}
+                              style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', whiteSpace: 'nowrap' }}
+                            >
+                              Загрузить КП
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

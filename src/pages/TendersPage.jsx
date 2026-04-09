@@ -91,10 +91,13 @@ function TendersPage({ department = 'construction' }) {
   }
 
   useEffect(() => {
-    fetchTenders()
-    fetchObjects()
-    fetchCounterparties()
-    fetchResponsibleContacts()
+    // Загружаем всё параллельно
+    Promise.all([
+      fetchTenders(),
+      fetchObjects(),
+      fetchCounterparties(),
+      fetchResponsibleContacts()
+    ])
   }, [department])
 
   const fetchTenders = async () => {
@@ -148,15 +151,51 @@ function TendersPage({ department = 'construction' }) {
     }
   }
 
+  const ROLE_LABELS_MAP = {
+    admin: 'Администратор',
+    engineer: 'Инженер ОСП',
+    economist: 'Экономист ОСП',
+    lawyer: 'Юрист ОСП'
+  }
+
   const fetchResponsibleContacts = async () => {
     try {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('*')
-        .order('full_name', { ascending: true })
+      // Параллельная загрузка
+      const [contactsRes, profilesRes] = await Promise.all([
+        supabase.from('contacts').select('*').order('full_name', { ascending: true }),
+        supabase.from('user_roles').select('full_name, role, work_phone, work_email, email, is_approved').eq('is_approved', true)
+      ])
 
-      if (error) throw error
-      setResponsibleContacts(data || [])
+      if (contactsRes.error) throw contactsRes.error
+
+      const contacts = contactsRes.data || []
+      const profiles = profilesRes.data || []
+
+      // Синхронизируем: добавляем профили, которых нет в contacts
+      const contactNames = new Set(contacts.map(c => c.full_name?.toLowerCase()))
+      const missing = profiles.filter(
+        p => p.full_name && !contactNames.has(p.full_name.toLowerCase())
+      )
+
+      if (missing.length > 0) {
+        const toInsert = missing.map(p => ({
+          full_name: p.full_name,
+          position: ROLE_LABELS_MAP[p.role] || p.role,
+          phone: p.work_phone || '',
+          email: p.work_email || p.email || ''
+        }))
+
+        const { data: inserted } = await supabase.from('contacts').insert(toInsert).select()
+
+        if (inserted) {
+          setResponsibleContacts([...contacts, ...inserted].sort((a, b) =>
+            (a.full_name || '').localeCompare(b.full_name || '', 'ru')
+          ))
+          return
+        }
+      }
+
+      setResponsibleContacts(contacts)
     } catch (error) {
       console.error('Ошибка загрузки сотрудников:', error.message)
     }

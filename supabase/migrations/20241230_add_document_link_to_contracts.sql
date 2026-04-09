@@ -1,0 +1,2 @@
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS document_link TEXT;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS tender_id UUID REFERENCES tenders(id);

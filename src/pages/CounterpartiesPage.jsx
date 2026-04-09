@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import { formatPhone } from '../utils/phoneFormat'
@@ -814,15 +814,15 @@ function CounterpartiesPage() {
     }
   }
 
-  // Получить уникальные виды работ (разделяем по запятой)
-  const uniqueWorkTypes = [...new Set(
+  // Получить уникальные виды работ (мемоизация)
+  const uniqueWorkTypes = useMemo(() => [...new Set(
     counterparties
       .flatMap(c => (c.work_type || '').split(',').map(wt => wt.trim()))
       .filter(wt => wt !== '')
-  )].sort((a, b) => a.localeCompare(b, 'ru'))
+  )].sort((a, b) => a.localeCompare(b, 'ru')), [counterparties])
 
-  // Функция фильтрации контрагентов
-  const filteredCounterparties = counterparties.filter(counterparty => {
+  // Фильтрация контрагентов (мемоизация)
+  const filteredCounterparties = useMemo(() => counterparties.filter(counterparty => {
     // Фильтр по виду работ (проверяем каждый вид отдельно)
     if (workTypeFilter) {
       const types = (counterparty.work_type || '').split(',').map(wt => wt.trim())
@@ -866,7 +866,7 @@ function CounterpartiesPage() {
     if (a.status !== 'blacklist' && b.status === 'blacklist') return -1
     // Если статусы одинаковые, сортируем по имени
     return (a.name || '').localeCompare(b.name || '', 'ru')
-  })
+  }), [counterparties, workTypeFilter, departmentFilter, searchQuery])
 
   const blacklistCount = counterparties.filter(c => c.status === 'blacklist').length
 
@@ -977,6 +977,7 @@ function CounterpartiesPage() {
               <table className="compact-table">
                 <thead>
                   <tr>
+                    <th className="col-num">№</th>
                     <th className="col-checkbox">
                       <input
                         type="checkbox"
@@ -997,7 +998,7 @@ function CounterpartiesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCounterparties.map((counterparty) => {
+                  {filteredCounterparties.map((counterparty, cpIndex) => {
                     const isExpanded = expandedRows.has(counterparty.id)
                     const contactsCount = counterparty.counterparty_contacts?.length || 0
                     const firstContact = counterparty.counterparty_contacts?.[0]
@@ -1008,6 +1009,7 @@ function CounterpartiesPage() {
                           className={`table-row ${selectedCounterpartyIds.includes(counterparty.id) ? 'selected' : ''} ${counterparty.status === 'blacklist' ? 'blacklist' : ''} ${isExpanded ? 'expanded' : ''}`}
                           onClick={() => toggleRowExpand(counterparty.id)}
                         >
+                          <td className="col-num">{cpIndex + 1}</td>
                           <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
@@ -1104,7 +1106,7 @@ function CounterpartiesPage() {
 
                         {isExpanded && (
                           <tr className="expanded-row">
-                            <td colSpan="11">
+                            <td colSpan="12">
                               <div className="expanded-content">
                                 <div className="expanded-details">
                                   {counterparty.legal_address && (
