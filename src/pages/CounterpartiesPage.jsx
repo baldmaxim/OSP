@@ -9,6 +9,7 @@ function CounterpartiesPage() {
   const [counterparties, setCounterparties] = useState([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null) // { success: [], errors: [], totalParsed: 0 }
   const [showCounterpartyModal, setShowCounterpartyModal] = useState(false)
   const [showContactModal, setShowContactModal] = useState(false)
   const [showImportInstructionsModal, setShowImportInstructionsModal] = useState(false)
@@ -62,7 +63,7 @@ function CounterpartiesPage() {
   }, [])
 
   // Блокируем скролл body при открытой модалке
-  const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showRelationModal
+  const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showRelationModal || importResult
   useEffect(() => {
     if (anyModalOpen) {
       document.body.classList.add('modal-open')
@@ -683,24 +684,15 @@ function CounterpartiesPage() {
             console.log(`Строка ${rowNumber}: Ссылка на сайт отсутствует для "${counterpartyName}"`)
           }
 
-          // Обрезаем значения до максимальной длины, разрешенной в БД
-          const truncateString = (str, maxLength) => {
-            if (!str) return null
-            const trimmed = str.trim()
-            if (trimmed.length <= maxLength) return trimmed
-            console.warn(`Значение обрезано с ${trimmed.length} до ${maxLength} символов: ${trimmed.substring(0, 50)}...`)
-            return trimmed.substring(0, maxLength)
-          }
-
           counterpartiesMap.set(counterpartyKey, {
-            name: truncateString(counterpartyName, 255),
+            name: counterpartyName,
             department: row['Категория работ'] ? String(row['Категория работ']).trim() : null,
-            work_type: truncateString(row['Вид работ'] ? String(row['Вид работ']) : null, 255),
-            inn: truncateString(counterpartyInn || null, 12),
-            kpp: truncateString(row['КПП'] ? String(row['КПП']) : null, 9),
+            work_type: row['Вид работ'] ? String(row['Вид работ']).trim() : null,
+            inn: counterpartyInn || null,
+            kpp: row['КПП'] ? String(row['КПП']).trim() : null,
             legal_address: row['Юридический адрес'] ? String(row['Юридический адрес']).trim() : null,
             actual_address: row['Фактический адрес'] ? String(row['Фактический адрес']).trim() : null,
-            website: truncateString(websiteUrl, 500),
+            website: websiteUrl,
             status: row['Статус'] === 'Черный список' ? 'blacklist' : 'active',
             notes: row['Примечание'] ? String(row['Примечание']).trim() : null,
             contacts: []
@@ -740,88 +732,65 @@ function CounterpartiesPage() {
         }
       })
 
-      if (errors.length > 0) {
-        alert(`Обнаружены ошибки при импорте:\n\n${errors.join('\n')}\n\nКорректные данные будут импортированы.`)
-      }
-
       const counterpartiesToInsert = Array.from(counterpartiesMap.values())
 
       if (counterpartiesToInsert.length === 0) {
-        alert('Не найдено корректных данных для импорта.')
+        setImportResult({ success: [], contacts: 0, errors: [...errors, 'Не найдено корректных данных для импорта'], totalParsed: jsonData.length })
         setImporting(false)
         return
       }
 
-      // Сохраняем контрагентов
-      const counterpartiesToDB = counterpartiesToInsert.map(({ contacts, ...rest }) => rest)
-      const { data: insertedCounterparties, error: counterpartiesError } = await supabase
-        .from('counterparties')
-        .insert(counterpartiesToDB)
-        .select()
+      // Вставляем контрагентов по одному, чтобы отловить ошибки поштучно
+      const successList = []
+      const failList = [...errors]
 
-      if (counterpartiesError) throw counterpartiesError
+      for (const { contacts, ...cpData } of counterpartiesToInsert) {
+        try {
+          const { data: inserted, error: cpError } = await supabase
+            .from('counterparties')
+            .insert([cpData])
+            .select()
 
-      console.log('Импортировано контрагентов:', insertedCounterparties.length)
-      console.log('Данные контрагентов с контактами:', counterpartiesToInsert.map(c => ({
-        name: c.name,
-        inn: c.inn,
-        contactsCount: c.contacts.length
-      })))
+          if (cpError) throw cpError
 
-      // Сопоставляем контрагентов по имени и ИНН для надежности
-      const counterpartiesWithContacts = counterpartiesToInsert.filter(c => c.contacts && c.contacts.length > 0)
-      console.log('Контрагентов с контактами для импорта:', counterpartiesWithContacts.length)
+          successList.push(inserted[0])
 
-      // Собираем все контакты для массовой вставки
-      const allContactsToInsert = []
-
-      for (const counterpartyData of counterpartiesWithContacts) {
-        // Находим соответствующего вставленного контрагента по имени и ИНН
-        const insertedCounterparty = insertedCounterparties.find(
-          ic => ic.name === counterpartyData.name && ic.inn === counterpartyData.inn
-        )
-
-        if (insertedCounterparty) {
-          counterpartyData.contacts.forEach(contact => {
-            allContactsToInsert.push({
-              ...contact,
-              counterparty_id: insertedCounterparty.id
-            })
-          })
-        } else {
-          console.error('Не найден контрагент для контактов:', counterpartyData.name, counterpartyData.inn)
+          // Вставляем контакты
+          if (contacts.length > 0 && inserted[0]) {
+            const contactsToInsert = contacts.map(c => ({ ...c, counterparty_id: inserted[0].id }))
+            const { error: contactsErr } = await supabase
+              .from('counterparty_contacts')
+              .insert(contactsToInsert)
+            if (contactsErr) {
+              failList.push(`${cpData.name}: контакты не загружены — ${contactsErr.message}`)
+            }
+          }
+        } catch (err) {
+          failList.push(`${cpData.name}: ${err.message}`)
         }
       }
 
-      console.log('Всего контактов для вставки:', allContactsToInsert.length)
+      const totalContacts = successList.length > 0 ? counterpartiesToInsert
+        .filter(c => successList.some(s => s.name === c.name))
+        .reduce((sum, c) => sum + c.contacts.length, 0) : 0
 
-      // Вставляем все контакты одним запросом
-      let totalContactsInserted = 0
-      if (allContactsToInsert.length > 0) {
-        const { error: contactsError } = await supabase
-          .from('counterparty_contacts')
-          .insert(allContactsToInsert)
-
-        if (contactsError) {
-          console.error('Ошибка вставки контактов:', contactsError)
-          throw contactsError
-        }
-        totalContactsInserted = allContactsToInsert.length
-        console.log('Успешно вставлено контактов:', totalContactsInserted)
-      }
-
-      alert(
-        `Успешно импортировано:\n` +
-        `- Контрагентов: ${insertedCounterparties.length}\n` +
-        `- Контактов: ${totalContactsInserted}` +
-        `${errors.length > 0 ? `\n\nПропущено строк с ошибками: ${errors.length}` : ''}`
-      )
+      setImportResult({
+        success: successList.map(s => s.name),
+        contacts: totalContacts,
+        errors: failList,
+        totalParsed: counterpartiesToInsert.length
+      })
 
       fetchCounterparties()
       event.target.value = ''
     } catch (error) {
       console.error('Ошибка импорта:', error)
-      alert(`Ошибка при импорте файла: ${error.message}`)
+      setImportResult({
+        success: [],
+        contacts: 0,
+        errors: [`Критическая ошибка: ${error.message}`],
+        totalParsed: 0
+      })
     } finally {
       setImporting(false)
     }
@@ -2059,6 +2028,92 @@ function CounterpartiesPage() {
                 >
                   Выбрать файл
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Результат импорта */}
+      {importResult && (
+        <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setImportResult(null) }}>
+          <div className="modal" style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <h3>Результат импорта</h3>
+              <button className="modal-close" onClick={() => setImportResult(null)}>×</button>
+            </div>
+            <div style={{ padding: '1.5rem' }}>
+              {/* Успешно */}
+              <div style={{
+                display: 'flex', gap: '1.5rem', marginBottom: '1.25rem'
+              }}>
+                <div style={{
+                  flex: 1, padding: '1rem', background: 'rgba(22, 163, 74, 0.08)',
+                  borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(22, 163, 74, 0.2)'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#16a34a' }}>{importResult.success.length}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>Контрагентов загружено</div>
+                </div>
+                <div style={{
+                  flex: 1, padding: '1rem', background: 'rgba(37, 99, 235, 0.08)',
+                  borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(37, 99, 235, 0.2)'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 800, color: '#2563eb' }}>{importResult.contacts}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>Контактов загружено</div>
+                </div>
+                {importResult.errors.length > 0 && (
+                  <div style={{
+                    flex: 1, padding: '1rem', background: 'rgba(220, 38, 38, 0.08)',
+                    borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(220, 38, 38, 0.2)'
+                  }}>
+                    <div style={{ fontSize: '2rem', fontWeight: 800, color: '#dc2626' }}>{importResult.errors.length}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>Ошибок</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Список загруженных */}
+              {importResult.success.length > 0 && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                    Загруженные контрагенты:
+                  </div>
+                  <div style={{
+                    maxHeight: '150px', overflowY: 'auto', background: 'var(--bg-tertiary)',
+                    borderRadius: '6px', padding: '0.5rem 0.75rem', fontSize: '0.8125rem',
+                    border: '1px solid var(--border-color)'
+                  }}>
+                    {importResult.success.map((name, i) => (
+                      <div key={i} style={{ padding: '0.2rem 0', color: 'var(--text-secondary)', borderBottom: i < importResult.success.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                        {i + 1}. {name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Ошибки */}
+              {importResult.errors.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#dc2626', marginBottom: '0.5rem' }}>
+                    Не удалось импортировать:
+                  </div>
+                  <div style={{
+                    maxHeight: '150px', overflowY: 'auto', background: 'rgba(220, 38, 38, 0.05)',
+                    borderRadius: '6px', padding: '0.5rem 0.75rem', fontSize: '0.8125rem',
+                    border: '1px solid rgba(220, 38, 38, 0.15)'
+                  }}>
+                    {importResult.errors.map((err, i) => (
+                      <div key={i} style={{ padding: '0.25rem 0', color: 'var(--text-secondary)', borderBottom: i < importResult.errors.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                        {err}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
+                <button className="btn-primary" onClick={() => setImportResult(null)}>Закрыть</button>
               </div>
             </div>
           </div>
