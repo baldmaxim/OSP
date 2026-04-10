@@ -233,15 +233,24 @@ function ObjectsPage() {
   const handleObjectSubmit = async (e) => {
     e.preventDefault()
     try {
+      // Преобразуем пустые строки в null для числовых полей,
+      // иначе Postgres падает с "invalid input syntax for type numeric"
+      const payload = {
+        ...objectFormData,
+        latitude: objectFormData.latitude === '' ? null : objectFormData.latitude,
+        longitude: objectFormData.longitude === '' ? null : objectFormData.longitude,
+        cover_image_url: objectFormData.cover_image_url || null,
+      }
+
       if (editingObject) {
         const { error } = await supabase
           .from('objects')
-          .update(objectFormData)
+          .update(payload)
           .eq('id', editingObject.id)
 
         if (error) throw error
       } else {
-        const { error } = await supabase.from('objects').insert([objectFormData])
+        const { error } = await supabase.from('objects').insert([payload])
         if (error) throw error
       }
 

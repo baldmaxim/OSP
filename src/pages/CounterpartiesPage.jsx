@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import { formatPhone } from '../utils/phoneFormat'
+import { useRole } from '../contexts/RoleContext'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
 function CounterpartiesPage() {
+  const { isAdmin } = useRole()
   const [counterparties, setCounterparties] = useState([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -178,6 +180,13 @@ function CounterpartiesPage() {
         work_type: workTypes.join(', ')
       }
 
+      // Запоминаем ID старых контактов ДО любых изменений в БД,
+      // чтобы потом удалить их строго по id (а не по counterparty_id) —
+      // так мы не теряем данные при сбое вставки.
+      const oldContactIds = editingCounterparty
+        ? (editingCounterparty.counterparty_contacts || []).map(c => c.id).filter(Boolean)
+        : []
+
       if (editingCounterparty) {
         // Обновление существующего контрагента
         const { error } = await supabase
@@ -187,15 +196,6 @@ function CounterpartiesPage() {
 
         if (error) throw error
         counterpartyId = editingCounterparty.id
-
-        // Удаляем старые контакты и добавляем новые (упрощенный подход)
-        // В реальном приложении можно делать более умное обновление
-        const { error: deleteError } = await supabase
-          .from('counterparty_contacts')
-          .delete()
-          .eq('counterparty_id', counterpartyId)
-
-        if (deleteError) throw deleteError
       } else {
         // Создание нового контрагента
         const { data, error } = await supabase
@@ -207,9 +207,12 @@ function CounterpartiesPage() {
         counterpartyId = data[0].id
       }
 
-      // Добавляем контакты (убираем id чтобы Supabase сгенерировал новые)
+      // Шаг 1: вставляем новые контакты с клиентскими UUID.
+      // Это страхует от ситуации, когда DEFAULT gen_random_uuid() в прод-БД
+      // не срабатывает (и Postgres ругается "null value in column id").
       if (tempContacts.length > 0) {
-        const contactsToInsert = tempContacts.map(({ id, ...contact }) => ({
+        const contactsToInsert = tempContacts.map((contact) => ({
+          id: crypto.randomUUID(),
           full_name: contact.full_name,
           position: contact.position || '',
           phone: contact.phone || '',
@@ -222,6 +225,22 @@ function CounterpartiesPage() {
           .insert(contactsToInsert)
 
         if (contactsError) throw contactsError
+      }
+
+      // Шаг 2: только теперь удаляем старые контакты — по их собственным id,
+      // не по counterparty_id. Если этот шаг упадёт, у пользователя останутся
+      // и старые, и новые контакты (можно подчистить вручную), но данные точно
+      // не потеряются. Раньше же удаление шло первым, и при ошибке вставки
+      // все контакты исчезали.
+      if (oldContactIds.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('counterparty_contacts')
+          .delete()
+          .in('id', oldContactIds)
+
+        if (deleteError) {
+          console.error('Не удалось удалить старые контакты (новые сохранены):', deleteError)
+        }
       }
 
       setShowCounterpartyModal(false)
@@ -519,6 +538,117 @@ function CounterpartiesPage() {
 
   const handleImportClick = () => {
     setShowImportInstructionsModal(true)
+  }
+
+  const handleExportToExcel = () => {
+    if (counterparties.length === 0) {
+      alert('Нет данных для экспорта')
+      return
+    }
+
+    const headers = [
+      '№ п/п',
+      'Наименование организации',
+      'Категория работ',
+      'Вид работ',
+      'ИНН',
+      'КПП',
+      'Юридический адрес',
+      'Фактический адрес',
+      'Ссылка на сайт',
+      'Статус',
+      'Примечание',
+      'ФИО контакта',
+      'Должность контакта',
+      'Телефон контакта',
+      'Email контакта'
+    ]
+
+    const statusLabel = (status) => {
+      if (status === 'blacklist') return 'Черный список'
+      if (status === 'active') return 'Активный'
+      return status || ''
+    }
+
+    // Сортировка: активные сверху, ЧС снизу, по имени
+    const sorted = [...counterparties].sort((a, b) => {
+      if (a.status === 'blacklist' && b.status !== 'blacklist') return 1
+      if (a.status !== 'blacklist' && b.status === 'blacklist') return -1
+      return (a.name || '').localeCompare(b.name || '', 'ru')
+    })
+
+    const rows = []
+    sorted.forEach((cp, idx) => {
+      const num = idx + 1
+      const baseRow = [
+        num,
+        cp.name || '',
+        cp.department || '',
+        cp.work_type || '',
+        cp.inn || '',
+        cp.kpp || '',
+        cp.legal_address || '',
+        cp.actual_address || '',
+        cp.website || '',
+        statusLabel(cp.status),
+        cp.notes || '',
+      ]
+
+      const contacts = cp.counterparty_contacts || []
+      if (contacts.length === 0) {
+        rows.push([...baseRow, '', '', '', ''])
+      } else {
+        contacts.forEach((contact, ci) => {
+          // Для второго и последующих контактов оставляем основные поля пустыми,
+          // чтобы строки с контактами одной организации визуально группировались
+          const isFirst = ci === 0
+          rows.push([
+            isFirst ? num : '',
+            isFirst ? cp.name || '' : '',
+            isFirst ? cp.department || '' : '',
+            isFirst ? cp.work_type || '' : '',
+            isFirst ? cp.inn || '' : '',
+            isFirst ? cp.kpp || '' : '',
+            isFirst ? cp.legal_address || '' : '',
+            isFirst ? cp.actual_address || '' : '',
+            isFirst ? cp.website || '' : '',
+            isFirst ? statusLabel(cp.status) : '',
+            isFirst ? cp.notes || '' : '',
+            contact.full_name || '',
+            contact.position || '',
+            contact.phone ? formatPhone(contact.phone) : '',
+            contact.email || '',
+          ])
+        })
+      }
+    })
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+
+    // Ширина колонок для удобного чтения
+    ws['!cols'] = [
+      { wch: 6 },   // №
+      { wch: 35 },  // Наименование
+      { wch: 22 },  // Категория
+      { wch: 30 },  // Виды работ
+      { wch: 14 },  // ИНН
+      { wch: 12 },  // КПП
+      { wch: 38 },  // Юр. адрес
+      { wch: 38 },  // Факт. адрес
+      { wch: 24 },  // Сайт
+      { wch: 14 },  // Статус
+      { wch: 28 },  // Примечание
+      { wch: 28 },  // ФИО
+      { wch: 22 },  // Должность
+      { wch: 18 },  // Телефон
+      { wch: 26 },  // Email
+    ]
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Контрагенты')
+
+    const today = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(wb, `Контрагенты_${today}.xlsx`)
   }
 
   const handleProceedWithImport = () => {
@@ -919,6 +1049,16 @@ function CounterpartiesPage() {
             <button className="btn-import" onClick={handleImportClick} disabled={importing}>
               {importing ? '...' : 'Импорт'}
             </button>
+            {isAdmin && (
+              <button
+                className="btn-import"
+                onClick={handleExportToExcel}
+                disabled={counterparties.length === 0}
+                title="Скачать всех контрагентов в Excel"
+              >
+                📥 Экспорт
+              </button>
+            )}
           </div>
         </div>
 
