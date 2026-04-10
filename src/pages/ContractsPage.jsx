@@ -402,7 +402,8 @@ function ContractRegistry() {
     const options = {
       'request_sent': 'Запрос отправлен',
       'declined': 'Отказ',
-      'proposal_provided': 'КП предоставлено'
+      'proposal_provided': 'КП предоставлено',
+      'accepted_for_work': 'Принято в работу'
     }
     return options[status] || status
   }
@@ -411,7 +412,8 @@ function ContractRegistry() {
     const colors = {
       'request_sent': '#6366f1',
       'declined': '#b91c1c',
-      'proposal_provided': '#15803d'
+      'proposal_provided': '#15803d',
+      'accepted_for_work': '#4338ca'
     }
     return colors[status] || '#64748b'
   }

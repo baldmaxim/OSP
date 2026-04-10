@@ -68,12 +68,13 @@ function TendersPage({ department = 'construction' }) {
   const objectStatus = department === 'construction' ? 'main_construction' : 'warranty_service'
   const pageTitle = department === 'construction' ? 'Тендеры — Основное строительство' : 'Тендеры — Гарантийный отдел'
 
-  const statusOptions = ['Не начат', 'Идет тендерная процедура', 'Завершен']
+  const statusOptions = ['Не начат', 'Идет тендерная процедура', 'Завершен', 'Принято в работу']
 
   const counterpartyStatusOptions = [
     { value: 'request_sent', label: 'Запрос отправлен' },
-    { value: 'declined', label: 'Отказ' },
-    { value: 'proposal_provided', label: 'КП предоставлено' }
+    { value: 'accepted_for_work', label: 'Принято в работу' },
+    { value: 'proposal_provided', label: 'КП предоставлено' },
+    { value: 'declined', label: 'Отказ' }
   ]
 
   const getCounterpartyStatusLabel = (status) => {
@@ -85,7 +86,8 @@ function TendersPage({ department = 'construction' }) {
     const colors = {
       'request_sent': '#6b7a99',
       'declined': '#9c6b6b',
-      'proposal_provided': '#5a8a72'
+      'proposal_provided': '#5a8a72',
+      'accepted_for_work': '#4338ca'
     }
     return colors[status] || '#64748b'
   }
@@ -565,6 +567,7 @@ function TendersPage({ department = 'construction' }) {
       'Не начат': 'status-not-started',
       'Идет тендерная процедура': 'status-in-progress',
       'Завершен': 'status-completed',
+      'Принято в работу': 'status-accepted',
     }
     return statusClasses[status] || 'status-not-started'
   }
@@ -1192,7 +1195,7 @@ function TendersPage({ department = 'construction' }) {
                     required
                   >
                     {statusOptions
-                      .filter(status => editingTender || status !== 'Завершен')
+                      .filter(status => editingTender || (status !== 'Завершен' && status !== 'Принято в работу'))
                       .map((status) => (
                         <option key={status} value={status}>
                           {status}

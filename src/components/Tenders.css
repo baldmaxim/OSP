@@ -109,6 +109,12 @@
   border: 1px solid #c2d9cf;
 }
 
+.status-accepted {
+  background-color: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
 [data-theme='dark'] .status-not-started {
   background-color: #334155;
   color: #cbd5e1;
@@ -125,6 +131,12 @@
   background-color: #2a4038;
   color: #a8d4be;
   border-color: #4a7a62;
+}
+
+[data-theme='dark'] .status-accepted {
+  background-color: #312e81;
+  color: #c7d2fe;
+  border-color: #4338ca;
 }
 
 /* Options в select для темной темы */

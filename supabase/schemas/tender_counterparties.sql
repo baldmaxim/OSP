@@ -1,5 +1,5 @@
 -- ENUM для статуса участия контрагента в тендере
-CREATE TYPE tender_counterparty_status AS ENUM ('request_sent', 'declined', 'proposal_provided');
+CREATE TYPE tender_counterparty_status AS ENUM ('request_sent', 'declined', 'proposal_provided', 'accepted_for_work');
 
 -- Таблица связи между тендерами и контрагентами (многие-ко-многим)
 CREATE TABLE IF NOT EXISTS tender_counterparties (
@@ -37,6 +37,6 @@ COMMENT ON TABLE tender_counterparties IS 'Связь между тендера�
 COMMENT ON COLUMN tender_counterparties.id IS 'Уникальный идентификатор связи';
 COMMENT ON COLUMN tender_counterparties.tender_id IS 'Ссылка на тендер';
 COMMENT ON COLUMN tender_counterparties.counterparty_id IS 'Ссылка на контрагента';
-COMMENT ON COLUMN tender_counterparties.status IS 'Статус участия контрагента в тендере (Запрос отправлен, Отказ, КП предоставлено)';
+COMMENT ON COLUMN tender_counterparties.status IS 'Статус участия контрагента в тендере (Запрос отправлен, Отказ, КП предоставлено, Принято в работу)';
 COMMENT ON COLUMN tender_counterparties.invited_at IS 'Дата и время приглашения контрагента';
 COMMENT ON COLUMN tender_counterparties.notes IS 'Примечания к участию контрагента в тендере';

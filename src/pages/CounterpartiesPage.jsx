@@ -207,10 +207,13 @@ function CounterpartiesPage() {
         counterpartyId = data[0].id
       }
 
-      // Добавляем контакты
+      // Добавляем контакты (убираем id чтобы Supabase сгенерировал новые)
       if (tempContacts.length > 0) {
-        const contactsToInsert = tempContacts.map(contact => ({
-          ...contact,
+        const contactsToInsert = tempContacts.map(({ id, ...contact }) => ({
+          full_name: contact.full_name,
+          position: contact.position || '',
+          phone: contact.phone || '',
+          email: contact.email || '',
           counterparty_id: counterpartyId
         }))
 

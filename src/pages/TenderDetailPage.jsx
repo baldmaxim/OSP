@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
@@ -41,6 +41,8 @@ function TenderDetailPage() {
   const [selectedParticipants, setSelectedParticipants] = useState(new Set())
   const [loadingCounterparties, setLoadingCounterparties] = useState(false)
   const [participantSearchQuery, setParticipantSearchQuery] = useState('')
+  const [participantWorkTypeFilter, setParticipantWorkTypeFilter] = useState('')
+  const [participantDepartmentFilter, setParticipantDepartmentFilter] = useState('')
 
   // Полноэкранный режим для таблицы сравнения КП
   const [isComparisonFullscreen, setIsComparisonFullscreen] = useState(false)
@@ -353,17 +355,53 @@ function TenderDetailPage() {
     }
   }
 
+  // Уникальные виды работ доступных контрагентов (для фильтра в модале приглашения)
+  const uniqueAvailableWorkTypes = useMemo(() => [...new Set(
+    availableCounterparties
+      .flatMap(c => (c.work_type || '').split(',').map(wt => wt.trim()))
+      .filter(wt => wt !== '')
+  )].sort((a, b) => a.localeCompare(b, 'ru')), [availableCounterparties])
+
+  // Отфильтрованный список контрагентов для модала приглашения
+  const filteredAvailableCounterparties = useMemo(() => availableCounterparties.filter(cp => {
+    if (participantWorkTypeFilter) {
+      const types = (cp.work_type || '').split(',').map(wt => wt.trim())
+      if (!types.includes(participantWorkTypeFilter)) return false
+    }
+    if (participantDepartmentFilter) {
+      const depts = (cp.department || '').split(',').map(d => d.trim())
+      if (!depts.includes(participantDepartmentFilter)) return false
+    }
+    if (!participantSearchQuery.trim()) return true
+    const query = participantSearchQuery.toLowerCase().trim()
+    return (
+      (cp.name && cp.name.toLowerCase().includes(query)) ||
+      (cp.inn && cp.inn.toLowerCase().includes(query)) ||
+      (cp.work_type && cp.work_type.toLowerCase().includes(query))
+    )
+  }), [availableCounterparties, participantWorkTypeFilter, participantDepartmentFilter, participantSearchQuery])
+
+  const closeAddParticipantModal = () => {
+    setShowAddParticipantModal(false)
+    setParticipantSearchQuery('')
+    setParticipantWorkTypeFilter('')
+    setParticipantDepartmentFilter('')
+  }
+
   // Функции для добавления участников
   const handleOpenAddParticipantModal = async () => {
     setShowAddParticipantModal(true)
     setSelectedParticipants(new Set())
+    setParticipantSearchQuery('')
+    setParticipantWorkTypeFilter('')
+    setParticipantDepartmentFilter('')
     setLoadingCounterparties(true)
 
     try {
       // Загружаем всех активных контрагентов
       const { data, error } = await supabase
         .from('counterparties')
-        .select('id, name, work_type, inn')
+        .select('id, name, work_type, inn, department')
         .eq('status', 'active')
         .order('name')
 
@@ -1380,7 +1418,8 @@ function TenderDetailPage() {
     const classes = {
       'Не начат': 'status-not-started',
       'Идет тендерная процедура': 'status-in-progress',
-      'Завершен': 'status-completed'
+      'Завершен': 'status-completed',
+      'Принято в работу': 'status-accepted'
     }
     return classes[status] || ''
   }
@@ -1389,7 +1428,8 @@ function TenderDetailPage() {
     const colors = {
       'request_sent': '#6366f1',
       'declined': '#b91c1c',
-      'proposal_provided': '#15803d'
+      'proposal_provided': '#15803d',
+      'accepted_for_work': '#4338ca'
     }
     return colors[status] || '#64748b'
   }
@@ -2226,8 +2266,9 @@ function TenderDetailPage() {
                               }}
                             >
                               <option value="request_sent">Запрос отправлен</option>
-                              <option value="declined">Отказ</option>
+                              <option value="accepted_for_work">Принято в работу</option>
                               <option value="proposal_provided">КП предоставлено</option>
+                              <option value="declined">Отказ</option>
                             </select>
                           </td>
                           <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
@@ -2633,109 +2674,281 @@ function TenderDetailPage() {
 
       {/* Модал добавления участников */}
       {showAddParticipantModal && (
-        <div className="modal-overlay" onClick={() => { setShowAddParticipantModal(false); setParticipantSearchQuery(''); }}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+        <div className="modal-overlay" onClick={closeAddParticipantModal}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '85vh' }}>
             <div className="modal-header">
-              <h3>Пригласить участников</h3>
-              <button className="modal-close" onClick={() => { setShowAddParticipantModal(false); setParticipantSearchQuery(''); }}>×</button>
+              <h3>Выбрать контрагентов для приглашения в тендер</h3>
+              <button className="modal-close" onClick={closeAddParticipantModal}>×</button>
             </div>
-            <div className="modal-content">
+
+            <div style={{ padding: '1.5rem' }}>
               {loadingCounterparties ? (
-                <div className="empty-state">
-                  <p>Загрузка списка контрагентов...</p>
-                </div>
-              ) : availableCounterparties.length === 0 ? (
-                <div className="empty-state">
-                  <p>Нет доступных контрагентов</p>
-                  <p className="hint">Все активные контрагенты уже добавлены в тендер</p>
-                </div>
+                <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
+                  Загрузка списка контрагентов...
+                </p>
               ) : (
                 <>
+                  {/* Поиск и фильтры */}
                   <div style={{ marginBottom: '1rem' }}>
                     <input
                       type="text"
-                      placeholder="Поиск по названию, ИНН или виду работ..."
+                      placeholder="🔍 Поиск по названию, виду работ, ИНН..."
                       value={participantSearchQuery}
                       onChange={(e) => setParticipantSearchQuery(e.target.value)}
                       style={{
                         width: '100%',
                         padding: '0.75rem 1rem',
+                        fontSize: '1rem',
                         border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        background: 'var(--bg-secondary)',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.9375rem'
+                        borderRadius: '6px',
+                        backgroundColor: 'var(--bg-color)',
+                        color: 'var(--text-color)',
+                        marginBottom: '0.75rem'
                       }}
                     />
-                  </div>
-                  <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
-                    Выберите контрагентов для приглашения в тендер:
-                  </p>
-                  <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                    {availableCounterparties
-                      .filter(cp => {
-                        if (!participantSearchQuery.trim()) return true
-                        const query = participantSearchQuery.toLowerCase().trim()
-                        return (
-                          (cp.name && cp.name.toLowerCase().includes(query)) ||
-                          (cp.inn && cp.inn.toLowerCase().includes(query)) ||
-                          (cp.work_type && cp.work_type.toLowerCase().includes(query))
-                        )
-                      })
-                      .map(cp => (
-                      <div
-                        key={cp.id}
-                        onClick={() => handleToggleParticipant(cp.id)}
+
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <select
+                        value={participantDepartmentFilter}
+                        onChange={(e) => setParticipantDepartmentFilter(e.target.value)}
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem',
-                          padding: '0.75rem 1rem',
-                          marginBottom: '0.5rem',
-                          background: selectedParticipants.has(cp.id) ? 'rgba(8, 145, 178, 0.1)' : 'var(--bg-tertiary)',
-                          border: selectedParticipants.has(cp.id) ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
-                          borderRadius: '8px',
+                          padding: '0.375rem 0.75rem',
+                          fontSize: '0.8125rem',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '4px',
+                          background: 'var(--bg-secondary)',
+                          color: 'var(--text-primary)',
                           cursor: 'pointer',
-                          transition: 'all 0.2s'
                         }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={selectedParticipants.has(cp.id)}
-                          onChange={() => {}}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                        />
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{cp.name}</div>
-                          {cp.work_type && (
-                            <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{cp.work_type}</div>
-                          )}
-                          {cp.inn && (
-                            <div style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>ИНН: {cp.inn}</div>
+                        <option value="">Все категории</option>
+                        <option value="Основное строительство">Основное строительство</option>
+                        <option value="Гарантийный отдел">Гарантийный отдел</option>
+                      </select>
+
+                      {uniqueAvailableWorkTypes.length > 0 && (
+                        <select
+                          value={participantWorkTypeFilter}
+                          onChange={(e) => setParticipantWorkTypeFilter(e.target.value)}
+                          style={{
+                            padding: '0.375rem 0.75rem',
+                            fontSize: '0.8125rem',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px',
+                            background: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <option value="">Все виды работ</option>
+                          {uniqueAvailableWorkTypes.map(workType => (
+                            <option key={workType} value={workType}>{workType}</option>
+                          ))}
+                        </select>
+                      )}
+
+                      {(participantDepartmentFilter || participantWorkTypeFilter) && (
+                        <button
+                          onClick={() => { setParticipantDepartmentFilter(''); setParticipantWorkTypeFilter('') }}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
+                        >Сбросить</button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Таблица контрагентов */}
+                  {availableCounterparties.length === 0 ? (
+                    <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
+                      Все активные контрагенты уже добавлены в тендер
+                    </p>
+                  ) : filteredAvailableCounterparties.length === 0 ? (
+                    <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
+                      Контрагенты не найдены по заданным критериям
+                    </p>
+                  ) : (
+                    <>
+                      <div style={{
+                        maxHeight: '400px',
+                        overflowY: 'auto',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        marginBottom: '1rem'
+                      }}>
+                        <table className="data-table" style={{ margin: 0 }}>
+                          <thead>
+                            <tr>
+                              <th style={{
+                                width: '50px',
+                                position: 'sticky',
+                                top: 0,
+                                backgroundColor: 'var(--card-bg)',
+                                backdropFilter: 'blur(10px)',
+                                zIndex: 11,
+                                borderBottom: '2px solid var(--border-color)',
+                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                                padding: '0.75rem'
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  checked={filteredAvailableCounterparties.length > 0 && filteredAvailableCounterparties.every(cp => selectedParticipants.has(cp.id))}
+                                  onChange={(e) => {
+                                    setSelectedParticipants(prev => {
+                                      const newSet = new Set(prev)
+                                      if (e.target.checked) {
+                                        filteredAvailableCounterparties.forEach(cp => newSet.add(cp.id))
+                                      } else {
+                                        filteredAvailableCounterparties.forEach(cp => newSet.delete(cp.id))
+                                      }
+                                      return newSet
+                                    })
+                                  }}
+                                  style={{ cursor: 'pointer' }}
+                                />
+                              </th>
+                              <th style={{
+                                position: 'sticky',
+                                top: 0,
+                                backgroundColor: 'var(--card-bg)',
+                                backdropFilter: 'blur(10px)',
+                                zIndex: 11,
+                                borderBottom: '2px solid var(--border-color)',
+                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                                padding: '0.75rem'
+                              }}>Наименование</th>
+                              <th style={{
+                                position: 'sticky',
+                                top: 0,
+                                backgroundColor: 'var(--card-bg)',
+                                zIndex: 11,
+                                borderBottom: '2px solid var(--border-color)',
+                                padding: '0.75rem',
+                                width: '80px',
+                                textAlign: 'center'
+                              }}>Категория</th>
+                              <th style={{
+                                position: 'sticky',
+                                top: 0,
+                                backgroundColor: 'var(--card-bg)',
+                                zIndex: 11,
+                                borderBottom: '2px solid var(--border-color)',
+                                padding: '0.75rem'
+                              }}>Вид работ</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredAvailableCounterparties.map((cp) => (
+                              <tr
+                                key={cp.id}
+                                style={{
+                                  cursor: 'pointer',
+                                  backgroundColor: selectedParticipants.has(cp.id) ? 'var(--hover-bg, #f0f9ff)' : ''
+                                }}
+                                onClick={() => handleToggleParticipant(cp.id)}
+                                onMouseEnter={(e) => {
+                                  if (!selectedParticipants.has(cp.id)) {
+                                    e.currentTarget.style.backgroundColor = 'var(--hover-bg, #f9fafb)'
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!selectedParticipants.has(cp.id)) {
+                                    e.currentTarget.style.backgroundColor = ''
+                                  }
+                                }}
+                              >
+                                <td onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedParticipants.has(cp.id)}
+                                    onChange={() => handleToggleParticipant(cp.id)}
+                                    style={{ cursor: 'pointer' }}
+                                  />
+                                </td>
+                                <td style={{ fontWeight: 500 }}>{cp.name}</td>
+                                <td style={{ textAlign: 'center' }}>
+                                  {cp.department ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', alignItems: 'center' }}>
+                                      {cp.department.split(',').map((d, i) => {
+                                        const dept = d.trim()
+                                        const isCon = dept === 'Основное строительство'
+                                        return (
+                                          <span key={i} style={{
+                                            padding: '0.1rem 0.35rem',
+                                            fontSize: '0.6875rem',
+                                            fontWeight: 700,
+                                            borderRadius: '3px',
+                                            background: isCon ? 'rgba(37,99,235,0.12)' : 'rgba(234,88,12,0.12)',
+                                            color: isCon ? '#2563eb' : '#ea580c',
+                                            border: `1px solid ${isCon ? 'rgba(37,99,235,0.25)' : 'rgba(234,88,12,0.25)'}`,
+                                          }}>{isCon ? 'ОС' : 'ГО'}</span>
+                                        )
+                                      })}
+                                    </div>
+                                  ) : '-'}
+                                </td>
+                                <td>
+                                  {cp.work_type ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                      {cp.work_type.split(',').map((wt, i) => (
+                                        <span key={i} style={{
+                                          display: 'block',
+                                          padding: '0.1rem 0.35rem',
+                                          fontSize: '0.75rem',
+                                          background: 'var(--bg-tertiary)',
+                                          borderRadius: '3px',
+                                          borderLeft: '2px solid var(--primary-color)',
+                                          color: 'var(--text-secondary)',
+                                        }}>{wt.trim()}</span>
+                                      ))}
+                                    </div>
+                                  ) : '-'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                          {selectedParticipants.size > 0 && (
+                            <span>Выбрано: <strong>{selectedParticipants.size}</strong></span>
                           )}
                         </div>
+                        <button
+                          onClick={handleAddParticipants}
+                          disabled={selectedParticipants.size === 0}
+                          style={{
+                            backgroundColor: selectedParticipants.size > 0 ? 'var(--primary-color)' : '#9ca3af',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '0.75rem 2rem',
+                            cursor: selectedParticipants.size > 0 ? 'pointer' : 'not-allowed',
+                            fontSize: '1rem',
+                            fontWeight: '600',
+                            transition: 'all 0.2s',
+                            boxShadow: selectedParticipants.size > 0 ? '0 4px 6px rgba(0, 0, 0, 0.1)' : 'none'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (selectedParticipants.size > 0) {
+                              e.target.style.transform = 'scale(1.05)'
+                              e.target.style.boxShadow = '0 6px 8px rgba(0, 0, 0, 0.15)'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.transform = 'scale(1)'
+                            if (selectedParticipants.size > 0) {
+                              e.target.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)'
+                            }
+                          }}
+                        >
+                          ✓ Пригласить выбранных ({selectedParticipants.size})
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                  {selectedParticipants.size > 0 && (
-                    <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(8, 145, 178, 0.1)', borderRadius: '8px' }}>
-                      Выбрано: {selectedParticipants.size} контрагент(ов)
-                    </div>
+                    </>
                   )}
                 </>
               )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => { setShowAddParticipantModal(false); setParticipantSearchQuery(''); }}>
-                Отмена
-              </button>
-              <button
-                className="btn-primary"
-                onClick={handleAddParticipants}
-                disabled={selectedParticipants.size === 0}
-              >
-                Добавить выбранных
-              </button>
             </div>
           </div>
         </div>

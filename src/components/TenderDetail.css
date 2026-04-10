@@ -75,6 +75,11 @@
   color: #166534;
 }
 
+.status-badge.status-accepted {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
 /* Info Card */
 .tender-info-card {
   background: var(--bg-secondary);
@@ -1417,6 +1422,11 @@
 [data-theme='dark'] .status-badge.status-completed {
   background: #14532d;
   color: #bbf7d0;
+}
+
+[data-theme='dark'] .status-badge.status-accepted {
+  background: #312e81;
+  color: #c7d2fe;
 }
 
 [data-theme='dark'] .info-item.winner .info-value {

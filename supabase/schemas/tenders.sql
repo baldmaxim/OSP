@@ -57,7 +57,7 @@ COMMENT ON TABLE tenders IS 'Тендеры и тендерные процеду
 COMMENT ON COLUMN tenders.id IS 'Уникальный идентификатор тендера';
 COMMENT ON COLUMN tenders.object_id IS 'Ссылка на объект строительства';
 COMMENT ON COLUMN tenders.work_description IS 'Описание работ';
-COMMENT ON COLUMN tenders.status IS 'Статус тендера (Не начат, Идет тендерная процедура, Завершен)';
+COMMENT ON COLUMN tenders.status IS 'Статус тендера (Не начат, Идет тендерная процедура, Завершен, Принято в работу)';
 COMMENT ON COLUMN tenders.start_date IS 'Дата начала тендерной процедуры';
 COMMENT ON COLUMN tenders.end_date IS 'Дата окончания тендерной процедуры';
 COMMENT ON COLUMN tenders.tender_package_link IS 'Ссылка на тендерный пакет';

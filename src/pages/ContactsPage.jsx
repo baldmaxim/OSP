@@ -183,15 +183,17 @@ function ContactsPage() {
           <div className="table-container">
             <table className="data-table" style={{ tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '22%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '16%' }} />
+                <col style={{ width: '5%' }} />
                 <col style={{ width: '20%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '19%' }} />
                 <col style={{ width: '15%' }} />
                 <col style={{ width: '12%' }} />
               </colgroup>
               <thead>
                 <tr>
+                  <th style={{ textAlign: 'center' }}>№ п/п</th>
                   <th>ФИО</th>
                   <th>Должность</th>
                   <th>Телефон</th>
@@ -201,50 +203,59 @@ function ContactsPage() {
                 </tr>
               </thead>
               <tbody>
-                {/* Профили из user_roles, которых нет в contacts */}
-                {userProfiles
-                  .filter(p => p.full_name && !contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase()))
-                  .map((profile, idx) => (
-                  <tr key={`profile-${idx}`}>
-                    <td>{profile.full_name}</td>
-                    <td>{ROLE_LABELS[profile.role] || profile.role}</td>
-                    <td>{profile.work_phone || '—'}</td>
-                    <td style={{ wordBreak: 'break-all' }}>{profile.work_email || profile.email || '—'}</td>
-                    <td>Офис</td>
-                    <td className="actions-cell"></td>
-                  </tr>
-                ))}
-                {/* Контакты из таблицы contacts (без дублей) */}
-                {contacts.filter((contact, index, self) =>
-                  index === self.findIndex(c => c.full_name?.toLowerCase() === contact.full_name?.toLowerCase())
-                ).map((contact) => (
-                  <tr key={contact.id}>
-                    <td>{contact.full_name}</td>
-                    <td>{contact.position}</td>
-                    <td>{contact.phone}</td>
-                    <td>{contact.email}</td>
-                    <td>{contact.objects?.name || 'Офис'}</td>
-                    <td className="actions-cell">
-                      <button
-                        className="btn-icon btn-edit"
-                        onClick={() => handleEditContact(contact)}
-                        title="Редактировать"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        className="btn-icon btn-delete"
-                        onClick={() => handleDeleteContact(contact.id, contact.full_name)}
-                        title="Удалить"
-                      >
-                        🗑️
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const filteredProfiles = userProfiles
+                    .filter(p => p.full_name && !contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase()))
+                  const uniqueContacts = contacts.filter((contact, index, self) =>
+                    index === self.findIndex(c => c.full_name?.toLowerCase() === contact.full_name?.toLowerCase())
+                  )
+                  return (
+                    <>
+                      {/* Профили из user_roles, которых нет в contacts */}
+                      {filteredProfiles.map((profile, idx) => (
+                        <tr key={`profile-${idx}`}>
+                          <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{idx + 1}</td>
+                          <td>{profile.full_name}</td>
+                          <td>{ROLE_LABELS[profile.role] || profile.role}</td>
+                          <td>{profile.work_phone || '—'}</td>
+                          <td style={{ wordBreak: 'break-all' }}>{profile.work_email || profile.email || '—'}</td>
+                          <td>Офис</td>
+                          <td className="actions-cell"></td>
+                        </tr>
+                      ))}
+                      {/* Контакты из таблицы contacts (без дублей) */}
+                      {uniqueContacts.map((contact, idx) => (
+                        <tr key={contact.id}>
+                          <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{filteredProfiles.length + idx + 1}</td>
+                          <td>{contact.full_name}</td>
+                          <td>{contact.position}</td>
+                          <td>{contact.phone}</td>
+                          <td>{contact.email}</td>
+                          <td>{contact.objects?.name || 'Офис'}</td>
+                          <td className="actions-cell">
+                            <button
+                              className="btn-icon btn-edit"
+                              onClick={() => handleEditContact(contact)}
+                              title="Редактировать"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              className="btn-icon btn-delete"
+                              onClick={() => handleDeleteContact(contact.id, contact.full_name)}
+                              title="Удалить"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </>
+                  )
+                })()}
                 {userProfiles.length === 0 && contacts.length === 0 && (
                   <tr>
-                    <td colSpan="6" className="no-data">
+                    <td colSpan="7" className="no-data">
                       Нет контактов. Добавьте первый контакт.
                     </td>
                   </tr>

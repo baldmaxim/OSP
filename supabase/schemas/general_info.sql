@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS objects (
   planned_end_date DATE,                -- Планируемая дата окончания работ
   total_area DECIMAL(12, 2),            -- Общая площадь объекта (м²)
   budget DECIMAL(15, 2),                -- Бюджет объекта (руб.)
+  cover_image_url TEXT,                 -- Ссылка на обложку/фото объекта (Supabase Storage)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

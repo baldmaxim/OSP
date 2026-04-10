@@ -17,7 +17,9 @@ function ObjectsPage() {
   const [mapLoading, setMapLoading] = useState(false)
   const [mapFilter, setMapFilter] = useState('all')
   const [editingObject, setEditingObject] = useState(null)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const fileInputRef = useRef(null)
+  const photoInputRef = useRef(null)
   const mapInitialized = useRef(false)
 
   const [objectFormData, setObjectFormData] = useState({
@@ -28,6 +30,7 @@ function ObjectsPage() {
     latitude: '',
     longitude: '',
     status: 'main_construction',
+    cover_image_url: '',
   })
 
   // Фильтр по статусу
@@ -244,7 +247,7 @@ function ObjectsPage() {
 
       setShowObjectModal(false)
       setEditingObject(null)
-      setObjectFormData({ name: '', address: '', description: '', map_link: '', latitude: '', longitude: '', status: 'main_construction' })
+      setObjectFormData({ name: '', address: '', description: '', map_link: '', latitude: '', longitude: '', status: 'main_construction', cover_image_url: '' })
       fetchObjects()
     } catch (error) {
       console.error('Ошибка сохранения объекта:', error.message)
@@ -262,8 +265,54 @@ function ObjectsPage() {
       latitude: object.latitude || '',
       longitude: object.longitude || '',
       status: object.status || 'main_construction',
+      cover_image_url: object.cover_image_url || '',
     })
     setShowObjectModal(true)
+  }
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      alert('Выберите файл изображения (JPEG, PNG, WebP и т.п.)')
+      e.target.value = ''
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Размер файла не должен превышать 5 МБ')
+      e.target.value = ''
+      return
+    }
+
+    setUploadingPhoto(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const fileName = `${crypto.randomUUID()}.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('object-photos')
+        .upload(fileName, file, { cacheControl: '3600', upsert: false })
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('object-photos')
+        .getPublicUrl(fileName)
+
+      setObjectFormData(prev => ({ ...prev, cover_image_url: publicUrl }))
+    } catch (err) {
+      console.error('Ошибка загрузки фото:', err)
+      alert('Ошибка загрузки фото: ' + err.message)
+    } finally {
+      setUploadingPhoto(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleRemovePhoto = () => {
+    setObjectFormData(prev => ({ ...prev, cover_image_url: '' }))
   }
 
   const handleDeleteObject = async (id, name) => {
@@ -281,7 +330,7 @@ function ObjectsPage() {
 
   const handleAddNewObject = () => {
     setEditingObject(null)
-    setObjectFormData({ name: '', address: '', description: '', map_link: '', latitude: '', longitude: '', status: 'main_construction' })
+    setObjectFormData({ name: '', address: '', description: '', map_link: '', latitude: '', longitude: '', status: 'main_construction', cover_image_url: '' })
     setShowObjectModal(true)
   }
 
@@ -414,85 +463,111 @@ function ObjectsPage() {
             />
           </div>
 
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '60px' }}>№ п/п</th>
-                  <th>Название объекта</th>
-                  <th>Адрес</th>
-                  <th>Ссылка на карту</th>
-                  <th className="actions-column">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {objects.filter(obj => (obj.status || 'main_construction') === statusFilter).length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="no-data">
-                      Нет объектов с выбранным статусом.
-                    </td>
-                  </tr>
-                ) : (
-                  objects
-                    .filter(obj => (obj.status || 'main_construction') === statusFilter)
-                    .map((object, index) => (
-                    <tr key={object.id}>
-                      <td style={{ textAlign: 'center', fontWeight: '600' }}>{index + 1}</td>
-                      <td>
-                        <button
-                          onClick={() => navigate(`/general/objects/${object.id}`)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--primary-color)',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            padding: 0,
-                            fontSize: 'inherit',
-                            fontWeight: '600',
-                            textDecoration: 'underline'
-                          }}
-                          title="Открыть карточку объекта"
-                        >
-                          {object.name}
-                        </button>
-                      </td>
-                      <td>{object.address}</td>
-                      <td>
-                        {object.map_link ? (
-                          <a
-                            href={object.map_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link"
-                          >
-                            Открыть карту
-                          </a>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td className="actions-cell">
-                        <button
-                          className="btn-icon btn-edit"
-                          onClick={() => handleEditObject(object)}
-                          title="Редактировать"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          className="btn-icon btn-delete"
-                          onClick={() => handleDeleteObject(object.id, object.name)}
-                          title="Удалить"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div className="objects-grid">
+            {(() => {
+              const filteredObjects = objects.filter(obj => (obj.status || 'main_construction') === statusFilter)
+
+              if (filteredObjects.length === 0) {
+                return (
+                  <div className="objects-empty">
+                    Нет объектов с выбранным статусом.
+                  </div>
+                )
+              }
+
+              const formatDate = (d) => {
+                if (!d) return null
+                const date = new Date(d)
+                if (isNaN(date.getTime())) return null
+                return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              }
+
+              const formatBudget = (value) => {
+                if (value === null || value === undefined || value === '') return null
+                const num = Number(value)
+                if (isNaN(num)) return null
+                if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(num >= 10_000_000 ? 0 : 1)} млн ₽`
+                if (num >= 1_000) return `${(num / 1_000).toFixed(0)} тыс ₽`
+                return `${num.toLocaleString('ru-RU')} ₽`
+              }
+
+              const formatArea = (value) => {
+                if (value === null || value === undefined || value === '') return null
+                const num = Number(value)
+                if (isNaN(num)) return null
+                return `${num.toLocaleString('ru-RU')} м²`
+              }
+
+              return filteredObjects.map((object) => {
+                const start = formatDate(object.planned_start_date)
+                const end = formatDate(object.planned_end_date)
+                const area = formatArea(object.total_area)
+                const budget = formatBudget(object.budget)
+
+                return (
+                  <div
+                    key={object.id}
+                    className="object-card"
+                    onClick={() => navigate(`/general/objects/${object.id}`)}
+                    title="Открыть карточку объекта"
+                  >
+                    <div className="object-card-actions" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className="object-card-action-btn"
+                        onClick={() => handleEditObject(object)}
+                        title="Редактировать"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        className="object-card-action-btn"
+                        onClick={() => handleDeleteObject(object.id, object.name)}
+                        title="Удалить"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+
+                    {object.cover_image_url ? (
+                      <div className="object-card-cover">
+                        <img src={object.cover_image_url} alt={object.name} loading="lazy" />
+                      </div>
+                    ) : (
+                      <div className="object-card-cover-placeholder">🏢</div>
+                    )}
+
+                    <div className="object-card-body">
+                      <h3 className="object-card-name">{object.name}</h3>
+
+                      <div className="object-card-address">
+                        <span className="object-card-address-icon">📍</span>
+                        <span>{object.address}</span>
+                      </div>
+
+                      {object.description && (
+                        <div className="object-card-description">{object.description}</div>
+                      )}
+
+                      {(area || budget || start || end) && (
+                        <div className="object-card-meta">
+                          {area && (
+                            <span className="object-card-meta-item">📐 <strong>{area}</strong></span>
+                          )}
+                          {budget && (
+                            <span className="object-card-meta-item">💰 <strong>{budget}</strong></span>
+                          )}
+                          {(start || end) && (
+                            <span className="object-card-meta-item">
+                              📅 <strong>{start || '...'} — {end || '...'}</strong>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            })()}
           </div>
         </div>
       )}
@@ -518,6 +593,44 @@ function ObjectsPage() {
 
             <form onSubmit={handleObjectSubmit}>
               <div className="form-grid">
+                <div className="form-group full-width">
+                  <label>Фото объекта</label>
+                  <div className="object-photo-upload">
+                    {objectFormData.cover_image_url ? (
+                      <div className="object-photo-preview">
+                        <img src={objectFormData.cover_image_url} alt="Превью" />
+                        <button
+                          type="button"
+                          className="object-photo-preview-remove"
+                          onClick={handleRemovePhoto}
+                          title="Удалить фото"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="object-photo-upload-btn"
+                        onClick={() => photoInputRef.current?.click()}
+                        disabled={uploadingPhoto}
+                      >
+                        {uploadingPhoto ? '⏳ Загрузка...' : '📷 Загрузить фото объекта'}
+                      </button>
+                    )}
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      style={{ display: 'none' }}
+                    />
+                  </div>
+                  <small style={{ color: 'var(--text-tertiary)', marginTop: '4px', display: 'block' }}>
+                    JPEG, PNG или WebP, до 5 МБ
+                  </small>
+                </div>
+
                 <div className="form-group full-width">
                   <label>Название объекта *</label>
                   <input
