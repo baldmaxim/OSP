@@ -61,12 +61,87 @@ function TenderDetailPage() {
     material_consumption: ''
   })
 
+  // История изменений тендера
+  const [auditLog, setAuditLog] = useState([])
+  const [loadingAuditLog, setLoadingAuditLog] = useState(false)
+
   useEffect(() => {
     if (tenderId) {
       fetchTenderData()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
+
+  useEffect(() => {
+    if (activeTab === 'history' && tenderId) {
+      loadAuditLog()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, tenderId])
+
+  const loadAuditLog = async () => {
+    try {
+      setLoadingAuditLog(true)
+      const { data, error } = await supabase
+        .from('tender_audit_log')
+        .select('*')
+        .eq('tender_id', tenderId)
+        .order('changed_at', { ascending: false })
+      if (error) throw error
+      setAuditLog(data || [])
+    } catch (err) {
+      console.error('Ошибка загрузки истории тендера:', err.message)
+      setAuditLog([])
+    } finally {
+      setLoadingAuditLog(false)
+    }
+  }
+
+  const formatDateTime = (dt) => {
+    if (!dt) return ''
+    const d = new Date(dt)
+    const dd = String(d.getDate()).padStart(2, '0')
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const yyyy = d.getFullYear()
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mi = String(d.getMinutes()).padStart(2, '0')
+    return `${dd}.${mm}.${yyyy} ${hh}:${mi}`
+  }
+
+  const ROLE_LABEL = {
+    employee: 'Сотрудник',
+    contractor: 'Подрядчик',
+    admin: 'Администратор'
+  }
+
+  const HISTORY_FIELD_LABELS = {
+    work_description: 'Описание работ',
+    start_date: 'Дата начала',
+    end_date: 'Дата окончания',
+    tender_package_link: 'Ссылка на тендерный пакет',
+    responsible_contact_id: 'Ответственный',
+    object_id: 'Объект'
+  }
+
+  const formatHistoryValue = (val) => {
+    if (val === null || val === undefined) return '—'
+    if (typeof val === 'string' || typeof val === 'number') return String(val)
+    if (typeof val === 'object') {
+      if (val.name) return val.name
+      return JSON.stringify(val)
+    }
+    return String(val)
+  }
+
+  const renderEventIcon = (eventType) => {
+    switch (eventType) {
+      case 'created': return '🟢'
+      case 'status_changed': return '🔄'
+      case 'winner_assigned': return '🏆'
+      case 'field_updated': return '📝'
+      default: return '•'
+    }
+  }
 
   // Закрытие полноэкранного режима по Escape
   useEffect(() => {
@@ -1612,6 +1687,13 @@ function TenderDetailPage() {
           Участники
           {tenderCounterparties.length > 0 && <span className="tab-count">{tenderCounterparties.length}</span>}
         </button>
+        <button
+          className={`tender-tab ${activeTab === 'history' ? 'active' : ''}`}
+          onClick={() => setActiveTab('history')}
+        >
+          История
+          {auditLog.length > 0 && <span className="tab-count">{auditLog.length}</span>}
+        </button>
       </div>
 
       {/* Контент вкладок */}
@@ -2323,6 +2405,56 @@ function TenderDetailPage() {
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Вкладка История */}
+        {activeTab === 'history' && (
+          <div className="history-section">
+            <div className="section-header">
+              <h3>История изменений</h3>
+            </div>
+            {loadingAuditLog ? (
+              <div className="empty-state">Загрузка истории...</div>
+            ) : auditLog.length === 0 ? (
+              <div className="empty-state">
+                <p>Записей пока нет</p>
+                <p className="hint">События будут появляться при создании тендера и изменении его данных</p>
+              </div>
+            ) : (
+              <ul className="tender-history-timeline">
+                {auditLog.map((event) => {
+                  const fieldLabel = event.field_name ? (HISTORY_FIELD_LABELS[event.field_name] || event.field_name) : null
+                  const oldStr = formatHistoryValue(event.old_value)
+                  const newStr = formatHistoryValue(event.new_value)
+                  const author = event.changed_by_name || ROLE_LABEL[event.changed_by_role] || event.changed_by_role || null
+                  return (
+                    <li key={event.id} className={`history-event history-event-${event.event_type}`}>
+                      <div className="history-event-marker" aria-hidden>{renderEventIcon(event.event_type)}</div>
+                      <div className="history-event-body">
+                        <div className="history-event-title">
+                          {event.description || event.event_type}
+                        </div>
+                        {(event.event_type === 'status_changed' || event.event_type === 'field_updated') && (
+                          <div className="history-event-diff">
+                            {event.event_type === 'field_updated' && fieldLabel && (
+                              <span className="history-field-name">{fieldLabel}: </span>
+                            )}
+                            <span className="history-old">{oldStr}</span>
+                            <span className="history-arrow">→</span>
+                            <span className="history-new">{newStr}</span>
+                          </div>
+                        )}
+                        <div className="history-event-meta">
+                          <span>{formatDateTime(event.changed_at)}</span>
+                          {author && <span> · автор: {author}</span>}
+                        </div>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
             )}
           </div>
         )}

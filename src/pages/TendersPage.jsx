@@ -349,10 +349,44 @@ function TendersPage({ department = 'construction' }) {
           .eq('id', editingTender.id)
 
         if (error) throw error
+
+        // Логируем изменения каждого поля
+        const trackFields = ['work_description', 'start_date', 'end_date', 'tender_package_link', 'responsible_contact_id', 'object_id']
+        for (const f of trackFields) {
+          const oldV = editingTender[f] ?? null
+          const newV = formData[f] || null
+          if ((oldV || null) !== (newV || null)) {
+            await logTenderEvent(editingTender.id, 'field_updated', {
+              fieldName: f,
+              oldValue: oldV,
+              newValue: newV,
+              description: `Изменено: ${FIELD_LABELS[f] || f}`
+            })
+          }
+        }
+        // Если статус изменился через форму — отдельно
+        if ((editingTender.status || null) !== (formData.status || null)) {
+          await logTenderEvent(editingTender.id, 'status_changed', {
+            oldValue: editingTender.status || null,
+            newValue: formData.status,
+            description: `Статус: ${editingTender.status || '—'} → ${formData.status}`
+          })
+        }
       } else {
         // Insert new tender
-        const { error } = await supabase.from('tenders').insert([formData])
+        const { data: inserted, error } = await supabase
+          .from('tenders')
+          .insert([formData])
+          .select('id')
+          .single()
         if (error) throw error
+
+        if (inserted?.id) {
+          await logTenderEvent(inserted.id, 'created', {
+            newValue: formData,
+            description: 'Тендер создан'
+          })
+        }
       }
 
       // Генерируем письмо только для нового тендера
@@ -444,12 +478,24 @@ function TendersPage({ department = 'construction' }) {
     }
 
     try {
+      const prev = tenders.find(t => t.id === tenderId)
+      const oldStatus = prev?.status || null
+
       const { error } = await supabase
         .from('tenders')
         .update({ status: newStatus })
         .eq('id', tenderId)
 
       if (error) throw error
+
+      if (oldStatus !== newStatus) {
+        await logTenderEvent(tenderId, 'status_changed', {
+          oldValue: oldStatus,
+          newValue: newStatus,
+          description: `Статус: ${oldStatus || '—'} → ${newStatus}`
+        })
+      }
+
       fetchTenders()
     } catch (error) {
       console.error('Ошибка изменения статуса:', error.message)
@@ -461,6 +507,9 @@ function TendersPage({ department = 'construction' }) {
     if (!tenderForWinnerSelection) return
 
     try {
+      const prevStatus = tenderForWinnerSelection.status || null
+      const prevWinnerId = tenderForWinnerSelection.winner_counterparty_id || null
+
       // Обновляем статус тендера
       const { error: tenderError } = await supabase
         .from('tenders')
@@ -471,6 +520,27 @@ function TendersPage({ department = 'construction' }) {
         .eq('id', tenderForWinnerSelection.id)
 
       if (tenderError) throw tenderError
+
+      // Лог: смена статуса
+      if (prevStatus !== 'Завершен') {
+        await logTenderEvent(tenderForWinnerSelection.id, 'status_changed', {
+          oldValue: prevStatus,
+          newValue: 'Завершен',
+          description: `Статус: ${prevStatus || '—'} → Завершен`
+        })
+      }
+
+      // Лог: назначение победителя
+      if (selectedWinnerId && selectedWinnerId !== prevWinnerId) {
+        const tcList = tenderCounterparties[tenderForWinnerSelection.id] || []
+        const winner = tcList.find(tc => tc.counterparties?.id === selectedWinnerId)?.counterparties
+        const winnerName = winner?.name || null
+        await logTenderEvent(tenderForWinnerSelection.id, 'winner_assigned', {
+          oldValue: prevWinnerId,
+          newValue: { id: selectedWinnerId, name: winnerName },
+          description: winnerName ? `Назначен победитель: ${winnerName}` : 'Назначен победитель'
+        })
+      }
 
       // Если выбран победитель, создаем договор на согласовании
       if (selectedWinnerId) {
@@ -507,6 +577,49 @@ function TendersPage({ department = 'construction' }) {
   const formatDate = (dateString) => {
     if (!dateString) return ''
     return new Date(dateString).toLocaleDateString('ru-RU')
+  }
+
+  const formatDateRange = (startDate, endDate) => {
+    if (!startDate && !endDate) return '—'
+    if (!startDate) return formatDate(endDate)
+    if (!endDate) return formatDate(startDate)
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    const sameYear = start.getFullYear() === end.getFullYear()
+    const dd = (d) => String(d.getDate()).padStart(2, '0')
+    const mm = (d) => String(d.getMonth() + 1).padStart(2, '0')
+    if (sameYear) {
+      return `${dd(start)}.${mm(start)} — ${dd(end)}.${mm(end)}.${end.getFullYear()}`
+    }
+    return `${formatDate(startDate)} — ${formatDate(endDate)}`
+  }
+
+  const FIELD_LABELS = {
+    work_description: 'Описание работ',
+    start_date: 'Дата начала',
+    end_date: 'Дата окончания',
+    tender_package_link: 'Ссылка на тендерный пакет',
+    responsible_contact_id: 'Ответственный',
+    object_id: 'Объект'
+  }
+
+  const logTenderEvent = async (tenderId, eventType, payload = {}) => {
+    if (!tenderId || !eventType) return
+    try {
+      const role = localStorage.getItem('userRole') || null
+      await supabase.from('tender_audit_log').insert([{
+        tender_id: tenderId,
+        event_type: eventType,
+        field_name: payload.fieldName || null,
+        old_value: payload.oldValue ?? null,
+        new_value: payload.newValue ?? null,
+        description: payload.description || null,
+        changed_by_role: role,
+        changed_by_name: null
+      }])
+    } catch (err) {
+      console.error('Ошибка записи истории тендера:', err.message)
+    }
   }
 
   const formatDateForLetter = (dateString) => {
@@ -716,8 +829,7 @@ function TendersPage({ department = 'construction' }) {
               <th>Описание работ</th>
               <th>Статус</th>
               {activeTab === 'completed' && <th>Победитель</th>}
-              <th>Дата начала</th>
-              <th>Дата окончания</th>
+              <th>Сроки</th>
               <th>Ответственный</th>
               <th>Тендерный пакет</th>
               <th className="actions-column">Действия</th>
@@ -726,7 +838,7 @@ function TendersPage({ department = 'construction' }) {
           <tbody>
             {filteredByTab.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? 10 : 9} className="no-data">
+                <td colSpan={activeTab === 'completed' ? 9 : 8} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : 'Нет актуальных тендеров. Добавьте первый тендер.'}
@@ -828,9 +940,8 @@ function TendersPage({ department = 'construction' }) {
                         )}
                       </td>
                     )}
-                    <td>{formatDate(tender.start_date)}</td>
-                    <td style={isOverdue(tender) ? { color: '#dc2626', fontWeight: 600 } : {}}>
-                      {formatDate(tender.end_date)}
+                    <td style={isOverdue(tender) ? { color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap' } : { whiteSpace: 'nowrap' }}>
+                      {formatDateRange(tender.start_date, tender.end_date)}
                       {isOverdue(tender) && <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem' }} title="Срок истёк">!</span>}
                     </td>
                     <td>{getResponsibleName(tender) || <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>—</span>}</td>
@@ -869,7 +980,7 @@ function TendersPage({ department = 'construction' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? 10 : 9} style={{ padding: '1.5rem', backgroundColor: 'var(--card-bg)', borderTop: '2px solid var(--primary-color)' }}>
+                      <td colSpan={activeTab === 'completed' ? 9 : 8} style={{ padding: '1.5rem', backgroundColor: 'var(--card-bg)', borderTop: '2px solid var(--primary-color)' }}>
                         <div style={{ marginBottom: '1rem' }}>
                           <button
                             className="btn-primary"
