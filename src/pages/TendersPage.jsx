@@ -367,8 +367,6 @@ function TendersPage({ department = 'construction' }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
-      const isNewTender = !editingTender
-
       if (editingTender) {
         // Update existing tender
         const { error } = await supabase
@@ -415,16 +413,6 @@ function TendersPage({ department = 'construction' }) {
             description: 'Тендер создан'
           })
         }
-      }
-
-      // Генерируем письмо только для нового тендера
-      if (isNewTender) {
-        const selectedObject = objects.find(obj => obj.id === formData.object_id)
-        const objectName = selectedObject?.name || '[Объект не указан]'
-        const selectedContact = responsibleContacts.find(c => c.id === formData.responsible_contact_id)
-        const letter = generateRequestLetter(formData, objectName, selectedContact)
-        setGeneratedLetter(letter)
-        setShowLetterModal(true)
       }
 
       setShowModal(false)
@@ -1441,71 +1429,74 @@ function TendersPage({ department = 'construction' }) {
                   />
                 </div>
 
-                <div className="form-group full-width">
-                  <label>Ответственный сотрудник *</label>
-                  <select
-                    name="responsible_contact_id"
-                    value={formData.responsible_contact_id}
-                    onChange={handleInputChange}
-                    required
-                  >
-                    <option value="">Выберите сотрудника</option>
-                    {responsibleContacts.map((contact) => (
-                      <option key={contact.id} value={contact.id}>
-                        {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {editingTender && (
+                  <>
+                    <div className="form-group full-width">
+                      <label>Ответственный сотрудник</label>
+                      <select
+                        name="responsible_contact_id"
+                        value={formData.responsible_contact_id}
+                        onChange={handleInputChange}
+                      >
+                        <option value="">— не назначен —</option>
+                        {responsibleContacts.map((contact) => (
+                          <option key={contact.id} value={contact.id}>
+                            {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                <div className="form-group full-width">
-                  <label>Ссылка на тендерный пакет</label>
-                  <input
-                    type="url"
-                    name="tender_package_link"
-                    value={formData.tender_package_link}
-                    onChange={handleInputChange}
-                    placeholder="https://example.com/tender-package.pdf"
-                  />
-                </div>
+                    <div className="form-group full-width">
+                      <label>Ссылка на тендерный пакет</label>
+                      <input
+                        type="url"
+                        name="tender_package_link"
+                        value={formData.tender_package_link}
+                        onChange={handleInputChange}
+                        placeholder="https://example.com/tender-package.pdf"
+                      />
+                    </div>
 
-                <div className="form-group full-width">
-                  <label>План затрат — ссылка</label>
-                  <input
-                    type="url"
-                    name="cost_plan_link"
-                    value={formData.cost_plan_link}
-                    onChange={handleInputChange}
-                    placeholder="https://drive.google.com/... или https://disk.yandex.ru/..."
-                  />
-                </div>
+                    <div className="form-group full-width">
+                      <label>План затрат — ссылка</label>
+                      <input
+                        type="url"
+                        name="cost_plan_link"
+                        value={formData.cost_plan_link}
+                        onChange={handleInputChange}
+                        placeholder="https://drive.google.com/... или https://disk.yandex.ru/..."
+                      />
+                    </div>
 
-                <div className="form-group full-width">
-                  <label>Ответственный за план затрат</label>
-                  <select
-                    name="cost_plan_responsible_id"
-                    value={formData.cost_plan_responsible_id}
-                    onChange={handleInputChange}
-                  >
-                    <option value="">— не назначен —</option>
-                    {responsibleContacts.map((contact) => (
-                      <option key={contact.id} value={contact.id}>
-                        {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <div className="form-group full-width">
+                      <label>Ответственный за план затрат</label>
+                      <select
+                        name="cost_plan_responsible_id"
+                        value={formData.cost_plan_responsible_id}
+                        onChange={handleInputChange}
+                      >
+                        <option value="">— не назначен —</option>
+                        {responsibleContacts.map((contact) => (
+                          <option key={contact.id} value={contact.id}>
+                            {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                <div className="form-group full-width">
-                  <label>Сводная КП — ссылка</label>
-                  <input
-                    type="url"
-                    name="summary_proposal_link"
-                    value={formData.summary_proposal_link}
-                    onChange={handleInputChange}
-                    placeholder="https://drive.google.com/... или https://disk.yandex.ru/..."
-                  />
-                </div>
+                    <div className="form-group full-width">
+                      <label>Сводная КП — ссылка</label>
+                      <input
+                        type="url"
+                        name="summary_proposal_link"
+                        value={formData.summary_proposal_link}
+                        onChange={handleInputChange}
+                        placeholder="https://drive.google.com/... или https://disk.yandex.ru/..."
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="form-group full-width">
                   <label>Примечание</label>
@@ -1530,6 +1521,23 @@ function TendersPage({ department = 'construction' }) {
                 >
                   Отмена
                 </button>
+                {editingTender && formData.responsible_contact_id && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      const selectedObject = objects.find(obj => obj.id === formData.object_id)
+                      const objectName = selectedObject?.name || '[Объект не указан]'
+                      const selectedContact = responsibleContacts.find(c => c.id === formData.responsible_contact_id)
+                      const letter = generateRequestLetter(formData, objectName, selectedContact)
+                      setGeneratedLetter(letter)
+                      setShowLetterModal(true)
+                    }}
+                    title="Сгенерировать письмо для подрядчиков"
+                  >
+                    Письмо подрядчикам
+                  </button>
+                )}
                 <button type="submit" className="btn-primary">
                   {editingTender ? 'Сохранить' : 'Добавить'}
                 </button>
