@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS tenders (
   tender_package_link TEXT,
   winner_counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  cost_plan_link TEXT,
+  cost_plan_responsible_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  summary_proposal_link TEXT,
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -22,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_tenders_start_date ON tenders(start_date);
 CREATE INDEX IF NOT EXISTS idx_tenders_end_date ON tenders(end_date);
 CREATE INDEX IF NOT EXISTS idx_tenders_winner_counterparty_id ON tenders(winner_counterparty_id);
 CREATE INDEX IF NOT EXISTS idx_tenders_responsible_contact_id ON tenders(responsible_contact_id);
+CREATE INDEX IF NOT EXISTS idx_tenders_cost_plan_responsible_id ON tenders(cost_plan_responsible_id);
 
 -- Триггер для автоматического обновления updated_at
 CREATE OR REPLACE FUNCTION update_tenders_updated_at()
@@ -64,6 +68,9 @@ COMMENT ON COLUMN tenders.end_date IS 'Дата окончания тендер�
 COMMENT ON COLUMN tenders.tender_package_link IS 'Ссылка на тендерный пакет';
 COMMENT ON COLUMN tenders.winner_counterparty_id IS 'Контрагент-победитель тендера';
 COMMENT ON COLUMN tenders.responsible_contact_id IS 'Ответственный сотрудник за тендер (из таблицы contacts)';
+COMMENT ON COLUMN tenders.cost_plan_link IS 'Ссылка на план затрат (Google/Yandex Drive)';
+COMMENT ON COLUMN tenders.cost_plan_responsible_id IS 'Ответственный сотрудник за план затрат (из таблицы contacts)';
+COMMENT ON COLUMN tenders.summary_proposal_link IS 'Ссылка на сводную таблицу КП (Google/Yandex Drive)';
 COMMENT ON COLUMN tenders.notes IS 'Примечание по тендеру (свободный текст, ведётся ответственным)';
 COMMENT ON COLUMN tenders.created_at IS 'Дата и время создания записи';
 COMMENT ON COLUMN tenders.updated_at IS 'Дата и время последнего обновления записи';

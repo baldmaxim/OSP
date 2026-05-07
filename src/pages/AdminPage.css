@@ -389,3 +389,105 @@
   background: #5a1f1f;
   color: #fca5a5;
 }
+
+/* Permissions pane (role picker + per-section list) */
+.permissions-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+}
+
+.perm-role-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding-bottom: 0.625rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.perm-role-picker label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.perm-role-picker .role-select {
+  min-width: 220px;
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.625rem;
+}
+
+.perm-feedback {
+  margin-left: auto;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+}
+
+.perm-feedback.ok {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+}
+
+.perm-feedback.err {
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+}
+
+.perm-admin-notice {
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  border-left: 3px solid var(--primary-color);
+}
+
+.permissions-list-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.permissions-list-table thead th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.permissions-list-table thead th.perm-col {
+  text-align: center;
+  width: 130px;
+}
+
+.permissions-list-table tbody td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.8125rem;
+}
+
+.permissions-list-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.permissions-list-table tbody tr:hover {
+  background: var(--hover-bg);
+}
+
+.permissions-list-table .section-name {
+  font-weight: 500;
+}
+
+.permissions-list-table .perm-cell {
+  text-align: center;
+}
+
+.permissions-list-table .perm-cell input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}

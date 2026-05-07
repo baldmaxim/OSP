@@ -16,6 +16,8 @@ function AdminPage() {
   // --- Permissions ---
   const [permissions, setPermissions] = useState([])
   const [loadingPerms, setLoadingPerms] = useState(true)
+  const [selectedPermRole, setSelectedPermRole] = useState('engineer')
+  const [permFeedback, setPermFeedback] = useState(null) // { kind: 'ok'|'err', text }
 
   useEffect(() => {
     if (activeTab === 'users') fetchUsers()
@@ -167,6 +169,11 @@ function AdminPage() {
     }
   }
 
+  const showPermFeedback = (kind, text) => {
+    setPermFeedback({ kind, text })
+    setTimeout(() => setPermFeedback(null), kind === 'ok' ? 1800 : 5000)
+  }
+
   const handlePermissionToggle = async (role, section, field) => {
     const existing = permissions.find(p => p.role === role && p.section === section)
 
@@ -199,8 +206,15 @@ function AdminPage() {
         if (error) throw error
         if (data) setPermissions(prev => [...prev, data])
       }
+      showPermFeedback('ok', 'Сохранено')
     } catch (err) {
-      alert('Ошибка изменения прав: ' + err.message)
+      console.error('Ошибка изменения прав:', err)
+      // Подсказка про CHECK-constraint, если миграция роли не применена
+      if (/valid_perm_role|check constraint/i.test(err.message)) {
+        showPermFeedback('err', `Ошибка: роль «${ROLE_LABELS[role] || role}» отсутствует в CHECK-constraint таблицы role_permissions. Примените миграцию для этой роли.`)
+      } else {
+        showPermFeedback('err', 'Ошибка: ' + err.message)
+      }
     }
   }
 
@@ -374,64 +388,70 @@ function AdminPage() {
           {loadingPerms ? (
             <div className="admin-loading">Загрузка...</div>
           ) : (
-            <div className="permissions-grid">
-              <table className="admin-table permissions-table">
-                <thead>
-                  <tr>
-                    <th className="section-header">Раздел</th>
-                    {EMPLOYEE_ROLES.map(r => (
-                      <th key={r} colSpan="2" className="role-header">{ROLE_LABELS[r]}</th>
-                    ))}
-                  </tr>
-                  <tr className="sub-header">
-                    <th></th>
-                    {EMPLOYEE_ROLES.map(r => (
-                      <th key={r + '-sub'} colSpan="1" className="perm-sub">
-                        <span className="perm-sub-group">
-                          <span>Вид.</span>
-                          <span>Ред.</span>
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sectionKeys.map(section => (
-                    <tr key={section}>
-                      <td className="section-name">{SECTIONS[section]}</td>
-                      {EMPLOYEE_ROLES.map(r => {
-                        const perm = permissions.find(p => p.role === r && p.section === section)
-                        const isAdminRow = r === 'admin'
-                        return (
-                          <td key={r} className="perm-cell">
-                            <div className="perm-checkboxes">
-                              <input
-                                type="checkbox"
-                                checked={perm?.can_view ?? false}
-                                onChange={() => handlePermissionToggle(r, section, 'can_view')}
-                                disabled={isAdminRow}
-                                title="Просмотр"
-                              />
-                              <input
-                                type="checkbox"
-                                checked={perm?.can_edit ?? false}
-                                onChange={() => handlePermissionToggle(r, section, 'can_edit')}
-                                disabled={isAdminRow}
-                                title="Редактирование"
-                              />
-                            </div>
-                          </td>
-                        )
-                      })}
-                    </tr>
+            <div className="permissions-pane">
+              <div className="perm-role-picker">
+                <label htmlFor="perm-role-select">Роль:</label>
+                <select
+                  id="perm-role-select"
+                  className="role-select"
+                  value={selectedPermRole}
+                  onChange={(e) => setSelectedPermRole(e.target.value)}
+                >
+                  {EMPLOYEE_ROLES.map(r => (
+                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                   ))}
-                </tbody>
-              </table>
+                </select>
+                {permFeedback && (
+                  <span className={`perm-feedback ${permFeedback.kind}`}>
+                    {permFeedback.text}
+                  </span>
+                )}
+              </div>
+
+              {selectedPermRole === 'admin' ? (
+                <div className="perm-admin-notice">
+                  Права администратора изменять нельзя — у роли «Администратор» полный доступ ко всем разделам.
+                </div>
+              ) : (
+                <table className="admin-table permissions-list-table">
+                  <thead>
+                    <tr>
+                      <th className="section-header">Раздел</th>
+                      <th className="perm-col">Просмотр</th>
+                      <th className="perm-col">Редактирование</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sectionKeys.map(section => {
+                      const perm = permissions.find(p => p.role === selectedPermRole && p.section === section)
+                      return (
+                        <tr key={section}>
+                          <td className="section-name">{SECTIONS[section]}</td>
+                          <td className="perm-cell">
+                            <input
+                              type="checkbox"
+                              checked={perm?.can_view ?? false}
+                              onChange={() => handlePermissionToggle(selectedPermRole, section, 'can_view')}
+                            />
+                          </td>
+                          <td className="perm-cell">
+                            <input
+                              type="checkbox"
+                              checked={perm?.can_edit ?? false}
+                              onChange={() => handlePermissionToggle(selectedPermRole, section, 'can_edit')}
+                            />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
 
               <div className="permissions-legend">
-                <span>Вид. = просмотр раздела</span>
-                <span>Ред. = редактирование данных</span>
-                <span>Права администратора изменить нельзя</span>
+                <span>Просмотр — открывать раздел</span>
+                <span>Редактирование — менять данные</span>
+                <span>Изменения сохраняются автоматически</span>
               </div>
             </div>
           )}

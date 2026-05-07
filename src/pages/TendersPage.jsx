@@ -64,6 +64,9 @@ function TendersPage({ department = 'construction' }) {
     end_date: '',
     tender_package_link: '',
     responsible_contact_id: '',
+    cost_plan_link: '',
+    cost_plan_responsible_id: '',
+    summary_proposal_link: '',
     notes: '',
   })
 
@@ -110,7 +113,7 @@ function TendersPage({ department = 'construction' }) {
       setLoading(true)
       const { data, error } = await supabase
         .from('tenders')
-        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name)')
+        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name)')
         .order('start_date', { ascending: false })
 
       if (error) throw error
@@ -294,6 +297,28 @@ function TendersPage({ department = 'construction' }) {
     })
   }
 
+  const handleUpdateCounterpartyProposalLink = async (tenderId, tenderCounterpartyId, currentLink) => {
+    const next = window.prompt('Ссылка на КП (Google/Yandex Drive):', currentLink || '')
+    if (next === null) return // отменили
+    const newValue = next.trim() || null
+    try {
+      const { error } = await supabase
+        .from('tender_counterparties')
+        .update({ proposal_link: newValue })
+        .eq('id', tenderCounterpartyId)
+      if (error) throw error
+      setTenderCounterparties(prev => ({
+        ...prev,
+        [tenderId]: prev[tenderId].map(tc =>
+          tc.id === tenderCounterpartyId ? { ...tc, proposal_link: newValue } : tc
+        )
+      }))
+    } catch (error) {
+      console.error('Ошибка сохранения ссылки на КП:', error.message)
+      alert('Ошибка сохранения: ' + error.message)
+    }
+  }
+
   const handleUpdateCounterpartyStatus = async (tenderId, tenderCounterpartyId, newStatus) => {
     try {
       const { error } = await supabase
@@ -354,7 +379,7 @@ function TendersPage({ department = 'construction' }) {
         if (error) throw error
 
         // Логируем изменения каждого поля
-        const trackFields = ['work_description', 'start_date', 'end_date', 'tender_package_link', 'responsible_contact_id', 'object_id', 'notes']
+        const trackFields = ['work_description', 'start_date', 'end_date', 'tender_package_link', 'responsible_contact_id', 'object_id', 'cost_plan_link', 'cost_plan_responsible_id', 'summary_proposal_link', 'notes']
         for (const f of trackFields) {
           const oldV = editingTender[f] ?? null
           const newV = formData[f] || null
@@ -412,6 +437,9 @@ function TendersPage({ department = 'construction' }) {
         end_date: '',
         tender_package_link: '',
         responsible_contact_id: '',
+        cost_plan_link: '',
+        cost_plan_responsible_id: '',
+        summary_proposal_link: '',
         notes: '',
       })
       fetchTenders()
@@ -431,6 +459,9 @@ function TendersPage({ department = 'construction' }) {
       end_date: tender.end_date || '',
       tender_package_link: tender.tender_package_link || '',
       responsible_contact_id: tender.responsible_contact_id || '',
+      cost_plan_link: tender.cost_plan_link || '',
+      cost_plan_responsible_id: tender.cost_plan_responsible_id || '',
+      summary_proposal_link: tender.summary_proposal_link || '',
       notes: tender.notes || '',
     })
     setShowModal(true)
@@ -462,6 +493,9 @@ function TendersPage({ department = 'construction' }) {
       end_date: '',
       tender_package_link: '',
       responsible_contact_id: '',
+      cost_plan_link: '',
+      cost_plan_responsible_id: '',
+      summary_proposal_link: '',
       notes: '',
     })
     setShowModal(true)
@@ -607,6 +641,9 @@ function TendersPage({ department = 'construction' }) {
     tender_package_link: 'Ссылка на тендерный пакет',
     responsible_contact_id: 'Ответственный',
     object_id: 'Объект',
+    cost_plan_link: 'План затрат',
+    cost_plan_responsible_id: 'Ответственный за план затрат',
+    summary_proposal_link: 'Сводная КП',
     notes: 'Примечание'
   }
 
@@ -874,13 +911,15 @@ function TendersPage({ department = 'construction' }) {
               </th>
               <th>Ответственный</th>
               <th>Тендерный пакет</th>
+              <th>План затрат</th>
+              <th>Сводная КП</th>
               <th className="actions-column">Действия</th>
             </tr>
           </thead>
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? 9 : 8} className="no-data">
+                <td colSpan={activeTab === 'completed' ? 11 : 10} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : 'Нет актуальных тендеров. Добавьте первый тендер.'}
@@ -977,6 +1016,39 @@ function TendersPage({ department = 'construction' }) {
                         '-'
                       )}
                     </td>
+                    <td>
+                      {tender.cost_plan_link ? (
+                        <a
+                          href={tender.cost_plan_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link"
+                        >
+                          Открыть
+                        </a>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                      )}
+                      {tender.cost_plan_responsible?.full_name && (
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
+                          {tender.cost_plan_responsible.full_name}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {tender.summary_proposal_link ? (
+                        <a
+                          href={tender.summary_proposal_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link"
+                        >
+                          Открыть
+                        </a>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                      )}
+                    </td>
                     <td className="actions-cell">
                       <button
                         className="btn-icon btn-edit"
@@ -998,7 +1070,7 @@ function TendersPage({ department = 'construction' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? 9 : 8} className="expanded-cp-row">
+                      <td colSpan={activeTab === 'completed' ? 11 : 10} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"
@@ -1020,6 +1092,7 @@ function TendersPage({ department = 'construction' }) {
                                   <th>Контактные данные</th>
                                   <th>Email</th>
                                   <th style={{ width: '170px' }}>Статус</th>
+                                  <th style={{ width: '140px' }}>КП</th>
                                   <th style={{ width: '64px' }}></th>
                                 </tr>
                               </thead>
@@ -1137,6 +1210,44 @@ function TendersPage({ department = 'construction' }) {
                                           </option>
                                         ))}
                                       </select>
+                                    </td>
+                                    <td>
+                                      {tc.proposal_link ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                                          <a
+                                            href={tc.proposal_link}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="link"
+                                          >
+                                            Открыть
+                                          </a>
+                                          <button
+                                            className="btn-icon btn-edit"
+                                            onClick={() => handleUpdateCounterpartyProposalLink(tender.id, tc.id, tc.proposal_link)}
+                                            title="Изменить ссылку"
+                                            style={{ fontSize: '0.75rem' }}
+                                          >
+                                            ✏️
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          onClick={() => handleUpdateCounterpartyProposalLink(tender.id, tc.id, '')}
+                                          style={{
+                                            background: 'none',
+                                            border: '1px dashed var(--border-color)',
+                                            borderRadius: '4px',
+                                            padding: '0.1875rem 0.5rem',
+                                            color: 'var(--text-tertiary)',
+                                            cursor: 'pointer',
+                                            fontSize: '0.75rem'
+                                          }}
+                                          title="Добавить ссылку на КП"
+                                        >
+                                          + ссылка
+                                        </button>
+                                      )}
                                     </td>
                                     <td style={{ textAlign: 'center' }}>
                                       <button
@@ -1355,6 +1466,44 @@ function TendersPage({ department = 'construction' }) {
                     value={formData.tender_package_link}
                     onChange={handleInputChange}
                     placeholder="https://example.com/tender-package.pdf"
+                  />
+                </div>
+
+                <div className="form-group full-width">
+                  <label>План затрат — ссылка</label>
+                  <input
+                    type="url"
+                    name="cost_plan_link"
+                    value={formData.cost_plan_link}
+                    onChange={handleInputChange}
+                    placeholder="https://drive.google.com/... или https://disk.yandex.ru/..."
+                  />
+                </div>
+
+                <div className="form-group full-width">
+                  <label>Ответственный за план затрат</label>
+                  <select
+                    name="cost_plan_responsible_id"
+                    value={formData.cost_plan_responsible_id}
+                    onChange={handleInputChange}
+                  >
+                    <option value="">— не назначен —</option>
+                    {responsibleContacts.map((contact) => (
+                      <option key={contact.id} value={contact.id}>
+                        {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group full-width">
+                  <label>Сводная КП — ссылка</label>
+                  <input
+                    type="url"
+                    name="summary_proposal_link"
+                    value={formData.summary_proposal_link}
+                    onChange={handleInputChange}
+                    placeholder="https://drive.google.com/... или https://disk.yandex.ru/..."
                   />
                 </div>
 

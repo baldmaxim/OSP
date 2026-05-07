@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS tender_counterparties (
   status tender_counterparty_status DEFAULT 'request_sent',
   invited_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   notes TEXT,
+  proposal_link TEXT,
   UNIQUE(tender_id, counterparty_id)
 );
 
@@ -40,3 +41,4 @@ COMMENT ON COLUMN tender_counterparties.counterparty_id IS 'Ссылка на к
 COMMENT ON COLUMN tender_counterparties.status IS 'Статус участия контрагента в тендере (Запрос отправлен, Отказ, КП предоставлено, Принято в работу)';
 COMMENT ON COLUMN tender_counterparties.invited_at IS 'Дата и время приглашения контрагента';
 COMMENT ON COLUMN tender_counterparties.notes IS 'Примечания к участию контрагента в тендере';
+COMMENT ON COLUMN tender_counterparties.proposal_link IS 'Ссылка на коммерческое предложение контрагента (Google/Yandex Drive)';
