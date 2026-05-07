@@ -5,6 +5,7 @@ import './ReportsPage.css'
 function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
+  const [activeTab, setActiveTab] = useState('tenders') // 'tenders' | 'contracts'
 
   useEffect(() => {
     fetchStats()
@@ -97,28 +98,41 @@ function ReportsPage() {
     <div className="reports-page">
       <div className="reports-header">
         <h2>Отчёты</h2>
+        <div className="reports-tabs">
+          <button
+            className={`reports-tab ${activeTab === 'tenders' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tenders')}
+          >
+            Тендеры
+            <span className="reports-tab-count">{s.totalTenders}</span>
+          </button>
+          <button
+            className={`reports-tab ${activeTab === 'contracts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('contracts')}
+          >
+            Договоры
+            <span className="reports-tab-count">{s.totalContracts}</span>
+          </button>
+        </div>
       </div>
 
       <div className="reports-content">
-        {/* Сводка */}
-        <div className="summary-cards">
-          <div className="summary-card">
-            <div className="summary-number">{s.totalTenders}</div>
-            <div className="summary-label">Всего тендеров</div>
-          </div>
-          <div className="summary-card">
-            <div className="summary-number">{s.tOpenConst + s.tOpenWar}</div>
-            <div className="summary-label">Открытых тендеров</div>
-          </div>
-          <div className="summary-card">
-            <div className="summary-number">{s.totalContracts}</div>
-            <div className="summary-label">Всего договоров</div>
-          </div>
-          <div className="summary-card">
-            <div className="summary-number">{s.cSignedConst + s.cSignedWar}</div>
-            <div className="summary-label">Заключено договоров</div>
-          </div>
-        </div>
+        {activeTab === 'tenders' && (
+          <>
+            <div className="summary-cards">
+              <div className="summary-card">
+                <div className="summary-number">{s.totalTenders}</div>
+                <div className="summary-label">Всего тендеров</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-number">{s.tOpenConst + s.tOpenWar}</div>
+                <div className="summary-label">Открытых тендеров</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-number">{s.tClosedConst + s.tClosedWar}</div>
+                <div className="summary-label">Завершённых тендеров</div>
+              </div>
+            </div>
 
         {/* Тендеры */}
         <div className="report-block">
@@ -228,6 +242,26 @@ function ReportsPage() {
           )}
         </div>
 
+          </>
+        )}
+
+        {activeTab === 'contracts' && (
+          <>
+            <div className="summary-cards">
+              <div className="summary-card">
+                <div className="summary-number">{s.totalContracts}</div>
+                <div className="summary-label">Всего договоров</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-number">{s.cPendingConst + s.cPendingWar}</div>
+                <div className="summary-label">На стадии заключения</div>
+              </div>
+              <div className="summary-card">
+                <div className="summary-number">{s.cSignedConst + s.cSignedWar}</div>
+                <div className="summary-label">Заключено договоров</div>
+              </div>
+            </div>
+
         {/* Договоры */}
         <div className="report-block">
           <div className="block-header">
@@ -289,6 +323,8 @@ function ReportsPage() {
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
     </div>
   )

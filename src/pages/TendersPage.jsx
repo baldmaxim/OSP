@@ -66,6 +66,8 @@ function TendersPage({ department = 'construction' }) {
     responsible_contact_id: '',
     cost_plan_link: '',
     cost_plan_responsible_id: '',
+    vor_link: '',
+    vor_responsible_id: '',
     summary_proposal_link: '',
     notes: '',
   })
@@ -113,7 +115,7 @@ function TendersPage({ department = 'construction' }) {
       setLoading(true)
       const { data, error } = await supabase
         .from('tenders')
-        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name)')
+        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name)')
         .order('start_date', { ascending: false })
 
       if (error) throw error
@@ -377,7 +379,7 @@ function TendersPage({ department = 'construction' }) {
         if (error) throw error
 
         // Логируем изменения каждого поля
-        const trackFields = ['work_description', 'start_date', 'end_date', 'tender_package_link', 'responsible_contact_id', 'object_id', 'cost_plan_link', 'cost_plan_responsible_id', 'summary_proposal_link', 'notes']
+        const trackFields = ['work_description', 'start_date', 'end_date', 'tender_package_link', 'responsible_contact_id', 'object_id', 'cost_plan_link', 'cost_plan_responsible_id', 'vor_link', 'vor_responsible_id', 'summary_proposal_link', 'notes']
         for (const f of trackFields) {
           const oldV = editingTender[f] ?? null
           const newV = formData[f] || null
@@ -449,6 +451,8 @@ function TendersPage({ department = 'construction' }) {
       responsible_contact_id: tender.responsible_contact_id || '',
       cost_plan_link: tender.cost_plan_link || '',
       cost_plan_responsible_id: tender.cost_plan_responsible_id || '',
+      vor_link: tender.vor_link || '',
+      vor_responsible_id: tender.vor_responsible_id || '',
       summary_proposal_link: tender.summary_proposal_link || '',
       notes: tender.notes || '',
     })
@@ -631,6 +635,8 @@ function TendersPage({ department = 'construction' }) {
     object_id: 'Объект',
     cost_plan_link: 'План затрат',
     cost_plan_responsible_id: 'Ответственный за план затрат',
+    vor_link: 'ВОР',
+    vor_responsible_id: 'Ответственный за ВОР',
     summary_proposal_link: 'Сводная КП',
     notes: 'Примечание'
   }
@@ -1387,23 +1393,23 @@ function TendersPage({ department = 'construction' }) {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label>Статус *</label>
-                  <select
-                    name="status"
-                    value={formData.status}
-                    onChange={handleInputChange}
-                    required
-                  >
-                    {statusOptions
-                      .filter(status => editingTender || status !== 'Завершен')
-                      .map((status) => (
+                {editingTender && (
+                  <div className="form-group">
+                    <label>Статус *</label>
+                    <select
+                      name="status"
+                      value={formData.status}
+                      onChange={handleInputChange}
+                      required
+                    >
+                      {statusOptions.map((status) => (
                         <option key={status} value={status}>
                           {status}
                         </option>
                       ))}
-                  </select>
-                </div>
+                    </select>
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label>Дата начала *</label>
@@ -1474,6 +1480,33 @@ function TendersPage({ department = 'construction' }) {
                       <select
                         name="cost_plan_responsible_id"
                         value={formData.cost_plan_responsible_id}
+                        onChange={handleInputChange}
+                      >
+                        <option value="">— не назначен —</option>
+                        {responsibleContacts.map((contact) => (
+                          <option key={contact.id} value={contact.id}>
+                            {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group full-width">
+                      <label>ВОР — ссылка</label>
+                      <input
+                        type="url"
+                        name="vor_link"
+                        value={formData.vor_link}
+                        onChange={handleInputChange}
+                        placeholder="https://drive.google.com/... или https://disk.yandex.ru/..."
+                      />
+                    </div>
+
+                    <div className="form-group full-width">
+                      <label>Ответственный за ВОР</label>
+                      <select
+                        name="vor_responsible_id"
+                        value={formData.vor_responsible_id}
                         onChange={handleInputChange}
                       >
                         <option value="">— не назначен —</option>

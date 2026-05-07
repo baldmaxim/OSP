@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
-import { useRole, ROLE_LABELS, SECTIONS } from '../contexts/RoleContext'
+import { useRole, SECTIONS } from '../contexts/RoleContext'
 import './AdminPage.css'
 
-const EMPLOYEE_ROLES = ['admin', 'engineer', 'economist', 'lawyer', 'construction_manager']
-
 function AdminPage() {
-  const { isAdmin } = useRole()
+  const { isAdmin, availableRoles, roleLabels, refreshAvailableRoles } = useRole()
   const [activeTab, setActiveTab] = useState('users')
+
+  // Список ролей-сотрудников (для селектов в users / permissions / form): всё кроме contractor
+  const employeeRoleKeys = availableRoles
+    .filter(r => r.key !== 'contractor')
+    .map(r => r.key)
 
   // --- Users ---
   const [userRoles, setUserRoles] = useState([])
@@ -19,9 +22,14 @@ function AdminPage() {
   const [selectedPermRole, setSelectedPermRole] = useState('engineer')
   const [permFeedback, setPermFeedback] = useState(null) // { kind: 'ok'|'err', text }
 
+  // --- Roles (управление справочником) ---
+  const [newRoleKey, setNewRoleKey] = useState('')
+  const [newRoleLabel, setNewRoleLabel] = useState('')
+  const [roleFeedback, setRoleFeedback] = useState(null)
+
   useEffect(() => {
     if (activeTab === 'users') fetchUsers()
-    else fetchPermissions()
+    else if (activeTab === 'permissions') fetchPermissions()
   }, [activeTab])
 
   const fetchUsers = async () => {
@@ -169,6 +177,76 @@ function AdminPage() {
     }
   }
 
+  const showRoleFeedback = (kind, text) => {
+    setRoleFeedback({ kind, text })
+    setTimeout(() => setRoleFeedback(null), kind === 'ok' ? 1800 : 5000)
+  }
+
+  const handleAddRole = async (e) => {
+    e.preventDefault()
+    const key = newRoleKey.trim().toLowerCase()
+    const label = newRoleLabel.trim()
+    if (!key || !label) {
+      showRoleFeedback('err', 'Заполните машинный ключ и название роли')
+      return
+    }
+    if (!/^[a-z][a-z0-9_]*$/.test(key)) {
+      showRoleFeedback('err', 'Ключ должен начинаться с латинской буквы и содержать только латиницу, цифры и нижнее подчёркивание')
+      return
+    }
+    try {
+      const { error } = await supabase
+        .from('roles')
+        .insert([{ key, label, is_system: false }])
+      if (error) throw error
+      setNewRoleKey('')
+      setNewRoleLabel('')
+      await refreshAvailableRoles()
+      showRoleFeedback('ok', 'Роль добавлена')
+    } catch (err) {
+      console.error('Ошибка добавления роли:', err)
+      if (err.code === '23505') {
+        showRoleFeedback('err', 'Роль с таким ключом уже существует')
+      } else if (/relation .* does not exist/i.test(err.message)) {
+        showRoleFeedback('err', 'Таблица roles не создана. Примените миграцию 20260507_roles_table.sql.')
+      } else {
+        showRoleFeedback('err', 'Ошибка: ' + err.message)
+      }
+    }
+  }
+
+  const handleRenameRole = async (key, newLabel) => {
+    const label = (newLabel || '').trim()
+    if (!label) return
+    try {
+      const { error } = await supabase
+        .from('roles')
+        .update({ label })
+        .eq('key', key)
+      if (error) throw error
+      await refreshAvailableRoles()
+      showRoleFeedback('ok', 'Сохранено')
+    } catch (err) {
+      showRoleFeedback('err', 'Ошибка: ' + err.message)
+    }
+  }
+
+  const handleDeleteRole = async (key, label) => {
+    if (!window.confirm(`Удалить роль «${label}»? Пользователи с этой ролью потеряют её, права в role_permissions останутся как сироты.`)) return
+    try {
+      // Сначала чистим связанные permissions
+      await supabase.from('role_permissions').delete().eq('role', key)
+      // Сбрасываем у пользователей
+      await supabase.from('user_roles').update({ role: 'engineer' }).eq('role', key)
+      const { error } = await supabase.from('roles').delete().eq('key', key).eq('is_system', false)
+      if (error) throw error
+      await refreshAvailableRoles()
+      showRoleFeedback('ok', 'Роль удалена')
+    } catch (err) {
+      showRoleFeedback('err', 'Ошибка: ' + err.message)
+    }
+  }
+
   const showPermFeedback = (kind, text) => {
     setPermFeedback({ kind, text })
     setTimeout(() => setPermFeedback(null), kind === 'ok' ? 1800 : 5000)
@@ -211,7 +289,7 @@ function AdminPage() {
       console.error('Ошибка изменения прав:', err)
       // Подсказка про CHECK-constraint, если миграция роли не применена
       if (/valid_perm_role|check constraint/i.test(err.message)) {
-        showPermFeedback('err', `Ошибка: роль «${ROLE_LABELS[role] || role}» отсутствует в CHECK-constraint таблицы role_permissions. Примените миграцию для этой роли.`)
+        showPermFeedback('err', `Ошибка: роль «${roleLabels[role] || role}» отсутствует в CHECK-constraint таблицы role_permissions. Примените миграцию для этой роли.`)
       } else {
         showPermFeedback('err', 'Ошибка: ' + err.message)
       }
@@ -241,6 +319,9 @@ function AdminPage() {
           </button>
           <button className={`admin-tab ${activeTab === 'permissions' ? 'active' : ''}`} onClick={() => setActiveTab('permissions')}>
             Права доступа
+          </button>
+          <button className={`admin-tab ${activeTab === 'roles' ? 'active' : ''}`} onClick={() => setActiveTab('roles')}>
+            Роли
           </button>
         </div>
       </div>
@@ -288,8 +369,8 @@ function AdminPage() {
                                 value={ur.role || 'engineer'}
                                 onChange={(e) => handleRoleChange(ur.user_id, e.target.value, ur.email)}
                               >
-                                {EMPLOYEE_ROLES.map(r => (
-                                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                                {employeeRoleKeys.map(r => (
+                                  <option key={r} value={r}>{roleLabels[r]}</option>
                                 ))}
                               </select>
                             </td>
@@ -348,8 +429,8 @@ function AdminPage() {
                               value={ur.role || 'engineer'}
                               onChange={(e) => handleRoleChange(ur.user_id, e.target.value, ur.email)}
                             >
-                              {EMPLOYEE_ROLES.map(r => (
-                                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                              {employeeRoleKeys.map(r => (
+                                <option key={r} value={r}>{roleLabels[r]}</option>
                               ))}
                             </select>
                           </td>
@@ -397,8 +478,8 @@ function AdminPage() {
                   value={selectedPermRole}
                   onChange={(e) => setSelectedPermRole(e.target.value)}
                 >
-                  {EMPLOYEE_ROLES.map(r => (
-                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  {employeeRoleKeys.map(r => (
+                    <option key={r} value={r}>{roleLabels[r]}</option>
                   ))}
                 </select>
                 {permFeedback && (
@@ -455,6 +536,104 @@ function AdminPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ===== Роли ===== */}
+      {activeTab === 'roles' && (
+        <div className="admin-content">
+          <div className="roles-pane">
+            <form className="roles-add-form" onSubmit={handleAddRole}>
+              <div className="form-row">
+                <div className="form-col">
+                  <label>Машинный ключ</label>
+                  <input
+                    type="text"
+                    value={newRoleKey}
+                    onChange={(e) => setNewRoleKey(e.target.value)}
+                    placeholder="site_manager"
+                  />
+                  <small>Латиница, цифры, _ — например <code>site_manager</code></small>
+                </div>
+                <div className="form-col">
+                  <label>Название</label>
+                  <input
+                    type="text"
+                    value={newRoleLabel}
+                    onChange={(e) => setNewRoleLabel(e.target.value)}
+                    placeholder="Прораб"
+                  />
+                  <small>Отображается в селектах</small>
+                </div>
+                <div className="form-col-action">
+                  <button type="submit" className="btn-primary">
+                    Добавить роль
+                  </button>
+                </div>
+              </div>
+              {roleFeedback && (
+                <div className={`perm-feedback ${roleFeedback.kind}`} style={{ marginTop: '0.5rem' }}>
+                  {roleFeedback.text}
+                </div>
+              )}
+            </form>
+
+            <table className="admin-table roles-table">
+              <thead>
+                <tr>
+                  <th>Ключ</th>
+                  <th>Название</th>
+                  <th>Тип</th>
+                  <th style={{ width: '60px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {availableRoles.length === 0 ? (
+                  <tr><td colSpan="4" className="admin-empty">Ролей пока нет. Примените миграцию <code>20260507_roles_table.sql</code>.</td></tr>
+                ) : (
+                  availableRoles.map(r => (
+                    <tr key={r.key}>
+                      <td><code>{r.key}</code></td>
+                      <td>
+                        <input
+                          type="text"
+                          defaultValue={r.label}
+                          disabled={r.is_system}
+                          onBlur={(e) => {
+                            if (!r.is_system && e.target.value !== r.label) {
+                              handleRenameRole(r.key, e.target.value)
+                            }
+                          }}
+                          className="role-rename-input"
+                        />
+                      </td>
+                      <td>
+                        {r.is_system
+                          ? <span className="state-badge new">Системная</span>
+                          : <span className="state-badge blocked" style={{ background: 'rgba(8,145,178,0.1)', color: '#0e7490' }}>Пользовательская</span>}
+                      </td>
+                      <td>
+                        {!r.is_system && (
+                          <button
+                            className="btn-delete-user"
+                            onClick={() => handleDeleteRole(r.key, r.label)}
+                            title="Удалить роль"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+
+            <div className="permissions-legend">
+              <span>Системные роли изменять и удалять нельзя</span>
+              <span>Удаление пользовательской роли переводит её носителей в «Инженер ОСП»</span>
+            </div>
+          </div>
         </div>
       )}
     </div>

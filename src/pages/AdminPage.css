@@ -491,3 +491,118 @@
   height: 16px;
   cursor: pointer;
 }
+
+/* Roles management */
+.roles-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+}
+
+.roles-add-form {
+  padding: 0.875rem 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.roles-add-form .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.875rem;
+  align-items: end;
+}
+
+.roles-add-form .form-col,
+.roles-add-form .form-col-action {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.roles-add-form .form-col label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.roles-add-form .form-col input {
+  padding: 0.4375rem 0.625rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.roles-add-form .form-col small {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.roles-add-form .form-col code {
+  font-family: Consolas, Monaco, monospace;
+  background: var(--bg-secondary);
+  padding: 0 0.25rem;
+  border-radius: 3px;
+}
+
+.roles-add-form .form-col-action .btn-primary {
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.8125rem;
+  border-radius: 5px;
+}
+
+.roles-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.roles-table thead th {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.75rem;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.roles-table tbody td {
+  padding: 0.4375rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.roles-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.roles-table code {
+  font-family: Consolas, Monaco, monospace;
+  font-size: 0.75rem;
+  color: var(--primary-color);
+}
+
+.role-rename-input {
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 4px;
+}
+
+.role-rename-input:not(:disabled):hover,
+.role-rename-input:not(:disabled):focus {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+  outline: none;
+}
+
+.role-rename-input:disabled {
+  cursor: not-allowed;
+  color: var(--text-tertiary);
+}

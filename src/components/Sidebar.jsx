@@ -1,25 +1,27 @@
 import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useRole, ROLE_LABELS } from '../contexts/RoleContext'
+import { useRole } from '../contexts/RoleContext'
 import ThemeToggle from './ThemeToggle'
 import './Sidebar.css'
 
 function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { logout, canView, isAdmin, role } = useRole()
+  const { logout, canView, isAdmin, role, roleLabels } = useRole()
 
-  const [tendersExpanded, setTendersExpanded] = useState(
-    location.pathname.startsWith('/tenders') || location.pathname.startsWith('/cost-plans')
-  )
+  const isInTendersSection =
+    location.pathname.startsWith('/tenders')
+    || location.pathname.startsWith('/cost-plans')
+    || location.pathname.startsWith('/vors')
 
-  const isTendersActive =
-    location.pathname.startsWith('/tenders') || location.pathname.startsWith('/cost-plans')
+  const [tendersExpanded, setTendersExpanded] = useState(isInTendersSection)
+  const isTendersActive = isInTendersSection
 
   const tendersSubItems = [
     { path: '/tenders/construction', label: 'Основное строительство', icon: '🏗️' },
     { path: '/tenders/warranty', label: 'Гарантийный отдел', icon: '🛡️' },
     { path: '/cost-plans', label: 'Планы затрат', icon: '💰' },
+    { path: '/vors', label: 'ВОРы', icon: '📐' },
   ]
 
   return (
@@ -28,7 +30,7 @@ function Sidebar() {
         <h1 className="sidebar-title">ОСП</h1>
         <p className="sidebar-subtitle">отдел сопровождения подрядчиков</p>
         {role && role !== 'contractor' && (
-          <span className="sidebar-role">{ROLE_LABELS[role]}</span>
+          <span className="sidebar-role">{roleLabels?.[role] || role}</span>
         )}
       </div>
 

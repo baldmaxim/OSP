@@ -46,6 +46,36 @@ export function RoleProvider({ children }) {
   const [authLoading, setAuthLoading] = useState(true)
   const [permissions, setPermissions] = useState({}) // { section: { can_view, can_edit } }
   const [userProfile, setUserProfile] = useState({ full_name: '' })
+  // Динамический справочник ролей из БД (таблица roles)
+  const [availableRoles, setAvailableRoles] = useState([])
+
+  const fetchAvailableRoles = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('roles')
+        .select('key, label, is_system')
+        .order('is_system', { ascending: false })
+        .order('label', { ascending: true })
+      if (error) throw error
+      setAvailableRoles(data || [])
+    } catch (err) {
+      console.warn('Не удалось загрузить справочник ролей (таблица roles?):', err.message)
+      // Фоллбэк: используем встроенные ROLE_LABELS
+      setAvailableRoles(Object.entries(ROLE_LABELS).map(([key, label]) => ({
+        key, label, is_system: true
+      })))
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchAvailableRoles()
+  }, [fetchAvailableRoles])
+
+  // Сводный лейбл-маппинг: динамический из БД + статический фоллбэк
+  const dynamicRoleLabels = availableRoles.reduce((acc, r) => {
+    acc[r.key] = r.label
+    return acc
+  }, { ...ROLE_LABELS })
 
   // Загрузить права для роли
   const fetchPermissions = useCallback(async (userRole) => {
@@ -306,7 +336,10 @@ export function RoleProvider({ children }) {
       refreshPermissions,
       ROLES,
       ROLE_LABELS,
-      SECTIONS
+      SECTIONS,
+      availableRoles,
+      roleLabels: dynamicRoleLabels,
+      refreshAvailableRoles: fetchAvailableRoles
     }}>
       {children}
     </RoleContext.Provider>
