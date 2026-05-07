@@ -30,7 +30,10 @@
       "Bash(tasklist:*)",
       "Bash(findstr:*)",
       "Bash(npx eslint:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "mcp__claude_ai_Supabase__list_projects",
+      "PowerShell(npm install --no-audit --no-fund)",
+      "PowerShell(npm run lint 2>&1)"
     ],
     "deny": [],
     "ask": []
