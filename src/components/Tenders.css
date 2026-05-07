@@ -115,6 +115,18 @@
   border: 1px solid #c7d2fe;
 }
 
+.status-waiting-vor {
+  background-color: #f5f3ff;
+  color: #6b3fa0;
+  border: 1px solid #ddd6fe;
+}
+
+.status-suspended {
+  background-color: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fed7aa;
+}
+
 [data-theme='dark'] .status-not-started {
   background-color: #334155;
   color: #cbd5e1;
@@ -137,6 +149,18 @@
   background-color: #312e81;
   color: #c7d2fe;
   border-color: #4338ca;
+}
+
+[data-theme='dark'] .status-waiting-vor {
+  background-color: #3b2a5a;
+  color: #d8c8ff;
+  border-color: #5b4a8a;
+}
+
+[data-theme='dark'] .status-suspended {
+  background-color: #4a2c1a;
+  color: #fbbf94;
+  border-color: #8a4a30;
 }
 
 /* Options в select для темной темы */
@@ -613,6 +637,17 @@
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.tenders-page .data-table th.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.tenders-page .data-table th.sortable-th:hover {
+  color: var(--text-primary);
+  background-color: var(--hover-bg);
 }
 
 .tenders-page .data-table td {

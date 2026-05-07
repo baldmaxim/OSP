@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   tender_package_link TEXT,
   winner_counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   CONSTRAINT check_dates CHECK (end_date >= start_date)
@@ -63,5 +64,6 @@ COMMENT ON COLUMN tenders.end_date IS 'Дата окончания тендер�
 COMMENT ON COLUMN tenders.tender_package_link IS 'Ссылка на тендерный пакет';
 COMMENT ON COLUMN tenders.winner_counterparty_id IS 'Контрагент-победитель тендера';
 COMMENT ON COLUMN tenders.responsible_contact_id IS 'Ответственный сотрудник за тендер (из таблицы contacts)';
+COMMENT ON COLUMN tenders.notes IS 'Примечание по тендеру (свободный текст, ведётся ответственным)';
 COMMENT ON COLUMN tenders.created_at IS 'Дата и время создания записи';
 COMMENT ON COLUMN tenders.updated_at IS 'Дата и время последнего обновления записи';

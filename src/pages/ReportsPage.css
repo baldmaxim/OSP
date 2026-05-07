@@ -208,6 +208,96 @@
   min-width: 2px;
 }
 
+/* Tenders by responsible — table */
+.responsible-empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: 0.875rem;
+}
+
+.responsible-table-wrap {
+  overflow-x: auto;
+}
+
+.responsible-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.responsible-table thead th {
+  padding: 0.625rem 0.875rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.responsible-table thead th.num {
+  text-align: right;
+  width: 90px;
+}
+
+.responsible-table thead th.bar-col {
+  width: 35%;
+  min-width: 200px;
+}
+
+.responsible-table tbody td {
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.responsible-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.responsible-table tbody tr:hover {
+  background-color: var(--hover-bg);
+}
+
+.responsible-table td.name {
+  font-weight: 500;
+}
+
+.responsible-table td.name.muted {
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.responsible-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.responsible-table td.num.total {
+  font-weight: 600;
+}
+
+.responsible-table .bar-with-label {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.responsible-table .bar-with-label .bar-track {
+  flex: 1;
+}
+
+.responsible-table .bar-pct {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: right;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .summary-cards {

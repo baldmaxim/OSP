@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { useRole, ROLE_LABELS, SECTIONS } from '../contexts/RoleContext'
 import './AdminPage.css'
 
-const EMPLOYEE_ROLES = ['admin', 'engineer', 'economist', 'lawyer']
+const EMPLOYEE_ROLES = ['admin', 'engineer', 'economist', 'lawyer', 'construction_manager']
 
 function AdminPage() {
   const { isAdmin } = useRole()

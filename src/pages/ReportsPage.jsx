@@ -16,7 +16,7 @@ function ReportsPage() {
 
       const { data: tenders } = await supabase
         .from('tenders')
-        .select('id, status, objects(status)')
+        .select('id, status, responsible_contact_id, objects(status), responsible_contact:contacts!responsible_contact_id(id, full_name)')
 
       const { data: contracts } = await supabase
         .from('contracts')
@@ -31,6 +31,22 @@ function ReportsPage() {
       const cConstruction = c.filter(x => x.objects?.status === 'main_construction')
       const cWarranty = c.filter(x => x.objects?.status === 'warranty_service')
 
+      // Распределение тендеров по ответственным
+      const byResponsibleMap = new Map()
+      for (const x of t) {
+        const id = x.responsible_contact_id || '_unassigned'
+        const name = x.responsible_contact?.full_name || 'Не назначен'
+        if (!byResponsibleMap.has(id)) {
+          byResponsibleMap.set(id, { id, name, inWork: 0, completed: 0 })
+        }
+        const row = byResponsibleMap.get(id)
+        if (x.status === 'Завершен') row.completed += 1
+        else row.inWork += 1
+      }
+      const byResponsible = Array.from(byResponsibleMap.values())
+        .map(r => ({ ...r, total: r.inWork + r.completed }))
+        .sort((a, b) => b.total - a.total)
+
       setStats({
         tOpenConst: tConstruction.filter(x => x.status !== 'Завершен').length,
         tClosedConst: tConstruction.filter(x => x.status === 'Завершен').length,
@@ -42,6 +58,7 @@ function ReportsPage() {
         cSignedWar: cWarranty.filter(x => x.status === 'signed').length,
         totalTenders: t.length,
         totalContracts: c.length,
+        byResponsible,
       })
     } catch (err) {
       console.error('Ошибка загрузки отчётов:', err.message)
@@ -163,6 +180,52 @@ function ReportsPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Распределение тендеров по ответственным */}
+        <div className="report-block">
+          <div className="block-header">
+            <h3>Тендеры по ответственным</h3>
+            <span className="block-total">{s.byResponsible.length}</span>
+          </div>
+
+          {s.byResponsible.length === 0 ? (
+            <div className="responsible-empty">Тендеров пока нет</div>
+          ) : (
+            <div className="responsible-table-wrap">
+              <table className="responsible-table">
+                <thead>
+                  <tr>
+                    <th>Ответственный</th>
+                    <th className="num">В работе</th>
+                    <th className="num">Завершено</th>
+                    <th className="num">Всего</th>
+                    <th className="bar-col">Доля завершённых</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.byResponsible.map(r => {
+                    const pct = r.total > 0 ? Math.round((r.completed / r.total) * 100) : 0
+                    const isUnassigned = r.id === '_unassigned'
+                    return (
+                      <tr key={r.id}>
+                        <td className={isUnassigned ? 'name muted' : 'name'}>{r.name}</td>
+                        <td className="num">{r.inWork}</td>
+                        <td className="num">{r.completed}</td>
+                        <td className="num total">{r.total}</td>
+                        <td className="bar-col">
+                          <div className="bar-with-label">
+                            <Bar value={r.completed} max={r.total} color="#2563eb" />
+                            <span className="bar-pct">{pct}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Договоры */}

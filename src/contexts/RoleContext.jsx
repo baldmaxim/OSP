@@ -9,6 +9,7 @@ export const ROLES = {
   ENGINEER: 'engineer',
   ECONOMIST: 'economist',
   LAWYER: 'lawyer',
+  CONSTRUCTION_MANAGER: 'construction_manager',
   CONTRACTOR: 'contractor'
 }
 
@@ -17,6 +18,7 @@ export const ROLE_LABELS = {
   engineer: 'Инженер ОСП',
   economist: 'Экономист ОСП',
   lawyer: 'Юрист ОСП',
+  construction_manager: 'Руководитель строительства',
   contractor: 'Подрядчик'
 }
 

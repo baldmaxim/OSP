@@ -65,6 +65,11 @@ function TenderDetailPage() {
   const [auditLog, setAuditLog] = useState([])
   const [loadingAuditLog, setLoadingAuditLog] = useState(false)
 
+  // Примечание тендера (inline-редактирование)
+  const [notesDraft, setNotesDraft] = useState('')
+  const [notesSaving, setNotesSaving] = useState(false)
+  const [notesSavedAt, setNotesSavedAt] = useState(null)
+
   useEffect(() => {
     if (tenderId) {
       fetchTenderData()
@@ -97,6 +102,42 @@ function TenderDetailPage() {
     }
   }
 
+  const handleSaveNotes = async () => {
+    if (!tender) return
+    const oldValue = tender.notes || ''
+    const newValue = notesDraft || ''
+    if (oldValue === newValue) return
+    try {
+      setNotesSaving(true)
+      const { error } = await supabase
+        .from('tenders')
+        .update({ notes: newValue || null })
+        .eq('id', tender.id)
+      if (error) throw error
+
+      const role = localStorage.getItem('userRole') || null
+      await supabase.from('tender_audit_log').insert([{
+        tender_id: tender.id,
+        event_type: 'field_updated',
+        field_name: 'notes',
+        old_value: oldValue || null,
+        new_value: newValue || null,
+        description: 'Изменено: Примечание',
+        changed_by_role: role,
+        changed_by_name: null
+      }])
+
+      setTender(prev => prev ? { ...prev, notes: newValue } : prev)
+      setNotesSavedAt(Date.now())
+      if (activeTab === 'history') loadAuditLog()
+    } catch (err) {
+      console.error('Ошибка сохранения примечания:', err.message)
+      alert('Ошибка сохранения примечания: ' + err.message)
+    } finally {
+      setNotesSaving(false)
+    }
+  }
+
   const formatDateTime = (dt) => {
     if (!dt) return ''
     const d = new Date(dt)
@@ -120,7 +161,8 @@ function TenderDetailPage() {
     end_date: 'Дата окончания',
     tender_package_link: 'Ссылка на тендерный пакет',
     responsible_contact_id: 'Ответственный',
-    object_id: 'Объект'
+    object_id: 'Объект',
+    notes: 'Примечание'
   }
 
   const formatHistoryValue = (val) => {
@@ -167,6 +209,7 @@ function TenderDetailPage() {
 
       if (tenderError) throw tenderError
       setTender(tenderData)
+      setNotesDraft(tenderData?.notes || '')
 
       // Загружаем контрагентов тендера
       const { data: counterpartiesData, error: cpError } = await supabase
@@ -1492,7 +1535,9 @@ function TenderDetailPage() {
   const getStatusBadgeClass = (status) => {
     const classes = {
       'Не начат': 'status-not-started',
+      'Ожидание ВОР': 'status-waiting-vor',
       'Идет тендерная процедура': 'status-in-progress',
+      'Приостановка тендера': 'status-suspended',
       'Завершен': 'status-completed',
       'Принято в работу': 'status-accepted'
     }
@@ -1655,6 +1700,24 @@ function TenderDetailPage() {
               </a>
             </div>
           )}
+        </div>
+
+        <div className="tender-notes">
+          <div className="tender-notes-header">
+            <span className="info-label">Примечание</span>
+            {notesSaving && <span className="tender-notes-status">Сохранение…</span>}
+            {!notesSaving && notesSavedAt && (Date.now() - notesSavedAt < 2500) && (
+              <span className="tender-notes-status saved">Сохранено</span>
+            )}
+          </div>
+          <textarea
+            className="tender-notes-textarea"
+            value={notesDraft}
+            onChange={(e) => setNotesDraft(e.target.value)}
+            onBlur={handleSaveNotes}
+            placeholder="Свободные заметки по тендеру: ход переговоров, особые условия, риски, договорённости…"
+            rows={2}
+          />
         </div>
       </div>
 

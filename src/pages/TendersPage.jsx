@@ -54,6 +54,8 @@ function TendersPage({ department = 'construction' }) {
   const [templateSaved, setTemplateSaved] = useState(false)
   const [objectFilter, setObjectFilter] = useState('')
   const [responsibleFilter, setResponsibleFilter] = useState('')
+  const [sortField, setSortField] = useState('start_date') // 'start_date' | 'end_date'
+  const [sortOrder, setSortOrder] = useState('desc') // 'asc' | 'desc'
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
@@ -62,13 +64,14 @@ function TendersPage({ department = 'construction' }) {
     end_date: '',
     tender_package_link: '',
     responsible_contact_id: '',
+    notes: '',
   })
 
   // Определяем статус объекта в зависимости от отдела
   const objectStatus = department === 'construction' ? 'main_construction' : 'warranty_service'
   const pageTitle = department === 'construction' ? 'Тендеры — Основное строительство' : 'Тендеры — Гарантийный отдел'
 
-  const statusOptions = ['Не начат', 'Идет тендерная процедура', 'Завершен', 'Принято в работу']
+  const statusOptions = ['Не начат', 'Ожидание ВОР', 'Идет тендерная процедура', 'Приостановка тендера', 'Завершен', 'Принято в работу']
 
   const counterpartyStatusOptions = [
     { value: 'request_sent', label: 'Запрос отправлен' },
@@ -351,7 +354,7 @@ function TendersPage({ department = 'construction' }) {
         if (error) throw error
 
         // Логируем изменения каждого поля
-        const trackFields = ['work_description', 'start_date', 'end_date', 'tender_package_link', 'responsible_contact_id', 'object_id']
+        const trackFields = ['work_description', 'start_date', 'end_date', 'tender_package_link', 'responsible_contact_id', 'object_id', 'notes']
         for (const f of trackFields) {
           const oldV = editingTender[f] ?? null
           const newV = formData[f] || null
@@ -409,6 +412,7 @@ function TendersPage({ department = 'construction' }) {
         end_date: '',
         tender_package_link: '',
         responsible_contact_id: '',
+        notes: '',
       })
       fetchTenders()
     } catch (error) {
@@ -427,6 +431,7 @@ function TendersPage({ department = 'construction' }) {
       end_date: tender.end_date || '',
       tender_package_link: tender.tender_package_link || '',
       responsible_contact_id: tender.responsible_contact_id || '',
+      notes: tender.notes || '',
     })
     setShowModal(true)
   }
@@ -457,6 +462,7 @@ function TendersPage({ department = 'construction' }) {
       end_date: '',
       tender_package_link: '',
       responsible_contact_id: '',
+      notes: '',
     })
     setShowModal(true)
   }
@@ -600,7 +606,8 @@ function TendersPage({ department = 'construction' }) {
     end_date: 'Дата окончания',
     tender_package_link: 'Ссылка на тендерный пакет',
     responsible_contact_id: 'Ответственный',
-    object_id: 'Объект'
+    object_id: 'Объект',
+    notes: 'Примечание'
   }
 
   const logTenderEvent = async (tenderId, eventType, payload = {}) => {
@@ -678,7 +685,9 @@ function TendersPage({ department = 'construction' }) {
   const getStatusBadgeClass = (status) => {
     const statusClasses = {
       'Не начат': 'status-not-started',
+      'Ожидание ВОР': 'status-waiting-vor',
       'Идет тендерная процедура': 'status-in-progress',
+      'Приостановка тендера': 'status-suspended',
       'Завершен': 'status-completed',
       'Принято в работу': 'status-accepted',
     }
@@ -703,6 +712,30 @@ function TendersPage({ department = 'construction' }) {
     if (responsibleFilter && tender.responsible_contact_id !== responsibleFilter) return false
     return true
   })
+
+  // Сортировка по выбранному полю-дате
+  const sortedTenders = [...filteredByTab].sort((a, b) => {
+    const av = a[sortField] || ''
+    const bv = b[sortField] || ''
+    if (av === bv) return 0
+    if (!av) return 1   // пустые в конец
+    if (!bv) return -1
+    return sortOrder === 'asc' ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1)
+  })
+
+  const toggleSort = (field) => {
+    if (sortField === field) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortOrder('desc')
+    }
+  }
+
+  const sortIndicator = (field) => {
+    if (sortField !== field) return ' ↕'
+    return sortOrder === 'asc' ? ' ↑' : ' ↓'
+  }
 
   // Подсчет количества тендеров для каждой вкладки
   const activeTendersCount = tenders.filter(t => t.status !== 'Завершен').length
@@ -829,14 +862,20 @@ function TendersPage({ department = 'construction' }) {
               <th>Описание работ</th>
               <th>Статус</th>
               {activeTab === 'completed' && <th>Победитель</th>}
-              <th>Сроки</th>
+              <th
+                className="sortable-th"
+                onClick={() => toggleSort('start_date')}
+                title="Сортировать по датам"
+              >
+                Сроки{sortIndicator('start_date')}
+              </th>
               <th>Ответственный</th>
               <th>Тендерный пакет</th>
               <th className="actions-column">Действия</th>
             </tr>
           </thead>
           <tbody>
-            {filteredByTab.length === 0 ? (
+            {sortedTenders.length === 0 ? (
               <tr>
                 <td colSpan={activeTab === 'completed' ? 9 : 8} className="no-data">
                   {activeTab === 'completed'
@@ -845,7 +884,7 @@ function TendersPage({ department = 'construction' }) {
                 </td>
               </tr>
             ) : (
-              filteredByTab.map((tender) => (
+              sortedTenders.map((tender) => (
                 <React.Fragment key={tender.id}>
                   <tr className={isOverdue(tender) ? 'overdue-row' : ''}>
                     <td>
@@ -1313,6 +1352,17 @@ function TendersPage({ department = 'construction' }) {
                     value={formData.tender_package_link}
                     onChange={handleInputChange}
                     placeholder="https://example.com/tender-package.pdf"
+                  />
+                </div>
+
+                <div className="form-group full-width">
+                  <label>Примечание</label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    rows={3}
+                    placeholder="Свободные заметки по тендеру: ход переговоров, особые условия, риски и т.п."
                   />
                 </div>
               </div>
