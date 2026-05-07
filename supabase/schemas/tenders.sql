@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,
   work_description TEXT NOT NULL,
-  status VARCHAR(50) NOT NULL DEFAULT 'Не начат',
+  status VARCHAR(50) NOT NULL DEFAULT 'Заявка на тендер',
   start_date DATE NOT NULL,
   end_date DATE NOT NULL,
   tender_package_link TEXT,
@@ -58,7 +58,7 @@ COMMENT ON TABLE tenders IS 'Тендеры и тендерные процеду
 COMMENT ON COLUMN tenders.id IS 'Уникальный идентификатор тендера';
 COMMENT ON COLUMN tenders.object_id IS 'Ссылка на объект строительства';
 COMMENT ON COLUMN tenders.work_description IS 'Описание работ';
-COMMENT ON COLUMN tenders.status IS 'Статус тендера (Не начат, Идет тендерная процедура, Завершен, Принято в работу)';
+COMMENT ON COLUMN tenders.status IS 'Статус тендера (Заявка на тендер, Подготовка ВОР, Идет тендерная процедура, Завершен, Приостановка тендера)';
 COMMENT ON COLUMN tenders.start_date IS 'Дата начала тендерной процедуры';
 COMMENT ON COLUMN tenders.end_date IS 'Дата окончания тендерной процедуры';
 COMMENT ON COLUMN tenders.tender_package_link IS 'Ссылка на тендерный пакет';

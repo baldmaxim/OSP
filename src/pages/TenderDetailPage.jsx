@@ -64,6 +64,7 @@ function TenderDetailPage() {
   // История изменений тендера
   const [auditLog, setAuditLog] = useState([])
   const [loadingAuditLog, setLoadingAuditLog] = useState(false)
+  const [auditLogError, setAuditLogError] = useState(null)
 
   // Примечание тендера (inline-редактирование)
   const [notesDraft, setNotesDraft] = useState('')
@@ -77,16 +78,19 @@ function TenderDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
 
+  // Грузим историю сразу при открытии тендера, чтобы счётчик в табе был актуален
+  // и при переключении на вкладку «История» данные были уже на месте.
   useEffect(() => {
-    if (activeTab === 'history' && tenderId) {
+    if (tenderId) {
       loadAuditLog()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, tenderId])
+  }, [tenderId])
 
   const loadAuditLog = async () => {
     try {
       setLoadingAuditLog(true)
+      setAuditLogError(null)
       const { data, error } = await supabase
         .from('tender_audit_log')
         .select('*')
@@ -97,6 +101,7 @@ function TenderDetailPage() {
     } catch (err) {
       console.error('Ошибка загрузки истории тендера:', err.message)
       setAuditLog([])
+      setAuditLogError(err.message || 'Не удалось загрузить историю')
     } finally {
       setLoadingAuditLog(false)
     }
@@ -129,7 +134,7 @@ function TenderDetailPage() {
 
       setTender(prev => prev ? { ...prev, notes: newValue } : prev)
       setNotesSavedAt(Date.now())
-      if (activeTab === 'history') loadAuditLog()
+      loadAuditLog()
     } catch (err) {
       console.error('Ошибка сохранения примечания:', err.message)
       alert('Ошибка сохранения примечания: ' + err.message)
@@ -1534,12 +1539,15 @@ function TenderDetailPage() {
 
   const getStatusBadgeClass = (status) => {
     const classes = {
+      'Заявка на тендер': 'status-not-started',
+      'Подготовка ВОР': 'status-waiting-vor',
+      'Идет тендерная процедура': 'status-in-progress',
+      'Завершен': 'status-completed',
+      'Приостановка тендера': 'status-suspended',
+      // legacy fallbacks
       'Не начат': 'status-not-started',
       'Ожидание ВОР': 'status-waiting-vor',
-      'Идет тендерная процедура': 'status-in-progress',
-      'Приостановка тендера': 'status-suspended',
-      'Завершен': 'status-completed',
-      'Принято в работу': 'status-accepted'
+      'Принято в работу': 'status-completed'
     }
     return classes[status] || ''
   }
@@ -2480,6 +2488,12 @@ function TenderDetailPage() {
             </div>
             {loadingAuditLog ? (
               <div className="empty-state">Загрузка истории...</div>
+            ) : auditLogError ? (
+              <div className="empty-state">
+                <p>Не удалось загрузить историю</p>
+                <p className="hint">Ошибка: {auditLogError}</p>
+                <p className="hint">Проверьте, что таблица <code>tender_audit_log</code> создана (миграция <code>20260506_tender_audit_log.sql</code>) и доступна для текущего пользователя.</p>
+              </div>
             ) : auditLog.length === 0 ? (
               <div className="empty-state">
                 <p>Записей пока нет</p>

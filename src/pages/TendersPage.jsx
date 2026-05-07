@@ -59,7 +59,7 @@ function TendersPage({ department = 'construction' }) {
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
-    status: 'Не начат',
+    status: 'Заявка на тендер',
     start_date: '',
     end_date: '',
     tender_package_link: '',
@@ -71,7 +71,7 @@ function TendersPage({ department = 'construction' }) {
   const objectStatus = department === 'construction' ? 'main_construction' : 'warranty_service'
   const pageTitle = department === 'construction' ? 'Тендеры — Основное строительство' : 'Тендеры — Гарантийный отдел'
 
-  const statusOptions = ['Не начат', 'Ожидание ВОР', 'Идет тендерная процедура', 'Приостановка тендера', 'Завершен', 'Принято в работу']
+  const statusOptions = ['Заявка на тендер', 'Подготовка ВОР', 'Идет тендерная процедура', 'Завершен', 'Приостановка тендера']
 
   const counterpartyStatusOptions = [
     { value: 'request_sent', label: 'Запрос отправлен' },
@@ -407,7 +407,7 @@ function TendersPage({ department = 'construction' }) {
       setFormData({
         object_id: '',
         work_description: '',
-        status: 'Не начат',
+        status: 'Заявка на тендер',
         start_date: '',
         end_date: '',
         tender_package_link: '',
@@ -457,7 +457,7 @@ function TendersPage({ department = 'construction' }) {
     setFormData({
       object_id: '',
       work_description: '',
-      status: 'Не начат',
+      status: 'Заявка на тендер',
       start_date: '',
       end_date: '',
       tender_package_link: '',
@@ -684,12 +684,15 @@ function TendersPage({ department = 'construction' }) {
 
   const getStatusBadgeClass = (status) => {
     const statusClasses = {
+      'Заявка на тендер': 'status-not-started',
+      'Подготовка ВОР': 'status-waiting-vor',
+      'Идет тендерная процедура': 'status-in-progress',
+      'Завершен': 'status-completed',
+      'Приостановка тендера': 'status-suspended',
+      // legacy fallbacks (на случай несмигрированных данных)
       'Не начат': 'status-not-started',
       'Ожидание ВОР': 'status-waiting-vor',
-      'Идет тендерная процедура': 'status-in-progress',
-      'Приостановка тендера': 'status-suspended',
-      'Завершен': 'status-completed',
-      'Принято в работу': 'status-accepted',
+      'Принято в работу': 'status-completed',
     }
     return statusClasses[status] || 'status-not-started'
   }
@@ -1294,7 +1297,7 @@ function TendersPage({ department = 'construction' }) {
                     required
                   >
                     {statusOptions
-                      .filter(status => editingTender || (status !== 'Завершен' && status !== 'Принято в работу'))
+                      .filter(status => editingTender || status !== 'Завершен')
                       .map((status) => (
                         <option key={status} value={status}>
                           {status}

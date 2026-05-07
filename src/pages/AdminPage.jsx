@@ -110,18 +110,6 @@ function AdminPage() {
     }
   }
 
-  // Отклонить (удалить заявку)
-  const handleReject = async (id, email) => {
-    if (!window.confirm(`Отклонить и удалить заявку ${email || 'пользователя'}?`)) return
-    try {
-      const { error } = await supabase.from('user_roles').delete().eq('id', id)
-      if (error) throw error
-      fetchUsers()
-    } catch (err) {
-      alert('Ошибка: ' + err.message)
-    }
-  }
-
   // Заблокировать (снять подтверждение)
   const handleBlock = async (id) => {
     try {
@@ -158,35 +146,61 @@ function AdminPage() {
     }
   }
 
-  const handleDeleteUser = async (id, email) => {
-    if (!window.confirm(`Удалить пользователя ${email || ''}?`)) return
+  const handleDeleteUser = async (userId, email) => {
+    if (!userId) return
+    if (!window.confirm(`Полностью удалить пользователя ${email || ''}? Это действие необратимо: пользователь будет удалён из системы и больше не сможет войти.`)) return
     try {
-      const { error } = await supabase.from('user_roles').delete().eq('id', id)
-      if (error) throw error
+      const { error } = await supabase.rpc('admin_delete_user', { target_user_id: userId })
+      if (error) {
+        // Фоллбэк: если RPC ещё не создан — удаляем хотя бы запись в user_roles
+        if (/function .* does not exist/i.test(error.message)) {
+          alert('RPC admin_delete_user не найдена в БД. Применяю частичное удаление: убирается роль (запись в user_roles), но запись в auth.users останется. Чтобы удалять полностью — примените миграцию 20260507_admin_delete_user_function.sql.')
+          const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', userId)
+          if (delError) throw delError
+        } else {
+          throw error
+        }
+      }
       fetchUsers()
     } catch (err) {
-      alert('Ошибка: ' + err.message)
+      alert('Ошибка удаления: ' + err.message)
     }
   }
 
-  const handlePermissionToggle = async (permId, field) => {
-    const perm = permissions.find(p => p.id === permId)
-    if (!perm) return
+  const handlePermissionToggle = async (role, section, field) => {
+    const existing = permissions.find(p => p.role === role && p.section === section)
 
-    const newValue = !perm[field]
-    const updates = { [field]: newValue }
-    if (field === 'can_view' && !newValue) updates.can_edit = false
-    if (field === 'can_edit' && newValue) updates.can_view = true
+    const currentView = existing?.can_view ?? false
+    const currentEdit = existing?.can_edit ?? false
+
+    const next = { can_view: currentView, can_edit: currentEdit }
+    if (field === 'can_view') {
+      next.can_view = !currentView
+      if (!next.can_view) next.can_edit = false
+    } else {
+      next.can_edit = !currentEdit
+      if (next.can_edit) next.can_view = true
+    }
 
     try {
-      const { error } = await supabase
-        .from('role_permissions')
-        .update(updates)
-        .eq('id', permId)
-      if (error) throw error
-      setPermissions(prev => prev.map(p => p.id === permId ? { ...p, ...updates } : p))
+      if (existing) {
+        const { error } = await supabase
+          .from('role_permissions')
+          .update(next)
+          .eq('id', existing.id)
+        if (error) throw error
+        setPermissions(prev => prev.map(p => p.id === existing.id ? { ...p, ...next } : p))
+      } else {
+        const { data, error } = await supabase
+          .from('role_permissions')
+          .insert([{ role, section, ...next }])
+          .select()
+          .single()
+        if (error) throw error
+        if (data) setPermissions(prev => [...prev, data])
+      }
     } catch (err) {
-      alert('Ошибка: ' + err.message)
+      alert('Ошибка изменения прав: ' + err.message)
     }
   }
 
@@ -224,11 +238,11 @@ function AdminPage() {
             <div className="admin-loading">Загрузка...</div>
           ) : (
             <>
-              {/* Заявки на подтверждение */}
+              {/* Заявки и заблокированные */}
               {pendingUsers.length > 0 && (
                 <div className="admin-section">
                   <h3 className="section-title pending-title">
-                    Ожидают подтверждения
+                    Заявки и заблокированные
                     <span className="pending-count">{pendingUsers.length}</span>
                   </h3>
                   <table className="admin-table">
@@ -236,44 +250,51 @@ function AdminPage() {
                       <tr>
                         <th>Email</th>
                         <th>ФИО</th>
+                        <th>Состояние</th>
                         <th>Роль</th>
                         <th>Дата регистрации</th>
                         <th>Действия</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingUsers.map(ur => (
-                        <tr key={ur.user_id} className="pending-row">
-                          <td className="email-cell">{ur.email || '—'}</td>
-                          <td className="name-cell">{ur.full_name || <span className="empty-cell">—</span>}</td>
-                          <td>
-                            <select
-                              className="role-select"
-                              value={ur.role || 'engineer'}
-                              onChange={(e) => handleRoleChange(ur.user_id, e.target.value, ur.email)}
-                            >
-                              {EMPLOYEE_ROLES.map(r => (
-                                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="date-cell">
-                            {new Date(ur.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td>
-                            <div className="action-btns">
-                              <button className="btn-approve" onClick={() => handleApprove(ur)} title="Подтвердить">
-                                Подтвердить
-                              </button>
-                              {ur.has_role && (
-                                <button className="btn-reject" onClick={() => handleReject(ur.id, ur.email)} title="Отклонить">
-                                  Отклонить
+                      {pendingUsers.map(ur => {
+                        const isBlocked = ur.has_role
+                        return (
+                          <tr key={ur.user_id} className="pending-row">
+                            <td className="email-cell">{ur.email || '—'}</td>
+                            <td className="name-cell">{ur.full_name || <span className="empty-cell">—</span>}</td>
+                            <td>
+                              <span className={isBlocked ? 'state-badge blocked' : 'state-badge new'}>
+                                {isBlocked ? 'Заблокирован' : 'Новая заявка'}
+                              </span>
+                            </td>
+                            <td>
+                              <select
+                                className="role-select"
+                                value={ur.role || 'engineer'}
+                                onChange={(e) => handleRoleChange(ur.user_id, e.target.value, ur.email)}
+                              >
+                                {EMPLOYEE_ROLES.map(r => (
+                                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="date-cell">
+                              {new Date(ur.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td>
+                              <div className="action-btns">
+                                <button className="btn-approve" onClick={() => handleApprove(ur)} title={isBlocked ? 'Разблокировать' : 'Подтвердить'}>
+                                  {isBlocked ? 'Разблок.' : 'Подтвердить'}
                                 </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                <button className="btn-delete-user" onClick={() => handleDeleteUser(ur.user_id, ur.email)} title="Удалить полностью">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -331,7 +352,7 @@ function AdminPage() {
                               <button className="btn-block" onClick={() => handleBlock(ur.id)} title="Заблокировать">
                                 Заблок.
                               </button>
-                              <button className="btn-delete-user" onClick={() => handleDeleteUser(ur.id, ur.email)} title="Удалить">
+                              <button className="btn-delete-user" onClick={() => handleDeleteUser(ur.user_id, ur.email)} title="Удалить полностью">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                               </button>
                             </div>
@@ -387,14 +408,14 @@ function AdminPage() {
                               <input
                                 type="checkbox"
                                 checked={perm?.can_view ?? false}
-                                onChange={() => perm && handlePermissionToggle(perm.id, 'can_view')}
+                                onChange={() => handlePermissionToggle(r, section, 'can_view')}
                                 disabled={isAdminRow}
                                 title="Просмотр"
                               />
                               <input
                                 type="checkbox"
                                 checked={perm?.can_edit ?? false}
-                                onChange={() => perm && handlePermissionToggle(perm.id, 'can_edit')}
+                                onChange={() => handlePermissionToggle(r, section, 'can_edit')}
                                 disabled={isAdminRow}
                                 title="Редактирование"
                               />
