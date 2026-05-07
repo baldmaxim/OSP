@@ -73,7 +73,7 @@ function VorsPage() {
   if (loading) {
     return (
       <div className="cost-plans-page">
-        <div className="page-header"><h2>ВОРы</h2></div>
+        <div className="page-header"><h2>ВОРы и РД</h2></div>
         <div className="loading">Загрузка...</div>
       </div>
     )
@@ -98,9 +98,9 @@ function VorsPage() {
   return (
     <div className="cost-plans-page">
       <div className="page-header">
-        <h2>ВОРы</h2>
+        <h2>ВОРы и РД</h2>
         <div className="page-header-hint">
-          Список тендеров основного строительства, по которым назначен ответственный за ВОР
+          Список тендеров основного строительства, по которым назначен ответственный за ВОРы и РД
         </div>
       </div>
 
@@ -152,8 +152,8 @@ function VorsPage() {
               <th>Описание работ</th>
               <th>Ответственный</th>
               <th>Сроки тендера</th>
-              <th>ВОР</th>
-              <th style={{ width: '180px' }}>Статус ВОР</th>
+              <th>ВОРы и РД</th>
+              <th style={{ width: '180px' }}>Статус</th>
               <th className="actions-column">Действия</th>
             </tr>
           </thead>

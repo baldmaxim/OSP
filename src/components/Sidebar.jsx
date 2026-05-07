@@ -21,7 +21,7 @@ function Sidebar() {
     { path: '/tenders/construction', label: 'Основное строительство', icon: '🏗️' },
     { path: '/tenders/warranty', label: 'Гарантийный отдел', icon: '🛡️' },
     { path: '/cost-plans', label: 'Планы затрат', icon: '💰' },
-    { path: '/vors', label: 'ВОРы', icon: '📐' },
+    { path: '/vors', label: 'ВОРы и РД', icon: '📐' },
   ]
 
   return (

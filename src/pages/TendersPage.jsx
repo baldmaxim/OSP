@@ -635,8 +635,8 @@ function TendersPage({ department = 'construction' }) {
     object_id: 'Объект',
     cost_plan_link: 'План затрат',
     cost_plan_responsible_id: 'Ответственный за план затрат',
-    vor_link: 'ВОР',
-    vor_responsible_id: 'Ответственный за ВОР',
+    vor_link: 'ВОРы и РД',
+    vor_responsible_id: 'Ответственный за ВОРы и РД',
     summary_proposal_link: 'Сводная КП',
     notes: 'Примечание'
   }
@@ -906,6 +906,7 @@ function TendersPage({ department = 'construction' }) {
               <th>Ответственный</th>
               <th>Тендерный пакет</th>
               <th>План затрат</th>
+              <th>ВОРы и РД</th>
               <th>Сводная КП</th>
               <th className="actions-column">Действия</th>
             </tr>
@@ -913,7 +914,7 @@ function TendersPage({ department = 'construction' }) {
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? 11 : 10} className="no-data">
+                <td colSpan={activeTab === 'completed' ? 12 : 11} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : 'Нет актуальных тендеров. Добавьте первый тендер.'}
@@ -1030,6 +1031,25 @@ function TendersPage({ department = 'construction' }) {
                       )}
                     </td>
                     <td>
+                      {tender.vor_link ? (
+                        <a
+                          href={tender.vor_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link"
+                        >
+                          Открыть
+                        </a>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                      )}
+                      {tender.vor_responsible?.full_name && (
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
+                          {tender.vor_responsible.full_name}
+                        </div>
+                      )}
+                    </td>
+                    <td>
                       {tender.summary_proposal_link ? (
                         <a
                           href={tender.summary_proposal_link}
@@ -1064,7 +1084,7 @@ function TendersPage({ department = 'construction' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? 11 : 10} className="expanded-cp-row">
+                      <td colSpan={activeTab === 'completed' ? 12 : 11} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"
@@ -1492,7 +1512,7 @@ function TendersPage({ department = 'construction' }) {
                     </div>
 
                     <div className="form-group full-width">
-                      <label>ВОР — ссылка</label>
+                      <label>ВОРы и РД — ссылка на диск</label>
                       <input
                         type="url"
                         name="vor_link"
@@ -1503,7 +1523,7 @@ function TendersPage({ department = 'construction' }) {
                     </div>
 
                     <div className="form-group full-width">
-                      <label>Ответственный за ВОР</label>
+                      <label>Ответственный за ВОРы и РД</label>
                       <select
                         name="vor_responsible_id"
                         value={formData.vor_responsible_id}
