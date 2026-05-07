@@ -851,13 +851,7 @@ function TendersPage({ department = 'construction' }) {
                     <td>
                       <button
                         onClick={() => handleToggleTender(tender.id)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontSize: '1.2rem',
-                          padding: '0.25rem'
-                        }}
+                        className="expand-toggle"
                         title="Показать контрагентов"
                       >
                         {expandedTenderId === tender.id ? '▼' : '▶'}
@@ -866,17 +860,7 @@ function TendersPage({ department = 'construction' }) {
                     <td>
                       <button
                         onClick={() => navigate(`/tenders/${tender.id}`)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--primary-color)',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          padding: 0,
-                          fontSize: 'inherit',
-                          fontWeight: '600',
-                          textDecoration: 'underline'
-                        }}
+                        className="row-link primary"
                         title="Открыть тендер"
                       >
                         {tender.objects?.name || '-'}
@@ -885,15 +869,7 @@ function TendersPage({ department = 'construction' }) {
                     <td>
                       <button
                         onClick={() => navigate(`/tenders/${tender.id}`)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--text-primary)',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          padding: 0,
-                          fontSize: 'inherit'
-                        }}
+                        className="row-link muted"
                         title="Открыть тендер"
                       >
                         {tender.work_description}
@@ -980,72 +956,68 @@ function TendersPage({ department = 'construction' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? 9 : 8} style={{ padding: '1.5rem', backgroundColor: 'var(--card-bg)', borderTop: '2px solid var(--primary-color)' }}>
-                        <div style={{ marginBottom: '1rem' }}>
+                      <td colSpan={activeTab === 'completed' ? 9 : 8} className="expanded-cp-row">
+                        <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"
                             onClick={() => {
                               setSelectedTenderForCounterparty(tender.id)
                               setShowAddCounterpartyModal(true)
                             }}
-                            style={{ fontSize: '0.9rem', padding: '0.5rem 1rem' }}
                           >
                             + Добавить контрагента
                           </button>
                         </div>
                         {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 ? (
-                          <div style={{
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '8px',
-                            overflow: 'hidden'
-                          }}>
+                          <div className="expanded-cp-table-wrap">
                             <table className="data-table" style={{ margin: 0 }}>
                               <thead>
                                 <tr>
-                                  <th style={{ width: '60px' }}>№ п/п</th>
+                                  <th style={{ width: '48px' }}>№</th>
                                   <th>Наименование</th>
                                   <th>Контактные данные</th>
                                   <th>Email</th>
-                                  <th>Статус</th>
-                                  <th style={{ width: '100px' }}>Действия</th>
+                                  <th style={{ width: '170px' }}>Статус</th>
+                                  <th style={{ width: '64px' }}></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {tenderCounterparties[tender.id].map((tc, index) => (
                                   <tr key={tc.id}>
-                                    <td style={{ textAlign: 'center', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                                    <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>
                                       {index + 1}
                                     </td>
                                     <td>
-                                      <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>
+                                      <div style={{ fontWeight: 600 }}>
                                         {tc.counterparties?.name}
                                       </div>
                                       {tc.counterparties?.work_type && (
-                                        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
                                           {tc.counterparties.work_type}
                                         </div>
                                       )}
                                       {tc.counterparties?.inn && (
-                                        <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
                                           ИНН: {tc.counterparties.inn}
                                         </div>
                                       )}
                                     </td>
                                     <td>
                                       {tc.counterparties?.counterparty_contacts && tc.counterparties.counterparty_contacts.length > 0 ? (
-                                        <div style={{ display: 'grid', gap: '0.5rem' }}>
+                                        <div style={{ display: 'grid', gap: '0.25rem' }}>
                                           {tc.counterparties.counterparty_contacts.map((contact, idx) => (
-                                            <div key={contact.id || idx} style={{ fontSize: '0.875rem' }}>
+                                            <div key={contact.id || idx}>
                                               {contact.full_name && (
-                                                <div style={{ fontWeight: '600', color: 'var(--text-color)' }}>
+                                                <div style={{ fontWeight: 500 }}>
                                                   {contact.full_name}
                                                   {contact.position && (
                                                     <span style={{
-                                                      color: 'var(--text-secondary)',
-                                                      fontWeight: '400',
-                                                      marginLeft: '0.5rem'
+                                                      color: 'var(--text-tertiary)',
+                                                      fontWeight: 400,
+                                                      marginLeft: '0.375rem',
+                                                      fontSize: '0.75rem'
                                                     }}>
-                                                      ({contact.position})
+                                                      {contact.position}
                                                     </span>
                                                   )}
                                                 </div>
@@ -1056,24 +1028,23 @@ function TendersPage({ department = 'construction' }) {
                                                   style={{
                                                     color: 'var(--primary-color)',
                                                     textDecoration: 'none',
-                                                    display: 'block'
+                                                    display: 'block',
+                                                    fontSize: '0.75rem'
                                                   }}
                                                 >
-                                                  📞 {contact.phone}
+                                                  {contact.phone}
                                                 </a>
                                               )}
                                             </div>
                                           ))}
                                         </div>
                                       ) : (
-                                        <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.875rem' }}>
-                                          Не указаны
-                                        </span>
+                                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                                       )}
                                     </td>
                                     <td>
                                       {tc.counterparties?.counterparty_contacts && tc.counterparties.counterparty_contacts.length > 0 ? (
-                                        <div style={{ display: 'grid', gap: '0.5rem' }}>
+                                        <div style={{ display: 'grid', gap: '0.25rem' }}>
                                           {tc.counterparties.counterparty_contacts
                                             .filter(contact => contact.email)
                                             .map((contact, idx) => (
@@ -1083,23 +1054,18 @@ function TendersPage({ department = 'construction' }) {
                                                 style={{
                                                   color: 'var(--primary-color)',
                                                   textDecoration: 'none',
-                                                  fontSize: '0.875rem',
                                                   display: 'block'
                                                 }}
                                               >
-                                                ✉️ {contact.email}
+                                                {contact.email}
                                               </a>
                                             ))}
                                           {tc.counterparties.counterparty_contacts.every(c => !c.email) && (
-                                            <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.875rem' }}>
-                                              Не указан
-                                            </span>
+                                            <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                                           )}
                                         </div>
                                       ) : (
-                                        <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.875rem' }}>
-                                          Не указан
-                                        </span>
+                                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                                       )}
                                     </td>
                                     <td>
@@ -1107,16 +1073,15 @@ function TendersPage({ department = 'construction' }) {
                                         value={tc.status || 'request_sent'}
                                         onChange={(e) => handleUpdateCounterpartyStatus(tender.id, tc.id, e.target.value)}
                                         style={{
-                                          padding: '0.4rem 0.75rem',
-                                          fontSize: '0.875rem',
-                                          fontWeight: '500',
-                                          border: '2px solid',
+                                          padding: '0.25rem 0.5rem',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 600,
+                                          border: '1px solid',
                                           borderColor: getCounterpartyStatusColor(tc.status || 'request_sent'),
-                                          borderRadius: '6px',
-                                          backgroundColor: 'var(--bg-color)',
+                                          borderRadius: '4px',
+                                          backgroundColor: 'var(--bg-secondary)',
                                           color: getCounterpartyStatusColor(tc.status || 'request_sent'),
                                           cursor: 'pointer',
-                                          transition: 'all 0.2s',
                                           width: '100%'
                                         }}
                                       >
@@ -1131,27 +1096,11 @@ function TendersPage({ department = 'construction' }) {
                                         ))}
                                       </select>
                                     </td>
-                                    <td>
+                                    <td style={{ textAlign: 'center' }}>
                                       <button
+                                        className="btn-icon btn-delete"
                                         onClick={() => handleRemoveCounterpartyFromTender(tender.id, tc.id)}
-                                        style={{
-                                          background: '#dc2626',
-                                          color: 'white',
-                                          border: 'none',
-                                          borderRadius: '6px',
-                                          padding: '0.5rem 0.75rem',
-                                          cursor: 'pointer',
-                                          fontSize: '0.875rem',
-                                          fontWeight: '500',
-                                          transition: 'all 0.2s',
-                                          width: '100%'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          e.target.style.background = '#b91c1c'
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.target.style.background = '#dc2626'
-                                        }}
+                                        title="Удалить из тендера"
                                       >
                                         🗑️
                                       </button>
@@ -1162,7 +1111,7 @@ function TendersPage({ department = 'construction' }) {
                             </table>
                           </div>
                         ) : (
-                          <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic', textAlign: 'center', padding: '2rem' }}>
+                          <p className="expanded-cp-empty">
                             Контрагенты еще не добавлены к этому тендеру
                           </p>
                         )}
