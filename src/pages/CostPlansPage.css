@@ -1,0 +1,269 @@
+.cost-plans-page {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.cost-plans-page .page-header {
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cost-plans-page .page-header h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cost-plans-page .page-header-hint {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.cost-plans-page .loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+/* Tabs */
+.cost-plans-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  padding: 0 1.25rem;
+}
+
+.cost-plans-tabs .tab {
+  padding: 0.5rem 1.125rem;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.cost-plans-tabs .tab:hover {
+  color: var(--text-primary);
+  background: var(--hover-bg);
+}
+
+.cost-plans-tabs .tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  background: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.cost-plans-tabs .tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.375rem;
+  border-radius: 8px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: var(--primary-color);
+  color: white;
+}
+
+.cost-plans-tabs .tab-count.completed {
+  background: #16a34a;
+}
+
+/* Toolbar */
+.cost-plans-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  font-size: 0.8125rem;
+}
+
+.cost-plans-toolbar .toolbar-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+}
+
+.cost-plans-toolbar select {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  min-width: 220px;
+}
+
+.cost-plans-toolbar .reset-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  text-decoration: underline;
+}
+
+.cost-plans-toolbar .reset-btn:hover {
+  color: var(--text-secondary);
+}
+
+/* Table */
+.cost-plans-page .table-container {
+  overflow-x: auto;
+}
+
+.cost-plans-page .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.cost-plans-page .data-table thead {
+  background: var(--bg-tertiary);
+}
+
+.cost-plans-page .data-table th {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.cost-plans-page .data-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  vertical-align: top;
+}
+
+.cost-plans-page .data-table tbody tr:hover {
+  background: var(--hover-bg);
+}
+
+.cost-plans-page .data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cost-plans-page .no-data {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.cost-plans-page .row-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.cost-plans-page .row-link:hover {
+  text-decoration: underline;
+}
+
+.cost-plans-page .muted-text {
+  color: var(--text-secondary);
+}
+
+.cost-plans-page .muted-tiny {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: 0.125rem;
+}
+
+.cost-plans-page .nowrap {
+  white-space: nowrap;
+}
+
+.cost-plans-page .link {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.cost-plans-page .link:hover {
+  text-decoration: underline;
+}
+
+/* Plan status select with semantic colors */
+.plan-status-select {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+  background: var(--bg-secondary);
+}
+
+.plan-status-select.status-not_started {
+  color: #475569;
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}
+
+.plan-status-select.status-in_progress {
+  color: #1e40af;
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.plan-status-select.status-completed {
+  color: #166534;
+  border-color: #86efac;
+  background: #dcfce7;
+}
+
+[data-theme='dark'] .plan-status-select.status-not_started {
+  color: #cbd5e1;
+  border-color: #475569;
+  background: #334155;
+}
+
+[data-theme='dark'] .plan-status-select.status-in_progress {
+  color: #bfdbfe;
+  border-color: #3b82f6;
+  background: #1e3a5c;
+}
+
+[data-theme='dark'] .plan-status-select.status-completed {
+  color: #a8d4be;
+  border-color: #4a7a62;
+  background: #2a4038;
+}
+
+/* Action buttons */
+.cost-plans-page .actions-cell {
+  white-space: nowrap;
+}
+
+.cost-plans-page .btn-small {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  border-radius: 4px;
+}

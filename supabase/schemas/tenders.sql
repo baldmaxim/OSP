@@ -11,11 +11,13 @@ CREATE TABLE IF NOT EXISTS tenders (
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
   cost_plan_link TEXT,
   cost_plan_responsible_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  cost_plan_status TEXT NOT NULL DEFAULT 'not_started',
   summary_proposal_link TEXT,
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  CONSTRAINT check_dates CHECK (end_date >= start_date)
+  CONSTRAINT check_dates CHECK (end_date >= start_date),
+  CONSTRAINT valid_cost_plan_status CHECK (cost_plan_status IN ('not_started', 'in_progress', 'completed'))
 );
 
 -- Индексы для оптимизации запросов
@@ -26,6 +28,7 @@ CREATE INDEX IF NOT EXISTS idx_tenders_end_date ON tenders(end_date);
 CREATE INDEX IF NOT EXISTS idx_tenders_winner_counterparty_id ON tenders(winner_counterparty_id);
 CREATE INDEX IF NOT EXISTS idx_tenders_responsible_contact_id ON tenders(responsible_contact_id);
 CREATE INDEX IF NOT EXISTS idx_tenders_cost_plan_responsible_id ON tenders(cost_plan_responsible_id);
+CREATE INDEX IF NOT EXISTS idx_tenders_cost_plan_status ON tenders(cost_plan_status);
 
 -- Триггер для автоматического обновления updated_at
 CREATE OR REPLACE FUNCTION update_tenders_updated_at()
@@ -70,6 +73,7 @@ COMMENT ON COLUMN tenders.winner_counterparty_id IS 'Контрагент-поб
 COMMENT ON COLUMN tenders.responsible_contact_id IS 'Ответственный сотрудник за тендер (из таблицы contacts)';
 COMMENT ON COLUMN tenders.cost_plan_link IS 'Ссылка на план затрат (Google/Yandex Drive)';
 COMMENT ON COLUMN tenders.cost_plan_responsible_id IS 'Ответственный сотрудник за план затрат (из таблицы contacts)';
+COMMENT ON COLUMN tenders.cost_plan_status IS 'Статус плана затрат: not_started | in_progress | completed';
 COMMENT ON COLUMN tenders.summary_proposal_link IS 'Ссылка на сводную таблицу КП (Google/Yandex Drive)';
 COMMENT ON COLUMN tenders.notes IS 'Примечание по тендеру (свободный текст, ведётся ответственным)';
 COMMENT ON COLUMN tenders.created_at IS 'Дата и время создания записи';

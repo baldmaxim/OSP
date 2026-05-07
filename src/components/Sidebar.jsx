@@ -10,14 +10,16 @@ function Sidebar() {
   const { logout, canView, isAdmin, role } = useRole()
 
   const [tendersExpanded, setTendersExpanded] = useState(
-    location.pathname.startsWith('/tenders')
+    location.pathname.startsWith('/tenders') || location.pathname.startsWith('/cost-plans')
   )
 
-  const isTendersActive = location.pathname.startsWith('/tenders')
+  const isTendersActive =
+    location.pathname.startsWith('/tenders') || location.pathname.startsWith('/cost-plans')
 
   const tendersSubItems = [
     { path: '/tenders/construction', label: 'Основное строительство', icon: '🏗️' },
     { path: '/tenders/warranty', label: 'Гарантийный отдел', icon: '🛡️' },
+    { path: '/cost-plans', label: 'Планы затрат', icon: '💰' },
   ]
 
   return (

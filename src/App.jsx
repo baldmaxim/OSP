@@ -12,6 +12,7 @@ const ContactsPage = lazy(() => import('./pages/ContactsPage'))
 const CounterpartiesPage = lazy(() => import('./pages/CounterpartiesPage'))
 const TendersPage = lazy(() => import('./pages/TendersPage'))
 const TenderDetailPage = lazy(() => import('./pages/TenderDetailPage'))
+const CostPlansPage = lazy(() => import('./pages/CostPlansPage'))
 const ContractsPage = lazy(() => import('./pages/ContractsPage'))
 const AcceptancePage = lazy(() => import('./pages/AcceptancePage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
@@ -61,6 +62,7 @@ function EmployeeLayout() {
             <Route path="/tenders/construction" element={<TendersPage department="construction" />} />
             <Route path="/tenders/warranty" element={<TendersPage department="warranty" />} />
             <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />
+            <Route path="/cost-plans" element={<CostPlansPage />} />
             <Route path="/analysis-kp" element={<BSMPage />} />
             <Route path="/contracts" element={<ContractsPage />} />
             <Route path="/contracts/:contractId" element={<ContractDetailPage />} />
