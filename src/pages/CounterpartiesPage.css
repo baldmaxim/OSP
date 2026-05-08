@@ -421,6 +421,56 @@
   color: var(--primary-color);
 }
 
+.contact-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.contact-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.contact-name {
+  font-size: 0.8125rem;
+}
+
+.contact-position {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  line-height: 1.2;
+}
+
+.btn-add-contact-inline {
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  padding: 0;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-add-contact-inline:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.btn-add-contact-inline.btn-add-contact-empty {
+  width: auto;
+  height: auto;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+}
+
 .contact-link {
   color: var(--primary-color);
   text-decoration: none;
@@ -560,6 +610,16 @@
 .contacts-subtable td {
   padding: 0.25rem 0.5rem 0.25rem 0;
   color: var(--text-primary);
+}
+
+.contacts-subtable th {
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .text-muted {

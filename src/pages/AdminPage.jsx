@@ -87,7 +87,8 @@ function AdminPage() {
           object_id: roleRecord?.object_id || null,
           has_role: !!roleRecord,
           created_at: au.created_at,
-          last_sign_in_at: au.last_sign_in_at
+          last_sign_in_at: au.last_sign_in_at,
+          last_login_at: roleRecord?.last_login_at || null
         }
       })
 
@@ -490,8 +491,8 @@ function AdminPage() {
                             {new Date(ur.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           </td>
                           <td className="date-cell">
-                            {ur.last_sign_in_at
-                              ? new Date(ur.last_sign_in_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                            {(ur.last_login_at || ur.last_sign_in_at)
+                              ? new Date(ur.last_login_at || ur.last_sign_in_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                               : '—'}
                           </td>
                           <td>

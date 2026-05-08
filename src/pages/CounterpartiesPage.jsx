@@ -1178,13 +1178,28 @@ function CounterpartiesPage() {
                               <span className="kpp-value"> / {counterparty.kpp}</span>
                             )}
                           </td>
-                          <td className="col-contact-name">
+                          <td className="col-contact-name" onClick={(e) => e.stopPropagation()}>
                             {firstContact ? (
-                              <span>
-                                {firstContact.full_name}
-                                {contactsCount > 1 && <span className="contacts-more">+{contactsCount - 1}</span>}
-                              </span>
-                            ) : <span className="empty-cell">--</span>}
+                              <div className="contact-cell">
+                                <div className="contact-name-row">
+                                  <span className="contact-name">{firstContact.full_name}</span>
+                                  {contactsCount > 1 && <span className="contacts-more">+{contactsCount - 1}</span>}
+                                  <button
+                                    className="btn-add-contact-inline"
+                                    onClick={() => handleAddContact(counterparty)}
+                                    title="Добавить контакт"
+                                  >+</button>
+                                </div>
+                                {firstContact.position && (
+                                  <span className="contact-position">{firstContact.position}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <button
+                                className="btn-add-contact-inline btn-add-contact-empty"
+                                onClick={() => handleAddContact(counterparty)}
+                              >+ контакт</button>
+                            )}
                           </td>
                           <td className="col-contact-phone" onClick={(e) => e.stopPropagation()}>
                             {firstContact?.phone ? (
@@ -1254,13 +1269,22 @@ function CounterpartiesPage() {
                                   )}
                                 </div>
 
-                                {contactsCount > 1 && (
-                                  <div className="expanded-contacts">
-                                    <div className="contacts-header-row">
-                                      <span className="detail-label">Все контакты ({contactsCount})</span>
-                                      <button className="btn-link" onClick={() => handleAddContact(counterparty)}>+ Добавить</button>
-                                    </div>
+                                <div className="expanded-contacts">
+                                  <div className="contacts-header-row">
+                                    <span className="detail-label">Контакты{contactsCount > 0 ? ` (${contactsCount})` : ''}</span>
+                                    <button className="btn-link" onClick={() => handleAddContact(counterparty)}>+ Добавить</button>
+                                  </div>
+                                  {contactsCount > 0 && (
                                     <table className="contacts-subtable">
+                                      <thead>
+                                        <tr>
+                                          <th>ФИО</th>
+                                          <th>Должность</th>
+                                          <th>Телефон</th>
+                                          <th>Email</th>
+                                          <th></th>
+                                        </tr>
+                                      </thead>
                                       <tbody>
                                         {counterparty.counterparty_contacts.map((contact) => (
                                           <tr key={contact.id}>
@@ -1292,14 +1316,8 @@ function CounterpartiesPage() {
                                         ))}
                                       </tbody>
                                     </table>
-                                  </div>
-                                )}
-
-                                {contactsCount <= 1 && (
-                                  <div className="expanded-contacts">
-                                    <button className="btn-link" onClick={() => handleAddContact(counterparty)}>+ Добавить контакт</button>
-                                  </div>
-                                )}
+                                  )}
+                                </div>
 
                                 {/* Связанные контрагенты */}
                                 {(() => {

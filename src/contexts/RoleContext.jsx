@@ -223,6 +223,14 @@ export function RoleProvider({ children }) {
     setUser(data.user)
     await fetchUserRole(data.user.id, email)
     setContractorInfo(null)
+    // Фиксируем фактический момент входа в собственном поле
+    supabase
+      .from('user_roles')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('user_id', data.user.id)
+      .then(({ error: loginErr }) => {
+        if (loginErr) console.warn('Не удалось обновить last_login_at:', loginErr.message)
+      })
     return data
   }
 
@@ -254,6 +262,14 @@ export function RoleProvider({ children }) {
     setRole(ROLES.CONTRACTOR)
     setContractorInfo({ id: counterpartyId, name: counterpartyName })
     setPermissions({})
+    // Фиксируем фактический момент входа подрядчика
+    supabase
+      .from('user_roles')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('user_id', data.user.id)
+      .then(({ error: loginErr }) => {
+        if (loginErr) console.warn('Не удалось обновить last_login_at:', loginErr.message)
+      })
     return data
   }
 

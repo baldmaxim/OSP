@@ -6,7 +6,7 @@ import '../components/Tenders.css'
 
 function TendersPage({ department = 'construction' }) {
   const navigate = useNavigate()
-  const { scopedObjectId } = useRole()
+  const { scopedObjectId, userProfile } = useRole()
   const [tenders, setTenders] = useState([])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
@@ -741,7 +741,7 @@ function TendersPage({ department = 'construction' }) {
         new_value: payload.newValue ?? null,
         description: payload.description || null,
         changed_by_role: role,
-        changed_by_name: null
+        changed_by_name: userProfile?.full_name || null
       }])
     } catch (err) {
       console.error('Ошибка записи истории тендера:', err.message)
