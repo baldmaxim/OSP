@@ -10,6 +10,7 @@ function ContactsPage() {
   const [loading, setLoading] = useState(true)
   const [showContactModal, setShowContactModal] = useState(false)
   const [editingContact, setEditingContact] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const [contactFormData, setContactFormData] = useState({
     full_name: '',
@@ -194,9 +195,16 @@ function ContactsPage() {
         <div className="loading">Загрузка...</div>
       ) : (
         <div className="section-content">
-          <div className="section-actions">
+          <div className="section-actions contacts-toolbar">
+            <input
+              type="search"
+              className="contacts-search"
+              placeholder="🔍 Поиск по ФИО, должности, телефону, email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
             <button className="btn-primary" onClick={handleAddNewContact}>
-              + Добавить контакт
+              + Добавить
             </button>
           </div>
 
@@ -215,11 +223,34 @@ function ContactsPage() {
               </thead>
               <tbody>
                 {(() => {
+                  const q = searchQuery.trim().toLowerCase()
+                  const matchesProfile = (p) => {
+                    if (!q) return true
+                    return [
+                      p.full_name,
+                      ROLE_LABELS[p.role] || p.role,
+                      p.work_phone,
+                      p.work_email || p.email,
+                    ].some(v => v && String(v).toLowerCase().includes(q))
+                  }
+                  const matchesContact = (c) => {
+                    if (!q) return true
+                    return [
+                      c.full_name,
+                      c.position,
+                      c.phone,
+                      c.email,
+                      c.objects?.name,
+                    ].some(v => v && String(v).toLowerCase().includes(q))
+                  }
                   const filteredProfiles = userProfiles
                     .filter(p => p.full_name && !contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase()))
-                  const uniqueContacts = contacts.filter((contact, index, self) =>
-                    index === self.findIndex(c => c.full_name?.toLowerCase() === contact.full_name?.toLowerCase())
-                  )
+                    .filter(matchesProfile)
+                  const uniqueContacts = contacts
+                    .filter((contact, index, self) =>
+                      index === self.findIndex(c => c.full_name?.toLowerCase() === contact.full_name?.toLowerCase())
+                    )
+                    .filter(matchesContact)
                   return (
                     <>
                       {/* Профили из user_roles, которых нет в contacts */}
@@ -276,13 +307,35 @@ function ContactsPage() {
                     </>
                   )
                 })()}
-                {userProfiles.length === 0 && contacts.length === 0 && (
-                  <tr>
-                    <td colSpan="7" className="no-data">
-                      Нет контактов. Добавьте первый контакт.
-                    </td>
-                  </tr>
-                )}
+                {(() => {
+                  if (userProfiles.length === 0 && contacts.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan="7" className="no-data">
+                          Нет контактов. Добавьте первый контакт.
+                        </td>
+                      </tr>
+                    )
+                  }
+                  const q = searchQuery.trim().toLowerCase()
+                  if (!q) return null
+                  const anyProfile = userProfiles
+                    .filter(p => p.full_name && !contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase()))
+                    .some(p => [p.full_name, ROLE_LABELS[p.role] || p.role, p.work_phone, p.work_email || p.email]
+                      .some(v => v && String(v).toLowerCase().includes(q)))
+                  const anyContact = contacts.some(c => [c.full_name, c.position, c.phone, c.email, c.objects?.name]
+                    .some(v => v && String(v).toLowerCase().includes(q)))
+                  if (!anyProfile && !anyContact) {
+                    return (
+                      <tr>
+                        <td colSpan="7" className="no-data">
+                          Ничего не найдено по запросу «{searchQuery}»
+                        </td>
+                      </tr>
+                    )
+                  }
+                  return null
+                })()}
               </tbody>
             </table>
           </div>

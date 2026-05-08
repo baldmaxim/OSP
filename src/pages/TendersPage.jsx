@@ -1101,9 +1101,9 @@ function TendersPage({ department = 'construction' }) {
                 Сроки{sortIndicator('start_date')}
               </th>
               <th>Ответственный</th>
+              <th>ВОРы и РД</th>
               <th>Тендерный пакет</th>
               <th>План затрат</th>
-              <th>ВОРы и РД</th>
               <th>Сводная КП</th>
               <th className="actions-column">Действия</th>
             </tr>
@@ -1239,6 +1239,34 @@ function TendersPage({ department = 'construction' }) {
                         </button>
                       )}
                     </td>
+                    {/* ВОРы и РД */}
+                    <td>
+                      {tender.vor_link ? (
+                        <div className="phase-cell">
+                          {tender.vor_status === 'completed' && (
+                            <span className="phase-done" title="ВОР готов">✓ Готово</span>
+                          )}
+                          <a
+                            href={tender.vor_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link"
+                          >
+                            Открыть
+                          </a>
+                        </div>
+                      ) : tender.vor_status === 'completed' ? (
+                        <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                      )}
+                      {tender.vor_responsible?.full_name && (
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
+                          {tender.vor_responsible.full_name}
+                        </div>
+                      )}
+                    </td>
+                    {/* Тендерный пакет */}
                     <td>
                       {tender.tender_package_link ? (
                         <a
@@ -1253,16 +1281,24 @@ function TendersPage({ department = 'construction' }) {
                         '-'
                       )}
                     </td>
+                    {/* План затрат */}
                     <td>
                       {tender.cost_plan_link ? (
-                        <a
-                          href={tender.cost_plan_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link"
-                        >
-                          Открыть
-                        </a>
+                        <div className="phase-cell">
+                          {tender.cost_plan_status === 'completed' && (
+                            <span className="phase-done" title="План затрат готов">✓ Готово</span>
+                          )}
+                          <a
+                            href={tender.cost_plan_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link"
+                          >
+                            Открыть
+                          </a>
+                        </div>
+                      ) : tender.cost_plan_status === 'completed' ? (
+                        <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
                       ) : (
                         <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                       )}
@@ -1272,25 +1308,7 @@ function TendersPage({ department = 'construction' }) {
                         </div>
                       )}
                     </td>
-                    <td>
-                      {tender.vor_link ? (
-                        <a
-                          href={tender.vor_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link"
-                        >
-                          Открыть
-                        </a>
-                      ) : (
-                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                      )}
-                      {tender.vor_responsible?.full_name && (
-                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
-                          {tender.vor_responsible.full_name}
-                        </div>
-                      )}
-                    </td>
+                    {/* Сводная КП */}
                     <td>
                       {tender.summary_proposal_link ? (
                         <a
