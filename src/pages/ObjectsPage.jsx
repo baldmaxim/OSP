@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useRole } from '../contexts/RoleContext'
 import * as XLSX from 'xlsx'
 import '../components/GeneralInfo.css'
 
@@ -8,6 +9,7 @@ import '../components/GeneralInfo.css'
 let mapInstance = null
 
 function ObjectsPage() {
+  const { scopedObjectId } = useRole()
   const navigate = useNavigate()
   const [objects, setObjects] = useState([])
   const [loading, setLoading] = useState(true)
@@ -216,10 +218,12 @@ function ObjectsPage() {
   const fetchObjects = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      let query = supabase
         .from('objects')
         .select('*')
         .order('name', { ascending: true })
+      if (scopedObjectId) query = query.eq('id', scopedObjectId)
+      const { data, error } = await query
 
       if (error) throw error
       setObjects(data || [])

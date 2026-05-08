@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useRole } from '../contexts/RoleContext'
 import './CostPlansPage.css'
 
 const STATUS_LABELS = {
@@ -13,6 +14,7 @@ const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
 
 function VorsPage() {
   const navigate = useNavigate()
+  const { scopedObjectId } = useRole()
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('in_work')
@@ -28,7 +30,7 @@ function VorsPage() {
       const { data, error } = await supabase
         .from('tenders')
         .select(`
-          id, status, vor_status, vor_link,
+          id, object_id, status, vor_status, vor_link,
           start_date, end_date, work_description,
           objects(name, status),
           vor_responsible:contacts!vor_responsible_id(id, full_name, position)
@@ -37,7 +39,10 @@ function VorsPage() {
         .order('start_date', { ascending: false })
 
       if (error) throw error
-      const filtered = (data || []).filter(t => t.objects?.status === 'main_construction')
+      let filtered = (data || []).filter(t => t.objects?.status === 'main_construction')
+      if (scopedObjectId) {
+        filtered = filtered.filter(t => t.object_id === scopedObjectId)
+      }
       setTenders(filtered)
     } catch (err) {
       console.error('Ошибка загрузки ВОРов:', err.message)

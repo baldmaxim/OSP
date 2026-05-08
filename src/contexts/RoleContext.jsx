@@ -112,7 +112,7 @@ export function RoleProvider({ children }) {
     try {
       const { data, error } = await supabase
         .from('user_roles')
-        .select('role, is_approved, full_name, work_phone, work_email, created_at')
+        .select('role, is_approved, full_name, work_phone, work_email, created_at, object_id')
         .eq('user_id', userId)
         .single()
 
@@ -126,7 +126,7 @@ export function RoleProvider({ children }) {
             .update({ is_approved: true, role: 'admin' })
             .eq('user_id', userId)
           setRole(ROLES.ADMIN)
-          setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '' })
+          setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_id: data.object_id || null })
           await fetchPermissions(ROLES.ADMIN)
           return
         }
@@ -135,7 +135,7 @@ export function RoleProvider({ children }) {
           throw new Error('PENDING_APPROVAL')
         }
         setRole(data.role)
-        setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '' })
+        setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_id: data.object_id || null })
         await fetchPermissions(data.role)
       } else {
         if (isSuperAdmin) {
@@ -296,6 +296,11 @@ export function RoleProvider({ children }) {
   const isContractor = role === ROLES.CONTRACTOR
   const isLoggedIn = role !== null && user !== null
 
+  // Scope доступа по объекту:
+  // null  → видит все объекты (админ или офисный сотрудник без привязки)
+  // uuid  → видит только этот объект
+  const scopedObjectId = isAdmin ? null : (userProfile?.object_id || null)
+
   // Проверка прав по разделу
   const canView = (section) => {
     if (role === ROLES.ADMIN) return true
@@ -339,7 +344,8 @@ export function RoleProvider({ children }) {
       SECTIONS,
       availableRoles,
       roleLabels: dynamicRoleLabels,
-      refreshAvailableRoles: fetchAvailableRoles
+      refreshAvailableRoles: fetchAvailableRoles,
+      scopedObjectId
     }}>
       {children}
     </RoleContext.Provider>

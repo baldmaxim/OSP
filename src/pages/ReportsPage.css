@@ -86,11 +86,24 @@
 
 .kpi-card {
   background: var(--bg-secondary);
-  padding: 0.875rem 1rem;
+  padding: 0.875rem 1rem 0.875rem 0.875rem;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   min-height: 84px;
+  border-left: 3px solid var(--primary-color);
+  position: relative;
+}
+
+/* Семантические цвета левой полосы (явные классы) */
+.kpi-card--success {
+  border-left-color: #16a34a;
+}
+.kpi-card--warn {
+  border-left-color: #d97706;
+}
+.kpi-card--danger {
+  border-left-color: #dc2626;
 }
 
 .kpi-card-wide {
@@ -164,6 +177,17 @@
   color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.section-head h3::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--primary-color);
 }
 
 .section-meta {
@@ -221,7 +245,11 @@
   border-bottom: none;
 }
 
-.dense-table tbody tr:hover {
+.dense-table tbody tr:nth-child(even) td {
+  background: var(--bg-tertiary);
+}
+
+.dense-table tbody tr:hover td {
   background: var(--hover-bg);
 }
 
@@ -247,16 +275,16 @@
 
 .bar-track {
   flex: 1;
-  height: 4px;
+  height: 6px;
   background: var(--bg-tertiary);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
 }
 
 .bar-fill {
   height: 100%;
-  background: var(--primary-color);
-  border-radius: 2px;
+  background: linear-gradient(90deg, var(--primary-color) 0%, #16a34a 100%);
+  border-radius: 3px;
   transition: width 0.5s ease;
 }
 

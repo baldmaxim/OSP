@@ -1,27 +1,34 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { useRole } from '../contexts/RoleContext'
 import './ReportsPage.css'
 
 function ReportsPage() {
+  const { scopedObjectId } = useRole()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
   const [activeTab, setActiveTab] = useState('tenders')
 
   useEffect(() => {
     fetchStats()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedObjectId])
 
   const fetchStats = async () => {
     try {
       setLoading(true)
 
-      const { data: tenders } = await supabase
+      let tendersQ = supabase
         .from('tenders')
-        .select('id, status, end_date, responsible_contact_id, objects(status), responsible_contact:contacts!responsible_contact_id(id, full_name)')
+        .select('id, object_id, status, end_date, responsible_contact_id, objects(status), responsible_contact:contacts!responsible_contact_id(id, full_name)')
+      if (scopedObjectId) tendersQ = tendersQ.eq('object_id', scopedObjectId)
+      const { data: tenders } = await tendersQ
 
-      const { data: contracts } = await supabase
+      let contractsQ = supabase
         .from('contracts')
-        .select('id, status, contract_amount, objects(status)')
+        .select('id, object_id, status, contract_amount, objects(status)')
+      if (scopedObjectId) contractsQ = contractsQ.eq('object_id', scopedObjectId)
+      const { data: contracts } = await contractsQ
 
       const t = tenders || []
       const c = contracts || []
@@ -146,17 +153,17 @@ function ReportsPage() {
                 <div className="kpi-value">{s.tOpen}</div>
                 <div className="kpi-foot">{pct(s.tOpen, s.tTotal)}% от всех</div>
               </div>
-              <div className="kpi-card">
+              <div className="kpi-card kpi-card--success">
                 <div className="kpi-label">Завершено</div>
                 <div className="kpi-value accent-success">{s.tClosed}</div>
                 <div className="kpi-foot">{pct(s.tClosed, s.tTotal)}% завершения</div>
               </div>
-              <div className="kpi-card">
+              <div className={`kpi-card ${s.tOverdue > 0 ? 'kpi-card--danger' : ''}`}>
                 <div className="kpi-label">Просрочено</div>
                 <div className={`kpi-value ${s.tOverdue > 0 ? 'accent-danger' : ''}`}>{s.tOverdue}</div>
                 <div className="kpi-foot">сроки прошли</div>
               </div>
-              <div className="kpi-card">
+              <div className={`kpi-card ${s.tUnassigned > 0 ? 'kpi-card--warn' : ''}`}>
                 <div className="kpi-label">Без ответственного</div>
                 <div className={`kpi-value ${s.tUnassigned > 0 ? 'accent-warn' : ''}`}>{s.tUnassigned}</div>
                 <div className="kpi-foot">требуют назначения</div>
@@ -252,7 +259,7 @@ function ReportsPage() {
                 <div className="kpi-value">{s.cPending}</div>
                 <div className="kpi-foot">{pct(s.cPending, s.cTotal)}% от всех</div>
               </div>
-              <div className="kpi-card">
+              <div className="kpi-card kpi-card--success">
                 <div className="kpi-label">Заключено</div>
                 <div className="kpi-value accent-success">{s.cSigned}</div>
                 <div className="kpi-foot">{pct(s.cSigned, s.cTotal)}% заключено</div>

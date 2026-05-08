@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useRole } from '../contexts/RoleContext'
 import '../components/Tenders.css'
 
 function TendersPage({ department = 'construction' }) {
   const navigate = useNavigate()
+  const { scopedObjectId } = useRole()
   const [tenders, setTenders] = useState([])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
@@ -123,10 +125,13 @@ function TendersPage({ department = 'construction' }) {
         .order('start_date', { ascending: false })
 
       if (error) throw error
-      // Фильтруем тендеры по статусу объекта
-      const filteredTenders = (data || []).filter(
+      // Фильтруем тендеры по статусу объекта + scope пользователя по объекту (если есть)
+      let filteredTenders = (data || []).filter(
         tender => tender.objects?.status === objectStatus
       )
+      if (scopedObjectId) {
+        filteredTenders = filteredTenders.filter(t => t.object_id === scopedObjectId)
+      }
       setTenders(filteredTenders)
     } catch (error) {
       console.error('Ошибка загрузки тендеров:', error.message)

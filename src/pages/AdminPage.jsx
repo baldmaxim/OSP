@@ -15,6 +15,7 @@ function AdminPage() {
   // --- Users ---
   const [userRoles, setUserRoles] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(true)
+  const [objectsList, setObjectsList] = useState([])
 
   // --- Permissions ---
   const [permissions, setPermissions] = useState([])
@@ -28,9 +29,25 @@ function AdminPage() {
   const [roleFeedback, setRoleFeedback] = useState(null)
 
   useEffect(() => {
-    if (activeTab === 'users') fetchUsers()
+    if (activeTab === 'users') {
+      fetchUsers()
+      fetchObjectsList()
+    }
     else if (activeTab === 'permissions') fetchPermissions()
   }, [activeTab])
+
+  const fetchObjectsList = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('objects')
+        .select('id, name')
+        .order('name', { ascending: true })
+      if (error) throw error
+      setObjectsList(data || [])
+    } catch (err) {
+      console.warn('Не удалось загрузить список объектов:', err.message)
+    }
+  }
 
   const fetchUsers = async () => {
     setLoadingUsers(true)
@@ -67,6 +84,7 @@ function AdminPage() {
           full_name: roleRecord?.full_name || '',
           work_phone: roleRecord?.work_phone || '',
           work_email: roleRecord?.work_email || '',
+          object_id: roleRecord?.object_id || null,
           has_role: !!roleRecord,
           created_at: au.created_at,
           last_sign_in_at: au.last_sign_in_at
@@ -131,6 +149,26 @@ function AdminPage() {
       fetchUsers()
     } catch (err) {
       alert('Ошибка: ' + err.message)
+    }
+  }
+
+  const handleObjectChange = async (userId, newObjectId) => {
+    try {
+      const value = newObjectId || null
+      const existing = userRoles.find(u => u.user_id === userId)
+      if (!existing?.has_role) return // не меняем у пользователей без роли
+      const { error } = await supabase
+        .from('user_roles')
+        .update({ object_id: value })
+        .eq('user_id', userId)
+      if (error) throw error
+      setUserRoles(prev => prev.map(u => u.user_id === userId ? { ...u, object_id: value } : u))
+    } catch (err) {
+      if (/column .*object_id.* does not exist/i.test(err.message)) {
+        alert('Колонка user_roles.object_id не создана. Примените миграцию 20260507_add_object_id_to_user_roles.sql.')
+      } else {
+        alert('Ошибка: ' + err.message)
+      }
     }
   }
 
@@ -407,6 +445,7 @@ function AdminPage() {
                       <th>Телефон</th>
                       <th>Раб. почта</th>
                       <th>Роль</th>
+                      <th>Объект</th>
                       <th>Регистрация</th>
                       <th>Последний вход</th>
                       <th></th>
@@ -414,7 +453,7 @@ function AdminPage() {
                   </thead>
                   <tbody>
                     {approvedUsers.length === 0 ? (
-                      <tr><td colSpan="9" className="admin-empty">Нет активных пользователей</td></tr>
+                      <tr><td colSpan="10" className="admin-empty">Нет активных пользователей</td></tr>
                     ) : (
                       approvedUsers.map((ur, idx) => (
                         <tr key={ur.user_id}>
@@ -431,6 +470,19 @@ function AdminPage() {
                             >
                               {employeeRoleKeys.map(r => (
                                 <option key={r} value={r}>{roleLabels[r]}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <select
+                              className="role-select"
+                              value={ur.object_id || ''}
+                              onChange={(e) => handleObjectChange(ur.user_id, e.target.value)}
+                              title="Объект, к которому привязан пользователь"
+                            >
+                              <option value="">Офис (все объекты)</option>
+                              {objectsList.map(o => (
+                                <option key={o.id} value={o.id}>{o.name}</option>
                               ))}
                             </select>
                           </td>

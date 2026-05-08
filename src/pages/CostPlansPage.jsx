@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useRole } from '../contexts/RoleContext'
 import './CostPlansPage.css'
 
 const STATUS_LABELS = {
@@ -13,6 +14,7 @@ const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
 
 function CostPlansPage() {
   const navigate = useNavigate()
+  const { scopedObjectId } = useRole()
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('in_work') // 'in_work' | 'completed'
@@ -28,7 +30,7 @@ function CostPlansPage() {
       const { data, error } = await supabase
         .from('tenders')
         .select(`
-          id, status, cost_plan_status, cost_plan_link,
+          id, object_id, status, cost_plan_status, cost_plan_link,
           start_date, end_date, work_description,
           objects(name, status),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name, position)
@@ -38,7 +40,12 @@ function CostPlansPage() {
 
       if (error) throw error
       // Только тендеры по основному строительству — план затрат имеет смысл там
-      const filtered = (data || []).filter(t => t.objects?.status === 'main_construction')
+      let filtered = (data || []).filter(t => t.objects?.status === 'main_construction')
+      if (scopedObjectId) {
+        // Запрос вернул объект только в JOIN — фильтруем дополнительно через REST-запрос id-объекта,
+        // но здесь данные уже содержат objects.id неявно. Используем другой путь:
+        filtered = filtered.filter(t => t.object_id === scopedObjectId)
+      }
       setTenders(filtered)
     } catch (err) {
       console.error('Ошибка загрузки планов затрат:', err.message)

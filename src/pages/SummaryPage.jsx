@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { useRole } from '../contexts/RoleContext'
 import './SummaryPage.css'
 
 const STAGE_LABELS = {
@@ -12,8 +13,9 @@ const STAGE_LABELS = {
   unknown: 'Не определено',
 }
 
+const STAGE_ORDER_KEYS = ['vor', 'tender', 'work']
+
 function getCurrentStage(t, today) {
-  // Если ВОР ещё не завершён — этап подготовки ВОР
   if (t.vor_status !== 'completed') {
     return {
       key: 'vor',
@@ -24,7 +26,6 @@ function getCurrentStage(t, today) {
       overdue: !!(t.vor_end_date && t.vor_end_date < today),
     }
   }
-  // Если статус тендера не «Завершен» — этап тендерной процедуры (ОСП)
   if (t.status !== 'Завершен') {
     return {
       key: 'tender',
@@ -35,66 +36,45 @@ function getCurrentStage(t, today) {
       overdue: !!(t.tender_end_date && t.tender_end_date < today),
     }
   }
-  // Тендер завершён → смотрим на даты работ
   if (t.start_date && t.end_date) {
     if (today < t.start_date) {
-      return {
-        key: 'pre_work',
-        responsible: t.winner?.name || 'Подрядчик не выбран',
-        responsibleNote: null,
-        start: t.start_date,
-        end: t.end_date,
-        overdue: false,
-      }
+      return { key: 'pre_work', responsible: t.winner?.name || 'Подрядчик не выбран', responsibleNote: null, start: t.start_date, end: t.end_date, overdue: false }
     } else if (today > t.end_date) {
-      return {
-        key: 'post_work',
-        responsible: t.winner?.name || '—',
-        responsibleNote: null,
-        start: t.start_date,
-        end: t.end_date,
-        overdue: false,
-      }
-    } else {
-      return {
-        key: 'work',
-        responsible: t.winner?.name || '—',
-        responsibleNote: null,
-        start: t.start_date,
-        end: t.end_date,
-        overdue: false,
-      }
+      return { key: 'post_work', responsible: t.winner?.name || '—', responsibleNote: null, start: t.start_date, end: t.end_date, overdue: false }
     }
+    return { key: 'work', responsible: t.winner?.name || '—', responsibleNote: null, start: t.start_date, end: t.end_date, overdue: false }
   }
-  return {
-    key: 'unknown',
-    responsible: '—',
-    responsibleNote: null,
-    start: null,
-    end: null,
-    overdue: false,
-  }
+  return { key: 'unknown', responsible: '—', responsibleNote: null, start: null, end: null, overdue: false }
 }
 
-const STAGE_ORDER = { vor: 1, tender: 2, pre_work: 3, work: 4, post_work: 5, unknown: 6 }
+const STAGE_RANK = { vor: 1, tender: 2, pre_work: 3, work: 4, post_work: 5, unknown: 6 }
+
+const daysBetween = (fromIso, toIso) => {
+  if (!fromIso || !toIso) return null
+  const from = new Date(fromIso)
+  const to = new Date(toIso)
+  return Math.round((to - from) / (1000 * 60 * 60 * 24))
+}
 
 function SummaryPage() {
   const navigate = useNavigate()
+  const { scopedObjectId } = useRole()
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
-  const [stageFilter, setStageFilter] = useState('all') // 'all' | 'vor' | 'tender' | 'work' | 'overdue'
+  const [stageFilter, setStageFilter] = useState('all')
 
   useEffect(() => {
     fetchTenders()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedObjectId])
 
   const fetchTenders = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      let query = supabase
         .from('tenders')
         .select(`
-          id, status, start_date, end_date,
+          id, object_id, status, start_date, end_date,
           vor_status, vor_start_date, vor_end_date,
           tender_start_date, tender_end_date,
           work_description,
@@ -104,6 +84,8 @@ function SummaryPage() {
           winner:counterparties!winner_counterparty_id(id, name)
         `)
         .order('start_date', { ascending: false })
+      if (scopedObjectId) query = query.eq('object_id', scopedObjectId)
+      const { data, error } = await query
       if (error) throw error
       const filtered = (data || []).filter(t => t.objects?.status === 'main_construction')
       setTenders(filtered)
@@ -115,7 +97,7 @@ function SummaryPage() {
     }
   }
 
-  const fmtDate = (s) => s ? new Date(s).toLocaleDateString('ru-RU') : '—'
+  const fmtDate = (s) => s ? new Date(s).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : '—'
 
   if (loading) {
     return (
@@ -128,12 +110,13 @@ function SummaryPage() {
 
   const today = new Date().toISOString().split('T')[0]
 
-  const enriched = tenders.map(t => ({
-    ...t,
-    stage: getCurrentStage(t, today),
-  }))
+  const enriched = tenders.map(t => {
+    const stage = getCurrentStage(t, today)
+    let daysLeft = null
+    if (stage.end) daysLeft = daysBetween(today, stage.end)
+    return { ...t, stage, daysLeft }
+  })
 
-  // Применяем фильтр
   const filtered = enriched.filter(t => {
     if (stageFilter === 'all') return true
     if (stageFilter === 'overdue') return t.stage.overdue
@@ -143,18 +126,16 @@ function SummaryPage() {
     return true
   })
 
-  // Сортировка: просроченные первыми, потом по порядку этапов, потом по end_date этапа
   filtered.sort((a, b) => {
     if (a.stage.overdue !== b.stage.overdue) return a.stage.overdue ? -1 : 1
-    if (STAGE_ORDER[a.stage.key] !== STAGE_ORDER[b.stage.key]) {
-      return STAGE_ORDER[a.stage.key] - STAGE_ORDER[b.stage.key]
+    if (STAGE_RANK[a.stage.key] !== STAGE_RANK[b.stage.key]) {
+      return STAGE_RANK[a.stage.key] - STAGE_RANK[b.stage.key]
     }
     const aEnd = a.stage.end || ''
     const bEnd = b.stage.end || ''
     return aEnd.localeCompare(bEnd)
   })
 
-  // Подсчёт для бейджей фильтров
   const counts = {
     all: enriched.length,
     vor: enriched.filter(t => t.stage.key === 'vor').length,
@@ -168,7 +149,31 @@ function SummaryPage() {
       <div className="summary-header">
         <div>
           <h2>Сводка по тендерам</h2>
-          <div className="summary-subtitle">Текущий этап, ответственный и сроки по каждому тендеру основного строительства</div>
+          <div className="summary-subtitle">Этап, ответственный и сроки по каждому тендеру основного строительства</div>
+        </div>
+      </div>
+
+      {/* KPI: 5 карточек */}
+      <div className="summary-kpis">
+        <div className="kpi">
+          <div className="kpi-label">Всего</div>
+          <div className="kpi-value">{counts.all}</div>
+        </div>
+        <div className="kpi accent-vor">
+          <div className="kpi-label">Подготовка ВОР</div>
+          <div className="kpi-value">{counts.vor}</div>
+        </div>
+        <div className="kpi accent-tender">
+          <div className="kpi-label">Тендерная процедура</div>
+          <div className="kpi-value">{counts.tender}</div>
+        </div>
+        <div className="kpi accent-work">
+          <div className="kpi-label">Работы</div>
+          <div className="kpi-value">{counts.work}</div>
+        </div>
+        <div className={`kpi ${counts.overdue > 0 ? 'accent-danger' : ''}`}>
+          <div className="kpi-label">Просрочено</div>
+          <div className="kpi-value">{counts.overdue}</div>
         </div>
       </div>
 
@@ -197,16 +202,15 @@ function SummaryPage() {
             <tr>
               <th style={{ width: '20%' }}>Объект</th>
               <th>Описание работ</th>
-              <th style={{ width: '180px' }}>Этап</th>
+              <th style={{ width: '210px' }}>Этапы</th>
               <th style={{ width: '180px' }}>На ком</th>
-              <th style={{ width: '140px' }}>Срок этапа</th>
-              <th style={{ width: '110px' }}>Срок работ</th>
+              <th style={{ width: '160px' }}>Срок этапа</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="summary-empty">
+                <td colSpan={5} className="summary-empty">
                   {tenders.length === 0
                     ? 'Тендеров основного строительства пока нет'
                     : 'По выбранному фильтру тендеров нет'}
@@ -222,28 +226,17 @@ function SummaryPage() {
                   <td className="object-cell">{t.objects?.name || '—'}</td>
                   <td className="muted">{t.work_description}</td>
                   <td>
-                    <span className={`stage-badge stage-${t.stage.key}`}>
+                    <Timeline currentStage={t.stage.key} />
+                  </td>
+                  <td>
+                    <div className="responsible-name">{t.stage.responsible}</div>
+                    <div className="muted-tiny">
                       {STAGE_LABELS[t.stage.key]}
-                    </span>
+                      {t.stage.responsibleNote && <span> · {t.stage.responsibleNote}</span>}
+                    </div>
                   </td>
                   <td>
-                    <div>{t.stage.responsible}</div>
-                    {t.stage.responsibleNote && (
-                      <div className="muted-tiny">{t.stage.responsibleNote}</div>
-                    )}
-                  </td>
-                  <td>
-                    {t.stage.start || t.stage.end ? (
-                      <div className={t.stage.overdue ? 'date-overdue' : ''}>
-                        {fmtDate(t.stage.start)} — {fmtDate(t.stage.end)}
-                        {t.stage.overdue && <span className="overdue-mark"> просрочен</span>}
-                      </div>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td className="nowrap">
-                    {fmtDate(t.start_date)} — {fmtDate(t.end_date)}
+                    <DeadlineCell start={t.stage.start} end={t.stage.end} daysLeft={t.daysLeft} overdue={t.stage.overdue} fmt={fmtDate} />
                   </td>
                 </tr>
               ))
@@ -253,6 +246,67 @@ function SummaryPage() {
       </div>
     </div>
   )
+}
+
+function Timeline({ currentStage }) {
+  // 3 этапа, текущий подсвечен; прошедшие — заполнены, будущие — приглушены
+  const currentIdx = STAGE_ORDER_KEYS.indexOf(currentStage === 'pre_work' || currentStage === 'work' || currentStage === 'post_work' ? 'work' : currentStage)
+  const stages = [
+    { key: 'vor', label: 'ВОР' },
+    { key: 'tender', label: 'Тендер' },
+    { key: 'work', label: 'Работы' },
+  ]
+  return (
+    <div className="timeline">
+      {stages.map((s, i) => {
+        let state = 'future'
+        if (currentIdx === -1) state = 'future'
+        else if (i < currentIdx) state = 'done'
+        else if (i === currentIdx) state = 'current'
+        return (
+          <div key={s.key} className={`timeline-step ${state} step-${s.key}`}>
+            <span className="dot" />
+            <span className="label">{s.label}</span>
+            {i < stages.length - 1 && <span className={`connector ${state}`} />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function DeadlineCell({ start, end, daysLeft, overdue, fmt }) {
+  if (!start && !end) {
+    return <span className="muted">не указан</span>
+  }
+  const range = `${fmt(start)} — ${fmt(end)}`
+  let suffix = null
+  if (daysLeft !== null) {
+    if (overdue) {
+      const overdueDays = Math.abs(daysLeft)
+      suffix = <span className="days-pill danger">просрочен на {overdueDays} {pluralDays(overdueDays)}</span>
+    } else if (daysLeft === 0) {
+      suffix = <span className="days-pill warn">сегодня</span>
+    } else if (daysLeft <= 3) {
+      suffix = <span className="days-pill warn">{daysLeft} {pluralDays(daysLeft)}</span>
+    } else {
+      suffix = <span className="days-pill">{daysLeft} {pluralDays(daysLeft)}</span>
+    }
+  }
+  return (
+    <div className="deadline-cell">
+      <div className="deadline-range">{range}</div>
+      {suffix}
+    </div>
+  )
+}
+
+function pluralDays(n) {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'день'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня'
+  return 'дней'
 }
 
 export default SummaryPage
