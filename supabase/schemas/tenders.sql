@@ -4,8 +4,12 @@ CREATE TABLE IF NOT EXISTS tenders (
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,
   work_description TEXT NOT NULL,
   status VARCHAR(50) NOT NULL DEFAULT 'Заявка на тендер',
-  start_date DATE NOT NULL,
-  end_date DATE NOT NULL,
+  start_date DATE NOT NULL,            -- начало работ (подрядчик)
+  end_date DATE NOT NULL,              -- окончание работ (подрядчик)
+  vor_start_date DATE,                 -- начало подготовки ВОР (сметный отдел)
+  vor_end_date DATE,                   -- окончание подготовки ВОР
+  tender_start_date DATE,              -- начало тендерной процедуры (ОСП)
+  tender_end_date DATE,                -- окончание тендерной процедуры
   tender_package_link TEXT,
   winner_counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,

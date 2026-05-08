@@ -68,6 +68,10 @@ function TendersPage({ department = 'construction' }) {
     cost_plan_responsible_id: '',
     vor_link: '',
     vor_responsible_id: '',
+    vor_start_date: '',
+    vor_end_date: '',
+    tender_start_date: '',
+    tender_end_date: '',
     summary_proposal_link: '',
     notes: '',
   })
@@ -366,23 +370,54 @@ function TendersPage({ department = 'construction' }) {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Поля, которые могут содержать UUID — пустую строку конвертируем в null,
+  // иначе Postgres падает на невалидном UUID.
+  const UUID_FIELDS = new Set([
+    'object_id', 'responsible_contact_id', 'cost_plan_responsible_id', 'vor_responsible_id'
+  ])
+  const normalizeField = (key, value) => {
+    if (value === '' || value === undefined) return null
+    return value
+  }
+  const normalizePayload = (data) => {
+    const out = {}
+    for (const [k, v] of Object.entries(data)) {
+      const nv = normalizeField(k, v)
+      // UUID — null если пусто
+      if (UUID_FIELDS.has(k) && (nv === '' || nv == null)) {
+        out[k] = null
+      } else {
+        out[k] = nv
+      }
+    }
+    return out
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
       if (editingTender) {
-        // Update existing tender
+        // Update existing tender — отправляем все поля
+        const updatePayload = normalizePayload(formData)
         const { error } = await supabase
           .from('tenders')
-          .update(formData)
+          .update(updatePayload)
           .eq('id', editingTender.id)
 
         if (error) throw error
 
         // Логируем изменения каждого поля
-        const trackFields = ['work_description', 'start_date', 'end_date', 'tender_package_link', 'responsible_contact_id', 'object_id', 'cost_plan_link', 'cost_plan_responsible_id', 'vor_link', 'vor_responsible_id', 'summary_proposal_link', 'notes']
+        const trackFields = [
+          'work_description', 'start_date', 'end_date',
+          'vor_start_date', 'vor_end_date', 'tender_start_date', 'tender_end_date',
+          'tender_package_link', 'responsible_contact_id', 'object_id',
+          'cost_plan_link', 'cost_plan_responsible_id',
+          'vor_link', 'vor_responsible_id',
+          'summary_proposal_link', 'notes'
+        ]
         for (const f of trackFields) {
           const oldV = editingTender[f] ?? null
-          const newV = formData[f] || null
+          const newV = updatePayload[f] ?? null
           if ((oldV || null) !== (newV || null)) {
             await logTenderEvent(editingTender.id, 'field_updated', {
               fieldName: f,
@@ -401,17 +436,45 @@ function TendersPage({ department = 'construction' }) {
           })
         }
       } else {
-        // Insert new tender
+        // Insert new tender — только минимальный набор для заявки от руководителя строительства.
+        // Это страхует от падений, если новые миграции (notes, cost_plan_*, vor_*) ещё не применены.
+        const insertPayload = {
+          object_id: formData.object_id || null,
+          work_description: formData.work_description,
+          status: formData.status || 'Заявка на тендер',
+          start_date: formData.start_date,
+          end_date: formData.end_date,
+        }
+        if (formData.notes) insertPayload.notes = formData.notes
+
         const { data: inserted, error } = await supabase
           .from('tenders')
-          .insert([formData])
+          .insert([insertPayload])
           .select('id')
           .single()
-        if (error) throw error
-
-        if (inserted?.id) {
+        if (error) {
+          // Если БД ругается на отсутствующую колонку notes (миграция не применена) —
+          // повторим без неё, чтобы создать тендер.
+          if (insertPayload.notes && /column .*notes.* does not exist/i.test(error.message)) {
+            delete insertPayload.notes
+            const retry = await supabase
+              .from('tenders')
+              .insert([insertPayload])
+              .select('id')
+              .single()
+            if (retry.error) throw retry.error
+            if (retry.data?.id) {
+              await logTenderEvent(retry.data.id, 'created', {
+                newValue: insertPayload,
+                description: 'Тендер создан'
+              })
+            }
+          } else {
+            throw error
+          }
+        } else if (inserted?.id) {
           await logTenderEvent(inserted.id, 'created', {
-            newValue: formData,
+            newValue: insertPayload,
             description: 'Тендер создан'
           })
         }
@@ -429,6 +492,12 @@ function TendersPage({ department = 'construction' }) {
         responsible_contact_id: '',
         cost_plan_link: '',
         cost_plan_responsible_id: '',
+        vor_link: '',
+        vor_responsible_id: '',
+        vor_start_date: '',
+        vor_end_date: '',
+        tender_start_date: '',
+        tender_end_date: '',
         summary_proposal_link: '',
         notes: '',
       })
@@ -453,6 +522,10 @@ function TendersPage({ department = 'construction' }) {
       cost_plan_responsible_id: tender.cost_plan_responsible_id || '',
       vor_link: tender.vor_link || '',
       vor_responsible_id: tender.vor_responsible_id || '',
+      vor_start_date: tender.vor_start_date || '',
+      vor_end_date: tender.vor_end_date || '',
+      tender_start_date: tender.tender_start_date || '',
+      tender_end_date: tender.tender_end_date || '',
       summary_proposal_link: tender.summary_proposal_link || '',
       notes: tender.notes || '',
     })
@@ -487,6 +560,12 @@ function TendersPage({ department = 'construction' }) {
       responsible_contact_id: '',
       cost_plan_link: '',
       cost_plan_responsible_id: '',
+      vor_link: '',
+      vor_responsible_id: '',
+      vor_start_date: '',
+      vor_end_date: '',
+      tender_start_date: '',
+      tender_end_date: '',
       summary_proposal_link: '',
       notes: '',
     })
@@ -628,8 +707,12 @@ function TendersPage({ department = 'construction' }) {
 
   const FIELD_LABELS = {
     work_description: 'Описание работ',
-    start_date: 'Дата начала',
-    end_date: 'Дата окончания',
+    start_date: 'Дата начала работ',
+    end_date: 'Дата окончания работ',
+    vor_start_date: 'Начало подготовки ВОР',
+    vor_end_date: 'Окончание подготовки ВОР',
+    tender_start_date: 'Начало тендерной процедуры',
+    tender_end_date: 'Окончание тендерной процедуры',
     tender_package_link: 'Ссылка на тендерный пакет',
     responsible_contact_id: 'Ответственный',
     object_id: 'Объект',
@@ -1432,7 +1515,7 @@ function TendersPage({ department = 'construction' }) {
                 )}
 
                 <div className="form-group">
-                  <label>Дата начала *</label>
+                  <label>Дата начала работ *</label>
                   <input
                     type="date"
                     name="start_date"
@@ -1444,7 +1527,7 @@ function TendersPage({ department = 'construction' }) {
                 </div>
 
                 <div className="form-group">
-                  <label>Дата окончания *</label>
+                  <label>Дата окончания работ *</label>
                   <input
                     type="date"
                     name="end_date"
@@ -1457,6 +1540,50 @@ function TendersPage({ department = 'construction' }) {
 
                 {editingTender && (
                   <>
+                    <div className="form-group">
+                      <label>Подготовка ВОР: начало</label>
+                      <input
+                        type="date"
+                        name="vor_start_date"
+                        value={formData.vor_start_date}
+                        onChange={handleInputChange}
+                        min="2020-01-01"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Подготовка ВОР: окончание</label>
+                      <input
+                        type="date"
+                        name="vor_end_date"
+                        value={formData.vor_end_date}
+                        onChange={handleInputChange}
+                        min={formData.vor_start_date || '2020-01-01'}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Тендерная процедура: начало</label>
+                      <input
+                        type="date"
+                        name="tender_start_date"
+                        value={formData.tender_start_date}
+                        onChange={handleInputChange}
+                        min="2020-01-01"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Тендерная процедура: окончание</label>
+                      <input
+                        type="date"
+                        name="tender_end_date"
+                        value={formData.tender_end_date}
+                        onChange={handleInputChange}
+                        min={formData.tender_start_date || '2020-01-01'}
+                      />
+                    </div>
+
                     <div className="form-group full-width">
                       <label>Ответственный сотрудник</label>
                       <select
