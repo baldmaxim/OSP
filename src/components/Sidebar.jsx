@@ -109,6 +109,17 @@ function Sidebar() {
           </NavLink>
         )}
 
+        {/* Проверка ДП/ДС */}
+        <NavLink
+          to="/document-check"
+          className={({ isActive }) =>
+            `sidebar-item ${isActive ? 'active' : ''}`
+          }
+        >
+          <span className="sidebar-icon">📑</span>
+          <span className="sidebar-label">Проверка ДП/ДС</span>
+        </NavLink>
+
         {/* Материалы (БСМ) */}
         {canView('bsm') && (
           <NavLink

@@ -1144,7 +1144,7 @@ function TendersPage({ department = 'construction' }) {
               >
                 Планируемые сроки выполнения работ{sortIndicator('start_date')}
               </th>
-              <th>Ответственный</th>
+              <th>Ответственный по тендеру</th>
               {department === 'construction' && <th>ВОРы и РД</th>}
               <th>Тендерный пакет</th>
               {department === 'construction' && <th>План затрат</th>}
@@ -1337,11 +1337,20 @@ function TendersPage({ department = 'construction' }) {
                     {/* План затрат */}
                     {department === 'construction' && (
                       <td>
-                        {tender.cost_plan_link ? (
-                          <div className="phase-cell">
-                            {tender.cost_plan_status === 'completed' && (
-                              <span className="phase-done" title="План затрат готов">✓ Готово</span>
-                            )}
+                        <div className="phase-cell">
+                          {(() => {
+                            const s = tender.cost_plan_status || 'not_started'
+                            if (s === 'completed') {
+                              return tender.cost_plan_link
+                                ? <span className="phase-done" title="План затрат готов">✓ Готово</span>
+                                : <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
+                            }
+                            if (s === 'in_progress') {
+                              return <span className="phase-progress" title="В работе">В работе</span>
+                            }
+                            return <span className="phase-pending" title="Не начат">Не начат</span>
+                          })()}
+                          {tender.cost_plan_link && (
                             <a
                               href={tender.cost_plan_link}
                               target="_blank"
@@ -1350,12 +1359,8 @@ function TendersPage({ department = 'construction' }) {
                             >
                               Открыть
                             </a>
-                          </div>
-                        ) : tender.cost_plan_status === 'completed' ? (
-                          <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
-                        ) : (
-                          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                        )}
+                          )}
+                        </div>
                         {tender.cost_plan_responsible?.full_name && (
                           <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
                             {tender.cost_plan_responsible.full_name}
