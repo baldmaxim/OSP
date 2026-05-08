@@ -52,6 +52,7 @@ function CostPlansPage() {
           objects(name, status),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name, position)
         `)
+        .is('deleted_at', null)
         .order('start_date', { ascending: false })
 
       if (error) throw error
@@ -72,6 +73,13 @@ function CostPlansPage() {
   }
 
   const handleChangeStatus = async (tenderId, newStatus) => {
+    if (newStatus === 'completed') {
+      const tender = tenders.find(t => t.id === tenderId)
+      if (!tender?.cost_plan_link) {
+        alert('Нельзя установить статус «Завершён» без ссылки на план затрат. Сначала прикрепите документ.')
+        return
+      }
+    }
     try {
       const { error } = await supabase
         .from('tenders')
@@ -168,8 +176,8 @@ function CostPlansPage() {
 
   return (
     <div className="cost-plans-page">
-      <div className="page-header">
-        <h2>Планы затрат</h2>
+      <div className="page-header page-header-cost-plans">
+        <h2><span className="page-icon" aria-hidden>💰</span> Планы затрат</h2>
         <div className="page-header-hint">
           Список тендеров основного строительства. Ответственного за план затрат можно назначить в карточке тендера.
         </div>

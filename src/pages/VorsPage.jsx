@@ -52,6 +52,7 @@ function VorsPage() {
           objects(name, status),
           vor_responsible:contacts!vor_responsible_id(id, full_name, position)
         `)
+        .is('deleted_at', null)
         .order('start_date', { ascending: false })
 
       if (error) throw error
@@ -69,6 +70,13 @@ function VorsPage() {
   }
 
   const handleChangeStatus = async (tenderId, newStatus) => {
+    if (newStatus === 'completed') {
+      const tender = tenders.find(t => t.id === tenderId)
+      if (!tender?.vor_link) {
+        alert('Нельзя установить статус «Завершён» без ссылки на ВОРы и РД. Сначала прикрепите документ.')
+        return
+      }
+    }
     try {
       const { error } = await supabase
         .from('tenders')
@@ -162,8 +170,8 @@ function VorsPage() {
 
   return (
     <div className="cost-plans-page">
-      <div className="page-header">
-        <h2>ВОРы и РД</h2>
+      <div className="page-header page-header-vors">
+        <h2><span className="page-icon" aria-hidden>📐</span> ВОРы и РД</h2>
         <div className="page-header-hint">
           Список тендеров основного строительства. Ответственного за ВОРы и РД можно назначить в карточке тендера.
         </div>

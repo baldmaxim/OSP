@@ -61,7 +61,8 @@ function ContractRegistry() {
         .from('contracts')
         .select('*, objects(name, status), counterparties(name, inn, kpp, legal_address), tenders(work_description)')
         .eq('status', status)
-        .order('contract_date', { ascending: false })
+        .order('contract_date', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true })
 
       if (error) throw error
 

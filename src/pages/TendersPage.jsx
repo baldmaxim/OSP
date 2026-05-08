@@ -611,19 +611,49 @@ function TendersPage({ department = 'construction' }) {
     setShowModal(true)
   }
 
+  // Мягкое удаление: тендер уходит во вкладку «Удалённые» и может быть восстановлен.
   const handleDeleteTender = async (id, objectName) => {
     if (
-      window.confirm(`Вы уверены, что хотите удалить тендер "${objectName}"?`)
+      window.confirm(`Переместить тендер "${objectName}" в «Удалённые»? Его можно будет восстановить.`)
     ) {
       try {
-        const { error } = await supabase.from('tenders').delete().eq('id', id)
-
+        const { error } = await supabase
+          .from('tenders')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', id)
         if (error) throw error
         fetchTenders()
       } catch (error) {
         console.error('Ошибка удаления тендера:', error.message)
         alert('Ошибка удаления: ' + error.message)
       }
+    }
+  }
+
+  const handleRestoreTender = async (id, objectName) => {
+    if (!window.confirm(`Восстановить тендер "${objectName}"?`)) return
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ deleted_at: null })
+        .eq('id', id)
+      if (error) throw error
+      fetchTenders()
+    } catch (err) {
+      console.error('Ошибка восстановления тендера:', err.message)
+      alert('Ошибка восстановления: ' + err.message)
+    }
+  }
+
+  const handleHardDeleteTender = async (id, objectName) => {
+    if (!window.confirm(`Удалить тендер "${objectName}" БЕЗВОЗВРАТНО? Это действие нельзя отменить.`)) return
+    try {
+      const { error } = await supabase.from('tenders').delete().eq('id', id)
+      if (error) throw error
+      fetchTenders()
+    } catch (err) {
+      console.error('Ошибка безвозвратного удаления:', err.message)
+      alert('Ошибка: ' + err.message)
     }
   }
 
@@ -896,10 +926,14 @@ function TendersPage({ department = 'construction' }) {
 
   // Фильтрация тендеров по вкладке и объекту
   const filteredByTab = tenders.filter(tender => {
-    // Фильтр по вкладке
-    if (activeTab === 'completed') {
+    // Фильтр по вкладке (deleted_at-aware)
+    if (activeTab === 'deleted') {
+      if (!tender.deleted_at) return false
+    } else if (activeTab === 'completed') {
+      if (tender.deleted_at) return false
       if (tender.status !== 'Завершен') return false
     } else {
+      if (tender.deleted_at) return false
       if (tender.status === 'Завершен') return false
     }
     // Фильтр по объекту
@@ -942,9 +976,10 @@ function TendersPage({ department = 'construction' }) {
     return sortOrder === 'asc' ? ' ↑' : ' ↓'
   }
 
-  // Подсчет количества тендеров для каждой вкладки
-  const activeTendersCount = tenders.filter(t => t.status !== 'Завершен').length
-  const completedTendersCount = tenders.filter(t => t.status === 'Завершен').length
+  // Подсчет количества тендеров для каждой вкладки (deleted_at-aware)
+  const activeTendersCount = tenders.filter(t => !t.deleted_at && t.status !== 'Завершен').length
+  const completedTendersCount = tenders.filter(t => !t.deleted_at && t.status === 'Завершен').length
+  const deletedTendersCount = tenders.filter(t => t.deleted_at).length
 
   // Проверка просроченности
   const today = new Date().toISOString().split('T')[0]
@@ -956,8 +991,8 @@ function TendersPage({ department = 'construction' }) {
 
   return (
     <div className="tenders-page">
-      <div className="page-header">
-        <h2>{pageTitle}</h2>
+      <div className="page-header page-header-tenders">
+        <h2><span className="page-icon" aria-hidden>📋</span> {pageTitle}</h2>
         <button className="btn-primary" onClick={handleAddNew}>
           + Добавить тендер
         </button>
@@ -981,6 +1016,15 @@ function TendersPage({ department = 'construction' }) {
           Завершенные
           {completedTendersCount > 0 && (
             <span className="tender-tab-count completed">{completedTendersCount}</span>
+          )}
+        </button>
+        <button
+          className={`tender-tab ${activeTab === 'deleted' ? 'active' : ''}`}
+          onClick={() => setActiveTab('deleted')}
+        >
+          Удалённые
+          {deletedTendersCount > 0 && (
+            <span className="tender-tab-count">{deletedTendersCount}</span>
           )}
         </button>
         <button
@@ -1114,7 +1158,9 @@ function TendersPage({ department = 'construction' }) {
                 <td colSpan={(department === 'construction' ? 11 : 9) + (activeTab === 'completed' ? 1 : 0)} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
-                    : 'Нет актуальных тендеров. Добавьте первый тендер.'}
+                    : activeTab === 'deleted'
+                      ? 'В корзине нет тендеров'
+                      : 'Нет актуальных тендеров. Добавьте первый тендер.'}
                 </td>
               </tr>
             ) : (
@@ -1242,11 +1288,20 @@ function TendersPage({ department = 'construction' }) {
                     {/* ВОРы и РД */}
                     {department === 'construction' && (
                       <td>
-                        {tender.vor_link ? (
-                          <div className="phase-cell">
-                            {tender.vor_status === 'completed' && (
-                              <span className="phase-done" title="ВОР готов">✓ Готово</span>
-                            )}
+                        <div className="phase-cell">
+                          {(() => {
+                            const s = tender.vor_status || 'not_started'
+                            if (s === 'completed') {
+                              return tender.vor_link
+                                ? <span className="phase-done" title="ВОР готов">✓ Готово</span>
+                                : <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
+                            }
+                            if (s === 'in_progress') {
+                              return <span className="phase-progress" title="В работе">В работе</span>
+                            }
+                            return <span className="phase-pending" title="Не начат">Не начат</span>
+                          })()}
+                          {tender.vor_link && (
                             <a
                               href={tender.vor_link}
                               target="_blank"
@@ -1255,12 +1310,8 @@ function TendersPage({ department = 'construction' }) {
                             >
                               Открыть
                             </a>
-                          </div>
-                        ) : tender.vor_status === 'completed' ? (
-                          <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
-                        ) : (
-                          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                        )}
+                          )}
+                        </div>
                         {tender.vor_responsible?.full_name && (
                           <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
                             {tender.vor_responsible.full_name}
@@ -1328,22 +1379,44 @@ function TendersPage({ department = 'construction' }) {
                       )}
                     </td>
                     <td className="actions-cell">
-                      <button
-                        className="btn-icon btn-edit"
-                        onClick={() => handleEditTender(tender)}
-                        title="Редактировать"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        className="btn-icon btn-delete"
-                        onClick={() =>
-                          handleDeleteTender(tender.id, tender.objects?.name || 'тендер')
-                        }
-                        title="Удалить"
-                      >
-                        🗑️
-                      </button>
+                      {activeTab === 'deleted' ? (
+                        <>
+                          <button
+                            className="btn-icon"
+                            onClick={() => handleRestoreTender(tender.id, tender.objects?.name || 'тендер')}
+                            title="Восстановить"
+                            style={{ fontSize: '0.875rem' }}
+                          >
+                            ↩️
+                          </button>
+                          <button
+                            className="btn-icon btn-delete"
+                            onClick={() => handleHardDeleteTender(tender.id, tender.objects?.name || 'тендер')}
+                            title="Удалить безвозвратно"
+                          >
+                            🗑️
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            className="btn-icon btn-edit"
+                            onClick={() => handleEditTender(tender)}
+                            title="Редактировать"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            className="btn-icon btn-delete"
+                            onClick={() =>
+                              handleDeleteTender(tender.id, tender.objects?.name || 'тендер')
+                            }
+                            title="В корзину"
+                          >
+                            🗑️
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                   {expandedTenderId === tender.id && (

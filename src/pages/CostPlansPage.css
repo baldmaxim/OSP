@@ -84,6 +84,27 @@
   font-size: 1.0625rem;
   font-weight: 600;
   color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.page-header-cost-plans {
+  border-left: 4px solid #16a34a;
+  background: linear-gradient(90deg, rgba(22, 163, 74, 0.07) 0%, transparent 60%);
+}
+
+.page-header-cost-plans .page-icon {
+  color: #16a34a;
+}
+
+.page-header-vors {
+  border-left: 4px solid #ea580c;
+  background: linear-gradient(90deg, rgba(234, 88, 12, 0.07) 0%, transparent 60%);
+}
+
+.page-header-vors .page-icon {
+  color: #ea580c;
 }
 
 .cost-plans-page .page-header-hint {
