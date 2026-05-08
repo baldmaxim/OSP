@@ -156,7 +156,10 @@ function TenderDetailPage() {
     start_date: 'Дата начала',
     end_date: 'Дата окончания',
     tender_package_link: 'Ссылка на тендерный пакет',
-    responsible_contact_id: 'Ответственный',
+    summary_proposal_link: 'Ссылка на сводную КП',
+    responsible_contact_id: 'Ответственный по тендеру',
+    cost_plan_responsible_id: 'Ответственный за план затрат',
+    vor_responsible_id: 'Ответственный за ВОРы и РД',
     object_id: 'Объект',
     notes: 'Примечание'
   }

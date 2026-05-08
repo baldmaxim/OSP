@@ -14,7 +14,27 @@ const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
 
 function CostPlansPage() {
   const navigate = useNavigate()
-  const { scopedObjectId } = useRole()
+  const { scopedObjectId, userProfile } = useRole()
+
+  // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
+  const logTenderEvent = async (tenderId, eventType, payload = {}) => {
+    if (!tenderId || !eventType) return
+    try {
+      const role = localStorage.getItem('userRole') || null
+      await supabase.from('tender_audit_log').insert([{
+        tender_id: tenderId,
+        event_type: eventType,
+        field_name: payload.fieldName || null,
+        old_value: payload.oldValue ?? null,
+        new_value: payload.newValue ?? null,
+        description: payload.description || null,
+        changed_by_role: role,
+        changed_by_name: userProfile?.full_name || null
+      }])
+    } catch (err) {
+      console.error('Ошибка записи истории тендера:', err.message)
+    }
+  }
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('in_work') // 'in_work' | 'completed'
@@ -95,18 +115,31 @@ function CostPlansPage() {
 
   const handleChangeResponsible = async (tenderId, newContactId) => {
     const value = newContactId || null
+    const tender = tenders.find(t => t.id === tenderId)
+    const oldName = tender?.cost_plan_responsible?.full_name || null
+    const c = value ? allContacts.find(x => x.id === value) : null
+    const newName = c?.full_name || null
     try {
       const { error } = await supabase
         .from('tenders')
         .update({ cost_plan_responsible_id: value })
         .eq('id', tenderId)
       if (error) throw error
-      const c = value ? allContacts.find(x => x.id === value) : null
       setTenders(prev => prev.map(t =>
         t.id === tenderId
           ? { ...t, cost_plan_responsible_id: value, cost_plan_responsible: c ? { id: c.id, full_name: c.full_name, position: c.position } : null }
           : t
       ))
+      if (oldName !== newName) {
+        logTenderEvent(tenderId, 'field_updated', {
+          fieldName: 'cost_plan_responsible_id',
+          oldValue: oldName,
+          newValue: newName,
+          description: newName
+            ? (oldName ? `Сменён ответственный за план затрат: ${oldName} → ${newName}` : `Назначен ответственный за план затрат: ${newName}`)
+            : `Снят ответственный за план затрат (был: ${oldName})`,
+        })
+      }
     } catch (err) {
       console.error('Ошибка назначения ответственного:', err.message)
       alert('Ошибка: ' + err.message)

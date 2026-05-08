@@ -383,22 +383,78 @@ function TendersPage({ department = 'construction' }) {
 
   const handleUpdateTenderResponsible = async (tenderId, newContactId) => {
     const value = newContactId || null
+    const tender = tenders.find(t => t.id === tenderId)
+    const oldName = tender?.responsible_contact?.full_name || null
+    const newContact = value ? responsibleContacts.find(c => c.id === value) : null
+    const newName = newContact?.full_name || null
     try {
       const { error } = await supabase
         .from('tenders')
         .update({ responsible_contact_id: value })
         .eq('id', tenderId)
       if (error) throw error
-      const newContact = value ? responsibleContacts.find(c => c.id === value) : null
       setTenders(prev => prev.map(t =>
         t.id === tenderId
           ? { ...t, responsible_contact_id: value, responsible_contact: newContact ? { id: newContact.id, full_name: newContact.full_name } : null }
           : t
       ))
+      if (oldName !== newName) {
+        logTenderEvent(tenderId, 'field_updated', {
+          fieldName: 'responsible_contact_id',
+          oldValue: oldName,
+          newValue: newName,
+          description: newName
+            ? (oldName ? `Сменён ответственный по тендеру: ${oldName} → ${newName}` : `Назначен ответственный по тендеру: ${newName}`)
+            : `Снят ответственный по тендеру (был: ${oldName})`,
+        })
+      }
     } catch (err) {
       console.error('Ошибка назначения ответственного:', err.message)
       alert('Ошибка: ' + err.message)
     }
+  }
+
+  // Инлайн-редактирование ссылок (тендерный пакет / сводная КП) прямо из таблицы.
+  const TENDER_LINK_FIELDS = {
+    tender_package_link: 'Ссылка на тендерный пакет',
+    summary_proposal_link: 'Ссылка на сводную КП',
+  }
+  const handleUpdateTenderLink = async (tenderId, field, currentValue) => {
+    const label = TENDER_LINK_FIELDS[field] || 'Ссылка'
+    const next = window.prompt(`${label} (Google/Yandex Drive):`, currentValue || '')
+    if (next === null) return
+    const value = next.trim() || null
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ [field]: value })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, [field]: value } : t))
+      // Пишем событие в журнал, чтобы изменение было видно в истории тендера.
+      logTenderEvent(tenderId, 'field_updated', {
+        fieldName: field,
+        oldValue: currentValue || null,
+        newValue: value,
+        description: `Изменено: ${label}`,
+      })
+    } catch (err) {
+      console.error('Ошибка сохранения ссылки:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // Открыть модалку с шаблоном письма прямо из строки таблицы (без перехода в редактирование).
+  const handleShowLetterForTender = (tender) => {
+    if (!tender.responsible_contact_id) {
+      alert('Сначала назначьте ответственного по тендеру — без него нельзя сформировать письмо.')
+      return
+    }
+    const objectName = tender.objects?.name || '[Объект не указан]'
+    const employee = responsibleContacts.find(c => c.id === tender.responsible_contact_id)
+    const letter = generateRequestLetter(tender, objectName, employee)
+    setGeneratedLetter(letter)
+    setShowLetterModal(true)
   }
 
   const handleCopyEmailsForTender = async (tenderId) => {
@@ -1135,7 +1191,7 @@ function TendersPage({ department = 'construction' }) {
               <th style={{ width: '50px' }}></th>
               <th>Наименование объекта</th>
               <th>Описание работ</th>
-              <th>Статус</th>
+              {activeTab !== 'completed' && <th>Статус</th>}
               {activeTab === 'completed' && <th>Победитель</th>}
               <th
                 className="sortable-th"
@@ -1145,9 +1201,9 @@ function TendersPage({ department = 'construction' }) {
                 Планируемые сроки выполнения работ{sortIndicator('start_date')}
               </th>
               <th>Ответственный по тендеру</th>
-              {department === 'construction' && <th>ВОРы и РД</th>}
-              <th>Тендерный пакет</th>
-              {department === 'construction' && <th>План затрат</th>}
+              {department === 'construction' && activeTab !== 'completed' && <th>ВОРы и РД</th>}
+              {activeTab !== 'completed' && <th>Тендерный пакет</th>}
+              {department === 'construction' && activeTab !== 'completed' && <th>План затрат</th>}
               <th>Сводная КП</th>
               <th className="actions-column">Действия</th>
             </tr>
@@ -1155,7 +1211,7 @@ function TendersPage({ department = 'construction' }) {
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={(department === 'construction' ? 11 : 9) + (activeTab === 'completed' ? 1 : 0)} className="no-data">
+                <td colSpan={activeTab === 'completed' ? 8 : (department === 'construction' ? 11 : 9)} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : activeTab === 'deleted'
@@ -1209,41 +1265,33 @@ function TendersPage({ department = 'construction' }) {
                         {tender.work_description}
                       </button>
                     </td>
-                    <td>
-                      <select
-                        className={`status-select ${getStatusBadgeClass(tender.status)}`}
-                        value={tender.status}
-                        onChange={(e) => handleStatusChange(tender.id, e.target.value)}
-                      >
-                        {statusOptions.map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
+                    {activeTab !== 'completed' && (
+                      <td>
+                        <select
+                          className={`status-select ${getStatusBadgeClass(tender.status)}`}
+                          value={tender.status}
+                          onChange={(e) => handleStatusChange(tender.id, e.target.value)}
+                        >
+                          {statusOptions.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    )}
                     {activeTab === 'completed' && (
                       <td>
                         {tender.winner ? (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            padding: '0.375rem 0.75rem',
-                            backgroundColor: '#dcfce7',
-                            color: '#166534',
-                            borderRadius: '6px',
-                            fontSize: '0.875rem',
-                            fontWeight: '500',
-                            border: '1px solid #86efac'
-                          }}>
-                            🏆 {tender.winner.name}
+                          <span className="winner-cell" title="Победитель">
+                            <span className="winner-icon" aria-hidden>🏆</span>
+                            <span className="winner-name">{tender.winner.name}</span>
                           </span>
                         ) : (
                           <span style={{
                             color: 'var(--text-tertiary)',
                             fontStyle: 'italic',
-                            fontSize: '0.875rem'
+                            fontSize: '0.8125rem'
                           }}>
                             Не выбран
                           </span>
@@ -1286,7 +1334,7 @@ function TendersPage({ department = 'construction' }) {
                       )}
                     </td>
                     {/* ВОРы и РД */}
-                    {department === 'construction' && (
+                    {department === 'construction' && activeTab !== 'completed' && (
                       <td>
                         <div className="phase-cell">
                           {(() => {
@@ -1320,22 +1368,44 @@ function TendersPage({ department = 'construction' }) {
                       </td>
                     )}
                     {/* Тендерный пакет */}
-                    <td>
-                      {tender.tender_package_link ? (
-                        <a
-                          href={tender.tender_package_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link"
-                        >
-                          Открыть
-                        </a>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
+                    {activeTab !== 'completed' && (
+                      <td>
+                        {tender.tender_package_link ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                            <a
+                              href={tender.tender_package_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link"
+                            >
+                              Открыть
+                            </a>
+                            <button
+                              className="btn-icon btn-edit"
+                              onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', tender.tender_package_link)}
+                              title="Изменить ссылку"
+                              style={{ fontSize: '0.75rem' }}
+                            >✏️</button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', '')}
+                            style={{
+                              background: 'none',
+                              border: '1px dashed var(--border-color)',
+                              borderRadius: '4px',
+                              padding: '0.1875rem 0.5rem',
+                              color: 'var(--text-tertiary)',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem'
+                            }}
+                            title="Добавить ссылку на тендерный пакет"
+                          >+ ссылка</button>
+                        )}
+                      </td>
+                    )}
                     {/* План затрат */}
-                    {department === 'construction' && (
+                    {department === 'construction' && activeTab !== 'completed' && (
                       <td>
                         <div className="phase-cell">
                           {(() => {
@@ -1371,16 +1441,36 @@ function TendersPage({ department = 'construction' }) {
                     {/* Сводная КП */}
                     <td>
                       {tender.summary_proposal_link ? (
-                        <a
-                          href={tender.summary_proposal_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link"
-                        >
-                          Открыть
-                        </a>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                          <a
+                            href={tender.summary_proposal_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link"
+                          >
+                            Открыть
+                          </a>
+                          <button
+                            className="btn-icon btn-edit"
+                            onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', tender.summary_proposal_link)}
+                            title="Изменить ссылку"
+                            style={{ fontSize: '0.75rem' }}
+                          >✏️</button>
+                        </div>
                       ) : (
-                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                        <button
+                          onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', '')}
+                          style={{
+                            background: 'none',
+                            border: '1px dashed var(--border-color)',
+                            borderRadius: '4px',
+                            padding: '0.1875rem 0.5rem',
+                            color: 'var(--text-tertiary)',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem'
+                          }}
+                          title="Добавить ссылку на сводную КП"
+                        >+ ссылка</button>
                       )}
                     </td>
                     <td className="actions-cell">
@@ -1405,6 +1495,14 @@ function TendersPage({ department = 'construction' }) {
                       ) : (
                         <>
                           <button
+                            className="btn-icon"
+                            onClick={() => handleShowLetterForTender(tender)}
+                            title="Шаблон письма подрядчикам"
+                            style={{ fontSize: '0.875rem' }}
+                          >
+                            ✉️
+                          </button>
+                          <button
                             className="btn-icon btn-edit"
                             onClick={() => handleEditTender(tender)}
                             title="Редактировать"
@@ -1426,7 +1524,7 @@ function TendersPage({ department = 'construction' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={(department === 'construction' ? 11 : 9) + (activeTab === 'completed' ? 1 : 0)} className="expanded-cp-row">
+                      <td colSpan={activeTab === 'completed' ? 8 : (department === 'construction' ? 11 : 9)} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"
