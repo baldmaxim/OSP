@@ -1098,12 +1098,12 @@ function TendersPage({ department = 'construction' }) {
                 onClick={() => toggleSort('start_date')}
                 title="Сортировать по датам"
               >
-                Сроки{sortIndicator('start_date')}
+                Планируемые сроки выполнения работ{sortIndicator('start_date')}
               </th>
               <th>Ответственный</th>
-              <th>ВОРы и РД</th>
+              {department === 'construction' && <th>ВОРы и РД</th>}
               <th>Тендерный пакет</th>
-              <th>План затрат</th>
+              {department === 'construction' && <th>План затрат</th>}
               <th>Сводная КП</th>
               <th className="actions-column">Действия</th>
             </tr>
@@ -1111,7 +1111,7 @@ function TendersPage({ department = 'construction' }) {
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? 12 : 11} className="no-data">
+                <td colSpan={(department === 'construction' ? 11 : 9) + (activeTab === 'completed' ? 1 : 0)} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : 'Нет актуальных тендеров. Добавьте первый тендер.'}
@@ -1240,32 +1240,34 @@ function TendersPage({ department = 'construction' }) {
                       )}
                     </td>
                     {/* ВОРы и РД */}
-                    <td>
-                      {tender.vor_link ? (
-                        <div className="phase-cell">
-                          {tender.vor_status === 'completed' && (
-                            <span className="phase-done" title="ВОР готов">✓ Готово</span>
-                          )}
-                          <a
-                            href={tender.vor_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link"
-                          >
-                            Открыть
-                          </a>
-                        </div>
-                      ) : tender.vor_status === 'completed' ? (
-                        <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
-                      ) : (
-                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                      )}
-                      {tender.vor_responsible?.full_name && (
-                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
-                          {tender.vor_responsible.full_name}
-                        </div>
-                      )}
-                    </td>
+                    {department === 'construction' && (
+                      <td>
+                        {tender.vor_link ? (
+                          <div className="phase-cell">
+                            {tender.vor_status === 'completed' && (
+                              <span className="phase-done" title="ВОР готов">✓ Готово</span>
+                            )}
+                            <a
+                              href={tender.vor_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link"
+                            >
+                              Открыть
+                            </a>
+                          </div>
+                        ) : tender.vor_status === 'completed' ? (
+                          <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                        )}
+                        {tender.vor_responsible?.full_name && (
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
+                            {tender.vor_responsible.full_name}
+                          </div>
+                        )}
+                      </td>
+                    )}
                     {/* Тендерный пакет */}
                     <td>
                       {tender.tender_package_link ? (
@@ -1282,32 +1284,34 @@ function TendersPage({ department = 'construction' }) {
                       )}
                     </td>
                     {/* План затрат */}
-                    <td>
-                      {tender.cost_plan_link ? (
-                        <div className="phase-cell">
-                          {tender.cost_plan_status === 'completed' && (
-                            <span className="phase-done" title="План затрат готов">✓ Готово</span>
-                          )}
-                          <a
-                            href={tender.cost_plan_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link"
-                          >
-                            Открыть
-                          </a>
-                        </div>
-                      ) : tender.cost_plan_status === 'completed' ? (
-                        <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
-                      ) : (
-                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                      )}
-                      {tender.cost_plan_responsible?.full_name && (
-                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
-                          {tender.cost_plan_responsible.full_name}
-                        </div>
-                      )}
-                    </td>
+                    {department === 'construction' && (
+                      <td>
+                        {tender.cost_plan_link ? (
+                          <div className="phase-cell">
+                            {tender.cost_plan_status === 'completed' && (
+                              <span className="phase-done" title="План затрат готов">✓ Готово</span>
+                            )}
+                            <a
+                              href={tender.cost_plan_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link"
+                            >
+                              Открыть
+                            </a>
+                          </div>
+                        ) : tender.cost_plan_status === 'completed' ? (
+                          <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                        )}
+                        {tender.cost_plan_responsible?.full_name && (
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
+                            {tender.cost_plan_responsible.full_name}
+                          </div>
+                        )}
+                      </td>
+                    )}
                     {/* Сводная КП */}
                     <td>
                       {tender.summary_proposal_link ? (
@@ -1344,7 +1348,7 @@ function TendersPage({ department = 'construction' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? 12 : 11} className="expanded-cp-row">
+                      <td colSpan={(department === 'construction' ? 11 : 9) + (activeTab === 'completed' ? 1 : 0)} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"
@@ -1683,7 +1687,7 @@ function TendersPage({ department = 'construction' }) {
                 </div>
 
                 {editingTender && (
-                  <div className="form-group">
+                  <div className="form-group full-width">
                     <label>Статус *</label>
                     <select
                       name="status"

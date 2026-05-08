@@ -578,7 +578,7 @@ function ContractRegistry() {
                       }}
                       title="Открыть договор"
                     >
-                      {contract.contract_number || '—'}
+                      №{index + 1}
                     </button>
                   </td>
                   <td>{contract.counterparties?.name || '-'}</td>

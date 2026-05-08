@@ -11,6 +11,7 @@ function ContactsPage() {
   const [showContactModal, setShowContactModal] = useState(false)
   const [editingContact, setEditingContact] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [objectFilter, setObjectFilter] = useState('') // '' | 'office' | objectId
 
   const [contactFormData, setContactFormData] = useState({
     full_name: '',
@@ -203,6 +204,18 @@ function ContactsPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            <select
+              className="contacts-object-filter"
+              value={objectFilter}
+              onChange={(e) => setObjectFilter(e.target.value)}
+              title="Фильтр по объекту/офису"
+            >
+              <option value="">Все объекты/офис</option>
+              <option value="office">Только офис</option>
+              {objects.map(obj => (
+                <option key={obj.id} value={obj.id}>{obj.name}</option>
+              ))}
+            </select>
             <button className="btn-primary" onClick={handleAddNewContact}>
               + Добавить
             </button>
@@ -243,14 +256,24 @@ function ContactsPage() {
                       c.objects?.name,
                     ].some(v => v && String(v).toLowerCase().includes(q))
                   }
+                  // Профили из user_roles считаются «офисными»: object_id у них всегда null.
+                  const profileMatchesObject = () =>
+                    objectFilter === '' || objectFilter === 'office'
+                  const contactMatchesObject = (c) => {
+                    if (!objectFilter) return true
+                    if (objectFilter === 'office') return !c.object_id
+                    return c.object_id === objectFilter
+                  }
                   const filteredProfiles = userProfiles
                     .filter(p => p.full_name && !contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase()))
                     .filter(matchesProfile)
+                    .filter(profileMatchesObject)
                   const uniqueContacts = contacts
                     .filter((contact, index, self) =>
                       index === self.findIndex(c => c.full_name?.toLowerCase() === contact.full_name?.toLowerCase())
                     )
                     .filter(matchesContact)
+                    .filter(contactMatchesObject)
                   return (
                     <>
                       {/* Профили из user_roles, которых нет в contacts */}
@@ -318,18 +341,27 @@ function ContactsPage() {
                     )
                   }
                   const q = searchQuery.trim().toLowerCase()
-                  if (!q) return null
-                  const anyProfile = userProfiles
-                    .filter(p => p.full_name && !contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase()))
-                    .some(p => [p.full_name, ROLE_LABELS[p.role] || p.role, p.work_phone, p.work_email || p.email]
-                      .some(v => v && String(v).toLowerCase().includes(q)))
-                  const anyContact = contacts.some(c => [c.full_name, c.position, c.phone, c.email, c.objects?.name]
-                    .some(v => v && String(v).toLowerCase().includes(q)))
-                  if (!anyProfile && !anyContact) {
+                  if (!q && !objectFilter) return null
+                  const profileFilter = (p) => {
+                    if (!p.full_name) return false
+                    if (contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase())) return false
+                    if (objectFilter && objectFilter !== 'office') return false
+                    if (q && ![p.full_name, ROLE_LABELS[p.role] || p.role, p.work_phone, p.work_email || p.email]
+                      .some(v => v && String(v).toLowerCase().includes(q))) return false
+                    return true
+                  }
+                  const contactFilter = (c) => {
+                    if (objectFilter === 'office' && c.object_id) return false
+                    if (objectFilter && objectFilter !== 'office' && c.object_id !== objectFilter) return false
+                    if (q && ![c.full_name, c.position, c.phone, c.email, c.objects?.name]
+                      .some(v => v && String(v).toLowerCase().includes(q))) return false
+                    return true
+                  }
+                  if (!userProfiles.some(profileFilter) && !contacts.some(contactFilter)) {
                     return (
                       <tr>
                         <td colSpan="7" className="no-data">
-                          Ничего не найдено по запросу «{searchQuery}»
+                          Ничего не найдено{q && ` по запросу «${searchQuery}»`}
                         </td>
                       </tr>
                     )

@@ -105,6 +105,23 @@ function CostPlansPage() {
     }
   }
 
+  const handleChangeCostPlanLink = async (tenderId, currentLink) => {
+    const next = window.prompt('Ссылка на план затрат (Google/Yandex Drive):', currentLink || '')
+    if (next === null) return
+    const value = next.trim() || null
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ cost_plan_link: value })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, cost_plan_link: value } : t))
+    } catch (err) {
+      console.error('Ошибка сохранения ссылки на план затрат:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
   const handleChangeCostPlanDate = async (tenderId, field, value) => {
     const next = value || null
     try {
@@ -288,16 +305,40 @@ function CostPlansPage() {
                   </td>
                   <td>
                     {t.cost_plan_link ? (
-                      <a
-                        href={t.cost_plan_link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="link"
-                      >
-                        Открыть
-                      </a>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <a
+                          href={t.cost_plan_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="link"
+                        >
+                          Открыть
+                        </a>
+                        <button
+                          className="btn-icon btn-edit"
+                          onClick={() => handleChangeCostPlanLink(t.id, t.cost_plan_link)}
+                          title="Изменить ссылку"
+                          style={{ fontSize: '0.75rem' }}
+                        >
+                          ✏️
+                        </button>
+                      </div>
                     ) : (
-                      <span className="muted-text">—</span>
+                      <button
+                        onClick={() => handleChangeCostPlanLink(t.id, '')}
+                        style={{
+                          background: 'none',
+                          border: '1px dashed var(--border-color)',
+                          borderRadius: '4px',
+                          padding: '0.1875rem 0.5rem',
+                          color: 'var(--text-tertiary)',
+                          cursor: 'pointer',
+                          fontSize: '0.75rem'
+                        }}
+                        title="Добавить ссылку на план затрат"
+                      >
+                        + ссылка
+                      </button>
                     )}
                   </td>
                   <td>
