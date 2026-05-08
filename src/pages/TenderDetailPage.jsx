@@ -46,7 +46,7 @@ function TenderDetailPage() {
     try {
       const { data: tenderData, error: tenderError } = await supabase
         .from('tenders')
-        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name)')
+        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name)')
         .eq('id', tenderId)
         .single()
 
@@ -184,6 +184,12 @@ function TenderDetailPage() {
   const formatDate = (dateString) => {
     if (!dateString) return '-'
     return new Date(dateString).toLocaleDateString('ru-RU')
+  }
+
+  const formatDateRangeOrDash = (start, end) => {
+    if (!start && !end) return '—'
+    if (start && end) return `${formatDate(start)} — ${formatDate(end)}`
+    return formatDate(start || end)
   }
 
   const getStatusBadgeClass = (status) => {
@@ -420,6 +426,28 @@ function TenderDetailPage() {
               <a href={tender.tender_package_link} target="_blank" rel="noopener noreferrer" className="info-link">
                 Открыть документ
               </a>
+            </div>
+          )}
+          {(tender.cost_plan_start_date || tender.cost_plan_end_date || tender.cost_plan_responsible) && (
+            <div className="info-item">
+              <span className="info-label">Срок выполнения плана затрат</span>
+              <span className="info-value">
+                {formatDateRangeOrDash(tender.cost_plan_start_date, tender.cost_plan_end_date)}
+                {tender.cost_plan_responsible?.full_name && (
+                  <span className="info-sub"> · {tender.cost_plan_responsible.full_name}</span>
+                )}
+              </span>
+            </div>
+          )}
+          {(tender.vor_start_date || tender.vor_end_date || tender.vor_responsible) && (
+            <div className="info-item">
+              <span className="info-label">Срок подготовки ВОР</span>
+              <span className="info-value">
+                {formatDateRangeOrDash(tender.vor_start_date, tender.vor_end_date)}
+                {tender.vor_responsible?.full_name && (
+                  <span className="info-sub"> · {tender.vor_responsible.full_name}</span>
+                )}
+              </span>
             </div>
           )}
         </div>

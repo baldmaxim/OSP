@@ -151,6 +151,26 @@ function ContactsPage() {
     }
   }
 
+  const handleInlineObjectChange = async (contactId, newObjectId) => {
+    const value = newObjectId || null
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ object_id: value })
+        .eq('id', contactId)
+      if (error) throw error
+      const newObj = value ? objects.find(o => o.id === value) : null
+      setContacts(prev => prev.map(c =>
+        c.id === contactId
+          ? { ...c, object_id: value, objects: newObj ? { name: newObj.name } : null }
+          : c
+      ))
+    } catch (err) {
+      console.error('Ошибка изменения объекта:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
   const handleAddNewContact = () => {
     setEditingContact(null)
     setIsCustomPosition(false)
@@ -181,25 +201,16 @@ function ContactsPage() {
           </div>
 
           <div className="table-container">
-            <table className="data-table" style={{ tableLayout: 'fixed' }}>
-              <colgroup>
-                <col style={{ width: '5%' }} />
-                <col style={{ width: '20%' }} />
-                <col style={{ width: '14%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '19%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '12%' }} />
-              </colgroup>
+            <table className="data-table contacts-table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'center' }}>№ п/п</th>
+                  <th style={{ width: '40px', textAlign: 'center' }}>№</th>
                   <th>ФИО</th>
                   <th>Должность</th>
                   <th>Телефон</th>
                   <th>Email</th>
-                  <th>Объект</th>
-                  <th className="actions-column">Действия</th>
+                  <th style={{ width: '220px' }}>Объект/Офис</th>
+                  <th style={{ width: '72px' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -213,25 +224,37 @@ function ContactsPage() {
                     <>
                       {/* Профили из user_roles, которых нет в contacts */}
                       {filteredProfiles.map((profile, idx) => (
-                        <tr key={`profile-${idx}`}>
-                          <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{idx + 1}</td>
+                        <tr key={`profile-${idx}`} className="profile-row">
+                          <td className="num-cell">{idx + 1}</td>
                           <td>{profile.full_name}</td>
-                          <td>{ROLE_LABELS[profile.role] || profile.role}</td>
+                          <td className="muted">{ROLE_LABELS[profile.role] || profile.role}</td>
                           <td>{profile.work_phone || '—'}</td>
-                          <td style={{ wordBreak: 'break-all' }}>{profile.work_email || profile.email || '—'}</td>
-                          <td>Офис</td>
-                          <td className="actions-cell"></td>
+                          <td>{profile.work_email || profile.email || '—'}</td>
+                          <td className="muted">Офис</td>
+                          <td></td>
                         </tr>
                       ))}
                       {/* Контакты из таблицы contacts (без дублей) */}
                       {uniqueContacts.map((contact, idx) => (
                         <tr key={contact.id}>
-                          <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{filteredProfiles.length + idx + 1}</td>
+                          <td className="num-cell">{filteredProfiles.length + idx + 1}</td>
                           <td>{contact.full_name}</td>
-                          <td>{contact.position}</td>
+                          <td className="muted">{contact.position}</td>
                           <td>{contact.phone}</td>
                           <td>{contact.email}</td>
-                          <td>{contact.objects?.name || 'Офис'}</td>
+                          <td>
+                            <select
+                              className="inline-object-select"
+                              value={contact.object_id || ''}
+                              onChange={(e) => handleInlineObjectChange(contact.id, e.target.value)}
+                              title="Привязать к объекту или оставить «Офис»"
+                            >
+                              <option value="">Офис</option>
+                              {objects.map(obj => (
+                                <option key={obj.id} value={obj.id}>{obj.name}</option>
+                              ))}
+                            </select>
+                          </td>
                           <td className="actions-cell">
                             <button
                               className="btn-icon btn-edit"

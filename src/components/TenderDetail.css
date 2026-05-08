@@ -144,6 +144,12 @@
   font-weight: 500;
 }
 
+.info-sub {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
 .info-item.winner .info-value {
   color: #166534;
   background: #dcfce7;

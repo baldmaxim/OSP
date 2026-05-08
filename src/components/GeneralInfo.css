@@ -107,6 +107,57 @@
   font-style: italic;
 }
 
+/* Contacts page — компактный вид и инлайн-выбор объекта */
+.contacts-table th {
+  padding: 0.5rem 0.625rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-color);
+}
+
+.contacts-table td {
+  padding: 0.5rem 0.625rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.contacts-table .num-cell {
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}
+
+.contacts-table .muted {
+  color: var(--text-secondary);
+}
+
+.contacts-table .profile-row {
+  background: var(--bg-tertiary);
+}
+
+.contacts-table .profile-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.contacts-table .inline-object-select {
+  width: 100%;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.contacts-table .inline-object-select:hover,
+.contacts-table .inline-object-select:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+
 .loading {
   text-align: center;
   padding: 3rem;

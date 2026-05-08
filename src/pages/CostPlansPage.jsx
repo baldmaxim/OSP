@@ -20,6 +20,7 @@ function CostPlansPage() {
   const [activeTab, setActiveTab] = useState('in_work') // 'in_work' | 'completed'
   const [responsibleFilter, setResponsibleFilter] = useState('')
   const [allContacts, setAllContacts] = useState([])
+  const [editingResponsibleId, setEditingResponsibleId] = useState(null)
 
   useEffect(() => {
     fetchTenders()
@@ -235,16 +236,33 @@ function CostPlansPage() {
                   </td>
                   <td className="muted-text">{t.work_description}</td>
                   <td>
-                    <select
-                      className="inline-responsible-select"
-                      value={t.cost_plan_responsible_id || ''}
-                      onChange={(e) => handleChangeResponsible(t.id, e.target.value)}
-                    >
-                      <option value="">— не назначен —</option>
-                      {allContacts.map(c => (
-                        <option key={c.id} value={c.id}>{c.full_name}</option>
-                      ))}
-                    </select>
+                    {editingResponsibleId === t.id ? (
+                      <select
+                        autoFocus
+                        className="inline-responsible-select"
+                        value={t.cost_plan_responsible_id || ''}
+                        onChange={(e) => {
+                          handleChangeResponsible(t.id, e.target.value)
+                          setEditingResponsibleId(null)
+                        }}
+                        onBlur={() => setEditingResponsibleId(null)}
+                      >
+                        <option value="">— не назначен —</option>
+                        {allContacts.map(c => (
+                          <option key={c.id} value={c.id}>{c.full_name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <button
+                        className="responsible-display"
+                        onClick={() => setEditingResponsibleId(t.id)}
+                        title="Назначить ответственного"
+                      >
+                        {t.cost_plan_responsible?.full_name || (
+                          <span className="responsible-empty">— не назначен —</span>
+                        )}
+                      </button>
+                    )}
                     {t.cost_plan_responsible?.position && (
                       <div className="muted-tiny">{t.cost_plan_responsible.position}</div>
                     )}

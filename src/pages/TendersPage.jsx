@@ -20,6 +20,7 @@ function TendersPage({ department = 'construction' }) {
   // Сводка по каждому тендеру: { tenderId: { total, proposalProvided } }
   const [tenderProposalCounts, setTenderProposalCounts] = useState({})
   const [copiedEmailsTenderId, setCopiedEmailsTenderId] = useState(null)
+  const [editingResponsibleTenderId, setEditingResponsibleTenderId] = useState(null)
   const [showAddCounterpartyModal, setShowAddCounterpartyModal] = useState(false)
   const [selectedTenderForCounterparty, setSelectedTenderForCounterparty] = useState(null)
   const [counterpartySearchQuery, setCounterpartySearchQuery] = useState('')
@@ -59,6 +60,7 @@ function TendersPage({ department = 'construction' }) {
   const [templateSaved, setTemplateSaved] = useState(false)
   const [objectFilter, setObjectFilter] = useState('')
   const [responsibleFilter, setResponsibleFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
   const [sortField, setSortField] = useState('start_date') // 'start_date' | 'end_date'
   const [sortOrder, setSortOrder] = useState('desc') // 'asc' | 'desc'
   const [formData, setFormData] = useState({
@@ -904,6 +906,8 @@ function TendersPage({ department = 'construction' }) {
     if (objectFilter && tender.object_id !== objectFilter) return false
     // Фильтр по ответственному
     if (responsibleFilter && tender.responsible_contact_id !== responsibleFilter) return false
+    // Фильтр по статусу
+    if (statusFilter && tender.status !== statusFilter) return false
     return true
   })
 
@@ -1017,6 +1021,32 @@ function TendersPage({ department = 'construction' }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Статус:</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{
+              padding: '0.375rem 1.5rem 0.375rem 0.5rem',
+              fontSize: '0.8125rem',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              appearance: 'none',
+              backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")",
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 0.375rem center'
+            }}
+          >
+            <option value="">Все статусы</option>
+            {statusOptions.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Ответственный:</span>
           <select
             value={responsibleFilter}
@@ -1044,9 +1074,9 @@ function TendersPage({ department = 'construction' }) {
           </select>
         </div>
 
-        {(objectFilter || responsibleFilter) && (
+        {(objectFilter || responsibleFilter || statusFilter) && (
           <button
-            onClick={() => { setObjectFilter(''); setResponsibleFilter('') }}
+            onClick={() => { setObjectFilter(''); setResponsibleFilter(''); setStatusFilter('') }}
             style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
           >
             Сбросить все
@@ -1061,13 +1091,7 @@ function TendersPage({ department = 'construction' }) {
               <th style={{ width: '50px' }}></th>
               <th>Наименование объекта</th>
               <th>Описание работ</th>
-              <th
-                className="sortable-th"
-                onClick={() => toggleSort('status')}
-                title="Сортировать по статусу"
-              >
-                Статус{sortIndicator('status')}
-              </th>
+              <th>Статус</th>
               {activeTab === 'completed' && <th>Победитель</th>}
               <th
                 className="sortable-th"
@@ -1185,19 +1209,35 @@ function TendersPage({ department = 'construction' }) {
                       {isOverdue(tender) && <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem' }} title="Срок истёк">!</span>}
                     </td>
                     <td>
-                      <select
-                        className="inline-responsible-select"
-                        value={tender.responsible_contact_id || ''}
-                        onChange={(e) => handleUpdateTenderResponsible(tender.id, e.target.value)}
-                        title={getResponsibleName(tender) || 'Назначить ответственного'}
-                      >
-                        <option value="">— не назначен —</option>
-                        {responsibleContacts.map((contact) => (
-                          <option key={contact.id} value={contact.id}>
-                            {contact.full_name}
-                          </option>
-                        ))}
-                      </select>
+                      {editingResponsibleTenderId === tender.id ? (
+                        <select
+                          autoFocus
+                          className="inline-responsible-select"
+                          value={tender.responsible_contact_id || ''}
+                          onChange={(e) => {
+                            handleUpdateTenderResponsible(tender.id, e.target.value)
+                            setEditingResponsibleTenderId(null)
+                          }}
+                          onBlur={() => setEditingResponsibleTenderId(null)}
+                        >
+                          <option value="">— не назначен —</option>
+                          {responsibleContacts.map((contact) => (
+                            <option key={contact.id} value={contact.id}>
+                              {contact.full_name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <button
+                          className="responsible-display"
+                          onClick={() => setEditingResponsibleTenderId(tender.id)}
+                          title="Назначить ответственного"
+                        >
+                          {getResponsibleName(tender) || (
+                            <span className="responsible-empty">— не назначен —</span>
+                          )}
+                        </button>
+                      )}
                     </td>
                     <td>
                       {tender.tender_package_link ? (
