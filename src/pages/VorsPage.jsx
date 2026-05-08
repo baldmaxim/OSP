@@ -35,7 +35,6 @@ function VorsPage() {
           objects(name, status),
           vor_responsible:contacts!vor_responsible_id(id, full_name, position)
         `)
-        .not('vor_responsible_id', 'is', null)
         .order('start_date', { ascending: false })
 
       if (error) throw error
@@ -105,7 +104,7 @@ function VorsPage() {
       <div className="page-header">
         <h2>ВОРы и РД</h2>
         <div className="page-header-hint">
-          Список тендеров основного строительства, по которым назначен ответственный за ВОРы и РД
+          Список тендеров основного строительства. Ответственного за ВОРы и РД можно назначить в карточке тендера.
         </div>
       </div>
 
@@ -169,7 +168,7 @@ function VorsPage() {
                   {activeTab === 'completed'
                     ? 'Завершённых ВОРов нет'
                     : tenders.length === 0
-                      ? 'Нет тендеров с назначенным ответственным за ВОР. Назначьте ответственного в форме тендера.'
+                      ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
                       : 'Все ВОРы для выбранного фильтра завершены — переключитесь на вкладку «Завершено».'}
                 </td>
               </tr>
@@ -187,9 +186,15 @@ function VorsPage() {
                   </td>
                   <td className="muted-text">{t.work_description}</td>
                   <td>
-                    <div>{t.vor_responsible?.full_name}</div>
-                    {t.vor_responsible?.position && (
-                      <div className="muted-tiny">{t.vor_responsible.position}</div>
+                    {t.vor_responsible?.full_name ? (
+                      <>
+                        <div>{t.vor_responsible.full_name}</div>
+                        {t.vor_responsible.position && (
+                          <div className="muted-tiny">{t.vor_responsible.position}</div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="muted-text">Не назначен</span>
                     )}
                   </td>
                   <td className="nowrap">{formatDateRange(t.start_date, t.end_date)}</td>

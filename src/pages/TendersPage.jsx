@@ -17,6 +17,9 @@ function TendersPage({ department = 'construction' }) {
   const [editingTender, setEditingTender] = useState(null)
   const [expandedTenderId, setExpandedTenderId] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState({})
+  // Сводка по каждому тендеру: { tenderId: { total, proposalProvided } }
+  const [tenderProposalCounts, setTenderProposalCounts] = useState({})
+  const [copiedEmailsTenderId, setCopiedEmailsTenderId] = useState(null)
   const [showAddCounterpartyModal, setShowAddCounterpartyModal] = useState(false)
   const [selectedTenderForCounterparty, setSelectedTenderForCounterparty] = useState(null)
   const [counterpartySearchQuery, setCounterpartySearchQuery] = useState('')
@@ -112,9 +115,30 @@ function TendersPage({ department = 'construction' }) {
       fetchTenders(),
       fetchObjects(),
       fetchCounterparties(),
-      fetchResponsibleContacts()
+      fetchResponsibleContacts(),
+      fetchTenderProposalCounts()
     ])
   }, [department])
+
+  // Сводный запрос: считаем для каждого тендера сколько контрагентов и сколько предоставили КП.
+  const fetchTenderProposalCounts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tender_counterparties')
+        .select('tender_id, status')
+      if (error) throw error
+      const map = {}
+      ;(data || []).forEach(row => {
+        const t = row.tender_id
+        if (!map[t]) map[t] = { total: 0, proposalProvided: 0 }
+        map[t].total += 1
+        if (row.status === 'proposal_provided') map[t].proposalProvided += 1
+      })
+      setTenderProposalCounts(map)
+    } catch (err) {
+      console.error('Ошибка загрузки счётчиков КП:', err.message)
+    }
+  }
 
   const fetchTenders = async () => {
     try {
@@ -288,6 +312,7 @@ function TendersPage({ department = 'construction' }) {
       if (error) throw error
 
       await fetchTenderCounterparties(selectedTenderForCounterparty)
+      fetchTenderProposalCounts()
       setShowAddCounterpartyModal(false)
       setSelectedCounterpartyIds([])
       setCounterpartySearchQuery('')
@@ -346,9 +371,35 @@ function TendersPage({ department = 'construction' }) {
           tc.id === tenderCounterpartyId ? { ...tc, status: newStatus } : tc
         )
       }))
+      // Перепосчитываем счётчик «КП предоставлено» для этого тендера
+      fetchTenderProposalCounts()
     } catch (error) {
       console.error('Ошибка обновления статуса:', error.message)
       alert('Ошибка обновления статуса: ' + error.message)
+    }
+  }
+
+  const handleCopyEmailsForTender = async (tenderId) => {
+    const rows = tenderCounterparties[tenderId] || []
+    const emails = []
+    rows.forEach(tc => {
+      const contacts = tc.counterparties?.counterparty_contacts || []
+      contacts.forEach(c => {
+        if (c.email && c.email.trim()) emails.push(c.email.trim())
+      })
+    })
+    const unique = Array.from(new Set(emails))
+    if (unique.length === 0) {
+      alert('У контрагентов нет email-адресов')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(unique.join('; '))
+      setCopiedEmailsTenderId(tenderId)
+      setTimeout(() => setCopiedEmailsTenderId(prev => prev === tenderId ? null : prev), 2000)
+    } catch (err) {
+      console.error('Ошибка копирования email:', err)
+      alert('Не удалось скопировать в буфер обмена')
     }
   }
 
@@ -364,6 +415,7 @@ function TendersPage({ department = 'construction' }) {
       if (error) throw error
 
       await fetchTenderCounterparties(tenderId)
+      fetchTenderProposalCounts()
     } catch (error) {
       console.error('Ошибка удаления контрагента:', error.message)
       alert('Ошибка удаления: ' + error.message)
@@ -1013,13 +1065,28 @@ function TendersPage({ department = 'construction' }) {
                 <React.Fragment key={tender.id}>
                   <tr className={isOverdue(tender) ? 'overdue-row' : ''}>
                     <td>
-                      <button
-                        onClick={() => handleToggleTender(tender.id)}
-                        className="expand-toggle"
-                        title="Показать контрагентов"
-                      >
-                        {expandedTenderId === tender.id ? '▼' : '▶'}
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <button
+                          onClick={() => handleToggleTender(tender.id)}
+                          className="expand-toggle"
+                          title="Показать контрагентов"
+                        >
+                          {expandedTenderId === tender.id ? '▼' : '▶'}
+                        </button>
+                        {(() => {
+                          const c = tenderProposalCounts[tender.id]
+                          if (!c || c.total === 0) return null
+                          const all = c.proposalProvided === c.total
+                          return (
+                            <span
+                              className={`kp-counter ${all ? 'kp-counter-full' : ''}`}
+                              title={`КП предоставлено: ${c.proposalProvided} из ${c.total} контрагентов`}
+                            >
+                              {c.proposalProvided}/{c.total} КП
+                            </span>
+                          )
+                        })()}
+                      </div>
                     </td>
                     <td>
                       <button
@@ -1183,6 +1250,15 @@ function TendersPage({ department = 'construction' }) {
                           >
                             + Добавить контрагента
                           </button>
+                          {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 && (
+                            <button
+                              className="btn-secondary"
+                              onClick={() => handleCopyEmailsForTender(tender.id)}
+                              title="Скопировать все email-адреса контрагентов в буфер обмена"
+                            >
+                              {copiedEmailsTenderId === tender.id ? '✓ Скопировано' : '📋 Копировать email'}
+                            </button>
+                          )}
                         </div>
                         {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 ? (
                           <div className="expanded-cp-table-wrap">

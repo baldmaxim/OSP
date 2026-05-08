@@ -491,8 +491,8 @@ function AdminPage() {
                             {new Date(ur.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                           </td>
                           <td className="date-cell">
-                            {(ur.last_login_at || ur.last_sign_in_at)
-                              ? new Date(ur.last_login_at || ur.last_sign_in_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                            {ur.last_login_at
+                              ? new Date(ur.last_login_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                               : '—'}
                           </td>
                           <td>

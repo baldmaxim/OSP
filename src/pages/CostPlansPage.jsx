@@ -35,7 +35,6 @@ function CostPlansPage() {
           objects(name, status),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name, position)
         `)
-        .not('cost_plan_responsible_id', 'is', null)
         .order('start_date', { ascending: false })
 
       if (error) throw error
@@ -114,7 +113,7 @@ function CostPlansPage() {
       <div className="page-header">
         <h2>Планы затрат</h2>
         <div className="page-header-hint">
-          Список тендеров основного строительства, по которым назначен ответственный за план затрат
+          Список тендеров основного строительства. Ответственного за план затрат можно назначить в карточке тендера.
         </div>
       </div>
 
@@ -178,7 +177,7 @@ function CostPlansPage() {
                   {activeTab === 'completed'
                     ? 'Завершённых планов затрат нет'
                     : tenders.length === 0
-                      ? 'Нет тендеров с назначенным ответственным за план затрат. Назначьте ответственного в форме тендера.'
+                      ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
                       : 'Все планы для выбранного фильтра завершены — переключитесь на вкладку «Завершено».'}
                 </td>
               </tr>
@@ -196,9 +195,15 @@ function CostPlansPage() {
                   </td>
                   <td className="muted-text">{t.work_description}</td>
                   <td>
-                    <div>{t.cost_plan_responsible?.full_name}</div>
-                    {t.cost_plan_responsible?.position && (
-                      <div className="muted-tiny">{t.cost_plan_responsible.position}</div>
+                    {t.cost_plan_responsible?.full_name ? (
+                      <>
+                        <div>{t.cost_plan_responsible.full_name}</div>
+                        {t.cost_plan_responsible.position && (
+                          <div className="muted-tiny">{t.cost_plan_responsible.position}</div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="muted-text">Не назначен</span>
                     )}
                   </td>
                   <td className="nowrap">{formatDateRange(t.start_date, t.end_date)}</td>

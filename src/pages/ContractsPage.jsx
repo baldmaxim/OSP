@@ -309,10 +309,30 @@ function ContractRegistry() {
     }
   }
 
-  const handleAddNew = () => {
+  // Подбираем следующий порядковый номер договора: max(числовой contract_number) + 1.
+  // Существующие нечисловые номера (например, «12-А-2024») игнорируем.
+  const computeNextContractNumber = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('contracts')
+        .select('contract_number')
+      if (error) throw error
+      const max = (data || []).reduce((acc, row) => {
+        const n = parseInt(String(row.contract_number || '').trim(), 10)
+        return Number.isInteger(n) && n > acc ? n : acc
+      }, 0)
+      return String(max + 1)
+    } catch (err) {
+      console.error('Не удалось подобрать следующий номер договора:', err.message)
+      return ''
+    }
+  }
+
+  const handleAddNew = async () => {
     setEditingContract(null)
+    const nextNumber = await computeNextContractNumber()
     setFormData({
-      contract_number: '',
+      contract_number: nextNumber,
       contract_date: '',
       counterparty_id: '',
       object_id: '',
