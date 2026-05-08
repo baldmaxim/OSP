@@ -379,6 +379,26 @@ function TendersPage({ department = 'construction' }) {
     }
   }
 
+  const handleUpdateTenderResponsible = async (tenderId, newContactId) => {
+    const value = newContactId || null
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ responsible_contact_id: value })
+        .eq('id', tenderId)
+      if (error) throw error
+      const newContact = value ? responsibleContacts.find(c => c.id === value) : null
+      setTenders(prev => prev.map(t =>
+        t.id === tenderId
+          ? { ...t, responsible_contact_id: value, responsible_contact: newContact ? { id: newContact.id, full_name: newContact.full_name } : null }
+          : t
+      ))
+    } catch (err) {
+      console.error('Ошибка назначения ответственного:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
   const handleCopyEmailsForTender = async (tenderId) => {
     const rows = tenderCounterparties[tenderId] || []
     const emails = []
@@ -887,13 +907,20 @@ function TendersPage({ department = 'construction' }) {
     return true
   })
 
-  // Сортировка по выбранному полю-дате
+  // Сортировка по выбранному полю
+  const statusOrder = Object.fromEntries(statusOptions.map((s, i) => [s, i]))
   const sortedTenders = [...filteredByTab].sort((a, b) => {
-    const av = a[sortField] || ''
-    const bv = b[sortField] || ''
+    let av, bv
+    if (sortField === 'status') {
+      av = statusOrder[a.status] ?? 999
+      bv = statusOrder[b.status] ?? 999
+    } else {
+      av = a[sortField] || ''
+      bv = b[sortField] || ''
+    }
     if (av === bv) return 0
-    if (!av) return 1   // пустые в конец
-    if (!bv) return -1
+    if (av === '' || av === null || av === undefined) return 1
+    if (bv === '' || bv === null || bv === undefined) return -1
     return sortOrder === 'asc' ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1)
   })
 
@@ -1034,7 +1061,13 @@ function TendersPage({ department = 'construction' }) {
               <th style={{ width: '50px' }}></th>
               <th>Наименование объекта</th>
               <th>Описание работ</th>
-              <th>Статус</th>
+              <th
+                className="sortable-th"
+                onClick={() => toggleSort('status')}
+                title="Сортировать по статусу"
+              >
+                Статус{sortIndicator('status')}
+              </th>
               {activeTab === 'completed' && <th>Победитель</th>}
               <th
                 className="sortable-th"
@@ -1151,7 +1184,21 @@ function TendersPage({ department = 'construction' }) {
                       {formatDateRange(tender.start_date, tender.end_date)}
                       {isOverdue(tender) && <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem' }} title="Срок истёк">!</span>}
                     </td>
-                    <td>{getResponsibleName(tender) || <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>—</span>}</td>
+                    <td>
+                      <select
+                        className="inline-responsible-select"
+                        value={tender.responsible_contact_id || ''}
+                        onChange={(e) => handleUpdateTenderResponsible(tender.id, e.target.value)}
+                        title={getResponsibleName(tender) || 'Назначить ответственного'}
+                      >
+                        <option value="">— не назначен —</option>
+                        {responsibleContacts.map((contact) => (
+                          <option key={contact.id} value={contact.id}>
+                            {contact.full_name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                     <td>
                       {tender.tender_package_link ? (
                         <a

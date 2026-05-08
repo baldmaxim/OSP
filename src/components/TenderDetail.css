@@ -52,6 +52,12 @@
   font-size: 0.9375rem;
 }
 
+.tender-work-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 0.25rem;
+}
+
 .tender-header-right {
   display: flex;
   align-items: center;

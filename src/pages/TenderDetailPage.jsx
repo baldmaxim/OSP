@@ -377,7 +377,11 @@ function TenderDetailPage() {
         </button>
         <div className="tender-detail-title">
           <h2>{tender.objects?.name || 'Тендер'}</h2>
-          <p className="tender-work-description">{tender.work_description}</p>
+          {tender.work_description && (
+            <p className="tender-work-description">
+              <span className="tender-work-label">Выполняемые работы:</span> {tender.work_description}
+            </p>
+          )}
         </div>
         <div className="tender-header-right">
           {tender.created_at && (

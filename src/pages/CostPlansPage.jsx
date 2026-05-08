@@ -19,10 +19,25 @@ function CostPlansPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('in_work') // 'in_work' | 'completed'
   const [responsibleFilter, setResponsibleFilter] = useState('')
+  const [allContacts, setAllContacts] = useState([])
 
   useEffect(() => {
     fetchTenders()
+    fetchAllContacts()
   }, [])
+
+  const fetchAllContacts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('id, full_name, position')
+        .order('full_name', { ascending: true })
+      if (error) throw error
+      setAllContacts(data || [])
+    } catch (err) {
+      console.error('Ошибка загрузки сотрудников:', err.message)
+    }
+  }
 
   const fetchTenders = async () => {
     try {
@@ -31,6 +46,7 @@ function CostPlansPage() {
         .from('tenders')
         .select(`
           id, object_id, status, cost_plan_status, cost_plan_link,
+          cost_plan_responsible_id, cost_plan_start_date, cost_plan_end_date,
           start_date, end_date, work_description,
           objects(name, status),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name, position)
@@ -68,17 +84,41 @@ function CostPlansPage() {
     }
   }
 
-  const formatDate = (s) => {
-    if (!s) return ''
-    return new Date(s).toLocaleDateString('ru-RU')
+  const handleChangeResponsible = async (tenderId, newContactId) => {
+    const value = newContactId || null
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ cost_plan_responsible_id: value })
+        .eq('id', tenderId)
+      if (error) throw error
+      const c = value ? allContacts.find(x => x.id === value) : null
+      setTenders(prev => prev.map(t =>
+        t.id === tenderId
+          ? { ...t, cost_plan_responsible_id: value, cost_plan_responsible: c ? { id: c.id, full_name: c.full_name, position: c.position } : null }
+          : t
+      ))
+    } catch (err) {
+      console.error('Ошибка назначения ответственного:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
   }
 
-  const formatDateRange = (start, end) => {
-    if (!start && !end) return '—'
-    if (!start) return formatDate(end)
-    if (!end) return formatDate(start)
-    return `${formatDate(start)} — ${formatDate(end)}`
+  const handleChangeCostPlanDate = async (tenderId, field, value) => {
+    const next = value || null
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ [field]: next })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, [field]: next } : t))
+    } catch (err) {
+      console.error('Ошибка изменения срока плана затрат:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
   }
+
 
   if (loading) {
     return (
@@ -164,7 +204,7 @@ function CostPlansPage() {
               <th>Объект</th>
               <th>Описание работ</th>
               <th>Ответственный</th>
-              <th>Сроки тендера</th>
+              <th>Срок выполнения плана затрат</th>
               <th>План затрат</th>
               <th style={{ width: '180px' }}>Статус плана</th>
               <th className="actions-column">Действия</th>
@@ -195,18 +235,39 @@ function CostPlansPage() {
                   </td>
                   <td className="muted-text">{t.work_description}</td>
                   <td>
-                    {t.cost_plan_responsible?.full_name ? (
-                      <>
-                        <div>{t.cost_plan_responsible.full_name}</div>
-                        {t.cost_plan_responsible.position && (
-                          <div className="muted-tiny">{t.cost_plan_responsible.position}</div>
-                        )}
-                      </>
-                    ) : (
-                      <span className="muted-text">Не назначен</span>
+                    <select
+                      className="inline-responsible-select"
+                      value={t.cost_plan_responsible_id || ''}
+                      onChange={(e) => handleChangeResponsible(t.id, e.target.value)}
+                    >
+                      <option value="">— не назначен —</option>
+                      {allContacts.map(c => (
+                        <option key={c.id} value={c.id}>{c.full_name}</option>
+                      ))}
+                    </select>
+                    {t.cost_plan_responsible?.position && (
+                      <div className="muted-tiny">{t.cost_plan_responsible.position}</div>
                     )}
                   </td>
-                  <td className="nowrap">{formatDateRange(t.start_date, t.end_date)}</td>
+                  <td>
+                    <div className="inline-date-range">
+                      <input
+                        type="date"
+                        className="inline-date-input"
+                        value={t.cost_plan_start_date || ''}
+                        onChange={(e) => handleChangeCostPlanDate(t.id, 'cost_plan_start_date', e.target.value)}
+                        title="Начало"
+                      />
+                      <span className="dash">—</span>
+                      <input
+                        type="date"
+                        className="inline-date-input"
+                        value={t.cost_plan_end_date || ''}
+                        onChange={(e) => handleChangeCostPlanDate(t.id, 'cost_plan_end_date', e.target.value)}
+                        title="Окончание"
+                      />
+                    </div>
+                  </td>
                   <td>
                     {t.cost_plan_link ? (
                       <a

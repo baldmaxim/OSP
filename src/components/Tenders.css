@@ -726,6 +726,52 @@
   border-color: #86efac;
 }
 
+.inline-responsible-select {
+  width: 100%;
+  max-width: 220px;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.inline-responsible-select:hover {
+  border-color: var(--primary-color);
+}
+
+.inline-responsible-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.inline-date-input {
+  width: 130px;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.inline-date-input:hover {
+  border-color: var(--primary-color);
+}
+
+.inline-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.inline-date-range .dash {
+  color: var(--text-tertiary);
+}
+
 .tenders-page .expanded-cp-table-wrap {
   border: 1px solid var(--border-color);
   border-radius: 6px;

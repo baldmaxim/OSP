@@ -19,10 +19,25 @@ function VorsPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('in_work')
   const [responsibleFilter, setResponsibleFilter] = useState('')
+  const [allContacts, setAllContacts] = useState([])
 
   useEffect(() => {
     fetchTenders()
+    fetchAllContacts()
   }, [])
+
+  const fetchAllContacts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('id, full_name, position')
+        .order('full_name', { ascending: true })
+      if (error) throw error
+      setAllContacts(data || [])
+    } catch (err) {
+      console.error('Ошибка загрузки сотрудников:', err.message)
+    }
+  }
 
   const fetchTenders = async () => {
     try {
@@ -31,6 +46,7 @@ function VorsPage() {
         .from('tenders')
         .select(`
           id, object_id, status, vor_status, vor_link,
+          vor_responsible_id, vor_start_date, vor_end_date,
           start_date, end_date, work_description,
           objects(name, status),
           vor_responsible:contacts!vor_responsible_id(id, full_name, position)
@@ -65,14 +81,41 @@ function VorsPage() {
     }
   }
 
-  const formatDate = (s) => s ? new Date(s).toLocaleDateString('ru-RU') : ''
-
-  const formatDateRange = (start, end) => {
-    if (!start && !end) return '—'
-    if (!start) return formatDate(end)
-    if (!end) return formatDate(start)
-    return `${formatDate(start)} — ${formatDate(end)}`
+  const handleChangeResponsible = async (tenderId, newContactId) => {
+    const value = newContactId || null
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ vor_responsible_id: value })
+        .eq('id', tenderId)
+      if (error) throw error
+      const c = value ? allContacts.find(x => x.id === value) : null
+      setTenders(prev => prev.map(t =>
+        t.id === tenderId
+          ? { ...t, vor_responsible_id: value, vor_responsible: c ? { id: c.id, full_name: c.full_name, position: c.position } : null }
+          : t
+      ))
+    } catch (err) {
+      console.error('Ошибка назначения ответственного:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
   }
+
+  const handleChangeVorDate = async (tenderId, field, value) => {
+    const next = value || null
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ [field]: next })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, [field]: next } : t))
+    } catch (err) {
+      console.error('Ошибка изменения срока ВОР:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
 
   if (loading) {
     return (
@@ -155,7 +198,7 @@ function VorsPage() {
               <th>Объект</th>
               <th>Описание работ</th>
               <th>Ответственный</th>
-              <th>Сроки тендера</th>
+              <th>Срок подготовки ВОР</th>
               <th>ВОРы и РД</th>
               <th style={{ width: '180px' }}>Статус</th>
               <th className="actions-column">Действия</th>
@@ -186,18 +229,39 @@ function VorsPage() {
                   </td>
                   <td className="muted-text">{t.work_description}</td>
                   <td>
-                    {t.vor_responsible?.full_name ? (
-                      <>
-                        <div>{t.vor_responsible.full_name}</div>
-                        {t.vor_responsible.position && (
-                          <div className="muted-tiny">{t.vor_responsible.position}</div>
-                        )}
-                      </>
-                    ) : (
-                      <span className="muted-text">Не назначен</span>
+                    <select
+                      className="inline-responsible-select"
+                      value={t.vor_responsible_id || ''}
+                      onChange={(e) => handleChangeResponsible(t.id, e.target.value)}
+                    >
+                      <option value="">— не назначен —</option>
+                      {allContacts.map(c => (
+                        <option key={c.id} value={c.id}>{c.full_name}</option>
+                      ))}
+                    </select>
+                    {t.vor_responsible?.position && (
+                      <div className="muted-tiny">{t.vor_responsible.position}</div>
                     )}
                   </td>
-                  <td className="nowrap">{formatDateRange(t.start_date, t.end_date)}</td>
+                  <td>
+                    <div className="inline-date-range">
+                      <input
+                        type="date"
+                        className="inline-date-input"
+                        value={t.vor_start_date || ''}
+                        onChange={(e) => handleChangeVorDate(t.id, 'vor_start_date', e.target.value)}
+                        title="Начало"
+                      />
+                      <span className="dash">—</span>
+                      <input
+                        type="date"
+                        className="inline-date-input"
+                        value={t.vor_end_date || ''}
+                        onChange={(e) => handleChangeVorDate(t.id, 'vor_end_date', e.target.value)}
+                        title="Окончание"
+                      />
+                    </div>
+                  </td>
                   <td>
                     {t.vor_link ? (
                       <a

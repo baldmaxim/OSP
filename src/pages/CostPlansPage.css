@@ -5,6 +5,49 @@
   overflow: hidden;
 }
 
+.cost-plans-page .inline-responsible-select {
+  width: 100%;
+  max-width: 220px;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.cost-plans-page .inline-responsible-select:hover,
+.cost-plans-page .inline-responsible-select:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+
+.cost-plans-page .inline-date-input {
+  width: 130px;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.cost-plans-page .inline-date-input:hover {
+  border-color: var(--primary-color);
+}
+
+.cost-plans-page .inline-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.cost-plans-page .inline-date-range .dash {
+  color: var(--text-tertiary);
+}
+
 .cost-plans-page .page-header {
   padding: 0.875rem 1.25rem;
   border-bottom: 1px solid var(--border-color);
