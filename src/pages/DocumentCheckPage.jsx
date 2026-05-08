@@ -30,6 +30,7 @@ function DocumentCheckPage() {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm())
   const [dragOverColumn, setDragOverColumn] = useState(null)
+  const [cpSearch, setCpSearch] = useState('')
 
   const fetchAll = useCallback(async () => {
     try {
@@ -61,6 +62,7 @@ function DocumentCheckPage() {
   const handleOpenAdd = () => {
     setEditing(null)
     setForm(emptyForm())
+    setCpSearch('')
     setShowModal(true)
   }
 
@@ -74,6 +76,7 @@ function DocumentCheckPage() {
       doc_date: req.doc_date,
       notes: req.notes || '',
     })
+    setCpSearch('')
     setShowModal(true)
   }
 
@@ -278,91 +281,107 @@ function DocumentCheckPage() {
         </div>
       )}
 
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{editing ? 'Редактировать заявку' : 'Новая заявка на проверку'}</h3>
-              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+      {showModal && (() => {
+        const cpQuery = cpSearch.trim().toLowerCase()
+        const filteredCps = cpQuery
+          ? counterparties.filter(c => c.name && c.name.toLowerCase().includes(cpQuery))
+          : counterparties
+        const selectedCp = counterparties.find(c => c.id === form.counterparty_id)
+        return (
+          <div className="modal-overlay" onClick={() => setShowModal(false)}>
+            <div className="modal doc-check-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>{editing ? 'Редактировать заявку' : 'Новая заявка на проверку'}</h3>
+                <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+              </div>
+              <form onSubmit={handleSubmit} className="doc-check-form">
+                <div className="doc-check-grid">
+                  <div className="form-group">
+                    <label>Тип *</label>
+                    <select
+                      value={form.doc_type}
+                      onChange={(e) => setForm({ ...form, doc_type: e.target.value })}
+                      required
+                    >
+                      <option value="ДП">ДП — Договор подряда</option>
+                      <option value="ДС">ДС — Доп. соглашение</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>№ договора / ДС *</label>
+                    <input
+                      type="text"
+                      value={form.doc_number}
+                      onChange={(e) => setForm({ ...form, doc_number: e.target.value })}
+                      required
+                      placeholder="Например, 12-А-2026"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Дата документа *</label>
+                    <input
+                      type="date"
+                      value={form.doc_date}
+                      onChange={(e) => setForm({ ...form, doc_date: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Контрагент {selectedCp && <span className="form-hint">— выбран: {selectedCp.name}</span>}</label>
+                    <input
+                      type="search"
+                      className="cp-search-input"
+                      placeholder="🔍 Поиск контрагента..."
+                      value={cpSearch}
+                      onChange={(e) => setCpSearch(e.target.value)}
+                    />
+                    <select
+                      value={form.counterparty_id}
+                      onChange={(e) => setForm({ ...form, counterparty_id: e.target.value })}
+                      size={Math.min(6, Math.max(3, filteredCps.length + 1))}
+                      className="cp-select"
+                    >
+                      <option value="">— не выбран —</option>
+                      {filteredCps.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group full-width">
+                    <label>Объект</label>
+                    <select
+                      value={form.object_id}
+                      onChange={(e) => setForm({ ...form, object_id: e.target.value })}
+                    >
+                      <option value="">— не выбран —</option>
+                      {objects.map(o => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group full-width">
+                    <label>Примечание</label>
+                    <textarea
+                      value={form.notes}
+                      onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                      rows={2}
+                      placeholder="Особенности проверки, ответственный, и т.д."
+                    />
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
+                    Отмена
+                  </button>
+                  <button type="submit" className="btn-primary">
+                    {editing ? 'Сохранить' : 'Создать'}
+                  </button>
+                </div>
+              </form>
             </div>
-            <form onSubmit={handleSubmit}>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Тип *</label>
-                  <select
-                    value={form.doc_type}
-                    onChange={(e) => setForm({ ...form, doc_type: e.target.value })}
-                    required
-                  >
-                    <option value="ДП">ДП — Договор подряда</option>
-                    <option value="ДС">ДС — Дополнительное соглашение</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>№ документа *</label>
-                  <input
-                    type="text"
-                    value={form.doc_number}
-                    onChange={(e) => setForm({ ...form, doc_number: e.target.value })}
-                    required
-                    placeholder="Например, 12-А-2026"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Дата документа *</label>
-                  <input
-                    type="date"
-                    value={form.doc_date}
-                    onChange={(e) => setForm({ ...form, doc_date: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Контрагент</label>
-                  <select
-                    value={form.counterparty_id}
-                    onChange={(e) => setForm({ ...form, counterparty_id: e.target.value })}
-                  >
-                    <option value="">— не выбран —</option>
-                    {counterparties.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group full-width">
-                  <label>Объект</label>
-                  <select
-                    value={form.object_id}
-                    onChange={(e) => setForm({ ...form, object_id: e.target.value })}
-                  >
-                    <option value="">— не выбран —</option>
-                    {objects.map(o => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group full-width">
-                  <label>Примечание</label>
-                  <textarea
-                    value={form.notes}
-                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    rows={3}
-                    placeholder="Особенности проверки, ответственный, и т.д."
-                  />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
-                  Отмена
-                </button>
-                <button type="submit" className="btn-primary">
-                  {editing ? 'Сохранить' : 'Создать'}
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

@@ -243,3 +243,89 @@
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 }
+
+/* Modal — компактный, чтобы всё умещалось без прокрутки */
+.doc-check-modal {
+  max-width: 720px;
+}
+
+.doc-check-modal .modal-header {
+  padding: 0.875rem 1.25rem;
+}
+
+.doc-check-modal .modal-header h3 {
+  font-size: 1rem;
+}
+
+.doc-check-form {
+  padding: 1rem 1.25rem;
+}
+
+.doc-check-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.625rem 1rem;
+}
+
+.doc-check-grid .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.doc-check-grid .form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.doc-check-grid label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.doc-check-grid .form-hint {
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+.doc-check-grid input,
+.doc-check-grid select,
+.doc-check-grid textarea {
+  padding: 0.375rem 0.5rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.doc-check-grid input:focus,
+.doc-check-grid select:focus,
+.doc-check-grid textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.doc-check-grid .cp-search-input {
+  margin-bottom: 0.25rem;
+}
+
+.doc-check-grid .cp-select {
+  padding: 0.25rem;
+  min-height: 5rem;
+}
+
+.doc-check-grid .cp-select option {
+  padding: 0.25rem 0.375rem;
+}
+
+.doc-check-modal .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+  margin-top: 0.75rem;
+}

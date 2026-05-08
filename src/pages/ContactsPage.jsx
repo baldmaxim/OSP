@@ -12,6 +12,13 @@ function ContactsPage() {
   const [editingContact, setEditingContact] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [objectFilter, setObjectFilter] = useState('') // '' | 'office' | objectId
+  const [activeTab, setActiveTab] = useState('contacts') // 'contacts' | 'departments'
+
+  // --- Departments ---
+  const [departments, setDepartments] = useState([])
+  const [showDeptModal, setShowDeptModal] = useState(false)
+  const [editingDept, setEditingDept] = useState(null)
+  const [deptForm, setDeptForm] = useState({ name: '', description: '' })
 
   const [contactFormData, setContactFormData] = useState({
     full_name: '',
@@ -34,7 +41,82 @@ function ContactsPage() {
     fetchContacts()
     fetchObjects()
     fetchUserProfiles()
+    fetchDepartments()
   }, [])
+
+  const fetchDepartments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('*')
+        .order('name', { ascending: true })
+      if (error) throw error
+      setDepartments(data || [])
+    } catch (err) {
+      console.error('Ошибка загрузки отделов:', err.message)
+    }
+  }
+
+  const handleOpenAddDept = () => {
+    setEditingDept(null)
+    setDeptForm({ name: '', description: '' })
+    setShowDeptModal(true)
+  }
+
+  const handleOpenEditDept = (dept) => {
+    setEditingDept(dept)
+    setDeptForm({ name: dept.name, description: dept.description || '' })
+    setShowDeptModal(true)
+  }
+
+  const handleSubmitDept = async (e) => {
+    e.preventDefault()
+    const name = deptForm.name.trim()
+    if (!name) {
+      alert('Укажите название отдела')
+      return
+    }
+    const payload = {
+      name,
+      description: deptForm.description.trim() || null,
+      updated_at: new Date().toISOString(),
+    }
+    try {
+      if (editingDept) {
+        const { error } = await supabase
+          .from('departments')
+          .update(payload)
+          .eq('id', editingDept.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('departments').insert([payload])
+        if (error) throw error
+      }
+      setShowDeptModal(false)
+      setEditingDept(null)
+      setDeptForm({ name: '', description: '' })
+      fetchDepartments()
+    } catch (err) {
+      if (err.code === '23505') {
+        alert('Отдел с таким названием уже существует')
+      } else {
+        console.error('Ошибка сохранения отдела:', err.message)
+        alert('Ошибка: ' + err.message)
+      }
+    }
+  }
+
+  const handleDeleteDept = async (dept) => {
+    if (!window.confirm(`Удалить отдел «${dept.name}»?`)) return
+    try {
+      const { error } = await supabase.from('departments').delete().eq('id', dept.id)
+      if (error) throw error
+      setDepartments(prev => prev.filter(d => d.id !== dept.id))
+    } catch (err) {
+      console.error('Ошибка удаления отдела:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
 
   const fetchContacts = async () => {
     try {
@@ -192,8 +274,73 @@ function ContactsPage() {
         <h2>Контактные данные сотрудников</h2>
       </div>
 
+      <div className="contacts-tabs">
+        <button
+          className={`contacts-tab ${activeTab === 'contacts' ? 'active' : ''}`}
+          onClick={() => setActiveTab('contacts')}
+        >
+          Сотрудники
+        </button>
+        <button
+          className={`contacts-tab ${activeTab === 'departments' ? 'active' : ''}`}
+          onClick={() => setActiveTab('departments')}
+        >
+          Отделы
+          {departments.length > 0 && <span className="contacts-tab-count">{departments.length}</span>}
+        </button>
+      </div>
+
       {loading ? (
         <div className="loading">Загрузка...</div>
+      ) : activeTab === 'departments' ? (
+        <div className="section-content">
+          <div className="section-actions contacts-toolbar">
+            <button className="btn-primary" onClick={handleOpenAddDept}>
+              + Добавить отдел
+            </button>
+          </div>
+          <div className="table-container">
+            <table className="data-table contacts-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '40px', textAlign: 'center' }}>№</th>
+                  <th>Название отдела</th>
+                  <th>Описание</th>
+                  <th style={{ width: '72px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {departments.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" className="no-data">
+                      Отделов нет. Добавьте первый отдел.
+                    </td>
+                  </tr>
+                ) : (
+                  departments.map((dept, idx) => (
+                    <tr key={dept.id}>
+                      <td className="num-cell">{idx + 1}</td>
+                      <td>{dept.name}</td>
+                      <td className="muted">{dept.description || '—'}</td>
+                      <td className="actions-cell">
+                        <button
+                          className="btn-icon btn-edit"
+                          onClick={() => handleOpenEditDept(dept)}
+                          title="Редактировать"
+                        >✏️</button>
+                        <button
+                          className="btn-icon btn-delete"
+                          onClick={() => handleDeleteDept(dept)}
+                          title="Удалить"
+                        >🗑️</button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
         <div className="section-content">
           <div className="section-actions contacts-toolbar">
@@ -530,6 +677,57 @@ function ContactsPage() {
                 </button>
                 <button type="submit" className="btn-primary">
                   {editingContact ? 'Сохранить' : 'Добавить'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: добавление/редактирование отдела */}
+      {showDeptModal && (
+        <div className="modal-overlay" onClick={() => setShowDeptModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3>{editingDept ? 'Редактировать отдел' : 'Новый отдел'}</h3>
+              <button
+                className="modal-close"
+                onClick={() => { setShowDeptModal(false); setEditingDept(null) }}
+              >×</button>
+            </div>
+            <form onSubmit={handleSubmitDept}>
+              <div className="form-grid">
+                <div className="form-group full-width">
+                  <label>Название отдела *</label>
+                  <input
+                    type="text"
+                    value={deptForm.name}
+                    onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
+                    required
+                    autoFocus
+                    placeholder="Например, Отдел сопровождения подрядчиков"
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label>Описание</label>
+                  <textarea
+                    value={deptForm.description}
+                    onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
+                    rows={3}
+                    placeholder="Краткое описание отдела (необязательно)"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => { setShowDeptModal(false); setEditingDept(null) }}
+                >
+                  Отмена
+                </button>
+                <button type="submit" className="btn-primary">
+                  {editingDept ? 'Сохранить' : 'Добавить'}
                 </button>
               </div>
             </form>
