@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
@@ -144,38 +144,106 @@ function SummaryPage() {
     overdue: enriched.filter(t => t.stage.overdue).length,
   }
 
+  // Группировка по этапам для секционного отображения
+  const stageGroups = [
+    { key: 'vor', label: 'Подготовка ВОР', icon: '📐', accent: '#9333ea' },
+    { key: 'tender', label: 'Тендерная процедура', icon: '📢', accent: '#2563eb' },
+    { key: 'pre_work', label: 'Ожидание начала работ', icon: '🕐', accent: '#0891b2' },
+    { key: 'work', label: 'Идут работы', icon: '🛠', accent: '#16a34a' },
+    { key: 'post_work', label: 'Работы завершены', icon: '🏁', accent: '#64748b' },
+    { key: 'unknown', label: 'Не определено', icon: '❓', accent: '#94a3b8' },
+  ]
+  const filteredByStageGroup = stageGroups
+    .map(g => ({ ...g, items: filtered.filter(t => t.stage.key === g.key) }))
+    .filter(g => g.items.length > 0)
+
+  // Список «требуют внимания»: просрочены или без ответственного на текущем этапе
+  const attentionItems = enriched.filter(t =>
+    t.stage.overdue || (t.stage.responsibleNote === 'не назначен' && t.stage.key !== 'unknown')
+  )
+
   return (
     <div className="summary-page">
-      <div className="summary-header">
+      <div className="summary-header summary-header-board">
         <div>
-          <h2>Сводка по тендерам</h2>
-          <div className="summary-subtitle">Этап, ответственный и сроки по каждому тендеру основного строительства</div>
+          <h2><span className="page-icon" aria-hidden>🧭</span> Сводка по тендерам</h2>
+          <div className="summary-subtitle">
+            Этап, ответственный и сроки по каждому тендеру основного строительства
+          </div>
+        </div>
+        <div className="summary-updated" title="Данные актуальны на момент загрузки страницы">
+          Обновлено: {new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
 
-      {/* KPI: 5 карточек */}
+      {/* KPI: 5 карточек с иконками */}
       <div className="summary-kpis">
         <div className="kpi">
-          <div className="kpi-label">Всего</div>
-          <div className="kpi-value">{counts.all}</div>
+          <div className="kpi-icon" aria-hidden>📊</div>
+          <div className="kpi-body">
+            <div className="kpi-label">Всего тендеров</div>
+            <div className="kpi-value">{counts.all}</div>
+          </div>
         </div>
         <div className="kpi accent-vor">
-          <div className="kpi-label">Подготовка ВОР</div>
-          <div className="kpi-value">{counts.vor}</div>
+          <div className="kpi-icon" aria-hidden>📐</div>
+          <div className="kpi-body">
+            <div className="kpi-label">Подготовка ВОР</div>
+            <div className="kpi-value">{counts.vor}</div>
+          </div>
         </div>
         <div className="kpi accent-tender">
-          <div className="kpi-label">Тендерная процедура</div>
-          <div className="kpi-value">{counts.tender}</div>
+          <div className="kpi-icon" aria-hidden>📢</div>
+          <div className="kpi-body">
+            <div className="kpi-label">Тендерная процедура</div>
+            <div className="kpi-value">{counts.tender}</div>
+          </div>
         </div>
         <div className="kpi accent-work">
-          <div className="kpi-label">Работы</div>
-          <div className="kpi-value">{counts.work}</div>
+          <div className="kpi-icon" aria-hidden>🛠</div>
+          <div className="kpi-body">
+            <div className="kpi-label">Работы</div>
+            <div className="kpi-value">{counts.work}</div>
+          </div>
         </div>
         <div className={`kpi ${counts.overdue > 0 ? 'accent-danger' : ''}`}>
-          <div className="kpi-label">Просрочено</div>
-          <div className="kpi-value">{counts.overdue}</div>
+          <div className="kpi-icon" aria-hidden>{counts.overdue > 0 ? '⚠️' : '✓'}</div>
+          <div className="kpi-body">
+            <div className="kpi-label">Просрочено</div>
+            <div className="kpi-value">{counts.overdue}</div>
+          </div>
         </div>
       </div>
+
+      {/* Требуют внимания — топ-проблемы для руководителя */}
+      {attentionItems.length > 0 && (
+        <div className="attention-panel">
+          <div className="attention-panel-header">
+            <span className="attention-icon" aria-hidden>⚠️</span>
+            <span className="attention-title">Требуют внимания</span>
+            <span className="attention-count">{attentionItems.length}</span>
+          </div>
+          <div className="attention-list">
+            {attentionItems.slice(0, 6).map(t => (
+              <button
+                key={t.id}
+                className={`attention-chip ${t.stage.overdue ? 'overdue' : 'no-responsible'}`}
+                onClick={() => navigate(`/tenders/${t.id}`)}
+                title={t.work_description}
+              >
+                <span className="chip-stage">{STAGE_LABELS[t.stage.key]}</span>
+                <span className="chip-object">{t.objects?.name || '—'}</span>
+                <span className="chip-reason">
+                  {t.stage.overdue ? `просрочен на ${Math.abs(t.daysLeft || 0)} дн.` : 'нет ответственного'}
+                </span>
+              </button>
+            ))}
+            {attentionItems.length > 6 && (
+              <span className="attention-more">+{attentionItems.length - 6}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="summary-filters">
         {[
@@ -204,7 +272,7 @@ function SummaryPage() {
               <th>Описание работ</th>
               <th style={{ width: '210px' }}>Этапы</th>
               <th style={{ width: '180px' }}>На ком</th>
-              <th style={{ width: '160px' }}>Срок этапа</th>
+              <th style={{ width: '170px' }}>Срок этапа</th>
             </tr>
           </thead>
           <tbody>
@@ -217,28 +285,41 @@ function SummaryPage() {
                 </td>
               </tr>
             ) : (
-              filtered.map(t => (
-                <tr
-                  key={t.id}
-                  className={t.stage.overdue ? 'overdue' : ''}
-                  onClick={() => navigate(`/tenders/${t.id}`)}
-                >
-                  <td className="object-cell">{t.objects?.name || '—'}</td>
-                  <td className="muted">{t.work_description}</td>
-                  <td>
-                    <Timeline currentStage={t.stage.key} />
-                  </td>
-                  <td>
-                    <div className="responsible-name">{t.stage.responsible}</div>
-                    <div className="muted-tiny">
-                      {STAGE_LABELS[t.stage.key]}
-                      {t.stage.responsibleNote && <span> · {t.stage.responsibleNote}</span>}
-                    </div>
-                  </td>
-                  <td>
-                    <DeadlineCell start={t.stage.start} end={t.stage.end} daysLeft={t.daysLeft} overdue={t.stage.overdue} fmt={fmtDate} />
-                  </td>
-                </tr>
+              filteredByStageGroup.map(group => (
+                <React.Fragment key={group.key}>
+                  <tr className="stage-group-row" style={{ '--stage-accent': group.accent }}>
+                    <td colSpan={5}>
+                      <div className="stage-group-header">
+                        <span className="stage-group-icon" aria-hidden>{group.icon}</span>
+                        <span className="stage-group-label">{group.label}</span>
+                        <span className="stage-group-count">{group.items.length}</span>
+                      </div>
+                    </td>
+                  </tr>
+                  {group.items.map(t => (
+                    <tr
+                      key={t.id}
+                      className={t.stage.overdue ? 'overdue' : ''}
+                      onClick={() => navigate(`/tenders/${t.id}`)}
+                    >
+                      <td className="object-cell">{t.objects?.name || '—'}</td>
+                      <td className="muted">{t.work_description}</td>
+                      <td>
+                        <Timeline currentStage={t.stage.key} />
+                      </td>
+                      <td>
+                        <div className="responsible-name">{t.stage.responsible}</div>
+                        <div className="muted-tiny">
+                          {STAGE_LABELS[t.stage.key]}
+                          {t.stage.responsibleNote && <span> · {t.stage.responsibleNote}</span>}
+                        </div>
+                      </td>
+                      <td>
+                        <DeadlineCell start={t.stage.start} end={t.stage.end} daysLeft={t.daysLeft} overdue={t.stage.overdue} fmt={fmtDate} />
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
               ))
             )}
           </tbody>
@@ -247,6 +328,7 @@ function SummaryPage() {
     </div>
   )
 }
+
 
 function Timeline({ currentStage }) {
   // 3 этапа, текущий подсвечен; прошедшие — заполнены, будущие — приглушены

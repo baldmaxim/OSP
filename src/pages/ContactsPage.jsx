@@ -6,7 +6,6 @@ import '../components/GeneralInfo.css'
 function ContactsPage() {
   const [contacts, setContacts] = useState([])
   const [objects, setObjects] = useState([])
-  const [userProfiles, setUserProfiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [showContactModal, setShowContactModal] = useState(false)
   const [editingContact, setEditingContact] = useState(null)
@@ -26,6 +25,7 @@ function ContactsPage() {
     phone: '',
     email: '',
     object_id: '',
+    department_id: '',
   })
   const [isCustomPosition, setIsCustomPosition] = useState(false)
 
@@ -40,7 +40,6 @@ function ContactsPage() {
   useEffect(() => {
     fetchContacts()
     fetchObjects()
-    fetchUserProfiles()
     fetchDepartments()
   }, [])
 
@@ -123,7 +122,7 @@ function ContactsPage() {
       setLoading(true)
       const { data, error } = await supabase
         .from('contacts')
-        .select('*, objects(name)')
+        .select('*, objects(name), departments(id, name)')
         .order('full_name', { ascending: true })
 
       if (error) throw error
@@ -149,35 +148,14 @@ function ContactsPage() {
     }
   }
 
-  const fetchUserProfiles = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('full_name, role, work_phone, work_email, email, is_approved')
-        .eq('is_approved', true)
-        .order('created_at', { ascending: true })
-
-      if (error) throw error
-      setUserProfiles(data || [])
-    } catch (err) {
-      console.error('Ошибка загрузки профилей:', err.message)
-    }
-  }
-
-  const ROLE_LABELS = {
-    admin: 'Администратор',
-    engineer: 'Инженер ОСП',
-    economist: 'Экономист ОСП',
-    lawyer: 'Юрист ОСП'
-  }
-
   const handleContactSubmit = async (e) => {
     e.preventDefault()
     try {
-      // Преобразуем пустую строку в null для object_id
+      // Преобразуем пустые строки в null для FK-полей
       const dataToSave = {
         ...contactFormData,
-        object_id: contactFormData.object_id || null
+        object_id: contactFormData.object_id || null,
+        department_id: contactFormData.department_id || null,
       }
 
       if (editingContact) {
@@ -200,6 +178,7 @@ function ContactsPage() {
         phone: '',
         email: '',
         object_id: '',
+        department_id: '',
       })
       fetchContacts()
     } catch (error) {
@@ -218,6 +197,7 @@ function ContactsPage() {
       phone: contact.phone,
       email: contact.email || '',
       object_id: contact.object_id || '',
+      department_id: contact.department_id || '',
     })
     setShowContactModal(true)
   }
@@ -255,6 +235,26 @@ function ContactsPage() {
     }
   }
 
+  const handleInlineDepartmentChange = async (contactId, newDeptId) => {
+    const value = newDeptId || null
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ department_id: value })
+        .eq('id', contactId)
+      if (error) throw error
+      const newDept = value ? departments.find(d => d.id === value) : null
+      setContacts(prev => prev.map(c =>
+        c.id === contactId
+          ? { ...c, department_id: value, departments: newDept ? { id: newDept.id, name: newDept.name } : null }
+          : c
+      ))
+    } catch (err) {
+      console.error('Ошибка изменения отдела:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
   const handleAddNewContact = () => {
     setEditingContact(null)
     setIsCustomPosition(false)
@@ -264,6 +264,7 @@ function ContactsPage() {
       phone: '',
       email: '',
       object_id: '',
+      department_id: '',
     })
     setShowContactModal(true)
   }
@@ -375,24 +376,16 @@ function ContactsPage() {
                   <th style={{ width: '40px', textAlign: 'center' }}>№</th>
                   <th>ФИО</th>
                   <th>Должность</th>
+                  <th style={{ width: '180px' }}>Отдел</th>
                   <th>Телефон</th>
                   <th>Email</th>
-                  <th style={{ width: '220px' }}>Объект/Офис</th>
+                  <th style={{ width: '180px' }}>Объект/Офис</th>
                   <th style={{ width: '72px' }}></th>
                 </tr>
               </thead>
               <tbody>
                 {(() => {
                   const q = searchQuery.trim().toLowerCase()
-                  const matchesProfile = (p) => {
-                    if (!q) return true
-                    return [
-                      p.full_name,
-                      ROLE_LABELS[p.role] || p.role,
-                      p.work_phone,
-                      p.work_email || p.email,
-                    ].some(v => v && String(v).toLowerCase().includes(q))
-                  }
                   const matchesContact = (c) => {
                     if (!q) return true
                     return [
@@ -401,119 +394,86 @@ function ContactsPage() {
                       c.phone,
                       c.email,
                       c.objects?.name,
+                      c.departments?.name,
                     ].some(v => v && String(v).toLowerCase().includes(q))
                   }
-                  // Профили из user_roles считаются «офисными»: object_id у них всегда null.
-                  const profileMatchesObject = () =>
-                    objectFilter === '' || objectFilter === 'office'
                   const contactMatchesObject = (c) => {
                     if (!objectFilter) return true
                     if (objectFilter === 'office') return !c.object_id
                     return c.object_id === objectFilter
                   }
-                  const filteredProfiles = userProfiles
-                    .filter(p => p.full_name && !contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase()))
-                    .filter(matchesProfile)
-                    .filter(profileMatchesObject)
-                  const uniqueContacts = contacts
-                    .filter((contact, index, self) =>
-                      index === self.findIndex(c => c.full_name?.toLowerCase() === contact.full_name?.toLowerCase())
-                    )
+                  const visibleContacts = contacts
                     .filter(matchesContact)
                     .filter(contactMatchesObject)
-                  return (
-                    <>
-                      {/* Профили из user_roles, которых нет в contacts */}
-                      {filteredProfiles.map((profile, idx) => (
-                        <tr key={`profile-${idx}`} className="profile-row">
-                          <td className="num-cell">{idx + 1}</td>
-                          <td>{profile.full_name}</td>
-                          <td className="muted">{ROLE_LABELS[profile.role] || profile.role}</td>
-                          <td>{profile.work_phone || '—'}</td>
-                          <td>{profile.work_email || profile.email || '—'}</td>
-                          <td className="muted">Офис</td>
-                          <td></td>
-                        </tr>
-                      ))}
-                      {/* Контакты из таблицы contacts (без дублей) */}
-                      {uniqueContacts.map((contact, idx) => (
-                        <tr key={contact.id}>
-                          <td className="num-cell">{filteredProfiles.length + idx + 1}</td>
-                          <td>{contact.full_name}</td>
-                          <td className="muted">{contact.position}</td>
-                          <td>{contact.phone}</td>
-                          <td>{contact.email}</td>
-                          <td>
-                            <select
-                              className="inline-object-select"
-                              value={contact.object_id || ''}
-                              onChange={(e) => handleInlineObjectChange(contact.id, e.target.value)}
-                              title="Привязать к объекту или оставить «Офис»"
-                            >
-                              <option value="">Офис</option>
-                              {objects.map(obj => (
-                                <option key={obj.id} value={obj.id}>{obj.name}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="actions-cell">
-                            <button
-                              className="btn-icon btn-edit"
-                              onClick={() => handleEditContact(contact)}
-                              title="Редактировать"
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              className="btn-icon btn-delete"
-                              onClick={() => handleDeleteContact(contact.id, contact.full_name)}
-                              title="Удалить"
-                            >
-                              🗑️
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </>
-                  )
-                })()}
-                {(() => {
-                  if (userProfiles.length === 0 && contacts.length === 0) {
+                  if (contacts.length === 0) {
                     return (
                       <tr>
-                        <td colSpan="7" className="no-data">
+                        <td colSpan="8" className="no-data">
                           Нет контактов. Добавьте первый контакт.
                         </td>
                       </tr>
                     )
                   }
-                  const q = searchQuery.trim().toLowerCase()
-                  if (!q && !objectFilter) return null
-                  const profileFilter = (p) => {
-                    if (!p.full_name) return false
-                    if (contacts.some(c => c.full_name?.toLowerCase() === p.full_name.toLowerCase())) return false
-                    if (objectFilter && objectFilter !== 'office') return false
-                    if (q && ![p.full_name, ROLE_LABELS[p.role] || p.role, p.work_phone, p.work_email || p.email]
-                      .some(v => v && String(v).toLowerCase().includes(q))) return false
-                    return true
-                  }
-                  const contactFilter = (c) => {
-                    if (objectFilter === 'office' && c.object_id) return false
-                    if (objectFilter && objectFilter !== 'office' && c.object_id !== objectFilter) return false
-                    if (q && ![c.full_name, c.position, c.phone, c.email, c.objects?.name]
-                      .some(v => v && String(v).toLowerCase().includes(q))) return false
-                    return true
-                  }
-                  if (!userProfiles.some(profileFilter) && !contacts.some(contactFilter)) {
+                  if (visibleContacts.length === 0) {
                     return (
                       <tr>
-                        <td colSpan="7" className="no-data">
+                        <td colSpan="8" className="no-data">
                           Ничего не найдено{q && ` по запросу «${searchQuery}»`}
                         </td>
                       </tr>
                     )
                   }
-                  return null
+                  return visibleContacts.map((contact, idx) => (
+                    <tr key={contact.id}>
+                      <td className="num-cell">{idx + 1}</td>
+                      <td>{contact.full_name}</td>
+                      <td className="muted">{contact.position}</td>
+                      <td>
+                        <select
+                          className="inline-object-select"
+                          value={contact.department_id || ''}
+                          onChange={(e) => handleInlineDepartmentChange(contact.id, e.target.value)}
+                          title="Отдел сотрудника"
+                        >
+                          <option value="">— не указан —</option>
+                          {departments.map(dept => (
+                            <option key={dept.id} value={dept.id}>{dept.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>{contact.phone}</td>
+                      <td>{contact.email}</td>
+                      <td>
+                        <select
+                          className="inline-object-select"
+                          value={contact.object_id || ''}
+                          onChange={(e) => handleInlineObjectChange(contact.id, e.target.value)}
+                          title="Привязать к объекту или оставить «Офис»"
+                        >
+                          <option value="">Офис</option>
+                          {objects.map(obj => (
+                            <option key={obj.id} value={obj.id}>{obj.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="actions-cell">
+                        <button
+                          className="btn-icon btn-edit"
+                          onClick={() => handleEditContact(contact)}
+                          title="Редактировать"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          className="btn-icon btn-delete"
+                          onClick={() => handleDeleteContact(contact.id, contact.full_name)}
+                          title="Удалить"
+                        >
+                          🗑️
+                        </button>
+                      </td>
+                    </tr>
+                  ))
                 })()}
               </tbody>
             </table>
@@ -616,6 +576,26 @@ function ContactsPage() {
                       </button>
                     </div>
                   )}
+                </div>
+
+                <div className="form-group">
+                  <label>Отдел</label>
+                  <select
+                    value={contactFormData.department_id}
+                    onChange={(e) =>
+                      setContactFormData({
+                        ...contactFormData,
+                        department_id: e.target.value,
+                      })
+                    }
+                  >
+                    <option value="">— не указан —</option>
+                    {departments.map((dept) => (
+                      <option key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="form-group">

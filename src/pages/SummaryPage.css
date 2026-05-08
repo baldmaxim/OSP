@@ -47,9 +47,23 @@
   background: var(--bg-secondary);
   padding: 0.75rem 1rem;
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 0.625rem;
   border-left: 3px solid transparent;
+}
+
+.kpi-icon {
+  font-size: 1.375rem;
+  line-height: 1;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.kpi-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
 }
 
 .kpi-label {
@@ -373,10 +387,203 @@
   color: #f87171;
 }
 
+/* Header — улучшенная шапка с датой обновления */
+.summary-header-board {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-left: 4px solid #0ea5e9;
+  background: linear-gradient(90deg, rgba(14, 165, 233, 0.06) 0%, transparent 60%);
+}
+
+.summary-header-board h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.summary-header-board .page-icon {
+  color: #0ea5e9;
+}
+
+.summary-updated {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Attention panel — топ-проблемы для руководителя */
+.attention-panel {
+  background: linear-gradient(180deg, rgba(220, 38, 38, 0.05), transparent);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.625rem 1rem 0.75rem;
+}
+
+.attention-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.attention-icon {
+  font-size: 1rem;
+}
+
+.attention-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #b91c1c;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+[data-theme='dark'] .attention-title {
+  color: #fca5a5;
+}
+
+.attention-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  background: #dc2626;
+  color: white;
+  border-radius: 10px;
+}
+
+.attention-list {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.attention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  background: var(--bg-secondary);
+  border: 1px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.15s;
+  text-align: left;
+}
+
+.attention-chip.overdue {
+  border-color: #fca5a5;
+}
+
+.attention-chip.no-responsible {
+  border-color: #fdba74;
+}
+
+.attention-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.chip-stage {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.chip-object {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chip-reason {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.attention-chip.no-responsible .chip-reason {
+  color: #c2410c;
+}
+
+[data-theme='dark'] .chip-reason {
+  color: #f87171;
+}
+
+[data-theme='dark'] .attention-chip.no-responsible .chip-reason {
+  color: #fdba74;
+}
+
+.attention-more {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+/* Stage group rows in table */
+.stage-group-row {
+  background: var(--bg-tertiary) !important;
+  cursor: default !important;
+}
+
+.stage-group-row:hover {
+  background: var(--bg-tertiary) !important;
+}
+
+.stage-group-row td {
+  padding: 0.5rem 0.875rem !important;
+  border-top: 2px solid var(--stage-accent, var(--border-color)) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.stage-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stage-group-icon {
+  font-size: 1rem;
+}
+
+.stage-group-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--stage-accent, var(--text-secondary));
+}
+
+.stage-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
 /* Responsive */
 @media (max-width: 1100px) {
   .summary-kpis {
     grid-template-columns: repeat(3, 1fr);
+  }
+  .summary-header-board {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

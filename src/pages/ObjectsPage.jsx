@@ -164,6 +164,11 @@ function ObjectsPage() {
             }
           )
 
+          // По клику на метку — приближаем карту и центрируем на объекте
+          placemark.events.add('click', () => {
+            mapInstance.setCenter([lat, lon], 16, { duration: 300 })
+          })
+
           mapInstance.geoObjects.add(placemark)
           bounds.push([lat, lon])
           successCount++
