@@ -157,7 +157,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       setLoading(true)
       const { data, error } = await supabase
         .from('tenders')
-        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link)')
+        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)')
         .eq('tender_type', tenderType)
         .order('start_date', { ascending: false })
 
@@ -394,6 +394,41 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     } catch (error) {
       console.error('Ошибка обновления статуса:', error.message)
       alert('Ошибка обновления статуса: ' + error.message)
+    }
+  }
+
+  const handleUpdateMaterialsDeadline = async (tenderId, value) => {
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ materials_proposal_deadline: value || null })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t =>
+        t.id === tenderId ? { ...t, materials_proposal_deadline: value || null } : t
+      ))
+    } catch (err) {
+      console.error('Ошибка сохранения срока КП на материалы:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
+  const handleUpdateMaterialsLink = async (tenderId, currentValue) => {
+    const next = window.prompt('Ссылка на КП на материалы (Google/Yandex Drive):', currentValue || '')
+    if (next === null) return
+    const trimmed = next.trim()
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ materials_proposal_link: trimmed || null })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t =>
+        t.id === tenderId ? { ...t, materials_proposal_link: trimmed || null } : t
+      ))
+    } catch (err) {
+      console.error('Ошибка сохранения ссылки на КП:', err.message)
+      alert('Ошибка: ' + err.message)
     }
   }
 
@@ -1326,6 +1361,225 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
       <div className="table-container">
         <table className="data-table">
+          {isMaterialsView ? (
+            <>
+              <thead>
+                <tr>
+                  <th style={{ minWidth: '180px' }}>Объект</th>
+                  <th style={{ minWidth: '180px' }}>Описание работ</th>
+                  <th style={{ width: '160px' }}>Ответственный</th>
+                  <th
+                    className="sortable-th"
+                    onClick={() => toggleSort('materials_proposal_deadline')}
+                    title="Сортировать по сроку"
+                    style={{ width: '150px' }}
+                  >
+                    Срок предоставления<br />КП на материалы{sortIndicator('materials_proposal_deadline')}
+                  </th>
+                  <th style={{ width: '140px' }}>Ссылка на КП</th>
+                  <th style={{ width: '180px' }}>Статус</th>
+                  <th className="actions-column" style={{ width: '90px' }}>Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedTenders.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="no-data">
+                      {activeTab === 'completed'
+                        ? 'Нет завершённых тендеров на материалы'
+                        : activeTab === 'deleted'
+                          ? 'В корзине нет тендеров на материалы'
+                          : 'Нет тендеров на материалы. Они создаются автоматически вместе с основным тендером, либо через «+ Добавить тендер».'}
+                    </td>
+                  </tr>
+                ) : (
+                  sortedTenders.map((tender) => (
+                    <tr key={tender.id} className={isOverdue(tender) ? 'overdue-row' : ''}>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                          <button
+                            onClick={() => navigate(`/tenders/${tender.id}`)}
+                            className="row-link primary"
+                            title="Открыть тендер"
+                          >
+                            {tender.objects?.name || '-'}
+                          </button>
+                          {tender.objects?.address && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', wordBreak: 'break-word' }}>
+                              {tender.objects.address}
+                            </div>
+                          )}
+                          {tender.objects?.map_link && (
+                            <a
+                              href={tender.objects.map_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Открыть в Яндекс.Картах"
+                              className="yandex-map-link"
+                            >
+                              <span aria-hidden>🗺️</span>
+                              <span>Месторасположение</span>
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <button
+                          onClick={() => navigate(`/tenders/${tender.id}`)}
+                          className="row-link muted"
+                          title="Открыть тендер"
+                        >
+                          {tender.work_description}
+                        </button>
+                      </td>
+                      <td>
+                        {editingResponsibleTenderId === tender.id ? (
+                          <select
+                            autoFocus
+                            className="inline-responsible-select"
+                            value={tender.responsible_contact_id || ''}
+                            onChange={(e) => { handleUpdateTenderResponsible(tender.id, e.target.value); setEditingResponsibleTenderId(null) }}
+                            onBlur={() => setEditingResponsibleTenderId(null)}
+                          >
+                            <option value="">— не назначен —</option>
+                            {responsibleContacts.map(c => (
+                              <option key={c.id} value={c.id}>{c.full_name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <button
+                            className="responsible-display"
+                            onClick={() => setEditingResponsibleTenderId(tender.id)}
+                            title="Назначить ответственного"
+                          >
+                            {tender.responsible_contact?.full_name || (
+                              <span className="responsible-empty">— не назначен —</span>
+                            )}
+                          </button>
+                        )}
+                      </td>
+                      <td>
+                        <input
+                          type="date"
+                          value={tender.materials_proposal_deadline || ''}
+                          onChange={(e) => handleUpdateMaterialsDeadline(tender.id, e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '0.25rem 0.375rem',
+                            fontSize: '0.75rem',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px',
+                            background: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            fontFamily: 'inherit',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </td>
+                      <td>
+                        {tender.materials_proposal_link ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                            <a
+                              href={tender.materials_proposal_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link"
+                            >
+                              Открыть
+                            </a>
+                            <button
+                              className="btn-icon btn-edit"
+                              onClick={() => handleUpdateMaterialsLink(tender.id, tender.materials_proposal_link)}
+                              title="Изменить ссылку"
+                              style={{ fontSize: '0.75rem' }}
+                            >
+                              ✏️
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleUpdateMaterialsLink(tender.id, '')}
+                            style={{
+                              background: 'none',
+                              border: '1px dashed var(--border-color)',
+                              borderRadius: '4px',
+                              padding: '0.1875rem 0.5rem',
+                              color: 'var(--text-tertiary)',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem'
+                            }}
+                            title="Добавить ссылку на КП"
+                          >
+                            + ссылка
+                          </button>
+                        )}
+                      </td>
+                      <td>
+                        {activeTab === 'completed' ? (
+                          <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ display: 'inline-block', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
+                            {tender.status}
+                          </span>
+                        ) : (
+                          <StatusDropdown
+                            value={tender.status}
+                            options={statusOptions}
+                            onChange={(next) => handleStatusChange(tender.id, next)}
+                            getBadgeClass={getStatusBadgeClass}
+                            getDisplay={(s) =>
+                              s === 'Идет тендерная процедура'
+                                ? <>Идет тендерная<br />процедура</>
+                                : s
+                            }
+                            ariaLabel="Статус тендера"
+                          />
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
+                          <button
+                            className="btn-icon"
+                            onClick={() => navigate(`/tenders/${tender.id}`)}
+                            title="Открыть тендер"
+                            style={{ fontSize: '0.875rem' }}
+                          >
+                            🔗
+                          </button>
+                          {activeTab === 'deleted' ? (
+                            <>
+                              <button
+                                className="btn-icon"
+                                onClick={() => handleRestoreTender(tender.id, tender.objects?.name)}
+                                title="Восстановить"
+                              >
+                                ♻️
+                              </button>
+                              <button
+                                className="btn-icon btn-delete"
+                                onClick={() => handleHardDeleteTender(tender.id, tender.objects?.name)}
+                                title="Удалить безвозвратно"
+                              >
+                                🗑️
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className="btn-icon btn-delete"
+                              onClick={() => handleDeleteTender(tender.id, tender.objects?.name)}
+                              title="Переместить в Корзину"
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </>
+          ) : (
+          <>
           <thead>
             <tr>
               <th style={{ width: '44px' }}></th>
@@ -1996,6 +2250,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               ))
             )}
           </tbody>
+          </>
+          )}
         </table>
       </div>
       </>)}

@@ -34,7 +34,8 @@
       "mcp__claude_ai_Supabase__list_projects",
       "PowerShell(npm install --no-audit --no-fund)",
       "PowerShell(npm run lint 2>&1)",
-      "Bash(xargs -I{} bash -c 'echo \"File: {}\" && cat {}')"
+      "Bash(xargs -I{} bash -c 'echo \"File: {}\" && cat {}')",
+      "Bash(npx vite *)"
     ],
     "deny": [],
     "ask": []

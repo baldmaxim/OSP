@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS tenders (
   notes TEXT,
   tender_type TEXT NOT NULL DEFAULT 'main',
   parent_tender_id UUID REFERENCES tenders(id) ON DELETE SET NULL,
+  materials_proposal_deadline DATE,
+  materials_proposal_link TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   CONSTRAINT check_dates CHECK (end_date >= start_date),
@@ -99,5 +101,7 @@ COMMENT ON COLUMN tenders.summary_proposal_link IS 'Ссылка на сводн
 COMMENT ON COLUMN tenders.notes IS 'Примечание по тендеру (свободный текст, ведётся ответственным)';
 COMMENT ON COLUMN tenders.tender_type IS 'Тип тендера: main (основной — работы) | materials (тендер на закупку материалов)';
 COMMENT ON COLUMN tenders.parent_tender_id IS 'Ссылка на родительский основной тендер (только для tender_type = materials)';
+COMMENT ON COLUMN tenders.materials_proposal_deadline IS 'Срок предоставления КП на материалы (для tender_type = materials)';
+COMMENT ON COLUMN tenders.materials_proposal_link IS 'Ссылка на КП на материалы (для tender_type = materials)';
 COMMENT ON COLUMN tenders.created_at IS 'Дата и время создания записи';
 COMMENT ON COLUMN tenders.updated_at IS 'Дата и время последнего обновления записи';
