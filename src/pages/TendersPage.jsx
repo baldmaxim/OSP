@@ -396,6 +396,26 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
+  const handleUpdateCounterpartyNotes = async (tenderId, tenderCounterpartyId, notes) => {
+    try {
+      const { error } = await supabase
+        .from('tender_counterparties')
+        .update({ notes: notes || null })
+        .eq('id', tenderCounterpartyId)
+
+      if (error) throw error
+
+      setTenderCounterparties(prev => ({
+        ...prev,
+        [tenderId]: prev[tenderId].map(tc =>
+          tc.id === tenderCounterpartyId ? { ...tc, notes } : tc
+        )
+      }))
+    } catch (error) {
+      console.error('Ошибка сохранения примечания:', error.message)
+    }
+  }
+
   const handleUpdateTenderResponsible = async (tenderId, newContactId) => {
     const value = newContactId || null
     const tender = tenders.find(t => t.id === tenderId)
@@ -608,6 +628,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           .insert([insertPayload])
           .select('id')
           .single()
+        let createdMainId = null
         if (error) {
           // Если БД ругается на отсутствующую колонку notes (миграция не применена) —
           // повторим без неё, чтобы создать тендер.
@@ -620,6 +641,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               .single()
             if (retry.error) throw retry.error
             if (retry.data?.id) {
+              createdMainId = retry.data.id
               await logTenderEvent(retry.data.id, 'created', {
                 newValue: insertPayload,
                 description: 'Тендер создан'
@@ -629,10 +651,42 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             throw error
           }
         } else if (inserted?.id) {
+          createdMainId = inserted.id
           await logTenderEvent(inserted.id, 'created', {
             newValue: insertPayload,
             description: 'Тендер создан'
           })
+        }
+
+        // Автоматически создаём связанный тендер на материалы для каждого нового основного тендера.
+        // Ошибка автосоздания не должна ломать основной тендер.
+        if (createdMainId && newTenderType === 'main') {
+          try {
+            const materialsPayload = {
+              object_id: insertPayload.object_id,
+              work_description: insertPayload.work_description,
+              status: 'Заявка на тендер',
+              start_date: insertPayload.start_date,
+              end_date: insertPayload.end_date,
+              tender_type: 'materials',
+              parent_tender_id: createdMainId,
+            }
+            const { data: materialsInserted, error: materialsError } = await supabase
+              .from('tenders')
+              .insert([materialsPayload])
+              .select('id')
+              .single()
+            if (materialsError) {
+              console.error('Не удалось автоматически создать тендер на материалы:', materialsError.message)
+            } else if (materialsInserted?.id) {
+              await logTenderEvent(materialsInserted.id, 'created', {
+                newValue: materialsPayload,
+                description: 'Тендер на материалы создан автоматически'
+              })
+            }
+          } catch (matErr) {
+            console.error('Ошибка автосоздания тендера на материалы:', matErr.message)
+          }
         }
       }
 
@@ -1274,8 +1328,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 className="sortable-th"
                 onClick={() => toggleSort('start_date')}
                 title="Сортировать по датам"
+                style={{ width: '140px' }}
               >
-                Планируемые сроки выполнения работ{sortIndicator('start_date')}
+                Планируемые сроки<br />выполнения работ{sortIndicator('start_date')}
               </th>
               <th>Ответственный по тендеру</th>
               {department === 'construction' && activeTab !== 'completed' && <th>ВОРы и РД</th>}
@@ -1672,7 +1727,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? 8 : (department === 'construction' ? 11 : 9)} className="expanded-cp-row">
+                      <td colSpan={activeTab === 'completed' ? 8 : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 10))} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"
@@ -1704,6 +1759,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                   <th>Email</th>
                                   <th style={{ width: '170px' }}>Статус</th>
                                   <th style={{ width: '140px' }}>КП</th>
+                                  <th style={{ width: '220px' }}>Примечание</th>
                                   <th style={{ width: '64px' }}></th>
                                 </tr>
                               </thead>
@@ -1859,6 +1915,30 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                           + ссылка
                                         </button>
                                       )}
+                                    </td>
+                                    <td>
+                                      <textarea
+                                        defaultValue={tc.notes || ''}
+                                        onBlur={(e) => {
+                                          const newNotes = e.target.value
+                                          if ((tc.notes || '') !== newNotes) {
+                                            handleUpdateCounterpartyNotes(tender.id, tc.id, newNotes)
+                                          }
+                                        }}
+                                        placeholder="Примечание…"
+                                        rows={2}
+                                        style={{
+                                          width: '100%',
+                                          padding: '0.25rem 0.5rem',
+                                          fontSize: '0.75rem',
+                                          border: '1px solid var(--border-color)',
+                                          borderRadius: '4px',
+                                          background: 'var(--bg-secondary)',
+                                          color: 'var(--text-primary)',
+                                          resize: 'vertical',
+                                          fontFamily: 'inherit',
+                                        }}
+                                      />
                                     </td>
                                     <td style={{ textAlign: 'center' }}>
                                       <button
