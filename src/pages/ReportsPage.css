@@ -296,6 +296,168 @@
   text-align: right;
 }
 
+/* Breadcrumb (детальный вид) */
+.reports-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+.reports-back {
+  background: none;
+  border: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.reports-back:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.reports-breadcrumb-sep {
+  opacity: 0.5;
+}
+
+.reports-breadcrumb-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Большие кликабельные карточки отделов */
+.dept-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.dept-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1.125rem 1.25rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.dept-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--primary-color);
+}
+
+.dept-card--construction::before {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+.dept-card--warranty::before {
+  background: linear-gradient(180deg, #16a34a 0%, #15803d 100%);
+}
+
+.dept-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  border-color: var(--text-tertiary);
+}
+
+[data-theme='dark'] .dept-card:hover {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.dept-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.dept-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.dept-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.dept-total {
+  margin-top: 0.1875rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.dept-total-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  margin-left: 0.25rem;
+}
+
+.dept-arrow {
+  margin-left: auto;
+  font-size: 1.125rem;
+  color: var(--text-tertiary);
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.dept-card:hover .dept-arrow {
+  transform: translateX(3px);
+  color: var(--text-primary);
+}
+
+.dept-metrics {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.dept-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.dept-metric-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.dept-metric-value {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.dept-progress {
+  margin-top: 0.125rem;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .reports-header {

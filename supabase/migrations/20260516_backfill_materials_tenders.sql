@@ -16,7 +16,7 @@ INSERT INTO tenders (
 SELECT
     main.object_id,
     main.work_description,
-    'Заявка на тендер',
+    'Не начат',
     main.start_date,
     main.end_date,
     'materials',

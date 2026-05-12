@@ -13,7 +13,6 @@ function Sidebar() {
     location.pathname.startsWith('/tenders')
     || location.pathname.startsWith('/cost-plans')
     || location.pathname.startsWith('/vors')
-    || location.pathname.startsWith('/summary')
 
   const [tendersExpanded, setTendersExpanded] = useState(isInTendersSection)
   const isTendersActive = isInTendersSection
@@ -22,7 +21,6 @@ function Sidebar() {
     { path: '/tenders/construction', label: 'Основное строительство', icon: '🏗️' },
     { path: '/tenders/warranty', label: 'Гарантийный отдел', icon: '🛡️' },
     { path: '/tenders/materials', label: 'Тендеры на материалы', icon: '📦' },
-    { path: '/summary', label: 'Сводка', icon: '🧭' },
     { path: '/cost-plans', label: 'Планы затрат', icon: '💰' },
     { path: '/vors', label: 'ВОРы и РД', icon: '📐' },
   ]
