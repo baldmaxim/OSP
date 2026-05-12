@@ -22,7 +22,16 @@ function ReportsPage() {
 
       let tendersQ = supabase
         .from('tenders')
-        .select('id, object_id, status, end_date, responsible_contact_id, tender_type, objects(status), responsible_contact:contacts!responsible_contact_id(id, full_name)')
+        .select(`
+          id, object_id, status, end_date, responsible_contact_id, tender_type, deleted_at,
+          cost_plan_status, cost_plan_responsible_id, cost_plan_end_date,
+          vor_status, vor_responsible_id, vor_end_date,
+          materials_proposal_deadline,
+          objects(status),
+          responsible_contact:contacts!responsible_contact_id(id, full_name),
+          cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name),
+          vor_responsible:contacts!vor_responsible_id(id, full_name)
+        `)
       if (scopedObjectId) tendersQ = tendersQ.eq('object_id', scopedObjectId)
       const { data: tendersRaw } = await tendersQ
 
@@ -34,7 +43,9 @@ function ReportsPage() {
 
       // Отчёт по тендерам считаем только по основным тендерам, не по дочерним на материалы.
       // Если миграция tender_type не применена, x.tender_type === undefined — учитываем как main.
-      const t = (tendersRaw || []).filter(x => !x.tender_type || x.tender_type === 'main')
+      const allTenders = (tendersRaw || []).filter(x => !x.deleted_at)
+      const t = allTenders.filter(x => !x.tender_type || x.tender_type === 'main')
+      const materialsTenders = allTenders.filter(x => x.tender_type === 'materials')
       const c = contracts || []
       const today = new Date().toISOString().split('T')[0]
 
@@ -68,6 +79,82 @@ function ReportsPage() {
       const unassignedCount = (rows) => rows.filter(x => !x.responsible_contact_id).length
 
       const sumAmount = (rows) => rows.reduce((acc, r) => acc + (Number(r.contract_amount) || 0), 0)
+
+      // Общая группировка по ответственному с произвольным предикатом «завершено»
+      // и произвольным getter ответственного — реюзается для materials/cost-plans/vor.
+      const groupByResponsibleGeneric = (rows, getRespId, getRespName, isDoneFn) => {
+        const map = new Map()
+        for (const x of rows) {
+          const id = getRespId(x) || '_unassigned'
+          const name = getRespName(x) || 'Не назначен'
+          if (!map.has(id)) map.set(id, { id, name, inWork: 0, completed: 0 })
+          const row = map.get(id)
+          if (isDoneFn(x)) row.completed += 1
+          else row.inWork += 1
+        }
+        return Array.from(map.values())
+          .map(r => ({ ...r, total: r.inWork + r.completed }))
+          .sort((a, b) => b.total - a.total)
+      }
+
+      // === Тендеры на материалы ===
+      const isMaterialsClosed = (x) => x.status === 'Завершён' || x.status === 'Завершен'
+      const isMaterialsOpen = (x) => !isMaterialsClosed(x)
+      const isMaterialsInWork = (x) => x.status === 'В работе'
+      const isMaterialsNotStarted = (x) => x.status === 'Не начат' || (!isMaterialsClosed(x) && !isMaterialsInWork(x))
+      const mat = {
+        total: materialsTenders.length,
+        open: materialsTenders.filter(isMaterialsOpen).length,
+        closed: materialsTenders.filter(isMaterialsClosed).length,
+        notStarted: materialsTenders.filter(isMaterialsNotStarted).length,
+        inWork: materialsTenders.filter(isMaterialsInWork).length,
+        overdue: materialsTenders.filter(x =>
+          isMaterialsOpen(x) && x.materials_proposal_deadline && x.materials_proposal_deadline < today
+        ).length,
+        unassigned: materialsTenders.filter(x => !x.responsible_contact_id).length,
+        byResp: groupByResponsibleGeneric(
+          materialsTenders,
+          (x) => x.responsible_contact_id,
+          (x) => x.responsible_contact?.full_name,
+          isMaterialsClosed
+        ),
+      }
+
+      // === Планы затрат (только основные тендеры основного строительства) ===
+      const cpRows = tConst
+      const isCpDone = (x) => x.cost_plan_status === 'completed'
+      const cp = {
+        total: cpRows.length,
+        notStarted: cpRows.filter(x => !x.cost_plan_status || x.cost_plan_status === 'not_started').length,
+        inProgress: cpRows.filter(x => x.cost_plan_status === 'in_progress').length,
+        completed: cpRows.filter(isCpDone).length,
+        overdue: cpRows.filter(x => !isCpDone(x) && x.cost_plan_end_date && x.cost_plan_end_date < today).length,
+        unassigned: cpRows.filter(x => !x.cost_plan_responsible_id).length,
+        byResp: groupByResponsibleGeneric(
+          cpRows,
+          (x) => x.cost_plan_responsible_id,
+          (x) => x.cost_plan_responsible?.full_name,
+          isCpDone
+        ),
+      }
+
+      // === ВОРы и РД ===
+      const vorRows = tConst
+      const isVorDone = (x) => x.vor_status === 'completed'
+      const vor = {
+        total: vorRows.length,
+        notStarted: vorRows.filter(x => !x.vor_status || x.vor_status === 'not_started').length,
+        inProgress: vorRows.filter(x => x.vor_status === 'in_progress').length,
+        completed: vorRows.filter(isVorDone).length,
+        overdue: vorRows.filter(x => !isVorDone(x) && x.vor_end_date && x.vor_end_date < today).length,
+        unassigned: vorRows.filter(x => !x.vor_responsible_id).length,
+        byResp: groupByResponsibleGeneric(
+          vorRows,
+          (x) => x.vor_responsible_id,
+          (x) => x.vor_responsible?.full_name,
+          isVorDone
+        ),
+      }
 
       setStats({
         // Тендеры — общие
@@ -106,6 +193,12 @@ function ReportsPage() {
         cSignedWar: cWar.filter(x => x.status === 'signed').length,
         cTotalWar: cWar.length,
         cAmountWar: sumAmount(cWar),
+        // Тендеры на материалы
+        mat,
+        // Планы затрат
+        cp,
+        // ВОРы и РД
+        vor,
       })
     } catch (err) {
       console.error('Ошибка загрузки отчётов:', err.message)
@@ -171,6 +264,24 @@ function ReportsPage() {
             onClick={() => { setActiveTab('tenders'); setTDeptView(null) }}
           >
             Тендеры
+          </button>
+          <button
+            className={`reports-tab ${activeTab === 'materials' ? 'active' : ''}`}
+            onClick={() => setActiveTab('materials')}
+          >
+            Тендеры на материалы
+          </button>
+          <button
+            className={`reports-tab ${activeTab === 'cost_plans' ? 'active' : ''}`}
+            onClick={() => setActiveTab('cost_plans')}
+          >
+            Планы затрат
+          </button>
+          <button
+            className={`reports-tab ${activeTab === 'vors' ? 'active' : ''}`}
+            onClick={() => setActiveTab('vors')}
+          >
+            ВОРы и РД
           </button>
           <button
             className={`reports-tab ${activeTab === 'contracts' ? 'active' : ''}`}
@@ -352,6 +463,137 @@ function ReportsPage() {
                 <div className="section-empty">В этом отделе тендеров нет</div>
               ) : (
                 <ResponsibleTable rows={deptData.byResp} />
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'materials' && (
+          <>
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">Всего тендеров</div>
+                <div className="kpi-value">{s.mat.total}</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">Не начато</div>
+                <div className="kpi-value">{s.mat.notStarted}</div>
+                <div className="kpi-foot">{pct(s.mat.notStarted, s.mat.total)}%</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">В работе</div>
+                <div className="kpi-value accent-warn">{s.mat.inWork}</div>
+                <div className="kpi-foot">{pct(s.mat.inWork, s.mat.total)}%</div>
+              </div>
+              <div className="kpi-card kpi-card--success">
+                <div className="kpi-label">Завершено</div>
+                <div className="kpi-value accent-success">{s.mat.closed}</div>
+                <div className="kpi-foot">{pct(s.mat.closed, s.mat.total)}% завершения</div>
+              </div>
+              <div className={`kpi-card ${s.mat.overdue > 0 ? 'kpi-card--danger' : ''}`}>
+                <div className="kpi-label">Просрочено (КП)</div>
+                <div className={`kpi-value ${s.mat.overdue > 0 ? 'accent-danger' : ''}`}>{s.mat.overdue}</div>
+                <div className="kpi-foot">срок предоставления КП прошёл</div>
+              </div>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По ответственным</h3>
+                <span className="section-meta">{s.mat.byResp.length}</span>
+              </header>
+              {s.mat.byResp.length === 0 ? (
+                <div className="section-empty">Тендеров на материалы пока нет</div>
+              ) : (
+                <ResponsibleTable rows={s.mat.byResp} />
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'cost_plans' && (
+          <>
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">Всего тендеров</div>
+                <div className="kpi-value">{s.cp.total}</div>
+                <div className="kpi-foot">только основное строительство</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">Не начато</div>
+                <div className="kpi-value">{s.cp.notStarted}</div>
+                <div className="kpi-foot">{pct(s.cp.notStarted, s.cp.total)}%</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">В работе</div>
+                <div className="kpi-value accent-warn">{s.cp.inProgress}</div>
+                <div className="kpi-foot">{pct(s.cp.inProgress, s.cp.total)}%</div>
+              </div>
+              <div className="kpi-card kpi-card--success">
+                <div className="kpi-label">Завершено</div>
+                <div className="kpi-value accent-success">{s.cp.completed}</div>
+                <div className="kpi-foot">{pct(s.cp.completed, s.cp.total)}% готовности</div>
+              </div>
+              <div className={`kpi-card ${s.cp.overdue > 0 ? 'kpi-card--danger' : ''}`}>
+                <div className="kpi-label">Просрочено</div>
+                <div className={`kpi-value ${s.cp.overdue > 0 ? 'accent-danger' : ''}`}>{s.cp.overdue}</div>
+                <div className="kpi-foot">срок плана прошёл</div>
+              </div>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По ответственным за план затрат</h3>
+                <span className="section-meta">{s.cp.byResp.length}</span>
+              </header>
+              {s.cp.byResp.length === 0 ? (
+                <div className="section-empty">Тендеров основного строительства пока нет</div>
+              ) : (
+                <ResponsibleTable rows={s.cp.byResp} />
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'vors' && (
+          <>
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">Всего тендеров</div>
+                <div className="kpi-value">{s.vor.total}</div>
+                <div className="kpi-foot">только основное строительство</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">Не начато</div>
+                <div className="kpi-value">{s.vor.notStarted}</div>
+                <div className="kpi-foot">{pct(s.vor.notStarted, s.vor.total)}%</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">В работе</div>
+                <div className="kpi-value accent-warn">{s.vor.inProgress}</div>
+                <div className="kpi-foot">{pct(s.vor.inProgress, s.vor.total)}%</div>
+              </div>
+              <div className="kpi-card kpi-card--success">
+                <div className="kpi-label">Завершено</div>
+                <div className="kpi-value accent-success">{s.vor.completed}</div>
+                <div className="kpi-foot">{pct(s.vor.completed, s.vor.total)}% готовности</div>
+              </div>
+              <div className={`kpi-card ${s.vor.overdue > 0 ? 'kpi-card--danger' : ''}`}>
+                <div className="kpi-label">Просрочено</div>
+                <div className={`kpi-value ${s.vor.overdue > 0 ? 'accent-danger' : ''}`}>{s.vor.overdue}</div>
+                <div className="kpi-foot">срок ВОР прошёл</div>
+              </div>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По ответственным за ВОР</h3>
+                <span className="section-meta">{s.vor.byResp.length}</span>
+              </header>
+              {s.vor.byResp.length === 0 ? (
+                <div className="section-empty">Тендеров основного строительства пока нет</div>
+              ) : (
+                <ResponsibleTable rows={s.vor.byResp} />
               )}
             </section>
           </>

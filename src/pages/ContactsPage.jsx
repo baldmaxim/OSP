@@ -353,6 +353,23 @@ function ContactsPage() {
     }
   }
 
+  const handleInlinePositionChange = async (contactId, newPosition) => {
+    const value = newPosition?.trim() || null
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ position: value })
+        .eq('id', contactId)
+      if (error) throw error
+      setContacts(prev => prev.map(c =>
+        c.id === contactId ? { ...c, position: value } : c
+      ))
+    } catch (err) {
+      console.error('Ошибка изменения должности:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
   const handleInlineNotesChange = async (contactId, newNotes) => {
     const value = newNotes?.trim() || null
     try {
@@ -618,7 +635,23 @@ function ContactsPage() {
                           ))}
                         </select>
                       </td>
-                      <td className="muted">{contact.position}</td>
+                      <td>
+                        <select
+                          className="inline-object-select"
+                          value={contact.position || ''}
+                          onChange={(e) => handleInlinePositionChange(contact.id, e.target.value)}
+                          title="Должность сотрудника"
+                        >
+                          <option value="">— не указана —</option>
+                          {allPositions.map(pos => (
+                            <option key={pos} value={pos}>{pos}</option>
+                          ))}
+                          {/* Если у контакта установлена должность, которой нет в справочнике — показываем как опцию */}
+                          {contact.position && !allPositions.includes(contact.position) && (
+                            <option value={contact.position}>{contact.position}</option>
+                          )}
+                        </select>
+                      </td>
                       <td>
                         <select
                           className="inline-object-select"

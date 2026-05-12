@@ -4,6 +4,108 @@ import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import './ObjectDetailPage.css'
 
+// Табличная строка документа (договор/ДС/приложение).
+// Объявлена вне ObjectDetailPage — иначе при каждом рендере родителя пересоздаётся компонент,
+// что приводит к unmount-mount всех строк документа и «вылетающим» модалкам редактирования.
+function DocRow({
+  doc,
+  level = 0,
+  showExpand = false,
+  attachments = [],
+  expandedDocs,
+  toggleExpand,
+  formatDate,
+  onAddAttachment,
+  onEdit,
+  onDelete,
+}) {
+  const isExpanded = expandedDocs.has(doc.id)
+  const hasAttachments = attachments.length > 0
+  const isAttachment = level > 0
+
+  return (
+    <>
+      <tr className={`doc-row-tr ${isAttachment ? 'doc-row-tr-attachment' : ''}`}>
+        <td className="doc-cell-expand" style={{ paddingLeft: `${level * 16 + 8}px` }}>
+          {showExpand ? (
+            <button
+              type="button"
+              className="doc-expand-btn"
+              onClick={() => toggleExpand(doc.id)}
+              title={hasAttachments ? (isExpanded ? 'Свернуть' : 'Развернуть') : 'Нет приложений'}
+              disabled={!hasAttachments}
+            >
+              {hasAttachments ? (isExpanded ? '▼' : '▶') : '·'}
+            </button>
+          ) : (
+            <span className="doc-leaf">└</span>
+          )}
+        </td>
+        <td className="doc-cell-name">
+          <div className="doc-name-line">
+            {isAttachment && <span className="doc-attachment-tag">📎 Приложение</span>}
+            <span className="doc-name-text">{doc.name}</span>
+          </div>
+          {doc.notes && <div className="doc-notes-line">{doc.notes}</div>}
+        </td>
+        <td className="doc-cell-meta">
+          <div>{doc.document_number || <span className="muted">—</span>}</div>
+          <div className="doc-date-line">{doc.document_date ? formatDate(doc.document_date) : ''}</div>
+        </td>
+        <td className="doc-cell-link">
+          {doc.signed_link ? (
+            <a href={doc.signed_link} target="_blank" rel="noopener noreferrer" className="doc-link-btn doc-link-signed">
+              📥 Открыть
+            </a>
+          ) : (
+            <span className="muted">—</span>
+          )}
+        </td>
+        <td className="doc-cell-link">
+          {doc.editable_link ? (
+            <a href={doc.editable_link} target="_blank" rel="noopener noreferrer" className="doc-link-btn doc-link-editable">
+              📝 Открыть
+            </a>
+          ) : (
+            <span className="muted">—</span>
+          )}
+        </td>
+        <td className="doc-cell-actions">
+          {!isAttachment && (
+            <button
+              type="button"
+              className="doc-action-btn"
+              onClick={() => onAddAttachment(doc.id)}
+              title="Добавить приложение"
+            >
+              📎
+            </button>
+          )}
+          <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">
+            ✏️
+          </button>
+          <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(doc.id)} title="Удалить">
+            🗑️
+          </button>
+        </td>
+      </tr>
+      {isExpanded && attachments.map(att => (
+        <DocRow
+          key={att.id}
+          doc={att}
+          level={level + 1}
+          expandedDocs={expandedDocs}
+          toggleExpand={toggleExpand}
+          formatDate={formatDate}
+          onAddAttachment={onAddAttachment}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      ))}
+    </>
+  )
+}
+
 function ObjectDetailPage() {
   const { objectId } = useParams()
   const navigate = useNavigate()
@@ -596,41 +698,6 @@ function ObjectDetailPage() {
     </div>
   )
 
-  const DocRow = ({ doc, level = 0, showExpand = false, attachments = [] }) => {
-    const isExpanded = expandedDocs.has(doc.id)
-    const hasAttachments = attachments.length > 0
-    const docMeta = [doc.document_number, doc.document_date ? formatDate(doc.document_date) : null].filter(Boolean).join(' от ')
-
-    return (
-      <>
-        <div className={`doc-row ${level > 0 ? 'attachment' : ''}`} style={{ paddingLeft: level * 24 + 16 }}>
-          {showExpand && (
-            <button className="expand-btn" onClick={() => toggleExpand(doc.id)}>
-              {hasAttachments ? (isExpanded ? '▼' : '▶') : '○'}
-            </button>
-          )}
-          <div className="doc-main">
-            <span className="doc-title">{doc.name}</span>
-            {(docMeta || doc.notes) && (
-              <span className="doc-notes">{[docMeta, doc.notes].filter(Boolean).join(' — ')}</span>
-            )}
-          </div>
-          <div className="doc-links">
-            {doc.signed_link && <a href={doc.signed_link} target="_blank" rel="noopener noreferrer" title="Подписанный">📥</a>}
-            {doc.editable_link && <a href={doc.editable_link} target="_blank" rel="noopener noreferrer" title="Редактируемый">📝</a>}
-          </div>
-          <div className="doc-actions">
-            {level === 0 && <button onClick={() => handleAddDocument('attachment', doc.id)} title="Добавить приложение">📎</button>}
-            <button onClick={() => handleEditDocument(doc)} title="Редактировать">✏️</button>
-            <button onClick={() => handleDeleteDocument(doc.id)} title="Удалить">🗑️</button>
-          </div>
-        </div>
-        {isExpanded && attachments.map(att => (
-          <DocRow key={att.id} doc={att} level={level + 1} />
-        ))}
-      </>
-    )
-  }
 
   return (
     <div className="object-detail-page">
@@ -700,11 +767,35 @@ function ObjectDetailPage() {
           <div className="doc-section">
             <div className="doc-section-header">
               <span>Договор генподряда</span>
-              {!generalContract && <button className="btn-add" onClick={() => handleAddDocument('general_contract')}>+</button>}
+              {!generalContract && <button className="btn-add" onClick={() => handleAddDocument('general_contract')}>+ Добавить</button>}
             </div>
             {generalContract ? (
-              <div className="doc-list">
-                <DocRow doc={generalContract} showExpand={true} attachments={contractAttachments} />
+              <div className="doc-table-wrap">
+                <table className="doc-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '36px' }}></th>
+                      <th>Наименование</th>
+                      <th style={{ width: '140px' }}>№ / дата</th>
+                      <th style={{ width: '120px' }}>📥 Подписанный</th>
+                      <th style={{ width: '120px' }}>📝 Редактируемый</th>
+                      <th style={{ width: '120px' }}>Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <DocRow
+                      doc={generalContract}
+                      showExpand={true}
+                      attachments={contractAttachments}
+                      expandedDocs={expandedDocs}
+                      toggleExpand={toggleExpand}
+                      formatDate={formatDate}
+                      onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
+                      onEdit={handleEditDocument}
+                      onDelete={handleDeleteDocument}
+                    />
+                  </tbody>
+                </table>
               </div>
             ) : (
               <div className="doc-empty">Не добавлен</div>
@@ -715,13 +806,38 @@ function ObjectDetailPage() {
           <div className="doc-section">
             <div className="doc-section-header">
               <span>Дополнительные соглашения ({additionalAgreements.length})</span>
-              <button className="btn-add" onClick={() => handleAddDocument('additional_agreement')}>+</button>
+              <button className="btn-add" onClick={() => handleAddDocument('additional_agreement')}>+ Добавить</button>
             </div>
             {additionalAgreements.length > 0 ? (
-              <div className="doc-list">
-                {additionalAgreements.map(doc => (
-                  <DocRow key={doc.id} doc={doc} showExpand={true} attachments={getAttachments(doc.id)} />
-                ))}
+              <div className="doc-table-wrap">
+                <table className="doc-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '36px' }}></th>
+                      <th>Наименование</th>
+                      <th style={{ width: '140px' }}>№ / дата</th>
+                      <th style={{ width: '120px' }}>📥 Подписанный</th>
+                      <th style={{ width: '120px' }}>📝 Редактируемый</th>
+                      <th style={{ width: '120px' }}>Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {additionalAgreements.map(doc => (
+                      <DocRow
+                        key={doc.id}
+                        doc={doc}
+                        showExpand={true}
+                        attachments={getAttachments(doc.id)}
+                        expandedDocs={expandedDocs}
+                        toggleExpand={toggleExpand}
+                        formatDate={formatDate}
+                        onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
+                        onEdit={handleEditDocument}
+                        onDelete={handleDeleteDocument}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <div className="doc-empty">Нет</div>
@@ -998,12 +1114,12 @@ function ObjectDetailPage() {
             </div>
             <form onSubmit={handleSubmitDocument}>
               <div className="form-row">
-                <label>Наименование *</label>
+                <label>{parentDocumentId ? 'Наименование приложения *' : 'Наименование *'}</label>
                 <input type="text" value={documentFormData.name} onChange={(e) => setDocumentFormData({ ...documentFormData, name: e.target.value })} required />
               </div>
               <div className="form-row-2">
                 <div>
-                  <label>Номер</label>
+                  <label>{parentDocumentId ? '№ Приложения' : 'Номер'}</label>
                   <input type="text" value={documentFormData.document_number} onChange={(e) => setDocumentFormData({ ...documentFormData, document_number: e.target.value })} />
                 </div>
                 <div>
@@ -1012,19 +1128,22 @@ function ObjectDetailPage() {
                 </div>
               </div>
               <div className="form-row">
-                <label>📥 Подписанный</label>
+                <label>📥 Ссылка на подписанный документ</label>
                 <input type="url" value={documentFormData.signed_link} onChange={(e) => setDocumentFormData({ ...documentFormData, signed_link: e.target.value })} placeholder="https://drive.google.com/..." />
               </div>
               <div className="form-row">
-                <label>📝 Редактируемый</label>
+                <label>📝 Ссылка на редактируемый документ</label>
                 <input type="url" value={documentFormData.editable_link} onChange={(e) => setDocumentFormData({ ...documentFormData, editable_link: e.target.value })} placeholder="https://drive.google.com/..." />
               </div>
-              {documentFormData.document_type === 'additional_agreement' && (
-                <div className="form-row">
-                  <label>Примечание</label>
-                  <input type="text" value={documentFormData.notes} onChange={(e) => setDocumentFormData({ ...documentFormData, notes: e.target.value })} />
-                </div>
-              )}
+              <div className="form-row">
+                <label>{parentDocumentId ? 'Описание' : 'Примечание'}</label>
+                <input
+                  type="text"
+                  value={documentFormData.notes}
+                  onChange={(e) => setDocumentFormData({ ...documentFormData, notes: e.target.value })}
+                  placeholder={parentDocumentId ? 'Описание приложения' : 'Дополнительная информация'}
+                />
+              </div>
               <div className="modal-footer">
                 <button type="button" className="btn-cancel" onClick={() => setShowDocumentModal(false)}>Отмена</button>
                 <button type="submit" className="btn-save">Сохранить</button>

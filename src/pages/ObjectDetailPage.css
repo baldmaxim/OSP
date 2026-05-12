@@ -368,6 +368,214 @@
   font-style: italic;
 }
 
+/* Табличный вид документов (договоры, ДС, приложения) */
+.doc-table-wrap {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.doc-table thead th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.doc-row-tr td {
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--border-color);
+  vertical-align: top;
+  color: var(--text-primary);
+}
+
+.doc-row-tr:hover td {
+  background: var(--hover-bg, var(--bg-tertiary));
+}
+
+.doc-row-tr-attachment td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme='dark'] .doc-row-tr-attachment td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.doc-cell-expand {
+  width: 36px;
+}
+
+.doc-expand-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.doc-expand-btn:hover:not([disabled]) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.doc-expand-btn[disabled] {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.doc-leaf {
+  display: inline-block;
+  width: 16px;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+
+.doc-cell-name {
+  min-width: 200px;
+}
+
+.doc-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.doc-name-text {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.doc-attachment-tag {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.doc-notes-line {
+  margin-top: 0.1875rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.doc-cell-meta {
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.doc-date-line {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.doc-cell-link {
+  white-space: nowrap;
+}
+
+.doc-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 500;
+  border: 1px solid;
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+
+.doc-link-btn:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+.doc-link-signed {
+  background: rgba(22, 163, 74, 0.08);
+  color: #15803d;
+  border-color: rgba(22, 163, 74, 0.25);
+}
+
+.doc-link-editable {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+[data-theme='dark'] .doc-link-signed {
+  color: #86efac;
+  background: rgba(22, 163, 74, 0.15);
+}
+
+[data-theme='dark'] .doc-link-editable {
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.15);
+}
+
+.doc-cell-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.doc-action-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  border-radius: 6px;
+  padding: 0;
+  margin-left: 0.125rem;
+  transition: background-color 0.12s ease;
+}
+
+.doc-action-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.doc-action-btn.doc-action-delete:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+.doc-row-tr td .muted {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
 /* Common table & header styles */
 .cost-header {
   display: flex;
