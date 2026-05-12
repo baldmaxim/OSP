@@ -103,7 +103,7 @@ export function RoleProvider({ children }) {
   }, [])
 
   // Суперадмины — автоматическое подтверждение без ожидания и всегда роль admin
-  const SUPER_ADMINS = ['sadovnikov.d.y@su10.ru', 'baldmaxim@gmail.com']
+  const SUPER_ADMINS = ['sadovnikov.d.y@su10.ru']
 
   // Загрузить роль пользователя из БД
   const fetchUserRole = useCallback(async (userId, userEmail) => {
@@ -311,6 +311,8 @@ export function RoleProvider({ children }) {
 
   // Проверки
   const isAdmin = role === ROLES.ADMIN
+  // Суперадмин всегда имеет доступ к админ-функциям, даже если выбрал/тестирует другую роль
+  const isSuperAdmin = !!(user?.email && SUPER_ADMINS.includes(user.email.toLowerCase()))
   const isEmployee = role !== null && role !== ROLES.CONTRACTOR
   const isContractor = role === ROLES.CONTRACTOR
   const isLoggedIn = role !== null && user !== null
@@ -321,13 +323,16 @@ export function RoleProvider({ children }) {
   const scopedObjectId = isAdmin ? null : (userProfile?.object_id || null)
 
   // Проверка прав по разделу
+  // Суперадмину доступ к разделу admin предоставляется всегда, даже если он переключился на другую роль.
   const canView = (section) => {
     if (role === ROLES.ADMIN) return true
+    if (section === 'admin' && user?.email && SUPER_ADMINS.includes(user.email.toLowerCase())) return true
     return permissions[section]?.can_view ?? false
   }
 
   const canEdit = (section) => {
     if (role === ROLES.ADMIN) return true
+    if (section === 'admin' && user?.email && SUPER_ADMINS.includes(user.email.toLowerCase())) return true
     return permissions[section]?.can_edit ?? false
   }
 
@@ -345,6 +350,7 @@ export function RoleProvider({ children }) {
       contractorInfo,
       permissions,
       isAdmin,
+      isSuperAdmin,
       isEmployee,
       isContractor,
       isLoggedIn,

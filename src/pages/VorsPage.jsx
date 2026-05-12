@@ -66,7 +66,7 @@ function VorsPage() {
       const { data, error } = await supabase
         .from('tenders')
         .select(`
-          id, object_id, status, vor_status, vor_link,
+          id, object_id, status, tender_type, vor_status, vor_link,
           vor_responsible_id, vor_start_date, vor_end_date,
           start_date, end_date, work_description,
           objects(name, status),
@@ -76,7 +76,11 @@ function VorsPage() {
         .order('start_date', { ascending: false })
 
       if (error) throw error
-      let filtered = (data || []).filter(t => t.objects?.status === 'main_construction')
+      // Только основные тендеры (без дочерних на материалы) по основному строительству.
+      let filtered = (data || []).filter(t =>
+        t.objects?.status === 'main_construction'
+        && (!t.tender_type || t.tender_type === 'main')
+      )
       if (scopedObjectId) {
         filtered = filtered.filter(t => t.object_id === scopedObjectId)
       }

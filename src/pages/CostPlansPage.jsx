@@ -66,7 +66,7 @@ function CostPlansPage() {
       const { data, error } = await supabase
         .from('tenders')
         .select(`
-          id, object_id, status, cost_plan_status, cost_plan_link,
+          id, object_id, status, tender_type, cost_plan_status, cost_plan_link,
           cost_plan_responsible_id, cost_plan_start_date, cost_plan_end_date,
           start_date, end_date, work_description,
           objects(name, status),
@@ -76,8 +76,12 @@ function CostPlansPage() {
         .order('start_date', { ascending: false })
 
       if (error) throw error
-      // Только тендеры по основному строительству — план затрат имеет смысл там
-      let filtered = (data || []).filter(t => t.objects?.status === 'main_construction')
+      // Только основные тендеры по основному строительству — план затрат имеет смысл только там.
+      // Дочерние тендеры на материалы (tender_type='materials') исключаем, чтобы не дублировать.
+      let filtered = (data || []).filter(t =>
+        t.objects?.status === 'main_construction'
+        && (!t.tender_type || t.tender_type === 'main')
+      )
       if (scopedObjectId) {
         // Запрос вернул объект только в JOIN — фильтруем дополнительно через REST-запрос id-объекта,
         // но здесь данные уже содержат objects.id неявно. Используем другой путь:

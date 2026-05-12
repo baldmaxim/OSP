@@ -7,7 +7,7 @@ import './Sidebar.css'
 function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { logout, canView, isAdmin, role, roleLabels } = useRole()
+  const { logout, canView, isAdmin, isSuperAdmin, role, roleLabels } = useRole()
 
   const isInTendersSection =
     location.pathname.startsWith('/tenders')
@@ -158,8 +158,8 @@ function Sidebar() {
           </NavLink>
         )}
 
-        {/* Администрирование */}
-        {isAdmin && (
+        {/* Администрирование — всегда видно суперадминам, даже если они переключились на другую роль */}
+        {(isAdmin || isSuperAdmin) && (
           <NavLink
             to="/admin"
             className={({ isActive }) =>

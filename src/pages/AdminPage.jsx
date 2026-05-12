@@ -4,7 +4,7 @@ import { useRole, SECTIONS } from '../contexts/RoleContext'
 import './AdminPage.css'
 
 function AdminPage() {
-  const { isAdmin, availableRoles, roleLabels, refreshAvailableRoles } = useRole()
+  const { isAdmin, isSuperAdmin, availableRoles, roleLabels, refreshAvailableRoles } = useRole()
   const [activeTab, setActiveTab] = useState('users')
 
   // Список ролей-сотрудников (для селектов в users / permissions / form): всё кроме contractor
@@ -335,7 +335,7 @@ function AdminPage() {
     }
   }
 
-  if (!isAdmin) {
+  if (!isAdmin && !isSuperAdmin) {
     return (
       <div className="admin-page">
         <div className="admin-denied">Доступ запрещён. Только для администраторов.</div>
@@ -351,6 +351,17 @@ function AdminPage() {
     <div className="admin-page">
       <div className="admin-header">
         <h2>Администрирование</h2>
+        <div className="admin-header-actions">
+          <a
+            href="/public/tenders"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="admin-public-link"
+            title="Открыть публичную страницу тендеров в новой вкладке"
+          >
+            🌐 Открытые тендеры (публичная страница)
+          </a>
+        </div>
         <div className="admin-tabs">
           <button className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
             Пользователи
