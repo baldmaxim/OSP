@@ -32,6 +32,7 @@ function ContactsPage() {
     email: '',
     object_id: '',
     department_id: '',
+    notes: '',
   })
   const [isCustomPosition, setIsCustomPosition] = useState(false)
 
@@ -244,12 +245,13 @@ function ContactsPage() {
   const handleContactSubmit = async (e) => {
     e.preventDefault()
     try {
-      // Преобразуем пустые строки в null для FK-полей и для необязательного телефона
+      // Преобразуем пустые строки в null для FK-полей и для необязательных текстовых полей
       const dataToSave = {
         ...contactFormData,
         object_id: contactFormData.object_id || null,
         department_id: contactFormData.department_id || null,
         phone: contactFormData.phone?.trim() || null,
+        notes: contactFormData.notes?.trim() || null,
       }
 
       if (editingContact) {
@@ -273,6 +275,7 @@ function ContactsPage() {
         email: '',
         object_id: '',
         department_id: '',
+        notes: '',
       })
       fetchContacts()
     } catch (error) {
@@ -288,10 +291,11 @@ function ContactsPage() {
     setContactFormData({
       full_name: contact.full_name,
       position: contact.position,
-      phone: contact.phone,
+      phone: contact.phone || '',
       email: contact.email || '',
       object_id: contact.object_id || '',
       department_id: contact.department_id || '',
+      notes: contact.notes || '',
     })
     setShowContactModal(true)
   }
@@ -349,6 +353,23 @@ function ContactsPage() {
     }
   }
 
+  const handleInlineNotesChange = async (contactId, newNotes) => {
+    const value = newNotes?.trim() || null
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ notes: value })
+        .eq('id', contactId)
+      if (error) throw error
+      setContacts(prev => prev.map(c =>
+        c.id === contactId ? { ...c, notes: value } : c
+      ))
+    } catch (err) {
+      console.error('Ошибка сохранения примечания:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
   const handleAddNewContact = () => {
     setEditingContact(null)
     setIsCustomPosition(false)
@@ -359,6 +380,7 @@ function ContactsPage() {
       email: '',
       object_id: '',
       department_id: '',
+      notes: '',
     })
     setShowContactModal(true)
   }
@@ -529,12 +551,13 @@ function ContactsPage() {
               <thead>
                 <tr>
                   <th style={{ width: '40px', textAlign: 'center' }}>№</th>
-                  <th>ФИО</th>
-                  <th style={{ width: '180px' }}>Объект/Офис</th>
+                  <th style={{ width: '200px' }}>ФИО</th>
+                  <th style={{ width: '170px' }}>Объект/Офис</th>
                   <th>Должность</th>
-                  <th style={{ width: '180px' }}>Отдел</th>
-                  <th>Телефон</th>
+                  <th style={{ width: '170px' }}>Отдел</th>
+                  <th style={{ width: '150px' }}>Телефон</th>
                   <th>Email</th>
+                  <th>Примечания</th>
                   <th style={{ width: '72px' }}></th>
                 </tr>
               </thead>
@@ -563,7 +586,7 @@ function ContactsPage() {
                   if (contacts.length === 0) {
                     return (
                       <tr>
-                        <td colSpan="8" className="no-data" style={{ textAlign: 'center' }}>
+                        <td colSpan="9" className="no-data" style={{ textAlign: 'center' }}>
                           Нет контактов. Добавьте первый контакт.
                         </td>
                       </tr>
@@ -572,7 +595,7 @@ function ContactsPage() {
                   if (visibleContacts.length === 0) {
                     return (
                       <tr>
-                        <td colSpan="8" className="no-data" style={{ textAlign: 'center' }}>
+                        <td colSpan="9" className="no-data" style={{ textAlign: 'center' }}>
                           Ничего не найдено{q && ` по запросу «${searchQuery}»`}
                         </td>
                       </tr>
@@ -611,6 +634,30 @@ function ContactsPage() {
                       </td>
                       <td>{contact.phone || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>—</span>}</td>
                       <td>{contact.email}</td>
+                      <td>
+                        <textarea
+                          ref={(el) => {
+                            if (el) {
+                              el.style.height = 'auto'
+                              el.style.height = Math.max(el.scrollHeight, 32) + 'px'
+                            }
+                          }}
+                          defaultValue={contact.notes || ''}
+                          onInput={(e) => {
+                            e.target.style.height = 'auto'
+                            e.target.style.height = Math.max(e.target.scrollHeight, 32) + 'px'
+                          }}
+                          onBlur={(e) => {
+                            const next = e.target.value
+                            if ((contact.notes || '') !== next) {
+                              handleInlineNotesChange(contact.id, next)
+                            }
+                          }}
+                          placeholder="Примечание…"
+                          rows={1}
+                          className="contact-notes-input"
+                        />
+                      </td>
                       <td className="actions-cell">
                         <button
                           className="btn-icon btn-edit"
@@ -794,6 +841,18 @@ function ContactsPage() {
                       setContactFormData({ ...contactFormData, email: e.target.value })
                     }
                     placeholder="email@example.com"
+                  />
+                </div>
+
+                <div className="form-group full-width">
+                  <label>Примечания</label>
+                  <textarea
+                    value={contactFormData.notes}
+                    onChange={(e) =>
+                      setContactFormData({ ...contactFormData, notes: e.target.value })
+                    }
+                    rows={3}
+                    placeholder="Произвольное примечание (необязательно)"
                   />
                 </div>
               </div>

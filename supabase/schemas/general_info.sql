@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   position VARCHAR(100) NOT NULL,
   phone VARCHAR(50),
   email VARCHAR(255),
+  notes TEXT,
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

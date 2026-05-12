@@ -11,6 +11,7 @@ function LoginPage() {
   const [mode, setMode] = useState('employee') // 'employee' | 'contractor' | 'register'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
@@ -99,12 +100,17 @@ function LoginPage() {
       setError('Пароль должен быть не менее 6 символов')
       return
     }
+    if (password !== passwordConfirm) {
+      setError('Пароли не совпадают')
+      return
+    }
     setLoading(true)
     try {
       await signUp(email, password)
       setSuccessMessage('Регистрация успешна! Теперь вы можете войти.')
       setMode('employee')
       setPassword('')
+      setPasswordConfirm('')
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -268,7 +274,23 @@ function LoginPage() {
                 minLength={6}
               />
             </div>
-            <button type="submit" className="login-button" disabled={loading}>
+            <div className="form-field">
+              <label>Повторите пароль</label>
+              <input
+                type="password"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                placeholder="Введите пароль ещё раз"
+                required
+                minLength={6}
+              />
+              {passwordConfirm && password !== passwordConfirm && (
+                <small style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                  Пароли не совпадают
+                </small>
+              )}
+            </div>
+            <button type="submit" className="login-button" disabled={loading || (passwordConfirm && password !== passwordConfirm)}>
               {loading ? 'Регистрация...' : 'Зарегистрироваться'}
             </button>
           </form>

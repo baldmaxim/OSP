@@ -239,6 +239,27 @@
   border-bottom: none;
 }
 
+.contact-notes-input {
+  width: 100%;
+  min-height: 32px;
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.contact-notes-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
 .contacts-table .num-cell {
   text-align: center;
   color: var(--text-tertiary);
