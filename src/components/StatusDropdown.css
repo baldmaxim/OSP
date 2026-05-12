@@ -1,0 +1,112 @@
+.status-dropdown {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.status-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.3125rem 0.4375rem 0.3125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-align: left;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1.2;
+  background: inherit;
+  color: inherit;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.status-dropdown-trigger:hover {
+  filter: brightness(0.97);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.status-dropdown.open .status-dropdown-trigger {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+}
+
+.status-dropdown-label {
+  flex: 1;
+  white-space: normal;
+  word-wrap: break-word;
+}
+
+.status-dropdown-chevron {
+  font-size: 0.625rem;
+  opacity: 0.7;
+  transform: rotate(0deg);
+  transition: transform 0.15s ease;
+}
+
+.status-dropdown.open .status-dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+.status-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  min-width: 220px;
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
+  animation: status-dropdown-in 0.12s ease-out;
+}
+
+@keyframes status-dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.status-dropdown-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.1s ease;
+}
+
+.status-dropdown-option:hover {
+  background: var(--hover-bg, var(--bg-tertiary));
+}
+
+.status-dropdown-option.active {
+  background: var(--bg-tertiary);
+}
+
+.status-dropdown-option-label {
+  flex: 1;
+}
+
+.status-dropdown-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: currentColor;
+  /* подменим фон через .status-* классы: они задают background-color */
+}
+
+.status-dropdown-check {
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 0.75rem;
+}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
+import StatusDropdown from '../components/StatusDropdown'
 import '../components/Tenders.css'
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
@@ -662,9 +663,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           })
         }
 
-        // Автоматически создаём связанный тендер на материалы для каждого нового основного тендера.
-        // Если миграция применена частично — покажем явное предупреждение пользователю.
-        if (createdMainId && newTenderType === 'main') {
+        // Автоматически создаём связанный тендер на материалы только для тендеров основного строительства.
+        // В гарантийном отделе тендеры на материалы не нужны.
+        if (createdMainId && newTenderType === 'main' && department === 'construction') {
           // Если retry основной вставки удалил tender_type / parent_tender_id — миграция не применена,
           // создание дочернего тендера невозможно. Сообщаем пользователю явно.
           if (mainFinalPayload.tender_type === undefined) {
@@ -1350,7 +1351,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               {department === 'construction' && activeTab !== 'completed' && (
                 <th style={{ width: '110px' }}>План<br />затрат</th>
               )}
-              {!isMaterialsView && activeTab !== 'completed' && (
+              {!isMaterialsView && department === 'construction' && activeTab !== 'completed' && (
                 <th style={{ width: '120px' }}>Тендер<br />на&nbsp;материалы</th>
               )}
               <th style={{ width: '120px' }}>Сводная<br />КП</th>
@@ -1360,7 +1361,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? 8 : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 10))} className="no-data">
+                <td colSpan={activeTab === 'completed' ? 8 : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : activeTab === 'deleted'
@@ -1436,27 +1437,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     </td>
                     {activeTab !== 'completed' && (
                       <td>
-                        <div className="status-select-wrap">
-                          <span className={`status-badge-display ${getStatusBadgeClass(tender.status)}`}>
-                            {tender.status === 'Идет тендерная процедура' ? (
-                              <>Идет тендерная<br />процедура</>
-                            ) : (
-                              tender.status
-                            )}
-                          </span>
-                          <select
-                            className="status-select-overlay"
-                            value={tender.status}
-                            onChange={(e) => handleStatusChange(tender.id, e.target.value)}
-                            aria-label="Статус тендера"
-                          >
-                            {statusOptions.map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        <StatusDropdown
+                          value={tender.status}
+                          options={statusOptions}
+                          onChange={(next) => handleStatusChange(tender.id, next)}
+                          getBadgeClass={getStatusBadgeClass}
+                          getDisplay={(s) =>
+                            s === 'Идет тендерная процедура'
+                              ? <>Идет тендерная<br />процедура</>
+                              : s
+                          }
+                          ariaLabel="Статус тендера"
+                        />
                       </td>
                     )}
                     {activeTab === 'completed' && (
@@ -1617,8 +1609,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         )}
                       </td>
                     )}
-                    {/* Тендер на материалы (дочерний) */}
-                    {!isMaterialsView && activeTab !== 'completed' && (
+                    {/* Тендер на материалы (дочерний) — только в основном строительстве */}
+                    {!isMaterialsView && department === 'construction' && activeTab !== 'completed' && (
                       <td>
                         {tender.materials_tender ? (
                           <div className="phase-cell">
@@ -1749,7 +1741,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? 8 : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 10))} className="expanded-cp-row">
+                      <td colSpan={activeTab === 'completed' ? 8 : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"
@@ -1942,7 +1934,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                     </td>
                                     <td>
                                       <textarea
+                                        ref={(el) => {
+                                          if (el) {
+                                            el.style.height = 'auto'
+                                            el.style.height = Math.max(el.scrollHeight, 36) + 'px'
+                                          }
+                                        }}
                                         defaultValue={tc.notes || ''}
+                                        onInput={(e) => {
+                                          e.target.style.height = 'auto'
+                                          e.target.style.height = Math.max(e.target.scrollHeight, 36) + 'px'
+                                        }}
                                         onBlur={(e) => {
                                           const newNotes = e.target.value
                                           if ((tc.notes || '') !== newNotes) {
@@ -1950,17 +1952,21 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                           }
                                         }}
                                         placeholder="Примечание…"
-                                        rows={2}
+                                        rows={1}
                                         style={{
                                           width: '100%',
-                                          padding: '0.25rem 0.5rem',
+                                          minHeight: '36px',
+                                          padding: '0.375rem 0.5rem',
                                           fontSize: '0.75rem',
+                                          lineHeight: 1.35,
                                           border: '1px solid var(--border-color)',
                                           borderRadius: '4px',
                                           background: 'var(--bg-secondary)',
                                           color: 'var(--text-primary)',
-                                          resize: 'vertical',
+                                          resize: 'none',
+                                          overflow: 'hidden',
                                           fontFamily: 'inherit',
+                                          boxSizing: 'border-box',
                                         }}
                                       />
                                     </td>
