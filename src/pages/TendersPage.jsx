@@ -623,69 +623,77 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         }
         if (formData.notes) insertPayload.notes = formData.notes
 
-        const { data: inserted, error } = await supabase
-          .from('tenders')
-          .insert([insertPayload])
-          .select('id')
-          .single()
-        let createdMainId = null
-        if (error) {
-          // Если БД ругается на отсутствующую колонку notes (миграция не применена) —
-          // повторим без неё, чтобы создать тендер.
-          if (insertPayload.notes && /column .*notes.* does not exist/i.test(error.message)) {
-            delete insertPayload.notes
-            const retry = await supabase
-              .from('tenders')
-              .insert([insertPayload])
-              .select('id')
-              .single()
-            if (retry.error) throw retry.error
-            if (retry.data?.id) {
-              createdMainId = retry.data.id
-              await logTenderEvent(retry.data.id, 'created', {
-                newValue: insertPayload,
-                description: 'Тендер создан'
-              })
+        // Вставка с автоматическим retry: если БД ругается на отсутствующие новые колонки
+        // (миграция ещё не применена), отбрасываем эти поля и пробуем снова.
+        const insertTenderWithRetry = async (payload) => {
+          const attempt = async (p) => await supabase
+            .from('tenders')
+            .insert([p])
+            .select('id')
+            .single()
+          let p = { ...payload }
+          let res = await attempt(p)
+          // Retry для каждой проблемной колонки (notes, tender_type, parent_tender_id)
+          for (let i = 0; i < 4 && res.error; i++) {
+            const m = res.error.message || ''
+            const match = m.match(/column "?([a-z_]+)"? .* does not exist/i)
+              || m.match(/Could not find the '([a-z_]+)' column/i)
+            if (match && p[match[1]] !== undefined) {
+              const col = match[1]
+              const next = { ...p }
+              delete next[col]
+              p = next
+              res = await attempt(p)
+              continue
             }
-          } else {
-            throw error
+            break
           }
-        } else if (inserted?.id) {
-          createdMainId = inserted.id
-          await logTenderEvent(inserted.id, 'created', {
-            newValue: insertPayload,
+          return { res, finalPayload: p }
+        }
+
+        const { res: mainRes, finalPayload: mainFinalPayload } = await insertTenderWithRetry(insertPayload)
+        let createdMainId = null
+        if (mainRes.error) throw mainRes.error
+        if (mainRes.data?.id) {
+          createdMainId = mainRes.data.id
+          await logTenderEvent(mainRes.data.id, 'created', {
+            newValue: mainFinalPayload,
             description: 'Тендер создан'
           })
         }
 
         // Автоматически создаём связанный тендер на материалы для каждого нового основного тендера.
-        // Ошибка автосоздания не должна ломать основной тендер.
+        // Если миграция применена частично — покажем явное предупреждение пользователю.
         if (createdMainId && newTenderType === 'main') {
-          try {
-            const materialsPayload = {
-              object_id: insertPayload.object_id,
-              work_description: insertPayload.work_description,
-              status: 'Заявка на тендер',
-              start_date: insertPayload.start_date,
-              end_date: insertPayload.end_date,
-              tender_type: 'materials',
-              parent_tender_id: createdMainId,
+          // Если retry основной вставки удалил tender_type / parent_tender_id — миграция не применена,
+          // создание дочернего тендера невозможно. Сообщаем пользователю явно.
+          if (mainFinalPayload.tender_type === undefined) {
+            alert('Тендер создан, но автосоздание тендера на материалы пропущено: миграция 20260515_add_tender_type_and_parent не применена в БД. Примените её и используйте кнопку «+ Создать» в колонке «Тендер на материалы».')
+          } else {
+            try {
+              const materialsPayload = {
+                object_id: insertPayload.object_id,
+                work_description: insertPayload.work_description,
+                status: 'Заявка на тендер',
+                start_date: insertPayload.start_date,
+                end_date: insertPayload.end_date,
+                tender_type: 'materials',
+                parent_tender_id: createdMainId,
+              }
+              const { res: matRes, finalPayload: matFinalPayload } = await insertTenderWithRetry(materialsPayload)
+              if (matRes.error) {
+                console.error('Не удалось автоматически создать тендер на материалы:', matRes.error.message)
+                alert('Тендер создан, но автосоздание тендера на материалы не удалось: ' + matRes.error.message)
+              } else if (matRes.data?.id) {
+                await logTenderEvent(matRes.data.id, 'created', {
+                  newValue: matFinalPayload,
+                  description: 'Тендер на материалы создан автоматически'
+                })
+              }
+            } catch (matErr) {
+              console.error('Ошибка автосоздания тендера на материалы:', matErr.message)
+              alert('Ошибка автосоздания тендера на материалы: ' + matErr.message)
             }
-            const { data: materialsInserted, error: materialsError } = await supabase
-              .from('tenders')
-              .insert([materialsPayload])
-              .select('id')
-              .single()
-            if (materialsError) {
-              console.error('Не удалось автоматически создать тендер на материалы:', materialsError.message)
-            } else if (materialsInserted?.id) {
-              await logTenderEvent(materialsInserted.id, 'created', {
-                newValue: materialsPayload,
-                description: 'Тендер на материалы создан автоматически'
-              })
-            }
-          } catch (matErr) {
-            console.error('Ошибка автосоздания тендера на материалы:', matErr.message)
           }
         }
       }
@@ -1319,26 +1327,34 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th style={{ width: '50px' }}></th>
-              <th>Наименование объекта</th>
-              <th>Описание работ</th>
-              {activeTab !== 'completed' && <th>Статус</th>}
-              {activeTab === 'completed' && <th>Победитель</th>}
+              <th style={{ width: '44px' }}></th>
+              <th style={{ minWidth: '180px' }}>Наименование<br />объекта</th>
+              <th style={{ minWidth: '180px' }}>Описание работ</th>
+              {activeTab !== 'completed' && <th style={{ width: '140px' }}>Статус</th>}
+              {activeTab === 'completed' && <th style={{ width: '140px' }}>Победитель</th>}
               <th
                 className="sortable-th"
                 onClick={() => toggleSort('start_date')}
                 title="Сортировать по датам"
-                style={{ width: '140px' }}
+                style={{ width: '120px' }}
               >
-                Планируемые сроки<br />выполнения работ{sortIndicator('start_date')}
+                Планируемые<br />сроки{sortIndicator('start_date')}
               </th>
-              <th>Ответственный по тендеру</th>
-              {department === 'construction' && activeTab !== 'completed' && <th>ВОРы и РД</th>}
-              {activeTab !== 'completed' && <th>Тендерный пакет</th>}
-              {department === 'construction' && activeTab !== 'completed' && <th>План затрат</th>}
-              {!isMaterialsView && activeTab !== 'completed' && <th>Тендер на материалы</th>}
-              <th>Сводная КП</th>
-              <th className="actions-column">Действия</th>
+              <th style={{ width: '140px' }}>Ответственный<br />по тендеру</th>
+              {department === 'construction' && activeTab !== 'completed' && (
+                <th style={{ width: '110px' }}>ВОРы<br />и&nbsp;РД</th>
+              )}
+              {activeTab !== 'completed' && (
+                <th style={{ width: '100px' }}>Тендерный<br />пакет</th>
+              )}
+              {department === 'construction' && activeTab !== 'completed' && (
+                <th style={{ width: '110px' }}>План<br />затрат</th>
+              )}
+              {!isMaterialsView && activeTab !== 'completed' && (
+                <th style={{ width: '120px' }}>Тендер<br />на&nbsp;материалы</th>
+              )}
+              <th style={{ width: '100px' }}>Сводная<br />КП</th>
+              <th className="actions-column" style={{ width: '80px' }}>Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -1389,27 +1405,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         >
                           {tender.objects?.name || '-'}
                         </button>
-                        {(tender.objects?.address || tender.objects?.map_link) && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                            {tender.objects?.address && (
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {tender.objects.address}
-                              </span>
-                            )}
-                            {tender.objects?.map_link && (
-                              <a
-                                href={tender.objects.map_link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                title="Открыть в Яндекс.Картах"
-                                style={{ textDecoration: 'none' }}
-                                aria-label="Открыть в Яндекс.Картах"
-                              >
-                                📍
-                              </a>
-                            )}
+                        {tender.objects?.address && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', wordBreak: 'break-word' }}>
+                            {tender.objects.address}
                           </div>
+                        )}
+                        {tender.objects?.map_link && (
+                          <a
+                            href={tender.objects.map_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title="Открыть в Яндекс.Картах"
+                            className="yandex-map-link"
+                          >
+                            <span aria-hidden>🗺️</span>
+                            <span>Яндекс.Карты</span>
+                          </a>
                         )}
                       </div>
                     </td>
@@ -1753,14 +1765,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             <table className="data-table" style={{ margin: 0 }}>
                               <thead>
                                 <tr>
-                                  <th style={{ width: '48px' }}>№</th>
-                                  <th>Наименование</th>
-                                  <th>Контактные данные</th>
-                                  <th>Email</th>
-                                  <th style={{ width: '170px' }}>Статус</th>
-                                  <th style={{ width: '140px' }}>КП</th>
-                                  <th style={{ width: '220px' }}>Примечание</th>
-                                  <th style={{ width: '64px' }}></th>
+                                  <th style={{ width: '40px' }}>№</th>
+                                  <th style={{ width: '20%' }}>Наименование</th>
+                                  <th style={{ width: '18%' }}>Контактные данные</th>
+                                  <th style={{ width: '140px' }}>Email</th>
+                                  <th style={{ width: '150px' }}>Статус</th>
+                                  <th style={{ width: '120px' }}>КП</th>
+                                  <th>Примечание</th>
+                                  <th style={{ width: '56px' }}></th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1836,7 +1848,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                                 style={{
                                                   color: 'var(--primary-color)',
                                                   textDecoration: 'none',
-                                                  display: 'block'
+                                                  display: 'block',
+                                                  fontSize: '0.75rem',
+                                                  wordBreak: 'break-all',
                                                 }}
                                               >
                                                 {contact.email}

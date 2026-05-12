@@ -386,22 +386,24 @@ function TenderDetailPage() {
         </button>
         <div className="tender-detail-title">
           <h2>{tender.objects?.name || 'Тендер'}</h2>
-          {(tender.objects?.address || tender.objects?.map_link) && (
-            <p className="tender-object-address" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', margin: '0.25rem 0', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>
-              {tender.objects?.address && <span>{tender.objects.address}</span>}
-              {tender.objects?.map_link && (
-                <a
-                  href={tender.objects.map_link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Открыть в Яндекс.Картах"
-                  aria-label="Открыть в Яндекс.Картах"
-                  style={{ textDecoration: 'none' }}
-                >
-                  📍
-                </a>
-              )}
+          {tender.objects?.address && (
+            <p className="tender-object-address" style={{ margin: '0.25rem 0 0', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>
+              {tender.objects.address}
             </p>
+          )}
+          {tender.objects?.map_link && (
+            <div style={{ marginTop: '0.25rem' }}>
+              <a
+                href={tender.objects.map_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Открыть в Яндекс.Картах"
+                className="yandex-map-link"
+              >
+                <span aria-hidden>🗺️</span>
+                <span>Яндекс.Карты</span>
+              </a>
+            </div>
           )}
           {tender.work_description && (
             <p className="tender-work-description">
