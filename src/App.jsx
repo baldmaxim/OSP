@@ -62,8 +62,9 @@ function EmployeeLayout() {
             <Route path="/general/contacts" element={<ContactsPage />} />
             <Route path="/general/counterparties" element={<CounterpartiesPage />} />
             <Route path="/tenders" element={<Navigate to="/tenders/construction" replace />} />
-            <Route path="/tenders/construction" element={<TendersPage department="construction" />} />
-            <Route path="/tenders/warranty" element={<TendersPage department="warranty" />} />
+            <Route path="/tenders/construction" element={<TendersPage department="construction" tenderType="main" />} />
+            <Route path="/tenders/warranty" element={<TendersPage department="warranty" tenderType="main" />} />
+            <Route path="/tenders/materials" element={<TendersPage tenderType="materials" />} />
             <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />
             <Route path="/cost-plans" element={<CostPlansPage />} />
             <Route path="/vors" element={<VorsPage />} />

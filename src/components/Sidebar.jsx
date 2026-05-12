@@ -21,6 +21,7 @@ function Sidebar() {
   const tendersSubItems = [
     { path: '/tenders/construction', label: 'Основное строительство', icon: '🏗️' },
     { path: '/tenders/warranty', label: 'Гарантийный отдел', icon: '🛡️' },
+    { path: '/tenders/materials', label: 'Тендеры на материалы', icon: '📦' },
     { path: '/summary', label: 'Сводка', icon: '🧭' },
     { path: '/cost-plans', label: 'Планы затрат', icon: '💰' },
     { path: '/vors', label: 'ВОРы и РД', icon: '📐' },

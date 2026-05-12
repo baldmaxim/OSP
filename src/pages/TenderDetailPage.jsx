@@ -46,7 +46,7 @@ function TenderDetailPage() {
     try {
       const { data: tenderData, error: tenderError } = await supabase
         .from('tenders')
-        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name)')
+        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name)')
         .eq('id', tenderId)
         .single()
 
@@ -386,6 +386,23 @@ function TenderDetailPage() {
         </button>
         <div className="tender-detail-title">
           <h2>{tender.objects?.name || 'Тендер'}</h2>
+          {(tender.objects?.address || tender.objects?.map_link) && (
+            <p className="tender-object-address" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', margin: '0.25rem 0', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>
+              {tender.objects?.address && <span>{tender.objects.address}</span>}
+              {tender.objects?.map_link && (
+                <a
+                  href={tender.objects.map_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Открыть в Яндекс.Картах"
+                  aria-label="Открыть в Яндекс.Картах"
+                  style={{ textDecoration: 'none' }}
+                >
+                  📍
+                </a>
+              )}
+            </p>
+          )}
           {tender.work_description && (
             <p className="tender-work-description">
               <span className="tender-work-label">Выполняемые работы:</span> {tender.work_description}

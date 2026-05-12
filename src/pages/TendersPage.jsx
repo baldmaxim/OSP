@@ -4,7 +4,8 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import '../components/Tenders.css'
 
-function TendersPage({ department = 'construction' }) {
+function TendersPage({ department = 'construction', tenderType = 'main' }) {
+  const isMaterialsView = tenderType === 'materials'
   const navigate = useNavigate()
   const { scopedObjectId, userProfile } = useRole()
   const [tenders, setTenders] = useState([])
@@ -61,6 +62,9 @@ function TendersPage({ department = 'construction' }) {
   const [objectFilter, setObjectFilter] = useState('')
   const [responsibleFilter, setResponsibleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  // Родительский тендер при создании дочернего тендера на материалы (preselect)
+  const [materialsParentTender, setMaterialsParentTender] = useState(null)
   const [sortField, setSortField] = useState('start_date') // 'start_date' | 'end_date'
   const [sortOrder, setSortOrder] = useState('desc') // 'asc' | 'desc'
   const [formData, setFormData] = useState({
@@ -83,9 +87,13 @@ function TendersPage({ department = 'construction' }) {
     notes: '',
   })
 
-  // Определяем статус объекта в зависимости от отдела
+  // Определяем статус объекта в зависимости от отдела (только для основных тендеров)
   const objectStatus = department === 'construction' ? 'main_construction' : 'warranty_service'
-  const pageTitle = department === 'construction' ? 'Тендеры — Основное строительство' : 'Тендеры — Гарантийный отдел'
+  const pageTitle = isMaterialsView
+    ? 'Тендеры на материалы'
+    : department === 'construction'
+      ? 'Тендеры — Основное строительство'
+      : 'Тендеры — Гарантийный отдел'
 
   const statusOptions = ['Заявка на тендер', 'Подготовка ВОР', 'Идет тендерная процедура', 'Завершен', 'Приостановка тендера']
 
@@ -120,7 +128,8 @@ function TendersPage({ department = 'construction' }) {
       fetchResponsibleContacts(),
       fetchTenderProposalCounts()
     ])
-  }, [department])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [department, tenderType])
 
   // Сводный запрос: считаем для каждого тендера сколько контрагентов и сколько предоставили КП.
   const fetchTenderProposalCounts = async () => {
@@ -147,14 +156,16 @@ function TendersPage({ department = 'construction' }) {
       setLoading(true)
       const { data, error } = await supabase
         .from('tenders')
-        .select('*, objects(name, status), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name)')
+        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link)')
+        .eq('tender_type', tenderType)
         .order('start_date', { ascending: false })
 
       if (error) throw error
-      // Фильтруем тендеры по статусу объекта + scope пользователя по объекту (если есть)
-      let filteredTenders = (data || []).filter(
-        tender => tender.objects?.status === objectStatus
-      )
+      // Для основных тендеров фильтруем по статусу объекта (construction/warranty).
+      // Для тендеров на материалы показываем все объекты без фильтрации по отделу.
+      let filteredTenders = isMaterialsView
+        ? (data || [])
+        : (data || []).filter(tender => tender.objects?.status === objectStatus)
       if (scopedObjectId) {
         filteredTenders = filteredTenders.filter(t => t.object_id === scopedObjectId)
       }
@@ -168,11 +179,15 @@ function TendersPage({ department = 'construction' }) {
 
   const fetchObjects = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('objects')
         .select('*')
-        .eq('status', objectStatus)
         .order('name', { ascending: true })
+      // Для тендеров на материалы доступны объекты любого отдела
+      if (!isMaterialsView) {
+        query = query.eq('status', objectStatus)
+      }
+      const { data, error } = await query
 
       if (error) throw error
       setObjects(data || [])
@@ -573,12 +588,18 @@ function TendersPage({ department = 'construction' }) {
       } else {
         // Insert new tender — только минимальный набор для заявки от руководителя строительства.
         // Это страхует от падений, если новые миграции (notes, cost_plan_*, vor_*) ещё не применены.
+        // Тип тендера определяется текущим режимом страницы или явным запуском дочернего тендера на материалы.
+        const newTenderType = materialsParentTender ? 'materials' : tenderType
         const insertPayload = {
           object_id: formData.object_id || null,
           work_description: formData.work_description,
           status: formData.status || 'Заявка на тендер',
           start_date: formData.start_date,
           end_date: formData.end_date,
+          tender_type: newTenderType,
+        }
+        if (materialsParentTender) {
+          insertPayload.parent_tender_id = materialsParentTender.id
         }
         if (formData.notes) insertPayload.notes = formData.notes
 
@@ -617,6 +638,7 @@ function TendersPage({ department = 'construction' }) {
 
       setShowModal(false)
       setEditingTender(null)
+      setMaterialsParentTender(null)
       setFormData({
         object_id: '',
         work_description: '',
@@ -715,8 +737,35 @@ function TendersPage({ department = 'construction' }) {
 
   const handleAddNew = () => {
     setEditingTender(null)
+    setMaterialsParentTender(null)
     setFormData({
       object_id: '',
+      work_description: '',
+      status: 'Заявка на тендер',
+      start_date: '',
+      end_date: '',
+      tender_package_link: '',
+      responsible_contact_id: '',
+      cost_plan_link: '',
+      cost_plan_responsible_id: '',
+      vor_link: '',
+      vor_responsible_id: '',
+      vor_start_date: '',
+      vor_end_date: '',
+      tender_start_date: '',
+      tender_end_date: '',
+      summary_proposal_link: '',
+      notes: '',
+    })
+    setShowModal(true)
+  }
+
+  // Открыть форму создания дочернего тендера на материалы для конкретного родительского тендера
+  const handleCreateMaterialsTender = (parentTender) => {
+    setEditingTender(null)
+    setMaterialsParentTender(parentTender)
+    setFormData({
+      object_id: parentTender.object_id || '',
       work_description: '',
       status: 'Заявка на тендер',
       start_date: '',
@@ -998,6 +1047,16 @@ function TendersPage({ department = 'construction' }) {
     if (responsibleFilter && tender.responsible_contact_id !== responsibleFilter) return false
     // Фильтр по статусу
     if (statusFilter && tender.status !== statusFilter) return false
+    // Текстовый поиск по наименованию объекта, адресу и описанию работ
+    const q = searchQuery.trim().toLowerCase()
+    if (q) {
+      const haystack = [
+        tender.objects?.name,
+        tender.objects?.address,
+        tender.work_description,
+      ].filter(Boolean).join(' ').toLowerCase()
+      if (!haystack.includes(q)) return false
+    }
     return true
   })
 
@@ -1094,6 +1153,24 @@ function TendersPage({ department = 'construction' }) {
       {/* Фильтры и таблица (скрываем на вкладке шаблона) */}
       {activeTab !== 'template' && (<>
       <div style={{ padding: '0.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 240px', minWidth: '200px', maxWidth: '360px' }}>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Поиск по объекту, адресу, описанию работ…"
+            style={{
+              width: '100%',
+              padding: '0.375rem 0.625rem',
+              fontSize: '0.8125rem',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-primary)',
+            }}
+          />
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Объект:</span>
           <select
@@ -1174,9 +1251,9 @@ function TendersPage({ department = 'construction' }) {
           </select>
         </div>
 
-        {(objectFilter || responsibleFilter || statusFilter) && (
+        {(objectFilter || responsibleFilter || statusFilter || searchQuery) && (
           <button
-            onClick={() => { setObjectFilter(''); setResponsibleFilter(''); setStatusFilter('') }}
+            onClick={() => { setObjectFilter(''); setResponsibleFilter(''); setStatusFilter(''); setSearchQuery('') }}
             style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
           >
             Сбросить все
@@ -1204,6 +1281,7 @@ function TendersPage({ department = 'construction' }) {
               {department === 'construction' && activeTab !== 'completed' && <th>ВОРы и РД</th>}
               {activeTab !== 'completed' && <th>Тендерный пакет</th>}
               {department === 'construction' && activeTab !== 'completed' && <th>План затрат</th>}
+              {!isMaterialsView && activeTab !== 'completed' && <th>Тендер на материалы</th>}
               <th>Сводная КП</th>
               <th className="actions-column">Действия</th>
             </tr>
@@ -1211,7 +1289,7 @@ function TendersPage({ department = 'construction' }) {
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? 8 : (department === 'construction' ? 11 : 9)} className="no-data">
+                <td colSpan={activeTab === 'completed' ? 8 : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 10))} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : activeTab === 'deleted'
@@ -1248,13 +1326,37 @@ function TendersPage({ department = 'construction' }) {
                       </div>
                     </td>
                     <td>
-                      <button
-                        onClick={() => navigate(`/tenders/${tender.id}`)}
-                        className="row-link primary"
-                        title="Открыть тендер"
-                      >
-                        {tender.objects?.name || '-'}
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                        <button
+                          onClick={() => navigate(`/tenders/${tender.id}`)}
+                          className="row-link primary"
+                          title="Открыть тендер"
+                        >
+                          {tender.objects?.name || '-'}
+                        </button>
+                        {(tender.objects?.address || tender.objects?.map_link) && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                            {tender.objects?.address && (
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {tender.objects.address}
+                              </span>
+                            )}
+                            {tender.objects?.map_link && (
+                              <a
+                                href={tender.objects.map_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                title="Открыть в Яндекс.Картах"
+                                style={{ textDecoration: 'none' }}
+                                aria-label="Открыть в Яндекс.Картах"
+                              >
+                                📍
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td>
                       <button
@@ -1435,6 +1537,52 @@ function TendersPage({ department = 'construction' }) {
                           <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
                             {tender.cost_plan_responsible.full_name}
                           </div>
+                        )}
+                      </td>
+                    )}
+                    {/* Тендер на материалы (дочерний) */}
+                    {!isMaterialsView && activeTab !== 'completed' && (
+                      <td>
+                        {tender.materials_tender ? (
+                          <div className="phase-cell">
+                            {(() => {
+                              const s = tender.materials_tender.status
+                              if (s === 'Завершен') {
+                                return <span className="phase-done" title="Тендер на материалы завершён">✓ Завершён</span>
+                              }
+                              if (s === 'Идет тендерная процедура') {
+                                return <span className="phase-progress" title="Идёт тендерная процедура">В работе</span>
+                              }
+                              if (s === 'Приостановка тендера') {
+                                return <span className="phase-warn" title="Приостановлен">Приостановлен</span>
+                              }
+                              return <span className="phase-pending" title={s || 'Не начат'}>{s || 'Не начат'}</span>
+                            })()}
+                            <a
+                              href={`/tenders/${tender.materials_tender.id}`}
+                              onClick={(e) => { e.preventDefault(); navigate(`/tenders/${tender.materials_tender.id}`) }}
+                              className="link"
+                            >
+                              Открыть
+                            </a>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleCreateMaterialsTender(tender)}
+                            className="btn-link"
+                            style={{
+                              background: 'none',
+                              border: '1px dashed var(--border-color)',
+                              color: 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: '4px',
+                              fontSize: '0.75rem'
+                            }}
+                            title="Создать тендер на материалы для этого объекта"
+                          >
+                            + Создать
+                          </button>
                         )}
                       </td>
                     )}
@@ -1818,13 +1966,20 @@ function TendersPage({ department = 'construction' }) {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
-                {editingTender ? 'Редактировать тендер' : 'Добавить новый тендер'}
+                {editingTender
+                  ? 'Редактировать тендер'
+                  : materialsParentTender
+                    ? `Тендер на материалы для: ${materialsParentTender.objects?.name || ''}`
+                    : isMaterialsView
+                      ? 'Новый тендер на материалы'
+                      : 'Добавить новый тендер'}
               </h3>
               <button
                 className="modal-close"
                 onClick={() => {
                   setShowModal(false)
                   setEditingTender(null)
+                  setMaterialsParentTender(null)
                 }}
               >
                 ×
@@ -1840,14 +1995,23 @@ function TendersPage({ department = 'construction' }) {
                     value={formData.object_id}
                     onChange={handleInputChange}
                     required
+                    disabled={!!materialsParentTender}
                   >
                     <option value="">Выберите объект</option>
-                    {objects.map((obj) => (
+                    {(materialsParentTender && !objects.some(o => o.id === materialsParentTender.object_id)
+                      ? [{ id: materialsParentTender.object_id, name: materialsParentTender.objects?.name || '—' }, ...objects]
+                      : objects
+                    ).map((obj) => (
                       <option key={obj.id} value={obj.id}>
                         {obj.name}
                       </option>
                     ))}
                   </select>
+                  {materialsParentTender && (
+                    <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                      Объект унаследован от родительского тендера на работы
+                    </small>
+                  )}
                 </div>
 
                 <div className="form-group full-width">
