@@ -10,52 +10,34 @@ import './ObjectDetailPage.css'
 function DocRow({
   doc,
   level = 0,
-  showExpand = false,
   attachments = [],
-  expandedDocs,
-  toggleExpand,
   formatDate,
   onAddAttachment,
   onEdit,
   onDelete,
 }) {
-  const isExpanded = expandedDocs.has(doc.id)
-  const hasAttachments = attachments.length > 0
   const isAttachment = level > 0
 
   return (
     <>
       <tr className={`doc-row-tr ${isAttachment ? 'doc-row-tr-attachment' : ''}`}>
-        <td className="doc-cell-expand" style={{ paddingLeft: `${level * 16 + 8}px` }}>
-          {showExpand ? (
-            <button
-              type="button"
-              className="doc-expand-btn"
-              onClick={() => toggleExpand(doc.id)}
-              title={hasAttachments ? (isExpanded ? 'Свернуть' : 'Развернуть') : 'Нет приложений'}
-              disabled={!hasAttachments}
-            >
-              {hasAttachments ? (isExpanded ? '▼' : '▶') : '·'}
-            </button>
-          ) : (
-            <span className="doc-leaf">└</span>
-          )}
+        <td className="doc-cell-marker" style={{ paddingLeft: `${level * 14 + 8}px` }}>
+          {isAttachment && <span className="doc-attachment-marker" aria-hidden>↳</span>}
+        </td>
+        <td className="doc-cell-name">
+          <div className="doc-name-line">
+            <span className="doc-name-text">{doc.name}</span>
+          </div>
+          {doc.notes && <div className="doc-notes-line">{doc.notes}</div>}
         </td>
         <td className="doc-cell-meta">
           <div>{doc.document_number || <span className="muted">—</span>}</div>
           <div className="doc-date-line">{doc.document_date ? formatDate(doc.document_date) : ''}</div>
         </td>
-        <td className="doc-cell-name">
-          <div className="doc-name-line">
-            {isAttachment && <span className="doc-attachment-tag">📎 Приложение</span>}
-            <span className="doc-name-text">{doc.name}</span>
-          </div>
-          {doc.notes && <div className="doc-notes-line">{doc.notes}</div>}
-        </td>
         <td className="doc-cell-link">
           {doc.signed_link ? (
             <a href={doc.signed_link} target="_blank" rel="noopener noreferrer" className="doc-link-btn doc-link-signed">
-              📥 Открыть
+              Открыть
             </a>
           ) : (
             <span className="muted">—</span>
@@ -64,23 +46,13 @@ function DocRow({
         <td className="doc-cell-link">
           {doc.editable_link ? (
             <a href={doc.editable_link} target="_blank" rel="noopener noreferrer" className="doc-link-btn doc-link-editable">
-              📝 Открыть
+              Открыть
             </a>
           ) : (
             <span className="muted">—</span>
           )}
         </td>
         <td className="doc-cell-actions">
-          {!isAttachment && (
-            <button
-              type="button"
-              className="doc-action-btn"
-              onClick={() => onAddAttachment(doc.id)}
-              title="Добавить приложение"
-            >
-              📎
-            </button>
-          )}
           <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">
             ✏️
           </button>
@@ -89,19 +61,34 @@ function DocRow({
           </button>
         </td>
       </tr>
-      {isExpanded && attachments.map(att => (
+      {/* Вложенные приложения */}
+      {!isAttachment && attachments.map(att => (
         <DocRow
           key={att.id}
           doc={att}
           level={level + 1}
-          expandedDocs={expandedDocs}
-          toggleExpand={toggleExpand}
           formatDate={formatDate}
           onAddAttachment={onAddAttachment}
           onEdit={onEdit}
           onDelete={onDelete}
         />
       ))}
+      {/* Кнопка «+ Приложение» под каждым родительским документом */}
+      {!isAttachment && (
+        <tr className="doc-row-tr-add-attachment">
+          <td colSpan={6}>
+            <button
+              type="button"
+              className="doc-add-attachment-btn"
+              onClick={() => onAddAttachment(doc.id)}
+              title="Добавить приложение к этому документу"
+            >
+              <span aria-hidden>+</span>
+              <span>Приложение</span>
+            </button>
+          </td>
+        </tr>
+      )}
     </>
   )
 }
@@ -774,21 +761,18 @@ function ObjectDetailPage() {
                 <table className="doc-table">
                   <thead>
                     <tr>
-                      <th style={{ width: '36px' }}></th>
-                      <th style={{ width: '140px' }}>№ / дата</th>
+                      <th style={{ width: '28px' }}></th>
                       <th>Наименование</th>
-                      <th style={{ width: '120px' }}>📥 Подписанный</th>
-                      <th style={{ width: '120px' }}>📝 Редактируемый</th>
-                      <th style={{ width: '120px' }}>Действия</th>
+                      <th style={{ width: '140px' }}>№ / дата</th>
+                      <th style={{ width: '120px' }}>Подписанный</th>
+                      <th style={{ width: '120px' }}>Редактируемый</th>
+                      <th style={{ width: '100px' }}>Действия</th>
                     </tr>
                   </thead>
                   <tbody>
                     <DocRow
                       doc={generalContract}
-                      showExpand={true}
                       attachments={contractAttachments}
-                      expandedDocs={expandedDocs}
-                      toggleExpand={toggleExpand}
                       formatDate={formatDate}
                       onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
                       onEdit={handleEditDocument}
@@ -813,12 +797,12 @@ function ObjectDetailPage() {
                 <table className="doc-table">
                   <thead>
                     <tr>
-                      <th style={{ width: '36px' }}></th>
-                      <th style={{ width: '140px' }}>№ / дата</th>
+                      <th style={{ width: '28px' }}></th>
                       <th>Наименование</th>
-                      <th style={{ width: '120px' }}>📥 Подписанный</th>
-                      <th style={{ width: '120px' }}>📝 Редактируемый</th>
-                      <th style={{ width: '120px' }}>Действия</th>
+                      <th style={{ width: '140px' }}>№ / дата</th>
+                      <th style={{ width: '120px' }}>Подписанный</th>
+                      <th style={{ width: '120px' }}>Редактируемый</th>
+                      <th style={{ width: '100px' }}>Действия</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -826,10 +810,7 @@ function ObjectDetailPage() {
                       <DocRow
                         key={doc.id}
                         doc={doc}
-                        showExpand={true}
                         attachments={getAttachments(doc.id)}
-                        expandedDocs={expandedDocs}
-                        toggleExpand={toggleExpand}
                         formatDate={formatDate}
                         onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
                         onEdit={handleEditDocument}
@@ -1128,11 +1109,11 @@ function ObjectDetailPage() {
                 </div>
               </div>
               <div className="form-row">
-                <label>📥 Ссылка на подписанный документ</label>
+                <label>Ссылка на подписанный документ</label>
                 <input type="url" value={documentFormData.signed_link} onChange={(e) => setDocumentFormData({ ...documentFormData, signed_link: e.target.value })} placeholder="https://drive.google.com/..." />
               </div>
               <div className="form-row">
-                <label>📝 Ссылка на редактируемый документ</label>
+                <label>Ссылка на редактируемый документ</label>
                 <input type="url" value={documentFormData.editable_link} onChange={(e) => setDocumentFormData({ ...documentFormData, editable_link: e.target.value })} placeholder="https://drive.google.com/..." />
               </div>
               <div className="form-row">

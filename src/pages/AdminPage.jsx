@@ -343,7 +343,10 @@ function AdminPage() {
     )
   }
 
-  const pendingUsers = userRoles.filter(u => !u.is_approved)
+  // Новая заявка — !is_approved и никогда не входил (last_login_at пустое).
+  // Заблокирован — !is_approved, но last_login_at заполнено (раньше работал, потом отозвали доступ).
+  const pendingUsers = userRoles.filter(u => !u.is_approved && !u.last_login_at)
+  const blockedUsers = userRoles.filter(u => !u.is_approved && !!u.last_login_at)
   const approvedUsers = userRoles.filter(u => u.is_approved)
   const sectionKeys = Object.keys(SECTIONS)
 
@@ -365,7 +368,7 @@ function AdminPage() {
         <div className="admin-tabs">
           <button className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
             Пользователи
-            {pendingUsers.length > 0 && <span className="tab-badge">{pendingUsers.length}</span>}
+            {(pendingUsers.length + blockedUsers.length) > 0 && <span className="tab-badge">{pendingUsers.length + blockedUsers.length}</span>}
           </button>
           <button className={`admin-tab ${activeTab === 'permissions' ? 'active' : ''}`} onClick={() => setActiveTab('permissions')}>
             Права доступа
@@ -383,11 +386,11 @@ function AdminPage() {
             <div className="admin-loading">Загрузка...</div>
           ) : (
             <>
-              {/* Заявки и заблокированные */}
+              {/* Заявки на регистрацию */}
               {pendingUsers.length > 0 && (
                 <div className="admin-section">
                   <h3 className="section-title pending-title">
-                    Заявки и заблокированные
+                    Заявки на регистрацию
                     <span className="pending-count">{pendingUsers.length}</span>
                   </h3>
                   <table className="admin-table">
@@ -395,51 +398,95 @@ function AdminPage() {
                       <tr>
                         <th>Email</th>
                         <th>ФИО</th>
-                        <th>Состояние</th>
                         <th>Роль</th>
                         <th>Дата регистрации</th>
                         <th>Действия</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {pendingUsers.map(ur => {
-                        const isBlocked = ur.has_role
-                        return (
-                          <tr key={ur.user_id} className="pending-row">
-                            <td className="email-cell">{ur.email || '—'}</td>
-                            <td className="name-cell">{ur.full_name || <span className="empty-cell">—</span>}</td>
-                            <td>
-                              <span className={isBlocked ? 'state-badge blocked' : 'state-badge new'}>
-                                {isBlocked ? 'Заблокирован' : 'Новая заявка'}
-                              </span>
-                            </td>
-                            <td>
-                              <select
-                                className="role-select"
-                                value={ur.role || 'engineer'}
-                                onChange={(e) => handleRoleChange(ur.user_id, e.target.value, ur.email)}
-                              >
-                                {employeeRoleKeys.map(r => (
-                                  <option key={r} value={r}>{roleLabels[r]}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="date-cell">
-                              {new Date(ur.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </td>
-                            <td>
-                              <div className="action-btns">
-                                <button className="btn-approve" onClick={() => handleApprove(ur)} title={isBlocked ? 'Разблокировать' : 'Подтвердить'}>
-                                  {isBlocked ? 'Разблок.' : 'Подтвердить'}
-                                </button>
-                                <button className="btn-delete-user" onClick={() => handleDeleteUser(ur.user_id, ur.email)} title="Удалить полностью">
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      })}
+                      {pendingUsers.map(ur => (
+                        <tr key={ur.user_id} className="pending-row">
+                          <td className="email-cell">{ur.email || '—'}</td>
+                          <td className="name-cell">{ur.full_name || <span className="empty-cell">—</span>}</td>
+                          <td>
+                            <select
+                              className="role-select"
+                              value={ur.role || 'engineer'}
+                              onChange={(e) => handleRoleChange(ur.user_id, e.target.value, ur.email)}
+                            >
+                              {employeeRoleKeys.map(r => (
+                                <option key={r} value={r}>{roleLabels[r]}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="date-cell">
+                            {new Date(ur.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td>
+                            <div className="action-btns">
+                              <button className="btn-approve" onClick={() => handleApprove(ur)} title="Подтвердить">
+                                Подтвердить
+                              </button>
+                              <button className="btn-delete-user" onClick={() => handleDeleteUser(ur.user_id, ur.email)} title="Удалить полностью">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Заблокированные пользователи */}
+              {blockedUsers.length > 0 && (
+                <div className="admin-section">
+                  <h3 className="section-title pending-title">
+                    Заблокированные пользователи
+                    <span className="pending-count">{blockedUsers.length}</span>
+                  </h3>
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Email</th>
+                        <th>ФИО</th>
+                        <th>Роль</th>
+                        <th>Последний вход</th>
+                        <th>Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {blockedUsers.map(ur => (
+                        <tr key={ur.user_id} className="pending-row">
+                          <td className="email-cell">{ur.email || '—'}</td>
+                          <td className="name-cell">{ur.full_name || <span className="empty-cell">—</span>}</td>
+                          <td>
+                            <select
+                              className="role-select"
+                              value={ur.role || 'engineer'}
+                              onChange={(e) => handleRoleChange(ur.user_id, e.target.value, ur.email)}
+                            >
+                              {employeeRoleKeys.map(r => (
+                                <option key={r} value={r}>{roleLabels[r]}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="date-cell">
+                            {ur.last_login_at ? new Date(ur.last_login_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                          </td>
+                          <td>
+                            <div className="action-btns">
+                              <button className="btn-approve" onClick={() => handleApprove(ur)} title="Разблокировать">
+                                Разблок.
+                              </button>
+                              <button className="btn-delete-user" onClick={() => handleDeleteUser(ur.user_id, ur.email)} title="Удалить полностью">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>

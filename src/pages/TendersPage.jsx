@@ -98,10 +98,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   const statusOptions = ['Заявка на тендер', 'Подготовка ВОР', 'Идет тендерная процедура', 'Завершен', 'Приостановка тендера']
   // Отдельный набор статусов для тендеров на материалы — не пересекается со статусами основного тендера.
-  const materialsStatusOptions = ['Не начат', 'В работе', 'Завершён']
+  // «Не нужно» — финальный статус (материалы закупать не требуется), считается как завершённый.
+  const materialsStatusOptions = ['Не начат', 'В работе', 'Завершён', 'Не нужно']
   const currentStatusOptions = isMaterialsView ? materialsStatusOptions : statusOptions
-  // Значение «завершено» в текущем наборе статусов (для фильтрации вкладки «Завершённые»).
-  const completedStatusValue = isMaterialsView ? 'Завершён' : 'Завершен'
+  // Для тендеров на материалы «завершённые» — это «Завершён» и «Не нужно».
+  // Для основных тендеров — только «Завершен».
+  const isCompletedStatus = (status) => isMaterialsView
+    ? (status === 'Завершён' || status === 'Не нужно')
+    : (status === 'Завершен')
   const initialStatusValue = isMaterialsView ? 'Не начат' : 'Заявка на тендер'
 
   const counterpartyStatusOptions = [
@@ -1126,6 +1130,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       'Не начат': 'status-not-started',
       'В работе': 'status-in-progress',
       'Завершён': 'status-completed',
+      'Не нужно': 'status-suspended',
       // legacy fallbacks (на случай несмигрированных данных)
       'Ожидание ВОР': 'status-waiting-vor',
       'Принято в работу': 'status-completed',
@@ -1144,10 +1149,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (!tender.deleted_at) return false
     } else if (activeTab === 'completed') {
       if (tender.deleted_at) return false
-      if (tender.status !== completedStatusValue) return false
+      if (!isCompletedStatus(tender.status)) return false
     } else {
       if (tender.deleted_at) return false
-      if (tender.status === completedStatusValue) return false
+      if (isCompletedStatus(tender.status)) return false
     }
     // Фильтр по объекту
     if (objectFilter && tender.object_id !== objectFilter) return false
@@ -1200,13 +1205,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   // Подсчет количества тендеров для каждой вкладки (deleted_at-aware)
-  const activeTendersCount = tenders.filter(t => !t.deleted_at && t.status !== completedStatusValue).length
-  const completedTendersCount = tenders.filter(t => !t.deleted_at && t.status === completedStatusValue).length
+  const activeTendersCount = tenders.filter(t => !t.deleted_at && !isCompletedStatus(t.status)).length
+  const completedTendersCount = tenders.filter(t => !t.deleted_at && isCompletedStatus(t.status)).length
   const deletedTendersCount = tenders.filter(t => t.deleted_at).length
 
   // Проверка просроченности
   const today = new Date().toISOString().split('T')[0]
-  const isOverdue = (tender) => tender.end_date && tender.end_date < today && tender.status !== completedStatusValue
+  const isOverdue = (tender) => tender.end_date && tender.end_date < today && !isCompletedStatus(tender.status)
 
   // Уникальные объекты из тендеров для фильтра
   const tenderObjectIds = [...new Set(tenders.map(t => t.object_id).filter(Boolean))]
@@ -1378,7 +1383,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <thead>
                 <tr>
                   <th style={{ width: '180px' }}>Объект</th>
-                  <th style={{ minWidth: '140px' }}>Описание работ</th>
+                  <th style={{ width: '150px' }}>Описание работ</th>
                   <th style={{ width: '160px' }}>Ответственный</th>
                   <th
                     className="sortable-th"

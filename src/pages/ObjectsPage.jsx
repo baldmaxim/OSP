@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
+import { generateUUID } from '../utils/uuid'
 import * as XLSX from 'xlsx'
 import '../components/GeneralInfo.css'
 
@@ -321,7 +322,7 @@ function ObjectsPage() {
     setUploadingPhoto(true)
     try {
       const ext = file.name.split('.').pop()
-      const fileName = `${crypto.randomUUID()}.${ext}`
+      const fileName = `${generateUUID()}.${ext}`
 
       const { error: uploadError } = await supabase.storage
         .from('object-photos')

@@ -206,25 +206,27 @@
 }
 
 .btn-add {
-  width: 28px;
-  height: 28px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.25rem;
+  min-height: 28px;
+  padding: 0.3125rem 0.75rem;
   background: var(--primary-color);
   color: white;
   border: none;
   border-radius: 6px;
-  font-size: 1.1rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: filter 0.15s ease, transform 0.15s ease;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .btn-add:hover {
-  opacity: 0.85;
-  transform: scale(1.05);
+  filter: brightness(1.08);
+  transform: translateY(-1px);
 }
 
 /* Document List */
@@ -407,48 +409,45 @@
 }
 
 .doc-row-tr-attachment td {
-  background: rgba(0, 0, 0, 0.02);
+  background: rgba(37, 99, 235, 0.03);
 }
 
 [data-theme='dark'] .doc-row-tr-attachment td {
-  background: rgba(255, 255, 255, 0.025);
+  background: rgba(96, 165, 250, 0.06);
 }
 
-.doc-cell-expand {
-  width: 36px;
+/* Левый цветной маркер у строк-приложений */
+.doc-row-tr-attachment td:first-child {
+  position: relative;
 }
 
-.doc-expand-btn {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  border-radius: 4px;
-  padding: 0;
+.doc-row-tr-attachment td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #2563eb;
 }
 
-.doc-expand-btn:hover:not([disabled]) {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.doc-expand-btn[disabled] {
-  cursor: default;
-  opacity: 0.35;
-}
-
-.doc-leaf {
-  display: inline-block;
-  width: 16px;
+.doc-cell-marker {
+  width: 28px;
   color: var(--text-tertiary);
-  font-size: 0.6875rem;
+  text-align: right;
+  font-size: 0.875rem;
+}
+
+.doc-attachment-marker {
+  display: inline-block;
+  color: #2563eb;
+  font-weight: 700;
+  font-size: 0.9375rem;
   line-height: 1;
+}
+
+[data-theme='dark'] .doc-attachment-marker {
+  color: #93c5fd;
 }
 
 .doc-cell-name {
@@ -462,20 +461,58 @@
   flex-wrap: wrap;
 }
 
+.doc-row-tr-attachment .doc-name-text {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .doc-name-text {
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.doc-attachment-tag {
-  font-size: 0.6875rem;
+/* Кнопка «+ Приложение» под каждым родительским документом */
+.doc-row-tr-add-attachment td {
+  padding: 0.25rem 0.75rem 0.5rem;
+  border-top: 0;
+  background: transparent;
+}
+
+.doc-add-attachment-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  margin-left: 28px;
+  padding: 0.25rem 0.625rem 0.25rem 0.5rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  color: var(--text-tertiary);
-  background: var(--bg-tertiary);
-  padding: 0.0625rem 0.4375rem;
-  border-radius: 999px;
-  border: 1px solid var(--border-color);
-  white-space: nowrap;
+  color: #2563eb;
+  background: transparent;
+  border: 1px dashed rgba(37, 99, 235, 0.35);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.doc-add-attachment-btn:hover {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: #2563eb;
+}
+
+[data-theme='dark'] .doc-add-attachment-btn {
+  color: #93c5fd;
+  border-color: rgba(96, 165, 250, 0.4);
+}
+
+[data-theme='dark'] .doc-add-attachment-btn:hover {
+  background: rgba(96, 165, 250, 0.12);
+  border-color: #60a5fa;
+}
+
+.doc-add-attachment-btn > span:first-child {
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .doc-notes-line {

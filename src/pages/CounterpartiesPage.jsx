@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import { formatPhone } from '../utils/phoneFormat'
+import { generateUUID } from '../utils/uuid'
 import { useRole } from '../contexts/RoleContext'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
@@ -212,7 +213,7 @@ function CounterpartiesPage() {
       // не срабатывает (и Postgres ругается "null value in column id").
       if (tempContacts.length > 0) {
         const contactsToInsert = tempContacts.map((contact) => ({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           full_name: contact.full_name,
           position: contact.position || '',
           phone: contact.phone || '',
