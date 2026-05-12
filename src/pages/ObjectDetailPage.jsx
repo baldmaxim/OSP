@@ -41,16 +41,16 @@ function DocRow({
             <span className="doc-leaf">└</span>
           )}
         </td>
+        <td className="doc-cell-meta">
+          <div>{doc.document_number || <span className="muted">—</span>}</div>
+          <div className="doc-date-line">{doc.document_date ? formatDate(doc.document_date) : ''}</div>
+        </td>
         <td className="doc-cell-name">
           <div className="doc-name-line">
             {isAttachment && <span className="doc-attachment-tag">📎 Приложение</span>}
             <span className="doc-name-text">{doc.name}</span>
           </div>
           {doc.notes && <div className="doc-notes-line">{doc.notes}</div>}
-        </td>
-        <td className="doc-cell-meta">
-          <div>{doc.document_number || <span className="muted">—</span>}</div>
-          <div className="doc-date-line">{doc.document_date ? formatDate(doc.document_date) : ''}</div>
         </td>
         <td className="doc-cell-link">
           {doc.signed_link ? (
@@ -775,8 +775,8 @@ function ObjectDetailPage() {
                   <thead>
                     <tr>
                       <th style={{ width: '36px' }}></th>
-                      <th>Наименование</th>
                       <th style={{ width: '140px' }}>№ / дата</th>
+                      <th>Наименование</th>
                       <th style={{ width: '120px' }}>📥 Подписанный</th>
                       <th style={{ width: '120px' }}>📝 Редактируемый</th>
                       <th style={{ width: '120px' }}>Действия</th>
@@ -814,8 +814,8 @@ function ObjectDetailPage() {
                   <thead>
                     <tr>
                       <th style={{ width: '36px' }}></th>
-                      <th>Наименование</th>
                       <th style={{ width: '140px' }}>№ / дата</th>
+                      <th>Наименование</th>
                       <th style={{ width: '120px' }}>📥 Подписанный</th>
                       <th style={{ width: '120px' }}>📝 Редактируемый</th>
                       <th style={{ width: '120px' }}>Действия</th>
