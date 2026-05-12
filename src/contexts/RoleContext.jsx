@@ -102,8 +102,8 @@ export function RoleProvider({ children }) {
     }
   }, [])
 
-  // Суперадмины — автоматическое подтверждение без ожидания
-  const SUPER_ADMINS = ['sadovnikov.d.y@su10.ru']
+  // Суперадмины — автоматическое подтверждение без ожидания и всегда роль admin
+  const SUPER_ADMINS = ['sadovnikov.d.y@su10.ru', 'baldmaxim@gmail.com']
 
   // Загрузить роль пользователя из БД
   const fetchUserRole = useCallback(async (userId, userEmail) => {

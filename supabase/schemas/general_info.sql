@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   full_name VARCHAR(255) NOT NULL,
   position VARCHAR(100) NOT NULL,
-  phone VARCHAR(50) NOT NULL,
+  phone VARCHAR(50),
   email VARCHAR(255),
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

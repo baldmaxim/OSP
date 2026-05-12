@@ -65,6 +65,13 @@
   animation: status-dropdown-in 0.12s ease-out;
 }
 
+/* Меню рендерится в document.body через portal — координаты фиксированные, чтобы не обрезалось overflow */
+.status-dropdown-menu-portal {
+  position: fixed;
+  right: auto;
+  z-index: 9999;
+}
+
 @keyframes status-dropdown-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }

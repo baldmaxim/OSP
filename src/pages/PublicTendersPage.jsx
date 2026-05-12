@@ -1,0 +1,195 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../supabase'
+import '../components/Tenders.css'
+import './PublicTendersPage.css'
+
+function PublicTendersPage() {
+  const [tenders, setTenders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [department, setDepartment] = useState('all') // 'all' | 'construction' | 'warranty'
+  const [searchQuery, setSearchQuery] = useState('')
+
+  useEffect(() => {
+    fetchPublicTenders()
+  }, [])
+
+  const fetchPublicTenders = async () => {
+    try {
+      setLoading(true)
+      // Только открытые тендеры (идёт тендерная процедура), не дочерние на материалы,
+      // не удалённые. Поля минимальные: гостям доступен ограниченный набор данных.
+      const { data, error: err } = await supabase
+        .from('tenders')
+        .select('id, work_description, start_date, end_date, status, tender_package_link, tender_type, deleted_at, objects(name, address, map_link, status)')
+        .eq('status', 'Идет тендерная процедура')
+        .order('start_date', { ascending: false })
+
+      if (err) throw err
+
+      const filtered = (data || []).filter(t =>
+        !t.deleted_at
+        && (!t.tender_type || t.tender_type === 'main')
+        && (t.objects?.status === 'main_construction' || t.objects?.status === 'warranty_service')
+      )
+      setTenders(filtered)
+    } catch (err) {
+      console.error('Ошибка загрузки открытых тендеров:', err.message)
+      setError('Не удалось загрузить открытые тендеры. Попробуйте обновить страницу позже.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatDate = (d) => {
+    if (!d) return '—'
+    try { return new Date(d).toLocaleDateString('ru-RU') } catch { return d }
+  }
+
+  const visibleTenders = tenders.filter(t => {
+    if (department === 'construction' && t.objects?.status !== 'main_construction') return false
+    if (department === 'warranty' && t.objects?.status !== 'warranty_service') return false
+    const q = searchQuery.trim().toLowerCase()
+    if (q) {
+      const haystack = [
+        t.objects?.name,
+        t.objects?.address,
+        t.work_description,
+      ].filter(Boolean).join(' ').toLowerCase()
+      if (!haystack.includes(q)) return false
+    }
+    return true
+  })
+
+  const countConst = tenders.filter(t => t.objects?.status === 'main_construction').length
+  const countWar = tenders.filter(t => t.objects?.status === 'warranty_service').length
+
+  return (
+    <div className="public-tenders-page">
+      <header className="public-header">
+        <div className="public-header-inner">
+          <div className="public-brand">
+            <h1>ООО «СУ-10»</h1>
+            <p className="public-subtitle">Открытые тендеры для подрядчиков</p>
+          </div>
+          <a href="/login" className="public-login-link">Войти →</a>
+        </div>
+      </header>
+
+      <main className="public-content">
+        <section className="public-intro">
+          <h2>Активные тендерные процедуры</h2>
+          <p>
+            Ниже представлены открытые тендеры, по которым принимаются коммерческие предложения от подрядчиков.
+            Для участия скачайте тендерный пакет и направьте КП через контактное лицо, указанное в документации.
+          </p>
+        </section>
+
+        <div className="public-toolbar">
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="🔍 Поиск по объекту, адресу или описанию работ..."
+            className="public-search"
+          />
+          <div className="public-dept-tabs">
+            <button
+              className={`public-dept-tab ${department === 'all' ? 'active' : ''}`}
+              onClick={() => setDepartment('all')}
+            >
+              Все <span className="public-dept-count">{tenders.length}</span>
+            </button>
+            <button
+              className={`public-dept-tab ${department === 'construction' ? 'active' : ''}`}
+              onClick={() => setDepartment('construction')}
+            >
+              Основное строительство <span className="public-dept-count">{countConst}</span>
+            </button>
+            <button
+              className={`public-dept-tab ${department === 'warranty' ? 'active' : ''}`}
+              onClick={() => setDepartment('warranty')}
+            >
+              Гарантийный отдел <span className="public-dept-count">{countWar}</span>
+            </button>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="public-state">Загрузка…</div>
+        )}
+        {error && (
+          <div className="public-state public-state-error">{error}</div>
+        )}
+        {!loading && !error && visibleTenders.length === 0 && (
+          <div className="public-state">
+            Сейчас открытых тендеров нет.{searchQuery || department !== 'all' ? ' Попробуйте сбросить фильтры.' : ''}
+          </div>
+        )}
+
+        {!loading && !error && visibleTenders.length > 0 && (
+          <div className="public-tenders-grid">
+            {visibleTenders.map(t => (
+              <article key={t.id} className="public-tender-card">
+                <div className="public-tender-header">
+                  <span className={`public-dept-badge ${t.objects?.status === 'warranty_service' ? 'warranty' : 'construction'}`}>
+                    {t.objects?.status === 'warranty_service' ? '🛡️ Гарантийный отдел' : '🏗️ Основное строительство'}
+                  </span>
+                </div>
+
+                <h3 className="public-tender-object">{t.objects?.name || 'Объект не указан'}</h3>
+                {t.objects?.address && (
+                  <p className="public-tender-address">{t.objects.address}</p>
+                )}
+                {t.objects?.map_link && (
+                  <a
+                    href={t.objects.map_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="yandex-map-link"
+                  >
+                    <span aria-hidden>🗺️</span>
+                    <span>Месторасположение</span>
+                  </a>
+                )}
+
+                <div className="public-tender-section">
+                  <span className="public-tender-label">Описание работ</span>
+                  <div className="public-tender-description">{t.work_description || '—'}</div>
+                </div>
+
+                <div className="public-tender-section public-tender-dates">
+                  <span className="public-tender-label">Планируемые сроки выполнения работ</span>
+                  <div className="public-tender-value">
+                    {formatDate(t.start_date)} — {formatDate(t.end_date)}
+                  </div>
+                </div>
+
+                <div className="public-tender-footer">
+                  {t.tender_package_link ? (
+                    <a
+                      href={t.tender_package_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="public-tender-package-btn"
+                    >
+                      📎 Тендерный пакет
+                    </a>
+                  ) : (
+                    <span className="public-tender-package-empty">Тендерный пакет не приложен</span>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </main>
+
+      <footer className="public-footer">
+        <span>© ООО «СУ-10», Отдел сопровождения подрядчиков</span>
+      </footer>
+    </div>
+  )
+}
+
+export default PublicTendersPage

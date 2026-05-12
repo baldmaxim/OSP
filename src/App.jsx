@@ -31,6 +31,7 @@ const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const ContractDetailPage = lazy(() => import('./pages/ContractDetailPage'))
 const DocumentCheckPage = lazy(() => import('./pages/DocumentCheckPage'))
+const PublicTendersPage = lazy(() => import('./pages/PublicTendersPage'))
 
 const PageLoader = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh', color: 'var(--text-tertiary)' }}>
@@ -100,6 +101,8 @@ function AuthRoutes() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
+        {/* Публичная страница тендеров — доступна без авторизации */}
+        <Route path="/public/tenders" element={<PublicTendersPage />} />
         <Route
           path="/login"
           element={

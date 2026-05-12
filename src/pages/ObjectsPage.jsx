@@ -189,11 +189,25 @@ function ObjectsPage() {
 
         if (validBounds.length > 0) {
           try {
-            mapInstance.setBounds(validBounds, {
-              checkZoomRange: true,
-              zoomMargin: 50
-            })
+            if (validBounds.length === 1) {
+              // Один объект — центрируем на нём с разумным зумом
+              mapInstance.setCenter(validBounds[0], 14, { duration: 0 })
+            } else {
+              // Несколько объектов — вычисляем bounding box и подгоняем зум,
+              // чтобы все метки помещались в одно поле без ручного масштабирования.
+              const lats = validBounds.map(c => c[0])
+              const lons = validBounds.map(c => c[1])
+              const swLat = Math.min(...lats)
+              const swLon = Math.min(...lons)
+              const neLat = Math.max(...lats)
+              const neLon = Math.max(...lons)
+              mapInstance.setBounds([[swLat, swLon], [neLat, neLon]], {
+                checkZoomRange: true,
+                zoomMargin: 60
+              })
+            }
           } catch (boundsError) {
+            console.error('Ошибка setBounds:', boundsError)
             if (validBounds.length > 0) {
               mapInstance.setCenter(validBounds[0], 12)
             }

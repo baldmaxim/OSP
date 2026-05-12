@@ -1,25 +1,45 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import './StatusDropdown.css'
 
 function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, ariaLabel = 'Статус' }) {
   const [isOpen, setIsOpen] = useState(false)
-  const rootRef = useRef(null)
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0 })
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
+
+  // Позиционируем меню относительно триггера (фиксированные координаты — не обрезаются overflow родителей)
+  const updatePosition = () => {
+    const el = triggerRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setMenuPos({ top: r.bottom + 4, left: r.left, width: r.width })
+  }
+
+  useLayoutEffect(() => {
+    if (isOpen) updatePosition()
+  }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return
     const onDocMouseDown = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        setIsOpen(false)
-      }
+      if (triggerRef.current?.contains(e.target)) return
+      if (menuRef.current?.contains(e.target)) return
+      setIsOpen(false)
     }
     const onKeyDown = (e) => {
       if (e.key === 'Escape') setIsOpen(false)
     }
+    const onScrollOrResize = () => updatePosition()
     document.addEventListener('mousedown', onDocMouseDown)
     document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
     return () => {
       document.removeEventListener('mousedown', onDocMouseDown)
       document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
     }
   }, [isOpen])
 
@@ -27,8 +47,9 @@ function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, a
   const display = getDisplay ? getDisplay(value) : value
 
   return (
-    <div ref={rootRef} className={`status-dropdown ${isOpen ? 'open' : ''}`}>
+    <div className={`status-dropdown ${isOpen ? 'open' : ''}`}>
       <button
+        ref={triggerRef}
         type="button"
         className={`status-dropdown-trigger ${currentClass}`}
         onClick={() => setIsOpen((v) => !v)}
@@ -39,8 +60,13 @@ function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, a
         <span className="status-dropdown-label">{display}</span>
         <span className="status-dropdown-chevron" aria-hidden>▾</span>
       </button>
-      {isOpen && (
-        <ul className="status-dropdown-menu" role="listbox">
+      {isOpen && createPortal(
+        <ul
+          ref={menuRef}
+          className="status-dropdown-menu status-dropdown-menu-portal"
+          role="listbox"
+          style={{ top: menuPos.top, left: menuPos.left, minWidth: Math.max(menuPos.width, 220) }}
+        >
           {options.map((opt) => {
             const isActive = opt === value
             return (
@@ -60,7 +86,8 @@ function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, a
               </li>
             )
           })}
-        </ul>
+        </ul>,
+        document.body
       )}
     </div>
   )

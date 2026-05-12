@@ -11,13 +11,19 @@ function ContactsPage() {
   const [editingContact, setEditingContact] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [objectFilter, setObjectFilter] = useState('') // '' | 'office' | objectId
-  const [activeTab, setActiveTab] = useState('contacts') // 'contacts' | 'departments'
+  const [activeTab, setActiveTab] = useState('contacts') // 'contacts' | 'departments' | 'positions'
 
   // --- Departments ---
   const [departments, setDepartments] = useState([])
   const [showDeptModal, setShowDeptModal] = useState(false)
   const [editingDept, setEditingDept] = useState(null)
   const [deptForm, setDeptForm] = useState({ name: '', description: '' })
+
+  // --- Positions (должности) ---
+  const [positions, setPositions] = useState([])
+  const [showPosModal, setShowPosModal] = useState(false)
+  const [editingPos, setEditingPos] = useState(null)
+  const [posForm, setPosForm] = useState({ name: '', description: '' })
 
   const [contactFormData, setContactFormData] = useState({
     full_name: '',
@@ -31,9 +37,10 @@ function ContactsPage() {
 
   const defaultPositions = ['Руководитель', 'Экономист', 'Старший инженер', 'Инженер', 'Прораб']
 
-  // Собираем уникальные должности из существующих контактов + дефолтные
+  // Собираем уникальные должности: справочник positions + использованные в контактах + дефолтные
   const allPositions = [...new Set([
     ...defaultPositions,
+    ...positions.map(p => p.name),
     ...contacts.map(c => c.position).filter(Boolean)
   ])].sort()
 
@@ -41,7 +48,93 @@ function ContactsPage() {
     fetchContacts()
     fetchObjects()
     fetchDepartments()
+    fetchPositions()
   }, [])
+
+  const fetchPositions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('positions')
+        .select('*')
+        .order('name', { ascending: true })
+      if (error) throw error
+      setPositions(data || [])
+    } catch (err) {
+      console.warn('Не удалось загрузить справочник должностей (таблица positions?):', err.message)
+      setPositions([])
+    }
+  }
+
+  const handleOpenAddPos = () => {
+    setEditingPos(null)
+    setPosForm({ name: '', description: '' })
+    setShowPosModal(true)
+  }
+
+  const handleOpenEditPos = (pos) => {
+    setEditingPos(pos)
+    setPosForm({ name: pos.name, description: pos.description || '' })
+    setShowPosModal(true)
+  }
+
+  const handleSubmitPos = async (e) => {
+    e.preventDefault()
+    const name = posForm.name.trim()
+    if (!name) {
+      alert('Укажите название должности')
+      return
+    }
+    const payload = {
+      name,
+      description: posForm.description.trim() || null,
+      updated_at: new Date().toISOString(),
+    }
+    try {
+      if (editingPos) {
+        const { error } = await supabase
+          .from('positions')
+          .update(payload)
+          .eq('id', editingPos.id)
+        if (error) throw error
+        // Если у должности было старое имя — обновим всех contacts с этим position
+        if (editingPos.name !== name) {
+          await supabase
+            .from('contacts')
+            .update({ position: name })
+            .eq('position', editingPos.name)
+        }
+      } else {
+        const { error } = await supabase.from('positions').insert([payload])
+        if (error) throw error
+      }
+      setShowPosModal(false)
+      setEditingPos(null)
+      setPosForm({ name: '', description: '' })
+      fetchPositions()
+      fetchContacts()
+    } catch (err) {
+      if (err.code === '23505') {
+        alert('Должность с таким названием уже существует')
+      } else {
+        alert('Ошибка сохранения должности: ' + err.message)
+      }
+    }
+  }
+
+  const handleDeletePos = async (pos) => {
+    const used = contacts.filter(c => c.position === pos.name).length
+    const msg = used > 0
+      ? `Должность «${pos.name}» используется у ${used} сотрудник(ов). Удалить из справочника? У сотрудников значение останется текстом.`
+      : `Удалить должность «${pos.name}»?`
+    if (!window.confirm(msg)) return
+    try {
+      const { error } = await supabase.from('positions').delete().eq('id', pos.id)
+      if (error) throw error
+      fetchPositions()
+    } catch (err) {
+      alert('Ошибка удаления: ' + err.message)
+    }
+  }
 
   const fetchDepartments = async () => {
     try {
@@ -151,11 +244,12 @@ function ContactsPage() {
   const handleContactSubmit = async (e) => {
     e.preventDefault()
     try {
-      // Преобразуем пустые строки в null для FK-полей
+      // Преобразуем пустые строки в null для FK-полей и для необязательного телефона
       const dataToSave = {
         ...contactFormData,
         object_id: contactFormData.object_id || null,
         department_id: contactFormData.department_id || null,
+        phone: contactFormData.phone?.trim() || null,
       }
 
       if (editingContact) {
@@ -289,6 +383,13 @@ function ContactsPage() {
           Отделы
           {departments.length > 0 && <span className="contacts-tab-count">{departments.length}</span>}
         </button>
+        <button
+          className={`contacts-tab ${activeTab === 'positions' ? 'active' : ''}`}
+          onClick={() => setActiveTab('positions')}
+        >
+          Должности
+          {positions.length > 0 && <span className="contacts-tab-count">{positions.length}</span>}
+        </button>
       </div>
 
       {loading ? (
@@ -342,6 +443,60 @@ function ContactsPage() {
             </table>
           </div>
         </div>
+      ) : activeTab === 'positions' ? (
+        <div className="section-content">
+          <div className="section-actions contacts-toolbar">
+            <button className="btn-primary" onClick={handleOpenAddPos}>
+              + Добавить должность
+            </button>
+          </div>
+          <div className="table-container">
+            <table className="data-table contacts-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '40px', textAlign: 'center' }}>№</th>
+                  <th>Название должности</th>
+                  <th>Описание</th>
+                  <th style={{ width: '120px', textAlign: 'right' }}>Сотрудников</th>
+                  <th style={{ width: '72px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="no-data">
+                      Должностей нет. Добавьте первую должность.
+                    </td>
+                  </tr>
+                ) : (
+                  positions.map((pos, idx) => {
+                    const used = contacts.filter(c => c.position === pos.name).length
+                    return (
+                      <tr key={pos.id}>
+                        <td className="num-cell">{idx + 1}</td>
+                        <td>{pos.name}</td>
+                        <td className="muted">{pos.description || '—'}</td>
+                        <td className="num-cell">{used}</td>
+                        <td className="actions-cell">
+                          <button
+                            className="btn-icon btn-edit"
+                            onClick={() => handleOpenEditPos(pos)}
+                            title="Редактировать"
+                          >✏️</button>
+                          <button
+                            className="btn-icon btn-delete"
+                            onClick={() => handleDeletePos(pos)}
+                            title="Удалить"
+                          >🗑️</button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
         <div className="section-content">
           <div className="section-actions contacts-toolbar">
@@ -375,11 +530,11 @@ function ContactsPage() {
                 <tr>
                   <th style={{ width: '40px', textAlign: 'center' }}>№</th>
                   <th>ФИО</th>
+                  <th style={{ width: '180px' }}>Объект/Офис</th>
                   <th>Должность</th>
                   <th style={{ width: '180px' }}>Отдел</th>
                   <th>Телефон</th>
                   <th>Email</th>
-                  <th style={{ width: '180px' }}>Объект/Офис</th>
                   <th style={{ width: '72px' }}></th>
                 </tr>
               </thead>
@@ -408,7 +563,7 @@ function ContactsPage() {
                   if (contacts.length === 0) {
                     return (
                       <tr>
-                        <td colSpan="8" className="no-data">
+                        <td colSpan="8" className="no-data" style={{ textAlign: 'center' }}>
                           Нет контактов. Добавьте первый контакт.
                         </td>
                       </tr>
@@ -417,7 +572,7 @@ function ContactsPage() {
                   if (visibleContacts.length === 0) {
                     return (
                       <tr>
-                        <td colSpan="8" className="no-data">
+                        <td colSpan="8" className="no-data" style={{ textAlign: 'center' }}>
                           Ничего не найдено{q && ` по запросу «${searchQuery}»`}
                         </td>
                       </tr>
@@ -427,6 +582,19 @@ function ContactsPage() {
                     <tr key={contact.id}>
                       <td className="num-cell">{idx + 1}</td>
                       <td>{contact.full_name}</td>
+                      <td>
+                        <select
+                          className="inline-object-select"
+                          value={contact.object_id || ''}
+                          onChange={(e) => handleInlineObjectChange(contact.id, e.target.value)}
+                          title="Привязать к объекту или оставить «Офис»"
+                        >
+                          <option value="">Офис</option>
+                          {objects.map(obj => (
+                            <option key={obj.id} value={obj.id}>{obj.name}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td className="muted">{contact.position}</td>
                       <td>
                         <select
@@ -441,21 +609,8 @@ function ContactsPage() {
                           ))}
                         </select>
                       </td>
-                      <td>{contact.phone}</td>
+                      <td>{contact.phone || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>—</span>}</td>
                       <td>{contact.email}</td>
-                      <td>
-                        <select
-                          className="inline-object-select"
-                          value={contact.object_id || ''}
-                          onChange={(e) => handleInlineObjectChange(contact.id, e.target.value)}
-                          title="Привязать к объекту или оставить «Офис»"
-                        >
-                          <option value="">Офис</option>
-                          {objects.map(obj => (
-                            <option key={obj.id} value={obj.id}>{obj.name}</option>
-                          ))}
-                        </select>
-                      </td>
                       <td className="actions-cell">
                         <button
                           className="btn-icon btn-edit"
@@ -619,14 +774,13 @@ function ContactsPage() {
                 </div>
 
                 <div className="form-group">
-                  <label>Телефон *</label>
+                  <label>Телефон</label>
                   <input
                     type="tel"
                     value={contactFormData.phone}
                     onChange={(e) =>
                       setContactFormData({ ...contactFormData, phone: formatPhone(e.target.value) })
                     }
-                    required
                     placeholder="+7(916)712-69-10"
                   />
                 </div>
@@ -708,6 +862,57 @@ function ContactsPage() {
                 </button>
                 <button type="submit" className="btn-primary">
                   {editingDept ? 'Сохранить' : 'Добавить'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: добавление/редактирование должности */}
+      {showPosModal && (
+        <div className="modal-overlay" onClick={() => setShowPosModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3>{editingPos ? 'Редактировать должность' : 'Новая должность'}</h3>
+              <button
+                className="modal-close"
+                onClick={() => { setShowPosModal(false); setEditingPos(null) }}
+              >×</button>
+            </div>
+            <form onSubmit={handleSubmitPos}>
+              <div className="form-grid">
+                <div className="form-group full-width">
+                  <label>Название должности *</label>
+                  <input
+                    type="text"
+                    value={posForm.name}
+                    onChange={(e) => setPosForm({ ...posForm, name: e.target.value })}
+                    required
+                    autoFocus
+                    placeholder="Например, Инженер ОСП"
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label>Описание</label>
+                  <textarea
+                    value={posForm.description}
+                    onChange={(e) => setPosForm({ ...posForm, description: e.target.value })}
+                    rows={3}
+                    placeholder="Краткое описание должности (необязательно)"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => { setShowPosModal(false); setEditingPos(null) }}
+                >
+                  Отмена
+                </button>
+                <button type="submit" className="btn-primary">
+                  {editingPos ? 'Сохранить' : 'Добавить'}
                 </button>
               </div>
             </form>
