@@ -689,6 +689,47 @@
   transform: none;
 }
 
+/* Двухслойный селект статуса: видимый бейдж с переносом + невидимый <select> поверх */
+.status-select-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 30px;
+}
+
+.status-badge-display {
+  display: block;
+  padding: 0.25rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 6px;
+  border: 1px solid currentColor;
+  line-height: 1.2;
+  white-space: normal;
+  word-wrap: break-word;
+  pointer-events: none;
+}
+
+.status-select-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.status-select-wrap:hover .status-badge-display {
+  filter: brightness(0.97);
+}
+
 .tenders-page .btn-primary,
 .tenders-page .btn-secondary {
   padding: 0.4375rem 0.875rem;
@@ -806,24 +847,24 @@
 .yandex-map-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.125rem;
-  padding: 0.125rem 0.5rem;
-  border-radius: 9999px;
-  background: linear-gradient(135deg, #ffdb4d 0%, #ffc926 100%);
-  color: #2b2b2b;
+  gap: 0.3125rem;
+  margin-top: 0.1875rem;
+  padding: 0.1875rem 0.5625rem;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
   font-size: 0.6875rem;
-  font-weight: 600;
+  font-weight: 500;
   text-decoration: none;
-  border: 1px solid #e0b900;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  border: 1px solid var(--border-color);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   white-space: nowrap;
 }
 
 .yandex-map-link:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  background: var(--hover-bg, var(--bg-secondary));
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
 }
 
 .phase-done {

@@ -55,23 +55,23 @@
 .yandex-map-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.1875rem 0.625rem;
-  border-radius: 9999px;
-  background: linear-gradient(135deg, #ffdb4d 0%, #ffc926 100%);
-  color: #2b2b2b;
-  font-size: 0.75rem;
-  font-weight: 600;
+  gap: 0.3125rem;
+  padding: 0.25rem 0.6875rem;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
   text-decoration: none;
-  border: 1px solid #e0b900;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  border: 1px solid var(--border-color);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   white-space: nowrap;
 }
 
 .yandex-map-link:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  background: var(--hover-bg, var(--bg-secondary));
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
 }
 
 .tender-work-label {

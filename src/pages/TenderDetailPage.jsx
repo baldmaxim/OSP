@@ -401,7 +401,7 @@ function TenderDetailPage() {
                 className="yandex-map-link"
               >
                 <span aria-hidden>🗺️</span>
-                <span>Яндекс.Карты</span>
+                <span>Месторасположение</span>
               </a>
             </div>
           )}

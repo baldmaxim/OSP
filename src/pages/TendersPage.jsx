@@ -1330,7 +1330,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <th style={{ width: '44px' }}></th>
               <th style={{ minWidth: '180px' }}>Наименование<br />объекта</th>
               <th style={{ minWidth: '180px' }}>Описание работ</th>
-              {activeTab !== 'completed' && <th style={{ width: '140px' }}>Статус</th>}
+              {activeTab !== 'completed' && <th style={{ width: '110px' }}>Статус</th>}
               {activeTab === 'completed' && <th style={{ width: '140px' }}>Победитель</th>}
               <th
                 className="sortable-th"
@@ -1345,7 +1345,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 <th style={{ width: '110px' }}>ВОРы<br />и&nbsp;РД</th>
               )}
               {activeTab !== 'completed' && (
-                <th style={{ width: '100px' }}>Тендерный<br />пакет</th>
+                <th style={{ width: '120px' }}>Тендерный<br />пакет</th>
               )}
               {department === 'construction' && activeTab !== 'completed' && (
                 <th style={{ width: '110px' }}>План<br />затрат</th>
@@ -1353,7 +1353,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               {!isMaterialsView && activeTab !== 'completed' && (
                 <th style={{ width: '120px' }}>Тендер<br />на&nbsp;материалы</th>
               )}
-              <th style={{ width: '100px' }}>Сводная<br />КП</th>
+              <th style={{ width: '120px' }}>Сводная<br />КП</th>
               <th className="actions-column" style={{ width: '80px' }}>Действия</th>
             </tr>
           </thead>
@@ -1420,7 +1420,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             className="yandex-map-link"
                           >
                             <span aria-hidden>🗺️</span>
-                            <span>Яндекс.Карты</span>
+                            <span>Месторасположение</span>
                           </a>
                         )}
                       </div>
@@ -1436,17 +1436,27 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     </td>
                     {activeTab !== 'completed' && (
                       <td>
-                        <select
-                          className={`status-select ${getStatusBadgeClass(tender.status)}`}
-                          value={tender.status}
-                          onChange={(e) => handleStatusChange(tender.id, e.target.value)}
-                        >
-                          {statusOptions.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="status-select-wrap">
+                          <span className={`status-badge-display ${getStatusBadgeClass(tender.status)}`}>
+                            {tender.status === 'Идет тендерная процедура' ? (
+                              <>Идет тендерная<br />процедура</>
+                            ) : (
+                              tender.status
+                            )}
+                          </span>
+                          <select
+                            className="status-select-overlay"
+                            value={tender.status}
+                            onChange={(e) => handleStatusChange(tender.id, e.target.value)}
+                            aria-label="Статус тендера"
+                          >
+                            {statusOptions.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
                     )}
                     {activeTab === 'completed' && (
@@ -1767,9 +1777,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                 <tr>
                                   <th style={{ width: '40px' }}>№</th>
                                   <th style={{ width: '20%' }}>Наименование</th>
-                                  <th style={{ width: '18%' }}>Контактные данные</th>
+                                  <th style={{ width: '13%' }}>Контактные данные</th>
                                   <th style={{ width: '140px' }}>Email</th>
-                                  <th style={{ width: '150px' }}>Статус</th>
+                                  <th style={{ width: '190px' }}>Статус</th>
                                   <th style={{ width: '120px' }}>КП</th>
                                   <th>Примечание</th>
                                   <th style={{ width: '56px' }}></th>
