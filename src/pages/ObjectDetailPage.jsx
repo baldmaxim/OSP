@@ -11,18 +11,34 @@ function DocRow({
   doc,
   level = 0,
   attachments = [],
+  expandedDocs,
+  toggleExpand,
   formatDate,
   onAddAttachment,
   onEdit,
   onDelete,
 }) {
   const isAttachment = level > 0
+  const hasAttachments = attachments.length > 0
+  const isExpanded = expandedDocs.has(doc.id)
 
   return (
     <>
       <tr className={`doc-row-tr ${isAttachment ? 'doc-row-tr-attachment' : ''}`}>
         <td className="doc-cell-marker" style={{ paddingLeft: `${level * 14 + 8}px` }}>
-          {isAttachment && <span className="doc-attachment-marker" aria-hidden>↳</span>}
+          {isAttachment ? (
+            <span className="doc-attachment-marker" aria-hidden>↳</span>
+          ) : hasAttachments ? (
+            <button
+              type="button"
+              className="doc-expand-btn"
+              onClick={() => toggleExpand(doc.id)}
+              title={isExpanded ? 'Свернуть приложения' : `Развернуть приложения (${attachments.length})`}
+              aria-label={isExpanded ? 'Свернуть' : 'Развернуть'}
+            >
+              {isExpanded ? '▼' : '▶'}
+            </button>
+          ) : null}
         </td>
         <td className="doc-cell-name">
           <div className="doc-name-line">
@@ -61,12 +77,14 @@ function DocRow({
           </button>
         </td>
       </tr>
-      {/* Вложенные приложения */}
-      {!isAttachment && attachments.map(att => (
+      {/* Вложенные приложения — показываются только если родитель развёрнут */}
+      {!isAttachment && isExpanded && attachments.map(att => (
         <DocRow
           key={att.id}
           doc={att}
           level={level + 1}
+          expandedDocs={expandedDocs}
+          toggleExpand={toggleExpand}
           formatDate={formatDate}
           onAddAttachment={onAddAttachment}
           onEdit={onEdit}
@@ -103,6 +121,7 @@ function ObjectDetailPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('info')
   const [expandedDocs, setExpandedDocs] = useState(new Set())
+  const didInitExpand = useRef(false)
   const [isEstimateFullscreen, setIsEstimateFullscreen] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState(new Set())
   const estimateFileRef = useRef(null)
@@ -181,7 +200,19 @@ function ObjectDetailPage() {
       const { data: docsData, error: docsError } = await supabase
         .from('object_documents').select('*').eq('object_id', objectId).order('order_number')
       if (docsError) throw docsError
-      setDocuments(docsData || [])
+      const allDocs = docsData || []
+      setDocuments(allDocs)
+      // При первой загрузке раскрываем все родительские документы с приложениями.
+      // Дальнейшие re-fetch (после добавления/удаления) не сбрасывают выбор пользователя.
+      if (!didInitExpand.current) {
+        didInitExpand.current = true
+        const parentIdsWithChildren = allDocs
+          .filter(d => d.parent_document_id)
+          .map(d => d.parent_document_id)
+        if (parentIdsWithChildren.length > 0) {
+          setExpandedDocs(new Set(parentIdsWithChildren))
+        }
+      }
 
       const { data: estimateData, error: estimateError } = await supabase
         .from('object_estimate_items').select('*').eq('object_id', objectId).order('row_number')
@@ -773,6 +804,8 @@ function ObjectDetailPage() {
                     <DocRow
                       doc={generalContract}
                       attachments={contractAttachments}
+                      expandedDocs={expandedDocs}
+                      toggleExpand={toggleExpand}
                       formatDate={formatDate}
                       onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
                       onEdit={handleEditDocument}
@@ -811,6 +844,8 @@ function ObjectDetailPage() {
                         key={doc.id}
                         doc={doc}
                         attachments={getAttachments(doc.id)}
+                        expandedDocs={expandedDocs}
+                        toggleExpand={toggleExpand}
                         formatDate={formatDate}
                         onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
                         onEdit={handleEditDocument}
