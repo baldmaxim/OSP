@@ -172,11 +172,19 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         .order('start_date', { ascending: false })
 
       if (error) throw error
+      // Reverse FK tenders!parent_tender_id возвращается массивом (UNIQUE на parent_tender_id нет).
+      // Сводим к одному объекту или null, чтобы дальше обращаться как tender.materials_tender.status.
+      const normalized = (data || []).map(t => ({
+        ...t,
+        materials_tender: Array.isArray(t.materials_tender)
+          ? (t.materials_tender[0] || null)
+          : (t.materials_tender || null)
+      }))
       // Для основных тендеров фильтруем по статусу объекта (construction/warranty).
       // Для тендеров на материалы показываем все объекты без фильтрации по отделу.
       let filteredTenders = isMaterialsView
-        ? (data || [])
-        : (data || []).filter(tender => tender.objects?.status === objectStatus)
+        ? normalized
+        : normalized.filter(tender => tender.objects?.status === objectStatus)
       if (scopedObjectId) {
         filteredTenders = filteredTenders.filter(t => t.object_id === scopedObjectId)
       }
@@ -1598,7 +1606,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               {department === 'construction' && activeTab !== 'completed' && (
                 <th style={{ width: '110px' }}>План<br />затрат</th>
               )}
-              {!isMaterialsView && department === 'construction' && activeTab !== 'completed' && (
+              {!isMaterialsView && department === 'construction' && (
                 <th style={{ width: '120px' }}>Тендер<br />на&nbsp;материалы</th>
               )}
               <th style={{ width: '120px' }}>Сводная<br />КП</th>
@@ -1608,7 +1616,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? 8 : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="no-data">
+                <td colSpan={activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 9 : 8) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : activeTab === 'deleted'
@@ -1857,7 +1865,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </td>
                     )}
                     {/* Тендер на материалы (дочерний) — только в основном строительстве */}
-                    {!isMaterialsView && department === 'construction' && activeTab !== 'completed' && (
+                    {!isMaterialsView && department === 'construction' && (
                       <td>
                         {tender.materials_tender ? (
                           <div className="phase-cell">
@@ -1868,6 +1876,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               }
                               if (s === 'В работе') {
                                 return <span className="phase-progress" title="В работе">В работе</span>
+                              }
+                              if (s === 'Не нужно') {
+                                return <span className="phase-done" title="Тендер на материалы не требуется">— Не нужно</span>
                               }
                               return <span className="phase-pending" title={s || 'Не начат'}>{s || 'Не начат'}</span>
                             })()}

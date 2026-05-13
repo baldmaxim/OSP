@@ -1,3 +1,6 @@
+-- Sequence для публичного порядкового номера тендера
+CREATE SEQUENCE IF NOT EXISTS tenders_public_number_seq;
+
 -- Таблица tenders (Тендеры)
 CREATE TABLE IF NOT EXISTS tenders (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -25,6 +28,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   parent_tender_id UUID REFERENCES tenders(id) ON DELETE SET NULL,
   materials_proposal_deadline DATE,
   materials_proposal_link TEXT,
+  public_tender_number INTEGER DEFAULT nextval('tenders_public_number_seq'),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   CONSTRAINT check_dates CHECK (end_date >= start_date),
@@ -49,6 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_tenders_vor_responsible_id ON tenders(vor_respons
 CREATE INDEX IF NOT EXISTS idx_tenders_vor_status ON tenders(vor_status);
 CREATE INDEX IF NOT EXISTS idx_tenders_tender_type ON tenders(tender_type);
 CREATE INDEX IF NOT EXISTS idx_tenders_parent_tender_id ON tenders(parent_tender_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenders_public_tender_number ON tenders(public_tender_number);
 
 -- Триггер для автоматического обновления updated_at
 CREATE OR REPLACE FUNCTION update_tenders_updated_at()
@@ -103,5 +108,6 @@ COMMENT ON COLUMN tenders.tender_type IS 'Тип тендера: main (осно�
 COMMENT ON COLUMN tenders.parent_tender_id IS 'Ссылка на родительский основной тендер (только для tender_type = materials)';
 COMMENT ON COLUMN tenders.materials_proposal_deadline IS 'Срок предоставления КП на материалы (для tender_type = materials)';
 COMMENT ON COLUMN tenders.materials_proposal_link IS 'Ссылка на КП на материалы (для tender_type = materials)';
+COMMENT ON COLUMN tenders.public_tender_number IS 'Сквозной публичный номер тендера, присваивается при создании';
 COMMENT ON COLUMN tenders.created_at IS 'Дата и время создания записи';
 COMMENT ON COLUMN tenders.updated_at IS 'Дата и время последнего обновления записи';

@@ -19,11 +19,12 @@ function PublicTendersPage() {
       setLoading(true)
       // Только открытые тендеры (идёт тендерная процедура), не дочерние на материалы,
       // не удалённые. Поля минимальные: гостям доступен ограниченный набор данных.
+      // Сортировка по дате окончания приёма КП (по возрастанию) — самые горящие сверху.
       const { data, error: err } = await supabase
         .from('tenders')
-        .select('id, work_description, start_date, end_date, status, tender_package_link, tender_type, deleted_at, objects(name, address, map_link, status)')
+        .select('id, public_tender_number, work_description, start_date, end_date, tender_start_date, tender_end_date, status, tender_package_link, tender_type, deleted_at, objects(name, address, map_link, status)')
         .eq('status', 'Идет тендерная процедура')
-        .order('start_date', { ascending: false })
+        .order('tender_end_date', { ascending: true, nullsFirst: false })
 
       if (err) throw err
 
@@ -44,6 +45,11 @@ function PublicTendersPage() {
   const formatDate = (d) => {
     if (!d) return '—'
     try { return new Date(d).toLocaleDateString('ru-RU') } catch { return d }
+  }
+
+  const formatDateRange = (start, end) => {
+    if (!start && !end) return '—'
+    return `${formatDate(start)} — ${formatDate(end)}`
   }
 
   const visibleTenders = tenders.filter(t => {
@@ -128,59 +134,72 @@ function PublicTendersPage() {
         )}
 
         {!loading && !error && visibleTenders.length > 0 && (
-          <div className="public-tenders-grid">
-            {visibleTenders.map(t => (
-              <article key={t.id} className="public-tender-card">
-                <div className="public-tender-header">
-                  <span className={`public-dept-badge ${t.objects?.status === 'warranty_service' ? 'warranty' : 'construction'}`}>
-                    {t.objects?.status === 'warranty_service' ? '🛡️ Гарантийный отдел' : '🏗️ Основное строительство'}
-                  </span>
-                </div>
-
-                <h3 className="public-tender-object">{t.objects?.name || 'Объект не указан'}</h3>
-                {t.objects?.address && (
-                  <p className="public-tender-address">{t.objects.address}</p>
-                )}
-                {t.objects?.map_link && (
-                  <a
-                    href={t.objects.map_link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="yandex-map-link"
-                  >
-                    <span aria-hidden>🗺️</span>
-                    <span>Месторасположение</span>
-                  </a>
-                )}
-
-                <div className="public-tender-section">
-                  <span className="public-tender-label">Описание работ</span>
-                  <div className="public-tender-description">{t.work_description || '—'}</div>
-                </div>
-
-                <div className="public-tender-section public-tender-dates">
-                  <span className="public-tender-label">Планируемые сроки выполнения работ</span>
-                  <div className="public-tender-value">
-                    {formatDate(t.start_date)} — {formatDate(t.end_date)}
-                  </div>
-                </div>
-
-                <div className="public-tender-footer">
-                  {t.tender_package_link ? (
-                    <a
-                      href={t.tender_package_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="public-tender-package-btn"
-                    >
-                      📎 Тендерный пакет
-                    </a>
-                  ) : (
-                    <span className="public-tender-package-empty">Тендерный пакет не приложен</span>
-                  )}
-                </div>
-              </article>
-            ))}
+          <div className="public-tenders-table-wrap">
+            <table className="public-tenders-table">
+              <thead>
+                <tr>
+                  <th className="col-num">№</th>
+                  <th className="col-object">Объект</th>
+                  <th className="col-address">Адрес</th>
+                  <th className="col-desc">Описание работ</th>
+                  <th className="col-dates">Планируемые сроки<br />выполнения работ</th>
+                  <th className="col-dates">Сроки приёма КП</th>
+                  <th className="col-package">Тендерный пакет</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleTenders.map(t => (
+                  <tr key={t.id}>
+                    <td className="col-num">
+                      {t.public_tender_number ?? '—'}
+                    </td>
+                    <td className="col-object">
+                      <div className="public-tender-object">{t.objects?.name || 'Объект не указан'}</div>
+                      <span className={`public-dept-badge ${t.objects?.status === 'warranty_service' ? 'warranty' : 'construction'}`}>
+                        {t.objects?.status === 'warranty_service' ? '🛡️ Гарантийный отдел' : '🏗️ Основное строительство'}
+                      </span>
+                    </td>
+                    <td className="col-address">
+                      <div className="public-tender-address">{t.objects?.address || '—'}</div>
+                      {t.objects?.map_link && (
+                        <a
+                          href={t.objects.map_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="yandex-map-link"
+                        >
+                          <span aria-hidden>🗺️</span>
+                          <span>На карте</span>
+                        </a>
+                      )}
+                    </td>
+                    <td className="col-desc">
+                      <div className="public-tender-description">{t.work_description || '—'}</div>
+                    </td>
+                    <td className="col-dates">
+                      {formatDateRange(t.start_date, t.end_date)}
+                    </td>
+                    <td className="col-dates">
+                      {formatDateRange(t.tender_start_date, t.tender_end_date)}
+                    </td>
+                    <td className="col-package">
+                      {t.tender_package_link ? (
+                        <a
+                          href={t.tender_package_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="public-tender-package-btn"
+                        >
+                          📎 Скачать
+                        </a>
+                      ) : (
+                        <span className="public-tender-package-empty">не приложен</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </main>
