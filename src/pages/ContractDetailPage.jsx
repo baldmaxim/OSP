@@ -5,6 +5,7 @@ import Docxtemplater from 'docxtemplater'
 import PizZip from 'pizzip'
 import { saveAs } from 'file-saver'
 import { renderAsync } from 'docx-preview'
+import { copyToClipboard } from '../utils/clipboard'
 import '../components/ContractRegistry.css'
 
 function ContractDetailPage() {
@@ -280,7 +281,7 @@ function ContractDetailPage() {
                 <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
                   <td style={{ padding: '0.375rem 1rem' }}>
                     <span
-                      onClick={() => navigator.clipboard.writeText(name)}
+                      onClick={() => copyToClipboard(name)}
                       style={{
                         padding: '0.15rem 0.5rem', fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.8125rem',
                         background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '3px',

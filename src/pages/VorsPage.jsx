@@ -258,6 +258,7 @@ function VorsPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th style={{ width: '52px' }}>№ п/п</th>
               <th>Объект</th>
               <th>Описание работ</th>
               <th>Ответственный</th>
@@ -270,7 +271,7 @@ function VorsPage() {
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={7} className="no-data">
+                <td colSpan={8} className="no-data">
                   {activeTab === 'completed'
                     ? 'Завершённых ВОРов нет'
                     : tenders.length === 0
@@ -279,8 +280,9 @@ function VorsPage() {
                 </td>
               </tr>
             ) : (
-              visible.map((t) => (
+              visible.map((t, idx) => (
                 <tr key={t.id}>
+                  <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</td>
                   <td>
                     <button
                       className="row-link primary"

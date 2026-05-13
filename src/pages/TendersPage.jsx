@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
+import { copyToClipboard } from '../utils/clipboard'
 import '../components/Tenders.css'
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
@@ -560,12 +561,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       alert('У контрагентов нет email-адресов')
       return
     }
-    try {
-      await navigator.clipboard.writeText(unique.join('; '))
+    const ok = await copyToClipboard(unique.join('; '))
+    if (ok) {
       setCopiedEmailsTenderId(tenderId)
       setTimeout(() => setCopiedEmailsTenderId(prev => prev === tenderId ? null : prev), 2000)
-    } catch (err) {
-      console.error('Ошибка копирования email:', err)
+    } else {
       alert('Не удалось скопировать в буфер обмена')
     }
   }
@@ -1117,12 +1117,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   const handleCopyLetter = async () => {
-    try {
-      await navigator.clipboard.writeText(generatedLetter)
+    const ok = await copyToClipboard(generatedLetter)
+    if (ok) {
       setLetterCopied(true)
       setTimeout(() => setLetterCopied(false), 2000)
-    } catch (error) {
-      console.error('Ошибка копирования:', error)
+    } else {
       alert('Не удалось скопировать текст')
     }
   }
@@ -1390,6 +1389,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <>
               <thead>
                 <tr>
+                  <th style={{ width: '52px' }}>№ п/п</th>
                   <th style={{ width: '180px' }}>Объект</th>
                   <th style={{ width: '150px' }}>Описание работ</th>
                   <th style={{ width: '160px' }}>Ответственный</th>
@@ -1409,7 +1409,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <tbody>
                 {sortedTenders.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="no-data">
+                    <td colSpan={8} className="no-data">
                       {activeTab === 'completed'
                         ? 'Нет завершённых тендеров на материалы'
                         : activeTab === 'deleted'
@@ -1418,8 +1418,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     </td>
                   </tr>
                 ) : (
-                  sortedTenders.map((tender) => (
+                  sortedTenders.map((tender, idx) => (
                     <tr key={tender.id} className={isOverdue(tender) ? 'overdue-row' : ''}>
+                      <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</td>
                       <td>
                         <button
                           onClick={() => navigate(`/tenders/${tender.id}`)}
@@ -2291,7 +2292,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <span
                 key={variable}
                 title={label}
-                onClick={() => navigator.clipboard.writeText(variable)}
+                onClick={() => copyToClipboard(variable)}
                 style={{
                   padding: '0.2rem 0.5rem',
                   fontSize: '0.75rem',

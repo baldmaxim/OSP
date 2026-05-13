@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { generateUUID } from '../utils/uuid'
@@ -11,7 +11,6 @@ let mapInstance = null
 
 function ObjectsPage() {
   const { scopedObjectId } = useRole()
-  const navigate = useNavigate()
   const [objects, setObjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -538,13 +537,17 @@ function ObjectsPage() {
                 const budget = formatBudget(object.budget)
 
                 return (
-                  <div
+                  <Link
                     key={object.id}
+                    to={`/general/objects/${object.id}`}
                     className="object-card"
-                    onClick={() => navigate(`/general/objects/${object.id}`)}
-                    title="Открыть карточку объекта"
+                    title="Открыть карточку объекта (Ctrl+клик или средняя кнопка — в новой вкладке)"
+                    style={{ textDecoration: 'none', color: 'inherit' }}
                   >
-                    <div className="object-card-actions" onClick={(e) => e.stopPropagation()}>
+                    <div
+                      className="object-card-actions"
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
+                    >
                       <button
                         className="object-card-action-btn"
                         onClick={() => handleEditObject(object)}
@@ -597,7 +600,7 @@ function ObjectsPage() {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </Link>
                 )
               })
             })()}

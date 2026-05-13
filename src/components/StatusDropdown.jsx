@@ -8,16 +8,32 @@ function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, a
   const triggerRef = useRef(null)
   const menuRef = useRef(null)
 
-  // Позиционируем меню относительно триггера (фиксированные координаты — не обрезаются overflow родителей)
+  // Позиционируем меню относительно триггера (фиксированные координаты — не обрезаются overflow родителей).
+  // Если внизу мало места — раскрываем меню вверх, чтобы оно не уходило за экран.
   const updatePosition = () => {
     const el = triggerRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
-    setMenuPos({ top: r.bottom + 4, left: r.left, width: r.width })
+    const viewportH = window.innerHeight
+    const spaceBelow = viewportH - r.bottom
+    const spaceAbove = r.top
+    // Оцениваем высоту меню по числу опций (примерно 32px на строку + паддинги).
+    const estimatedMenuH = Math.min(320, options.length * 32 + 16)
+    const openUp = spaceBelow < estimatedMenuH + 12 && spaceAbove > spaceBelow
+    // Если у меню уже есть реальная высота (после первого рендера) — используем её.
+    const actualH = menuRef.current?.offsetHeight || estimatedMenuH
+    const top = openUp
+      ? Math.max(8, r.top - actualH - 4)
+      : r.bottom + 4
+    setMenuPos({ top, left: r.left, width: r.width })
   }
 
   useLayoutEffect(() => {
-    if (isOpen) updatePosition()
+    if (isOpen) {
+      updatePosition()
+      // Второй проход после рендера меню — теперь у нас есть фактическая высота.
+      requestAnimationFrame(updatePosition)
+    }
   }, [isOpen])
 
   useEffect(() => {
