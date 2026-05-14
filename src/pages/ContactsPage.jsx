@@ -546,18 +546,49 @@ function ContactsPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <select
-              className="contacts-object-filter"
-              value={objectFilter}
-              onChange={(e) => setObjectFilter(e.target.value)}
-              title="Фильтр по объекту/офису"
-            >
-              <option value="">Все объекты/офис</option>
-              <option value="office">Только офис</option>
-              {objects.map(obj => (
-                <option key={obj.id} value={obj.id}>{obj.name}</option>
-              ))}
-            </select>
+            <div className="contacts-filter-pills" role="tablist" aria-label="Фильтр по объекту/офису">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={objectFilter === ''}
+                className={`contacts-filter-pill ${objectFilter === '' ? 'active' : ''}`}
+                onClick={() => setObjectFilter('')}
+              >
+                <span className="contacts-filter-pill-icon" aria-hidden>📋</span>
+                <span>Все</span>
+                <span className="contacts-filter-pill-count">{contacts.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={objectFilter === 'office'}
+                className={`contacts-filter-pill ${objectFilter === 'office' ? 'active' : ''}`}
+                onClick={() => setObjectFilter('office')}
+              >
+                <span className="contacts-filter-pill-icon" aria-hidden>🏢</span>
+                <span>Офис</span>
+                <span className="contacts-filter-pill-count">
+                  {contacts.filter(c => !c.object_id).length}
+                </span>
+              </button>
+              <div className={`contacts-filter-object-wrap ${objectFilter && objectFilter !== 'office' ? 'active' : ''}`}>
+                <span className="contacts-filter-pill-icon" aria-hidden>🏗️</span>
+                <select
+                  className="contacts-filter-object-select"
+                  value={objectFilter && objectFilter !== 'office' ? objectFilter : ''}
+                  onChange={(e) => setObjectFilter(e.target.value || '')}
+                  title="Выбрать объект"
+                >
+                  <option value="">Объект…</option>
+                  {objects.map(obj => {
+                    const cnt = contacts.filter(c => c.object_id === obj.id).length
+                    return (
+                      <option key={obj.id} value={obj.id}>{obj.name} ({cnt})</option>
+                    )
+                  })}
+                </select>
+              </div>
+            </div>
             <button className="btn-primary" onClick={handleAddNewContact}>
               + Добавить
             </button>

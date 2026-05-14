@@ -63,19 +63,33 @@ function DocumentCheckPage() {
     try {
       setLoading(true)
       const [reqRes, objRes, cpRes, contactsRes] = await Promise.all([
+        // Не используем PostgREST relationship `responsible:contacts!responsible_contact_id` —
+        // если FK отсутствует или schema cache PostgREST не перезагружен после миграции,
+        // запрос падает с "Could not find a relationship". Собираем ответственного на клиенте
+        // из загруженного списка contacts.
         supabase
           .from('document_check_requests')
-          .select('*, objects(name), counterparties(name), responsible:contacts!responsible_contact_id(id, full_name)')
+          .select('*, objects(name), counterparties(name)')
           .order('created_at', { ascending: true }),
         supabase.from('objects').select('id, name').order('name'),
         supabase.from('counterparties').select('id, name').eq('status', 'active').order('name'),
         supabase.from('contacts').select('id, full_name, position').order('full_name'),
       ])
       if (reqRes.error) throw reqRes.error
-      setRequests(reqRes.data || [])
+      const contactsList = contactsRes.data || []
+      const contactsById = new Map(contactsList.map(c => [c.id, c]))
+      const requestsWithResp = (reqRes.data || []).map(r => ({
+        ...r,
+        responsible: r.responsible_contact_id
+          ? (contactsById.get(r.responsible_contact_id)
+            ? { id: r.responsible_contact_id, full_name: contactsById.get(r.responsible_contact_id).full_name }
+            : null)
+          : null,
+      }))
+      setRequests(requestsWithResp)
       setObjects(objRes.data || [])
       setCounterparties(cpRes.data || [])
-      setContacts(contactsRes.data || [])
+      setContacts(contactsList)
     } catch (err) {
       console.error('Ошибка загрузки данных проверки документов:', err.message)
       alert('Ошибка загрузки: ' + err.message)

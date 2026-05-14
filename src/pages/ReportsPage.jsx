@@ -27,17 +27,19 @@ function ReportsPage() {
           cost_plan_status, cost_plan_responsible_id, cost_plan_end_date,
           vor_status, vor_responsible_id, vor_end_date,
           materials_proposal_deadline,
+          winner_counterparty_id,
           objects(status),
           responsible_contact:contacts!responsible_contact_id(id, full_name),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name),
-          vor_responsible:contacts!vor_responsible_id(id, full_name)
+          vor_responsible:contacts!vor_responsible_id(id, full_name),
+          winner:counterparties!winner_counterparty_id(id, name)
         `)
       if (scopedObjectId) tendersQ = tendersQ.eq('object_id', scopedObjectId)
       const { data: tendersRaw } = await tendersQ
 
       let contractsQ = supabase
         .from('contracts')
-        .select('id, object_id, status, contract_amount, objects(status)')
+        .select('id, object_id, status, contract_amount, counterparty_id, objects(status)')
       if (scopedObjectId) contractsQ = contractsQ.eq('object_id', scopedObjectId)
       const { data: contracts } = await contractsQ
 
@@ -138,6 +140,55 @@ function ReportsPage() {
         ),
       }
 
+      // === Победители тендеров ===
+      // Считаем только завершённые основные тендеры с указанным победителем.
+      const winnerTenders = t.filter(x => isClosed(x) && x.winner_counterparty_id)
+      const contractsByCounterparty = (c || []).reduce((acc, contract) => {
+        const cpId = contract.counterparty_id
+        if (!cpId) return acc
+        if (!acc[cpId]) acc[cpId] = { signed: 0, signedAmount: 0, total: 0, totalAmount: 0 }
+        const amount = Number(contract.contract_amount) || 0
+        acc[cpId].total += 1
+        acc[cpId].totalAmount += amount
+        if (contract.status === 'signed') {
+          acc[cpId].signed += 1
+          acc[cpId].signedAmount += amount
+        }
+        return acc
+      }, {})
+
+      const winnerMap = new Map()
+      for (const x of winnerTenders) {
+        const id = x.winner_counterparty_id
+        const name = x.winner?.name || 'Контрагент удалён'
+        if (!winnerMap.has(id)) {
+          winnerMap.set(id, {
+            id,
+            name,
+            wins: 0,
+            winsConst: 0,
+            winsWar: 0,
+            signedContracts: 0,
+            signedAmount: 0,
+          })
+        }
+        const row = winnerMap.get(id)
+        row.wins += 1
+        if (x.objects?.status === 'main_construction') row.winsConst += 1
+        else if (x.objects?.status === 'warranty_service') row.winsWar += 1
+        const cStats = contractsByCounterparty[id]
+        if (cStats) {
+          row.signedContracts = cStats.signed
+          row.signedAmount = cStats.signedAmount
+        }
+      }
+      const winners = {
+        total: winnerTenders.length,
+        unique: winnerMap.size,
+        totalAmount: Array.from(winnerMap.values()).reduce((s, r) => s + r.signedAmount, 0),
+        rows: Array.from(winnerMap.values()).sort((a, b) => b.wins - a.wins || b.signedAmount - a.signedAmount),
+      }
+
       // === ВОРы и РД ===
       const vorRows = tConst
       const isVorDone = (x) => x.vor_status === 'completed'
@@ -199,6 +250,8 @@ function ReportsPage() {
         cp,
         // ВОРы и РД
         vor,
+        // Победители тендеров
+        winners,
       })
     } catch (err) {
       console.error('Ошибка загрузки отчётов:', err.message)
@@ -251,6 +304,15 @@ function ReportsPage() {
       }
       : null
 
+  const reportTabs = [
+    { key: 'tenders', label: 'Тендеры', icon: '🏗️', accent: 'tab-blue', count: s.tTotal },
+    { key: 'winners', label: 'Победители', icon: '🏆', accent: 'tab-amber', count: s.winners.unique },
+    { key: 'materials', label: 'Материалы', icon: '📦', accent: 'tab-violet', count: s.mat.total },
+    { key: 'cost_plans', label: 'Планы затрат', icon: '💰', accent: 'tab-emerald', count: s.cp.total },
+    { key: 'vors', label: 'ВОРы и РД', icon: '📐', accent: 'tab-cyan', count: s.vor.total },
+    { key: 'contracts', label: 'Договоры', icon: '📝', accent: 'tab-rose', count: s.cTotal },
+  ]
+
   return (
     <div className="reports-page">
       <div className="reports-header">
@@ -258,39 +320,26 @@ function ReportsPage() {
           <h2>Отчёты</h2>
           <div className="reports-subtitle">Состояние тендерной работы и договорной активности</div>
         </div>
-        <div className="reports-tabs">
-          <button
-            className={`reports-tab ${activeTab === 'tenders' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('tenders'); setTDeptView(null) }}
-          >
-            Тендеры
-          </button>
-          <button
-            className={`reports-tab ${activeTab === 'materials' ? 'active' : ''}`}
-            onClick={() => setActiveTab('materials')}
-          >
-            Тендеры на материалы
-          </button>
-          <button
-            className={`reports-tab ${activeTab === 'cost_plans' ? 'active' : ''}`}
-            onClick={() => setActiveTab('cost_plans')}
-          >
-            Планы затрат
-          </button>
-          <button
-            className={`reports-tab ${activeTab === 'vors' ? 'active' : ''}`}
-            onClick={() => setActiveTab('vors')}
-          >
-            ВОРы и РД
-          </button>
-          <button
-            className={`reports-tab ${activeTab === 'contracts' ? 'active' : ''}`}
-            onClick={() => setActiveTab('contracts')}
-          >
-            Договоры
-          </button>
-        </div>
       </div>
+
+      <nav className="reports-nav" aria-label="Разделы отчётов">
+        {reportTabs.map(tab => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`reports-nav-card ${tab.accent} ${activeTab === tab.key ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab(tab.key)
+              if (tab.key !== 'tenders') setTDeptView(null)
+            }}
+            aria-pressed={activeTab === tab.key}
+          >
+            <span className="reports-nav-icon" aria-hidden>{tab.icon}</span>
+            <span className="reports-nav-label">{tab.label}</span>
+            <span className="reports-nav-count">{tab.count}</span>
+          </button>
+        ))}
+      </nav>
 
       <div className="reports-content">
         {activeTab === 'tenders' && !deptData && (
@@ -463,6 +512,39 @@ function ReportsPage() {
                 <div className="section-empty">В этом отделе тендеров нет</div>
               ) : (
                 <ResponsibleTable rows={deptData.byResp} />
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'winners' && (
+          <>
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">Завершённых тендеров с победителем</div>
+                <div className="kpi-value">{s.winners.total}</div>
+              </div>
+              <div className="kpi-card kpi-card--success">
+                <div className="kpi-label">Уникальных победителей</div>
+                <div className="kpi-value accent-success">{s.winners.unique}</div>
+                <div className="kpi-foot">подрядчиков-победителей</div>
+              </div>
+              <div className="kpi-card kpi-card-wide">
+                <div className="kpi-label">Сумма заключённых договоров</div>
+                <div className="kpi-value">{fmtMoney(s.winners.totalAmount)}</div>
+                <div className="kpi-foot">по победителям тендеров</div>
+              </div>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>Рейтинг победителей</h3>
+                <span className="section-meta">{s.winners.rows.length}</span>
+              </header>
+              {s.winners.rows.length === 0 ? (
+                <div className="section-empty">Победителей пока нет. Назначьте победителя у завершённого тендера.</div>
+              ) : (
+                <WinnersTable rows={s.winners.rows} fmtMoney={fmtMoney} />
               )}
             </section>
           </>
@@ -696,6 +778,44 @@ function ResponsibleTable({ rows }) {
             </tr>
           )
         })}
+      </tbody>
+    </table>
+  )
+}
+
+function WinnersTable({ rows, fmtMoney }) {
+  const maxWins = Math.max(...rows.map(r => r.wins), 1)
+  return (
+    <table className="dense-table">
+      <thead>
+        <tr>
+          <th style={{ width: '44px' }} className="num">#</th>
+          <th>Контрагент</th>
+          <th className="num">Побед</th>
+          <th className="num">Стр-во</th>
+          <th className="num">Гарантия</th>
+          <th className="num">Договоров</th>
+          <th className="num">Сумма</th>
+          <th className="bar-col">Доля побед</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, idx) => (
+          <tr key={r.id}>
+            <td className="num" style={{ fontWeight: 600, color: idx < 3 ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+              {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
+            </td>
+            <td style={{ fontWeight: 500 }}>{r.name}</td>
+            <td className="num strong">{r.wins}</td>
+            <td className="num">{r.winsConst || '—'}</td>
+            <td className="num">{r.winsWar || '—'}</td>
+            <td className="num">{r.signedContracts || '—'}</td>
+            <td className="num">{r.signedAmount > 0 ? fmtMoney(r.signedAmount) : '—'}</td>
+            <td className="bar-col">
+              <ProgressBar value={r.wins} total={maxWins} />
+            </td>
+          </tr>
+        ))}
       </tbody>
     </table>
   )

@@ -12,7 +12,7 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.5rem 0;
+  padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -36,7 +36,7 @@
   color: var(--text-tertiary);
 }
 
-/* Tabs */
+/* Tabs (legacy — оставлены на случай других страниц) */
 .reports-tabs {
   display: flex;
   gap: 0.125rem;
@@ -64,6 +64,92 @@
   border-bottom-color: var(--primary-color);
   font-weight: 600;
 }
+
+/* Карточный навигатор отчётов */
+.reports-nav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem 0;
+}
+
+.reports-nav-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4375rem;
+  padding: 0.9375rem 1rem 0.8125rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  text-align: left;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.reports-nav-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--accent, var(--primary-color));
+  opacity: 0.85;
+}
+
+.reports-nav-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+  border-color: var(--accent, var(--text-tertiary));
+}
+
+[data-theme='dark'] .reports-nav-card:hover {
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+}
+
+.reports-nav-card.active {
+  border-color: var(--accent, var(--primary-color));
+  background: var(--accent-soft, var(--bg-tertiary));
+  box-shadow: 0 0 0 3px var(--accent-ring, rgba(99, 102, 241, 0.15));
+}
+
+.reports-nav-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.reports-nav-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.reports-nav-count {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  margin-top: auto;
+  line-height: 1;
+}
+
+/* Цветовые акценты */
+.reports-nav-card.tab-blue { --accent: #2563eb; --accent-soft: rgba(37, 99, 235, 0.06); --accent-ring: rgba(37, 99, 235, 0.18); }
+.reports-nav-card.tab-amber { --accent: #d97706; --accent-soft: rgba(217, 119, 6, 0.06); --accent-ring: rgba(217, 119, 6, 0.18); }
+.reports-nav-card.tab-violet { --accent: #7c3aed; --accent-soft: rgba(124, 58, 237, 0.06); --accent-ring: rgba(124, 58, 237, 0.18); }
+.reports-nav-card.tab-emerald { --accent: #059669; --accent-soft: rgba(5, 150, 105, 0.06); --accent-ring: rgba(5, 150, 105, 0.18); }
+.reports-nav-card.tab-cyan { --accent: #0891b2; --accent-soft: rgba(8, 145, 178, 0.06); --accent-ring: rgba(8, 145, 178, 0.18); }
+.reports-nav-card.tab-rose { --accent: #e11d48; --accent-soft: rgba(225, 29, 72, 0.06); --accent-ring: rgba(225, 29, 72, 0.18); }
+
+[data-theme='dark'] .reports-nav-card.tab-blue { --accent-soft: rgba(37, 99, 235, 0.18); }
+[data-theme='dark'] .reports-nav-card.tab-amber { --accent-soft: rgba(217, 119, 6, 0.18); }
+[data-theme='dark'] .reports-nav-card.tab-violet { --accent-soft: rgba(124, 58, 237, 0.18); }
+[data-theme='dark'] .reports-nav-card.tab-emerald { --accent-soft: rgba(5, 150, 105, 0.18); }
+[data-theme='dark'] .reports-nav-card.tab-cyan { --accent-soft: rgba(8, 145, 178, 0.18); }
+[data-theme='dark'] .reports-nav-card.tab-rose { --accent-soft: rgba(225, 29, 72, 0.18); }
 
 /* Content */
 .reports-content {
@@ -463,10 +549,14 @@
   .reports-header {
     flex-direction: column;
     align-items: stretch;
-    padding: 1rem 1rem 0;
+    padding: 1rem 1rem;
   }
   .reports-tabs {
     margin-top: 0.5rem;
+  }
+  .reports-nav {
+    padding: 1rem 1rem 0;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
   .reports-content {
     padding: 1rem;
@@ -478,6 +568,9 @@
 
 @media (max-width: 600px) {
   .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .reports-nav {
     grid-template-columns: repeat(2, 1fr);
   }
 }

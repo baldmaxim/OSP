@@ -9,7 +9,7 @@ import '../components/Tenders.css'
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
   const navigate = useNavigate()
-  const { scopedObjectId, userProfile } = useRole()
+  const { scopedObjectId, userProfile, isAdmin } = useRole()
   const [tenders, setTenders] = useState([])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
@@ -807,6 +807,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   // Мягкое удаление: тендер уходит во вкладку «Удалённые» и может быть восстановлен.
   const handleDeleteTender = async (id, objectName) => {
+    if (!isAdmin) {
+      alert('Удалять тендеры может только администратор.')
+      return
+    }
     if (
       window.confirm(`Переместить тендер "${objectName}" в «Удалённые»? Его можно будет восстановить.`)
     ) {
@@ -840,6 +844,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   const handleHardDeleteTender = async (id, objectName) => {
+    if (!isAdmin) {
+      alert('Удалять тендеры может только администратор.')
+      return
+    }
     if (!window.confirm(`Удалить тендер "${objectName}" БЕЗВОЗВРАТНО? Это действие нельзя отменить.`)) return
     try {
       const { error } = await supabase.from('tenders').delete().eq('id', id)
@@ -1556,22 +1564,26 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               >
                                 ♻️
                               </button>
+                              {isAdmin && (
+                                <button
+                                  className="btn-icon btn-delete"
+                                  onClick={() => handleHardDeleteTender(tender.id, tender.objects?.name)}
+                                  title="Удалить безвозвратно (только для администратора)"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            isAdmin && (
                               <button
                                 className="btn-icon btn-delete"
-                                onClick={() => handleHardDeleteTender(tender.id, tender.objects?.name)}
-                                title="Удалить безвозвратно"
+                                onClick={() => handleDeleteTender(tender.id, tender.objects?.name)}
+                                title="Переместить в Корзину (только для администратора)"
                               >
                                 🗑️
                               </button>
-                            </>
-                          ) : (
-                            <button
-                              className="btn-icon btn-delete"
-                              onClick={() => handleDeleteTender(tender.id, tender.objects?.name)}
-                              title="Переместить в Корзину"
-                            >
-                              🗑️
-                            </button>
+                            )
                           )}
                         </div>
                       </td>
@@ -1957,13 +1969,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           >
                             ↩️
                           </button>
-                          <button
-                            className="btn-icon btn-delete"
-                            onClick={() => handleHardDeleteTender(tender.id, tender.objects?.name || 'тендер')}
-                            title="Удалить безвозвратно"
-                          >
-                            🗑️
-                          </button>
+                          {isAdmin && (
+                            <button
+                              className="btn-icon btn-delete"
+                              onClick={() => handleHardDeleteTender(tender.id, tender.objects?.name || 'тендер')}
+                              title="Удалить безвозвратно (только для администратора)"
+                            >
+                              🗑️
+                            </button>
+                          )}
                         </>
                       ) : (
                         <>
@@ -1982,15 +1996,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           >
                             ✏️
                           </button>
-                          <button
-                            className="btn-icon btn-delete"
-                            onClick={() =>
-                              handleDeleteTender(tender.id, tender.objects?.name || 'тендер')
-                            }
-                            title="В корзину"
-                          >
-                            🗑️
-                          </button>
+                          {isAdmin && (
+                            <button
+                              className="btn-icon btn-delete"
+                              onClick={() =>
+                                handleDeleteTender(tender.id, tender.objects?.name || 'тендер')
+                              }
+                              title="В корзину (только для администратора)"
+                            >
+                              🗑️
+                            </button>
+                          )}
                         </>
                       )}
                     </td>
