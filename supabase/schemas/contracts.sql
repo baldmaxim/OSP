@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS contracts (
   work_end_date DATE,
   warranty_period VARCHAR(100),
   status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  document_link TEXT,
+  tender_id UUID REFERENCES tenders(id),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -67,5 +69,7 @@ COMMENT ON COLUMN contracts.warranty_retention_period IS 'Срок гарант�
 COMMENT ON COLUMN contracts.work_start_date IS 'Дата начала работ';
 COMMENT ON COLUMN contracts.work_end_date IS 'Дата окончания работ';
 COMMENT ON COLUMN contracts.warranty_period IS 'Срок гарантии на выполненные работы';
+COMMENT ON COLUMN contracts.document_link IS 'Ссылка на документ договора (Google Drive и т.п.)';
+COMMENT ON COLUMN contracts.tender_id IS 'Ссылка на тендер, по которому заключён договор';
 COMMENT ON COLUMN contracts.created_at IS 'Дата и время создания записи';
 COMMENT ON COLUMN contracts.updated_at IS 'Дата и время последнего обновления записи';

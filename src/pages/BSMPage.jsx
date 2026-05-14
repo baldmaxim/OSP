@@ -122,10 +122,10 @@ function BSMPage() {
   const [mainTab, setMainTab] = useState('material')
   const [subTab, setSubTab] = useState('summary')
   const [error, setError] = useState(null)
+  const [isDragActive, setIsDragActive] = useState(false)
   const fileInputRef = useRef(null)
 
-  const handleFile = async (event) => {
-    const file = event.target.files?.[0]
+  const processFile = async (file) => {
     if (!file) return
     setError(null)
     try {
@@ -138,9 +138,39 @@ function BSMPage() {
     } catch (err) {
       console.error('Ошибка чтения Excel:', err)
       setError('Не удалось прочитать файл. Проверьте формат (нужен .xlsx или .xls).')
+    }
+  }
+
+  const handleFile = async (event) => {
+    const file = event.target.files?.[0]
+    try {
+      await processFile(file)
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  const handleDragOver = (e) => {
+    if (!e.dataTransfer?.types?.includes('Files')) return
+    e.preventDefault()
+    if (!isDragActive) setIsDragActive(true)
+  }
+
+  const handleDragLeave = (e) => {
+    if (e.currentTarget.contains(e.relatedTarget)) return
+    setIsDragActive(false)
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setIsDragActive(false)
+    const file = e.dataTransfer?.files?.[0]
+    if (!file) return
+    if (!/\.(xlsx|xls)$/i.test(file.name)) {
+      setError('Поддерживаются только файлы .xlsx и .xls.')
+      return
+    }
+    processFile(file)
   }
 
   // Парсим выбранный лист. Запускается при изменении workbook или selectedSheet.
@@ -465,11 +495,18 @@ function BSMPage() {
       {error && <div className="bsm-error">{error}</div>}
 
       {!hasData && (
-        <div className="bsm-empty">
-          <div className="bsm-empty-icon" aria-hidden>📥</div>
-          <div className="bsm-empty-title">Нет данных</div>
+        <div
+          className={`bsm-empty${isDragActive ? ' bsm-drag-active' : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <div className="bsm-empty-icon" aria-hidden>{isDragActive ? '⬇️' : '📥'}</div>
+          <div className="bsm-empty-title">{isDragActive ? 'Отпустите файл для загрузки' : 'Нет данных'}</div>
           <div className="bsm-empty-text">
-            Загрузите Excel-документ. Ожидается следующая структура колонок:
+            {isDragActive
+              ? 'Файл будет загружен и обработан автоматически.'
+              : 'Загрузите Excel-документ или перетащите его сюда. Ожидается следующая структура колонок:'}
           </div>
           <table className="bsm-format-table">
             <thead>

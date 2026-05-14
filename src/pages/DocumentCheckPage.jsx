@@ -496,7 +496,7 @@ function DocumentCheckPage() {
       )}
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="modal-overlay">
           <div className="modal doc-check-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editing ? 'Редактировать заявку' : 'Новая заявка на проверку'}</h3>
@@ -635,7 +635,7 @@ function DocumentCheckPage() {
 
       {/* История заявки */}
       {historyOpen && historyRequest && (
-        <div className="modal-overlay" onClick={() => setHistoryOpen(false)}>
+        <div className="modal-overlay">
           <div className="modal doc-check-history-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>История заявки: {historyRequest.doc_type} № {historyRequest.doc_number}</h3>

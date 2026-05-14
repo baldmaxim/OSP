@@ -1821,7 +1821,7 @@ function CounterpartiesPage() {
 
       {/* Modal для добавления/редактирования контакта контрагента */}
       {showContactModal && (
-        <div className="modal-overlay" onClick={() => setShowContactModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
@@ -1955,7 +1955,7 @@ function CounterpartiesPage() {
       {/* Modal с инструкцией по импорту */}
       {/* Modal для добавления связи между контрагентами */}
       {showRelationModal && (
-        <div className="modal-overlay" onClick={() => { setShowRelationModal(false); setRelationSearchQuery('') }}>
+        <div className="modal-overlay">
           <div className="modal relation-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Добавить связь</h3>

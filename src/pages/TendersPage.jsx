@@ -2371,7 +2371,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       )}
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
@@ -2704,13 +2704,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         })
 
         return (
-          <div className="modal-overlay" onClick={() => {
-            setShowAddCounterpartyModal(false)
-            setCounterpartySearchQuery('')
-            setCounterpartyWorkTypeFilter('')
-            setCounterpartyDepartmentFilter('')
-            setSelectedCounterpartyIds([])
-          }}>
+          <div className="modal-overlay">
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '85vh' }}>
               <div className="modal-header">
                 <h3>Выбрать контрагентов для добавления к тендеру</h3>
@@ -2997,11 +2991,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         const tenderCps = tenderCounterparties[tenderForWinnerSelection.id] || []
 
         return (
-          <div className="modal-overlay" onClick={() => {
-            setShowWinnerModal(false)
-            setTenderForWinnerSelection(null)
-            setSelectedWinnerId(null)
-          }}>
+          <div className="modal-overlay">
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
               <div className="modal-header">
                 <h3>Выбор победителя тендера</h3>
@@ -3157,10 +3147,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
       {/* Модальное окно с шаблонным письмом */}
       {showLetterModal && (
-        <div className="modal-overlay" onClick={() => {
-          setShowLetterModal(false)
-          setLetterCopied(false)
-        }}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh' }}>
             <div className="modal-header">
               <h3>📧 Шаблон письма для запроса КП</h3>

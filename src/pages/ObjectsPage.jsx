@@ -610,7 +610,7 @@ function ObjectsPage() {
 
       {/* Modal для добавления/редактирования объекта */}
       {showObjectModal && (
-        <div className="modal-overlay" onClick={() => setShowObjectModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
@@ -816,7 +816,7 @@ function ObjectsPage() {
 
       {/* Modal для карты объектов */}
       {showMapModal && (
-        <div className="modal-overlay" onClick={() => setShowMapModal(false)}>
+        <div className="modal-overlay">
           <div className="modal modal-map" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Объекты на карте</h3>

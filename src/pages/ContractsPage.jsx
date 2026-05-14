@@ -673,7 +673,7 @@ function ContractRegistry() {
       )}
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
@@ -849,11 +849,7 @@ function ContractRegistry() {
 
       {/* Модальное окно информации о тендере */}
       {showTenderModal && department && (
-        <div className="modal-overlay" onClick={() => {
-          setShowTenderModal(false)
-          setSelectedTenderInfo(null)
-          setTenderCounterparties([])
-        }}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '85vh' }}>
             <div className="modal-header">
               <h3>Информация о тендере</h3>

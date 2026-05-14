@@ -582,7 +582,7 @@ function BSMContractRatesPage() {
 
         {/* Модалка добавления БСМ */}
         {showAddBsmModal && (
-          <div className="modal-overlay" onClick={() => setShowAddBsmModal(false)}>
+          <div className="modal-overlay">
             <div className="modal" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <h3>Добавить БСМ с заказчиком</h3>

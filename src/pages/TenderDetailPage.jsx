@@ -706,7 +706,7 @@ function TenderDetailPage() {
 
       {/* Modal: добавление участников */}
       {showAddParticipantModal && (
-        <div className="modal-overlay" onClick={closeAddParticipantModal}>
+        <div className="modal-overlay">
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '85vh' }}>
             <div className="modal-header">
               <h3>Выбрать контрагентов для приглашения в тендер</h3>

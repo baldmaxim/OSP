@@ -233,7 +233,7 @@ function GeneralInfo() {
 
       {/* Modal для добавления объекта */}
       {showObjectModal && (
-        <div className="modal-overlay" onClick={() => setShowObjectModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Добавить новый объект</h3>
@@ -305,7 +305,7 @@ function GeneralInfo() {
 
       {/* Modal для добавления контакта */}
       {showContactModal && (
-        <div className="modal-overlay" onClick={() => setShowContactModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Добавить новый контакт</h3>

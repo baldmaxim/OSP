@@ -749,7 +749,7 @@ function ContactsPage() {
 
       {/* Modal для добавления/редактирования контакта */}
       {showContactModal && (
-        <div className="modal-overlay" onClick={() => setShowContactModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
@@ -943,7 +943,7 @@ function ContactsPage() {
 
       {/* Modal: добавление/редактирование отдела */}
       {showDeptModal && (
-        <div className="modal-overlay" onClick={() => setShowDeptModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
             <div className="modal-header">
               <h3>{editingDept ? 'Редактировать отдел' : 'Новый отдел'}</h3>
@@ -994,7 +994,7 @@ function ContactsPage() {
 
       {/* Modal: добавление/редактирование должности */}
       {showPosModal && (
-        <div className="modal-overlay" onClick={() => setShowPosModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
             <div className="modal-header">
               <h3>{editingPos ? 'Редактировать должность' : 'Новая должность'}</h3>

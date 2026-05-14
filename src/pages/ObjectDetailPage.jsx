@@ -1122,7 +1122,7 @@ function ObjectDetailPage() {
 
       {/* Модальное окно документа */}
       {showDocumentModal && (
-        <div className="modal-overlay" onClick={() => setShowDocumentModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editingDocument ? 'Редактировать' : 'Добавить'} {parentDocumentId ? 'приложение' : documentFormData.document_type === 'general_contract' ? 'договор' : 'ДС'}</h3>
@@ -1171,7 +1171,7 @@ function ObjectDetailPage() {
 
       {/* Модальное окно НДС при импорте сметы */}
       {showVatModal && (
-        <div className="modal-overlay" onClick={() => { setShowVatModal(false); setPendingWorkbook(null) }}>
+        <div className="modal-overlay">
           <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Импорт сметы</h3>
@@ -1236,7 +1236,7 @@ function ObjectDetailPage() {
 
       {/* Модальное окно информации об объекте */}
       {showInfoModal && (
-        <div className="modal-overlay" onClick={() => setShowInfoModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Редактировать информацию</h3>
@@ -1274,7 +1274,7 @@ function ObjectDetailPage() {
 
       {/* Модальное окно гарантии */}
       {showWarrantyModal && (
-        <div className="modal-overlay" onClick={() => setShowWarrantyModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editingWarranty ? 'Редактировать' : 'Добавить'} гарантийный срок</h3>
@@ -1306,7 +1306,7 @@ function ObjectDetailPage() {
 
       {/* Модальное окно гарантийных удержаний */}
       {showRetentionModal && (
-        <div className="modal-overlay" onClick={() => setShowRetentionModal(false)}>
+        <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editingRetention ? 'Редактировать' : 'Добавить'} удержание</h3>

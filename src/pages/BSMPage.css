@@ -162,6 +162,14 @@
   color: var(--text-secondary);
 }
 
+.bsm-empty.bsm-drag-active {
+  border-style: solid;
+  border-color: var(--primary-color, #2563eb);
+  background: var(--bg-tertiary, rgba(37, 99, 235, 0.08));
+}
+
+.bsm-empty.bsm-drag-active * { pointer-events: none; }
+
 .bsm-format-table {
   border-collapse: collapse;
   font-size: 0.8125rem;
