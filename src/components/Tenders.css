@@ -621,6 +621,52 @@
   color: #2563eb;
 }
 
+/* Переключатель вида таблицы (Компактный / Все столбцы) */
+.btn-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.4375rem 0.75rem;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn-view-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
+.btn-view-toggle.active {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
+[data-theme='dark'] .btn-view-toggle.active {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+  border-color: rgba(37, 99, 235, 0.5);
+}
+
+/* Компактный режим таблицы: оставшимся столбцам разрешаем растягиваться */
+.tenders-page .data-table--compact {
+  table-layout: auto;
+  width: 100%;
+}
+
+.tenders-page .data-table--compact th,
+.tenders-page .data-table--compact td {
+  /* Снимаем maxWidth у «Описание работ», чтобы оно занимало освободившееся место */
+  max-width: none;
+}
+
 .tenders-page .tender-tabs {
   border-bottom-width: 1px;
 }

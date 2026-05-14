@@ -1,20 +1,26 @@
-// Универсальная генерация UUID v4 с fallback на ручную реализацию.
-// crypto.randomUUID() недоступен в незащищённых контекстах (http://) и в старых браузерах.
-export function generateUUID() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  // Fallback: UUID v4 на основе crypto.getRandomValues или Math.random.
+// Ручная реализация UUID v4. НЕ обращается к crypto.randomUUID — поэтому безопасно
+// использовать как полифил для самого crypto.randomUUID (см. main.jsx).
+export function uuidv4Manual() {
   const bytes = new Uint8Array(16)
   if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
     crypto.getRandomValues(bytes)
   } else {
     for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256)
   }
-  // Установить версию (v4) и вариант (RFC 4122)
+  // Версия (v4) и вариант (RFC 4122)
   bytes[6] = (bytes[6] & 0x0f) | 0x40
   bytes[8] = (bytes[8] & 0x3f) | 0x80
   const hex = []
   for (let i = 0; i < 16; i++) hex.push(bytes[i].toString(16).padStart(2, '0'))
   return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`
+}
+
+// Универсальная генерация UUID v4: предпочитаем нативный crypto.randomUUID,
+// fallback — на ручную реализацию.
+// crypto.randomUUID() недоступен в незащищённых контекстах (http://) и в старых браузерах.
+export function generateUUID() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return uuidv4Manual()
 }

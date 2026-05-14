@@ -65,6 +65,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [responsibleFilter, setResponsibleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  // Компактный вид: скрывает столбцы «ВОРы и РД», «План затрат», «Тендер на материалы», «Сводная КП»
+  // и сохраняется в localStorage отдельно для каждого представления (construction/warranty/materials).
+  const compactStorageKey = `tenders-compact-view:${tenderType}:${department}`
+  const [compactView, setCompactView] = useState(() => {
+    try { return localStorage.getItem(compactStorageKey) === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(compactStorageKey, compactView ? '1' : '0') } catch { /* noop */ }
+  }, [compactView, compactStorageKey])
   // Родительский тендер при создании дочернего тендера на материалы (preselect)
   const [materialsParentTender, setMaterialsParentTender] = useState(null)
   const [sortField, setSortField] = useState('start_date') // 'start_date' | 'end_date'
@@ -1236,9 +1245,22 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     <div className="tenders-page">
       <div className="page-header page-header-tenders">
         <h2><span className="page-icon" aria-hidden>📋</span> {pageTitle}</h2>
-        <button className="btn-primary" onClick={handleAddNew}>
-          + Добавить тендер
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            type="button"
+            className={`btn-view-toggle ${compactView ? 'active' : ''}`}
+            onClick={() => setCompactView(v => !v)}
+            title={compactView
+              ? 'Показать все столбцы'
+              : 'Скрыть столбцы: ВОРы и РД, План затрат, Тендер на материалы, Сводная КП'}
+          >
+            <span aria-hidden style={{ fontSize: '0.875rem' }}>{compactView ? '⊞' : '⊟'}</span>
+            <span>{compactView ? 'Все столбцы' : 'Компактный вид'}</span>
+          </button>
+          <button className="btn-primary" onClick={handleAddNew}>
+            + Добавить тендер
+          </button>
+        </div>
       </div>
 
       {/* Вкладки */}
@@ -1392,7 +1414,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       </div>
 
       <div className="table-container">
-        <table className="data-table">
+        <table className={`data-table ${compactView ? 'data-table--compact' : ''}`}>
           {isMaterialsView ? (
             <>
               <thead>
@@ -1610,24 +1632,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 Планируемые<br />сроки{sortIndicator('start_date')}
               </th>
               <th style={{ width: '140px' }}>Ответственный<br />по тендеру</th>
-              {department === 'construction' && (
+              {!compactView && department === 'construction' && (
                 <th style={{ width: '110px' }}>ВОРы<br />и&nbsp;РД</th>
               )}
               <th style={{ width: '120px' }}>Тендерный<br />пакет</th>
-              {department === 'construction' && activeTab !== 'completed' && (
+              {!compactView && department === 'construction' && activeTab !== 'completed' && (
                 <th style={{ width: '110px' }}>План<br />затрат</th>
               )}
-              {!isMaterialsView && department === 'construction' && (
+              {!compactView && !isMaterialsView && department === 'construction' && (
                 <th style={{ width: '120px' }}>Тендер<br />на&nbsp;материалы</th>
               )}
-              <th style={{ width: '120px' }}>Сводная<br />КП</th>
+              {!compactView && <th style={{ width: '120px' }}>Сводная<br />КП</th>}
               <th className="actions-column" style={{ width: '80px' }}>Действия</th>
             </tr>
           </thead>
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="no-data">
+                <td colSpan={compactView ? 8 : (activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9)))} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : activeTab === 'deleted'
@@ -1771,7 +1793,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       )}
                     </td>
                     {/* ВОРы и РД */}
-                    {department === 'construction' && (
+                    {!compactView && department === 'construction' && (
                       <td>
                         <div className="phase-cell">
                           {(() => {
@@ -1840,7 +1862,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         )}
                       </td>
                     {/* План затрат */}
-                    {department === 'construction' && activeTab !== 'completed' && (
+                    {!compactView && department === 'construction' && activeTab !== 'completed' && (
                       <td>
                         <div className="phase-cell">
                           {(() => {
@@ -1874,7 +1896,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </td>
                     )}
                     {/* Тендер на материалы (дочерний) — только в основном строительстве */}
-                    {!isMaterialsView && department === 'construction' && (
+                    {!compactView && !isMaterialsView && department === 'construction' && (
                       <td>
                         {tender.materials_tender ? (
                           <div className="phase-cell">
@@ -1899,7 +1921,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                 className="link"
                                 title="Открыть КП на материалы"
                               >
-                                КП
+                                Открыть
                               </a>
                             )}
                           </div>
@@ -1924,40 +1946,42 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </td>
                     )}
                     {/* Сводная КП */}
-                    <td>
-                      {tender.summary_proposal_link ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                          <a
-                            href={tender.summary_proposal_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link"
-                          >
-                            Открыть
-                          </a>
+                    {!compactView && (
+                      <td>
+                        {tender.summary_proposal_link ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                            <a
+                              href={tender.summary_proposal_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link"
+                            >
+                              Открыть
+                            </a>
+                            <button
+                              className="btn-icon btn-edit"
+                              onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', tender.summary_proposal_link)}
+                              title="Изменить ссылку"
+                              style={{ fontSize: '0.75rem' }}
+                            >✏️</button>
+                          </div>
+                        ) : (
                           <button
-                            className="btn-icon btn-edit"
-                            onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', tender.summary_proposal_link)}
-                            title="Изменить ссылку"
-                            style={{ fontSize: '0.75rem' }}
-                          >✏️</button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', '')}
-                          style={{
-                            background: 'none',
-                            border: '1px dashed var(--border-color)',
-                            borderRadius: '4px',
-                            padding: '0.1875rem 0.5rem',
-                            color: 'var(--text-tertiary)',
-                            cursor: 'pointer',
-                            fontSize: '0.75rem'
-                          }}
-                          title="Добавить ссылку на сводную КП"
-                        >+ ссылка</button>
-                      )}
-                    </td>
+                            onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', '')}
+                            style={{
+                              background: 'none',
+                              border: '1px dashed var(--border-color)',
+                              borderRadius: '4px',
+                              padding: '0.1875rem 0.5rem',
+                              color: 'var(--text-tertiary)',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem'
+                            }}
+                            title="Добавить ссылку на сводную КП"
+                          >+ ссылка</button>
+                        )}
+                      </td>
+                    )}
                     <td className="actions-cell">
                       {activeTab === 'deleted' ? (
                         <>
@@ -2013,7 +2037,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="expanded-cp-row">
+                      <td colSpan={compactView ? 8 : (activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9)))} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"
