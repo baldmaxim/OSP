@@ -132,6 +132,11 @@
   color: #9a3412;
 }
 
+.status-badge.status-summarizing {
+  background: #cffafe;
+  color: #155e75;
+}
+
 /* Info Card */
 .tender-info-card {
   background: var(--bg-secondary);
@@ -1490,6 +1495,11 @@
 [data-theme='dark'] .status-badge.status-suspended {
   background: #4a2c1a;
   color: #fbbf94;
+}
+
+[data-theme='dark'] .status-badge.status-summarizing {
+  background: #164e63;
+  color: #a5f3fc;
 }
 
 [data-theme='dark'] .status-badge.status-accepted {

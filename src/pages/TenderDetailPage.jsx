@@ -200,6 +200,7 @@ function TenderDetailPage() {
       'Заявка на тендер': 'status-not-started',
       'Подготовка ВОР': 'status-waiting-vor',
       'Идет тендерная процедура': 'status-in-progress',
+      'Подведение итогов': 'status-summarizing',
       'Завершен': 'status-completed',
       'Приостановка тендера': 'status-suspended',
       'Не начат': 'status-not-started',

@@ -55,7 +55,8 @@ function detectKind(rawCode) {
   if (code === 'мат' || code === 'мат.' || code.startsWith('мат.') || code.startsWith('мат ')) {
     return 'material'
   }
-  if (code === 'р' || code.startsWith('р-') || code.startsWith('р ') || code === 'раб' || code === 'раб.') {
+  // Любой код, начинающийся с «р» (после нормализации регистра): «Р», «р», «Р-…», «раб», «раб.», «Работа», «работы», «РАБОТА».
+  if (code === 'р' || code.startsWith('р-') || code.startsWith('р ') || code.startsWith('раб')) {
     return 'work'
   }
   return null
@@ -312,6 +313,95 @@ function BSMPage() {
   const hasData = allRows.length > 0
   const subTabsAvailable = hasData
 
+  // Экспорт текущего состояния анализа в Excel: все 4 раздела в отдельных листах.
+  const handleExportExcel = () => {
+    if (!hasData || grouped.length === 0) {
+      alert('Нет данных для выгрузки. Сначала загрузите файл и проверьте, что в диапазоне есть позиции.')
+      return
+    }
+    const tabLabel = mainTab === 'material' ? 'Материалы' : 'Работы'
+    const volumeHeader = mainTab === 'material' ? 'Объём (расход)' : 'Объём работ'
+    const priceHeader = mainTab === 'material' ? 'Цена за ед., ₽' : 'Расценка СМР, ₽'
+
+    const wb = XLSX.utils.book_new()
+
+    // Лист 1: «Сводная»
+    const summaryRows = [
+      ['№', 'Наименование', 'Ед. изм.', volumeHeader, priceHeader, 'Сумма, ₽', 'Позиций', 'Предупреждения'],
+      ...grouped.map((g, idx) => [
+        idx + 1,
+        g.name,
+        g.units.join(', '),
+        round2(g.totalVolume),
+        round2(g.unitPrice),
+        round2(g.totalSum),
+        g.count,
+        [
+          g.hasDifferentPrices ? 'разные цены' : null,
+          g.hasDifferentUnits ? 'разные ед.' : null,
+          g.prices.length === 0 ? 'не расценено' : null,
+        ].filter(Boolean).join('; '),
+      ]),
+      [],
+      ['', 'ИТОГО', '', round2(grouped.reduce((s, r) => s + r.totalVolume, 0)), '',
+        round2(grouped.reduce((s, r) => s + r.totalSum, 0)),
+        grouped.reduce((s, r) => s + r.count, 0), ''],
+    ]
+    const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows)
+    summarySheet['!cols'] = [{ wch: 5 }, { wch: 55 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 9 }, { wch: 24 }]
+    XLSX.utils.book_append_sheet(wb, summarySheet, `${tabLabel} — Сводная`)
+
+    // Лист 2: «Разные цены»
+    if (differentPrices.length > 0) {
+      const rows = [['Наименование', 'Стр. Excel', 'Ед. изм.', 'Объём', 'Цена, ₽', 'Сумма, ₽']]
+      for (const g of differentPrices) {
+        rows.push([g.name, '', '', round2(g.totalVolume), '', round2(g.totalSum)])
+        for (const it of g.items) {
+          rows.push(['  → исходная строка', it.excelRow, it.unit, round2(it.volume), round2(it.price), round2(it.sum)])
+        }
+      }
+      const sh = XLSX.utils.aoa_to_sheet(rows)
+      sh['!cols'] = [{ wch: 55 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 16 }]
+      XLSX.utils.book_append_sheet(wb, sh, `${tabLabel} — Разные цены`)
+    }
+
+    // Лист 3: «Разные ед.изм.»
+    if (differentUnits.length > 0) {
+      const rows = [['Наименование', 'Стр. Excel', 'Ед. изм.', 'Объём', 'Цена, ₽', 'Сумма, ₽']]
+      for (const g of differentUnits) {
+        rows.push([g.name, '', '', round2(g.totalVolume), '', round2(g.totalSum)])
+        for (const it of g.items) {
+          rows.push(['  → исходная строка', it.excelRow, it.unit, round2(it.volume), round2(it.price), round2(it.sum)])
+        }
+      }
+      const sh = XLSX.utils.aoa_to_sheet(rows)
+      sh['!cols'] = [{ wch: 55 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 }]
+      XLSX.utils.book_append_sheet(wb, sh, `${tabLabel} — Разные ед.`)
+    }
+
+    // Лист 4: «Не расценены»
+    if (notPriced.length > 0) {
+      const rows = [['Наименование', 'Ед. изм.', 'Объём', 'Позиций', 'Стр. Excel']]
+      for (const g of notPriced) {
+        rows.push([
+          g.name,
+          g.units.join(', '),
+          round2(g.totalVolume),
+          g.count,
+          g.items.map(it => it.excelRow).join(', '),
+        ])
+      }
+      const sh = XLSX.utils.aoa_to_sheet(rows)
+      sh['!cols'] = [{ wch: 55 }, { wch: 12 }, { wch: 12 }, { wch: 9 }, { wch: 30 }]
+      XLSX.utils.book_append_sheet(wb, sh, `${tabLabel} — Не расценены`)
+    }
+
+    // Имя файла: «Анализ КП - <имя источника без расширения> - <Материалы|Работы>.xlsx»
+    const baseName = fileName.replace(/\.(xlsx|xls)$/i, '') || 'без имени'
+    const outName = `Анализ КП - ${baseName} - ${tabLabel}.xlsx`
+    XLSX.writeFile(wb, outName)
+  }
+
   return (
     <div className="bsm-page">
       <header className="bsm-header">
@@ -355,6 +445,14 @@ function BSMPage() {
               )}
               <button className="bsm-btn-secondary" onClick={() => fileInputRef.current?.click()}>
                 Заменить
+              </button>
+              <button
+                className="bsm-btn-secondary"
+                onClick={handleExportExcel}
+                disabled={!hasData || grouped.length === 0}
+                title="Выгрузить текущий анализ (Сводная + расхождения + не расценены) в Excel"
+              >
+                📥 Скачать Excel
               </button>
               <button className="bsm-btn-ghost" onClick={handleClear}>
                 Очистить

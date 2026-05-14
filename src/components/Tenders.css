@@ -127,6 +127,18 @@
   border: 1px solid #fed7aa;
 }
 
+.status-summarizing {
+  background-color: #ecfeff;
+  color: #155e75;
+  border: 1px solid #a5f3fc;
+}
+
+[data-theme='dark'] .status-summarizing {
+  background-color: #164e63;
+  color: #a5f3fc;
+  border-color: #0891b2;
+}
+
 [data-theme='dark'] .status-not-started {
   background-color: #334155;
   color: #cbd5e1;
