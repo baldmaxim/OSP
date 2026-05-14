@@ -28,13 +28,18 @@ const COL = {
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
 // Excel-числа с разделителями/валютой/пробелами → JS number.
+// Учитываем все виды пробелов: обычный, табуляция, неразрывный (U+00A0),
+// figure space (U+2007), narrow no-break (U+202F), zero-width (U+200B).
 function cleanNumeric(value) {
   if (value === null || value === undefined || value === '') return 0
   if (typeof value === 'number') return value
   let str = String(value)
+  // 1) Убираем все виды пробелов СНАЧАЛА — иначе «1 234,56» парсится как «1».
+  str = str.replace(/[\s   ​]+/g, '')
+  // 2) Символы валют.
   str = str.replace(/[₽$€¥£]/g, '')
-  str = str.replace(/\s*(руб\.?|р\.?|rub\.?|usd|eur|тыс\.?|млн\.?)\s*/gi, '')
-  str = str.replace(/[\s   ]/g, '')
+  // 3) Валютные суффиксы (после удаления пробелов уже без границ).
+  str = str.replace(/(руб\.?|rub|usd|eur|тыс\.?|млн\.?)$/i, '')
   str = str.replace(',', '.')
   str = str.replace(/[^\d.\-]/g, '')
   const n = parseFloat(str)
@@ -43,8 +48,9 @@ function cleanNumeric(value) {
 
 // Определение типа строки по полю КОД.
 // «мат.» / «мат» → материал, «Р» / «Р-…» → работа, иначе пусто.
+// Нормализуем whitespace: КОД из Excel может прийти с неразрывными пробелами и табуляциями.
 function detectKind(rawCode) {
-  const code = String(rawCode || '').trim().toLowerCase()
+  const code = String(rawCode || '').replace(/\s+/g, ' ').trim().toLowerCase()
   if (!code) return null
   if (code === 'мат' || code === 'мат.' || code.startsWith('мат.') || code.startsWith('мат ')) {
     return 'material'
@@ -55,8 +61,8 @@ function detectKind(rawCode) {
   return null
 }
 
-const fmtRub = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(round2(n)) + ' ₽'
-const fmtNum = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(round2(n))
+const fmtRub = (n) => new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(round2(n)) + ' ₽'
+const fmtNum = (n) => new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(round2(n))
 
 function BSMPage() {
   const [fileName, setFileName] = useState('')
@@ -186,6 +192,8 @@ function BSMPage() {
 
   const differentPrices = useMemo(() => grouped.filter(g => g.hasDifferentPrices), [grouped])
   const differentUnits = useMemo(() => grouped.filter(g => g.hasDifferentUnits), [grouped])
+  // Позиции без цены: цена не указана ни в одной из исходных строк (pricesSet пуст).
+  const notPriced = useMemo(() => grouped.filter(g => g.prices.length === 0), [grouped])
 
   const stats = useMemo(() => {
     const totalRows = rangeRows.length
@@ -280,7 +288,11 @@ function BSMPage() {
                     min={1}
                     max={allRows.length}
                     value={rangeFrom}
-                    onChange={(e) => setRangeFrom(Math.max(1, Math.min(allRows.length, Number(e.target.value) || 1)))}
+                    onChange={(e) => setRangeFrom(e.target.value === '' ? '' : Number(e.target.value))}
+                    onBlur={(e) => {
+                      const v = Number(e.target.value) || 1
+                      setRangeFrom(Math.max(1, Math.min(allRows.length, v)))
+                    }}
                   />
                 </label>
                 <span className="bsm-range-sep">—</span>
@@ -288,10 +300,14 @@ function BSMPage() {
                   По
                   <input
                     type="number"
-                    min={rangeFrom}
+                    min={1}
                     max={allRows.length}
                     value={rangeTo}
-                    onChange={(e) => setRangeTo(Math.max(rangeFrom, Math.min(allRows.length, Number(e.target.value) || rangeFrom)))}
+                    onChange={(e) => setRangeTo(e.target.value === '' ? '' : Number(e.target.value))}
+                    onBlur={(e) => {
+                      const v = Number(e.target.value) || allRows.length
+                      setRangeTo(Math.max(1, Math.min(allRows.length, v)))
+                    }}
                   />
                 </label>
                 <span className="bsm-range-total">из {allRows.length}</span>
@@ -370,6 +386,15 @@ function BSMPage() {
                 Разные ед.&nbsp;изм.
                 <span className="bsm-tab-count">{differentUnits.length}</span>
               </button>
+              <button
+                role="tab"
+                aria-selected={subTab === 'not_priced'}
+                className={`bsm-tab-sub ${subTab === 'not_priced' ? 'active' : ''} ${notPriced.length > 0 ? 'has-warning' : ''}`}
+                onClick={() => setSubTab('not_priced')}
+              >
+                Не расценены
+                <span className="bsm-tab-count">{notPriced.length}</span>
+              </button>
             </nav>
           )}
 
@@ -382,6 +407,9 @@ function BSMPage() {
             )}
             {subTab === 'different_units' && (
               <DifferentUnitsTable rows={differentUnits} mainTab={mainTab} />
+            )}
+            {subTab === 'not_priced' && (
+              <NotPricedTable rows={notPriced} mainTab={mainTab} />
             )}
           </section>
         </>
@@ -481,6 +509,56 @@ function DifferentPricesTable({ rows, mainTab }) {
             <RowGroup key={g.name} group={g} priceField />
           ))}
         </tbody>
+      </table>
+    </div>
+  )
+}
+
+function NotPricedTable({ rows, mainTab }) {
+  if (rows.length === 0) {
+    return (
+      <div className="bsm-empty-block bsm-empty-block--success">
+        Все позиции ({mainTab === 'material' ? 'материалы' : 'работы'}) расценены — цены проставлены.
+      </div>
+    )
+  }
+  return (
+    <div className="bsm-table-wrap">
+      <table className="bsm-table">
+        <thead>
+          <tr>
+            <th style={{ width: '52px' }} className="num">№</th>
+            <th>Наименование</th>
+            <th style={{ width: '88px' }}>Ед. изм.</th>
+            <th className="num" style={{ width: '130px' }}>
+              {mainTab === 'material' ? 'Объём (расход)' : 'Объём работ'}
+            </th>
+            <th className="num" style={{ width: '110px' }} title="Сколько исходных строк агрегировано">
+              Позиций
+            </th>
+            <th style={{ width: '110px' }}>Стр. Excel</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((g, idx) => (
+            <tr key={g.name}>
+              <td className="num muted">{idx + 1}</td>
+              <td><div className="bsm-name">{g.name}</div></td>
+              <td>{g.units.join(', ') || '—'}</td>
+              <td className="num">{fmtNum(g.totalVolume)}</td>
+              <td className="num">{g.count}</td>
+              <td className="muted">{g.items.map(it => it.excelRow).join(', ')}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan={3} className="bsm-foot-label">Итого без цен</td>
+            <td className="num strong">{fmtNum(rows.reduce((s, r) => s + r.totalVolume, 0))}</td>
+            <td className="num">{rows.reduce((s, r) => s + r.count, 0)}</td>
+            <td></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   )
