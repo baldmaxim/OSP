@@ -13,9 +13,9 @@ module.exports = {
   plugins: ['react-refresh'],
   rules: {
     'react/jsx-no-target-blank': 'off',
-    'react-refresh/only-export-components': [
-      'warn',
-      { allowConstantExport: true },
-    ],
+    // Проект на чистом JS без PropTypes/TypeScript — правило только шумит.
+    'react/prop-types': 'off',
+    // HMR-only хинт; контексты в проекте намеренно держат провайдер + хук + константы в одном файле.
+    'react-refresh/only-export-components': 'off',
   },
 }

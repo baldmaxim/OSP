@@ -35,7 +35,9 @@
       "PowerShell(npm install --no-audit --no-fund)",
       "PowerShell(npm run lint 2>&1)",
       "Bash(xargs -I{} bash -c 'echo \"File: {}\" && cat {}')",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(node c:/tmp/fix_ws.cjs)",
+      "Bash(grep -A 4 \"BSMPage.jsx$\")"
     ],
     "deny": [],
     "ask": []

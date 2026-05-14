@@ -26,19 +26,7 @@ function ContractDetailPage() {
   const templateInputRef = useRef(null)
   const previewRef = useRef(null)
 
-  useEffect(() => {
-    fetchContract()
-    // Загрузить шаблон из localStorage
-    const saved = localStorage.getItem('contractTemplate')
-    if (saved) {
-      const binary = atob(saved)
-      const bytes = new Uint8Array(binary.length)
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-      setTemplateFile(bytes.buffer)
-    }
-  }, [contractId])
-
-  const fetchContract = async () => {
+  const fetchContract = useCallback(async () => {
     try {
       setLoading(true)
       const { data, error } = await supabase
@@ -54,7 +42,19 @@ function ContractDetailPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [contractId])
+
+  useEffect(() => {
+    fetchContract()
+    // Загрузить шаблон из localStorage
+    const saved = localStorage.getItem('contractTemplate')
+    if (saved) {
+      const binary = atob(saved)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      setTemplateFile(bytes.buffer)
+    }
+  }, [fetchContract])
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '—'

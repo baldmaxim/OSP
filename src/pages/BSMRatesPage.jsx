@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import './BSMRatesPage.css'
@@ -27,15 +27,6 @@ function BSMRatesPage() {
     fetchObjects()
   }, [])
 
-  // Загрузка расценок при выборе объекта
-  useEffect(() => {
-    if (selectedObjectId) {
-      fetchRates()
-    } else {
-      setRates([])
-    }
-  }, [selectedObjectId])
-
   const fetchObjects = async () => {
     const { data, error } = await supabase
       .from('objects')
@@ -47,7 +38,7 @@ function BSMRatesPage() {
     }
   }
 
-  const fetchRates = async () => {
+  const fetchRates = useCallback(async () => {
     setIsLoading(true)
     const { data, error } = await supabase
       .from('bsm_supply_rates')
@@ -59,7 +50,16 @@ function BSMRatesPage() {
       setRates(data)
     }
     setIsLoading(false)
-  }
+  }, [selectedObjectId])
+
+  // Загрузка расценок при выборе объекта
+  useEffect(() => {
+    if (selectedObjectId) {
+      fetchRates()
+    } else {
+      setRates([])
+    }
+  }, [selectedObjectId, fetchRates])
 
   const handleAddRate = async () => {
     if (!newRate.material_name || !newRate.supply_price) {

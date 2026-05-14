@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
@@ -38,34 +38,6 @@ function ObjectsPage() {
   // Фильтр по статусу
   const [statusFilter, setStatusFilter] = useState('main_construction')
 
-  useEffect(() => {
-    fetchObjects()
-  }, [])
-
-  useEffect(() => {
-    if (showMapModal && objects.length > 0) {
-      const timer = setTimeout(() => {
-        if (window.ymaps) {
-          console.log('Инициализация/обновление карты...')
-          window.ymaps.ready(() => {
-            initMap()
-          })
-        }
-      }, 100)
-
-      return () => clearTimeout(timer)
-    }
-
-    return () => {
-      if (mapInstance && !showMapModal) {
-        console.log('Очистка карты...')
-        mapInstance.destroy()
-        mapInstance = null
-        mapInitialized.current = false
-      }
-    }
-  }, [showMapModal, objects, mapFilter])
-
   const getObjectCoordinates = (object) => {
     if (object.latitude !== null && object.latitude !== undefined &&
         object.longitude !== null && object.longitude !== undefined) {
@@ -86,7 +58,7 @@ function ObjectsPage() {
     return null
   }
 
-  const initMap = async () => {
+  const initMap = useCallback(async () => {
     try {
       setMapLoading(true)
       console.log('Начало инициализации карты')
@@ -232,9 +204,9 @@ function ObjectsPage() {
       alert('Ошибка при загрузке карты: ' + error.message)
       setMapLoading(false)
     }
-  }
+  }, [objects, mapFilter])
 
-  const fetchObjects = async () => {
+  const fetchObjects = useCallback(async () => {
     try {
       setLoading(true)
       let query = supabase
@@ -251,7 +223,35 @@ function ObjectsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [scopedObjectId])
+
+  useEffect(() => {
+    fetchObjects()
+  }, [fetchObjects])
+
+  useEffect(() => {
+    if (showMapModal && objects.length > 0) {
+      const timer = setTimeout(() => {
+        if (window.ymaps) {
+          console.log('Инициализация/обновление карты...')
+          window.ymaps.ready(() => {
+            initMap()
+          })
+        }
+      }, 100)
+
+      return () => clearTimeout(timer)
+    }
+
+    return () => {
+      if (mapInstance && !showMapModal) {
+        console.log('Очистка карты...')
+        mapInstance.destroy()
+        mapInstance = null
+        mapInitialized.current = false
+      }
+    }
+  }, [showMapModal, objects, mapFilter, initMap])
 
   const handleObjectSubmit = async (e) => {
     e.preventDefault()
@@ -789,7 +789,7 @@ function ObjectsPage() {
                   <li>Откройте <a href="https://yandex.ru/maps" target="_blank" rel="noopener noreferrer">Яндекс.Карты</a></li>
                   <li>Найдите нужный объект на карте</li>
                   <li>Нажмите правой кнопкой мыши на точку объекта</li>
-                  <li>Выберите "Что здесь?" - координаты появятся внизу</li>
+                  <li>Выберите «Что здесь?» — координаты появятся внизу</li>
                   <li>Скопируйте широту и долготу в соответствующие поля</li>
                 </ol>
               </div>

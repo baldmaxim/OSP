@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import './BSMComparisonPage.css'
@@ -19,25 +19,6 @@ function BSMComparisonPage() {
     fetchObjects()
   }, [])
 
-  // Загрузка расценок при выборе объекта
-  useEffect(() => {
-    if (selectedObjectId) {
-      fetchAllRates()
-    } else {
-      setContractRates([])
-      setSupplyRates([])
-      setComparisonData([])
-      setStats(null)
-    }
-  }, [selectedObjectId])
-
-  // Пересчёт сравнения при изменении данных
-  useEffect(() => {
-    if (contractRates.length > 0 || supplyRates.length > 0) {
-      calculateComparison()
-    }
-  }, [contractRates, supplyRates])
-
   const fetchObjects = async () => {
     const { data, error } = await supabase
       .from('objects')
@@ -49,7 +30,7 @@ function BSMComparisonPage() {
     }
   }
 
-  const fetchAllRates = async () => {
+  const fetchAllRates = useCallback(async () => {
     setIsLoading(true)
 
     // Загружаем обе таблицы параллельно
@@ -74,9 +55,9 @@ function BSMComparisonPage() {
     }
 
     setIsLoading(false)
-  }
+  }, [selectedObjectId])
 
-  const calculateComparison = () => {
+  const calculateComparison = useCallback(() => {
     // Создаём карты расценок по названию материала (в нижнем регистре)
     const contractMap = {}
     contractRates.forEach(rate => {
@@ -166,7 +147,26 @@ function BSMComparisonPage() {
       contractTotal: contractRates.length,
       supplyTotal: supplyRates.length
     })
-  }
+  }, [contractRates, supplyRates])
+
+  // Загрузка расценок при выборе объекта
+  useEffect(() => {
+    if (selectedObjectId) {
+      fetchAllRates()
+    } else {
+      setContractRates([])
+      setSupplyRates([])
+      setComparisonData([])
+      setStats(null)
+    }
+  }, [selectedObjectId, fetchAllRates])
+
+  // Пересчёт сравнения при изменении данных
+  useEffect(() => {
+    if (contractRates.length > 0 || supplyRates.length > 0) {
+      calculateComparison()
+    }
+  }, [contractRates, supplyRates, calculateComparison])
 
   const handleExportExcel = () => {
     if (comparisonData.length === 0) return

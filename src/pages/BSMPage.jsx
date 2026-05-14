@@ -2,18 +2,21 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import './BSMPage.css'
 
-// Структура колонок Excel:
-// A(0) — № п/п
-// B(1) — КОД (мат./Р/Р-…)
-// C(2) — Наименование затрат
-// D(3) — Ед. изм.
-// E(4) — Объём по виду работ
-// F(5) — Общий расход по материалу
-// G(6) — Цена, руб. с НДС за материалы/оборудование
-// H(7) — Цена, руб. с НДС за СМР/ПНР
-// L(11) — Примечания
-
-const COL = {
+// Два варианта раскладки колонок исходного Excel.
+// Variant 1 (по умолчанию): отдельные столбцы под объём работ и расход материала.
+// Variant 2: единый столбец F с объёмом, цены и единицы измерения сдвинуты вправо.
+//
+// Variant 1:
+//   A(0) № п/п | B(1) КОД | C(2) Наименование | D(3) Ед. изм.
+//   E(4) Объём по виду работ | F(5) Общий расход по материалу
+//   G(6) Цена материалов | H(7) Цена работ | L(11) Примечания
+//
+// Variant 2:
+//   A(0) № п/п | B(1) КОД | C(2) Наименование
+//   D(3) Примечание к расчёту (не участвует — отображается)
+//   E(4) Ед. изм. | F(5) Объём по виду работ (общий, и для мат., и для работ)
+//   G(6) Расход по материалу (не участвует) | H(7) Цена материалов | I(8) Цена работ
+const COL_V1 = {
   num: 0,
   code: 1,
   name: 2,
@@ -23,6 +26,23 @@ const COL = {
   priceMaterial: 6,
   priceWork: 7,
   notes: 11,
+}
+
+const COL_V2 = {
+  num: 0,
+  code: 1,
+  name: 2,
+  notes: 3,        // D — Примечание к расчёту (для отображения)
+  unit: 4,         // E — Ед. изм.
+  volume: 5,       // F — единый столбец объёма
+  // 6 (G) — расход по материалу, не участвует
+  priceMaterial: 7,
+  priceWork: 8,
+}
+
+const VARIANTS = {
+  v1: { name: 'Вариант 1 (раздельные объёмы E/F)', columns: COL_V1 },
+  v2: { name: 'Вариант 2 (единый объём в F)', columns: COL_V2 },
 }
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
@@ -35,13 +55,13 @@ function cleanNumeric(value) {
   if (typeof value === 'number') return value
   let str = String(value)
   // 1) Убираем все виды пробелов СНАЧАЛА — иначе «1 234,56» парсится как «1».
-  str = str.replace(/[\s   ​]+/g, '')
+  str = str.replace(/[\s\u00A0\u2007\u202F\u200B]+/g, '')
   // 2) Символы валют.
   str = str.replace(/[₽$€¥£]/g, '')
   // 3) Валютные суффиксы (после удаления пробелов уже без границ).
   str = str.replace(/(руб\.?|rub|usd|eur|тыс\.?|млн\.?)$/i, '')
   str = str.replace(',', '.')
-  str = str.replace(/[^\d.\-]/g, '')
+  str = str.replace(/[^\d.-]/g, '')
   const n = parseFloat(str)
   return isNaN(n) ? 0 : n
 }
@@ -102,11 +122,11 @@ function cleanNumericLocal(value) {
   if (value === null || value === undefined || value === '') return 0
   if (typeof value === 'number') return value
   let str = String(value)
-  str = str.replace(/[\s   ​]+/g, '')
+  str = str.replace(/[\s\u00A0\u2007\u202F\u200B]+/g, '')
   str = str.replace(/[₽$€¥£]/g, '')
   str = str.replace(/(руб\.?|rub|usd|eur|тыс\.?|млн\.?)$/i, '')
   str = str.replace(',', '.')
-  str = str.replace(/[^\d.\-]/g, '')
+  str = str.replace(/[^\d.-]/g, '')
   const n = parseFloat(str)
   return isNaN(n) ? 0 : n
 }
@@ -123,6 +143,7 @@ function BSMPage() {
   const [subTab, setSubTab] = useState('summary')
   const [error, setError] = useState(null)
   const [isDragActive, setIsDragActive] = useState(false)
+  const [variant, setVariant] = useState('v1') // 'v1' | 'v2' — раскладка колонок Excel
   const fileInputRef = useRef(null)
 
   const processFile = async (file) => {
@@ -173,11 +194,12 @@ function BSMPage() {
     processFile(file)
   }
 
-  // Парсим выбранный лист. Запускается при изменении workbook или selectedSheet.
+  // Парсим выбранный лист. Запускается при изменении workbook, selectedSheet или variant.
   useEffect(() => {
     if (!workbook || !selectedSheet) return
     const sheet = workbook.Sheets[selectedSheet]
     if (!sheet) return
+    const COL = VARIANTS[variant].columns
     let maxR = 0
     for (const k of Object.keys(sheet)) {
       if (k.startsWith('!')) continue
@@ -203,6 +225,7 @@ function BSMPage() {
       return { value: 0, raw: display }
     }
     const getText = (rowIdx, colIdx) => {
+      if (colIdx === undefined || colIdx === null) return ''
       const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
       const cell = sheet[ref]
       if (!cell) return ''
@@ -210,11 +233,19 @@ function BSMPage() {
     }
     const parsed = []
     for (let r = 0; r <= maxR; r++) {
-      const wv = pickCell(r, COL.workVolume)
-      const mv = pickCell(r, COL.materialVolume)
       const pm = pickCell(r, COL.priceMaterial)
       const pw = pickCell(r, COL.priceWork)
       const codeText = getText(r, COL.code)
+      // v1 — раздельные объёмы (E/F); v2 — единый F, используем для обоих типов.
+      let wv, mv
+      if (variant === 'v2') {
+        const vol = pickCell(r, COL.volume)
+        wv = vol
+        mv = vol
+      } else {
+        wv = pickCell(r, COL.workVolume)
+        mv = pickCell(r, COL.materialVolume)
+      }
       parsed.push({
         excelRow: r + 1,
         num: getText(r, COL.num),
@@ -238,7 +269,7 @@ function BSMPage() {
     const firstDataRow = parsed.findIndex(r => r.name) + 1
     setRangeFrom(firstDataRow > 0 ? firstDataRow : 1)
     setRangeTo(parsed.length || 1)
-  }, [workbook, selectedSheet])
+  }, [workbook, selectedSheet, variant])
 
   const handleClear = () => {
     setFileName('')
@@ -443,6 +474,20 @@ function BSMPage() {
         </div>
 
         <div className="bsm-header-actions">
+          {/* Task 176: переключатель раскладки колонок */}
+          <div className="bsm-variant-switch" role="group" aria-label="Вариант раскладки колонок">
+            {Object.entries(VARIANTS).map(([key, v]) => (
+              <button
+                key={key}
+                type="button"
+                className={`bsm-variant-btn ${variant === key ? 'active' : ''}`}
+                onClick={() => setVariant(key)}
+                title={v.name}
+              >
+                {key === 'v1' ? 'Вариант 1' : 'Вариант 2'}
+              </button>
+            ))}
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -506,7 +551,7 @@ function BSMPage() {
           <div className="bsm-empty-text">
             {isDragActive
               ? 'Файл будет загружен и обработан автоматически.'
-              : 'Загрузите Excel-документ или перетащите его сюда. Ожидается следующая структура колонок:'}
+              : `Загрузите Excel-документ или перетащите его сюда. Активная раскладка: ${VARIANTS[variant].name}.`}
           </div>
           <table className="bsm-format-table">
             <thead>
@@ -515,15 +560,31 @@ function BSMPage() {
               </tr>
             </thead>
             <tbody>
-              <tr><td>A</td><td>№ п/п</td></tr>
-              <tr><td>B</td><td>КОД (<code>мат.</code> — материал, <code>Р</code>/<code>Р-…</code> — работа)</td></tr>
-              <tr><td>C</td><td>Наименование затрат</td></tr>
-              <tr><td>D</td><td>Ед. изм.</td></tr>
-              <tr><td>E</td><td>Объём по виду работ</td></tr>
-              <tr><td>F</td><td>Общий расход по материалу</td></tr>
-              <tr><td>G</td><td>Цена, руб. с НДС за материалы/оборудование</td></tr>
-              <tr><td>H</td><td>Цена, руб. с НДС за СМР/ПНР</td></tr>
-              <tr><td>L</td><td>Примечания</td></tr>
+              {variant === 'v1' ? (
+                <>
+                  <tr><td>A</td><td>№ п/п</td></tr>
+                  <tr><td>B</td><td>КОД (<code>мат.</code> — материал, <code>Р</code>/<code>Р-…</code> — работа)</td></tr>
+                  <tr><td>C</td><td>Наименование затрат</td></tr>
+                  <tr><td>D</td><td>Ед. изм.</td></tr>
+                  <tr><td>E</td><td>Объём по виду работ</td></tr>
+                  <tr><td>F</td><td>Общий расход по материалу</td></tr>
+                  <tr><td>G</td><td>Цена, руб. с НДС за материалы/оборудование</td></tr>
+                  <tr><td>H</td><td>Цена, руб. с НДС за СМР/ПНР</td></tr>
+                  <tr><td>L</td><td>Примечания</td></tr>
+                </>
+              ) : (
+                <>
+                  <tr><td>A</td><td>№ п/п</td></tr>
+                  <tr><td>B</td><td>КОД (<code>мат.</code> — материал, <code>Р</code>/<code>Р-…</code> — работа)</td></tr>
+                  <tr><td>C</td><td>Наименование затрат</td></tr>
+                  <tr><td>D</td><td>Примечание к расчёту <em>(в расчёте не участвует)</em></td></tr>
+                  <tr><td>E</td><td>Ед. изм.</td></tr>
+                  <tr><td>F</td><td>Объём по виду работ <em>(единый для материалов и работ)</em></td></tr>
+                  <tr><td>G</td><td>Расход по материалу <em>(в расчёте не участвует)</em></td></tr>
+                  <tr><td>H</td><td>Цена за материалы (ед.)</td></tr>
+                  <tr><td>I</td><td>Цена за работу (ед.)</td></tr>
+                </>
+              )}
             </tbody>
           </table>
         </div>

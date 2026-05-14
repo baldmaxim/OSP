@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './StatusDropdown.css'
 
@@ -10,7 +10,7 @@ function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, a
 
   // Позиционируем меню относительно триггера (фиксированные координаты — не обрезаются overflow родителей).
   // Если внизу мало места — раскрываем меню вверх, чтобы оно не уходило за экран.
-  const updatePosition = () => {
+  const updatePosition = useCallback(() => {
     const el = triggerRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
@@ -26,7 +26,7 @@ function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, a
       ? Math.max(8, r.top - actualH - 4)
       : r.bottom + 4
     setMenuPos({ top, left: r.left, width: r.width })
-  }
+  }, [options.length])
 
   useLayoutEffect(() => {
     if (isOpen) {
@@ -34,7 +34,7 @@ function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, a
       // Второй проход после рендера меню — теперь у нас есть фактическая высота.
       requestAnimationFrame(updatePosition)
     }
-  }, [isOpen])
+  }, [isOpen, updatePosition])
 
   useEffect(() => {
     if (!isOpen) return
@@ -57,7 +57,7 @@ function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, a
       window.removeEventListener('scroll', onScrollOrResize, true)
       window.removeEventListener('resize', onScrollOrResize)
     }
-  }, [isOpen])
+  }, [isOpen, updatePosition])
 
   const currentClass = getBadgeClass(value)
   const display = getDisplay ? getDisplay(value) : value

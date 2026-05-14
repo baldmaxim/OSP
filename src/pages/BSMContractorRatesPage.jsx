@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import './BSMRatesPage.css'
@@ -112,21 +112,6 @@ function BSMContractorRatesPage() {
     setBsmListLoading(false)
   }
 
-  useEffect(() => {
-    if (selectedObjectId && selectedCounterpartyId) {
-      fetchRates()
-    } else {
-      setRates([])
-    }
-  }, [selectedObjectId, selectedCounterpartyId])
-
-  // Пересчёт сравнения при изменении данных
-  useEffect(() => {
-    if (materialsData.length > 0 && rates.length > 0) {
-      calculateComparison()
-    }
-  }, [materialsData, rates])
-
   const fetchObjects = async () => {
     const { data, error } = await supabase
       .from('objects')
@@ -144,7 +129,7 @@ function BSMContractorRatesPage() {
     if (!error && data) setCounterparties(data)
   }
 
-  const fetchRates = async () => {
+  const fetchRates = useCallback(async () => {
     setIsLoading(true)
     const { data, error } = await supabase
       .from('bsm_contractor_rates')
@@ -154,7 +139,15 @@ function BSMContractorRatesPage() {
       .order('material_name')
     if (!error && data) setRates(data)
     setIsLoading(false)
-  }
+  }, [selectedObjectId, selectedCounterpartyId])
+
+  useEffect(() => {
+    if (selectedObjectId && selectedCounterpartyId) {
+      fetchRates()
+    } else {
+      setRates([])
+    }
+  }, [selectedObjectId, selectedCounterpartyId, fetchRates])
 
   // ========== Функции для работы со списком БСМ ==========
   const handleSelectBsm = (bsm) => {
@@ -670,7 +663,7 @@ function BSMContractorRatesPage() {
     setComparisonStats(null)
   }
 
-  const calculateComparison = () => {
+  const calculateComparison = useCallback(() => {
     const ratesMap = {}
     rates.forEach(rate => {
       ratesMap[rate.material_name.trim().toLowerCase()] = round2(rate.contractor_price)
@@ -729,7 +722,14 @@ function BSMContractorRatesPage() {
       notFoundCount,
       totalItems: materialsWithPrice.length
     })
-  }
+  }, [materialsData, rates])
+
+  // Пересчёт сравнения при изменении данных
+  useEffect(() => {
+    if (materialsData.length > 0 && rates.length > 0) {
+      calculateComparison()
+    }
+  }, [materialsData, rates, calculateComparison])
 
   const toggleExpanded = (index) => {
     setExpandedItems(prev => ({ ...prev, [index]: !prev[index] }))

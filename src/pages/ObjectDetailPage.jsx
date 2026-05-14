@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
@@ -178,10 +178,6 @@ function ObjectDetailPage() {
   })
 
   useEffect(() => {
-    if (objectId) fetchObjectData()
-  }, [objectId])
-
-  useEffect(() => {
     const handleEsc = (e) => { if (e.key === 'Escape') setIsEstimateFullscreen(false) }
     if (isEstimateFullscreen) {
       document.addEventListener('keydown', handleEsc)
@@ -189,7 +185,7 @@ function ObjectDetailPage() {
     }
   }, [isEstimateFullscreen])
 
-  const fetchObjectData = async () => {
+  const fetchObjectData = useCallback(async () => {
     setLoading(true)
     try {
       const { data: objectData, error: objectError } = await supabase
@@ -230,7 +226,11 @@ function ObjectDetailPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [objectId])
+
+  useEffect(() => {
+    if (objectId) fetchObjectData()
+  }, [objectId, fetchObjectData])
 
   const toggleExpand = (docId) => {
     setExpandedDocs(prev => {
@@ -322,7 +322,7 @@ function ObjectDetailPage() {
     str = str.replace(/[₽$€¥£]/g, '')
     str = str.replace(/[\s\u00A0\u2007\u202F]/g, '')
     str = str.replace(',', '.')
-    str = str.replace(/[^\d.\-]/g, '')
+    str = str.replace(/[^\d.-]/g, '')
     return parseFloat(str) || 0
   }
 
@@ -1022,8 +1022,6 @@ function ObjectDetailPage() {
                     if (!item.is_section && hiddenItemIds.has(item.id)) return null
                     const isCollapsed = item.is_section && collapsedSections.has(item.id)
                     const sectionTotal = item.is_section ? getSectionTotal(item.id) : 0
-                    const colCount = isCombinedEstimate ? 8 : 11
-                    const colCountWithGroup = colCount + (hasSections ? 1 : 0)
 
                     return (
                       <tr key={item.id} className={item.is_section ? `section-row${isCollapsed ? ' collapsed' : ''}` : ''}>

@@ -22,6 +22,9 @@ export const ROLE_LABELS = {
   contractor: 'Подрядчик'
 }
 
+// Email суперадминов — автоподтверждение и роль admin без ожидания.
+const SUPER_ADMINS = ['sadovnikov.d.y@su10.ru']
+
 // Разделы приложения
 export const SECTIONS = {
   objects: 'Объекты',
@@ -101,9 +104,6 @@ export function RoleProvider({ children }) {
       setPermissions({})
     }
   }, [])
-
-  // Суперадмины — автоматическое подтверждение без ожидания и всегда роль admin
-  const SUPER_ADMINS = ['sadovnikov.d.y@su10.ru']
 
   // Загрузить роль пользователя из БД
   const fetchUserRole = useCallback(async (userId, userEmail) => {

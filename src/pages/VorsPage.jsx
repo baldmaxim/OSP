@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
@@ -42,11 +42,6 @@ function VorsPage() {
   const [allContacts, setAllContacts] = useState([])
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
 
-  useEffect(() => {
-    fetchTenders()
-    fetchAllContacts()
-  }, [])
-
   const fetchAllContacts = async () => {
     try {
       const { data, error } = await supabase
@@ -60,7 +55,7 @@ function VorsPage() {
     }
   }
 
-  const fetchTenders = async () => {
+  const fetchTenders = useCallback(async () => {
     try {
       setLoading(true)
       const { data, error } = await supabase
@@ -91,7 +86,12 @@ function VorsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [scopedObjectId])
+
+  useEffect(() => {
+    fetchTenders()
+    fetchAllContacts()
+  }, [fetchTenders])
 
   const handleChangeStatus = async (tenderId, newStatus) => {
     if (newStatus === 'completed') {

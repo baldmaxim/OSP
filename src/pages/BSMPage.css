@@ -38,6 +38,39 @@
   flex-wrap: wrap;
 }
 
+/* Task 176: переключатель вариантов раскладки колонок */
+.bsm-variant-switch {
+  display: inline-flex;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.bsm-variant-btn {
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-right: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+
+.bsm-variant-btn:last-child { border-right: none; }
+
+.bsm-variant-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.bsm-variant-btn.active {
+  background: var(--primary-color, #2563eb);
+  color: #fff;
+}
+
 .bsm-btn-primary,
 .bsm-btn-secondary,
 .bsm-btn-ghost {

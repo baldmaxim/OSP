@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import { supabase } from '../supabase'
@@ -23,14 +23,8 @@ function ContractorProposalsPage() {
     }
   }, [isContractor, navigate])
 
-  // Загружаем тендеры, в которых участвует подрядчик
-  useEffect(() => {
-    if (contractorInfo?.id) {
-      fetchTenders()
-    }
-  }, [contractorInfo])
-
-  const fetchTenders = async () => {
+  const fetchTenders = useCallback(async () => {
+    if (!contractorInfo?.id) return
     setLoading(true)
     try {
       // Получаем тендеры, где подрядчик является участником
@@ -66,7 +60,14 @@ function ContractorProposalsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [contractorInfo?.id])
+
+  // Загружаем тендеры, в которых участвует подрядчик
+  useEffect(() => {
+    if (contractorInfo?.id) {
+      fetchTenders()
+    }
+  }, [contractorInfo?.id, fetchTenders])
 
   const fetchEstimateItems = async (tenderId) => {
     try {
