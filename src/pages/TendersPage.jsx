@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
@@ -1586,7 +1586,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <tr>
               <th style={{ width: '44px' }}></th>
               <th style={{ minWidth: '180px' }}>Наименование<br />объекта</th>
-              <th style={{ minWidth: '180px' }}>Описание работ</th>
+              <th style={{ minWidth: '140px', maxWidth: '220px' }}>Описание работ</th>
               {activeTab !== 'completed' && <th style={{ width: '110px' }}>Статус</th>}
               {activeTab === 'completed' && <th style={{ width: '140px' }}>Победитель</th>}
               <th
@@ -1598,12 +1598,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 Планируемые<br />сроки{sortIndicator('start_date')}
               </th>
               <th style={{ width: '140px' }}>Ответственный<br />по тендеру</th>
-              {department === 'construction' && activeTab !== 'completed' && (
+              {department === 'construction' && (
                 <th style={{ width: '110px' }}>ВОРы<br />и&nbsp;РД</th>
               )}
-              {activeTab !== 'completed' && (
-                <th style={{ width: '120px' }}>Тендерный<br />пакет</th>
-              )}
+              <th style={{ width: '120px' }}>Тендерный<br />пакет</th>
               {department === 'construction' && activeTab !== 'completed' && (
                 <th style={{ width: '110px' }}>План<br />затрат</th>
               )}
@@ -1617,7 +1615,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 9 : 8) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="no-data">
+                <td colSpan={activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : activeTab === 'deleted'
@@ -1655,13 +1653,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
-                        <button
-                          onClick={() => navigate(`/tenders/${tender.id}`)}
+                        <Link
+                          to={`/tenders/${tender.id}`}
                           className="row-link primary"
-                          title="Открыть тендер"
+                          title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
                         >
                           {tender.objects?.name || '-'}
-                        </button>
+                        </Link>
                         {tender.objects?.address && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', wordBreak: 'break-word' }}>
                             {tender.objects.address}
@@ -1683,13 +1681,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </div>
                     </td>
                     <td>
-                      <button
-                        onClick={() => navigate(`/tenders/${tender.id}`)}
+                      <Link
+                        to={`/tenders/${tender.id}`}
                         className="row-link muted"
-                        title="Открыть тендер"
+                        title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
                       >
                         {tender.work_description}
-                      </button>
+                      </Link>
                     </td>
                     {activeTab !== 'completed' && (
                       <td>
@@ -1761,7 +1759,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       )}
                     </td>
                     {/* ВОРы и РД */}
-                    {department === 'construction' && activeTab !== 'completed' && (
+                    {department === 'construction' && (
                       <td>
                         <div className="phase-cell">
                           {(() => {
@@ -1795,8 +1793,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </td>
                     )}
                     {/* Тендерный пакет */}
-                    {activeTab !== 'completed' && (
-                      <td>
+                    <td>
                         {tender.tender_package_link ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
                             <a
@@ -1830,7 +1827,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           >+ ссылка</button>
                         )}
                       </td>
-                    )}
                     {/* План затрат */}
                     {department === 'construction' && activeTab !== 'completed' && (
                       <td>
@@ -2008,7 +2004,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={activeTab === 'completed' ? 8 : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="expanded-cp-row">
+                      <td colSpan={activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9))} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"

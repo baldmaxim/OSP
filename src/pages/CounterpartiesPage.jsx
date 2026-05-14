@@ -384,7 +384,10 @@ function CounterpartiesPage() {
   }
 
   const handleAddContact = (counterparty) => {
-    setSelectedCounterparty(counterparty)
+    // Сохраняем только id и name, чтобы исключить циклические ссылки в state
+    // (counterparty приходит с counterparty_contacts; на компьютерах с менее устойчивыми
+    // версиями браузера/Supabase глубокий объект иногда вызывает stack overflow при сериализации).
+    setSelectedCounterparty({ id: counterparty.id, name: counterparty.name })
     setEditingContact(null)
     setContactFormData({
       full_name: '',
@@ -396,8 +399,8 @@ function CounterpartiesPage() {
   }
 
   const handleEditContact = (counterparty, contact) => {
-    setSelectedCounterparty(counterparty)
-    setEditingContact(contact)
+    setSelectedCounterparty({ id: counterparty.id, name: counterparty.name })
+    setEditingContact({ id: contact.id })
     setContactFormData({
       full_name: contact.full_name,
       position: contact.position || '',

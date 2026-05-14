@@ -969,6 +969,8 @@
   cursor: pointer;
   text-align: left;
   font: inherit;
+  text-decoration: none;
+  display: inline-block;
 }
 
 .tenders-page .row-link.primary {
