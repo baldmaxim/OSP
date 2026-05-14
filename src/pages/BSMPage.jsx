@@ -82,33 +82,46 @@ function BSMPage() {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf, { type: 'array' })
       const sheet = wb.Sheets[wb.SheetNames[0]]
-      // header: 1 — массив массивов, нумерация строк = индекс + 1 (как в Excel)
-      // Грузим ДВА варианта: raw (значения as-is) и formatted (как Excel рисует).
-      // Если raw-значение пусто или 0, берём formatted — это спасает случаи, когда
-      // в ячейке формула без кэша или число хранится как строка с локалью.
-      const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-      const aoaFmt = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
-      // pickNumber: пробуем raw, потом formatted. Возвращаем число и «лучшее» сырое значение для отображения.
-      const pickNumber = (rawVal, fmtVal) => {
-        const a = cleanNumeric(rawVal)
-        if (a > 0) return { value: a, raw: rawVal }
-        const b = cleanNumeric(fmtVal)
-        if (b > 0) return { value: b, raw: fmtVal }
-        // Оба нули — отдаём что есть для диагностики.
-        return { value: 0, raw: rawVal !== '' && rawVal !== undefined ? rawVal : fmtVal }
+      // sheet_to_json читает только в пределах sheet['!ref'], а он часто обрезан.
+      // Поэтому идём напрямую по ячейкам — берём фактический максимум по ключам листа.
+      let maxR = 0
+      for (const k of Object.keys(sheet)) {
+        if (k.startsWith('!')) continue
+        const cell = XLSX.utils.decode_cell(k)
+        if (cell.r > maxR) maxR = cell.r
       }
-      const parsed = aoa.map((row, idx) => {
-        const rowFmt = aoaFmt[idx] || []
-        const wv = pickNumber(row[COL.workVolume], rowFmt[COL.workVolume])
-        const mv = pickNumber(row[COL.materialVolume], rowFmt[COL.materialVolume])
-        const pm = pickNumber(row[COL.priceMaterial], rowFmt[COL.priceMaterial])
-        const pw = pickNumber(row[COL.priceWork], rowFmt[COL.priceWork])
-        return {
-          excelRow: idx + 1,
-          num: row[COL.num],
-          code: row[COL.code],
-          name: String(row[COL.name] || '').trim(),
-          unit: String(row[COL.unit] || '').trim(),
+      // pickCell: достаёт «лучшее» значение — сначала raw .v, потом formatted .w.
+      const pickCell = (rowIdx, colIdx) => {
+        const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
+        const cell = sheet[ref]
+        if (!cell) return { value: 0, raw: '' }
+        const rawV = cell.v
+        const a = cleanNumeric(rawV)
+        if (a > 0) return { value: a, raw: rawV }
+        const b = cleanNumeric(cell.w)
+        if (b > 0) return { value: b, raw: cell.w }
+        const display = (rawV !== undefined && rawV !== '' ? rawV : cell.w) ?? ''
+        return { value: 0, raw: display }
+      }
+      const getText = (rowIdx, colIdx) => {
+        const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
+        const cell = sheet[ref]
+        if (!cell) return ''
+        return cell.v !== undefined && cell.v !== '' ? String(cell.v) : String(cell.w || '')
+      }
+      const parsed = []
+      for (let r = 0; r <= maxR; r++) {
+        const wv = pickCell(r, COL.workVolume)
+        const mv = pickCell(r, COL.materialVolume)
+        const pm = pickCell(r, COL.priceMaterial)
+        const pw = pickCell(r, COL.priceWork)
+        const codeText = getText(r, COL.code)
+        parsed.push({
+          excelRow: r + 1,
+          num: getText(r, COL.num),
+          code: codeText,
+          name: getText(r, COL.name).trim(),
+          unit: getText(r, COL.unit).trim(),
           workVolume: wv.value,
           materialVolume: mv.value,
           priceMaterial: pm.value,
@@ -117,10 +130,10 @@ function BSMPage() {
           rawPriceWork: pw.raw,
           rawWorkVolume: wv.raw,
           rawMaterialVolume: mv.raw,
-          notes: String(row[COL.notes] || '').trim(),
-          kind: detectKind(row[COL.code]),
-        }
-      })
+          notes: getText(r, COL.notes).trim(),
+          kind: detectKind(codeText),
+        })
+      }
       setFileName(file.name)
       setAllRows(parsed)
       // По умолчанию пытаемся пропустить шапку: первая строка с непустым наименованием.
