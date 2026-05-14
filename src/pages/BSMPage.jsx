@@ -83,20 +83,44 @@ function BSMPage() {
       const wb = XLSX.read(buf, { type: 'array' })
       const sheet = wb.Sheets[wb.SheetNames[0]]
       // header: 1 — массив массивов, нумерация строк = индекс + 1 (как в Excel)
+      // Грузим ДВА варианта: raw (значения as-is) и formatted (как Excel рисует).
+      // Если raw-значение пусто или 0, берём formatted — это спасает случаи, когда
+      // в ячейке формула без кэша или число хранится как строка с локалью.
       const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-      const parsed = aoa.map((row, idx) => ({
-        excelRow: idx + 1,
-        num: row[COL.num],
-        code: row[COL.code],
-        name: String(row[COL.name] || '').trim(),
-        unit: String(row[COL.unit] || '').trim(),
-        workVolume: cleanNumeric(row[COL.workVolume]),
-        materialVolume: cleanNumeric(row[COL.materialVolume]),
-        priceMaterial: cleanNumeric(row[COL.priceMaterial]),
-        priceWork: cleanNumeric(row[COL.priceWork]),
-        notes: String(row[COL.notes] || '').trim(),
-        kind: detectKind(row[COL.code]),
-      }))
+      const aoaFmt = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
+      // pickNumber: пробуем raw, потом formatted. Возвращаем число и «лучшее» сырое значение для отображения.
+      const pickNumber = (rawVal, fmtVal) => {
+        const a = cleanNumeric(rawVal)
+        if (a > 0) return { value: a, raw: rawVal }
+        const b = cleanNumeric(fmtVal)
+        if (b > 0) return { value: b, raw: fmtVal }
+        // Оба нули — отдаём что есть для диагностики.
+        return { value: 0, raw: rawVal !== '' && rawVal !== undefined ? rawVal : fmtVal }
+      }
+      const parsed = aoa.map((row, idx) => {
+        const rowFmt = aoaFmt[idx] || []
+        const wv = pickNumber(row[COL.workVolume], rowFmt[COL.workVolume])
+        const mv = pickNumber(row[COL.materialVolume], rowFmt[COL.materialVolume])
+        const pm = pickNumber(row[COL.priceMaterial], rowFmt[COL.priceMaterial])
+        const pw = pickNumber(row[COL.priceWork], rowFmt[COL.priceWork])
+        return {
+          excelRow: idx + 1,
+          num: row[COL.num],
+          code: row[COL.code],
+          name: String(row[COL.name] || '').trim(),
+          unit: String(row[COL.unit] || '').trim(),
+          workVolume: wv.value,
+          materialVolume: mv.value,
+          priceMaterial: pm.value,
+          priceWork: pw.value,
+          rawPriceMaterial: pm.raw,
+          rawPriceWork: pw.raw,
+          rawWorkVolume: wv.raw,
+          rawMaterialVolume: mv.raw,
+          notes: String(row[COL.notes] || '').trim(),
+          kind: detectKind(row[COL.code]),
+        }
+      })
       setFileName(file.name)
       setAllRows(parsed)
       // По умолчанию пытаемся пропустить шапку: первая строка с непустым наименованием.
@@ -139,6 +163,8 @@ function BSMPage() {
       const key = r.name.toLowerCase()
       const volume = isMaterial ? r.materialVolume : r.workVolume
       const price = isMaterial ? r.priceMaterial : r.priceWork
+      const rawVolume = isMaterial ? r.rawMaterialVolume : r.rawWorkVolume
+      const rawPrice = isMaterial ? r.rawPriceMaterial : r.rawPriceWork
       if (!map.has(key)) {
         map.set(key, {
           name: r.name,
@@ -161,6 +187,8 @@ function BSMPage() {
         unit: r.unit,
         volume,
         price,
+        rawVolume,
+        rawPrice,
         sum: round2(volume * price),
         notes: r.notes,
       })
@@ -522,45 +550,64 @@ function NotPricedTable({ rows, mainTab }) {
       </div>
     )
   }
+  const priceColLabel = mainTab === 'material' ? 'G (цена мат.)' : 'H (цена СМР)'
   return (
     <div className="bsm-table-wrap">
-      <table className="bsm-table">
+      <table className="bsm-table bsm-table-detail">
         <thead>
           <tr>
-            <th style={{ width: '52px' }} className="num">№</th>
-            <th>Наименование</th>
-            <th style={{ width: '88px' }}>Ед. изм.</th>
-            <th className="num" style={{ width: '130px' }}>
-              {mainTab === 'material' ? 'Объём (расход)' : 'Объём работ'}
+            <th>Наименование / Стр. Excel</th>
+            <th style={{ width: '90px' }}>Ед. изм.</th>
+            <th className="num" style={{ width: '130px' }}>Объём</th>
+            <th className="num" style={{ width: '160px' }} title="Сырое значение из ячейки Excel">
+              {priceColLabel} <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(сырое)</span>
             </th>
-            <th className="num" style={{ width: '110px' }} title="Сколько исходных строк агрегировано">
-              Позиций
-            </th>
-            <th style={{ width: '110px' }}>Стр. Excel</th>
+            <th className="num" style={{ width: '120px' }}>Распознано как</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((g, idx) => (
-            <tr key={g.name}>
-              <td className="num muted">{idx + 1}</td>
-              <td><div className="bsm-name">{g.name}</div></td>
-              <td>{g.units.join(', ') || '—'}</td>
-              <td className="num">{fmtNum(g.totalVolume)}</td>
-              <td className="num">{g.count}</td>
-              <td className="muted">{g.items.map(it => it.excelRow).join(', ')}</td>
-            </tr>
+          {rows.map((g) => (
+            <RowNotPriced key={g.name} group={g} />
           ))}
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={3} className="bsm-foot-label">Итого без цен</td>
+            <td colSpan={2} className="bsm-foot-label">Итого позиций без цены</td>
             <td className="num strong">{fmtNum(rows.reduce((s, r) => s + r.totalVolume, 0))}</td>
-            <td className="num">{rows.reduce((s, r) => s + r.count, 0)}</td>
+            <td className="num">{rows.reduce((s, r) => s + r.count, 0)} строк</td>
             <td></td>
           </tr>
         </tfoot>
       </table>
     </div>
+  )
+}
+
+function RowNotPriced({ group }) {
+  const formatRaw = (v) => {
+    if (v === null || v === undefined || v === '') return <span className="muted">(пусто)</span>
+    return <code className="bsm-raw">{String(v)}</code>
+  }
+  return (
+    <>
+      <tr className="bsm-row-group-head">
+        <td colSpan={5}>
+          <span className="bsm-name">{group.name}</span>
+          <span className="bsm-group-hint">
+            строк в Excel: {group.items.length} · итого объём: {fmtNum(group.totalVolume)}
+          </span>
+        </td>
+      </tr>
+      {group.items.map((it, idx) => (
+        <tr key={`${group.name}-${idx}`}>
+          <td className="muted bsm-indent">стр. {it.excelRow}</td>
+          <td>{it.unit || '—'}</td>
+          <td className="num">{fmtNum(it.volume)}</td>
+          <td className="num">{formatRaw(it.rawPrice)}</td>
+          <td className="num">{it.price > 0 ? fmtRub(it.price) : <span className="muted">0</span>}</td>
+        </tr>
+      ))}
+    </>
   )
 }
 
