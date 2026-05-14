@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import './BSMPage.css'
 
@@ -64,13 +64,62 @@ function detectKind(rawCode) {
 const fmtRub = (n) => new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(round2(n)) + ' ₽'
 const fmtNum = (n) => new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(round2(n))
 
+// Резолвинг простых формул-ссылок: «=Лист!G15», «=G15», «='Цены'!$G$15», «+G15».
+// Возвращает { value, source } — value уже прошёл cleanNumeric.
+// Защита от циклов: visited (set ссылок).
+function resolveFormula(workbook, currentSheetName, formula, visited = new Set(), depth = 0) {
+  if (depth > 10 || !formula) return null
+  // Чистим: убираем ведущие =/+/-, окружающие пробелы.
+  let f = String(formula).trim().replace(/^[=+]/, '').trim()
+  // Поддерживаем варианты: 'Лист'!$G$15, Лист!G15, G15.
+  const m = f.match(/^(?:'([^']+)'|([^!\s]+))?!?\$?([A-Z]+)\$?(\d+)$/i)
+  if (!m) return null
+  const sheetName = (m[1] || m[2] || currentSheetName)
+  const col = m[3].toUpperCase()
+  const row = m[4]
+  const refKey = `${sheetName}!${col}${row}`
+  if (visited.has(refKey)) return null
+  visited.add(refKey)
+  const targetSheet = workbook.Sheets[sheetName]
+  if (!targetSheet) return null
+  const cell = targetSheet[`${col}${row}`]
+  if (!cell) return null
+  const a = cleanNumericLocal(cell.v)
+  if (a > 0) return { value: a, source: refKey, raw: cell.v }
+  const b = cleanNumericLocal(cell.w)
+  if (b > 0) return { value: b, source: refKey, raw: cell.w }
+  // Цепная формула: ячейка тоже содержит формулу со ссылкой.
+  if (cell.f) {
+    const rec = resolveFormula(workbook, sheetName, cell.f, visited, depth + 1)
+    if (rec) return { ...rec, source: `${refKey} → ${rec.source}` }
+  }
+  return null
+}
+
+// Локальный clone cleanNumeric (тот же код, нужен для использования внутри resolveFormula).
+function cleanNumericLocal(value) {
+  if (value === null || value === undefined || value === '') return 0
+  if (typeof value === 'number') return value
+  let str = String(value)
+  str = str.replace(/[\s   ​]+/g, '')
+  str = str.replace(/[₽$€¥£]/g, '')
+  str = str.replace(/(руб\.?|rub|usd|eur|тыс\.?|млн\.?)$/i, '')
+  str = str.replace(',', '.')
+  str = str.replace(/[^\d.\-]/g, '')
+  const n = parseFloat(str)
+  return isNaN(n) ? 0 : n
+}
+
 function BSMPage() {
   const [fileName, setFileName] = useState('')
-  const [allRows, setAllRows] = useState([]) // [{ excelRow, num, code, name, unit, workVolume, materialVolume, priceMaterial, priceWork, notes, kind }]
+  const [workbook, setWorkbook] = useState(null)         // Сам workbook — храним, чтобы переключать листы и резолвить формулы.
+  const [sheetNames, setSheetNames] = useState([])       // Список листов в файле.
+  const [selectedSheet, setSelectedSheet] = useState('') // Активный лист.
+  const [allRows, setAllRows] = useState([])
   const [rangeFrom, setRangeFrom] = useState(1)
   const [rangeTo, setRangeTo] = useState(1)
-  const [mainTab, setMainTab] = useState('material') // 'material' | 'work'
-  const [subTab, setSubTab] = useState('summary')    // 'summary' | 'different_prices' | 'different_units'
+  const [mainTab, setMainTab] = useState('material')
+  const [subTab, setSubTab] = useState('summary')
   const [error, setError] = useState(null)
   const fileInputRef = useRef(null)
 
@@ -81,65 +130,10 @@ function BSMPage() {
     try {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf, { type: 'array' })
-      const sheet = wb.Sheets[wb.SheetNames[0]]
-      // sheet_to_json читает только в пределах sheet['!ref'], а он часто обрезан.
-      // Поэтому идём напрямую по ячейкам — берём фактический максимум по ключам листа.
-      let maxR = 0
-      for (const k of Object.keys(sheet)) {
-        if (k.startsWith('!')) continue
-        const cell = XLSX.utils.decode_cell(k)
-        if (cell.r > maxR) maxR = cell.r
-      }
-      // pickCell: достаёт «лучшее» значение — сначала raw .v, потом formatted .w.
-      const pickCell = (rowIdx, colIdx) => {
-        const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
-        const cell = sheet[ref]
-        if (!cell) return { value: 0, raw: '' }
-        const rawV = cell.v
-        const a = cleanNumeric(rawV)
-        if (a > 0) return { value: a, raw: rawV }
-        const b = cleanNumeric(cell.w)
-        if (b > 0) return { value: b, raw: cell.w }
-        const display = (rawV !== undefined && rawV !== '' ? rawV : cell.w) ?? ''
-        return { value: 0, raw: display }
-      }
-      const getText = (rowIdx, colIdx) => {
-        const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
-        const cell = sheet[ref]
-        if (!cell) return ''
-        return cell.v !== undefined && cell.v !== '' ? String(cell.v) : String(cell.w || '')
-      }
-      const parsed = []
-      for (let r = 0; r <= maxR; r++) {
-        const wv = pickCell(r, COL.workVolume)
-        const mv = pickCell(r, COL.materialVolume)
-        const pm = pickCell(r, COL.priceMaterial)
-        const pw = pickCell(r, COL.priceWork)
-        const codeText = getText(r, COL.code)
-        parsed.push({
-          excelRow: r + 1,
-          num: getText(r, COL.num),
-          code: codeText,
-          name: getText(r, COL.name).trim(),
-          unit: getText(r, COL.unit).trim(),
-          workVolume: wv.value,
-          materialVolume: mv.value,
-          priceMaterial: pm.value,
-          priceWork: pw.value,
-          rawPriceMaterial: pm.raw,
-          rawPriceWork: pw.raw,
-          rawWorkVolume: wv.raw,
-          rawMaterialVolume: mv.raw,
-          notes: getText(r, COL.notes).trim(),
-          kind: detectKind(codeText),
-        })
-      }
+      setWorkbook(wb)
+      setSheetNames(wb.SheetNames)
       setFileName(file.name)
-      setAllRows(parsed)
-      // По умолчанию пытаемся пропустить шапку: первая строка с непустым наименованием.
-      const firstDataRow = parsed.findIndex(r => r.name) + 1
-      setRangeFrom(firstDataRow > 0 ? firstDataRow : 1)
-      setRangeTo(parsed.length)
+      setSelectedSheet(wb.SheetNames[0] || '')
     } catch (err) {
       console.error('Ошибка чтения Excel:', err)
       setError('Не удалось прочитать файл. Проверьте формат (нужен .xlsx или .xls).')
@@ -148,8 +142,78 @@ function BSMPage() {
     }
   }
 
+  // Парсим выбранный лист. Запускается при изменении workbook или selectedSheet.
+  useEffect(() => {
+    if (!workbook || !selectedSheet) return
+    const sheet = workbook.Sheets[selectedSheet]
+    if (!sheet) return
+    let maxR = 0
+    for (const k of Object.keys(sheet)) {
+      if (k.startsWith('!')) continue
+      const cell = XLSX.utils.decode_cell(k)
+      if (cell.r > maxR) maxR = cell.r
+    }
+    // pickCell: 1) .v 2) .w 3) если есть .f — резолвим ссылку на ячейку другого листа.
+    const pickCell = (rowIdx, colIdx) => {
+      const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
+      const cell = sheet[ref]
+      if (!cell) return { value: 0, raw: '' }
+      const rawV = cell.v
+      const a = cleanNumeric(rawV)
+      if (a > 0) return { value: a, raw: rawV }
+      const b = cleanNumeric(cell.w)
+      if (b > 0) return { value: b, raw: cell.w }
+      // Формула со ссылкой на другую ячейку/лист — пробуем разрешить вручную.
+      if (cell.f) {
+        const r = resolveFormula(workbook, selectedSheet, cell.f)
+        if (r && r.value > 0) return { value: r.value, raw: `${r.raw} (← ${r.source})` }
+      }
+      const display = (rawV !== undefined && rawV !== '' ? rawV : cell.w) ?? ''
+      return { value: 0, raw: display }
+    }
+    const getText = (rowIdx, colIdx) => {
+      const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
+      const cell = sheet[ref]
+      if (!cell) return ''
+      return cell.v !== undefined && cell.v !== '' ? String(cell.v) : String(cell.w || '')
+    }
+    const parsed = []
+    for (let r = 0; r <= maxR; r++) {
+      const wv = pickCell(r, COL.workVolume)
+      const mv = pickCell(r, COL.materialVolume)
+      const pm = pickCell(r, COL.priceMaterial)
+      const pw = pickCell(r, COL.priceWork)
+      const codeText = getText(r, COL.code)
+      parsed.push({
+        excelRow: r + 1,
+        num: getText(r, COL.num),
+        code: codeText,
+        name: getText(r, COL.name).trim(),
+        unit: getText(r, COL.unit).trim(),
+        workVolume: wv.value,
+        materialVolume: mv.value,
+        priceMaterial: pm.value,
+        priceWork: pw.value,
+        rawPriceMaterial: pm.raw,
+        rawPriceWork: pw.raw,
+        rawWorkVolume: wv.raw,
+        rawMaterialVolume: mv.raw,
+        notes: getText(r, COL.notes).trim(),
+        kind: detectKind(codeText),
+      })
+    }
+    setAllRows(parsed)
+    // По умолчанию пытаемся пропустить шапку: первая строка с непустым наименованием.
+    const firstDataRow = parsed.findIndex(r => r.name) + 1
+    setRangeFrom(firstDataRow > 0 ? firstDataRow : 1)
+    setRangeTo(parsed.length || 1)
+  }, [workbook, selectedSheet])
+
   const handleClear = () => {
     setFileName('')
+    setWorkbook(null)
+    setSheetNames([])
+    setSelectedSheet('')
     setAllRows([])
     setRangeFrom(1)
     setRangeTo(1)
@@ -266,7 +330,7 @@ function BSMPage() {
             onChange={handleFile}
             style={{ display: 'none' }}
           />
-          {!hasData ? (
+          {!workbook ? (
             <button className="bsm-btn-primary" onClick={() => fileInputRef.current?.click()}>
               📂 Загрузить Excel
             </button>
@@ -275,6 +339,20 @@ function BSMPage() {
               <span className="bsm-file-chip" title={fileName}>
                 <span aria-hidden>📎</span> {fileName}
               </span>
+              {sheetNames.length > 0 && (
+                <label className="bsm-sheet-select-wrap" title="Лист с данными">
+                  <span aria-hidden>📑</span>
+                  <select
+                    className="bsm-sheet-select"
+                    value={selectedSheet}
+                    onChange={(e) => setSelectedSheet(e.target.value)}
+                  >
+                    {sheetNames.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <button className="bsm-btn-secondary" onClick={() => fileInputRef.current?.click()}>
                 Заменить
               </button>
