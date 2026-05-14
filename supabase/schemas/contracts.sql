@@ -11,9 +11,11 @@ CREATE TABLE IF NOT EXISTS contracts (
   work_start_date DATE,
   work_end_date DATE,
   warranty_period VARCHAR(100),
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  status VARCHAR(20) NOT NULL DEFAULT 'new_request',
   document_link TEXT,
   tender_id UUID REFERENCES tenders(id),
+  work_name TEXT,
+  responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

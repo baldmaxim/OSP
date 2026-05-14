@@ -201,9 +201,16 @@ function ContractDetailPage() {
             <InfoRow label="№ договора" value={contract.contract_number} />
             <InfoRow label="Дата" value={formatDate(contract.contract_date)} />
             <InfoRow label="Объект" value={contract.objects?.name} />
-            <InfoRow label="Описание работ" value={contract.tenders?.work_description} />
+            <InfoRow label="Описание работ" value={contract.work_name || contract.tenders?.work_description} />
             <InfoRow label="Сумма" value={formatAmount(contract.contract_amount)} />
-            <InfoRow label="Статус" value={contract.status === 'signed' ? 'Заключён' : 'На согласовании'} />
+            <InfoRow
+              label="Статус"
+              value={
+                contract.status === 'completed' ? 'Завершено'
+                  : contract.status === 'in_work' ? 'В работе'
+                  : 'Новая заявка'
+              }
+            />
             {contract.document_link && (
               <InfoRow label="Документ" value={<a href={contract.document_link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)' }}>Открыть на Google Drive</a>} />
             )}
