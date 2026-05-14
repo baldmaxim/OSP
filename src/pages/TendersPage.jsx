@@ -2476,6 +2476,28 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   />
                 </div>
 
+                <div className="form-group">
+                  <label>Тендерная процедура: начало</label>
+                  <input
+                    type="date"
+                    name="tender_start_date"
+                    value={formData.tender_start_date}
+                    onChange={handleInputChange}
+                    min="2020-01-01"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Тендерная процедура: окончание</label>
+                  <input
+                    type="date"
+                    name="tender_end_date"
+                    value={formData.tender_end_date}
+                    onChange={handleInputChange}
+                    min={formData.tender_start_date || '2020-01-01'}
+                  />
+                </div>
+
                 {editingTender && (
                   <>
                     <div className="form-group">
@@ -2497,28 +2519,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         value={formData.vor_end_date}
                         onChange={handleInputChange}
                         min={formData.vor_start_date || '2020-01-01'}
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Тендерная процедура: начало</label>
-                      <input
-                        type="date"
-                        name="tender_start_date"
-                        value={formData.tender_start_date}
-                        onChange={handleInputChange}
-                        min="2020-01-01"
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Тендерная процедура: окончание</label>
-                      <input
-                        type="date"
-                        name="tender_end_date"
-                        value={formData.tender_end_date}
-                        onChange={handleInputChange}
-                        min={formData.tender_start_date || '2020-01-01'}
                       />
                     </div>
 
