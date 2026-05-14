@@ -1879,13 +1879,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               }
                               return <span className="phase-pending" title={s || 'Не начат'}>{s || 'Не начат'}</span>
                             })()}
-                            <a
-                              href={`/tenders/${tender.materials_tender.id}`}
-                              onClick={(e) => { e.preventDefault(); navigate(`/tenders/${tender.materials_tender.id}`) }}
-                              className="link"
-                            >
-                              Открыть
-                            </a>
                             {tender.materials_tender.materials_proposal_link && (
                               <a
                                 href={tender.materials_tender.materials_proposal_link}
