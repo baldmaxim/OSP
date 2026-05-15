@@ -1220,7 +1220,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
     } else {
       setSortField(field)
-      setSortOrder('desc')
+      // По номеру тендера логичнее восходящая (1, 2, 3...), по датам — нисходящая (свежие сверху).
+      setSortOrder(field === 'public_tender_number' ? 'asc' : 'desc')
     }
   }
 
@@ -1420,7 +1421,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <>
               <thead>
                 <tr>
-                  <th style={{ width: '52px', textAlign: 'center' }} title="Номер тендера (стабильный, присваивается при создании)">№</th>
+                  <th
+                    className="sortable-th"
+                    style={{ width: '52px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => toggleSort('public_tender_number')}
+                    title="Номер тендера. Кликните для сортировки"
+                  >
+                    №{sortIndicator('public_tender_number')}
+                  </th>
                   <th style={{ width: '180px' }}>Объект</th>
                   <th style={{ width: '150px' }}>Описание работ</th>
                   <th style={{ width: '160px' }}>Ответственный</th>
@@ -1621,7 +1629,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <>
           <thead>
             <tr>
-              <th style={{ width: '44px', textAlign: 'center' }} title="Номер тендера (стабильный, присваивается при создании)">№</th>
+              <th
+                className="sortable-th"
+                style={{ width: '44px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+                onClick={() => toggleSort('public_tender_number')}
+                title="Номер тендера. Кликните для сортировки"
+              >
+                №{sortIndicator('public_tender_number')}
+              </th>
               <th style={{ width: '36px' }}></th>
               <th style={{ minWidth: '160px' }}>Наименование<br />объекта</th>
               <th style={{ minWidth: '140px', maxWidth: '220px' }}>Описание работ</th>
@@ -1836,7 +1851,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     {/* Тендерный пакет */}
                     <td>
                         {tender.tender_package_link ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                          <div className="link-with-edit">
                             <a
                               href={tender.tender_package_link}
                               target="_blank"
@@ -1956,7 +1971,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     {!compactView && (
                       <td>
                         {tender.summary_proposal_link ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                          <div className="link-with-edit">
                             <a
                               href={tender.summary_proposal_link}
                               target="_blank"

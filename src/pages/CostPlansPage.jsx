@@ -359,14 +359,13 @@ function CostPlansPage() {
               <th>Срок выполнения плана затрат</th>
               <th>План затрат</th>
               <th style={{ width: '180px' }}>Статус плана</th>
-              <th className="actions-column">Действия</th>
               <th style={{ minWidth: '220px' }}>Примечание</th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={11} className="no-data">
+                <td colSpan={10} className="no-data">
                   {activeTab === 'completed'
                     ? 'Завершённых планов затрат нет'
                     : tenders.length === 0
@@ -497,15 +496,6 @@ function CostPlansPage() {
                         <option key={s} value={s}>{STATUS_LABELS[s]}</option>
                       ))}
                     </select>
-                  </td>
-                  <td className="actions-cell">
-                    <button
-                      className="btn-secondary btn-small"
-                      onClick={() => navigate(`/tenders/${t.id}`)}
-                      title="Открыть тендер"
-                    >
-                      Тендер
-                    </button>
                   </td>
                   <td>
                     <textarea

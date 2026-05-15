@@ -49,6 +49,19 @@
   color: var(--text-secondary);
 }
 
+/* task 182: «Открыть» сверху, кнопка ✏️ снизу — чтобы слово влезало в узкую колонку */
+.link-with-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.link-with-edit .btn-icon {
+  padding: 0;
+  line-height: 1;
+}
+
 .data-table tbody tr:hover {
   background-color: var(--bg-tertiary);
 }
