@@ -1189,6 +1189,7 @@ function CounterpartiesPage() {
                     <th className="col-worktype">Вид работ</th>
                     <th className="col-inn">ИНН</th>
                     <th className="col-contact-name">Контакты</th>
+                    <th className="col-contact-phone">Телефон</th>
                     <th className="col-contact-email">Email</th>
                     <th className="col-website">Сайт</th>
                     <th className="col-notes">Примечание</th>
@@ -1247,7 +1248,7 @@ function CounterpartiesPage() {
                           <td className="col-inn">
                             <span className="inn-value">{counterparty.inn || '--'}</span>
                           </td>
-                          {/* task 196: все контакты сразу, каждый — Должность + ФИО + Телефон */}
+                          {/* task 199: «Контакты» — только Должность + ФИО, телефоны в отдельном столбце */}
                           <td className="col-contact-name" onClick={(e) => e.stopPropagation()}>
                             {contactsCount > 0 ? (
                               <div className="contacts-stack">
@@ -1255,13 +1256,6 @@ function CounterpartiesPage() {
                                   <div key={c.id} className="contact-stack-item">
                                     {c.position && <div className="contact-position">{c.position}</div>}
                                     <div className="contact-name">{c.full_name}</div>
-                                    {c.phone && (
-                                      <div className="contact-phones">
-                                        {c.phone.split(';').map((ph, i) => (
-                                          ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
-                                        ))}
-                                      </div>
-                                    )}
                                   </div>
                                 ))}
                                 <button
@@ -1276,6 +1270,24 @@ function CounterpartiesPage() {
                                 onClick={() => handleAddContact(counterparty)}
                               >+ контакт</button>
                             )}
+                          </td>
+                          {/* task 199: телефоны — отдельный столбец */}
+                          <td className="col-contact-phone" onClick={(e) => e.stopPropagation()}>
+                            {contactsCount > 0 && contacts.some(c => c.phone) ? (
+                              <div className="contacts-stack contacts-stack-phones">
+                                {contacts.map((c) => (
+                                  c.phone ? (
+                                    <div key={c.id} className="phone-cell">
+                                      {c.phone.split(';').map((ph, i) => (
+                                        ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span key={c.id} className="empty-cell">--</span>
+                                  )
+                                ))}
+                              </div>
+                            ) : <span className="empty-cell">--</span>}
                           </td>
                           <td className="col-contact-email" onClick={(e) => e.stopPropagation()}>
                             {contactsCount > 0 && contacts.some(c => c.email) ? (
@@ -1342,7 +1354,7 @@ function CounterpartiesPage() {
                         {/* task 196: при раскрытии — история участия в тендерах */}
                         {isExpanded && (
                           <tr className="expanded-row">
-                            <td colSpan="12">
+                            <td colSpan="13">
                               <div className="expanded-content">
                                 <div className="tender-history-header">
                                   <span className="detail-label">История участия в тендерах</span>
