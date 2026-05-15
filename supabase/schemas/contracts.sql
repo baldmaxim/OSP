@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS contracts (
   tender_id UUID REFERENCES tenders(id),
   work_name TEXT,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  notes TEXT,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -27,6 +29,7 @@ CREATE INDEX IF NOT EXISTS idx_contracts_object_id ON contracts(object_id);
 CREATE INDEX IF NOT EXISTS idx_contracts_contract_date ON contracts(contract_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_work_dates ON contracts(work_start_date, work_end_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);
+CREATE INDEX IF NOT EXISTS idx_contracts_deleted_at ON contracts(deleted_at);
 
 -- Триггер для автоматического обновления updated_at
 CREATE OR REPLACE FUNCTION update_contracts_updated_at()

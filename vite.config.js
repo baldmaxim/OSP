@@ -11,7 +11,6 @@ export default defineConfig({
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-supabase': ['@supabase/supabase-js'],
           'vendor-xlsx': ['xlsx'],
-          'vendor-docx': ['docxtemplater', 'pizzip', 'file-saver', 'docx-preview'],
         }
       }
     }
