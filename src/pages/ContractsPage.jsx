@@ -677,13 +677,13 @@ function ContractRegistry() {
                     {items.length > 0 && <span className="expand-badge">{items.length}</span>}
                   </td>
                   <td className="cell-num">{index + 1}</td>
-                  <td>
+                  <td className="cell-contract-num">
                     <button
                       onClick={(e) => { e.stopPropagation(); navigate(`/contracts/${contract.id}`) }}
                       className="contract-number-link"
-                      title="Открыть карточку договора"
+                      title={`№ ${contract.contract_number || ''} — открыть карточку`}
                     >
-                      №{contract.contract_number || (index + 1)}
+                      №&nbsp;{contract.contract_number || (index + 1)}
                     </button>
                   </td>
                   <td className="cell-counterparty">{contract.counterparties?.name || '—'}</td>

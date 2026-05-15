@@ -66,6 +66,9 @@ function CounterpartiesPage() {
   const [tenderHistoryMap, setTenderHistoryMap] = useState({}) // { counterpartyId: [{tender_id, status, work_description, tender_start_date, tender_end_date, object_name}] }
   const [tenderHistoryLoadingId, setTenderHistoryLoadingId] = useState(null)
 
+  // task 197: вкладка «Активные» / «Удалённые»
+  const [activeTab, setActiveTab] = useState('active') // 'active' | 'deleted'
+
   const TENDER_STATUS_LABEL = {
     request_sent: 'Запрос отправлен',
     declined: 'Отказался',
@@ -390,16 +393,52 @@ function CounterpartiesPage() {
   }
 
 
+  // task 197: soft delete — переносит в «Удалённые»
   const handleDeleteCounterparty = async (id, name) => {
-    if (window.confirm(`Вы уверены, что хотите удалить контрагента "${name}"?`)) {
+    if (window.confirm(`Перенести контрагента «${name}» в «Удалённые»? Его можно будет восстановить.`)) {
       try {
-        const { error } = await supabase.from('counterparties').delete().eq('id', id)
+        const { error } = await supabase
+          .from('counterparties')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', id)
         if (error) throw error
         fetchCounterparties()
       } catch (error) {
         console.error('Ошибка удаления контрагента:', error.message)
-        alert('Ошибка удаления: ' + error.message)
+        alert('Ошибка: ' + error.message)
       }
+    }
+  }
+
+  // task 197: восстановить из «Удалённых»
+  const handleRestoreCounterparty = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('counterparties')
+        .update({ deleted_at: null })
+        .eq('id', id)
+      if (error) throw error
+      fetchCounterparties()
+    } catch (error) {
+      console.error('Ошибка восстановления контрагента:', error.message)
+      alert('Ошибка: ' + error.message)
+    }
+  }
+
+  // task 197: безвозвратное удаление — только для администратора
+  const handleHardDeleteCounterparty = async (id, name) => {
+    if (!isAdmin) {
+      alert('Безвозвратное удаление доступно только администратору.')
+      return
+    }
+    if (!window.confirm(`Безвозвратно удалить контрагента «${name}»? Это действие нельзя отменить.`)) return
+    try {
+      const { error } = await supabase.from('counterparties').delete().eq('id', id)
+      if (error) throw error
+      fetchCounterparties()
+    } catch (error) {
+      console.error('Ошибка безвозвратного удаления:', error.message)
+      alert('Ошибка: ' + error.message)
     }
   }
 
@@ -428,8 +467,15 @@ function CounterpartiesPage() {
       return
     }
 
+    const isHardDelete = activeTab === 'deleted'
+    if (isHardDelete && !isAdmin) {
+      alert('Безвозвратное удаление доступно только администратору.')
+      return
+    }
+
+    const verb = isHardDelete ? 'безвозвратно удалить' : 'перенести в «Удалённые»'
     const confirmed = window.confirm(
-      `Вы уверены, что хотите удалить ${selectedCounterpartyIds.length} ${
+      `Вы уверены, что хотите ${verb} ${selectedCounterpartyIds.length} ${
         selectedCounterpartyIds.length === 1 ? 'контрагента' :
         selectedCounterpartyIds.length < 5 ? 'контрагента' : 'контрагентов'
       }?`
@@ -438,16 +484,15 @@ function CounterpartiesPage() {
     if (!confirmed) return
 
     try {
-      const { error } = await supabase
-        .from('counterparties')
-        .delete()
-        .in('id', selectedCounterpartyIds)
-
+      const query = isHardDelete
+        ? supabase.from('counterparties').delete().in('id', selectedCounterpartyIds)
+        : supabase.from('counterparties').update({ deleted_at: new Date().toISOString() }).in('id', selectedCounterpartyIds)
+      const { error } = await query
       if (error) throw error
 
       setSelectedCounterpartyIds([])
       fetchCounterparties()
-      alert(`Успешно удалено контрагентов: ${selectedCounterpartyIds.length}`)
+      alert(`${isHardDelete ? 'Безвозвратно удалено' : 'Перемещено в «Удалённые»'}: ${selectedCounterpartyIds.length}`)
     } catch (error) {
       console.error('Ошибка массового удаления:', error.message)
       alert('Ошибка удаления: ' + error.message)
@@ -905,6 +950,13 @@ function CounterpartiesPage() {
 
   // Фильтрация контрагентов (мемоизация)
   const filteredCounterparties = useMemo(() => counterparties.filter(counterparty => {
+    // task 197: фильтр по активной вкладке (активные / удалённые)
+    if (activeTab === 'deleted') {
+      if (!counterparty.deleted_at) return false
+    } else {
+      if (counterparty.deleted_at) return false
+    }
+
     // Фильтр по виду работ (проверяем каждый вид отдельно)
     if (workTypeFilter) {
       const types = (counterparty.work_type || '').split(',').map(wt => wt.trim())
@@ -948,9 +1000,11 @@ function CounterpartiesPage() {
     if (a.status !== 'blacklist' && b.status === 'blacklist') return -1
     // Если статусы одинаковые, сортируем по имени
     return (a.name || '').localeCompare(b.name || '', 'ru')
-  }), [counterparties, workTypeFilter, departmentFilter, searchQuery])
+  }), [counterparties, workTypeFilter, departmentFilter, searchQuery, activeTab])
 
-  const blacklistCount = counterparties.filter(c => c.status === 'blacklist').length
+  const activeCount = counterparties.filter(c => !c.deleted_at).length
+  const deletedCount = counterparties.filter(c => c.deleted_at).length
+  const blacklistCount = counterparties.filter(c => !c.deleted_at && c.status === 'blacklist').length
 
   // task 196: подгружаем историю участия в тендерах (lazy)
   const fetchTenderHistory = async (counterpartyId) => {
@@ -1068,9 +1122,29 @@ function CounterpartiesPage() {
             <button className="btn-link" onClick={handleSelectAll}>
               {selectedCounterpartyIds.length === filteredCounterparties.length ? 'Снять' : 'Выбрать все'}
             </button>
-            <button className="btn-bulk-delete" onClick={handleBulkDelete}>Удалить</button>
+            <button className="btn-bulk-delete" onClick={handleBulkDelete}>
+              {activeTab === 'deleted' ? 'Удалить безвозвратно' : 'В корзину'}
+            </button>
           </div>
         )}
+
+        {/* task 197: вкладки Активные / Удалённые (справа сверху) */}
+        <div className="counterparties-tabs">
+          <button
+            className={`cp-tab ${activeTab === 'active' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('active'); setSelectedCounterpartyIds([]); setExpandedRows(new Set()) }}
+          >
+            Активные
+            <span className="cp-tab-count">{activeCount}</span>
+          </button>
+          <button
+            className={`cp-tab cp-tab-deleted ${activeTab === 'deleted' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('deleted'); setSelectedCounterpartyIds([]); setExpandedRows(new Set()) }}
+          >
+            Удалённые
+            {deletedCount > 0 && <span className="cp-tab-count">{deletedCount}</span>}
+          </button>
+        </div>
       </div>
 
       <input
@@ -1239,13 +1313,28 @@ function CounterpartiesPage() {
                           </td>
                           <td className="col-actions" onClick={(e) => e.stopPropagation()}>
                             <div className="actions-group">
-                              {/* task 196: иконка открытия полной карточки компании */}
-                              <button className="btn-action btn-action-card" onClick={() => handleEditCounterparty(counterparty)} title="Открыть полную карточку">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
-                              </button>
-                              <button className="btn-action delete" onClick={() => handleDeleteCounterparty(counterparty.id, counterparty.name)} title="Удалить">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                              </button>
+                              {activeTab === 'deleted' ? (
+                                <>
+                                  <button className="btn-action btn-action-restore" onClick={() => handleRestoreCounterparty(counterparty.id)} title="Восстановить">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>
+                                  </button>
+                                  {isAdmin && (
+                                    <button className="btn-action delete" onClick={() => handleHardDeleteCounterparty(counterparty.id, counterparty.name)} title="Удалить безвозвратно (админ)">
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {/* task 196: иконка открытия полной карточки компании */}
+                                  <button className="btn-action btn-action-card" onClick={() => handleEditCounterparty(counterparty)} title="Открыть полную карточку">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+                                  </button>
+                                  <button className="btn-action delete" onClick={() => handleDeleteCounterparty(counterparty.id, counterparty.name)} title="В корзину">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS counterparties (
   website VARCHAR(500),
   status counterparty_status DEFAULT 'active',
   notes TEXT,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS counterparties (
 -- Индексы для оптимизации запросов
 CREATE INDEX IF NOT EXISTS idx_counterparties_name ON counterparties(name);
 CREATE INDEX IF NOT EXISTS idx_counterparties_inn ON counterparties(inn);
+CREATE INDEX IF NOT EXISTS idx_counterparties_deleted_at ON counterparties(deleted_at);
 
 -- Триггер для автоматического обновления updated_at
 CREATE OR REPLACE FUNCTION update_counterparties_updated_at()
