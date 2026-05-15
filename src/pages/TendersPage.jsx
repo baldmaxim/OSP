@@ -16,7 +16,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [responsibleContacts, setResponsibleContacts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [activeTab, setActiveTab] = useState('active') // 'active' or 'completed'
+  // task 212: 'all' | <status> | 'template' | 'deleted'
+  const [activeTab, setActiveTab] = useState('all')
   const [editingTender, setEditingTender] = useState(null)
   const [expandedTenderId, setExpandedTenderId] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState({})
@@ -1168,15 +1169,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   // Фильтрация тендеров по вкладке и объекту
   const filteredByTab = tenders.filter(tender => {
-    // Фильтр по вкладке (deleted_at-aware)
+    // task 212: Фильтр по вкладке — 'all' | <конкретный статус> | 'deleted'
     if (activeTab === 'deleted') {
       if (!tender.deleted_at) return false
-    } else if (activeTab === 'completed') {
+    } else if (activeTab === 'all') {
       if (tender.deleted_at) return false
-      if (!isCompletedStatus(tender.status)) return false
     } else {
+      // вкладка конкретного статуса
       if (tender.deleted_at) return false
-      if (isCompletedStatus(tender.status)) return false
+      if (tender.status !== activeTab) return false
     }
     // Фильтр по объекту
     if (objectFilter && tender.object_id !== objectFilter) return false
@@ -1229,10 +1230,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     return sortOrder === 'asc' ? ' ↑' : ' ↓'
   }
 
-  // Подсчет количества тендеров для каждой вкладки (deleted_at-aware)
-  const activeTendersCount = tenders.filter(t => !t.deleted_at && !isCompletedStatus(t.status)).length
-  const completedTendersCount = tenders.filter(t => !t.deleted_at && isCompletedStatus(t.status)).length
+  // task 212: счётчики — «Все» + по каждому статусу + «Удалённые»
+  const allTendersCount = tenders.filter(t => !t.deleted_at).length
+  const statusCounts = Object.fromEntries(
+    currentStatusOptions.map(s => [s, tenders.filter(t => !t.deleted_at && t.status === s).length])
+  )
   const deletedTendersCount = tenders.filter(t => t.deleted_at).length
+
+  // task 212: «завершённая» вкладка — когда активен таб статуса, считающегося завершённым
+  const isCompletedTab = activeTab !== 'all'
+    && activeTab !== 'deleted'
+    && activeTab !== 'template'
+    && isCompletedStatus(activeTab)
 
   // Проверка просроченности
   const today = new Date().toISOString().split('T')[0]
@@ -1264,26 +1273,31 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         </div>
       </div>
 
-      {/* Вкладки */}
+      {/* task 212: Вкладки — «Все тендеры» + по каждому статусу + Шаблон + Удалённые */}
       <div className="tender-tabs">
         <button
-          className={`tender-tab ${activeTab === 'active' ? 'active' : ''}`}
-          onClick={() => setActiveTab('active')}
+          className={`tender-tab ${activeTab === 'all' ? 'active' : ''}`}
+          onClick={() => setActiveTab('all')}
         >
-          Актуальные тендеры
-          {activeTendersCount > 0 && (
-            <span className="tender-tab-count">{activeTendersCount}</span>
+          Все тендеры
+          {allTendersCount > 0 && (
+            <span className="tender-tab-count">{allTendersCount}</span>
           )}
         </button>
-        <button
-          className={`tender-tab ${activeTab === 'completed' ? 'active' : ''}`}
-          onClick={() => setActiveTab('completed')}
-        >
-          Завершенные
-          {completedTendersCount > 0 && (
-            <span className="tender-tab-count completed">{completedTendersCount}</span>
-          )}
-        </button>
+        {currentStatusOptions.map(s => (
+          <button
+            key={s}
+            className={`tender-tab ${activeTab === s ? 'active' : ''}`}
+            onClick={() => setActiveTab(s)}
+          >
+            {s}
+            {statusCounts[s] > 0 && (
+              <span className={`tender-tab-count ${isCompletedStatus(s) ? 'completed' : ''}`}>
+                {statusCounts[s]}
+              </span>
+            )}
+          </button>
+        ))}
         {!isMaterialsView && (
           <button
             className={`tender-tab ${activeTab === 'template' ? 'active' : ''}`}
@@ -1351,6 +1365,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           </select>
         </div>
 
+        {/* task 212: фильтр по статусу нужен только на вкладке «Все тендеры» —
+            на вкладке конкретного статуса список уже отфильтрован */}
+        {activeTab === 'all' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Статус:</span>
           <select
@@ -1376,6 +1393,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             ))}
           </select>
         </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Ответственный:</span>
@@ -1449,11 +1467,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 {sortedTenders.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="no-data">
-                      {activeTab === 'completed'
-                        ? 'Нет завершённых тендеров на материалы'
-                        : activeTab === 'deleted'
-                          ? 'В корзине нет тендеров на материалы'
-                          : 'Нет тендеров на материалы. Они создаются автоматически вместе с основным тендером, либо через «+ Добавить тендер».'}
+                      {activeTab === 'deleted'
+                        ? 'В корзине нет тендеров на материалы'
+                        : activeTab === 'all'
+                          ? 'Нет тендеров на материалы. Они создаются автоматически вместе с основным тендером, либо через «+ Добавить тендер».'
+                          : `Нет тендеров на материалы со статусом «${activeTab}»`}
                     </td>
                   </tr>
                 ) : (
@@ -1564,7 +1582,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         )}
                       </td>
                       <td>
-                        {activeTab === 'completed' ? (
+                        {isCompletedTab ? (
                           <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ display: 'inline-block', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
                             {tender.status}
                           </span>
@@ -1641,7 +1659,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <th style={{ minWidth: '160px' }}>Наименование<br />объекта</th>
               <th style={{ minWidth: '140px', maxWidth: '220px' }}>Описание работ</th>
               {activeTab !== 'completed' && <th style={{ width: '100px' }}>Статус</th>}
-              {activeTab === 'completed' && <th style={{ width: '130px' }}>Победитель</th>}
+              {isCompletedTab && <th style={{ width: '130px' }}>Победитель</th>}
               <th
                 className="sortable-th"
                 onClick={() => toggleSort('start_date')}
@@ -1668,12 +1686,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={compactView ? 9 : (activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 12 : 10) : (isMaterialsView ? 10 : (department === 'construction' ? 13 : 10)))} className="no-data">
-                  {activeTab === 'completed'
-                    ? 'Нет завершенных тендеров'
-                    : activeTab === 'deleted'
-                      ? 'В корзине нет тендеров'
-                      : 'Нет актуальных тендеров. Добавьте первый тендер.'}
+                <td colSpan={compactView ? 9 : (isCompletedTab ? (!isMaterialsView && department === 'construction' ? 12 : 10) : (isMaterialsView ? 10 : (department === 'construction' ? 13 : 10)))} className="no-data">
+                  {activeTab === 'deleted'
+                    ? 'В корзине нет тендеров'
+                    : activeTab === 'all'
+                      ? 'Нет тендеров. Добавьте первый тендер.'
+                      : `Нет тендеров со статусом «${activeTab}»`}
                 </td>
               </tr>
             ) : (
@@ -1761,7 +1779,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         />
                       </td>
                     )}
-                    {activeTab === 'completed' && (
+                    {isCompletedTab && (
                       <td>
                         {tender.winner ? (
                           <span className="winner-cell" title="Победитель">
@@ -2062,7 +2080,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={compactView ? 8 : (activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9)))} className="expanded-cp-row">
+                      <td colSpan={compactView ? 8 : (isCompletedTab ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9)))} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           <button
                             className="btn-primary"
