@@ -8,9 +8,13 @@ const STATUS_LABELS = {
   not_started: 'Не начат',
   in_progress: 'В работе',
   completed: 'Завершён',
+  not_required: 'Не требуется',
 }
 
-const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
+const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required']
+
+// Статусы, при которых план затрат считается «закрытым» (вкладка «Завершено»)
+const DONE_STATUSES = ['completed', 'not_required']
 
 function CostPlansPage() {
   const navigate = useNavigate()
@@ -263,9 +267,9 @@ function CostPlansPage() {
     })
   }
 
-  // Разделение по табу
-  const inWork = filtered.filter(t => t.cost_plan_status !== 'completed')
-  const completed = filtered.filter(t => t.cost_plan_status === 'completed')
+  // Разделение по табу (task 208: «Не требуется» тоже относится к «Завершено»)
+  const inWork = filtered.filter(t => !DONE_STATUSES.includes(t.cost_plan_status))
+  const completed = filtered.filter(t => DONE_STATUSES.includes(t.cost_plan_status))
   const visible = activeTab === 'completed' ? completed : inWork
 
   return (

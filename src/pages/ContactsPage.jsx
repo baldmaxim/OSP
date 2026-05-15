@@ -599,12 +599,12 @@ function ContactsPage() {
               <thead>
                 <tr>
                   <th style={{ width: '40px', textAlign: 'center' }}>№</th>
-                  <th style={{ width: '190px' }}>ФИО</th>
-                  <th style={{ width: '230px' }}>Объект/Офис</th>
-                  <th style={{ width: '150px' }}>Должность</th>
-                  <th style={{ width: '160px' }}>Отдел</th>
+                  <th style={{ width: '180px' }}>ФИО</th>
+                  <th style={{ width: '190px' }}>Объект/Офис</th>
+                  <th style={{ width: '230px' }}>Должность</th>
+                  <th style={{ width: '150px' }}>Отдел</th>
                   <th style={{ width: '140px' }}>Телефон</th>
-                  <th style={{ width: '190px' }}>Email</th>
+                  <th style={{ width: '170px' }}>Email</th>
                   <th>Примечания</th>
                   <th style={{ width: '64px' }}></th>
                 </tr>
@@ -671,7 +671,7 @@ function ContactsPage() {
                           className="inline-object-select"
                           value={contact.position || ''}
                           onChange={(e) => handleInlinePositionChange(contact.id, e.target.value)}
-                          title="Должность сотрудника"
+                          title={contact.position || 'Должность сотрудника'}
                         >
                           <option value="">— не указана —</option>
                           {allPositions.map(pos => (

@@ -347,6 +347,19 @@
   background: #2a4038;
 }
 
+/* task 208: «Не требуется» — нейтральный серый */
+.plan-status-select.status-not_required {
+  color: #64748b;
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}
+
+[data-theme='dark'] .plan-status-select.status-not_required {
+  color: #94a3b8;
+  border-color: #475569;
+  background: #2a3340;
+}
+
 /* Action buttons */
 .cost-plans-page .actions-cell {
   white-space: nowrap;

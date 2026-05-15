@@ -1889,6 +1889,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         <div className="phase-cell">
                           {(() => {
                             const s = tender.cost_plan_status || 'not_started'
+                            if (s === 'not_required') {
+                              return <span className="phase-done" title="План затрат не требуется">— Не требуется</span>
+                            }
                             if (s === 'completed') {
                               return tender.cost_plan_link
                                 ? <span className="phase-done" title="План затрат готов">✓ Готово</span>
