@@ -520,6 +520,24 @@ function CounterpartiesPage() {
     }
   }
 
+  // task 203: правка примечания прямо в таблице (сохранение по blur)
+  const handleNotesChange = async (counterpartyId, rawNotes) => {
+    const notes = rawNotes.trim() || null
+    try {
+      const { error } = await supabase
+        .from('counterparties')
+        .update({ notes })
+        .eq('id', counterpartyId)
+      if (error) throw error
+      setCounterparties(prev =>
+        prev.map(cp => (cp.id === counterpartyId ? { ...cp, notes } : cp))
+      )
+    } catch (error) {
+      console.error('Ошибка обновления примечания:', error.message)
+      alert('Ошибка обновления примечания: ' + error.message)
+    }
+  }
+
   const handleAddNewCounterparty = () => {
     setEditingCounterparty(null)
     setCounterpartyFormData({
@@ -1284,11 +1302,19 @@ function CounterpartiesPage() {
                               </a>
                             ) : <span className="empty-cell">--</span>}
                           </td>
-                          {/* task 196: примечание перед статусом */}
-                          <td className="col-notes">
-                            {counterparty.notes
-                              ? <span className="notes-text" title={counterparty.notes}>{counterparty.notes}</span>
-                              : <span className="empty-cell">--</span>}
+                          {/* task 203: редактируемое примечание прямо в таблице */}
+                          <td className="col-notes" onClick={(e) => e.stopPropagation()}>
+                            <textarea
+                              className="notes-edit"
+                              defaultValue={counterparty.notes || ''}
+                              placeholder="Примечание…"
+                              rows={2}
+                              onBlur={(e) => {
+                                if (e.target.value.trim() !== (counterparty.notes || '')) {
+                                  handleNotesChange(counterparty.id, e.target.value)
+                                }
+                              }}
+                            />
                           </td>
                           <td className="col-status" onClick={(e) => e.stopPropagation()}>
                             <select

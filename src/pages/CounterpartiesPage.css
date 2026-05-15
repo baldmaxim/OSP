@@ -301,6 +301,21 @@
   vertical-align: middle;
 }
 
+/* task 203: чекбокс — полная центровка в столбце (был смещён вправо из-за паддингов) */
+.compact-table th.col-checkbox,
+.compact-table td.col-checkbox {
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.compact-table .col-checkbox input[type="checkbox"] {
+  display: inline-block;
+  margin: 0;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
 .compact-table tbody tr:last-child td {
   border-bottom: none;
 }
@@ -316,7 +331,7 @@
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
 }
-.col-checkbox { width: 28px; text-align: center; }
+.col-checkbox { width: 36px; text-align: center; }
 .col-name { width: 17%; }
 .col-worktype { width: 14%; }
 .col-inn { width: 9%; font-size: 0.75rem; }
@@ -1246,6 +1261,38 @@
   overflow: hidden;
   color: var(--text-secondary);
   line-height: 1.35;
+}
+
+/* task 203: редактируемое примечание прямо в таблице */
+.col-notes textarea.notes-edit {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2.4em;
+  padding: 0.25rem 0.375rem;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  resize: vertical;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.col-notes textarea.notes-edit::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.col-notes textarea.notes-edit:hover {
+  border-color: var(--border-color);
+}
+
+.col-notes textarea.notes-edit:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
 }
 
 /* Иконка «Открыть полную карточку» */
