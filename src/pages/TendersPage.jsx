@@ -32,7 +32,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [selectedCounterpartyIds, setSelectedCounterpartyIds] = useState([])
   const [showWinnerModal, setShowWinnerModal] = useState(false)
   const [tenderForWinnerSelection, setTenderForWinnerSelection] = useState(null)
-  const [selectedWinnerId, setSelectedWinnerId] = useState(null)
+  // task 215: несколько победителей — массив { counterparty_id, scope_note }
+  const [selectedWinners, setSelectedWinners] = useState([])
   const [showLetterModal, setShowLetterModal] = useState(false)
   const [generatedLetter, setGeneratedLetter] = useState('')
   const [letterCopied, setLetterCopied] = useState(false)
@@ -177,7 +178,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       setLoading(true)
       const { data, error } = await supabase
         .from('tenders')
-        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)')
+        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)')
         .eq('tender_type', tenderType)
         .order('start_date', { ascending: false })
 
@@ -931,7 +932,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         await fetchTenderCounterparties(tenderId)
       }
 
-      setSelectedWinnerId(tender?.winner_counterparty_id || null)
+      const existingWinners = (tender?.tender_winners || []).map(w => ({
+        counterparty_id: w.counterparty_id,
+        scope_note: w.scope_note || ''
+      }))
+      // подстраховка, если миграция tender_winners ещё не применена
+      if (existingWinners.length === 0 && tender?.winner_counterparty_id) {
+        existingWinners.push({ counterparty_id: tender.winner_counterparty_id, scope_note: '' })
+      }
+      setSelectedWinners(existingWinners)
       setShowWinnerModal(true)
       return
     }
@@ -962,23 +971,70 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
+  // task 215: помощники для выбора нескольких победителей
+  const isWinnerSelected = (cpId) => selectedWinners.some(w => w.counterparty_id === cpId)
+  const toggleWinner = (cpId) => setSelectedWinners(prev =>
+    prev.some(w => w.counterparty_id === cpId)
+      ? prev.filter(w => w.counterparty_id !== cpId)
+      : [...prev, { counterparty_id: cpId, scope_note: '' }]
+  )
+  const setWinnerScope = (cpId, note) => setSelectedWinners(prev =>
+    prev.map(w => w.counterparty_id === cpId ? { ...w, scope_note: note } : w)
+  )
+  const getWinnerScope = (cpId) => selectedWinners.find(w => w.counterparty_id === cpId)?.scope_note || ''
+
+  // task 215: список победителей тендера для отображения (с откатом на одиночного winner)
+  const getTenderWinners = (tender) => {
+    const tw = tender?.tender_winners || []
+    if (tw.length > 0) {
+      return tw.map(w => ({
+        id: w.counterparty_id,
+        name: w.counterparties?.name || '—',
+        scope: w.scope_note || ''
+      }))
+    }
+    if (tender?.winner) {
+      return [{ id: tender.winner.id, name: tender.winner.name, scope: '' }]
+    }
+    return []
+  }
+
   const handleConfirmWinner = async () => {
     if (!tenderForWinnerSelection) return
 
     try {
       const prevStatus = tenderForWinnerSelection.status || null
-      const prevWinnerId = tenderForWinnerSelection.winner_counterparty_id || null
+      // основной победитель (первый выбранный) — для обратной совместимости
+      const primaryWinnerId = selectedWinners[0]?.counterparty_id || null
 
-      // Обновляем статус тендера
+      // Обновляем статус тендера и основного победителя
       const { error: tenderError } = await supabase
         .from('tenders')
         .update({
           status: 'Завершен',
-          winner_counterparty_id: selectedWinnerId
+          winner_counterparty_id: primaryWinnerId
         })
         .eq('id', tenderForWinnerSelection.id)
 
       if (tenderError) throw tenderError
+
+      // Пересобираем список победителей в junction-таблице
+      const { error: delError } = await supabase
+        .from('tender_winners')
+        .delete()
+        .eq('tender_id', tenderForWinnerSelection.id)
+      if (delError) throw delError
+
+      if (selectedWinners.length > 0) {
+        const { error: insError } = await supabase
+          .from('tender_winners')
+          .insert(selectedWinners.map(w => ({
+            tender_id: tenderForWinnerSelection.id,
+            counterparty_id: w.counterparty_id,
+            scope_note: w.scope_note?.trim() || null
+          })))
+        if (insError) throw insError
+      }
 
       // Лог: смена статуса
       if (prevStatus !== 'Завершен') {
@@ -989,43 +1045,49 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         })
       }
 
-      // Лог: назначение победителя
-      if (selectedWinnerId && selectedWinnerId !== prevWinnerId) {
+      // Лог: назначение победителей
+      if (selectedWinners.length > 0) {
         const tcList = tenderCounterparties[tenderForWinnerSelection.id] || []
-        const winner = tcList.find(tc => tc.counterparties?.id === selectedWinnerId)?.counterparties
-        const winnerName = winner?.name || null
+        const nameOf = (cpId) => tcList.find(tc => tc.counterparties?.id === cpId)?.counterparties?.name || null
+        const winnerNames = selectedWinners
+          .map(w => {
+            const nm = nameOf(w.counterparty_id) || '—'
+            return w.scope_note?.trim() ? `${nm} (${w.scope_note.trim()})` : nm
+          })
+          .join(', ')
         await logTenderEvent(tenderForWinnerSelection.id, 'winner_assigned', {
-          oldValue: prevWinnerId,
-          newValue: { id: selectedWinnerId, name: winnerName },
-          description: winnerName ? `Назначен победитель: ${winnerName}` : 'Назначен победитель'
+          oldValue: tenderForWinnerSelection.winner_counterparty_id || null,
+          newValue: { winners: selectedWinners },
+          description: `Назначены победители: ${winnerNames}`
         })
       }
 
-      // Если выбран победитель, создаем договор на согласовании
-      if (selectedWinnerId) {
+      // Создаём проект договора на каждого победителя
+      if (selectedWinners.length > 0) {
         const today = new Date().toISOString().split('T')[0]
+        const contractRows = selectedWinners.map((w, i) => ({
+          tender_id: tenderForWinnerSelection.id,
+          counterparty_id: w.counterparty_id,
+          object_id: tenderForWinnerSelection.object_id,
+          contract_number: `Проект-${Date.now()}-${i + 1}`,
+          contract_date: today,
+          contract_amount: 0,
+          status: 'pending'
+        }))
 
         const { error: contractError } = await supabase
           .from('contracts')
-          .insert([{
-            tender_id: tenderForWinnerSelection.id,
-            counterparty_id: selectedWinnerId,
-            object_id: tenderForWinnerSelection.object_id,
-            contract_number: `Проект-${Date.now()}`,
-            contract_date: today,
-            contract_amount: 0,
-            status: 'pending'
-          }])
+          .insert(contractRows)
 
         if (contractError) {
-          console.error('Ошибка создания договора:', contractError.message)
+          console.error('Ошибка создания договоров:', contractError.message)
           // Не прерываем выполнение, тендер уже завершен
         }
       }
 
       setShowWinnerModal(false)
       setTenderForWinnerSelection(null)
-      setSelectedWinnerId(null)
+      setSelectedWinners([])
       fetchTenders()
     } catch (error) {
       console.error('Ошибка завершения тендера:', error.message)
@@ -1702,7 +1764,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       {tender.public_tender_number ?? '—'}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
                         <button
                           onClick={() => handleToggleTender(tender.id)}
                           className={`expand-toggle${expandedTenderId === tender.id ? ' is-expanded' : ''}`}
@@ -1782,20 +1844,37 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     )}
                     {isCompletedTab && (
                       <td>
-                        {tender.winner ? (
-                          <span className="winner-cell" title="Победитель">
-                            <span className="winner-icon" aria-hidden>🏆</span>
-                            <span className="winner-name">{tender.winner.name}</span>
-                          </span>
-                        ) : (
-                          <span style={{
-                            color: 'var(--text-tertiary)',
-                            fontStyle: 'italic',
-                            fontSize: '0.8125rem'
-                          }}>
-                            Не выбран
-                          </span>
-                        )}
+                        {(() => {
+                          const winners = getTenderWinners(tender)
+                          if (winners.length === 0) {
+                            return (
+                              <span style={{
+                                color: 'var(--text-tertiary)',
+                                fontStyle: 'italic',
+                                fontSize: '0.8125rem'
+                              }}>
+                                Не выбран
+                              </span>
+                            )
+                          }
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                              {winners.map(w => (
+                                <span key={w.id} className="winner-cell" title="Победитель">
+                                  <span className="winner-icon" aria-hidden>🏆</span>
+                                  <span className="winner-name">
+                                    {w.name}
+                                    {w.scope && (
+                                      <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>
+                                        {' '}— {w.scope}
+                                      </span>
+                                    )}
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          )
+                        })()}
                       </td>
                     )}
                     <td style={isOverdue(tender) ? { color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap' } : { whiteSpace: 'nowrap' }}>
@@ -3013,13 +3092,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <div className="modal-overlay">
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
               <div className="modal-header">
-                <h3>Выбор победителя тендера</h3>
+                <h3>Выбор победителей тендера</h3>
                 <button
                   className="modal-close"
                   onClick={() => {
                     setShowWinnerModal(false)
                     setTenderForWinnerSelection(null)
-                    setSelectedWinnerId(null)
+                    setSelectedWinners([])
                   }}
                 >
                   ×
@@ -3050,86 +3129,109 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 ) : (
                   <>
                     <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem', fontWeight: '500' }}>
-                      Выберите победителя тендера:
+                      Выберите победителей тендера (можно несколько — при разделении по корпусам/системам):
                     </p>
                     <div style={{
-                      maxHeight: '300px',
+                      maxHeight: '320px',
                       overflowY: 'auto',
                       border: '1px solid var(--border-color)',
                       borderRadius: '8px'
                     }}>
-                      {tenderCps.map((tc) => (
-                        <div
-                          key={tc.id}
-                          onClick={() => setSelectedWinnerId(tc.counterparty_id)}
-                          style={{
-                            padding: '1rem',
-                            cursor: 'pointer',
-                            borderBottom: '1px solid var(--border-color)',
-                            backgroundColor: selectedWinnerId === tc.counterparty_id ? 'var(--primary-color)' : 'transparent',
-                            color: selectedWinnerId === tc.counterparty_id ? 'white' : 'var(--text-primary)',
-                            transition: 'all 0.2s',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '1rem'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (selectedWinnerId !== tc.counterparty_id) {
-                              e.currentTarget.style.backgroundColor = 'var(--hover-bg)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (selectedWinnerId !== tc.counterparty_id) {
-                              e.currentTarget.style.backgroundColor = 'transparent'
-                            }
-                          }}
-                        >
-                          <div style={{
-                            width: '24px',
-                            height: '24px',
-                            borderRadius: '50%',
-                            border: selectedWinnerId === tc.counterparty_id ? '2px solid white' : '2px solid var(--border-color)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
-                          }}>
-                            {selectedWinnerId === tc.counterparty_id && (
-                              <div style={{
-                                width: '12px',
-                                height: '12px',
-                                borderRadius: '50%',
-                                backgroundColor: 'white'
-                              }} />
-                            )}
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>
-                              {tc.counterparties?.name}
-                            </div>
-                            {tc.counterparties?.work_type && (
-                              <div style={{
-                                fontSize: '0.875rem',
-                                opacity: selectedWinnerId === tc.counterparty_id ? 0.9 : 0.7
-                              }}>
-                                {tc.counterparties.work_type}
-                              </div>
-                            )}
+                      {tenderCps.map((tc) => {
+                        const selected = isWinnerSelected(tc.counterparty_id)
+                        return (
+                          <div
+                            key={tc.id}
+                            onClick={() => toggleWinner(tc.counterparty_id)}
+                            style={{
+                              padding: '1rem',
+                              cursor: 'pointer',
+                              borderBottom: '1px solid var(--border-color)',
+                              backgroundColor: selected ? 'color-mix(in srgb, var(--primary-color) 12%, transparent)' : 'transparent',
+                              color: 'var(--text-primary)',
+                              transition: 'background 0.15s',
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              gap: '1rem'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!selected) e.currentTarget.style.backgroundColor = 'var(--hover-bg)'
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!selected) e.currentTarget.style.backgroundColor = 'transparent'
+                            }}
+                          >
                             <div style={{
-                              fontSize: '0.75rem',
-                              marginTop: '0.25rem',
-                              padding: '0.25rem 0.5rem',
+                              width: '20px',
+                              height: '20px',
                               borderRadius: '4px',
-                              display: 'inline-block',
-                              backgroundColor: selectedWinnerId === tc.counterparty_id ? 'rgba(255,255,255,0.2)' : 'var(--bg-tertiary)',
-                              color: selectedWinnerId === tc.counterparty_id ? 'white' : getCounterpartyStatusColor(tc.status)
+                              border: selected ? '2px solid var(--primary-color)' : '2px solid var(--border-color)',
+                              background: selected ? 'var(--primary-color)' : 'transparent',
+                              color: 'white',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                              marginTop: '0.125rem',
+                              fontSize: '0.75rem',
+                              lineHeight: 1
                             }}>
-                              {getCounterpartyStatusLabel(tc.status || 'request_sent')}
+                              {selected && '✓'}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>
+                                {tc.counterparties?.name}
+                              </div>
+                              {tc.counterparties?.work_type && (
+                                <div style={{ fontSize: '0.875rem', opacity: 0.7 }}>
+                                  {tc.counterparties.work_type}
+                                </div>
+                              )}
+                              <div style={{
+                                fontSize: '0.75rem',
+                                marginTop: '0.25rem',
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '4px',
+                                display: 'inline-block',
+                                backgroundColor: 'var(--bg-tertiary)',
+                                color: getCounterpartyStatusColor(tc.status)
+                              }}>
+                                {getCounterpartyStatusLabel(tc.status || 'request_sent')}
+                              </div>
+                              {selected && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{ marginTop: '0.625rem' }}
+                                >
+                                  <input
+                                    type="text"
+                                    value={getWinnerScope(tc.counterparty_id)}
+                                    onChange={(e) => setWinnerScope(tc.counterparty_id, e.target.value)}
+                                    placeholder="Корпус / система (необязательно)"
+                                    style={{
+                                      width: '100%',
+                                      padding: '0.375rem 0.5rem',
+                                      fontSize: '0.8125rem',
+                                      border: '1px solid var(--border-color)',
+                                      borderRadius: '4px',
+                                      background: 'var(--bg-secondary)',
+                                      color: 'var(--text-primary)',
+                                      fontFamily: 'inherit',
+                                      boxSizing: 'border-box'
+                                    }}
+                                  />
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
+                    {selectedWinners.length > 0 && (
+                      <p style={{ marginTop: '0.75rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                        Выбрано победителей: <strong>{selectedWinners.length}</strong>. На каждого будет создан проект договора.
+                      </p>
+                    )}
                   </>
                 )}
 
@@ -3146,7 +3248,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     onClick={() => {
                       setShowWinnerModal(false)
                       setTenderForWinnerSelection(null)
-                      setSelectedWinnerId(null)
+                      setSelectedWinners([])
                     }}
                   >
                     Отмена
@@ -3155,7 +3257,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     className="btn-primary"
                     onClick={handleConfirmWinner}
                   >
-                    {selectedWinnerId ? 'Завершить с победителем' : 'Завершить без победителя'}
+                    {selectedWinners.length > 0 ? 'Завершить с победителями' : 'Завершить без победителя'}
                   </button>
                 </div>
               </div>

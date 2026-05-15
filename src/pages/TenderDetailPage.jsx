@@ -46,7 +46,7 @@ function TenderDetailPage() {
     try {
       const { data: tenderData, error: tenderError } = await supabase
         .from('tenders')
-        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name)')
+        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name)')
         .eq('id', tenderId)
         .single()
 
@@ -378,6 +378,16 @@ function TenderDetailPage() {
     )
   }
 
+  // task 215: несколько победителей (с откатом на одиночного winner, если миграция не применена)
+  const winnersList = (tender.tender_winners && tender.tender_winners.length > 0)
+    ? tender.tender_winners.map(w => ({
+        id: w.counterparty_id,
+        name: w.counterparties?.name || '—',
+        scope: w.scope_note || ''
+      }))
+    : (tender.winner ? [{ id: tender.winner.id, name: tender.winner.name, scope: '' }] : [])
+  const winnerIds = new Set(winnersList.map(w => w.id))
+
   return (
     <div className="tender-detail-page">
       {/* Шапка */}
@@ -437,10 +447,16 @@ function TenderDetailPage() {
             <span className="info-label">Участников</span>
             <span className="info-value">{tenderCounterparties.length}</span>
           </div>
-          {tender.winner && (
+          {winnersList.length > 0 && (
             <div className="info-item winner">
-              <span className="info-label">Победитель</span>
-              <span className="info-value winner-name">🏆 {tender.winner.name}</span>
+              <span className="info-label">{winnersList.length > 1 ? 'Победители' : 'Победитель'}</span>
+              <span className="info-value winner-name">
+                {winnersList.map((w) => (
+                  <span key={w.id} style={{ display: 'block' }}>
+                    🏆 {w.name}{w.scope ? ` — ${w.scope}` : ''}
+                  </span>
+                ))}
+              </span>
             </div>
           )}
           {tender.tender_package_link && (
@@ -550,7 +566,8 @@ function TenderDetailPage() {
                   <tbody>
                     {tenderCounterparties.map((tc, idx) => {
                       const firstContact = tc.counterparties?.counterparty_contacts?.[0]
-                      const isWinner = tender.winner?.id === tc.counterparty_id
+                      const isWinner = winnerIds.has(tc.counterparty_id)
+                      const winnerScope = winnersList.find(w => w.id === tc.counterparty_id)?.scope || ''
                       return (
                         <tr key={tc.id} style={isWinner ? { background: 'rgba(22, 163, 74, 0.08)' } : {}}>
                           <td style={{ textAlign: 'center', fontWeight: 600, color: 'var(--text-tertiary)' }}>{idx + 1}</td>
@@ -558,6 +575,11 @@ function TenderDetailPage() {
                             <div style={{ fontWeight: 600 }}>
                               {isWinner && <span title="Победитель" style={{ marginRight: '0.25rem' }}>🏆</span>}
                               {tc.counterparties?.name}
+                              {isWinner && winnerScope && (
+                                <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-tertiary)' }}>
+                                  — {winnerScope}
+                                </span>
+                              )}
                             </div>
                             {tc.counterparties?.work_type && (
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>{tc.counterparties.work_type}</div>

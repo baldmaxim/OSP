@@ -237,14 +237,27 @@ function CostPlansPage() {
     )
   }
 
-  // Уникальные ответственные для фильтра
-  const responsibleMap = new Map()
+  // task 216: уникальные ответственные для фильтра — по ФИО (без дублей разных
+  // контактов с одинаковым именем, привязанных к разным объектам)
+  const responsibleNameSet = new Set()
+  const responsibles = []
   for (const t of tenders) {
-    const r = t.cost_plan_responsible
-    if (r?.id && !responsibleMap.has(r.id)) responsibleMap.set(r.id, r)
+    const name = t.cost_plan_responsible?.full_name
+    if (name && !responsibleNameSet.has(name.toLowerCase())) {
+      responsibleNameSet.add(name.toLowerCase())
+      responsibles.push(name)
+    }
   }
-  const responsibles = Array.from(responsibleMap.values())
-    .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '', 'ru'))
+  responsibles.sort((a, b) => a.localeCompare(b, 'ru'))
+
+  // task 216: контакты для назначения ответственного — без дублей по ФИО
+  const seenContactNames = new Set()
+  const uniqueContacts = allContacts.filter(c => {
+    const key = (c.full_name || '').toLowerCase()
+    if (!key || seenContactNames.has(key)) return false
+    seenContactNames.add(key)
+    return true
+  })
 
   // task 178: уникальные объекты для фильтра
   const objectMap = new Map()
@@ -259,7 +272,7 @@ function CostPlansPage() {
 
   // Фильтрация по ответственному, объекту и поиску
   let filtered = tenders
-  if (responsibleFilter) filtered = filtered.filter(t => t.cost_plan_responsible?.id === responsibleFilter)
+  if (responsibleFilter) filtered = filtered.filter(t => (t.cost_plan_responsible?.full_name || '') === responsibleFilter)
   if (objectFilter) filtered = filtered.filter(t => t.object_id === objectFilter)
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase()
@@ -357,11 +370,11 @@ function CostPlansPage() {
             onChange={(e) => setResponsibleFilter(e.target.value)}
           >
             <option value="">Все ({tenders.length})</option>
-            {responsibles.map(r => {
-              const cnt = tenders.filter(t => t.cost_plan_responsible?.id === r.id).length
+            {responsibles.map(name => {
+              const cnt = tenders.filter(t => (t.cost_plan_responsible?.full_name || '') === name).length
               return (
-                <option key={r.id} value={r.id}>
-                  {r.full_name} ({cnt})
+                <option key={name} value={name}>
+                  {name} ({cnt})
                 </option>
               )
             })}
@@ -377,7 +390,7 @@ function CostPlansPage() {
           <thead>
             <tr>
               <th style={{ width: '52px' }}>№ п/п</th>
-              <th>Объект</th>
+              <th style={{ minWidth: '220px' }}>Объект</th>
               <th>Описание работ</th>
               <th>Ответственный</th>
               <th
@@ -419,11 +432,12 @@ function CostPlansPage() {
               visible.map((t, idx) => (
                 <tr key={t.id}>
                   <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</td>
-                  <td>
+                  <td style={{ minWidth: '220px' }}>
                     <button
                       className="row-link primary"
                       onClick={() => navigate(`/tenders/${t.id}`)}
                       title="Открыть тендер"
+                      style={{ whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word' }}
                     >
                       {t.objects?.name || '—'}
                     </button>
@@ -442,7 +456,7 @@ function CostPlansPage() {
                         onBlur={() => setEditingResponsibleId(null)}
                       >
                         <option value="">— не назначен —</option>
-                        {allContacts.map(c => (
+                        {uniqueContacts.map(c => (
                           <option key={c.id} value={c.id}>{c.full_name}</option>
                         ))}
                       </select>
