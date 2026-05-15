@@ -795,17 +795,23 @@
 
 /* Expanded counterparties row inside the tenders table */
 .tenders-page .expanded-cp-row {
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
   background-color: var(--bg-tertiary);
-  border-top: 1px solid var(--primary-color);
+  box-shadow: inset 3px 0 0 var(--primary-color);
 }
 
 .tenders-page .expanded-cp-toolbar {
-  margin-bottom: 0.625rem;
+  margin-bottom: 0.5rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.tenders-page .expanded-cp-toolbar .btn-primary,
+.tenders-page .expanded-cp-toolbar .btn-secondary {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
 }
 
 .tenders-page .kp-counter {
@@ -1013,12 +1019,16 @@
 
 .tenders-page .expanded-cp-table-wrap .data-table th,
 .tenders-page .expanded-cp-table-wrap .data-table td {
-  padding: 0.4375rem 0.625rem;
+  padding: 0.3125rem 0.5rem;
+}
+
+.tenders-page .expanded-cp-table-wrap .data-table th {
+  font-size: 0.7rem;
 }
 
 .tenders-page .expanded-cp-empty {
   margin: 0;
-  padding: 1rem;
+  padding: 0.625rem;
   text-align: center;
   color: var(--text-secondary);
   font-style: italic;
@@ -1026,18 +1036,41 @@
 }
 
 .tenders-page .expand-toggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 0.8125rem;
-  padding: 0.125rem 0.375rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   color: var(--text-secondary);
-  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .tenders-page .expand-toggle:hover {
   background: var(--hover-bg);
   color: var(--text-primary);
+}
+
+.tenders-page .expand-toggle.is-expanded {
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.tenders-page .expand-toggle-chevron {
+  display: block;
+  font-size: 0.9375rem;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 0.18s ease;
+}
+
+.tenders-page .expand-toggle.is-expanded .expand-toggle-chevron {
+  transform: rotate(90deg);
 }
 
 .tenders-page .row-link {

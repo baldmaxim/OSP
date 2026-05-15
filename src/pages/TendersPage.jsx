@@ -1245,7 +1245,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   // Проверка просроченности
   const today = new Date().toISOString().split('T')[0]
-  const isOverdue = (tender) => tender.end_date && tender.end_date < today && !isCompletedStatus(tender.status)
+  const isOverdue = (tender) => tender.tender_end_date && tender.tender_end_date < today && !isCompletedStatus(tender.status)
 
   // Уникальные объекты из тендеров для фильтра
   const tenderObjectIds = [...new Set(tenders.map(t => t.object_id).filter(Boolean))]
@@ -1662,11 +1662,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               {isCompletedTab && <th style={{ width: '130px' }}>Победитель</th>}
               <th
                 className="sortable-th"
-                onClick={() => toggleSort('start_date')}
-                title="Сортировать по датам"
-                style={{ width: '110px' }}
+                onClick={() => toggleSort('tender_start_date')}
+                title="Сортировать по срокам тендерных процедур"
+                style={{ width: '150px' }}
               >
-                Планируемые<br />сроки{sortIndicator('start_date')}
+                Срок проведения<br />тендерных процедур{sortIndicator('tender_start_date')}
               </th>
               <th style={{ width: '130px' }}>Ответственный<br />по тендеру</th>
               {!compactView && department === 'construction' && (
@@ -1705,10 +1705,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
                         <button
                           onClick={() => handleToggleTender(tender.id)}
-                          className="expand-toggle"
+                          className={`expand-toggle${expandedTenderId === tender.id ? ' is-expanded' : ''}`}
                           title="Показать контрагентов"
+                          aria-expanded={expandedTenderId === tender.id}
                         >
-                          {expandedTenderId === tender.id ? '▼' : '▶'}
+                          <span className="expand-toggle-chevron" aria-hidden>›</span>
                         </button>
                         {(() => {
                           const c = tenderProposalCounts[tender.id]
@@ -1798,7 +1799,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </td>
                     )}
                     <td style={isOverdue(tender) ? { color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap' } : { whiteSpace: 'nowrap' }}>
-                      {formatDateRange(tender.start_date, tender.end_date)}
+                      {formatDateRange(tender.tender_start_date, tender.tender_end_date)}
                       {isOverdue(tender) && <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem' }} title="Срок истёк">!</span>}
                     </td>
                     <td>
@@ -2276,13 +2277,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                         ref={(el) => {
                                           if (el) {
                                             el.style.height = 'auto'
-                                            el.style.height = Math.max(el.scrollHeight, 36) + 'px'
+                                            el.style.height = Math.max(el.scrollHeight, 30) + 'px'
                                           }
                                         }}
                                         defaultValue={tc.notes || ''}
                                         onInput={(e) => {
                                           e.target.style.height = 'auto'
-                                          e.target.style.height = Math.max(e.target.scrollHeight, 36) + 'px'
+                                          e.target.style.height = Math.max(e.target.scrollHeight, 30) + 'px'
                                         }}
                                         onBlur={(e) => {
                                           const newNotes = e.target.value
@@ -2294,8 +2295,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                         rows={1}
                                         style={{
                                           width: '100%',
-                                          minHeight: '36px',
-                                          padding: '0.375rem 0.5rem',
+                                          minHeight: '30px',
+                                          padding: '0.25rem 0.4rem',
                                           fontSize: '0.75rem',
                                           lineHeight: 1.35,
                                           border: '1px solid var(--border-color)',
