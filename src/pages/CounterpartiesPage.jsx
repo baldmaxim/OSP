@@ -1539,35 +1539,6 @@ function CounterpartiesPage() {
                   </div>
                 </div>
 
-                <div className="form-group full-width">
-                  <label>Категория работ</label>
-                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                    {['Основное строительство', 'Гарантийный отдел'].map(dept => {
-                      const depts = (counterpartyFormData.department || '').split(',').map(d => d.trim()).filter(d => d)
-                      const checked = depts.includes(dept)
-                      return (
-                        <label key={dept} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.875rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              const newDepts = checked
-                                ? depts.filter(d => d !== dept)
-                                : [...depts, dept]
-                              setCounterpartyFormData({
-                                ...counterpartyFormData,
-                                department: newDepts.join(', ')
-                              })
-                            }}
-                            style={{ width: '16px', height: '16px', accentColor: 'var(--primary-color)' }}
-                          />
-                          {dept}
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
-
                 <div className="form-group">
                   <label>ИНН</label>
                   <input

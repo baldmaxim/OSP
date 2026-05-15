@@ -595,18 +595,18 @@ function ContactsPage() {
           </div>
 
           <div className="table-container">
-            <table className="data-table contacts-table">
+            <table className="data-table contacts-table people-table">
               <thead>
                 <tr>
                   <th style={{ width: '40px', textAlign: 'center' }}>№</th>
-                  <th style={{ width: '200px' }}>ФИО</th>
-                  <th style={{ width: '170px' }}>Объект/Офис</th>
-                  <th>Должность</th>
-                  <th style={{ width: '170px' }}>Отдел</th>
-                  <th style={{ width: '150px' }}>Телефон</th>
-                  <th>Email</th>
+                  <th style={{ width: '190px' }}>ФИО</th>
+                  <th style={{ width: '230px' }}>Объект/Офис</th>
+                  <th style={{ width: '150px' }}>Должность</th>
+                  <th style={{ width: '160px' }}>Отдел</th>
+                  <th style={{ width: '140px' }}>Телефон</th>
+                  <th style={{ width: '190px' }}>Email</th>
                   <th>Примечания</th>
-                  <th style={{ width: '72px' }}></th>
+                  <th style={{ width: '64px' }}></th>
                 </tr>
               </thead>
               <tbody>

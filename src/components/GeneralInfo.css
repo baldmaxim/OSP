@@ -327,6 +327,33 @@
   border-bottom: none;
 }
 
+/* task 204: таблица сотрудников — фикс. ширины (Должность короче, Объект/Примечания шире)
+   + тонкие вертикальные полоски для удобства чтения */
+.people-table {
+  table-layout: fixed;
+}
+
+.people-table th,
+.people-table td {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.people-table th:last-child,
+.people-table td:last-child {
+  border-right: none;
+}
+
+.people-table td {
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.people-table .num-cell {
+  vertical-align: middle;
+}
+
 .contact-notes-input {
   width: 100%;
   min-height: 32px;

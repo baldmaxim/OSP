@@ -28,7 +28,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [selectedTenderForCounterparty, setSelectedTenderForCounterparty] = useState(null)
   const [counterpartySearchQuery, setCounterpartySearchQuery] = useState('')
   const [counterpartyWorkTypeFilter, setCounterpartyWorkTypeFilter] = useState('')
-  const [counterpartyDepartmentFilter, setCounterpartyDepartmentFilter] = useState('')
   const [selectedCounterpartyIds, setSelectedCounterpartyIds] = useState([])
   const [showWinnerModal, setShowWinnerModal] = useState(false)
   const [tenderForWinnerSelection, setTenderForWinnerSelection] = useState(null)
@@ -2699,12 +2698,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         const availableCounterparties = counterparties.filter(cp => {
           if (currentTenderCounterparties.some(tc => tc.counterparty_id === cp.id)) return false
 
-          // Фильтр по категории работ
-          if (counterpartyDepartmentFilter) {
-            const depts = (cp.department || '').split(',').map(d => d.trim())
-            if (!depts.includes(counterpartyDepartmentFilter)) return false
-          }
-
           // Фильтр по виду работ
           if (counterpartyWorkTypeFilter) {
             const types = (cp.work_type || '').split(',').map(wt => wt.trim())
@@ -2764,24 +2757,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   />
 
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <select
-                      value={counterpartyDepartmentFilter}
-                      onChange={(e) => setCounterpartyDepartmentFilter(e.target.value)}
-                      style={{
-                        padding: '0.375rem 0.75rem',
-                        fontSize: '0.8125rem',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '4px',
-                        background: 'var(--bg-secondary)',
-                        color: 'var(--text-primary)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <option value="">Все категории</option>
-                      <option value="Основное строительство">Основное строительство</option>
-                      <option value="Гарантийный отдел">Гарантийный отдел</option>
-                    </select>
-
                     {uniqueWorkTypes.length > 0 && (
                       <select
                         value={counterpartyWorkTypeFilter}
@@ -2803,9 +2778,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </select>
                     )}
 
-                    {(counterpartyDepartmentFilter || counterpartyWorkTypeFilter) && (
+                    {counterpartyWorkTypeFilter && (
                       <button
-                        onClick={() => { setCounterpartyDepartmentFilter(''); setCounterpartyWorkTypeFilter('') }}
+                        onClick={() => setCounterpartyWorkTypeFilter('')}
                         style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
                       >Сбросить</button>
                     )}
