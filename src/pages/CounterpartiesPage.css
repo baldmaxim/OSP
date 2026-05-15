@@ -262,6 +262,8 @@
 .compact-table td {
   padding: 0.4375rem 0.5rem;
   border-bottom: 1px solid var(--border-color);
+  /* task 200: тонкие, почти прозрачные вертикальные полоски между столбцами */
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
   vertical-align: top;
   color: var(--text-primary);
   font-size: 0.8125rem;
@@ -269,7 +271,21 @@
   text-overflow: ellipsis;
 }
 
-/* Центрируем компактные одноклеточные значения (№, чекбокс, департамент, сайт, действия) */
+.compact-table th {
+  /* такие же лёгкие вертикальные полоски в шапке */
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+}
+
+.compact-table th:last-child,
+.compact-table td:last-child {
+  border-right: none;
+}
+
+/* task 200: Наименование, Вид работ, ИНН — по центру вертикально (как просил пользователь) */
+.compact-table td.col-name,
+.compact-table td.col-worktype,
+.compact-table td.col-inn,
+/* Центрируем компактные одноклеточные значения (№, чекбокс, департамент, сайт, статус, действия) */
 .compact-table td.col-num,
 .compact-table td.col-checkbox,
 .compact-table td.col-department,
@@ -1110,17 +1126,27 @@
 .contact-stack-item {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 0.0625rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.5rem 0.4375rem;
+  min-height: 2.4em;
   border-left: 2px solid var(--border-color);
+  /* task 200: пунктирная черточка снизу — визуально отделяет контакты друг от друга */
+  border-bottom: 1px dashed color-mix(in srgb, var(--border-color) 70%, transparent);
   background: var(--bg-secondary);
   border-radius: 0 4px 4px 0;
   transition: border-color 0.15s, background 0.15s;
+  box-sizing: border-box;
 }
 
 .contact-stack-item:hover {
   border-left-color: var(--primary-color);
   background: var(--bg-tertiary);
+}
+
+.contacts-stack > .contact-stack-item:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0.25rem;
 }
 
 .contact-stack-item .contact-position {
@@ -1160,8 +1186,17 @@
   flex-direction: column;
   gap: 0.0625rem;
   min-height: 2.4em;
+  padding-bottom: 0.4375rem;
   justify-content: center;
   word-break: break-word;
+  /* task 200: разделитель между телефонами разных контактов */
+  border-bottom: 1px dashed color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+
+.contacts-stack-phones > .phone-cell:last-of-type,
+.contacts-stack-phones > .empty-cell:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .contacts-stack-phones > .empty-cell,
@@ -1172,6 +1207,14 @@
   min-height: 2.4em;
   line-height: 1.35;
   word-break: break-word;
+  padding-bottom: 0.4375rem;
+  border-bottom: 1px dashed color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+
+.contacts-stack-emails > a:last-of-type,
+.contacts-stack-emails > .empty-cell:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .contacts-stack-phones .phone-cell .contact-link {
