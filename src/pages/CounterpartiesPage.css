@@ -282,16 +282,22 @@
 }
 
 /* task 200: Наименование, Вид работ, ИНН — по центру вертикально (как просил пользователь) */
+/* task 200/202: Наименование, Вид работ, ИНН + одноклеточные — по центру вертикально */
 .compact-table td.col-name,
 .compact-table td.col-worktype,
 .compact-table td.col-inn,
-/* Центрируем компактные одноклеточные значения (№, чекбокс, департамент, сайт, статус, действия) */
 .compact-table td.col-num,
 .compact-table td.col-checkbox,
-.compact-table td.col-department,
 .compact-table td.col-website,
 .compact-table td.col-status,
 .compact-table td.col-actions {
+  vertical-align: middle;
+}
+
+/* task 202: № — гарантированная центровка по горизонтали и вертикали */
+.compact-table th.col-num,
+.compact-table td.col-num {
+  text-align: center;
   vertical-align: middle;
 }
 
@@ -311,18 +317,18 @@
   font-variant-numeric: tabular-nums;
 }
 .col-checkbox { width: 28px; text-align: center; }
-.col-name { width: 14%; }
-.col-department { width: 5%; text-align: center; }
-.col-worktype { width: 11%; }
-.col-inn { width: 7%; font-size: 0.75rem; }
-.col-contact-name { width: 14%; }
-.col-contact-phone { width: 10%; font-size: 0.75rem; }
-.col-contact-email { width: 11%; font-size: 0.75rem; }
-.col-website { width: 4%; text-align: center; }
+.col-name { width: 17%; }
+.col-worktype { width: 14%; }
+.col-inn { width: 9%; font-size: 0.75rem; }
+.col-contact-name { width: 17%; }
+/* task 202: телефон фикс. минимальной ширины — формат +7(000)000-00-00 (16 симв.) */
+.col-contact-phone { width: 132px; font-size: 0.75rem; }
+.col-contact-email { width: 14%; font-size: 0.75rem; }
+.col-website { width: 5%; text-align: center; }
 /* task 199: «Примечание» — шире */
-.col-notes { width: 15%; font-size: 0.75rem; }
-.col-status { width: 7%; }
-.col-actions { width: 5%; text-align: center; }
+.col-notes { width: 18%; font-size: 0.75rem; }
+.col-status { width: 9%; }
+.col-actions { width: 6%; text-align: center; }
 
 /* Row states */
 .table-row {
@@ -1100,6 +1106,15 @@
 }
 
 /* Вкладка «Удалённые» — красная, в правый край */
+/* task 201: вкладка «Чёрный список» — серо-стальной акцент */
+.cp-tab-blacklist { color: #475569; }
+.cp-tab-blacklist:hover { color: #1e293b; }
+.cp-tab-blacklist.active { color: #1e293b; border-bottom-color: #475569; }
+.cp-tab-blacklist.active .cp-tab-count { background: #475569; }
+[data-theme='dark'] .cp-tab-blacklist { color: #cbd5e1; }
+[data-theme='dark'] .cp-tab-blacklist.active { color: #f1f5f9; border-bottom-color: #94a3b8; }
+
+/* «Удалённые» прижата к правому краю */
 .cp-tab-deleted { margin-left: auto; color: #b91c1c; }
 .cp-tab-deleted:hover { color: #991b1b; }
 .cp-tab-deleted.active { color: #991b1b; border-bottom-color: #b91c1c; }

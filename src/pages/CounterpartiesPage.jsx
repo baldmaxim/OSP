@@ -36,7 +36,6 @@ function CounterpartiesPage() {
     status: 'active',
     notes: '',
   })
-  const [departmentFilter, setDepartmentFilter] = useState('')
 
   const [contactFormData, setContactFormData] = useState({
     full_name: '',
@@ -950,23 +949,22 @@ function CounterpartiesPage() {
 
   // Фильтрация контрагентов (мемоизация)
   const filteredCounterparties = useMemo(() => counterparties.filter(counterparty => {
-    // task 197: фильтр по активной вкладке (активные / удалённые)
+    // task 197 + 201: фильтр по активной вкладке (активные / чёрный список / удалённые)
     if (activeTab === 'deleted') {
       if (!counterparty.deleted_at) return false
-    } else {
+    } else if (activeTab === 'blacklist') {
       if (counterparty.deleted_at) return false
+      if (counterparty.status !== 'blacklist') return false
+    } else {
+      // 'active'
+      if (counterparty.deleted_at) return false
+      if (counterparty.status === 'blacklist') return false
     }
 
     // Фильтр по виду работ (проверяем каждый вид отдельно)
     if (workTypeFilter) {
       const types = (counterparty.work_type || '').split(',').map(wt => wt.trim())
       if (!types.includes(workTypeFilter)) return false
-    }
-
-    // Фильтр по отделу
-    if (departmentFilter) {
-      const depts = (counterparty.department || '').split(',').map(d => d.trim())
-      if (!depts.includes(departmentFilter)) return false
     }
 
     // Поиск по всем полям
@@ -1000,11 +998,11 @@ function CounterpartiesPage() {
     if (a.status !== 'blacklist' && b.status === 'blacklist') return -1
     // Если статусы одинаковые, сортируем по имени
     return (a.name || '').localeCompare(b.name || '', 'ru')
-  }), [counterparties, workTypeFilter, departmentFilter, searchQuery, activeTab])
+  }), [counterparties, workTypeFilter, searchQuery, activeTab])
 
-  const activeCount = counterparties.filter(c => !c.deleted_at).length
-  const deletedCount = counterparties.filter(c => c.deleted_at).length
+  const activeCount = counterparties.filter(c => !c.deleted_at && c.status !== 'blacklist').length
   const blacklistCount = counterparties.filter(c => !c.deleted_at && c.status === 'blacklist').length
+  const deletedCount = counterparties.filter(c => c.deleted_at).length
 
   // task 196: подгружаем историю участия в тендерах (lazy)
   const fetchTenderHistory = async (counterpartyId) => {
@@ -1060,9 +1058,6 @@ function CounterpartiesPage() {
           <div className="toolbar-left">
             <h2 className="page-title">Контрагенты</h2>
             <span className="counter-badge">{filteredCounterparties.length}</span>
-            {blacklistCount > 0 && (
-              <span className="counter-badge blacklist">{blacklistCount} ЧС</span>
-            )}
           </div>
 
           <div className="toolbar-center">
@@ -1087,15 +1082,6 @@ function CounterpartiesPage() {
               ))}
             </select>
 
-            <select
-              className={`filter-select ${departmentFilter ? 'active' : ''}`}
-              value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-            >
-              <option value="">Все категории</option>
-              <option value="Основное строительство">Основное строительство</option>
-              <option value="Гарантийный отдел">Гарантийный отдел</option>
-            </select>
           </div>
 
           <div className="toolbar-actions">
@@ -1128,7 +1114,7 @@ function CounterpartiesPage() {
           </div>
         )}
 
-        {/* task 197: вкладки Активные / Удалённые (справа сверху) */}
+        {/* task 197 + 201: вкладки Активные / Чёрный список / Удалённые */}
         <div className="counterparties-tabs">
           <button
             className={`cp-tab ${activeTab === 'active' ? 'active' : ''}`}
@@ -1136,6 +1122,13 @@ function CounterpartiesPage() {
           >
             Активные
             <span className="cp-tab-count">{activeCount}</span>
+          </button>
+          <button
+            className={`cp-tab cp-tab-blacklist ${activeTab === 'blacklist' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('blacklist'); setSelectedCounterpartyIds([]); setExpandedRows(new Set()) }}
+          >
+            Чёрный список
+            {blacklistCount > 0 && <span className="cp-tab-count">{blacklistCount}</span>}
           </button>
           <button
             className={`cp-tab cp-tab-deleted ${activeTab === 'deleted' ? 'active' : ''}`}
@@ -1185,7 +1178,6 @@ function CounterpartiesPage() {
                       />
                     </th>
                     <th className="col-name">Наименование</th>
-                    <th className="col-department">Категория работ</th>
                     <th className="col-worktype">Вид работ</th>
                     <th className="col-inn">ИНН</th>
                     <th className="col-contact-name">Контакты</th>
@@ -1219,21 +1211,6 @@ function CounterpartiesPage() {
                           </td>
                           <td className="col-name">
                             <span className="company-name">{counterparty.name}</span>
-                          </td>
-                          <td className="col-department">
-                            {counterparty.department ? (
-                              <div className="department-list">
-                                {counterparty.department.split(',').map((d, i) => {
-                                  const dept = d.trim()
-                                  const isConstruction = dept === 'Основное строительство'
-                                  return (
-                                    <span key={i} className={`department-tag ${isConstruction ? 'construction' : 'warranty'}`}>
-                                      {isConstruction ? 'ОС' : 'ГО'}
-                                    </span>
-                                  )
-                                })}
-                              </div>
-                            ) : <span className="empty-cell">--</span>}
                           </td>
                           <td className="col-worktype">
                             {counterparty.work_type ? (
@@ -1354,7 +1331,7 @@ function CounterpartiesPage() {
                         {/* task 196: при раскрытии — история участия в тендерах */}
                         {isExpanded && (
                           <tr className="expanded-row">
-                            <td colSpan="13">
+                            <td colSpan="12">
                               <div className="expanded-content">
                                 <div className="tender-history-header">
                                   <span className="detail-label">История участия в тендерах</span>
