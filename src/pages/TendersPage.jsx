@@ -1420,7 +1420,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <>
               <thead>
                 <tr>
-                  <th style={{ width: '52px' }}>№ п/п</th>
+                  <th style={{ width: '52px', textAlign: 'center' }} title="Номер тендера (стабильный, присваивается при создании)">№</th>
                   <th style={{ width: '180px' }}>Объект</th>
                   <th style={{ width: '150px' }}>Описание работ</th>
                   <th style={{ width: '160px' }}>Ответственный</th>
@@ -1449,9 +1449,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     </td>
                   </tr>
                 ) : (
-                  sortedTenders.map((tender, idx) => (
+                  sortedTenders.map((tender) => (
                     <tr key={tender.id} className={isOverdue(tender) ? 'overdue-row' : ''}>
-                      <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</td>
+                      <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                        {tender.public_tender_number ?? '—'}
+                      </td>
                       <td>
                         <button
                           onClick={() => navigate(`/tenders/${tender.id}`)}
@@ -1619,38 +1621,39 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <>
           <thead>
             <tr>
-              <th style={{ width: '44px' }}></th>
-              <th style={{ minWidth: '180px' }}>Наименование<br />объекта</th>
+              <th style={{ width: '44px', textAlign: 'center' }} title="Номер тендера (стабильный, присваивается при создании)">№</th>
+              <th style={{ width: '36px' }}></th>
+              <th style={{ minWidth: '160px' }}>Наименование<br />объекта</th>
               <th style={{ minWidth: '140px', maxWidth: '220px' }}>Описание работ</th>
-              {activeTab !== 'completed' && <th style={{ width: '110px' }}>Статус</th>}
-              {activeTab === 'completed' && <th style={{ width: '140px' }}>Победитель</th>}
+              {activeTab !== 'completed' && <th style={{ width: '100px' }}>Статус</th>}
+              {activeTab === 'completed' && <th style={{ width: '130px' }}>Победитель</th>}
               <th
                 className="sortable-th"
                 onClick={() => toggleSort('start_date')}
                 title="Сортировать по датам"
-                style={{ width: '120px' }}
+                style={{ width: '110px' }}
               >
                 Планируемые<br />сроки{sortIndicator('start_date')}
               </th>
-              <th style={{ width: '140px' }}>Ответственный<br />по тендеру</th>
+              <th style={{ width: '130px' }}>Ответственный<br />по тендеру</th>
               {!compactView && department === 'construction' && (
-                <th style={{ width: '110px' }}>ВОРы<br />и&nbsp;РД</th>
+                <th style={{ width: '90px' }}>ВОРы<br />и&nbsp;РД</th>
               )}
-              <th style={{ width: '120px' }}>Тендерный<br />пакет</th>
+              <th style={{ width: '105px' }}>Тендерный<br />пакет</th>
               {!compactView && department === 'construction' && activeTab !== 'completed' && (
-                <th style={{ width: '110px' }}>План<br />затрат</th>
+                <th style={{ width: '95px' }}>План<br />затрат</th>
               )}
               {!compactView && !isMaterialsView && department === 'construction' && (
-                <th style={{ width: '120px' }}>Тендер<br />на&nbsp;материалы</th>
+                <th style={{ width: '105px' }}>Тендер<br />на&nbsp;материалы</th>
               )}
-              {!compactView && <th style={{ width: '120px' }}>Сводная<br />КП</th>}
-              <th className="actions-column" style={{ width: '80px' }}>Действия</th>
+              {!compactView && <th style={{ width: '105px' }}>Сводная<br />КП</th>}
+              <th className="actions-column" style={{ width: '72px' }}>Действия</th>
             </tr>
           </thead>
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={compactView ? 8 : (activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9)))} className="no-data">
+                <td colSpan={compactView ? 9 : (activeTab === 'completed' ? (!isMaterialsView && department === 'construction' ? 12 : 10) : (isMaterialsView ? 10 : (department === 'construction' ? 13 : 10)))} className="no-data">
                   {activeTab === 'completed'
                     ? 'Нет завершенных тендеров'
                     : activeTab === 'deleted'
@@ -1662,6 +1665,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               sortedTenders.map((tender) => (
                 <React.Fragment key={tender.id}>
                   <tr className={isOverdue(tender) ? 'overdue-row' : ''}>
+                    <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                      {tender.public_tender_number ?? '—'}
+                    </td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
                         <button

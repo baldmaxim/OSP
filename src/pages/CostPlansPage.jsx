@@ -39,8 +39,12 @@ function CostPlansPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('in_work') // 'in_work' | 'completed'
   const [responsibleFilter, setResponsibleFilter] = useState('')
+  const [objectFilter, setObjectFilter] = useState('') // task 178: фильтр по объектам
   const [allContacts, setAllContacts] = useState([])
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
+  // task 179: сортировка по срокам тендерных процедур
+  const [sortKey, setSortKey] = useState('') // '' | 'tender_start_date' | 'tender_end_date'
+  const [sortDir, setSortDir] = useState('asc') // 'asc' | 'desc'
 
   const fetchAllContacts = async () => {
     try {
@@ -63,7 +67,8 @@ function CostPlansPage() {
         .select(`
           id, object_id, status, tender_type, cost_plan_status, cost_plan_link,
           cost_plan_responsible_id, cost_plan_start_date, cost_plan_end_date,
-          start_date, end_date, work_description,
+          start_date, end_date, tender_start_date, tender_end_date,
+          work_description, cost_plan_notes,
           objects(name, status),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name, position)
         `)
@@ -182,6 +187,33 @@ function CostPlansPage() {
     }
   }
 
+  // task 177: сохранение примечания к плану затрат (по blur, без спама запросами)
+  const handleChangeCostPlanNotes = async (tenderId, value) => {
+    const next = value.trim() || null
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ cost_plan_notes: next })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, cost_plan_notes: next } : t))
+    } catch (err) {
+      console.error('Ошибка сохранения примечания:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // task 179: переключатель сортировки по колонкам с датами тендера
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+  const sortIndicator = (key) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
+
 
   if (loading) {
     return (
@@ -201,10 +233,35 @@ function CostPlansPage() {
   const responsibles = Array.from(responsibleMap.values())
     .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '', 'ru'))
 
-  // Фильтрация по выбранному ответственному
-  const filtered = responsibleFilter
-    ? tenders.filter(t => t.cost_plan_responsible?.id === responsibleFilter)
-    : tenders
+  // task 178: уникальные объекты для фильтра
+  const objectMap = new Map()
+  for (const t of tenders) {
+    const o = t.objects
+    if (t.object_id && !objectMap.has(t.object_id)) {
+      objectMap.set(t.object_id, { id: t.object_id, name: o?.name || '—' })
+    }
+  }
+  const objectsList = Array.from(objectMap.values())
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
+
+  // Фильтрация по ответственному и объекту
+  let filtered = tenders
+  if (responsibleFilter) filtered = filtered.filter(t => t.cost_plan_responsible?.id === responsibleFilter)
+  if (objectFilter) filtered = filtered.filter(t => t.object_id === objectFilter)
+
+  // task 179: сортировка по выбранной колонке (даты тендерных процедур)
+  if (sortKey) {
+    filtered = [...filtered].sort((a, b) => {
+      const av = a[sortKey] || ''
+      const bv = b[sortKey] || ''
+      if (av === bv) return 0
+      // пустые значения уходят в конец независимо от направления
+      if (!av) return 1
+      if (!bv) return -1
+      const cmp = av < bv ? -1 : 1
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }
 
   // Разделение по табу
   const inWork = filtered.filter(t => t.cost_plan_status !== 'completed')
@@ -239,6 +296,21 @@ function CostPlansPage() {
 
       <div className="cost-plans-toolbar">
         <label className="toolbar-label">
+          Объект:
+          <select
+            value={objectFilter}
+            onChange={(e) => setObjectFilter(e.target.value)}
+          >
+            <option value="">Все ({tenders.length})</option>
+            {objectsList.map(o => {
+              const cnt = tenders.filter(t => t.object_id === o.id).length
+              return (
+                <option key={o.id} value={o.id}>{o.name} ({cnt})</option>
+              )
+            })}
+          </select>
+        </label>
+        <label className="toolbar-label">
           Ответственный:
           <select
             value={responsibleFilter}
@@ -255,8 +327,8 @@ function CostPlansPage() {
             })}
           </select>
         </label>
-        {responsibleFilter && (
-          <button className="reset-btn" onClick={() => setResponsibleFilter('')}>Сбросить</button>
+        {(responsibleFilter || objectFilter) && (
+          <button className="reset-btn" onClick={() => { setResponsibleFilter(''); setObjectFilter('') }}>Сбросить</button>
         )}
       </div>
 
@@ -268,16 +340,33 @@ function CostPlansPage() {
               <th>Объект</th>
               <th>Описание работ</th>
               <th>Ответственный</th>
+              <th
+                className="sortable-th"
+                onClick={() => toggleSort('tender_start_date')}
+                title="Сортировать по началу тендерной процедуры"
+                style={{ width: '120px', cursor: 'pointer', userSelect: 'none' }}
+              >
+                Начало<br />тендера{sortIndicator('tender_start_date')}
+              </th>
+              <th
+                className="sortable-th"
+                onClick={() => toggleSort('tender_end_date')}
+                title="Сортировать по окончанию тендерной процедуры"
+                style={{ width: '120px', cursor: 'pointer', userSelect: 'none' }}
+              >
+                Окончание<br />тендера{sortIndicator('tender_end_date')}
+              </th>
               <th>Срок выполнения плана затрат</th>
               <th>План затрат</th>
               <th style={{ width: '180px' }}>Статус плана</th>
               <th className="actions-column">Действия</th>
+              <th style={{ minWidth: '220px' }}>Примечание</th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={8} className="no-data">
+                <td colSpan={11} className="no-data">
                   {activeTab === 'completed'
                     ? 'Завершённых планов затрат нет'
                     : tenders.length === 0
@@ -330,6 +419,16 @@ function CostPlansPage() {
                     {t.cost_plan_responsible?.position && (
                       <div className="muted-tiny">{t.cost_plan_responsible.position}</div>
                     )}
+                  </td>
+                  <td className="muted-text" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {t.tender_start_date
+                      ? new Date(t.tender_start_date).toLocaleDateString('ru-RU')
+                      : <span className="muted-tiny">—</span>}
+                  </td>
+                  <td className="muted-text" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {t.tender_end_date
+                      ? new Date(t.tender_end_date).toLocaleDateString('ru-RU')
+                      : <span className="muted-tiny">—</span>}
                   </td>
                   <td>
                     <div className="inline-date-range">
@@ -407,6 +506,31 @@ function CostPlansPage() {
                     >
                       Тендер
                     </button>
+                  </td>
+                  <td>
+                    <textarea
+                      className="cost-plan-notes"
+                      defaultValue={t.cost_plan_notes || ''}
+                      placeholder="Примечание…"
+                      rows={1}
+                      onInput={(e) => {
+                        // auto-grow: подстраиваем высоту под содержимое
+                        e.target.style.height = 'auto'
+                        e.target.style.height = e.target.scrollHeight + 'px'
+                      }}
+                      onBlur={(e) => {
+                        const v = e.target.value
+                        if ((t.cost_plan_notes || '') !== (v.trim() || '')) {
+                          handleChangeCostPlanNotes(t.id, v)
+                        }
+                      }}
+                      ref={(el) => {
+                        if (!el) return
+                        // первая инициализация — растягиваем под существующее содержимое
+                        el.style.height = 'auto'
+                        el.style.height = el.scrollHeight + 'px'
+                      }}
+                    />
                   </td>
                 </tr>
               ))

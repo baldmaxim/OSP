@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   vor_status TEXT NOT NULL DEFAULT 'not_started',
   summary_proposal_link TEXT,
   notes TEXT,
+  cost_plan_notes TEXT,                -- примечание для страницы «Планы затрат»
   tender_type TEXT NOT NULL DEFAULT 'main',
   parent_tender_id UUID REFERENCES tenders(id) ON DELETE SET NULL,
   materials_proposal_deadline DATE,

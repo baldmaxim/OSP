@@ -357,3 +357,41 @@
   font-size: 0.75rem;
   border-radius: 4px;
 }
+
+/* task 179: сортируемые заголовки */
+.cost-plans-page .data-table th.sortable-th:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+/* task 177: автоматически расширяющееся примечание */
+.cost-plans-page textarea.cost-plan-notes {
+  width: 100%;
+  min-height: 28px;
+  padding: 0.3125rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  resize: none;
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.cost-plans-page textarea.cost-plan-notes::placeholder {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.cost-plans-page textarea.cost-plan-notes:hover {
+  background: var(--bg-tertiary);
+}
+
+.cost-plans-page textarea.cost-plan-notes:focus {
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+  outline: none;
+}
