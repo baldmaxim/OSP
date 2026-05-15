@@ -1285,15 +1285,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <span className="tender-tab-count completed">{completedTendersCount}</span>
           )}
         </button>
-        <button
-          className={`tender-tab ${activeTab === 'deleted' ? 'active' : ''}`}
-          onClick={() => setActiveTab('deleted')}
-        >
-          Удалённые
-          {deletedTendersCount > 0 && (
-            <span className="tender-tab-count">{deletedTendersCount}</span>
-          )}
-        </button>
         {!isMaterialsView && (
           <button
             className={`tender-tab ${activeTab === 'template' ? 'active' : ''}`}
@@ -1302,6 +1293,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             Шаблон письма
           </button>
         )}
+        {/* task 194: «Удалённые» — в самой правой части */}
+        <button
+          className={`tender-tab tender-tab-deleted ${activeTab === 'deleted' ? 'active' : ''}`}
+          onClick={() => setActiveTab('deleted')}
+        >
+          Удалённые
+          {deletedTendersCount > 0 && (
+            <span className="tender-tab-count">{deletedTendersCount}</span>
+          )}
+        </button>
       </div>
 
       {/* Фильтры и таблица (скрываем на вкладке шаблона) */}

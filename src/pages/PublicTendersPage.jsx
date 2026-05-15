@@ -3,11 +3,30 @@ import { supabase } from '../supabase'
 import '../components/Tenders.css'
 import './PublicTendersPage.css'
 
+const MONTHS_RU = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+]
+
+// task 195: «15 июня» — без года
+const formatShortDate = (d) => {
+  if (!d) return ''
+  try {
+    const dt = new Date(d)
+    return `${dt.getDate()} ${MONTHS_RU[dt.getMonth()]}`
+  } catch { return d }
+}
+
+const formatShortRange = (start, end) => {
+  if (!start && !end) return '—'
+  if (start && end) return `${formatShortDate(start)} — ${formatShortDate(end)}`
+  return formatShortDate(start || end)
+}
+
 function PublicTendersPage() {
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [department, setDepartment] = useState('all') // 'all' | 'construction' | 'warranty'
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
@@ -17,9 +36,6 @@ function PublicTendersPage() {
   const fetchPublicTenders = async () => {
     try {
       setLoading(true)
-      // Только открытые тендеры (идёт тендерная процедура), не дочерние на материалы,
-      // не удалённые. Поля минимальные: гостям доступен ограниченный набор данных.
-      // Сортировка по дате окончания приёма КП (по возрастанию) — самые горящие сверху.
       const { data, error: err } = await supabase
         .from('tenders')
         .select('id, public_tender_number, work_description, start_date, end_date, tender_start_date, tender_end_date, status, tender_package_link, tender_type, deleted_at, objects(name, address, map_link, status)')
@@ -28,6 +44,7 @@ function PublicTendersPage() {
 
       if (err) throw err
 
+      // task 195: убираем разделение по отделам — оставляем оба статуса в едином списке
       const filtered = (data || []).filter(t =>
         !t.deleted_at
         && (!t.tender_type || t.tender_type === 'main')
@@ -42,33 +59,16 @@ function PublicTendersPage() {
     }
   }
 
-  const formatDate = (d) => {
-    if (!d) return '—'
-    try { return new Date(d).toLocaleDateString('ru-RU') } catch { return d }
-  }
-
-  const formatDateRange = (start, end) => {
-    if (!start && !end) return '—'
-    return `${formatDate(start)} — ${formatDate(end)}`
-  }
-
   const visibleTenders = tenders.filter(t => {
-    if (department === 'construction' && t.objects?.status !== 'main_construction') return false
-    if (department === 'warranty' && t.objects?.status !== 'warranty_service') return false
     const q = searchQuery.trim().toLowerCase()
-    if (q) {
-      const haystack = [
-        t.objects?.name,
-        t.objects?.address,
-        t.work_description,
-      ].filter(Boolean).join(' ').toLowerCase()
-      if (!haystack.includes(q)) return false
-    }
-    return true
+    if (!q) return true
+    const haystack = [
+      t.objects?.name,
+      t.objects?.address,
+      t.work_description,
+    ].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(q)
   })
-
-  const countConst = tenders.filter(t => t.objects?.status === 'main_construction').length
-  const countWar = tenders.filter(t => t.objects?.status === 'warranty_service').length
 
   return (
     <div className="public-tenders-page">
@@ -99,26 +99,7 @@ function PublicTendersPage() {
             placeholder="🔍 Поиск по объекту, адресу или описанию работ..."
             className="public-search"
           />
-          <div className="public-dept-tabs">
-            <button
-              className={`public-dept-tab ${department === 'all' ? 'active' : ''}`}
-              onClick={() => setDepartment('all')}
-            >
-              Все <span className="public-dept-count">{tenders.length}</span>
-            </button>
-            <button
-              className={`public-dept-tab ${department === 'construction' ? 'active' : ''}`}
-              onClick={() => setDepartment('construction')}
-            >
-              Основное строительство <span className="public-dept-count">{countConst}</span>
-            </button>
-            <button
-              className={`public-dept-tab ${department === 'warranty' ? 'active' : ''}`}
-              onClick={() => setDepartment('warranty')}
-            >
-              Гарантийный отдел <span className="public-dept-count">{countWar}</span>
-            </button>
-          </div>
+          <div className="public-total-count">Всего: {tenders.length}</div>
         </div>
 
         {loading && (
@@ -129,7 +110,7 @@ function PublicTendersPage() {
         )}
         {!loading && !error && visibleTenders.length === 0 && (
           <div className="public-state">
-            Сейчас открытых тендеров нет.{searchQuery || department !== 'all' ? ' Попробуйте сбросить фильтры.' : ''}
+            Сейчас открытых тендеров нет.{searchQuery ? ' Попробуйте сбросить поиск.' : ''}
           </div>
         )}
 
@@ -140,10 +121,9 @@ function PublicTendersPage() {
                 <tr>
                   <th className="col-num">№</th>
                   <th className="col-object">Объект</th>
-                  <th className="col-address">Адрес</th>
                   <th className="col-desc">Описание работ</th>
-                  <th className="col-dates">Планируемые сроки<br />выполнения работ</th>
-                  <th className="col-dates">Сроки приёма КП</th>
+                  <th className="col-dates">Сроки выполнения работ</th>
+                  <th className="col-dates">Приём КП</th>
                   <th className="col-package">Тендерный пакет</th>
                 </tr>
               </thead>
@@ -155,32 +135,31 @@ function PublicTendersPage() {
                     </td>
                     <td className="col-object">
                       <div className="public-tender-object">{t.objects?.name || 'Объект не указан'}</div>
-                      <span className={`public-dept-badge ${t.objects?.status === 'warranty_service' ? 'warranty' : 'construction'}`}>
-                        {t.objects?.status === 'warranty_service' ? '🛡️ Гарантийный отдел' : '🏗️ Основное строительство'}
-                      </span>
-                    </td>
-                    <td className="col-address">
-                      <div className="public-tender-address">{t.objects?.address || '—'}</div>
-                      {t.objects?.map_link && (
-                        <a
-                          href={t.objects.map_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="yandex-map-link"
-                        >
-                          <span aria-hidden>🗺️</span>
-                          <span>На карте</span>
-                        </a>
+                      {/* task 195: адрес как гиперссылка на карту вместо отдельного столбца */}
+                      {t.objects?.address && (
+                        t.objects?.map_link ? (
+                          <a
+                            href={t.objects.map_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="public-tender-address-link"
+                            title="Открыть в Яндекс.Картах"
+                          >
+                            <span aria-hidden>📍</span> {t.objects.address}
+                          </a>
+                        ) : (
+                          <div className="public-tender-address">{t.objects.address}</div>
+                        )
                       )}
                     </td>
                     <td className="col-desc">
                       <div className="public-tender-description">{t.work_description || '—'}</div>
                     </td>
                     <td className="col-dates">
-                      {formatDateRange(t.start_date, t.end_date)}
+                      {formatShortRange(t.start_date, t.end_date)}
                     </td>
                     <td className="col-dates">
-                      {formatDateRange(t.tender_start_date, t.tender_end_date)}
+                      {t.tender_end_date ? `до ${formatShortDate(t.tender_end_date)}` : '—'}
                     </td>
                     <td className="col-package">
                       {t.tender_package_link ? (

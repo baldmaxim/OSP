@@ -57,8 +57,21 @@ function CounterpartiesPage() {
   // Связи между контрагентами
   const [relations, setRelations] = useState([]) // [{counterparty_id, related_counterparty_id}]
   const [showRelationModal, setShowRelationModal] = useState(false)
-  const [relationTargetId, setRelationTargetId] = useState(null) // для какого контрагента добавляем связь
+  // setRelationTargetId временно не используется — точка входа в модалку связей удалена вместе с inline-расширением
+  // eslint-disable-next-line no-unused-vars
+  const [relationTargetId, setRelationTargetId] = useState(null)
   const [relationSearchQuery, setRelationSearchQuery] = useState('')
+
+  // task 196: история участия в тендерах — лениво грузим при раскрытии строки
+  const [tenderHistoryMap, setTenderHistoryMap] = useState({}) // { counterpartyId: [{tender_id, status, work_description, tender_start_date, tender_end_date, object_name}] }
+  const [tenderHistoryLoadingId, setTenderHistoryLoadingId] = useState(null)
+
+  const TENDER_STATUS_LABEL = {
+    request_sent: 'Запрос отправлен',
+    declined: 'Отказался',
+    proposal_provided: 'Предоставил КП',
+    accepted_for_work: 'Принят в работу',
+  }
 
   useEffect(() => {
     fetchCounterparties()
@@ -146,28 +159,6 @@ function CounterpartiesPage() {
       console.error('Ошибка добавления связи:', error.message)
       alert('Ошибка: ' + error.message)
     }
-  }
-
-  const handleRemoveRelation = async (counterpartyId, relatedId) => {
-    try {
-      // Удаляем в обе стороны (связь могла быть создана в любом направлении)
-      const { error } = await supabase
-        .from('counterparty_relations')
-        .delete()
-        .or(`and(counterparty_id.eq.${counterpartyId},related_counterparty_id.eq.${relatedId}),and(counterparty_id.eq.${relatedId},related_counterparty_id.eq.${counterpartyId})`)
-
-      if (error) throw error
-      fetchRelations()
-    } catch (error) {
-      console.error('Ошибка удаления связи:', error.message)
-      alert('Ошибка: ' + error.message)
-    }
-  }
-
-  const openRelationModal = (counterpartyId) => {
-    setRelationTargetId(counterpartyId)
-    setRelationSearchQuery('')
-    setShowRelationModal(true)
   }
 
   const handleCounterpartySubmit = async (e) => {
@@ -398,34 +389,6 @@ function CounterpartiesPage() {
     setShowContactModal(true)
   }
 
-  const handleEditContact = (counterparty, contact) => {
-    setSelectedCounterparty({ id: counterparty.id, name: counterparty.name })
-    setEditingContact({ id: contact.id })
-    setContactFormData({
-      full_name: contact.full_name,
-      position: contact.position || '',
-      phone: contact.phone || '',
-      email: contact.email || '',
-    })
-    setShowContactModal(true)
-  }
-
-  const handleDeleteContact = async (contactId, contactName) => {
-    if (window.confirm(`Вы уверены, что хотите удалить контакт "${contactName}"?`)) {
-      try {
-        const { error } = await supabase
-          .from('counterparty_contacts')
-          .delete()
-          .eq('id', contactId)
-
-        if (error) throw error
-        fetchCounterparties()
-      } catch (error) {
-        console.error('Ошибка удаления контакта:', error.message)
-        alert('Ошибка удаления: ' + error.message)
-      }
-    }
-  }
 
   const handleDeleteCounterparty = async (id, name) => {
     if (window.confirm(`Вы уверены, что хотите удалить контрагента "${name}"?`)) {
@@ -989,6 +952,37 @@ function CounterpartiesPage() {
 
   const blacklistCount = counterparties.filter(c => c.status === 'blacklist').length
 
+  // task 196: подгружаем историю участия в тендерах (lazy)
+  const fetchTenderHistory = async (counterpartyId) => {
+    if (tenderHistoryMap[counterpartyId]) return // уже загружено
+    setTenderHistoryLoadingId(counterpartyId)
+    try {
+      const { data, error } = await supabase
+        .from('tender_counterparties')
+        .select('status, tenders(id, work_description, tender_start_date, tender_end_date, objects(name))')
+        .eq('counterparty_id', counterpartyId)
+      if (error) throw error
+      const list = (data || [])
+        .filter(r => r.tenders)
+        .map(r => ({
+          tender_id: r.tenders.id,
+          status: r.status,
+          work_description: r.tenders.work_description,
+          tender_start_date: r.tenders.tender_start_date,
+          tender_end_date: r.tenders.tender_end_date,
+          object_name: r.tenders.objects?.name || '—',
+        }))
+        // свежие тендеры сверху
+        .sort((a, b) => (b.tender_start_date || '').localeCompare(a.tender_start_date || ''))
+      setTenderHistoryMap(prev => ({ ...prev, [counterpartyId]: list }))
+    } catch (err) {
+      console.error('Ошибка загрузки истории тендеров:', err.message)
+      setTenderHistoryMap(prev => ({ ...prev, [counterpartyId]: [] }))
+    } finally {
+      setTenderHistoryLoadingId(null)
+    }
+  }
+
   // Функция для раскрытия/скрытия строки
   const toggleRowExpand = (id) => {
     setExpandedRows(prev => {
@@ -997,6 +991,8 @@ function CounterpartiesPage() {
         newSet.delete(id)
       } else {
         newSet.add(id)
+        // подгружаем историю при раскрытии (task 196)
+        fetchTenderHistory(id)
       }
       return newSet
     })
@@ -1117,11 +1113,11 @@ function CounterpartiesPage() {
                     <th className="col-name">Наименование</th>
                     <th className="col-department">Категория работ</th>
                     <th className="col-worktype">Вид работ</th>
-                    <th className="col-inn">ИНН / КПП</th>
-                    <th className="col-contact-name">Контакт</th>
-                    <th className="col-contact-phone">Телефон</th>
+                    <th className="col-inn">ИНН</th>
+                    <th className="col-contact-name">Контакты</th>
                     <th className="col-contact-email">Email</th>
                     <th className="col-website">Сайт</th>
+                    <th className="col-notes">Примечание</th>
                     <th className="col-status">Статус</th>
                     <th className="col-actions"></th>
                   </tr>
@@ -1129,8 +1125,8 @@ function CounterpartiesPage() {
                 <tbody>
                   {filteredCounterparties.map((counterparty, cpIndex) => {
                     const isExpanded = expandedRows.has(counterparty.id)
-                    const contactsCount = counterparty.counterparty_contacts?.length || 0
-                    const firstContact = counterparty.counterparty_contacts?.[0]
+                    const contacts = counterparty.counterparty_contacts || []
+                    const contactsCount = contacts.length
 
                     return (
                       <React.Fragment key={counterparty.id}>
@@ -1148,9 +1144,6 @@ function CounterpartiesPage() {
                           </td>
                           <td className="col-name">
                             <span className="company-name">{counterparty.name}</span>
-                            {counterparty.notes && (
-                              <span className="has-notes" title={counterparty.notes}>*</span>
-                            )}
                           </td>
                           <td className="col-department">
                             {counterparty.department ? (
@@ -1176,27 +1169,32 @@ function CounterpartiesPage() {
                               </div>
                             ) : <span className="empty-cell">--</span>}
                           </td>
+                          {/* task 196: только ИНН, без КПП */}
                           <td className="col-inn">
                             <span className="inn-value">{counterparty.inn || '--'}</span>
-                            {counterparty.kpp && (
-                              <span className="kpp-value"> / {counterparty.kpp}</span>
-                            )}
                           </td>
+                          {/* task 196: все контакты сразу, каждый — Должность + ФИО + Телефон */}
                           <td className="col-contact-name" onClick={(e) => e.stopPropagation()}>
-                            {firstContact ? (
-                              <div className="contact-cell">
-                                <div className="contact-name-row">
-                                  <span className="contact-name">{firstContact.full_name}</span>
-                                  {contactsCount > 1 && <span className="contacts-more">+{contactsCount - 1}</span>}
-                                  <button
-                                    className="btn-add-contact-inline"
-                                    onClick={() => handleAddContact(counterparty)}
-                                    title="Добавить контакт"
-                                  >+</button>
-                                </div>
-                                {firstContact.position && (
-                                  <span className="contact-position">{firstContact.position}</span>
-                                )}
+                            {contactsCount > 0 ? (
+                              <div className="contacts-stack">
+                                {contacts.map((c) => (
+                                  <div key={c.id} className="contact-stack-item">
+                                    {c.position && <div className="contact-position">{c.position}</div>}
+                                    <div className="contact-name">{c.full_name}</div>
+                                    {c.phone && (
+                                      <div className="contact-phones">
+                                        {c.phone.split(';').map((ph, i) => (
+                                          ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                                <button
+                                  className="btn-add-contact-inline"
+                                  onClick={() => handleAddContact(counterparty)}
+                                  title="Добавить контакт"
+                                >+ контакт</button>
                               </div>
                             ) : (
                               <button
@@ -1205,18 +1203,15 @@ function CounterpartiesPage() {
                               >+ контакт</button>
                             )}
                           </td>
-                          <td className="col-contact-phone" onClick={(e) => e.stopPropagation()}>
-                            {firstContact?.phone ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
-                                {firstContact.phone.split(';').map((ph, i) => (
-                                  ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
+                          <td className="col-contact-email" onClick={(e) => e.stopPropagation()}>
+                            {contactsCount > 0 && contacts.some(c => c.email) ? (
+                              <div className="contacts-stack contacts-stack-emails">
+                                {contacts.map((c) => (
+                                  c.email
+                                    ? <a key={c.id} href={`mailto:${c.email}`} className="contact-link">{c.email}</a>
+                                    : <span key={c.id} className="empty-cell">--</span>
                                 ))}
                               </div>
-                            ) : <span className="empty-cell">--</span>}
-                          </td>
-                          <td className="col-contact-email" onClick={(e) => e.stopPropagation()}>
-                            {firstContact?.email ? (
-                              <a href={`mailto:${firstContact.email}`} className="contact-link">{firstContact.email}</a>
                             ) : <span className="empty-cell">--</span>}
                           </td>
                           <td className="col-website" onClick={(e) => e.stopPropagation()}>
@@ -1225,6 +1220,12 @@ function CounterpartiesPage() {
                                 ссылка
                               </a>
                             ) : <span className="empty-cell">--</span>}
+                          </td>
+                          {/* task 196: примечание перед статусом */}
+                          <td className="col-notes">
+                            {counterparty.notes
+                              ? <span className="notes-text" title={counterparty.notes}>{counterparty.notes}</span>
+                              : <span className="empty-cell">--</span>}
                           </td>
                           <td className="col-status" onClick={(e) => e.stopPropagation()}>
                             <select
@@ -1238,8 +1239,9 @@ function CounterpartiesPage() {
                           </td>
                           <td className="col-actions" onClick={(e) => e.stopPropagation()}>
                             <div className="actions-group">
-                              <button className="btn-action" onClick={() => handleEditCounterparty(counterparty)} title="Редактировать">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                              {/* task 196: иконка открытия полной карточки компании */}
+                              <button className="btn-action btn-action-card" onClick={() => handleEditCounterparty(counterparty)} title="Открыть полную карточку">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
                               </button>
                               <button className="btn-action delete" onClick={() => handleDeleteCounterparty(counterparty.id, counterparty.name)} title="Удалить">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -1248,109 +1250,64 @@ function CounterpartiesPage() {
                           </td>
                         </tr>
 
+                        {/* task 196: при раскрытии — история участия в тендерах */}
                         {isExpanded && (
                           <tr className="expanded-row">
                             <td colSpan="12">
                               <div className="expanded-content">
-                                <div className="expanded-details">
-                                  {counterparty.legal_address && (
-                                    <div className="detail-item">
-                                      <span className="detail-label">Юр. адрес:</span>
-                                      <span className="detail-value">{counterparty.legal_address}</span>
-                                    </div>
-                                  )}
-                                  {counterparty.actual_address && (
-                                    <div className="detail-item">
-                                      <span className="detail-label">Факт. адрес:</span>
-                                      <span className="detail-value">{counterparty.actual_address}</span>
-                                    </div>
-                                  )}
-                                  {counterparty.notes && (
-                                    <div className="detail-item">
-                                      <span className="detail-label">Примечание:</span>
-                                      <span className="detail-value">{counterparty.notes}</span>
-                                    </div>
+                                <div className="tender-history-header">
+                                  <span className="detail-label">История участия в тендерах</span>
+                                  {tenderHistoryMap[counterparty.id] && (
+                                    <span className="tender-history-count">
+                                      Всего: {tenderHistoryMap[counterparty.id].length}
+                                    </span>
                                   )}
                                 </div>
-
-                                <div className="expanded-contacts">
-                                  <div className="contacts-header-row">
-                                    <span className="detail-label">Контакты{contactsCount > 0 ? ` (${contactsCount})` : ''}</span>
-                                    <button className="btn-link" onClick={() => handleAddContact(counterparty)}>+ Добавить</button>
-                                  </div>
-                                  {contactsCount > 0 && (
-                                    <table className="contacts-subtable">
-                                      <thead>
-                                        <tr>
-                                          <th>ФИО</th>
-                                          <th>Должность</th>
-                                          <th>Телефон</th>
-                                          <th>Email</th>
-                                          <th></th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {counterparty.counterparty_contacts.map((contact) => (
-                                          <tr key={contact.id}>
-                                            <td>{contact.full_name}</td>
-                                            <td className="text-muted">{contact.position || '--'}</td>
-                                            <td>
-                                              {contact.phone ? (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
-                                                  {contact.phone.split(';').map((ph, i) => (
-                                                    ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
-                                                  ))}
-                                                </div>
-                                              ) : '--'}
-                                            </td>
-                                            <td>
-                                              {contact.email ? (
-                                                <a href={`mailto:${contact.email}`} className="contact-link">{contact.email}</a>
-                                              ) : '--'}
-                                            </td>
-                                            <td className="contact-sub-actions">
-                                              <button onClick={() => handleEditContact(counterparty, contact)} title="Редактировать">
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                                              </button>
-                                              <button onClick={() => handleDeleteContact(contact.id, contact.full_name)} title="Удалить">
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  )}
-                                </div>
-
-                                {/* Связанные контрагенты */}
-                                {(() => {
-                                  const related = getRelatedCounterparties(counterparty.id)
-                                  return (
-                                    <div className="expanded-relations">
-                                      <div className="contacts-header-row">
-                                        <span className="detail-label">Связанные контрагенты{related.length > 0 ? ` (${related.length})` : ''}</span>
-                                        <button className="btn-link" onClick={() => openRelationModal(counterparty.id)}>+ Добавить связь</button>
-                                      </div>
-                                      {related.length > 0 && (
-                                        <div className="relations-list">
-                                          {related.map(rel => (
-                                            <span key={rel.id} className="relation-tag">
-                                              {rel.name}
-                                              <button
-                                                className="relation-tag-remove"
-                                                onClick={() => handleRemoveRelation(counterparty.id, rel.id)}
-                                                title="Убрать связь"
-                                              >
-                                                &times;
-                                              </button>
+                                {tenderHistoryLoadingId === counterparty.id ? (
+                                  <div className="tender-history-loading">Загрузка истории…</div>
+                                ) : !tenderHistoryMap[counterparty.id] || tenderHistoryMap[counterparty.id].length === 0 ? (
+                                  <div className="tender-history-empty">Контрагент пока не участвовал в тендерах.</div>
+                                ) : (
+                                  <table className="tender-history-table">
+                                    <thead>
+                                      <tr>
+                                        <th style={{ width: '50px' }}>№ п/п</th>
+                                        <th>Объект</th>
+                                        <th>Описание работ</th>
+                                        <th style={{ width: '160px' }}>Статус</th>
+                                        <th style={{ width: '200px' }}>Сроки тендерной процедуры</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {tenderHistoryMap[counterparty.id].map((h, i) => (
+                                        <tr key={h.tender_id}>
+                                          <td className="tender-history-num">{i + 1}</td>
+                                          <td>{h.object_name}</td>
+                                          <td>
+                                            <a
+                                              href={`/tenders/${h.tender_id}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="contact-link"
+                                            >
+                                              {h.work_description || '—'}
+                                            </a>
+                                          </td>
+                                          <td>
+                                            <span className={`tender-history-status status-${h.status || 'request_sent'}`}>
+                                              {TENDER_STATUS_LABEL[h.status] || h.status || '—'}
                                             </span>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )
-                                })()}
+                                          </td>
+                                          <td className="tender-history-dates">
+                                            {h.tender_start_date || h.tender_end_date
+                                              ? `${h.tender_start_date ? new Date(h.tender_start_date).toLocaleDateString('ru-RU') : '—'} — ${h.tender_end_date ? new Date(h.tender_end_date).toLocaleDateString('ru-RU') : '—'}`
+                                              : '—'}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                )}
                               </div>
                             </td>
                           </tr>

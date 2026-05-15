@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS contract_attachments (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   contract_id UUID NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
   attachment_id UUID NOT NULL REFERENCES object_contract_attachments(id) ON DELETE CASCADE,
+  comment TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE (contract_id, attachment_id)
 );

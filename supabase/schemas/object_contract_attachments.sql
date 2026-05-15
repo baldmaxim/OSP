@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS object_contract_attachments (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   object_id UUID NOT NULL REFERENCES objects(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
+  description TEXT,
   link TEXT,
   sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

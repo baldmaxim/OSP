@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { Fragment, useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
@@ -65,17 +65,18 @@ function ContractRegistry() {
   const [attachmentsObjectId, setAttachmentsObjectId] = useState('')
   const [objectAttachments, setObjectAttachments] = useState([])
   const [newAttachmentName, setNewAttachmentName] = useState('')
+  const [newAttachmentDescription, setNewAttachmentDescription] = useState('')
   const [newAttachmentLink, setNewAttachmentLink] = useState('')
   const [formAttachments, setFormAttachments] = useState(new Set())
   const [availableAttachments, setAvailableAttachments] = useState([])
   const [contractAttachmentsMap, setContractAttachmentsMap] = useState({})
 
-  // Task 188: dropdown состояния для приложений в форме и в строке таблицы
+  // Task 188: dropdown состояние для приложений в форме
   const [attachmentsDropdownOpenForm, setAttachmentsDropdownOpenForm] = useState(false)
-  const [rowAttachmentsOpenId, setRowAttachmentsOpenId] = useState(null)
+  // Task 193: раскрытая строка договора (показывает приложения с комментариями)
+  const [expandedContractId, setExpandedContractId] = useState(null)
 
   const [formData, setFormData] = useState(EMPTY_FORM)
-  const rowAttachmentsRef = useRef(null)
 
   const objectStatus = department === 'construction' ? 'main_construction' : 'warranty_service'
 
@@ -130,12 +131,12 @@ function ContractRegistry() {
       const filtered = (data || []).filter(c => c.objects?.status === objectStatus)
       setContracts(filtered)
 
-      // Подгружаем приложения для отображения в таблице
+      // Подгружаем приложения договоров (с комментариями) для inline-раскрытия (task 193)
       const ids = filtered.map(c => c.id)
       if (ids.length > 0) {
         const { data: caRows, error: caErr } = await supabase
           .from('contract_attachments')
-          .select('contract_id, object_contract_attachments(id, name, link, sort_order)')
+          .select('id, contract_id, comment, object_contract_attachments(id, name, description, link, sort_order)')
           .in('contract_id', ids)
         if (caErr) throw caErr
         const map = {}
@@ -143,7 +144,15 @@ function ContractRegistry() {
           const att = row.object_contract_attachments
           if (!att) continue
           if (!map[row.contract_id]) map[row.contract_id] = []
-          map[row.contract_id].push(att)
+          map[row.contract_id].push({
+            ca_id: row.id,
+            comment: row.comment || '',
+            id: att.id,
+            name: att.name,
+            description: att.description || '',
+            link: att.link,
+            sort_order: att.sort_order,
+          })
         }
         Object.values(map).forEach(arr => arr.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)))
         setContractAttachmentsMap(map)
@@ -235,15 +244,38 @@ function ContractRegistry() {
         .insert([{
           object_id: attachmentsObjectId,
           name: newAttachmentName.trim(),
+          description: newAttachmentDescription.trim() || null,
           link: newAttachmentLink.trim() || null,
           sort_order: maxOrder + 1,
         }])
       if (error) throw error
       setNewAttachmentName('')
+      setNewAttachmentDescription('')
       setNewAttachmentLink('')
       fetchObjectAttachments(attachmentsObjectId)
     } catch (err) {
       console.error('Ошибка добавления приложения:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // Task 193: сохранение комментария к приложению договора (по blur)
+  const handleSaveAttachmentComment = async (caId, newComment) => {
+    try {
+      const { error } = await supabase
+        .from('contract_attachments')
+        .update({ comment: newComment.trim() || null })
+        .eq('id', caId)
+      if (error) throw error
+      setContractAttachmentsMap(prev => {
+        const next = {}
+        for (const [contractId, list] of Object.entries(prev)) {
+          next[contractId] = list.map(a => a.ca_id === caId ? { ...a, comment: newComment } : a)
+        }
+        return next
+      })
+    } catch (err) {
+      console.error('Ошибка сохранения комментария:', err.message)
       alert('Ошибка: ' + err.message)
     }
   }
@@ -292,18 +324,6 @@ function ContractRegistry() {
     }
     loadFormAttachments()
   }, [formData.object_id, editingContract])
-
-  // Закрытие row-dropdown по клику снаружи
-  useEffect(() => {
-    if (!rowAttachmentsOpenId) return
-    const onClick = (e) => {
-      if (rowAttachmentsRef.current && !rowAttachmentsRef.current.contains(e.target)) {
-        setRowAttachmentsOpenId(null)
-      }
-    }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [rowAttachmentsOpenId])
 
   // Автоподтягивание данных из тендера
   const handleTenderChange = (e) => {
@@ -620,14 +640,14 @@ function ContractRegistry() {
         <table className="contracts-table contracts-table-compact">
           <thead>
             <tr>
+              <th style={{ width: '32px' }} aria-label="Раскрыть"></th>
               <th style={{ width: '40px' }}>№</th>
-              <th style={{ width: '80px' }}>№ договора</th>
+              <th style={{ width: '110px' }}>№ договора</th>
               <th style={{ minWidth: '180px' }}>Контрагент</th>
               <th style={{ minWidth: '220px' }}>Объект</th>
               <th>Наименование работ</th>
               <th style={{ width: '140px' }}>Ответственный</th>
               <th style={{ width: '140px' }}>Тендер</th>
-              <th style={{ width: '120px' }}>Приложения</th>
               <th style={{ width: '160px' }}>Статус</th>
               <th className="actions-column" style={{ width: '90px' }}>Действия</th>
             </tr>
@@ -642,12 +662,24 @@ function ContractRegistry() {
                 </td>
               </tr>
             ) : (
-              contracts.map((contract, index) => (
-                <tr key={contract.id} className={isDeletedTab ? 'row-deleted' : ''}>
+              contracts.map((contract, index) => {
+                const items = contractAttachmentsMap[contract.id] || []
+                const isExpanded = expandedContractId === contract.id
+                const toggleExpand = () => setExpandedContractId(isExpanded ? null : contract.id)
+                return (
+                <Fragment key={contract.id}>
+                <tr
+                  className={`contract-row ${isDeletedTab ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}`}
+                  onClick={toggleExpand}
+                >
+                  <td className="cell-expand" onClick={(e) => { e.stopPropagation(); toggleExpand() }}>
+                    <span className={`expand-chev ${isExpanded ? 'open' : ''}`} aria-hidden>▸</span>
+                    {items.length > 0 && <span className="expand-badge">{items.length}</span>}
+                  </td>
                   <td className="cell-num">{index + 1}</td>
                   <td>
                     <button
-                      onClick={() => navigate(`/contracts/${contract.id}`)}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/contracts/${contract.id}`) }}
                       className="contract-number-link"
                       title="Открыть карточку договора"
                     >
@@ -667,7 +699,7 @@ function ContractRegistry() {
                       </>
                     ) : '—'}
                   </td>
-                  <td>
+                  <td onClick={(e) => e.stopPropagation()}>
                     {contract.tender_id ? (
                       <a
                         href={`/tenders/${contract.tender_id}`}
@@ -682,41 +714,7 @@ function ContractRegistry() {
                       <span className="muted-dash">—</span>
                     )}
                   </td>
-                  {/* Task 188: dropdown с приложениями */}
-                  <td>
-                    {(() => {
-                      const items = contractAttachmentsMap[contract.id] || []
-                      if (items.length === 0) return <span className="muted-dash">—</span>
-                      const isOpen = rowAttachmentsOpenId === contract.id
-                      return (
-                        <div className="row-attachments-dropdown" ref={isOpen ? rowAttachmentsRef : null}>
-                          <button
-                            type="button"
-                            className="row-attachments-trigger"
-                            onClick={() => setRowAttachmentsOpenId(isOpen ? null : contract.id)}
-                            title="Показать приложения"
-                          >
-                            <span>📎 {items.length}</span>
-                            <span className="caret">{isOpen ? '▴' : '▾'}</span>
-                          </button>
-                          {isOpen && (
-                            <div className="row-attachments-menu">
-                              {items.map(a => (
-                                <div key={a.id} className="row-attachments-item">
-                                  {a.link ? (
-                                    <a href={a.link} target="_blank" rel="noopener noreferrer">{a.name}</a>
-                                  ) : (
-                                    <span>{a.name}</span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })()}
-                  </td>
-                  <td>
+                  <td onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
                       <span className="status-badge status-deleted">Удалён</span>
                     ) : (
@@ -731,7 +729,7 @@ function ContractRegistry() {
                       </select>
                     )}
                   </td>
-                  <td className="actions-cell">
+                  <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
                       <>
                         <button
@@ -763,7 +761,53 @@ function ContractRegistry() {
                     )}
                   </td>
                 </tr>
-              ))
+                {isExpanded && (
+                  <tr className="contract-attachments-row" onClick={(e) => e.stopPropagation()}>
+                    <td colSpan="10">
+                      <div className="contract-attachments-panel">
+                        <div className="cap-header">
+                          <span className="cap-title">📎 Приложения к договору № {contract.contract_number}</span>
+                          <span className="cap-count">{items.length === 0 ? 'нет приложений' : `${items.length} шт.`}</span>
+                        </div>
+                        {items.length === 0 ? (
+                          <div className="cap-empty">
+                            Для договора не выбрано ни одного приложения. Откройте редактирование и отметьте нужные.
+                          </div>
+                        ) : (
+                          <ul className="cap-list">
+                            {items.map(a => (
+                              <li key={a.ca_id} className="cap-item">
+                                <div className="cap-item-head">
+                                  <span className="cap-item-name">
+                                    {a.link
+                                      ? <a href={a.link} target="_blank" rel="noopener noreferrer">{a.name}</a>
+                                      : a.name}
+                                  </span>
+                                  {a.description && <span className="cap-item-desc">{a.description}</span>}
+                                </div>
+                                <textarea
+                                  className="cap-item-comment"
+                                  defaultValue={a.comment || ''}
+                                  placeholder="Комментарий к этому приложению (необязательно)…"
+                                  rows={1}
+                                  onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
+                                  onBlur={(e) => {
+                                    const v = e.target.value
+                                    if ((a.comment || '') !== v) handleSaveAttachmentComment(a.ca_id, v)
+                                  }}
+                                  ref={(el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }}
+                                />
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+                )
+              })
             )}
           </tbody>
         </table>
@@ -951,7 +995,10 @@ function ContractRegistry() {
                                   setFormAttachments(next)
                                 }}
                               />
-                              <span>{a.name}</span>
+                              <span className="ms-name">
+                                {a.name}
+                                {a.description && <span className="ms-desc"> — {a.description}</span>}
+                              </span>
                               {a.link && (
                                 <a href={a.link} target="_blank" rel="noopener noreferrer" className="attachment-link"
                                   onClick={(e) => e.stopPropagation()}>(ссылка)</a>
@@ -1009,9 +1056,14 @@ function ContractRegistry() {
                         <div key={a.id} className="attachment-list-row">
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 500 }}>{a.name}</div>
+                            {a.description && (
+                              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.1875rem' }}>
+                                {a.description}
+                              </div>
+                            )}
                             {a.link && (
                               <a href={a.link} target="_blank" rel="noopener noreferrer"
-                                style={{ color: 'var(--primary-color)', fontSize: '0.8125rem', wordBreak: 'break-all' }}>
+                                style={{ color: 'var(--primary-color)', fontSize: '0.8125rem', wordBreak: 'break-all', display: 'block', marginTop: '0.1875rem' }}>
                                 {a.link}
                               </a>
                             )}
@@ -1029,6 +1081,12 @@ function ContractRegistry() {
                       placeholder="Название приложения"
                       value={newAttachmentName}
                       onChange={(e) => setNewAttachmentName(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Описание (краткая сводка)"
+                      value={newAttachmentDescription}
+                      onChange={(e) => setNewAttachmentDescription(e.target.value)}
                     />
                     <input
                       type="url"
