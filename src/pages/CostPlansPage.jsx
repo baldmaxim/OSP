@@ -41,8 +41,11 @@ function CostPlansPage() {
   }
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('in_work') // 'in_work' | 'completed'
+  const [activeTab, setActiveTab] = useState('not_started') // 'not_started' | 'in_work' | 'completed'
   const [responsibleFilter, setResponsibleFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('') // task 209
+  // task 211: модалка редактирования ссылки на план затрат
+  const [linkModal, setLinkModal] = useState(null) // { tenderId, value }
   const [objectFilter, setObjectFilter] = useState('') // task 178: фильтр по объектам
   const [allContacts, setAllContacts] = useState([])
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
@@ -159,10 +162,15 @@ function CostPlansPage() {
     }
   }
 
-  const handleChangeCostPlanLink = async (tenderId, currentLink) => {
-    const next = window.prompt('Ссылка на план затрат (Google/Yandex Drive):', currentLink || '')
-    if (next === null) return
-    const value = next.trim() || null
+  // task 211: открыть модалку редактирования ссылки
+  const openLinkModal = (tenderId, currentLink) => {
+    setLinkModal({ tenderId, value: currentLink || '' })
+  }
+
+  const handleSaveCostPlanLink = async () => {
+    if (!linkModal) return
+    const { tenderId } = linkModal
+    const value = linkModal.value.trim() || null
     try {
       const { error } = await supabase
         .from('tenders')
@@ -170,6 +178,7 @@ function CostPlansPage() {
         .eq('id', tenderId)
       if (error) throw error
       setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, cost_plan_link: value } : t))
+      setLinkModal(null)
     } catch (err) {
       console.error('Ошибка сохранения ссылки на план затрат:', err.message)
       alert('Ошибка: ' + err.message)
@@ -248,10 +257,19 @@ function CostPlansPage() {
   const objectsList = Array.from(objectMap.values())
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
 
-  // Фильтрация по ответственному и объекту
+  // Фильтрация по ответственному, объекту и поиску
   let filtered = tenders
   if (responsibleFilter) filtered = filtered.filter(t => t.cost_plan_responsible?.id === responsibleFilter)
   if (objectFilter) filtered = filtered.filter(t => t.object_id === objectFilter)
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase()
+    filtered = filtered.filter(t =>
+      (t.work_description || '').toLowerCase().includes(q) ||
+      (t.objects?.name || '').toLowerCase().includes(q) ||
+      (t.cost_plan_responsible?.full_name || '').toLowerCase().includes(q) ||
+      (t.cost_plan_notes || '').toLowerCase().includes(q)
+    )
+  }
 
   // task 179: сортировка по выбранной колонке (даты тендерных процедур)
   if (sortKey) {
@@ -267,10 +285,14 @@ function CostPlansPage() {
     })
   }
 
-  // Разделение по табу (task 208: «Не требуется» тоже относится к «Завершено»)
-  const inWork = filtered.filter(t => !DONE_STATUSES.includes(t.cost_plan_status))
+  // Разделение по табам (task 210: «Не начат» / «В работе» / «Завершено»)
+  // task 208: «Не требуется» относится к «Завершено»
+  const notStarted = filtered.filter(t => (t.cost_plan_status || 'not_started') === 'not_started')
+  const inWork = filtered.filter(t => t.cost_plan_status === 'in_progress')
   const completed = filtered.filter(t => DONE_STATUSES.includes(t.cost_plan_status))
-  const visible = activeTab === 'completed' ? completed : inWork
+  const visible = activeTab === 'completed' ? completed
+    : activeTab === 'in_work' ? inWork
+    : notStarted
 
   return (
     <div className="cost-plans-page">
@@ -282,6 +304,13 @@ function CostPlansPage() {
       </div>
 
       <div className="cost-plans-tabs">
+        <button
+          className={`tab ${activeTab === 'not_started' ? 'active' : ''}`}
+          onClick={() => setActiveTab('not_started')}
+        >
+          Не начат
+          <span className="tab-count">{notStarted.length}</span>
+        </button>
         <button
           className={`tab ${activeTab === 'in_work' ? 'active' : ''}`}
           onClick={() => setActiveTab('in_work')}
@@ -299,6 +328,13 @@ function CostPlansPage() {
       </div>
 
       <div className="cost-plans-toolbar">
+        <input
+          type="search"
+          className="cost-plans-search"
+          placeholder="🔍 Поиск по объекту, описанию, ответственному…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
         <label className="toolbar-label">
           Объект:
           <select
@@ -331,8 +367,8 @@ function CostPlansPage() {
             })}
           </select>
         </label>
-        {(responsibleFilter || objectFilter) && (
-          <button className="reset-btn" onClick={() => { setResponsibleFilter(''); setObjectFilter('') }}>Сбросить</button>
+        {(responsibleFilter || objectFilter || searchQuery) && (
+          <button className="reset-btn" onClick={() => { setResponsibleFilter(''); setObjectFilter(''); setSearchQuery('') }}>Сбросить</button>
         )}
       </div>
 
@@ -370,11 +406,13 @@ function CostPlansPage() {
             {visible.length === 0 ? (
               <tr>
                 <td colSpan={10} className="no-data">
-                  {activeTab === 'completed'
-                    ? 'Завершённых планов затрат нет'
-                    : tenders.length === 0
-                      ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
-                      : 'Все планы для выбранного фильтра завершены — переключитесь на вкладку «Завершено».'}
+                  {tenders.length === 0
+                    ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
+                    : activeTab === 'completed'
+                      ? 'Завершённых планов затрат нет'
+                      : activeTab === 'in_work'
+                        ? 'Нет планов затрат в работе'
+                        : 'Нет планов затрат со статусом «Не начат»'}
                 </td>
               </tr>
             ) : (
@@ -454,7 +492,7 @@ function CostPlansPage() {
                   </td>
                   <td>
                     {t.cost_plan_link ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                      <div className="cost-plan-link-cell">
                         <a
                           href={t.cost_plan_link}
                           target="_blank"
@@ -464,26 +502,21 @@ function CostPlansPage() {
                           Открыть
                         </a>
                         <button
-                          className="btn-icon btn-edit"
-                          onClick={() => handleChangeCostPlanLink(t.id, t.cost_plan_link)}
+                          className="link-edit-btn"
+                          onClick={() => openLinkModal(t.id, t.cost_plan_link)}
                           title="Изменить ссылку"
-                          style={{ fontSize: '0.75rem' }}
+                          aria-label="Изменить ссылку"
                         >
-                          ✏️
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          </svg>
                         </button>
                       </div>
                     ) : (
                       <button
-                        onClick={() => handleChangeCostPlanLink(t.id, '')}
-                        style={{
-                          background: 'none',
-                          border: '1px dashed var(--border-color)',
-                          borderRadius: '4px',
-                          padding: '0.1875rem 0.5rem',
-                          color: 'var(--text-tertiary)',
-                          cursor: 'pointer',
-                          fontSize: '0.75rem'
-                        }}
+                        className="link-add-btn"
+                        onClick={() => openLinkModal(t.id, '')}
                         title="Добавить ссылку на план затрат"
                       >
                         + ссылка
@@ -532,6 +565,55 @@ function CostPlansPage() {
           </tbody>
         </table>
       </div>
+
+      {/* task 211: модалка редактирования ссылки на план затрат */}
+      {linkModal && (
+        <div className="cp-modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setLinkModal(null) }}>
+          <div className="cp-modal" role="dialog" aria-modal="true">
+            <div className="cp-modal-header">
+              <h3>Ссылка на план затрат</h3>
+              <button className="cp-modal-close" onClick={() => setLinkModal(null)} aria-label="Закрыть">×</button>
+            </div>
+            <div className="cp-modal-body">
+              <label className="cp-modal-label">Ссылка (Google Drive / Яндекс.Диск)</label>
+              <input
+                type="url"
+                className="cp-modal-input"
+                placeholder="https://…"
+                autoFocus
+                value={linkModal.value}
+                onChange={(e) => setLinkModal(m => ({ ...m, value: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveCostPlanLink()
+                  if (e.key === 'Escape') setLinkModal(null)
+                }}
+              />
+              {linkModal.value.trim() && (
+                <a
+                  href={linkModal.value.trim()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="cp-modal-preview-link"
+                >
+                  Открыть введённую ссылку →
+                </a>
+              )}
+            </div>
+            <div className="cp-modal-footer">
+              {linkModal.value.trim() && (
+                <button
+                  className="cp-modal-btn-ghost"
+                  onClick={() => setLinkModal(m => ({ ...m, value: '' }))}
+                >
+                  Очистить
+                </button>
+              )}
+              <button className="cp-modal-btn-secondary" onClick={() => setLinkModal(null)}>Отмена</button>
+              <button className="cp-modal-btn-primary" onClick={handleSaveCostPlanLink}>Сохранить</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
