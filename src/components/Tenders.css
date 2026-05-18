@@ -551,7 +551,9 @@
 }
 
 /* task 194: вкладка «Удалённые» — в правый край */
-.tender-tab-deleted { margin-left: auto; color: #b91c1c; }
+/* task 253: без margin-left:auto — вкладки идут подряд, без пустого
+   промежутка между статусами и «Удалёнными» (как в ВОРы и РД / Планах затрат) */
+.tender-tab-deleted { color: #b91c1c; }
 .tender-tab-deleted:hover { color: #991b1b; }
 .tender-tab-deleted.active { color: #991b1b; border-bottom-color: #b91c1c !important; }
 [data-theme='dark'] .tender-tab-deleted { color: #fca5a5; }
