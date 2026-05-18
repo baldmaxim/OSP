@@ -1356,10 +1356,10 @@
   word-break: break-word;
 }
 
-/* вертикальные линии между столбцами */
+/* task 258: чёткие вертикальные линии между столбцами */
 .tender-history-table th,
 .tender-history-table td {
-  border-right: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+  border-right: 1px solid var(--border-color);
 }
 
 .tender-history-table th:last-child,
@@ -1373,6 +1373,7 @@
 
 .tender-history-num {
   text-align: center;
+  vertical-align: middle;
   font-weight: 600;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;

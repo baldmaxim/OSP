@@ -1,8 +1,51 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import '../components/TenderDetail.css'
+
+// task 259: таблица сметы (предпросмотр распознанного и сохранённая смета)
+function EstimateTable({ items }) {
+  const fmt = (v) => (v === null || v === undefined || v === '')
+    ? '—'
+    : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 4 }).format(v)
+  return (
+    <div className="table-container">
+      <table className="data-table estimate-table">
+        <thead>
+          <tr>
+            <th style={{ width: '52px' }}>№</th>
+            <th style={{ width: '110px' }}>КОД</th>
+            <th>Наименование затрат</th>
+            <th style={{ width: '90px' }}>Ед. изм.</th>
+            <th style={{ width: '130px' }}>Объём</th>
+            <th style={{ width: '130px' }}>Общий расход</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, idx) => (
+            it.is_section ? (
+              <tr key={it.id || idx} className="estimate-section-row">
+                <td className="estimate-num">{it.row_number}</td>
+                <td colSpan={5}>{it.cost_name}</td>
+              </tr>
+            ) : (
+              <tr key={it.id || idx}>
+                <td className="estimate-num">{it.row_number}</td>
+                <td>{it.code || '—'}</td>
+                <td>{it.cost_name}</td>
+                <td>{it.unit || '—'}</td>
+                <td className="estimate-num-cell">{fmt(it.work_volume)}</td>
+                <td className="estimate-num-cell">{fmt(it.material_consumption)}</td>
+              </tr>
+            )
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 function TenderDetailPage() {
   const { tenderId } = useParams()
@@ -12,7 +55,19 @@ function TenderDetailPage() {
   const [tender, setTender] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('participants') // 'participants' | 'history'
+  const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'participants' | 'history'
+
+  // task 259: смета тендера (импорт из Excel → проверка → сохранение)
+  const [estimateItems, setEstimateItems] = useState([])
+  const estimateFileRef = useRef(null)
+  const [pendingWorkbook, setPendingWorkbook] = useState(null)
+  const [estSheetNames, setEstSheetNames] = useState([])
+  const [estSelectedSheet, setEstSelectedSheet] = useState('')
+  const [estStartRow, setEstStartRow] = useState('2')
+  const [estEndRow, setEstEndRow] = useState('')
+  const [showEstimateModal, setShowEstimateModal] = useState(false)
+  const [parsedEstimate, setParsedEstimate] = useState(null) // предпросмотр до сохранения
+  const [estimateSaving, setEstimateSaving] = useState(false)
 
   // Состояния для добавления участников
   const [showAddParticipantModal, setShowAddParticipantModal] = useState(false)
@@ -37,9 +92,147 @@ function TenderDetailPage() {
     if (tenderId) {
       fetchTenderData()
       loadAuditLog()
+      fetchEstimateItems()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
+
+  // task 259: загрузка сохранённой сметы тендера
+  const fetchEstimateItems = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tender_estimate_items')
+        .select('*')
+        .eq('tender_id', tenderId)
+        .order('row_number', { ascending: true })
+      if (error) throw error
+      setEstimateItems(data || [])
+    } catch (err) {
+      console.error('Ошибка загрузки сметы:', err.message)
+    }
+  }
+
+  // Очистка числовых значений из Excel (валюта, пробелы, запятая → точка)
+  const cleanNumericValue = (value) => {
+    if (value === null || value === undefined || value === '') return null
+    if (typeof value === 'number') return value
+    let str = String(value)
+    str = str.replace(/[₽$€¥£]/g, '')
+    str = str.replace(/\s/g, '')
+    str = str.replace(',', '.')
+    str = str.replace(/[^\d.-]/g, '')
+    const n = parseFloat(str)
+    return isNaN(n) ? null : n
+  }
+
+  const handleEstimateFileSelect = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      const data = new Uint8Array(await file.arrayBuffer())
+      const workbook = XLSX.read(data, { type: 'array' })
+      const names = workbook.SheetNames || []
+      setPendingWorkbook(workbook)
+      setEstSheetNames(names)
+      setEstSelectedSheet(names[0] || '')
+      setEstStartRow('2')
+      setEstEndRow('')
+      setShowEstimateModal(true)
+    } catch (error) {
+      alert('Ошибка чтения файла: ' + error.message)
+    }
+    if (estimateFileRef.current) estimateFileRef.current.value = ''
+  }
+
+  // Распознаём строки в предпросмотр (БД ещё не трогаем — пользователь проверяет)
+  const handleParseEstimate = () => {
+    if (!pendingWorkbook) return
+    try {
+      const sheet = pendingWorkbook.Sheets[estSelectedSheet || pendingWorkbook.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+      const start = Math.max(0, (parseInt(estStartRow) || 2) - 1)
+      const end = estEndRow ? Math.min(rows.length, parseInt(estEndRow) || rows.length) : rows.length
+
+      const items = []
+      let rowNum = 1
+      for (let i = start; i < end; i++) {
+        const row = rows[i]
+        if (!row || row.length === 0) continue
+        // A=№ п/п, B=КОД, C=Наименование затрат, D=Ед. изм., E=Объём, F=Общий расход
+        const code = row[1] != null ? String(row[1]).trim() : ''
+        const name = row[2] != null ? String(row[2]).trim() : ''
+        if (!name) continue
+        const unit = row[3] != null ? String(row[3]).trim() : ''
+        const workVolume = cleanNumericValue(row[4])
+        const materialConsumption = cleanNumericValue(row[5])
+        // Раздел: только наименование, без кода/ед.изм./чисел
+        const isSection = !code && !unit && workVolume == null && materialConsumption == null
+        items.push({
+          row_number: rowNum++,
+          code: code || null,
+          cost_name: name,
+          unit: unit || null,
+          work_volume: workVolume,
+          material_consumption: materialConsumption,
+          is_section: isSection,
+          original_row_number: String(i + 1),
+        })
+      }
+      if (items.length === 0) {
+        alert('Не найдено позиций сметы. Проверьте лист и диапазон строк.')
+        return
+      }
+      setParsedEstimate(items)
+      setShowEstimateModal(false)
+    } catch (error) {
+      alert('Ошибка распознавания: ' + error.message)
+    }
+  }
+
+  // Сохранение проверенной сметы в тендер (заменяет предыдущую)
+  const handleSaveEstimate = async () => {
+    if (!parsedEstimate || parsedEstimate.length === 0) return
+    setEstimateSaving(true)
+    try {
+      const { error: delErr } = await supabase
+        .from('tender_estimate_items')
+        .delete()
+        .eq('tender_id', tenderId)
+      if (delErr) throw delErr
+      const payload = parsedEstimate.map(it => ({
+        ...it,
+        tender_id: tenderId,
+        estimate_name: 'Основная смета',
+      }))
+      const { error: insErr } = await supabase
+        .from('tender_estimate_items')
+        .insert(payload)
+      if (insErr) throw insErr
+      setParsedEstimate(null)
+      setPendingWorkbook(null)
+      await fetchEstimateItems()
+      alert(`Смета сохранена: ${payload.length} позиций`)
+    } catch (error) {
+      console.error('Ошибка сохранения сметы:', error.message)
+      alert('Ошибка сохранения сметы: ' + error.message)
+    } finally {
+      setEstimateSaving(false)
+    }
+  }
+
+  const handleClearEstimate = async () => {
+    if (!window.confirm('Удалить сохранённую смету тендера?')) return
+    try {
+      const { error } = await supabase
+        .from('tender_estimate_items')
+        .delete()
+        .eq('tender_id', tenderId)
+      if (error) throw error
+      setEstimateItems([])
+    } catch (error) {
+      alert('Ошибка удаления сметы: ' + error.message)
+    }
+  }
 
   const fetchTenderData = async () => {
     setLoading(true)
@@ -607,6 +800,13 @@ function TenderDetailPage() {
       {/* Вкладки */}
       <div className="tender-tabs">
         <button
+          className={`tender-tab ${activeTab === 'estimate' ? 'active' : ''}`}
+          onClick={() => setActiveTab('estimate')}
+        >
+          Смета
+          {estimateItems.length > 0 && <span className="tab-count">{estimateItems.length}</span>}
+        </button>
+        <button
           className={`tender-tab ${activeTab === 'participants' ? 'active' : ''}`}
           onClick={() => setActiveTab('participants')}
         >
@@ -624,6 +824,70 @@ function TenderDetailPage() {
 
       {/* Контент вкладок */}
       <div className="tender-tab-content">
+        {/* task 259: Вкладка Смета */}
+        {activeTab === 'estimate' && (
+          <div className="estimate-section">
+            <div className="section-header">
+              <h3>Смета тендера</h3>
+              <div className="section-actions">
+                <label className="btn-primary estimate-import-label">
+                  {estimateItems.length > 0 || parsedEstimate ? 'Заменить (импорт Excel)' : 'Импорт из Excel'}
+                  <input
+                    ref={estimateFileRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleEstimateFileSelect}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+                {estimateItems.length > 0 && !parsedEstimate && (
+                  <button className="btn-secondary" onClick={handleClearEstimate}>
+                    Удалить смету
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {parsedEstimate ? (
+              <>
+                <div className="estimate-verify-bar">
+                  <span>
+                    Распознано <strong>{parsedEstimate.length}</strong> позиций. Проверьте корректность и сохраните.
+                  </span>
+                  <div className="estimate-verify-actions">
+                    <button
+                      className="btn-secondary"
+                      onClick={() => { setParsedEstimate(null); setPendingWorkbook(null) }}
+                      disabled={estimateSaving}
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      className="btn-primary"
+                      onClick={handleSaveEstimate}
+                      disabled={estimateSaving}
+                    >
+                      {estimateSaving ? 'Сохранение…' : 'Сохранить смету в тендер'}
+                    </button>
+                  </div>
+                </div>
+                <EstimateTable items={parsedEstimate} />
+              </>
+            ) : estimateItems.length > 0 ? (
+              <EstimateTable items={estimateItems} />
+            ) : (
+              <div className="empty-state">
+                <p>Смета ещё не загружена</p>
+                <p className="hint">
+                  Нажмите «Импорт из Excel» и загрузите исходную смету.
+                  Ожидаемые столбцы: A — № п/п, B — КОД, C — Наименование затрат,
+                  D — Ед. изм., E — Объём по виду работ, F — Общий расход.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Вкладка Участники */}
         {activeTab === 'participants' && (
           <div className="participants-section">
@@ -1096,6 +1360,72 @@ function TenderDetailPage() {
                 </>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* task 259: модал параметров импорта сметы */}
+      {showEstimateModal && (
+        <div className="modal-overlay">
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '460px' }}>
+            <div className="modal-header">
+              <h3>Импорт сметы</h3>
+              <button
+                className="modal-close"
+                onClick={() => { setShowEstimateModal(false); setPendingWorkbook(null) }}
+              >×</button>
+            </div>
+            <form
+              onSubmit={(e) => { e.preventDefault(); handleParseEstimate() }}
+              style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}
+            >
+              {estSheetNames.length > 1 && (
+                <div>
+                  <label className="info-label" style={{ display: 'block', marginBottom: '0.375rem' }}>Лист Excel</label>
+                  <select
+                    value={estSelectedSheet}
+                    onChange={(e) => setEstSelectedSheet(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                  >
+                    {estSheetNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label className="info-label" style={{ display: 'block', marginBottom: '0.375rem' }}>Со строки</label>
+                  <input
+                    type="number" min="1" value={estStartRow}
+                    onChange={(e) => setEstStartRow(e.target.value)}
+                    placeholder="2"
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="info-label" style={{ display: 'block', marginBottom: '0.375rem' }}>По строку</label>
+                  <input
+                    type="number" min="1" value={estEndRow}
+                    onChange={(e) => setEstEndRow(e.target.value)}
+                    placeholder="Все"
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+              <p className="hint" style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
+                Столбцы: A — № п/п, B — КОД, C — Наименование затрат, D — Ед. изм.,
+                E — Объём по виду работ, F — Общий расход.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => { setShowEstimateModal(false); setPendingWorkbook(null) }}
+                >
+                  Отмена
+                </button>
+                <button type="submit" className="btn-primary">Распознать</button>
+              </div>
+            </form>
           </div>
         </div>
       )}

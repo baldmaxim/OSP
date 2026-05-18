@@ -3024,3 +3024,85 @@
   box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.12);
   background: var(--bg-secondary);
 }
+
+/* task 259: вкладка «Смета» тендера */
+.tender-detail-page .estimate-section {
+  padding: 1rem 1.25rem 1.5rem;
+}
+
+.tender-detail-page .estimate-import-label {
+  cursor: pointer;
+}
+
+.tender-detail-page .estimate-verify-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.875rem;
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary-color) 35%, transparent);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.tender-detail-page .estimate-verify-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tender-detail-page .estimate-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tender-detail-page .estimate-table th,
+.tender-detail-page .estimate-table td {
+  padding: 0.4375rem 0.625rem;
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.tender-detail-page .estimate-table th {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.tender-detail-page .estimate-table th:last-child,
+.tender-detail-page .estimate-table td:last-child {
+  border-right: none;
+}
+
+.tender-detail-page .estimate-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.tender-detail-page .estimate-table .estimate-num,
+.tender-detail-page .estimate-table .estimate-num-cell {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.tender-detail-page .estimate-table .estimate-num-cell {
+  text-align: right;
+}
+
+.tender-detail-page .estimate-table .estimate-section-row td {
+  background: var(--bg-tertiary);
+  font-weight: 700;
+  color: var(--text-primary);
+}
