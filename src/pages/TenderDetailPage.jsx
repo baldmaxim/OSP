@@ -6,10 +6,21 @@ import { useRole } from '../contexts/RoleContext'
 import '../components/TenderDetail.css'
 
 // task 259: таблица сметы (предпросмотр распознанного и сохранённая смета)
-function EstimateTable({ items }) {
-  const fmt = (v) => (v === null || v === undefined || v === '')
-    ? '—'
-    : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 4 }).format(v)
+const fmtNum = (v) => (v === null || v === undefined || v === '')
+  ? '—'
+  : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 4 }).format(v)
+
+// task 260: КОД «Р»/«Р-» → работы, «мат.»/иное → материалы (как в Анализ КП/БСМ)
+const isWorkItem = (it) => {
+  const c = (it.code || '').trim().toUpperCase()
+  return c.startsWith('Р')
+}
+
+const sectionKey = (it, idx) => (it.id != null ? `id:${it.id}` : `idx:${idx}`)
+
+// task 260: исходная смета с группировкой/сворачиванием разделов
+function EstimateTable({ items, collapsedSections, onToggleSection }) {
+  let curSection = null
   return (
     <div className="table-container">
       <table className="data-table estimate-table">
@@ -24,22 +35,94 @@ function EstimateTable({ items }) {
           </tr>
         </thead>
         <tbody>
-          {items.map((it, idx) => (
-            it.is_section ? (
-              <tr key={it.id || idx} className="estimate-section-row">
-                <td className="estimate-num">{it.row_number}</td>
-                <td colSpan={5}>{it.cost_name}</td>
-              </tr>
-            ) : (
+          {items.map((it, idx) => {
+            if (it.is_section) {
+              const key = sectionKey(it, idx)
+              curSection = key
+              const collapsed = collapsedSections.has(key)
+              return (
+                <tr key={it.id || idx} className="estimate-section-row">
+                  <td className="estimate-num">
+                    <button
+                      type="button"
+                      className="estimate-group-toggle"
+                      onClick={() => onToggleSection(key)}
+                      title={collapsed ? 'Развернуть раздел' : 'Свернуть раздел'}
+                      aria-expanded={!collapsed}
+                    >
+                      {collapsed ? '+' : '−'}
+                    </button>
+                  </td>
+                  <td colSpan={5}>{it.cost_name}</td>
+                </tr>
+              )
+            }
+            if (curSection && collapsedSections.has(curSection)) return null
+            return (
               <tr key={it.id || idx}>
                 <td className="estimate-num">{it.row_number}</td>
                 <td>{it.code || '—'}</td>
                 <td>{it.cost_name}</td>
                 <td>{it.unit || '—'}</td>
-                <td className="estimate-num-cell">{fmt(it.work_volume)}</td>
-                <td className="estimate-num-cell">{fmt(it.material_consumption)}</td>
+                <td className="estimate-num-cell">{fmtNum(it.work_volume)}</td>
+                <td className="estimate-num-cell">{fmtNum(it.material_consumption)}</td>
               </tr>
             )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// task 260: подвкладки «Материалы»/«Работы» — суммирование объёмов по наименованию
+function AggregateTable({ items, type }) {
+  const map = new Map()
+  for (const it of items) {
+    if (it.is_section) continue
+    const work = isWorkItem(it)
+    if (type === 'works' && !work) continue
+    if (type === 'materials' && work) continue
+    const name = (it.cost_name || '').trim()
+    if (!name) continue
+    const unit = (it.unit || '').trim()
+    const key = `${name.toLowerCase()}∣${unit.toLowerCase()}`
+    const vol = type === 'works' ? it.work_volume : it.material_consumption
+    const cur = map.get(key) || { name, unit, total: 0, count: 0 }
+    cur.total += Number(vol) || 0
+    cur.count += 1
+    map.set(key, cur)
+  }
+  const rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  if (rows.length === 0) {
+    return (
+      <div className="empty-state">
+        <p>{type === 'works' ? 'Позиций по работам не найдено' : 'Позиций по материалам не найдено'}</p>
+        <p className="hint">Тип определяется столбцом КОД: «Р»/«Р-» — работы, остальное — материалы.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="table-container">
+      <table className="data-table estimate-table">
+        <thead>
+          <tr>
+            <th style={{ width: '52px' }}>№</th>
+            <th>Наименование</th>
+            <th style={{ width: '90px' }}>Ед. изм.</th>
+            <th style={{ width: '90px' }}>Позиций</th>
+            <th style={{ width: '150px' }}>Суммарный объём</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.name + '∣' + r.unit}>
+              <td className="estimate-num">{i + 1}</td>
+              <td>{r.name}</td>
+              <td>{r.unit || '—'}</td>
+              <td className="estimate-num">{r.count}</td>
+              <td className="estimate-num-cell">{fmtNum(r.total)}</td>
+            </tr>
           ))}
         </tbody>
       </table>
@@ -68,6 +151,8 @@ function TenderDetailPage() {
   const [showEstimateModal, setShowEstimateModal] = useState(false)
   const [parsedEstimate, setParsedEstimate] = useState(null) // предпросмотр до сохранения
   const [estimateSaving, setEstimateSaving] = useState(false)
+  const [estimateSubTab, setEstimateSubTab] = useState('source') // 'source' | 'materials' | 'works'
+  const [collapsedSections, setCollapsedSections] = useState(new Set())
 
   // Состояния для добавления участников
   const [showAddParticipantModal, setShowAddParticipantModal] = useState(false)
@@ -233,6 +318,23 @@ function TenderDetailPage() {
       alert('Ошибка удаления сметы: ' + error.message)
     }
   }
+
+  // task 260: текущий набор позиций (предпросмотр имеет приоритет над сохранённым)
+  const currentEstimate = parsedEstimate || estimateItems
+  const estimateSectionKeys = currentEstimate
+    .map((it, idx) => (it.is_section ? sectionKey(it, idx) : null))
+    .filter(Boolean)
+
+  const toggleSection = (key) => {
+    setCollapsedSections(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  const collapseAllSections = () => setCollapsedSections(new Set(estimateSectionKeys))
+  const expandAllSections = () => setCollapsedSections(new Set())
 
   const fetchTenderData = async () => {
     setLoading(true)
@@ -848,33 +950,73 @@ function TenderDetailPage() {
               </div>
             </div>
 
-            {parsedEstimate ? (
-              <>
-                <div className="estimate-verify-bar">
-                  <span>
-                    Распознано <strong>{parsedEstimate.length}</strong> позиций. Проверьте корректность и сохраните.
-                  </span>
-                  <div className="estimate-verify-actions">
-                    <button
-                      className="btn-secondary"
-                      onClick={() => { setParsedEstimate(null); setPendingWorkbook(null) }}
-                      disabled={estimateSaving}
-                    >
-                      Отмена
-                    </button>
-                    <button
-                      className="btn-primary"
-                      onClick={handleSaveEstimate}
-                      disabled={estimateSaving}
-                    >
-                      {estimateSaving ? 'Сохранение…' : 'Сохранить смету в тендер'}
-                    </button>
-                  </div>
+            {parsedEstimate && (
+              <div className="estimate-verify-bar">
+                <span>
+                  Распознано <strong>{parsedEstimate.length}</strong> позиций. Проверьте корректность и сохраните.
+                </span>
+                <div className="estimate-verify-actions">
+                  <button
+                    className="btn-secondary"
+                    onClick={() => { setParsedEstimate(null); setPendingWorkbook(null) }}
+                    disabled={estimateSaving}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={handleSaveEstimate}
+                    disabled={estimateSaving}
+                  >
+                    {estimateSaving ? 'Сохранение…' : 'Сохранить смету в тендер'}
+                  </button>
                 </div>
-                <EstimateTable items={parsedEstimate} />
+              </div>
+            )}
+
+            {(parsedEstimate || estimateItems.length > 0) ? (
+              <>
+                <div className="estimate-subtabs">
+                  <div className="estimate-subtabs-left">
+                    <button
+                      className={`estimate-subtab ${estimateSubTab === 'source' ? 'active' : ''}`}
+                      onClick={() => setEstimateSubTab('source')}
+                    >Исходная смета</button>
+                    <button
+                      className={`estimate-subtab ${estimateSubTab === 'materials' ? 'active' : ''}`}
+                      onClick={() => setEstimateSubTab('materials')}
+                    >Материалы</button>
+                    <button
+                      className={`estimate-subtab ${estimateSubTab === 'works' ? 'active' : ''}`}
+                      onClick={() => setEstimateSubTab('works')}
+                    >Работы</button>
+                  </div>
+                  {estimateSubTab === 'source' && estimateSectionKeys.length > 0 && (
+                    <div className="estimate-collapse-controls">
+                      <button className="btn-secondary btn-sm" onClick={collapseAllSections}>
+                        Свернуть все разделы
+                      </button>
+                      <button className="btn-secondary btn-sm" onClick={expandAllSections}>
+                        Развернуть все
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {estimateSubTab === 'source' && (
+                  <EstimateTable
+                    items={currentEstimate}
+                    collapsedSections={collapsedSections}
+                    onToggleSection={toggleSection}
+                  />
+                )}
+                {estimateSubTab === 'materials' && (
+                  <AggregateTable items={currentEstimate} type="materials" />
+                )}
+                {estimateSubTab === 'works' && (
+                  <AggregateTable items={currentEstimate} type="works" />
+                )}
               </>
-            ) : estimateItems.length > 0 ? (
-              <EstimateTable items={estimateItems} />
             ) : (
               <div className="empty-state">
                 <p>Смета ещё не загружена</p>
