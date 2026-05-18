@@ -18,6 +18,22 @@ const isWorkItem = (it) => {
 
 const sectionKey = (it, idx) => (it.id != null ? `id:${it.id}` : `idx:${idx}`)
 
+// task 264: 2 варианта раскладки колонок Excel (как в «Анализ КП»/БСМ)
+// Вариант 1: A=№, B=КОД, C=Наименование, D=Ед.изм., E=Объём по виду работ, F=Общий расход
+// Вариант 2: A=№, B=КОД, C=Наименование, D=Примечание, E=Ед.изм., F=Объём (единый)
+const VOR_VARIANTS = {
+  v1: {
+    title: 'Вариант 1',
+    desc: 'A — №, B — КОД, C — Наименование, D — Ед. изм., E — Объём по виду работ, F — Общий расход',
+    cols: { code: 1, name: 2, unit: 3, workVolume: 4, materialVolume: 5, note: null },
+  },
+  v2: {
+    title: 'Вариант 2',
+    desc: 'A — №, B — КОД, C — Наименование, D — Примечание, E — Ед. изм., F — Объём (единый)',
+    cols: { code: 1, name: 2, note: 3, unit: 4, volume: 5 },
+  },
+}
+
 // task 262: уровень группировки строки. Если в Excel была структура (outline)
 // — используем её; иначе откатываемся на эвристику (раздел=0, позиция=1).
 function makeLevelOf(items) {
@@ -194,6 +210,7 @@ function TenderDetailPage() {
   const [estimateSaving, setEstimateSaving] = useState(false)
   const [estimateSubTab, setEstimateSubTab] = useState('source') // 'source' | 'materials' | 'works'
   const [collapsedSections, setCollapsedSections] = useState(new Set())
+  const [estVariant, setEstVariant] = useState('v1') // task 264: вариант раскладки колонок
 
   // Состояния для добавления участников
   const [showAddParticipantModal, setShowAddParticipantModal] = useState(false)
@@ -286,18 +303,33 @@ function TenderDetailPage() {
       const start = Math.max(0, (parseInt(estStartRow) || 2) - 1)
       const end = estEndRow ? Math.min(rows.length, parseInt(estEndRow) || rows.length) : rows.length
 
+      const v = VOR_VARIANTS[estVariant] || VOR_VARIANTS.v1
+      const c = v.cols
+      const cell = (row, idx) => (idx != null && row[idx] != null) ? String(row[idx]).trim() : ''
+
       const items = []
       let rowNum = 1
       for (let i = start; i < end; i++) {
         const row = rows[i]
         if (!row || row.length === 0) continue
-        // A=№ п/п, B=КОД, C=Наименование затрат, D=Ед. изм., E=Объём, F=Общий расход
-        const code = row[1] != null ? String(row[1]).trim() : ''
-        const name = row[2] != null ? String(row[2]).trim() : ''
+        const code = cell(row, c.code)
+        const name = cell(row, c.name)
         if (!name) continue
-        const unit = row[3] != null ? String(row[3]).trim() : ''
-        const workVolume = cleanNumericValue(row[4])
-        const materialConsumption = cleanNumericValue(row[5])
+        const unit = cell(row, c.unit)
+        const note = c.note != null ? cell(row, c.note) : ''
+
+        let workVolume, materialConsumption
+        if (estVariant === 'v2') {
+          // Единый столбец объёма: для работ → work_volume, для материалов → material_consumption
+          const vol = cleanNumericValue(row[c.volume])
+          const isWork = (code || '').trim().toUpperCase().startsWith('Р')
+          workVolume = isWork ? vol : null
+          materialConsumption = isWork ? null : vol
+        } else {
+          workVolume = cleanNumericValue(row[c.workVolume])
+          materialConsumption = cleanNumericValue(row[c.materialVolume])
+        }
+
         // Раздел: только наименование, без кода/ед.изм./чисел
         const isSection = !code && !unit && workVolume == null && materialConsumption == null
         items.push({
@@ -305,6 +337,7 @@ function TenderDetailPage() {
           code: code || null,
           cost_name: name,
           unit: unit || null,
+          calculation_note: note || null,
           work_volume: workVolume,
           material_consumption: materialConsumption,
           is_section: isSection,
@@ -1575,6 +1608,29 @@ function TenderDetailPage() {
               onSubmit={(e) => { e.preventDefault(); handleParseEstimate() }}
               style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}
             >
+              <div>
+                <label className="info-label" style={{ display: 'block', marginBottom: '0.375rem' }}>
+                  Вариант раскладки колонок
+                </label>
+                <div className="estimate-variant-cards">
+                  {Object.entries(VOR_VARIANTS).map(([key, v]) => (
+                    <button
+                      type="button"
+                      key={key}
+                      className={`estimate-variant-card ${estVariant === key ? 'active' : ''}`}
+                      onClick={() => setEstVariant(key)}
+                    >
+                      <span className="estimate-variant-radio" aria-hidden>
+                        {estVariant === key ? '●' : '○'}
+                      </span>
+                      <span className="estimate-variant-text">
+                        <strong>{v.title}</strong>
+                        <small>{v.desc}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               {estSheetNames.length > 1 && (
                 <div>
                   <label className="info-label" style={{ display: 'block', marginBottom: '0.375rem' }}>Лист Excel</label>

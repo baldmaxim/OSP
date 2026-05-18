@@ -3188,3 +3188,57 @@
   color: var(--text-primary);
   border-top: 2px solid var(--border-color);
 }
+
+/* task 264: выбор варианта раскладки колонок при импорте ВОР */
+.tender-detail-page .estimate-variant-cards,
+.modal .estimate-variant-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.estimate-variant-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.estimate-variant-card:hover {
+  border-color: var(--text-tertiary);
+}
+
+.estimate-variant-card.active {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
+
+.estimate-variant-radio {
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.estimate-variant-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.estimate-variant-text strong {
+  font-size: 0.875rem;
+}
+
+.estimate-variant-text small {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
