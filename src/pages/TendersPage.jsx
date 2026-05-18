@@ -213,10 +213,30 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             console.error('Не удалось загрузить родительские тендеры:', parentsError.message)
           } else {
             const parentMap = new Map((parents || []).map(p => [p.id, p]))
-            filteredTenders = filteredTenders.map(t => ({
-              ...t,
-              parent_tender: t.parent_tender_id ? (parentMap.get(t.parent_tender_id) || null) : null
-            }))
+            // task 231: описание работ тендера на материалы всегда взято из
+            // основного тендера (взаимосвязь). Если разошлось — тихо приводим
+            // к родительскому и в отображении, и в БД (самовосстановление,
+            // чинит и старые расхождения без миграции).
+            const toSync = []
+            filteredTenders = filteredTenders.map(t => {
+              const parent = t.parent_tender_id ? (parentMap.get(t.parent_tender_id) || null) : null
+              if (parent && (parent.work_description || '') !== (t.work_description || '')) {
+                toSync.push({ id: t.id, work_description: parent.work_description })
+                return { ...t, parent_tender: parent, work_description: parent.work_description }
+              }
+              return { ...t, parent_tender: parent }
+            })
+            if (toSync.length > 0) {
+              await Promise.all(toSync.map(async (s) => {
+                const { error: upErr } = await supabase
+                  .from('tenders')
+                  .update({ work_description: s.work_description })
+                  .eq('id', s.id)
+                if (upErr) {
+                  console.error('Синхронизация описания тендера на материалы не удалась:', s.id, upErr.message)
+                }
+              }))
+            }
           }
         }
       }
@@ -1610,22 +1630,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         {tender.public_tender_number ?? '—'}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <button
-                          onClick={() => navigate(`/tenders/${tender.id}`)}
-                          className="row-link primary"
-                          title="Открыть тендер"
-                        >
-                          {tender.objects?.name || '-'}
-                        </button>
+                        {tender.objects?.name || '-'}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <Link
                           to={`/tenders/${tender.parent_tender_id || tender.id}`}
-                          className="row-link muted"
+                          className="row-link primary"
                           title={tender.parent_tender_id
                             ? 'Открыть тендер основного строительства (Ctrl+клик или средняя кнопка — в новой вкладке)'
                             : 'Открыть тендер'}
-                          style={{ fontSize: '0.75rem', textAlign: 'center', display: 'inline-block' }}
+                          style={{ fontSize: '0.75rem', textAlign: 'center', display: 'inline-block', color: 'var(--primary-color)', textDecoration: 'underline' }}
                         >
                           {tender.work_description}
                         </Link>
