@@ -110,13 +110,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   const statusOptions = ['Заявка на тендер', 'Подготовка ВОР', 'Идет тендерная процедура', 'Подведение итогов', 'Завершен', 'Приостановка тендера']
   // Отдельный набор статусов для тендеров на материалы — не пересекается со статусами основного тендера.
-  // «Не нужно» — финальный статус (материалы закупать не требуется), считается как завершённый.
-  const materialsStatusOptions = ['Не начат', 'В работе', 'Завершён', 'Не нужно']
+  // «Не требуется» — финальный статус (материалы закупать не требуется), считается как завершённый.
+  const materialsStatusOptions = ['Не начат', 'В работе', 'Завершён', 'Не требуется']
   const currentStatusOptions = isMaterialsView ? materialsStatusOptions : statusOptions
-  // Для тендеров на материалы «завершённые» — это «Завершён» и «Не нужно».
+  // Для тендеров на материалы «завершённые» — это «Завершён» и «Не требуется»
+  // (а также старое значение «Не нужно» — для обратной совместимости).
   // Для основных тендеров — только «Завершен».
   const isCompletedStatus = (status) => isMaterialsView
-    ? (status === 'Завершён' || status === 'Не нужно')
+    ? (status === 'Завершён' || status === 'Не требуется' || status === 'Не нужно')
     : (status === 'Завершен')
   const initialStatusValue = isMaterialsView ? 'Не начат' : 'Заявка на тендер'
 
@@ -766,8 +767,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           object_id: formData.object_id || null,
           work_description: formData.work_description,
           status: formData.status || initialStatusValue,
-          start_date: formData.start_date,
-          end_date: formData.end_date,
+          // task 270: даты работ необязательны — пустое значение сохраняем как NULL
+          start_date: formData.start_date || null,
+          end_date: formData.end_date || null,
           tender_type: newTenderType,
         }
         if (materialsParentTender) {
@@ -1318,7 +1320,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       'Не начат': 'status-not-started',
       'В работе': 'status-in-progress',
       'Завершён': 'status-completed',
-      'Не нужно': 'status-suspended',
+      'Не требуется': 'status-suspended',
+      'Не нужно': 'status-suspended', // legacy
       // legacy fallbacks (на случай несмигрированных данных)
       'Ожидание ВОР': 'status-waiting-vor',
       'Принято в работу': 'status-completed',
@@ -2152,8 +2155,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               if (s === 'В работе') {
                                 return <span className="phase-progress" title="В работе">В работе</span>
                               }
-                              if (s === 'Не нужно') {
-                                return <span className="phase-done" title="Тендер на материалы не требуется">— Не нужно</span>
+                              if (s === 'Не требуется' || s === 'Не нужно') {
+                                return <span className="phase-done" title="Тендер на материалы не требуется">— Не требуется</span>
                               }
                               return <span className="phase-pending" title={s || 'Не начат'}>{s || 'Не начат'}</span>
                             })()}
@@ -2697,26 +2700,26 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 )}
 
                 <div className="form-group">
-                  <label>Дата начала работ *</label>
+                  <label>Дата начала работ</label>
                   <input
                     type="date"
                     name="start_date"
                     value={formData.start_date}
                     onChange={handleInputChange}
                     min="2020-01-01"
-                    required
+                    max="9999-12-31"
                   />
                 </div>
 
                 <div className="form-group">
-                  <label>Дата окончания работ *</label>
+                  <label>Дата окончания работ</label>
                   <input
                     type="date"
                     name="end_date"
                     value={formData.end_date}
                     onChange={handleInputChange}
                     min={formData.start_date || '2020-01-01'}
-                    required
+                    max="9999-12-31"
                   />
                 </div>
 
@@ -2728,6 +2731,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     value={formData.tender_start_date}
                     onChange={handleInputChange}
                     min="2020-01-01"
+                    max="9999-12-31"
                   />
                 </div>
 
@@ -2739,6 +2743,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     value={formData.tender_end_date}
                     onChange={handleInputChange}
                     min={formData.tender_start_date || '2020-01-01'}
+                    max="9999-12-31"
                   />
                 </div>
 
@@ -2752,6 +2757,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         value={formData.vor_start_date}
                         onChange={handleInputChange}
                         min="2020-01-01"
+                        max="9999-12-31"
                       />
                     </div>
 
@@ -2763,6 +2769,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         value={formData.vor_end_date}
                         onChange={handleInputChange}
                         min={formData.vor_start_date || '2020-01-01'}
+                        max="9999-12-31"
                       />
                     </div>
 
