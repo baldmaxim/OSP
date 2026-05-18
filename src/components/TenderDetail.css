@@ -177,6 +177,14 @@
   font-weight: 400;
 }
 
+/* task 247: статус / срок / ссылка — каждое на своей строке */
+.info-value.info-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
 .info-item.winner .info-value {
   color: #166534;
   background: #dcfce7;

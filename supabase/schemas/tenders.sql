@@ -29,12 +29,14 @@ CREATE TABLE IF NOT EXISTS tenders (
   parent_tender_id UUID REFERENCES tenders(id) ON DELETE SET NULL,
   materials_proposal_deadline DATE,
   materials_proposal_link TEXT,
+  materials_status TEXT NOT NULL DEFAULT 'not_started',
   public_tender_number INTEGER DEFAULT nextval('tenders_public_number_seq'),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   CONSTRAINT check_dates CHECK (end_date >= start_date),
   CONSTRAINT valid_cost_plan_status CHECK (cost_plan_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
   CONSTRAINT valid_vor_status CHECK (vor_status IN ('not_started', 'in_progress', 'completed')),
+  CONSTRAINT valid_materials_status CHECK (materials_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
   CONSTRAINT valid_tender_type CHECK (tender_type IN ('main', 'materials')),
   CONSTRAINT tenders_parent_only_for_materials CHECK (
     (tender_type = 'materials') OR (parent_tender_id IS NULL)

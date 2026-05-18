@@ -180,69 +180,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       setLoading(true)
       const { data, error } = await supabase
         .from('tenders')
-        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)')
+        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name)')
         .eq('tender_type', tenderType)
         .order('start_date', { ascending: false })
 
       if (error) throw error
-      // Reverse FK tenders!parent_tender_id возвращается массивом (UNIQUE на parent_tender_id нет).
-      // Сводим к одному объекту или null, чтобы дальше обращаться как tender.materials_tender.status.
-      const normalized = (data || []).map(t => ({
-        ...t,
-        materials_tender: Array.isArray(t.materials_tender)
-          ? (t.materials_tender[0] || null)
-          : (t.materials_tender || null)
-      }))
-      // Для основных тендеров фильтруем по статусу объекта (construction/warranty).
-      // Для тендеров на материалы показываем все объекты без фильтрации по отделу.
-      let filteredTenders = isMaterialsView
-        ? normalized
-        : normalized.filter(tender => tender.objects?.status === objectStatus)
+      let filteredTenders = (data || []).filter(tender => tender.objects?.status === objectStatus)
       if (scopedObjectId) {
         filteredTenders = filteredTenders.filter(t => t.object_id === scopedObjectId)
       }
-
-      // task 223b: для тендеров на материалы подгружаем родительский тендер
-      // основного строительства (отдельным запросом — self-FK неоднозначен в embed).
-      if (isMaterialsView) {
-        const parentIds = [...new Set(filteredTenders.map(t => t.parent_tender_id).filter(Boolean))]
-        if (parentIds.length > 0) {
-          const { data: parents, error: parentsError } = await supabase
-            .from('tenders')
-            .select('id, public_tender_number, work_description, objects(name)')
-            .in('id', parentIds)
-          if (parentsError) {
-            console.error('Не удалось загрузить родительские тендеры:', parentsError.message)
-          } else {
-            const parentMap = new Map((parents || []).map(p => [p.id, p]))
-            // task 231: описание работ тендера на материалы всегда взято из
-            // основного тендера (взаимосвязь). Если разошлось — тихо приводим
-            // к родительскому и в отображении, и в БД (самовосстановление,
-            // чинит и старые расхождения без миграции).
-            const toSync = []
-            filteredTenders = filteredTenders.map(t => {
-              const parent = t.parent_tender_id ? (parentMap.get(t.parent_tender_id) || null) : null
-              if (parent && (parent.work_description || '') !== (t.work_description || '')) {
-                toSync.push({ id: t.id, work_description: parent.work_description })
-                return { ...t, parent_tender: parent, work_description: parent.work_description }
-              }
-              return { ...t, parent_tender: parent }
-            })
-            if (toSync.length > 0) {
-              await Promise.all(toSync.map(async (s) => {
-                const { error: upErr } = await supabase
-                  .from('tenders')
-                  .update({ work_description: s.work_description })
-                  .eq('id', s.id)
-                if (upErr) {
-                  console.error('Синхронизация описания тендера на материалы не удалась:', s.id, upErr.message)
-                }
-              }))
-            }
-          }
-        }
-      }
-
       setTenders(filteredTenders)
     } catch (error) {
       console.error('Ошибка загрузки тендеров:', error.message)
@@ -505,6 +451,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
+  // task 246: статус по материалам — простое поле на самом тендере
+  const handleUpdateMaterialsStatus = async (tenderId, value) => {
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ materials_status: value })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t =>
+        t.id === tenderId ? { ...t, materials_status: value } : t
+      ))
+    } catch (err) {
+      console.error('Ошибка сохранения статуса по материалам:', err.message)
+      alert('Не удалось сохранить статус по материалам. Возможно, не применена миграция '
+        + '20260525_add_materials_status_to_tenders. Ошибка: ' + err.message)
+    }
+  }
+
   const handleUpdateCounterpartyNotes = async (tenderId, tenderCounterpartyId, notes) => {
     try {
       const { error } = await supabase
@@ -714,50 +678,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           })
         }
 
-        // task 223a / 226 / 229: описание работ основного тендера взаимосвязано
-        // с дочерним тендером на материалы — синхронизируем при любом изменении.
-        const descChanged = (editingTender.work_description || '') !== (updatePayload.work_description || '')
-        if (editingTender.tender_type !== 'materials' && descChanged) {
-          const newDesc = updatePayload.work_description
-          let syncedCount = 0
-
-          // 1) Основной путь: дочерние тендеры на материалы по parent_tender_id.
-          const { data: byParent, error: byParentErr } = await supabase
-            .from('tenders')
-            .update({ work_description: newDesc })
-            .eq('parent_tender_id', editingTender.id)
-            .select('id')
-          if (byParentErr) {
-            console.error('Синхронизация описания (по parent_tender_id) не удалась:', byParentErr.message)
-          } else {
-            syncedCount += byParent?.length || 0
-          }
-
-          // 2) Самовосстановление связи: если по parent_tender_id ничего не нашлось,
-          //    подхватываем «осиротевшие» тендеры на материалы того же объекта
-          //    (parent_tender_id IS NULL) — обновляем описание и проставляем связь,
-          //    чтобы дальше работал быстрый путь.
-          if (syncedCount === 0 && editingTender.object_id) {
-            const { data: adopted, error: adoptErr } = await supabase
-              .from('tenders')
-              .update({ work_description: newDesc, parent_tender_id: editingTender.id })
-              .eq('object_id', editingTender.object_id)
-              .eq('tender_type', 'materials')
-              .is('parent_tender_id', null)
-              .select('id')
-            if (adoptErr) {
-              console.error('Синхронизация описания (привязка по объекту) не удалась:', adoptErr.message)
-            } else {
-              syncedCount += adopted?.length || 0
-            }
-          }
-
-          if (syncedCount === 0) {
-            console.warn('Описание работ изменено, но связанный тендер на материалы не найден ' +
-              '(нет тендера на материалы с parent_tender_id этого тендера и нет несвязанного ' +
-              'тендера на материалы для объекта).')
-          }
-        }
       } else {
         // Insert new tender — только минимальный набор для заявки от руководителя строительства.
         // Это страхует от падений, если новые миграции (notes, cost_plan_*, vor_*) ещё не применены.
@@ -805,49 +725,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         }
 
         const { res: mainRes, finalPayload: mainFinalPayload } = await insertTenderWithRetry(insertPayload)
-        let createdMainId = null
         if (mainRes.error) throw mainRes.error
         if (mainRes.data?.id) {
-          createdMainId = mainRes.data.id
           await logTenderEvent(mainRes.data.id, 'created', {
             newValue: mainFinalPayload,
             description: 'Тендер создан'
           })
-        }
-
-        // Автоматически создаём связанный тендер на материалы только для тендеров основного строительства.
-        // В гарантийном отделе тендеры на материалы не нужны.
-        if (createdMainId && newTenderType === 'main' && department === 'construction') {
-          // Если retry основной вставки удалил tender_type / parent_tender_id — миграция не применена,
-          // создание дочернего тендера невозможно. Сообщаем пользователю явно.
-          if (mainFinalPayload.tender_type === undefined) {
-            alert('Тендер создан, но автосоздание тендера на материалы пропущено: миграция 20260515_add_tender_type_and_parent не применена в БД. Примените её и используйте кнопку «+ Создать» в колонке «Тендер на материалы».')
-          } else {
-            try {
-              const materialsPayload = {
-                object_id: insertPayload.object_id,
-                work_description: insertPayload.work_description,
-                status: 'Не начат',
-                start_date: insertPayload.start_date,
-                end_date: insertPayload.end_date,
-                tender_type: 'materials',
-                parent_tender_id: createdMainId,
-              }
-              const { res: matRes, finalPayload: matFinalPayload } = await insertTenderWithRetry(materialsPayload)
-              if (matRes.error) {
-                console.error('Не удалось автоматически создать тендер на материалы:', matRes.error.message)
-                alert('Тендер создан, но автосоздание тендера на материалы не удалось: ' + matRes.error.message)
-              } else if (matRes.data?.id) {
-                await logTenderEvent(matRes.data.id, 'created', {
-                  newValue: matFinalPayload,
-                  description: 'Тендер на материалы создан автоматически'
-                })
-              }
-            } catch (matErr) {
-              console.error('Ошибка автосоздания тендера на материалы:', matErr.message)
-              alert('Ошибка автосоздания тендера на материалы: ' + matErr.message)
-            }
-          }
         }
       }
 
@@ -984,31 +867,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   // Открыть форму создания дочернего тендера на материалы для конкретного родительского тендера
-  const handleCreateMaterialsTender = (parentTender) => {
-    setEditingTender(null)
-    setMaterialsParentTender(parentTender)
-    setFormData({
-      object_id: parentTender.object_id || '',
-      work_description: '',
-      status: 'Не начат',
-      start_date: '',
-      end_date: '',
-      tender_package_link: '',
-      responsible_contact_id: '',
-      cost_plan_link: '',
-      cost_plan_responsible_id: '',
-      vor_link: '',
-      vor_responsible_id: '',
-      vor_start_date: '',
-      vor_end_date: '',
-      tender_start_date: '',
-      tender_end_date: '',
-      summary_proposal_link: '',
-      notes: '',
-    })
-    setShowModal(true)
-  }
-
   const handleStatusChange = async (tenderId, newStatus) => {
     // Для тендеров на материалы выбор победителя не требуется — статус ставится напрямую.
     // Для основных тендеров при переходе в «Завершен» открываем модал выбора победителя.
@@ -1844,8 +1702,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               {!compactView && department === 'construction' && activeTab !== 'completed' && (
                 <th style={{ width: '95px' }}>План<br />затрат</th>
               )}
-              {!compactView && !isMaterialsView && department === 'construction' && (
-                <th style={{ width: '105px' }}>Тендер<br />на&nbsp;материалы</th>
+              {!compactView && department === 'construction' && (
+                <th style={{ width: '150px' }}>Материалы</th>
               )}
               {!compactView && <th style={{ width: '105px' }}>Сводная<br />КП</th>}
               <th className="actions-column" style={{ width: '72px' }}>Действия</th>
@@ -2124,54 +1982,80 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         )}
                       </td>
                     )}
-                    {/* Тендер на материалы (дочерний) — только в основном строительстве */}
-                    {!compactView && !isMaterialsView && department === 'construction' && (
+                    {/* task 246: Материалы — простые поля (статус / срок / ссылка) на самом тендере */}
+                    {!compactView && department === 'construction' && (
                       <td>
-                        {tender.materials_tender ? (
-                          <div className="phase-cell">
-                            {(() => {
-                              const s = tender.materials_tender.status
-                              if (s === 'Завершён' || s === 'Завершен') {
-                                return <span className="phase-done" title="Тендер на материалы завершён">✓ Завершён</span>
-                              }
-                              if (s === 'В работе') {
-                                return <span className="phase-progress" title="В работе">В работе</span>
-                              }
-                              if (s === 'Не нужно') {
-                                return <span className="phase-done" title="Тендер на материалы не требуется">— Не нужно</span>
-                              }
-                              return <span className="phase-pending" title={s || 'Не начат'}>{s || 'Не начат'}</span>
-                            })()}
-                            {tender.materials_tender.materials_proposal_link && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          <select
+                            value={tender.materials_status || 'not_started'}
+                            onChange={(e) => handleUpdateMaterialsStatus(tender.id, e.target.value)}
+                            title="Статус по материалам"
+                            style={{
+                              fontSize: '0.7rem',
+                              padding: '0.15rem 0.25rem',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '4px',
+                              background: 'var(--bg-secondary)',
+                              color: 'var(--text-primary)',
+                              width: '100%',
+                              boxSizing: 'border-box'
+                            }}
+                          >
+                            <option value="not_started">Не начат</option>
+                            <option value="in_progress">В работе</option>
+                            <option value="completed">Завершён</option>
+                            <option value="not_required">Не требуется</option>
+                          </select>
+                          <input
+                            type="date"
+                            value={tender.materials_proposal_deadline || ''}
+                            onChange={(e) => handleUpdateMaterialsDeadline(tender.id, e.target.value)}
+                            title="Срок предоставления КП по материалам"
+                            style={{
+                              fontSize: '0.7rem',
+                              padding: '0.1rem 0.2rem',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '4px',
+                              background: 'var(--bg-secondary)',
+                              color: 'var(--text-primary)',
+                              width: '100%',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                          {tender.materials_proposal_link ? (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                               <a
-                                href={tender.materials_tender.materials_proposal_link}
+                                href={tender.materials_proposal_link}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="link"
-                                title="Открыть КП на материалы"
+                                title="Открыть КП по материалам"
                               >
-                                Открыть
+                                КП
                               </a>
-                            )}
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => handleCreateMaterialsTender(tender)}
-                            className="btn-link"
-                            style={{
-                              background: 'none',
-                              border: '1px dashed var(--border-color)',
-                              color: 'var(--text-secondary)',
-                              cursor: 'pointer',
-                              padding: '0.25rem 0.5rem',
-                              borderRadius: '4px',
-                              fontSize: '0.75rem'
-                            }}
-                            title="Создать тендер на материалы для этого объекта"
-                          >
-                            + Создать
-                          </button>
-                        )}
+                              <button
+                                className="btn-icon btn-edit"
+                                onClick={() => handleUpdateMaterialsLink(tender.id, tender.materials_proposal_link)}
+                                title="Изменить ссылку"
+                                style={{ fontSize: '0.7rem' }}
+                              >✏️</button>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleUpdateMaterialsLink(tender.id, '')}
+                              style={{
+                                background: 'none',
+                                border: '1px dashed var(--border-color)',
+                                borderRadius: '4px',
+                                padding: '0.1rem 0.4rem',
+                                color: 'var(--text-tertiary)',
+                                cursor: 'pointer',
+                                fontSize: '0.7rem'
+                              }}
+                              title="Добавить ссылку на КП по материалам"
+                            >+ ссылка</button>
+                          )}
+                        </div>
                       </td>
                     )}
                     {/* Сводная КП */}
