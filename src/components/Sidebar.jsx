@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import ThemeToggle from './ThemeToggle'
@@ -9,21 +8,12 @@ function Sidebar() {
   const navigate = useNavigate()
   const { logout, canView, isAdmin, isSuperAdmin, role, roleLabels } = useRole()
 
+  // task 254: «Тендеры» — единый пункт-ссылка на страницу-хаб /tenders.
+  // Подсвечиваем его активным на любой странице раздела тендеров.
   const isInTendersSection =
     location.pathname.startsWith('/tenders')
     || location.pathname.startsWith('/cost-plans')
     || location.pathname.startsWith('/vors')
-
-  const [tendersExpanded, setTendersExpanded] = useState(isInTendersSection)
-  const isTendersActive = isInTendersSection
-
-  const tendersSubItems = [
-    { path: '/tenders/construction', label: 'Основное строительство', icon: '🏗️' },
-    { path: '/tenders/warranty', label: 'Гарантийный отдел', icon: '🛡️' },
-    { path: '/tenders/materials', label: 'Тендеры на материалы', icon: '📦' },
-    { path: '/cost-plans', label: 'Планы затрат', icon: '💰' },
-    { path: '/vors', label: 'ВОРы и РД', icon: '📐' },
-  ]
 
   return (
     <aside className="sidebar">
@@ -49,37 +39,15 @@ function Sidebar() {
           </NavLink>
         )}
 
-        {/* Тендеры */}
+        {/* Тендеры — переход на страницу-хаб */}
         {canView('tenders') && (
-          <div className="sidebar-item-wrapper">
-            <button
-              className={`sidebar-item sidebar-item-parent ${isTendersActive ? 'active' : ''}`}
-              onClick={() => setTendersExpanded(!tendersExpanded)}
-            >
-              <span className="sidebar-icon">📢</span>
-              <span className="sidebar-label">Тендеры</span>
-              <span className={`sidebar-chevron ${tendersExpanded ? 'expanded' : ''}`}>
-                ›
-              </span>
-            </button>
-
-            {tendersExpanded && (
-              <div className="sidebar-submenu">
-                {tendersSubItems.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    className={({ isActive }) =>
-                      `sidebar-subitem ${isActive ? 'active' : ''}`
-                    }
-                  >
-                    <span className="sidebar-icon">{item.icon}</span>
-                    <span className="sidebar-label">{item.label}</span>
-                  </NavLink>
-                ))}
-              </div>
-            )}
-          </div>
+          <NavLink
+            to="/tenders"
+            className={`sidebar-item ${isInTendersSection ? 'active' : ''}`}
+          >
+            <span className="sidebar-icon">📢</span>
+            <span className="sidebar-label">Тендеры</span>
+          </NavLink>
         )}
 
         {/* Анализ КП */}
