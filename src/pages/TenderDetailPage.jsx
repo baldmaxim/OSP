@@ -34,11 +34,30 @@ const VOR_VARIANTS = {
   },
 }
 
-// task 262: уровень группировки строки. Если в Excel была структура (outline)
-// — используем её; иначе откатываемся на эвристику (раздел=0, позиция=1).
+// Глубина иерархической нумерации: «1» → 1, «1.2» → 2, «1.2.3» → 3.
+// Берём ведущий числовой токен (поддержка . - ) как разделителей).
+function numberDepth(s) {
+  if (s == null) return 0
+  const m = String(s).trim().match(/^[№\s.]*(\d+(?:[.\-)]\d+)*)/)
+  if (!m) return 0
+  return m[1].split(/[.\-)]/).filter(Boolean).length
+}
+
+// task 262/265: эффективный уровень строки.
+// 1) если есть outline_level из Excel — берём его;
+// 2) иначе уровень мог быть посчитан при импорте и сохранён в cost_type
+//    (чтобы группировка работала БЕЗ доп. миграции);
+// 3) иначе эвристика (раздел=0, позиция=1).
+function rowLevel(it) {
+  if (Number.isFinite(it.outline_level) && it.outline_level > 0) return it.outline_level
+  const ct = parseInt(it.cost_type, 10)
+  if (Number.isFinite(ct)) return ct
+  return it.is_section ? 0 : 1
+}
+
 function makeLevelOf(items) {
-  const maxLvl = items.reduce((m, x) => Math.max(m, x.outline_level || 0), 0)
-  if (maxLvl > 0) return (it) => it.outline_level || 0
+  const maxLvl = items.reduce((m, x) => Math.max(m, rowLevel(x)), 0)
+  if (maxLvl > 0) return rowLevel
   return (it) => (it.is_section ? 0 : 1)
 }
 
@@ -309,9 +328,11 @@ function TenderDetailPage() {
 
       const items = []
       let rowNum = 1
+      let runSecLvl = 0 // текущий уровень последнего встреченного раздела (для нумерации)
       for (let i = start; i < end; i++) {
         const row = rows[i]
         if (!row || row.length === 0) continue
+        const numA = cell(row, 0) // столбец A — № п/п (часто иерархический: 1 / 1.1 / 1.1.1)
         const code = cell(row, c.code)
         const name = cell(row, c.name)
         if (!name) continue
@@ -332,6 +353,21 @@ function TenderDetailPage() {
 
         // Раздел: только наименование, без кода/ед.изм./чисел
         const isSection = !code && !unit && workVolume == null && materialConsumption == null
+
+        // task 265: уровень = группировка Excel (приоритет), иначе по иерархической
+        // нумерации столбца A (1 / 1.1 / 1.1.1), иначе эвристика раздел/позиция.
+        const exLvl = levelAt(i)
+        let lvl
+        if (exLvl > 0) {
+          lvl = exLvl
+        } else if (isSection) {
+          const d = numberDepth(numA)
+          lvl = d > 0 ? d - 1 : runSecLvl
+          runSecLvl = lvl
+        } else {
+          lvl = runSecLvl + 1
+        }
+
         items.push({
           row_number: rowNum++,
           code: code || null,
@@ -341,8 +377,11 @@ function TenderDetailPage() {
           work_volume: workVolume,
           material_consumption: materialConsumption,
           is_section: isSection,
-          outline_level: levelAt(i),
-          original_row_number: String(i + 1),
+          outline_level: lvl,
+          // Дублируем уровень в cost_type — чтобы группировка сохранялась
+          // даже без миграции outline_level (cost_type есть в базовой схеме).
+          cost_type: String(lvl),
+          original_row_number: numA || String(i + 1),
         })
       }
       if (items.length === 0) {
