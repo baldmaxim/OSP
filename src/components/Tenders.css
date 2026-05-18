@@ -519,13 +519,13 @@
   background-color: var(--bg-tertiary);
 }
 
-/* task 238: вкладки в одну строку — компактнее, без переноса */
+/* task 238/240: вкладки в одну строку — компактнее, без переноса и без скролла */
 .tender-tab {
-  padding: 0.7rem 1.1rem;
+  padding: 0.55rem 0.7rem;
   border: none;
   background: transparent;
   color: var(--text-tertiary);
-  font-size: 0.82rem;
+  font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
@@ -533,7 +533,7 @@
   margin-bottom: -2px;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.3rem;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -561,11 +561,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.5rem;
-  height: 1.5rem;
-  padding: 0 0.5rem;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.3rem;
   border-radius: 10px;
-  font-size: 0.75rem;
+  font-size: 0.62rem;
   font-weight: 600;
   background-color: var(--primary-color);
   color: white;
@@ -597,15 +597,17 @@
 /* Встроенные вкладки статусов — компактнее обычных и на лёгком фоне,
    чтобы раскрытая вправо группа читалась как единое целое и не была громоздкой */
 .tender-tab.tender-tab-status {
-  padding: 0.7rem 0.8rem;
-  font-size: 0.78rem;
+  padding: 0.55rem 0.5rem;
+  font-size: 0.68rem;
+  gap: 0.25rem;
   background: var(--bg-secondary);
 }
 
 .tender-tab.tender-tab-status .tender-tab-count {
-  min-width: 1.15rem;
-  height: 1.15rem;
-  font-size: 0.66rem;
+  min-width: 0.95rem;
+  height: 0.95rem;
+  padding: 0 0.25rem;
+  font-size: 0.58rem;
 }
 
 .tender-tab.tender-tab-status:hover {
@@ -745,18 +747,25 @@
   border-bottom-width: 1px;
 }
 
+/* task 240: компактные вкладки на странице тендеров, чтобы при раскрытии
+   статусов всё помещалось в одну строку без горизонтального ползунка */
 .tenders-page .tender-tab {
-  padding: 0.5rem 1.125rem;
-  font-size: 0.8125rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.74rem;
   border-bottom-width: 2px;
   margin-bottom: -1px;
 }
 
+.tenders-page .tender-tab.tender-tab-status {
+  padding: 0.45rem 0.5rem;
+  font-size: 0.66rem;
+}
+
 .tenders-page .tender-tab-count {
-  min-width: 1.125rem;
-  height: 1.125rem;
-  padding: 0 0.375rem;
-  font-size: 0.6875rem;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.25rem;
+  font-size: 0.6rem;
   border-radius: 8px;
 }
 

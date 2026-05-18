@@ -184,6 +184,14 @@
 .cost-plans-tabs .tab-chevron {
   font-size: 0.7rem;
   opacity: 0.75;
+  display: inline-block;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+/* task 241: шеврон-стрелка разворачивается при раскрытии (как в тендерах) */
+.cost-plans-tabs .cost-plans-status-toggle.open .tab-chevron {
+  opacity: 1;
+  transform: rotate(180deg);
 }
 
 /* Toolbar */

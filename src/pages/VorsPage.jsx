@@ -37,7 +37,9 @@ function VorsPage() {
   }
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('in_work')
+  const [activeTab, setActiveTab] = useState('all') // 'all' | 'not_started' | 'in_progress' | 'completed'
+  // task 241: статус-вкладки скрыты под кнопкой «ВОРы и РД по статусам»
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [responsibleFilter, setResponsibleFilter] = useState('')
   const [objectFilter, setObjectFilter] = useState('') // task 239: фильтр по объектам
   const [searchQuery, setSearchQuery] = useState('') // task 239: поиск
@@ -222,9 +224,14 @@ function VorsPage() {
     )
   }
 
-  const inWork = filtered.filter(t => t.vor_status !== 'completed')
+  // task 241: разбивка по статусам ВОР (не начат / в работе / завершён)
+  const notStarted = filtered.filter(t => (t.vor_status || 'not_started') === 'not_started')
+  const inProgress = filtered.filter(t => t.vor_status === 'in_progress')
   const completed = filtered.filter(t => t.vor_status === 'completed')
-  const visible = activeTab === 'completed' ? completed : inWork
+  const visible = activeTab === 'all' ? filtered
+    : activeTab === 'completed' ? completed
+    : activeTab === 'in_progress' ? inProgress
+    : notStarted
 
   return (
     <div className="cost-plans-page">
@@ -237,19 +244,47 @@ function VorsPage() {
 
       <div className="cost-plans-tabs">
         <button
-          className={`tab ${activeTab === 'in_work' ? 'active' : ''}`}
-          onClick={() => setActiveTab('in_work')}
+          className={`tab ${activeTab === 'all' ? 'active' : ''}`}
+          onClick={() => setActiveTab('all')}
         >
-          В работе
-          <span className="tab-count">{inWork.length}</span>
+          Все ВОРы и РД
+          <span className="tab-count">{filtered.length}</span>
         </button>
         <button
-          className={`tab ${activeTab === 'completed' ? 'active' : ''}`}
-          onClick={() => setActiveTab('completed')}
+          type="button"
+          className={`tab cost-plans-status-toggle ${['not_started', 'in_progress', 'completed'].includes(activeTab) ? 'active' : ''} ${statusMenuOpen ? 'open' : ''}`}
+          onClick={() => setStatusMenuOpen(o => !o)}
+          aria-expanded={statusMenuOpen}
+          title="Развернуть/свернуть ВОРы и РД по статусам"
         >
-          Завершено
-          <span className="tab-count completed">{completed.length}</span>
+          ВОРы и РД по статусам
+          <span className="tab-chevron" aria-hidden>▸</span>
         </button>
+        {statusMenuOpen && (
+          <>
+            <button
+              className={`tab ${activeTab === 'not_started' ? 'active' : ''}`}
+              onClick={() => setActiveTab('not_started')}
+            >
+              Не начат
+              <span className="tab-count">{notStarted.length}</span>
+            </button>
+            <button
+              className={`tab ${activeTab === 'in_progress' ? 'active' : ''}`}
+              onClick={() => setActiveTab('in_progress')}
+            >
+              В работе
+              <span className="tab-count">{inProgress.length}</span>
+            </button>
+            <button
+              className={`tab ${activeTab === 'completed' ? 'active' : ''}`}
+              onClick={() => setActiveTab('completed')}
+            >
+              Завершено
+              <span className="tab-count completed">{completed.length}</span>
+            </button>
+          </>
+        )}
       </div>
 
       <div className="cost-plans-toolbar">
@@ -320,11 +355,15 @@ function VorsPage() {
             {visible.length === 0 ? (
               <tr>
                 <td colSpan={8} className="no-data">
-                  {activeTab === 'completed'
-                    ? 'Завершённых ВОРов нет'
-                    : tenders.length === 0
-                      ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
-                      : 'Все ВОРы для выбранного фильтра завершены — переключитесь на вкладку «Завершено».'}
+                  {tenders.length === 0
+                    ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
+                    : activeTab === 'completed'
+                      ? 'Завершённых ВОРов нет'
+                      : activeTab === 'in_progress'
+                        ? 'Нет ВОРов в работе'
+                        : activeTab === 'not_started'
+                          ? 'Нет ВОРов со статусом «Не начат»'
+                          : 'Нет ВОРов по выбранному фильтру'}
                 </td>
               </tr>
             ) : (
