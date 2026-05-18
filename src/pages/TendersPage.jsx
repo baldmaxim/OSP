@@ -1407,6 +1407,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       <div className="page-header page-header-tenders">
         <h2><span className="page-icon" aria-hidden>📋</span> {pageTitle}</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {!isMaterialsView && (
+            <button
+              type="button"
+              className={`btn-view-toggle ${activeTab === 'template' ? 'active' : ''}`}
+              onClick={() => setActiveTab(activeTab === 'template' ? 'all' : 'template')}
+              title="Шаблон письма для запроса КП"
+            >
+              <span aria-hidden style={{ fontSize: '0.875rem' }}>✉️</span>
+              <span>Шаблон письма</span>
+            </button>
+          )}
           <button
             type="button"
             className={`btn-view-toggle ${compactView ? 'active' : ''}`}
@@ -1466,14 +1477,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             </>
           )
         })()}
-        {!isMaterialsView && (
-          <button
-            className={`tender-tab ${activeTab === 'template' ? 'active' : ''}`}
-            onClick={() => setActiveTab('template')}
-          >
-            Шаблон письма
-          </button>
-        )}
+        {/* task 242: «Шаблон письма» перенесён в шапку (справа сверху) */}
         {/* task 194: «Удалённые» — в самой правой части */}
         <button
           className={`tender-tab tender-tab-deleted ${activeTab === 'deleted' ? 'active' : ''}`}
