@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
@@ -20,7 +20,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [activeTab, setActiveTab] = useState('all')
   // task 232/233: статус-вкладки скрыты под кнопкой «Статусы тендеров»
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
-  const statusMenuRef = useRef(null)
   const [editingTender, setEditingTender] = useState(null)
   const [expandedTenderId, setExpandedTenderId] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState({})
@@ -155,25 +154,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     ])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [department, tenderType])
-
-  // task 235: закрытие выпадающего списка статусов по клику вне/Escape
-  useEffect(() => {
-    if (!statusMenuOpen) return
-    const onDocMouseDown = (e) => {
-      if (statusMenuRef.current && !statusMenuRef.current.contains(e.target)) {
-        setStatusMenuOpen(false)
-      }
-    }
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') setStatusMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onDocMouseDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [statusMenuOpen])
 
   // Сводный запрос: считаем для каждого тендера сколько контрагентов и сколько предоставили КП.
   const fetchTenderProposalCounts = async () => {
@@ -1458,40 +1438,32 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         {(() => {
           const statusActive = currentStatusOptions.includes(activeTab)
           return (
-            <div className="tender-status-menu" ref={statusMenuRef}>
+            <>
               <button
                 type="button"
                 className={`tender-tab tender-tab-status-toggle ${statusActive ? 'active' : ''} ${statusMenuOpen ? 'open' : ''}`}
                 onClick={() => setStatusMenuOpen(o => !o)}
                 aria-expanded={statusMenuOpen}
-                aria-haspopup="true"
                 title="Развернуть/свернуть статусы тендеров"
               >
                 Статусы тендеров
                 <span className="tender-tab-chevron" aria-hidden>▸</span>
               </button>
-              {statusMenuOpen && (
-                <div className="tender-status-dropdown" role="menu">
-                  {currentStatusOptions.map(s => (
-                    <button
-                      key={s}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={activeTab === s}
-                      className={`tender-status-option ${activeTab === s ? 'active' : ''}`}
-                      onClick={() => { setActiveTab(s); setStatusMenuOpen(false) }}
-                    >
-                      <span className="tender-status-option-label">{s}</span>
-                      {statusCounts[s] > 0 && (
-                        <span className={`tender-tab-count ${isCompletedStatus(s) ? 'completed' : ''}`}>
-                          {statusCounts[s]}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+              {statusMenuOpen && currentStatusOptions.map(s => (
+                <button
+                  key={s}
+                  className={`tender-tab tender-tab-status ${activeTab === s ? 'active' : ''}`}
+                  onClick={() => setActiveTab(s)}
+                >
+                  {s}
+                  {statusCounts[s] > 0 && (
+                    <span className={`tender-tab-count ${isCompletedStatus(s) ? 'completed' : ''}`}>
+                      {statusCounts[s]}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </>
           )
         })()}
         {!isMaterialsView && (
