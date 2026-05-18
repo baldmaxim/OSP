@@ -913,11 +913,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       window.confirm(`Переместить тендер "${objectName}" в «Удалённые»? Его можно будет восстановить.`)
     ) {
       try {
+        const delAt = new Date().toISOString()
         const { error } = await supabase
           .from('tenders')
-          .update({ deleted_at: new Date().toISOString() })
+          .update({ deleted_at: delAt })
           .eq('id', id)
         if (error) throw error
+        // task 267: дочерние тендеры на материалы тоже уходят в «Удалённые»
+        const { error: childErr } = await supabase
+          .from('tenders')
+          .update({ deleted_at: delAt })
+          .eq('parent_tender_id', id)
+        if (childErr) console.error('Не удалось удалить связанный тендер на материалы:', childErr.message)
         fetchTenders()
       } catch (error) {
         console.error('Ошибка удаления тендера:', error.message)
@@ -934,6 +941,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         .update({ deleted_at: null })
         .eq('id', id)
       if (error) throw error
+      // task 267: восстанавливаем и связанный тендер на материалы
+      const { error: childErr } = await supabase
+        .from('tenders')
+        .update({ deleted_at: null })
+        .eq('parent_tender_id', id)
+      if (childErr) console.error('Не удалось восстановить связанный тендер на материалы:', childErr.message)
       fetchTenders()
     } catch (err) {
       console.error('Ошибка восстановления тендера:', err.message)

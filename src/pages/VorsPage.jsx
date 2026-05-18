@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import './CostPlansPage.css'
@@ -13,7 +13,6 @@ const STATUS_LABELS = {
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
 
 function VorsPage() {
-  const navigate = useNavigate()
   const { scopedObjectId, userProfile } = useRole()
 
   // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
@@ -67,11 +66,10 @@ function VorsPage() {
         .select(`
           id, object_id, status, tender_type, vor_status, vor_link,
           vor_responsible_id, vor_start_date, vor_end_date,
-          start_date, end_date, work_description,
+          start_date, end_date, work_description, deleted_at,
           objects(name, status),
           vor_responsible:contacts!vor_responsible_id(id, full_name, position)
         `)
-        .is('deleted_at', null)
         .order('start_date', { ascending: false })
 
       if (error) throw error
@@ -224,11 +222,16 @@ function VorsPage() {
     )
   }
 
+  // task 267: удалённые тендеры — в отдельной вкладке «Удалённые»
+  const deletedRows = filtered.filter(t => t.deleted_at)
+  const liveRows = filtered.filter(t => !t.deleted_at)
+
   // task 241: разбивка по статусам ВОР (не начат / в работе / завершён)
-  const notStarted = filtered.filter(t => (t.vor_status || 'not_started') === 'not_started')
-  const inProgress = filtered.filter(t => t.vor_status === 'in_progress')
-  const completed = filtered.filter(t => t.vor_status === 'completed')
-  const visible = activeTab === 'all' ? filtered
+  const notStarted = liveRows.filter(t => (t.vor_status || 'not_started') === 'not_started')
+  const inProgress = liveRows.filter(t => t.vor_status === 'in_progress')
+  const completed = liveRows.filter(t => t.vor_status === 'completed')
+  const visible = activeTab === 'deleted' ? deletedRows
+    : activeTab === 'all' ? liveRows
     : activeTab === 'completed' ? completed
     : activeTab === 'in_progress' ? inProgress
     : notStarted
@@ -248,7 +251,7 @@ function VorsPage() {
           onClick={() => setActiveTab('all')}
         >
           Все ВОРы и РД
-          <span className="tab-count">{filtered.length}</span>
+          <span className="tab-count">{liveRows.length}</span>
         </button>
         <button
           type="button"
@@ -285,6 +288,14 @@ function VorsPage() {
             </button>
           </>
         )}
+        {/* task 267: удалённые ВОРы (тендер удалён → сюда) */}
+        <button
+          className={`tab ${activeTab === 'deleted' ? 'active' : ''}`}
+          onClick={() => setActiveTab('deleted')}
+        >
+          Удалённые
+          {deletedRows.length > 0 && <span className="tab-count">{deletedRows.length}</span>}
+        </button>
       </div>
 
       <div className="cost-plans-toolbar">
@@ -348,22 +359,23 @@ function VorsPage() {
               <th>Срок подготовки ВОР</th>
               <th>ВОРы и РД</th>
               <th style={{ width: '180px' }}>Статус</th>
-              <th className="actions-column">Действия</th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={8} className="no-data">
+                <td colSpan={7} className="no-data">
                   {tenders.length === 0
                     ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
-                    : activeTab === 'completed'
-                      ? 'Завершённых ВОРов нет'
-                      : activeTab === 'in_progress'
-                        ? 'Нет ВОРов в работе'
-                        : activeTab === 'not_started'
-                          ? 'Нет ВОРов со статусом «Не начат»'
-                          : 'Нет ВОРов по выбранному фильтру'}
+                    : activeTab === 'deleted'
+                      ? 'Удалённых ВОРов нет'
+                      : activeTab === 'completed'
+                        ? 'Завершённых ВОРов нет'
+                        : activeTab === 'in_progress'
+                          ? 'Нет ВОРов в работе'
+                          : activeTab === 'not_started'
+                            ? 'Нет ВОРов со статусом «Не начат»'
+                            : 'Нет ВОРов по выбранному фильтру'}
                 </td>
               </tr>
             ) : (
@@ -371,15 +383,28 @@ function VorsPage() {
                 <tr key={t.id}>
                   <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</td>
                   <td>
-                    <button
-                      className="row-link primary"
-                      onClick={() => navigate(`/tenders/${t.id}`)}
-                      title="Открыть тендер"
-                    >
-                      {t.objects?.name || '—'}
-                    </button>
+                    {t.object_id ? (
+                      <Link
+                        to={`/general/objects/${t.object_id}`}
+                        className="row-link primary"
+                        title="Открыть карточку объекта (Ctrl+клик — в новой вкладке)"
+                      >
+                        {t.objects?.name || '—'}
+                      </Link>
+                    ) : (
+                      <span>{t.objects?.name || '—'}</span>
+                    )}
                   </td>
-                  <td className="muted-text">{t.work_description}</td>
+                  <td className="muted-text">
+                    <Link
+                      to={`/tenders/${t.id}`}
+                      className="row-link primary"
+                      title="Открыть тендер (Ctrl+клик — в новой вкладке)"
+                      style={{ color: 'var(--primary-color)', textDecoration: 'underline' }}
+                    >
+                      {t.work_description || '—'}
+                    </Link>
+                  </td>
                   <td>
                     {editingResponsibleId === t.id ? (
                       <select
@@ -479,15 +504,6 @@ function VorsPage() {
                         <option key={s} value={s}>{STATUS_LABELS[s]}</option>
                       ))}
                     </select>
-                  </td>
-                  <td className="actions-cell">
-                    <button
-                      className="btn-secondary btn-small"
-                      onClick={() => navigate(`/tenders/${t.id}`)}
-                      title="Открыть тендер"
-                    >
-                      Тендер
-                    </button>
                   </td>
                 </tr>
               ))

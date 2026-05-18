@@ -76,11 +76,10 @@ function CostPlansPage() {
           id, object_id, status, tender_type, cost_plan_status, cost_plan_link,
           cost_plan_responsible_id, cost_plan_start_date, cost_plan_end_date,
           start_date, end_date, tender_start_date, tender_end_date,
-          work_description, cost_plan_notes,
+          work_description, cost_plan_notes, deleted_at,
           objects(name, status),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name, position)
         `)
-        .is('deleted_at', null)
         .order('start_date', { ascending: false })
 
       if (error) throw error
@@ -299,12 +298,17 @@ function CostPlansPage() {
     })
   }
 
+  // task 267: удалённые тендеры — в отдельной вкладке «Удалённые»
+  const deletedRows = filtered.filter(t => t.deleted_at)
+  const liveRows = filtered.filter(t => !t.deleted_at)
+
   // Разделение по табам (task 210: «Не начат» / «В работе» / «Завершено»)
   // task 208: «Не требуется» относится к «Завершено»
-  const notStarted = filtered.filter(t => (t.cost_plan_status || 'not_started') === 'not_started')
-  const inWork = filtered.filter(t => t.cost_plan_status === 'in_progress')
-  const completed = filtered.filter(t => DONE_STATUSES.includes(t.cost_plan_status))
-  const visible = activeTab === 'all' ? filtered
+  const notStarted = liveRows.filter(t => (t.cost_plan_status || 'not_started') === 'not_started')
+  const inWork = liveRows.filter(t => t.cost_plan_status === 'in_progress')
+  const completed = liveRows.filter(t => DONE_STATUSES.includes(t.cost_plan_status))
+  const visible = activeTab === 'deleted' ? deletedRows
+    : activeTab === 'all' ? liveRows
     : activeTab === 'completed' ? completed
     : activeTab === 'in_work' ? inWork
     : notStarted
@@ -324,7 +328,7 @@ function CostPlansPage() {
           onClick={() => setActiveTab('all')}
         >
           Все планы затрат
-          <span className="tab-count">{filtered.length}</span>
+          <span className="tab-count">{liveRows.length}</span>
         </button>
         <button
           type="button"
@@ -361,6 +365,14 @@ function CostPlansPage() {
             </button>
           </>
         )}
+        {/* task 267: удалённые планы затрат (тендер удалён → сюда) */}
+        <button
+          className={`tab ${activeTab === 'deleted' ? 'active' : ''}`}
+          onClick={() => setActiveTab('deleted')}
+        >
+          Удалённые
+          {deletedRows.length > 0 && <span className="tab-count">{deletedRows.length}</span>}
+        </button>
       </div>
 
       <div className="cost-plans-toolbar">
@@ -444,13 +456,15 @@ function CostPlansPage() {
                 <td colSpan={10} className="no-data">
                   {tenders.length === 0
                     ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
-                    : activeTab === 'all'
-                      ? 'Нет планов затрат'
-                      : activeTab === 'completed'
-                        ? 'Завершённых планов затрат нет'
-                        : activeTab === 'in_work'
-                          ? 'Нет планов затрат в работе'
-                          : 'Нет планов затрат со статусом «Не начат»'}
+                    : activeTab === 'deleted'
+                      ? 'Удалённых планов затрат нет'
+                      : activeTab === 'all'
+                        ? 'Нет планов затрат'
+                        : activeTab === 'completed'
+                          ? 'Завершённых планов затрат нет'
+                          : activeTab === 'in_work'
+                            ? 'Нет планов затрат в работе'
+                            : 'Нет планов затрат со статусом «Не начат»'}
                 </td>
               </tr>
             ) : (
