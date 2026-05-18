@@ -692,16 +692,29 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           })
         }
 
-        // task 223a: описание работ основного тендера взаимосвязано с дочерним
-        // тендером на материалы — синхронизируем при изменении.
-        if (editingTender.tender_type !== 'materials'
-          && (editingTender.work_description || '') !== (updatePayload.work_description || '')) {
-          const { error: childErr } = await supabase
+        // task 223a / 226: описание работ основного тендера взаимосвязано с дочерним
+        // тендером на материалы — синхронизируем при любом изменении.
+        const descChanged = (editingTender.work_description || '') !== (updatePayload.work_description || '')
+        if (editingTender.tender_type !== 'materials' && descChanged) {
+          const newDesc = updatePayload.work_description
+          // Основной путь: дочерние тендеры на материалы по parent_tender_id.
+          const { data: syncedChildren, error: childErr } = await supabase
             .from('tenders')
-            .update({ work_description: updatePayload.work_description })
+            .update({ work_description: newDesc })
             .eq('parent_tender_id', editingTender.id)
+            .select('id')
           if (childErr) {
             console.error('Не удалось синхронизировать описание работ в тендере на материалы:', childErr.message)
+          } else if ((!syncedChildren || syncedChildren.length === 0) && editingTender.materials_tender?.id) {
+            // Подстраховка: если по parent_tender_id ничего не нашлось, но связанный
+            // тендер на материалы был подгружен — обновляем его напрямую по id.
+            const { error: fbErr } = await supabase
+              .from('tenders')
+              .update({ work_description: newDesc })
+              .eq('id', editingTender.materials_tender.id)
+            if (fbErr) {
+              console.error('Не удалось синхронизировать описание работ (fallback по id):', fbErr.message)
+            }
           }
         }
       } else {
@@ -1545,8 +1558,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     №{sortIndicator('public_tender_number')}
                   </th>
                   <th style={{ width: '130px', textAlign: 'center' }}>Объект</th>
-                  <th style={{ width: '150px', textAlign: 'center' }}>Описание работ</th>
-                  <th style={{ width: '150px' }}>Основной<br />тендер</th>
+                  <th style={{ width: '170px', textAlign: 'center' }}>Описание работ</th>
                   <th style={{ width: '160px' }}>Ответственный</th>
                   <th
                     className="sortable-th"
@@ -1564,7 +1576,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <tbody>
                 {sortedTenders.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="no-data">
+                    <td colSpan={8} className="no-data">
                       {activeTab === 'deleted'
                         ? 'В корзине нет тендеров на материалы'
                         : activeTab === 'all'
@@ -1588,30 +1600,28 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         </button>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <button
-                          onClick={() => navigate(`/tenders/${tender.id}`)}
-                          className="row-link muted"
-                          title="Открыть тендер"
-                          style={{ fontSize: '0.75rem', textAlign: 'center' }}
-                        >
-                          {tender.work_description}
-                        </button>
-                      </td>
-                      <td>
-                        {tender.parent_tender_id ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
                           <button
-                            onClick={() => navigate(`/tenders/${tender.parent_tender_id}`)}
-                            className="row-link primary"
-                            title="Открыть тендер основного строительства"
-                            style={{ fontSize: '0.75rem', textAlign: 'left' }}
+                            onClick={() => navigate(`/tenders/${tender.id}`)}
+                            className="row-link muted"
+                            title="Открыть тендер"
+                            style={{ fontSize: '0.75rem', textAlign: 'center' }}
                           >
-                            {tender.parent_tender?.public_tender_number
-                              ? `Тендер №${tender.parent_tender.public_tender_number}`
-                              : 'Открыть тендер ОС'}
+                            {tender.work_description}
                           </button>
-                        ) : (
-                          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                        )}
+                          {tender.parent_tender_id && (
+                            <button
+                              onClick={() => navigate(`/tenders/${tender.parent_tender_id}`)}
+                              className="row-link primary"
+                              title="Открыть тендер основного строительства"
+                              style={{ fontSize: '0.6875rem', textAlign: 'center' }}
+                            >
+                              {tender.parent_tender?.public_tender_number
+                                ? `↗ Тендер №${tender.parent_tender.public_tender_number}`
+                                : '↗ Тендер ОС'}
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td>
                         {editingResponsibleTenderId === tender.id ? (

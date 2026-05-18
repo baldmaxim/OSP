@@ -432,17 +432,19 @@ function CostPlansPage() {
               visible.map((t, idx) => (
                 <tr key={t.id}>
                   <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</td>
-                  <td style={{ width: '150px', maxWidth: '150px' }}>
+                  <td style={{ width: '150px', maxWidth: '150px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                    {t.objects?.name || '—'}
+                  </td>
+                  <td className="muted-text">
                     <button
                       className="row-link primary"
                       onClick={() => navigate(`/tenders/${t.id}`)}
                       title="Открыть тендер"
                       style={{ whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word' }}
                     >
-                      {t.objects?.name || '—'}
+                      {t.work_description || '—'}
                     </button>
                   </td>
-                  <td className="muted-text">{t.work_description}</td>
                   <td>
                     {editingResponsibleId === t.id ? (
                       <select
