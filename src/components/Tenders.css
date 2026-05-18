@@ -512,17 +512,20 @@
 /* Tender Tabs */
 .tender-tabs {
   display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   gap: 0;
   border-bottom: 2px solid var(--border-color);
   background-color: var(--bg-tertiary);
 }
 
+/* task 238: вкладки в одну строку — компактнее, без переноса */
 .tender-tab {
-  padding: 1rem 2rem;
+  padding: 0.7rem 1.1rem;
   border: none;
   background: transparent;
   color: var(--text-tertiary);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
@@ -530,7 +533,9 @@
   margin-bottom: -2px;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tender-tab:hover {
@@ -592,9 +597,15 @@
 /* Встроенные вкладки статусов — компактнее обычных и на лёгком фоне,
    чтобы раскрытая вправо группа читалась как единое целое и не была громоздкой */
 .tender-tab.tender-tab-status {
-  padding: 0.6rem 1.05rem;
-  font-size: 0.85rem;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.78rem;
   background: var(--bg-secondary);
+}
+
+.tender-tab.tender-tab-status .tender-tab-count {
+  min-width: 1.15rem;
+  height: 1.15rem;
+  font-size: 0.66rem;
 }
 
 .tender-tab.tender-tab-status:hover {

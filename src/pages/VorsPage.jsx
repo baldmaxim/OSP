@@ -39,6 +39,8 @@ function VorsPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('in_work')
   const [responsibleFilter, setResponsibleFilter] = useState('')
+  const [objectFilter, setObjectFilter] = useState('') // task 239: фильтр по объектам
+  const [searchQuery, setSearchQuery] = useState('') // task 239: поиск
   const [allContacts, setAllContacts] = useState([])
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
 
@@ -197,9 +199,28 @@ function VorsPage() {
   const responsibles = Array.from(responsibleMap.values())
     .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '', 'ru'))
 
-  const filtered = responsibleFilter
-    ? tenders.filter(t => t.vor_responsible?.id === responsibleFilter)
-    : tenders
+  // task 239: уникальные объекты для фильтра
+  const objectMap = new Map()
+  for (const t of tenders) {
+    if (t.object_id && !objectMap.has(t.object_id)) {
+      objectMap.set(t.object_id, { id: t.object_id, name: t.objects?.name || '—' })
+    }
+  }
+  const objectsList = Array.from(objectMap.values())
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
+
+  // task 239: фильтрация по ответственному, объекту и поиску
+  let filtered = tenders
+  if (responsibleFilter) filtered = filtered.filter(t => t.vor_responsible?.id === responsibleFilter)
+  if (objectFilter) filtered = filtered.filter(t => t.object_id === objectFilter)
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase()
+    filtered = filtered.filter(t =>
+      (t.objects?.name || '').toLowerCase().includes(q) ||
+      (t.work_description || '').toLowerCase().includes(q) ||
+      (t.vor_responsible?.full_name || '').toLowerCase().includes(q)
+    )
+  }
 
   const inWork = filtered.filter(t => t.vor_status !== 'completed')
   const completed = filtered.filter(t => t.vor_status === 'completed')
@@ -232,6 +253,28 @@ function VorsPage() {
       </div>
 
       <div className="cost-plans-toolbar">
+        <input
+          type="search"
+          className="cost-plans-search"
+          placeholder="🔍 Поиск по объекту, описанию, ответственному…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <label className="toolbar-label">
+          Объект:
+          <select
+            value={objectFilter}
+            onChange={(e) => setObjectFilter(e.target.value)}
+          >
+            <option value="">Все ({tenders.length})</option>
+            {objectsList.map(o => {
+              const cnt = tenders.filter(t => t.object_id === o.id).length
+              return (
+                <option key={o.id} value={o.id}>{o.name} ({cnt})</option>
+              )
+            })}
+          </select>
+        </label>
         <label className="toolbar-label">
           Ответственный:
           <select
@@ -249,8 +292,13 @@ function VorsPage() {
             })}
           </select>
         </label>
-        {responsibleFilter && (
-          <button className="reset-btn" onClick={() => setResponsibleFilter('')}>Сбросить</button>
+        {(responsibleFilter || objectFilter || searchQuery) && (
+          <button
+            className="reset-btn"
+            onClick={() => { setResponsibleFilter(''); setObjectFilter(''); setSearchQuery('') }}
+          >
+            Сбросить
+          </button>
         )}
       </div>
 
