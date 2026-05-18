@@ -18,6 +18,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [showModal, setShowModal] = useState(false)
   // task 212: 'all' | <status> | 'template' | 'deleted'
   const [activeTab, setActiveTab] = useState('all')
+  // task 232/233: статус-вкладки скрыты под кнопкой «Статусы тендеров»
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [editingTender, setEditingTender] = useState(null)
   const [expandedTenderId, setExpandedTenderId] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState({})
@@ -1433,20 +1435,37 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <span className="tender-tab-count">{allTendersCount}</span>
           )}
         </button>
-        {currentStatusOptions.map(s => (
-          <button
-            key={s}
-            className={`tender-tab ${activeTab === s ? 'active' : ''}`}
-            onClick={() => setActiveTab(s)}
-          >
-            {s}
-            {statusCounts[s] > 0 && (
-              <span className={`tender-tab-count ${isCompletedStatus(s) ? 'completed' : ''}`}>
-                {statusCounts[s]}
-              </span>
-            )}
-          </button>
-        ))}
+        {(() => {
+          const statusActive = currentStatusOptions.includes(activeTab)
+          return (
+            <>
+              <button
+                type="button"
+                className={`tender-tab tender-tab-status-toggle ${statusActive ? 'active' : ''}`}
+                onClick={() => setStatusMenuOpen(o => !o)}
+                aria-expanded={statusMenuOpen}
+                title="Развернуть/свернуть статусы тендеров"
+              >
+                Статусы тендеров
+                <span className="tender-tab-chevron" aria-hidden>{statusMenuOpen ? '▾' : '▸'}</span>
+              </button>
+              {statusMenuOpen && currentStatusOptions.map(s => (
+                <button
+                  key={s}
+                  className={`tender-tab tender-tab-status ${activeTab === s ? 'active' : ''}`}
+                  onClick={() => setActiveTab(s)}
+                >
+                  {s}
+                  {statusCounts[s] > 0 && (
+                    <span className={`tender-tab-count ${isCompletedStatus(s) ? 'completed' : ''}`}>
+                      {statusCounts[s]}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </>
+          )
+        })()}
         {!isMaterialsView && (
           <button
             className={`tender-tab ${activeTab === 'template' ? 'active' : ''}`}

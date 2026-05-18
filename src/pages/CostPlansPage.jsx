@@ -40,7 +40,9 @@ function CostPlansPage() {
   }
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('not_started') // 'not_started' | 'in_work' | 'completed'
+  const [activeTab, setActiveTab] = useState('all') // 'all' | 'not_started' | 'in_work' | 'completed'
+  // task 234: статус-вкладки скрыты под кнопкой «Статусы планов затрат»
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [responsibleFilter, setResponsibleFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('') // task 209
   // task 211: модалка редактирования ссылки на план затрат
@@ -302,7 +304,8 @@ function CostPlansPage() {
   const notStarted = filtered.filter(t => (t.cost_plan_status || 'not_started') === 'not_started')
   const inWork = filtered.filter(t => t.cost_plan_status === 'in_progress')
   const completed = filtered.filter(t => DONE_STATUSES.includes(t.cost_plan_status))
-  const visible = activeTab === 'completed' ? completed
+  const visible = activeTab === 'all' ? filtered
+    : activeTab === 'completed' ? completed
     : activeTab === 'in_work' ? inWork
     : notStarted
 
@@ -317,26 +320,47 @@ function CostPlansPage() {
 
       <div className="cost-plans-tabs">
         <button
-          className={`tab ${activeTab === 'not_started' ? 'active' : ''}`}
-          onClick={() => setActiveTab('not_started')}
+          className={`tab ${activeTab === 'all' ? 'active' : ''}`}
+          onClick={() => setActiveTab('all')}
         >
-          Не начат
-          <span className="tab-count">{notStarted.length}</span>
+          Все планы затрат
+          <span className="tab-count">{filtered.length}</span>
         </button>
         <button
-          className={`tab ${activeTab === 'in_work' ? 'active' : ''}`}
-          onClick={() => setActiveTab('in_work')}
+          type="button"
+          className={`tab cost-plans-status-toggle ${['not_started', 'in_work', 'completed'].includes(activeTab) ? 'active' : ''}`}
+          onClick={() => setStatusMenuOpen(o => !o)}
+          aria-expanded={statusMenuOpen}
+          title="Развернуть/свернуть статусы планов затрат"
         >
-          В работе
-          <span className="tab-count">{inWork.length}</span>
+          Статусы планов затрат
+          <span className="tab-chevron" aria-hidden>{statusMenuOpen ? '▾' : '▸'}</span>
         </button>
-        <button
-          className={`tab ${activeTab === 'completed' ? 'active' : ''}`}
-          onClick={() => setActiveTab('completed')}
-        >
-          Завершено
-          <span className="tab-count completed">{completed.length}</span>
-        </button>
+        {statusMenuOpen && (
+          <>
+            <button
+              className={`tab ${activeTab === 'not_started' ? 'active' : ''}`}
+              onClick={() => setActiveTab('not_started')}
+            >
+              Не начат
+              <span className="tab-count">{notStarted.length}</span>
+            </button>
+            <button
+              className={`tab ${activeTab === 'in_work' ? 'active' : ''}`}
+              onClick={() => setActiveTab('in_work')}
+            >
+              В работе
+              <span className="tab-count">{inWork.length}</span>
+            </button>
+            <button
+              className={`tab ${activeTab === 'completed' ? 'active' : ''}`}
+              onClick={() => setActiveTab('completed')}
+            >
+              Завершено
+              <span className="tab-count completed">{completed.length}</span>
+            </button>
+          </>
+        )}
       </div>
 
       <div className="cost-plans-toolbar">
@@ -420,11 +444,13 @@ function CostPlansPage() {
                 <td colSpan={10} className="no-data">
                   {tenders.length === 0
                     ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
-                    : activeTab === 'completed'
-                      ? 'Завершённых планов затрат нет'
-                      : activeTab === 'in_work'
-                        ? 'Нет планов затрат в работе'
-                        : 'Нет планов затрат со статусом «Не начат»'}
+                    : activeTab === 'all'
+                      ? 'Нет планов затрат'
+                      : activeTab === 'completed'
+                        ? 'Завершённых планов затрат нет'
+                        : activeTab === 'in_work'
+                          ? 'Нет планов затрат в работе'
+                          : 'Нет планов затрат со статусом «Не начат»'}
                 </td>
               </tr>
             ) : (
