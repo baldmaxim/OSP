@@ -1417,17 +1417,19 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <span>Шаблон письма</span>
             </button>
           )}
-          <button
-            type="button"
-            className={`btn-view-toggle ${compactView ? 'active' : ''}`}
-            onClick={() => setCompactView(v => !v)}
-            title={compactView
-              ? 'Показать все столбцы'
-              : 'Скрыть столбцы: ВОРы и РД, План затрат, Тендер на материалы, Сводная КП'}
-          >
-            <span aria-hidden style={{ fontSize: '0.875rem' }}>{compactView ? '⊞' : '⊟'}</span>
-            <span>{compactView ? 'Все столбцы' : 'Компактный вид'}</span>
-          </button>
+          {!isMaterialsView && (
+            <button
+              type="button"
+              className={`btn-view-toggle ${compactView ? 'active' : ''}`}
+              onClick={() => setCompactView(v => !v)}
+              title={compactView
+                ? 'Показать все столбцы'
+                : 'Скрыть столбцы: ВОРы и РД, План затрат, Тендер на материалы, Сводная КП'}
+            >
+              <span aria-hidden style={{ fontSize: '0.875rem' }}>{compactView ? '⊞' : '⊟'}</span>
+              <span>{compactView ? 'Все столбцы' : 'Компактный вид'}</span>
+            </button>
+          )}
           <button className="btn-primary" onClick={handleAddNew}>
             + Добавить тендер
           </button>
@@ -1435,7 +1437,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       </div>
 
       {/* task 212: Вкладки — «Все тендеры» + по каждому статусу + Шаблон + Удалённые */}
-      <div className="tender-tabs">
+      <div className={`tender-tabs${isMaterialsView ? ' tender-tabs--simple' : ''}`}>
         <button
           className={`tender-tab ${activeTab === 'all' ? 'active' : ''}`}
           onClick={() => setActiveTab('all')}

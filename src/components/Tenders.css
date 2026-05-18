@@ -519,6 +519,12 @@
   background-color: var(--bg-tertiary);
 }
 
+/* task 251: в «Тендеры на материалы» вкладок мало — убираем ненужный ползунок */
+.tender-tabs.tender-tabs--simple {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
 /* task 238/240: вкладки в одну строку — компактнее, без переноса и без скролла */
 .tender-tab {
   padding: 0.55rem 0.7rem;

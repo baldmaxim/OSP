@@ -1288,9 +1288,15 @@ function CounterpartiesPage() {
                             {contactsCount > 0 && contacts.some(c => c.email) ? (
                               <div className="contacts-stack contacts-stack-emails">
                                 {contacts.map((c) => (
-                                  c.email
-                                    ? <a key={c.id} href={`mailto:${c.email}`} className="contact-link">{c.email}</a>
-                                    : <span key={c.id} className="empty-cell">--</span>
+                                  c.email ? (
+                                    <div key={c.id} className="phone-cell">
+                                      {c.email.split(';').map((em, i) => (
+                                        em.trim() && <a key={i} href={`mailto:${em.trim()}`} className="contact-link">{em.trim()}</a>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span key={c.id} className="empty-cell">--</span>
+                                  )
                                 ))}
                               </div>
                             ) : <span className="empty-cell">--</span>}
@@ -1794,18 +1800,41 @@ function CounterpartiesPage() {
                     <label style={{ fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' }}>
                       Email
                     </label>
-                    <input
-                      type="email"
-                      value={contactFormData.email}
-                      onChange={(e) =>
-                        setContactFormData({
-                          ...contactFormData,
-                          email: e.target.value,
-                        })
-                      }
-                      placeholder="email@example.com"
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.875rem', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
-                    />
+                    {(contactFormData.email || '').split(';').map((em, emIdx, arr) => (
+                      <div key={emIdx} style={{ display: 'flex', gap: '0.25rem', marginBottom: emIdx < arr.length - 1 ? '0.25rem' : 0 }}>
+                        <input
+                          type="email"
+                          value={em.trim()}
+                          onChange={(e) => {
+                            const emails = (contactFormData.email || '').split(';').map(x => x.trim())
+                            emails[emIdx] = e.target.value
+                            setContactFormData({ ...contactFormData, email: emails.join('; ') })
+                          }}
+                          placeholder="email@example.com"
+                          style={{ flex: 1, padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.875rem', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                        />
+                        {arr.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const emails = (contactFormData.email || '').split(';').map(x => x.trim()).filter((_, i) => i !== emIdx)
+                              setContactFormData({ ...contactFormData, email: emails.join('; ') })
+                            }}
+                            style={{ padding: '0 0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.875rem' }}
+                            title="Удалить email"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setContactFormData({ ...contactFormData, email: (contactFormData.email || '') + '; ' })}
+                      style={{ marginTop: '0.25rem', padding: '0.25rem 0.5rem', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem' }}
+                    >
+                      + Ещё email
+                    </button>
                   </div>
                 </div>
 
@@ -1950,17 +1979,38 @@ function CounterpartiesPage() {
 
                 <div className="form-group full-width">
                   <label>Email</label>
-                  <input
-                    type="email"
-                    value={contactFormData.email}
-                    onChange={(e) =>
-                      setContactFormData({
-                        ...contactFormData,
-                        email: e.target.value,
-                      })
-                    }
-                    placeholder="email@example.com"
-                  />
+                  {(contactFormData.email || '').split(';').map((em, emIdx, arr) => (
+                    <div key={emIdx} style={{ display: 'flex', gap: '0.25rem', marginBottom: emIdx < arr.length - 1 ? '0.25rem' : 0 }}>
+                      <input
+                        type="email"
+                        value={em.trim()}
+                        onChange={(e) => {
+                          const emails = (contactFormData.email || '').split(';').map(x => x.trim())
+                          emails[emIdx] = e.target.value
+                          setContactFormData({ ...contactFormData, email: emails.join('; ') })
+                        }}
+                        placeholder="email@example.com"
+                        style={{ flex: 1 }}
+                      />
+                      {arr.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const emails = (contactFormData.email || '').split(';').map(x => x.trim()).filter((_, i) => i !== emIdx)
+                            setContactFormData({ ...contactFormData, email: emails.join('; ') })
+                          }}
+                          style={{ padding: '0 0.5rem', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer' }}
+                        >×</button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setContactFormData({ ...contactFormData, email: (contactFormData.email || '') + '; ' })}
+                    style={{ marginTop: '0.25rem', padding: '0.25rem 0', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem', textAlign: 'left' }}
+                  >
+                    + Ещё email
+                  </button>
                 </div>
               </div>
 

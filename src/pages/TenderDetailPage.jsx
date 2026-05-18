@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import '../components/TenderDetail.css'
@@ -46,7 +46,7 @@ function TenderDetailPage() {
     try {
       const { data: tenderData, error: tenderError } = await supabase
         .from('tenders')
-        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, materials_proposal_deadline, materials_proposal_link)')
+        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, materials_proposal_deadline, materials_proposal_link, responsible_contact:contacts!responsible_contact_id(id, full_name))')
         .eq('id', tenderId)
         .single()
 
@@ -515,53 +515,58 @@ function TenderDetailPage() {
             </div>
           )}
 
-          {/* task 245: статусы / сроки / ответственные по этапам (основное строительство) */}
+          {/* task 245/249/250: этапы — статус / срок (+ответственный) / ссылка по строкам */}
           {isMainConstruction && (
             <>
               <div className="info-item">
                 <span className="info-label">ВОРы и РД</span>
-                <span className="info-value">
-                  {vorPhaseText}
-                  {(tender.vor_start_date || tender.vor_end_date) && (
-                    <span className="info-sub"> · {formatDateRangeOrDash(tender.vor_start_date, tender.vor_end_date)}</span>
-                  )}
-                  {tender.vor_responsible?.full_name && (
-                    <span className="info-sub"> · {tender.vor_responsible.full_name}</span>
+                <span className="info-value info-stack">
+                  <span>{vorPhaseText}</span>
+                  {((tender.vor_start_date || tender.vor_end_date) || tender.vor_responsible?.full_name) && (
+                    <span className="info-sub">
+                      {formatDateRangeOrDash(tender.vor_start_date, tender.vor_end_date)}
+                      {tender.vor_responsible?.full_name && ` · ${tender.vor_responsible.full_name}`}
+                    </span>
                   )}
                   {tender.vor_link && (
-                    <> · <a href={tender.vor_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть</a></>
+                    <a href={tender.vor_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть документ</a>
                   )}
                 </span>
               </div>
               <div className="info-item">
                 <span className="info-label">План затрат</span>
-                <span className="info-value">
-                  {costPlanPhaseText}
-                  {(tender.cost_plan_start_date || tender.cost_plan_end_date) && (
-                    <span className="info-sub"> · {formatDateRangeOrDash(tender.cost_plan_start_date, tender.cost_plan_end_date)}</span>
-                  )}
-                  {tender.cost_plan_responsible?.full_name && (
-                    <span className="info-sub"> · {tender.cost_plan_responsible.full_name}</span>
+                <span className="info-value info-stack">
+                  <span>{costPlanPhaseText}</span>
+                  {((tender.cost_plan_start_date || tender.cost_plan_end_date) || tender.cost_plan_responsible?.full_name) && (
+                    <span className="info-sub">
+                      {formatDateRangeOrDash(tender.cost_plan_start_date, tender.cost_plan_end_date)}
+                      {tender.cost_plan_responsible?.full_name && ` · ${tender.cost_plan_responsible.full_name}`}
+                    </span>
                   )}
                   {tender.cost_plan_link && (
-                    <> · <a href={tender.cost_plan_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть</a></>
+                    <a href={tender.cost_plan_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть документ</a>
                   )}
                 </span>
               </div>
               <div className="info-item">
                 <span className="info-label">Тендер на материалы</span>
-                <span className="info-value">
+                <span className="info-value info-stack">
                   {tender.materials_tender ? (
                     <>
-                      {tender.materials_tender.status || 'Не начат'}
-                      {tender.materials_tender.materials_proposal_deadline && (
-                        <span className="info-sub"> · срок КП {formatDate(tender.materials_tender.materials_proposal_deadline)}</span>
+                      <span>{tender.materials_tender.status || 'Не начат'}</span>
+                      {(tender.materials_tender.materials_proposal_deadline || tender.materials_tender.responsible_contact?.full_name) && (
+                        <span className="info-sub">
+                          {tender.materials_tender.materials_proposal_deadline
+                            ? `срок КП: ${formatDate(tender.materials_tender.materials_proposal_deadline)}`
+                            : ''}
+                          {tender.materials_tender.responsible_contact?.full_name
+                            ? `${tender.materials_tender.materials_proposal_deadline ? ' · ' : ''}${tender.materials_tender.responsible_contact.full_name}`
+                            : ''}
+                        </span>
                       )}
                       {tender.materials_tender.materials_proposal_link && (
-                        <> · <a href={tender.materials_tender.materials_proposal_link} target="_blank" rel="noopener noreferrer" className="info-link">КП</a></>
+                        <a href={tender.materials_tender.materials_proposal_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть КП</a>
                       )}
-                      {' · '}
-                      <Link to={`/tenders/${tender.materials_tender.id}`} className="info-link">Открыть тендер</Link>
                     </>
                   ) : (
                     <span className="info-sub">— не создан</span>
@@ -570,7 +575,7 @@ function TenderDetailPage() {
               </div>
               <div className="info-item">
                 <span className="info-label">Сводная КП</span>
-                <span className="info-value">
+                <span className="info-value info-stack">
                   {tender.summary_proposal_link
                     ? <a href={tender.summary_proposal_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть документ</a>
                     : <span className="info-sub">—</span>}
