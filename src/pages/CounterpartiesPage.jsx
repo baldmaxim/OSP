@@ -1381,11 +1381,11 @@ function CounterpartiesPage() {
                                   <table className="tender-history-table">
                                     <thead>
                                       <tr>
-                                        <th style={{ width: '50px' }}>№ п/п</th>
+                                        <th>№ п/п</th>
                                         <th>Объект</th>
                                         <th>Описание работ</th>
-                                        <th style={{ width: '160px' }}>Статус</th>
-                                        <th style={{ width: '200px' }}>Сроки тендерной процедуры</th>
+                                        <th>Статус</th>
+                                        <th>Сроки тендерной процедуры</th>
                                       </tr>
                                     </thead>
                                     <tbody>

@@ -1893,13 +1893,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
-                        <Link
-                          to={`/tenders/${tender.id}`}
-                          className="row-link primary"
-                          title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
-                        >
-                          {tender.objects?.name || '-'}
-                        </Link>
+                        {tender.object_id ? (
+                          <Link
+                            to={`/general/objects/${tender.object_id}`}
+                            className="row-link primary"
+                            title="Открыть карточку объекта (Ctrl+клик или средняя кнопка — в новой вкладке)"
+                          >
+                            {tender.objects?.name || '-'}
+                          </Link>
+                        ) : (
+                          <span className="row-link primary" style={{ cursor: 'default' }}>{tender.objects?.name || '-'}</span>
+                        )}
                         {tender.objects?.address && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', wordBreak: 'break-word' }}>
                             {tender.objects.address}
@@ -1923,8 +1927,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     <td>
                       <Link
                         to={`/tenders/${tender.id}`}
-                        className="row-link muted"
+                        className="row-link primary"
                         title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
+                        style={{ color: 'var(--primary-color)', textDecoration: 'underline' }}
                       >
                         {tender.work_description}
                       </Link>

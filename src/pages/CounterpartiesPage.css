@@ -1326,8 +1326,10 @@
   text-align: center;
 }
 
+/* task 255: одинаковая ширина всех столбцов + вертикальные разделители */
 .tender-history-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.8125rem;
   background: var(--bg-secondary);
@@ -1345,13 +1347,24 @@
   color: var(--text-tertiary);
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
-  white-space: nowrap;
 }
 
 .tender-history-table tbody td {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border-color);
   vertical-align: top;
+  word-break: break-word;
+}
+
+/* вертикальные линии между столбцами */
+.tender-history-table th,
+.tender-history-table td {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+
+.tender-history-table th:last-child,
+.tender-history-table td:last-child {
+  border-right: none;
 }
 
 .tender-history-table tbody tr:last-child td {
@@ -1367,7 +1380,6 @@
 
 .tender-history-dates {
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
   color: var(--text-secondary);
 }
 
