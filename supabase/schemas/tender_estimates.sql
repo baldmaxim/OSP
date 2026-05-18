@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS tender_estimate_items (
   work_volume DECIMAL(15, 4),                     -- Объем по виду работ
   material_consumption DECIMAL(15, 4),            -- Общий расход по материалу
   is_section BOOLEAN DEFAULT FALSE,               -- Признак заголовка раздела
+  outline_level INTEGER NOT NULL DEFAULT 0,       -- Уровень группировки из Excel (ws.!rows[i].level)
   original_row_number VARCHAR(20),                -- Оригинальный номер строки из Excel
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

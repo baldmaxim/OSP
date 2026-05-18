@@ -3180,3 +3180,11 @@
 .tender-detail-page .estimate-section-row td {
   cursor: default;
 }
+
+/* task 263: итоговая строка в Материалах/Работах */
+.tender-detail-page .estimate-table tfoot .estimate-total-row td {
+  background: var(--bg-tertiary);
+  font-weight: 700;
+  color: var(--text-primary);
+  border-top: 2px solid var(--border-color);
+}

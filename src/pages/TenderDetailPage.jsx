@@ -5,10 +5,10 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import '../components/TenderDetail.css'
 
-// task 259: таблица сметы (предпросмотр распознанного и сохранённая смета)
+// task 261: числа выводим с округлением до сотых
 const fmtNum = (v) => (v === null || v === undefined || v === '')
   ? '—'
-  : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 4 }).format(v)
+  : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(v)
 
 // task 260: КОД «Р»/«Р-» → работы, «мат.»/иное → материалы (как в Анализ КП/БСМ)
 const isWorkItem = (it) => {
@@ -18,9 +18,76 @@ const isWorkItem = (it) => {
 
 const sectionKey = (it, idx) => (it.id != null ? `id:${it.id}` : `idx:${idx}`)
 
-// task 260: исходная смета с группировкой/сворачиванием разделов
+// task 262: уровень группировки строки. Если в Excel была структура (outline)
+// — используем её; иначе откатываемся на эвристику (раздел=0, позиция=1).
+function makeLevelOf(items) {
+  const maxLvl = items.reduce((m, x) => Math.max(m, x.outline_level || 0), 0)
+  if (maxLvl > 0) return (it) => it.outline_level || 0
+  return (it) => (it.is_section ? 0 : 1)
+}
+
+// Ключи всех «свёртываемых» строк-заголовков (у кого есть вложенные строки глубже)
+function getHeaderKeys(items) {
+  const lvlOf = makeLevelOf(items)
+  const keys = []
+  for (let i = 0; i < items.length; i++) {
+    const next = items[i + 1]
+    if (next && lvlOf(next) > lvlOf(items[i])) keys.push(sectionKey(items[i], i))
+  }
+  return keys
+}
+
+// task 260/262: смета с многоуровневой группировкой/сворачиванием (как в Excel)
 function EstimateTable({ items, collapsedSections, onToggleSection }) {
-  let curSection = null
+  const lvlOf = makeLevelOf(items)
+  const collapseStack = [] // активные свёрнутые заголовки: их уровни
+  const rendered = []
+  for (let idx = 0; idx < items.length; idx++) {
+    const it = items[idx]
+    const L = lvlOf(it)
+    while (collapseStack.length && L <= collapseStack[collapseStack.length - 1]) collapseStack.pop()
+    const hidden = collapseStack.length > 0
+    const next = items[idx + 1]
+    const isHeader = !!next && lvlOf(next) > L
+    const key = sectionKey(it, idx)
+    const collapsed = collapsedSections.has(key)
+
+    if (!hidden) {
+      const indent = { paddingLeft: `${0.625 + L * 1.1}rem` }
+      if (it.is_section || isHeader) {
+        rendered.push(
+          <tr key={it.id || idx} className="estimate-section-row">
+            <td className="estimate-num">
+              {isHeader && (
+                <button
+                  type="button"
+                  className="estimate-group-toggle"
+                  onClick={() => onToggleSection(key)}
+                  title={collapsed ? 'Развернуть' : 'Свернуть'}
+                  aria-expanded={!collapsed}
+                >
+                  {collapsed ? '+' : '−'}
+                </button>
+              )}
+            </td>
+            <td colSpan={5} style={indent}>{it.cost_name}</td>
+          </tr>
+        )
+      } else {
+        rendered.push(
+          <tr key={it.id || idx}>
+            <td className="estimate-num">{it.row_number}</td>
+            <td>{it.code || '—'}</td>
+            <td style={indent}>{it.cost_name}</td>
+            <td>{it.unit || '—'}</td>
+            <td className="estimate-num-cell">{fmtNum(it.work_volume)}</td>
+            <td className="estimate-num-cell">{fmtNum(it.material_consumption)}</td>
+          </tr>
+        )
+      }
+    }
+    if (isHeader && collapsed && !hidden) collapseStack.push(L)
+  }
   return (
     <div className="table-container">
       <table className="data-table estimate-table">
@@ -34,42 +101,7 @@ function EstimateTable({ items, collapsedSections, onToggleSection }) {
             <th style={{ width: '130px' }}>Общий расход</th>
           </tr>
         </thead>
-        <tbody>
-          {items.map((it, idx) => {
-            if (it.is_section) {
-              const key = sectionKey(it, idx)
-              curSection = key
-              const collapsed = collapsedSections.has(key)
-              return (
-                <tr key={it.id || idx} className="estimate-section-row">
-                  <td className="estimate-num">
-                    <button
-                      type="button"
-                      className="estimate-group-toggle"
-                      onClick={() => onToggleSection(key)}
-                      title={collapsed ? 'Развернуть раздел' : 'Свернуть раздел'}
-                      aria-expanded={!collapsed}
-                    >
-                      {collapsed ? '+' : '−'}
-                    </button>
-                  </td>
-                  <td colSpan={5}>{it.cost_name}</td>
-                </tr>
-              )
-            }
-            if (curSection && collapsedSections.has(curSection)) return null
-            return (
-              <tr key={it.id || idx}>
-                <td className="estimate-num">{it.row_number}</td>
-                <td>{it.code || '—'}</td>
-                <td>{it.cost_name}</td>
-                <td>{it.unit || '—'}</td>
-                <td className="estimate-num-cell">{fmtNum(it.work_volume)}</td>
-                <td className="estimate-num-cell">{fmtNum(it.material_consumption)}</td>
-              </tr>
-            )
-          })}
-        </tbody>
+        <tbody>{rendered}</tbody>
       </table>
     </div>
   )
@@ -94,6 +126,8 @@ function AggregateTable({ items, type }) {
     map.set(key, cur)
   }
   const rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  const grandTotal = rows.reduce((s, r) => s + r.total, 0)
+  const grandCount = rows.reduce((s, r) => s + r.count, 0)
   if (rows.length === 0) {
     return (
       <div className="empty-state">
@@ -125,6 +159,13 @@ function AggregateTable({ items, type }) {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="estimate-total-row">
+            <td colSpan={3}>Итого{type === 'works' ? ' по работам' : ' по материалам'}</td>
+            <td className="estimate-num">{grandCount}</td>
+            <td className="estimate-num-cell">{fmtNum(grandTotal)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   )
@@ -200,14 +241,15 @@ function TenderDetailPage() {
   // Очистка числовых значений из Excel (валюта, пробелы, запятая → точка)
   const cleanNumericValue = (value) => {
     if (value === null || value === undefined || value === '') return null
-    if (typeof value === 'number') return value
+    if (typeof value === 'number') return Math.round(value * 100) / 100
     let str = String(value)
     str = str.replace(/[₽$€¥£]/g, '')
     str = str.replace(/\s/g, '')
     str = str.replace(',', '.')
     str = str.replace(/[^\d.-]/g, '')
     const n = parseFloat(str)
-    return isNaN(n) ? null : n
+    // task 261: округляем до сотых (2 знака после запятой)
+    return isNaN(n) ? null : Math.round(n * 100) / 100
   }
 
   const handleEstimateFileSelect = async (e) => {
@@ -235,6 +277,12 @@ function TenderDetailPage() {
     try {
       const sheet = pendingWorkbook.Sheets[estSelectedSheet || pendingWorkbook.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+      // task 262: уровни группировки (структуры) Excel — ws['!rows'][i].level
+      const rowMeta = sheet['!rows'] || []
+      const levelAt = (i) => {
+        const m = rowMeta[i]
+        return (m && Number.isFinite(m.level)) ? m.level : 0
+      }
       const start = Math.max(0, (parseInt(estStartRow) || 2) - 1)
       const end = estEndRow ? Math.min(rows.length, parseInt(estEndRow) || rows.length) : rows.length
 
@@ -260,6 +308,7 @@ function TenderDetailPage() {
           work_volume: workVolume,
           material_consumption: materialConsumption,
           is_section: isSection,
+          outline_level: levelAt(i),
           original_row_number: String(i + 1),
         })
       }
@@ -289,24 +338,30 @@ function TenderDetailPage() {
         tender_id: tenderId,
         estimate_name: 'Основная смета',
       }))
-      const { error: insErr } = await supabase
+      let { error: insErr } = await supabase
         .from('tender_estimate_items')
         .insert(payload)
+      // Подстраховка: миграция outline_level ещё не применена — сохраняем без него
+      if (insErr && /outline_level/i.test(insErr.message || '')) {
+        const stripped = payload.map(({ outline_level, ...rest }) => rest) // eslint-disable-line no-unused-vars
+        const retry = await supabase.from('tender_estimate_items').insert(stripped)
+        insErr = retry.error
+      }
       if (insErr) throw insErr
       setParsedEstimate(null)
       setPendingWorkbook(null)
       await fetchEstimateItems()
-      alert(`Смета сохранена: ${payload.length} позиций`)
+      alert(`ВОР сохранён: ${payload.length} позиций`)
     } catch (error) {
-      console.error('Ошибка сохранения сметы:', error.message)
-      alert('Ошибка сохранения сметы: ' + error.message)
+      console.error('Ошибка сохранения ВОР:', error.message)
+      alert('Ошибка сохранения ВОР: ' + error.message)
     } finally {
       setEstimateSaving(false)
     }
   }
 
   const handleClearEstimate = async () => {
-    if (!window.confirm('Удалить сохранённую смету тендера?')) return
+    if (!window.confirm('Удалить сохранённый ВОР тендера?')) return
     try {
       const { error } = await supabase
         .from('tender_estimate_items')
@@ -315,15 +370,14 @@ function TenderDetailPage() {
       if (error) throw error
       setEstimateItems([])
     } catch (error) {
-      alert('Ошибка удаления сметы: ' + error.message)
+      alert('Ошибка удаления ВОР: ' + error.message)
     }
   }
 
   // task 260: текущий набор позиций (предпросмотр имеет приоритет над сохранённым)
   const currentEstimate = parsedEstimate || estimateItems
-  const estimateSectionKeys = currentEstimate
-    .map((it, idx) => (it.is_section ? sectionKey(it, idx) : null))
-    .filter(Boolean)
+  // task 262: ключи всех свёртываемых заголовков (учитывает группировку Excel)
+  const estimateSectionKeys = getHeaderKeys(currentEstimate)
 
   const toggleSection = (key) => {
     setCollapsedSections(prev => {
@@ -905,7 +959,7 @@ function TenderDetailPage() {
           className={`tender-tab ${activeTab === 'estimate' ? 'active' : ''}`}
           onClick={() => setActiveTab('estimate')}
         >
-          Смета
+          ВОР
           {estimateItems.length > 0 && <span className="tab-count">{estimateItems.length}</span>}
         </button>
         <button
@@ -930,7 +984,7 @@ function TenderDetailPage() {
         {activeTab === 'estimate' && (
           <div className="estimate-section">
             <div className="section-header">
-              <h3>Смета тендера</h3>
+              <h3>ВОР тендера</h3>
               <div className="section-actions">
                 <label className="btn-primary estimate-import-label">
                   {estimateItems.length > 0 || parsedEstimate ? 'Заменить (импорт Excel)' : 'Импорт из Excel'}
@@ -944,7 +998,7 @@ function TenderDetailPage() {
                 </label>
                 {estimateItems.length > 0 && !parsedEstimate && (
                   <button className="btn-secondary" onClick={handleClearEstimate}>
-                    Удалить смету
+                    Удалить ВОР
                   </button>
                 )}
               </div>
@@ -968,7 +1022,7 @@ function TenderDetailPage() {
                     onClick={handleSaveEstimate}
                     disabled={estimateSaving}
                   >
-                    {estimateSaving ? 'Сохранение…' : 'Сохранить смету в тендер'}
+                    {estimateSaving ? 'Сохранение…' : 'Сохранить ВОР в тендер'}
                   </button>
                 </div>
               </div>
@@ -981,7 +1035,7 @@ function TenderDetailPage() {
                     <button
                       className={`estimate-subtab ${estimateSubTab === 'source' ? 'active' : ''}`}
                       onClick={() => setEstimateSubTab('source')}
-                    >Исходная смета</button>
+                    >Исходный ВОР</button>
                     <button
                       className={`estimate-subtab ${estimateSubTab === 'materials' ? 'active' : ''}`}
                       onClick={() => setEstimateSubTab('materials')}
@@ -994,10 +1048,10 @@ function TenderDetailPage() {
                   {estimateSubTab === 'source' && estimateSectionKeys.length > 0 && (
                     <div className="estimate-collapse-controls">
                       <button className="btn-secondary btn-sm" onClick={collapseAllSections}>
-                        Свернуть все разделы
+                        Свернуть всё
                       </button>
                       <button className="btn-secondary btn-sm" onClick={expandAllSections}>
-                        Развернуть все
+                        Развернуть всё
                       </button>
                     </div>
                   )}
@@ -1019,9 +1073,9 @@ function TenderDetailPage() {
               </>
             ) : (
               <div className="empty-state">
-                <p>Смета ещё не загружена</p>
+                <p>ВОР ещё не загружен</p>
                 <p className="hint">
-                  Нажмите «Импорт из Excel» и загрузите исходную смету.
+                  Нажмите «Импорт из Excel» и загрузите исходный ВОР.
                   Ожидаемые столбцы: A — № п/п, B — КОД, C — Наименование затрат,
                   D — Ед. изм., E — Объём по виду работ, F — Общий расход.
                 </p>
@@ -1511,7 +1565,7 @@ function TenderDetailPage() {
         <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '460px' }}>
             <div className="modal-header">
-              <h3>Импорт сметы</h3>
+              <h3>Импорт ВОР</h3>
               <button
                 className="modal-close"
                 onClick={() => { setShowEstimateModal(false); setPendingWorkbook(null) }}
