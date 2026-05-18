@@ -293,8 +293,7 @@ function TenderDetailPage() {
     if (!file) return
     try {
       const data = new Uint8Array(await file.arrayBuffer())
-      // cellStyles:true — чтобы SheetJS точно заполнил ws['!rows'] (уровни группировки)
-      const workbook = XLSX.read(data, { type: 'array', cellStyles: true })
+      const workbook = XLSX.read(data, { type: 'array' })
       const names = workbook.SheetNames || []
       setPendingWorkbook(workbook)
       setEstSheetNames(names)
@@ -314,20 +313,12 @@ function TenderDetailPage() {
     try {
       const sheet = pendingWorkbook.Sheets[estSelectedSheet || pendingWorkbook.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
-      // task 262/265: уровни группировки (структуры) Excel — ws['!rows'][r].level.
-      // ВАЖНО: !rows индексируется АБСОЛЮТНЫМ номером строки листа, а массив
-      // sheet_to_json начинается с первой строки диапазона !ref — учитываем сдвиг.
+      // task 262: уровни группировки (структуры) Excel — ws['!rows'][i].level
       const rowMeta = sheet['!rows'] || []
-      let baseR = 0
-      try {
-        if (sheet['!ref']) baseR = XLSX.utils.decode_range(sheet['!ref']).s.r
-      } catch { /* noop */ }
       const levelAt = (i) => {
-        const m = rowMeta[baseR + i]
+        const m = rowMeta[i]
         return (m && Number.isFinite(m.level)) ? m.level : 0
       }
-      // Есть ли в листе реальная группировка Excel
-      const sheetHasOutline = rowMeta.some(m => m && Number.isFinite(m.level) && m.level > 0)
       const start = Math.max(0, (parseInt(estStartRow) || 2) - 1)
       const end = estEndRow ? Math.min(rows.length, parseInt(estEndRow) || rows.length) : rows.length
 
@@ -363,14 +354,12 @@ function TenderDetailPage() {
         // Раздел: только наименование, без кода/ед.изм./чисел
         const isSection = !code && !unit && workVolume == null && materialConsumption == null
 
-        // task 265: уровень.
-        // 1) Если в листе есть группировка Excel — берём её для ВСЕХ строк
-        //    (включая заголовки с уровнем 0) — это «переносим всё как в Excel».
-        // 2) Иначе — по иерархической нумерации столбца A (1 / 1.1 / 1.1.1).
-        // 3) Иначе — эвристика раздел(0)/позиция(1).
+        // task 265: уровень = группировка Excel (приоритет), иначе по иерархической
+        // нумерации столбца A (1 / 1.1 / 1.1.1), иначе эвристика раздел/позиция.
+        const exLvl = levelAt(i)
         let lvl
-        if (sheetHasOutline) {
-          lvl = levelAt(i)
+        if (exLvl > 0) {
+          lvl = exLvl
         } else if (isSection) {
           const d = numberDepth(numA)
           lvl = d > 0 ? d - 1 : runSecLvl
