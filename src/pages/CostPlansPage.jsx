@@ -390,7 +390,7 @@ function CostPlansPage() {
           <thead>
             <tr>
               <th style={{ width: '52px' }}>№ п/п</th>
-              <th style={{ minWidth: '220px' }}>Объект</th>
+              <th style={{ width: '150px' }}>Объект</th>
               <th>Описание работ</th>
               <th>Ответственный</th>
               <th
@@ -432,7 +432,7 @@ function CostPlansPage() {
               visible.map((t, idx) => (
                 <tr key={t.id}>
                   <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</td>
-                  <td style={{ minWidth: '220px' }}>
+                  <td style={{ width: '150px', maxWidth: '150px' }}>
                     <button
                       className="row-link primary"
                       onClick={() => navigate(`/tenders/${t.id}`)}

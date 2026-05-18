@@ -199,6 +199,28 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (scopedObjectId) {
         filteredTenders = filteredTenders.filter(t => t.object_id === scopedObjectId)
       }
+
+      // task 223b: для тендеров на материалы подгружаем родительский тендер
+      // основного строительства (отдельным запросом — self-FK неоднозначен в embed).
+      if (isMaterialsView) {
+        const parentIds = [...new Set(filteredTenders.map(t => t.parent_tender_id).filter(Boolean))]
+        if (parentIds.length > 0) {
+          const { data: parents, error: parentsError } = await supabase
+            .from('tenders')
+            .select('id, public_tender_number, work_description, objects(name)')
+            .in('id', parentIds)
+          if (parentsError) {
+            console.error('Не удалось загрузить родительские тендеры:', parentsError.message)
+          } else {
+            const parentMap = new Map((parents || []).map(p => [p.id, p]))
+            filteredTenders = filteredTenders.map(t => ({
+              ...t,
+              parent_tender: t.parent_tender_id ? (parentMap.get(t.parent_tender_id) || null) : null
+            }))
+          }
+        }
+      }
+
       setTenders(filteredTenders)
     } catch (error) {
       console.error('Ошибка загрузки тендеров:', error.message)
@@ -668,6 +690,19 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             newValue: formData.status,
             description: `Статус: ${editingTender.status || '—'} → ${formData.status}`
           })
+        }
+
+        // task 223a: описание работ основного тендера взаимосвязано с дочерним
+        // тендером на материалы — синхронизируем при изменении.
+        if (editingTender.tender_type !== 'materials'
+          && (editingTender.work_description || '') !== (updatePayload.work_description || '')) {
+          const { error: childErr } = await supabase
+            .from('tenders')
+            .update({ work_description: updatePayload.work_description })
+            .eq('parent_tender_id', editingTender.id)
+          if (childErr) {
+            console.error('Не удалось синхронизировать описание работ в тендере на материалы:', childErr.message)
+          }
         }
       } else {
         // Insert new tender — только минимальный набор для заявки от руководителя строительства.
@@ -1509,14 +1544,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   >
                     №{sortIndicator('public_tender_number')}
                   </th>
-                  <th style={{ width: '180px' }}>Объект</th>
-                  <th style={{ width: '150px' }}>Описание работ</th>
+                  <th style={{ width: '130px', textAlign: 'center' }}>Объект</th>
+                  <th style={{ width: '150px', textAlign: 'center' }}>Описание работ</th>
+                  <th style={{ width: '150px' }}>Основной<br />тендер</th>
                   <th style={{ width: '160px' }}>Ответственный</th>
                   <th
                     className="sortable-th"
                     onClick={() => toggleSort('materials_proposal_deadline')}
                     title="Сортировать по сроку"
-                    style={{ width: '150px' }}
+                    style={{ width: '110px', textAlign: 'center' }}
                   >
                     Срок предоставления<br />КП на материалы{sortIndicator('materials_proposal_deadline')}
                   </th>
@@ -1528,7 +1564,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <tbody>
                 {sortedTenders.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="no-data">
+                    <td colSpan={9} className="no-data">
                       {activeTab === 'deleted'
                         ? 'В корзине нет тендеров на материалы'
                         : activeTab === 'all'
@@ -1542,7 +1578,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                         {tender.public_tender_number ?? '—'}
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'center' }}>
                         <button
                           onClick={() => navigate(`/tenders/${tender.id}`)}
                           className="row-link primary"
@@ -1551,15 +1587,31 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           {tender.objects?.name || '-'}
                         </button>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'center' }}>
                         <button
                           onClick={() => navigate(`/tenders/${tender.id}`)}
                           className="row-link muted"
                           title="Открыть тендер"
-                          style={{ fontSize: '0.75rem', textAlign: 'left' }}
+                          style={{ fontSize: '0.75rem', textAlign: 'center' }}
                         >
                           {tender.work_description}
                         </button>
+                      </td>
+                      <td>
+                        {tender.parent_tender_id ? (
+                          <button
+                            onClick={() => navigate(`/tenders/${tender.parent_tender_id}`)}
+                            className="row-link primary"
+                            title="Открыть тендер основного строительства"
+                            style={{ fontSize: '0.75rem', textAlign: 'left' }}
+                          >
+                            {tender.parent_tender?.public_tender_number
+                              ? `Тендер №${tender.parent_tender.public_tender_number}`
+                              : 'Открыть тендер ОС'}
+                          </button>
+                        ) : (
+                          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                        )}
                       </td>
                       <td>
                         {editingResponsibleTenderId === tender.id ? (
@@ -1587,7 +1639,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           </button>
                         )}
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'center' }}>
                         <input
                           type="date"
                           value={tender.materials_proposal_deadline || ''}

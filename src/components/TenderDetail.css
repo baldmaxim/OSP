@@ -2950,6 +2950,17 @@
   padding: 0.4375rem 0.625rem;
 }
 
+/* task 222: вертикальные разделители столбцов для наглядности */
+.tender-detail-page .participants-section .data-table th,
+.tender-detail-page .participants-section .data-table td {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+
+.tender-detail-page .participants-section .data-table th:last-child,
+.tender-detail-page .participants-section .data-table td:last-child {
+  border-right: none;
+}
+
 /* Tender notes (inline editor inside info-card) */
 .tender-detail-page .tender-notes {
   margin-top: 0.875rem;

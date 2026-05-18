@@ -542,7 +542,7 @@ function ContactsPage() {
             <input
               type="search"
               className="contacts-search"
-              placeholder="🔍 Поиск по ФИО, должности, телефону, email..."
+              placeholder="🔍 Поиск по ФИО, должности, телефону, email, примечанию..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -621,6 +621,7 @@ function ContactsPage() {
                       c.email,
                       c.objects?.name,
                       c.departments?.name,
+                      c.notes,
                     ].some(v => v && String(v).toLowerCase().includes(q))
                   }
                   const contactMatchesObject = (c) => {
