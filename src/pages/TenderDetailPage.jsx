@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import '../components/TenderDetail.css'
@@ -46,12 +46,19 @@ function TenderDetailPage() {
     try {
       const { data: tenderData, error: tenderError } = await supabase
         .from('tenders')
-        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name)')
+        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, materials_proposal_deadline, materials_proposal_link)')
         .eq('id', tenderId)
         .single()
 
       if (tenderError) throw tenderError
-      setTender(tenderData)
+      // Reverse FK tenders!parent_tender_id возвращается массивом — сводим к одному.
+      const normalizedTender = tenderData ? {
+        ...tenderData,
+        materials_tender: Array.isArray(tenderData.materials_tender)
+          ? (tenderData.materials_tender[0] || null)
+          : (tenderData.materials_tender || null)
+      } : tenderData
+      setTender(normalizedTender)
       setNotesDraft(tenderData?.notes || '')
 
       const { data: counterpartiesData, error: cpError } = await supabase
@@ -388,6 +395,24 @@ function TenderDetailPage() {
     : (tender.winner ? [{ id: tender.winner.id, name: tender.winner.name, scope: '' }] : [])
   const winnerIds = new Set(winnersList.map(w => w.id))
 
+  // task 245: блок статусов/сроков/ответственных показываем для основного строительства
+  const isMainConstruction = tender.objects?.status === 'main_construction'
+    && (tender.tender_type === 'main' || !tender.tender_type)
+
+  const vorPhaseText = (() => {
+    const s = tender.vor_status || 'not_started'
+    if (s === 'completed') return tender.vor_link ? '✓ Готово' : '⚠ Завершён без ссылки'
+    if (s === 'in_progress') return 'В работе'
+    return 'Не начат'
+  })()
+  const costPlanPhaseText = (() => {
+    const s = tender.cost_plan_status || 'not_started'
+    if (s === 'not_required') return '— Не требуется'
+    if (s === 'completed') return tender.cost_plan_link ? '✓ Готово' : '⚠ Завершён без ссылки'
+    if (s === 'in_progress') return 'В работе'
+    return 'Не начат'
+  })()
+
   return (
     <div className="tender-detail-page">
       {/* Шапка */}
@@ -436,11 +461,11 @@ function TenderDetailPage() {
       <div className="tender-info-card">
         <div className="tender-info-grid">
           <div className="info-item">
-            <span className="info-label">Дата начала</span>
+            <span className="info-label">Дата начала работ</span>
             <span className="info-value">{formatDate(tender.start_date)}</span>
           </div>
           <div className="info-item">
-            <span className="info-label">Дата окончания</span>
+            <span className="info-label">Дата окончания работ</span>
             <span className="info-value">{formatDate(tender.end_date)}</span>
           </div>
           <div className="info-item">
@@ -467,7 +492,7 @@ function TenderDetailPage() {
               </a>
             </div>
           )}
-          {(tender.cost_plan_start_date || tender.cost_plan_end_date || tender.cost_plan_responsible) && (
+          {!isMainConstruction && (tender.cost_plan_start_date || tender.cost_plan_end_date || tender.cost_plan_responsible) && (
             <div className="info-item">
               <span className="info-label">Срок выполнения плана затрат</span>
               <span className="info-value">
@@ -478,7 +503,7 @@ function TenderDetailPage() {
               </span>
             </div>
           )}
-          {(tender.vor_start_date || tender.vor_end_date || tender.vor_responsible) && (
+          {!isMainConstruction && (tender.vor_start_date || tender.vor_end_date || tender.vor_responsible) && (
             <div className="info-item">
               <span className="info-label">Срок подготовки ВОР</span>
               <span className="info-value">
@@ -488,6 +513,70 @@ function TenderDetailPage() {
                 )}
               </span>
             </div>
+          )}
+
+          {/* task 245: статусы / сроки / ответственные по этапам (основное строительство) */}
+          {isMainConstruction && (
+            <>
+              <div className="info-item">
+                <span className="info-label">ВОРы и РД</span>
+                <span className="info-value">
+                  {vorPhaseText}
+                  {(tender.vor_start_date || tender.vor_end_date) && (
+                    <span className="info-sub"> · {formatDateRangeOrDash(tender.vor_start_date, tender.vor_end_date)}</span>
+                  )}
+                  {tender.vor_responsible?.full_name && (
+                    <span className="info-sub"> · {tender.vor_responsible.full_name}</span>
+                  )}
+                  {tender.vor_link && (
+                    <> · <a href={tender.vor_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть</a></>
+                  )}
+                </span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">План затрат</span>
+                <span className="info-value">
+                  {costPlanPhaseText}
+                  {(tender.cost_plan_start_date || tender.cost_plan_end_date) && (
+                    <span className="info-sub"> · {formatDateRangeOrDash(tender.cost_plan_start_date, tender.cost_plan_end_date)}</span>
+                  )}
+                  {tender.cost_plan_responsible?.full_name && (
+                    <span className="info-sub"> · {tender.cost_plan_responsible.full_name}</span>
+                  )}
+                  {tender.cost_plan_link && (
+                    <> · <a href={tender.cost_plan_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть</a></>
+                  )}
+                </span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Тендер на материалы</span>
+                <span className="info-value">
+                  {tender.materials_tender ? (
+                    <>
+                      {tender.materials_tender.status || 'Не начат'}
+                      {tender.materials_tender.materials_proposal_deadline && (
+                        <span className="info-sub"> · срок КП {formatDate(tender.materials_tender.materials_proposal_deadline)}</span>
+                      )}
+                      {tender.materials_tender.materials_proposal_link && (
+                        <> · <a href={tender.materials_tender.materials_proposal_link} target="_blank" rel="noopener noreferrer" className="info-link">КП</a></>
+                      )}
+                      {' · '}
+                      <Link to={`/tenders/${tender.materials_tender.id}`} className="info-link">Открыть тендер</Link>
+                    </>
+                  ) : (
+                    <span className="info-sub">— не создан</span>
+                  )}
+                </span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Сводная КП</span>
+                <span className="info-value">
+                  {tender.summary_proposal_link
+                    ? <a href={tender.summary_proposal_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть документ</a>
+                    : <span className="info-sub">—</span>}
+                </span>
+              </div>
+            </>
           )}
         </div>
 
