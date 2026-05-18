@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import './CostPlansPage.css'
@@ -17,7 +17,6 @@ const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required
 const DONE_STATUSES = ['completed', 'not_required']
 
 function CostPlansPage() {
-  const navigate = useNavigate()
   const { scopedObjectId, userProfile } = useRole()
 
   // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
@@ -436,14 +435,14 @@ function CostPlansPage() {
                     {t.objects?.name || '—'}
                   </td>
                   <td className="muted-text">
-                    <button
+                    <Link
+                      to={`/tenders/${t.id}`}
                       className="row-link primary"
-                      onClick={() => navigate(`/tenders/${t.id}`)}
-                      title="Открыть тендер"
-                      style={{ whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word' }}
+                      title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
+                      style={{ whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word', display: 'inline-block' }}
                     >
                       {t.work_description || '—'}
-                    </button>
+                    </Link>
                   </td>
                   <td>
                     {editingResponsibleId === t.id ? (
