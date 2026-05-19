@@ -776,6 +776,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           insertPayload.parent_tender_id = materialsParentTender.id
         }
         if (formData.notes) insertPayload.notes = formData.notes
+        // task 271: даты тендерной процедуры теперь сохраняются и при создании
+        // (поля есть в форме создания, но раньше не попадали в insert).
+        if (formData.tender_start_date) insertPayload.tender_start_date = formData.tender_start_date
+        if (formData.tender_end_date) insertPayload.tender_end_date = formData.tender_end_date
 
         // Вставка с автоматическим retry: если БД ругается на отсутствующие новые колонки
         // (миграция ещё не применена), отбрасываем эти поля и пробуем снова.
