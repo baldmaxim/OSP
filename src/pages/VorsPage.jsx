@@ -211,7 +211,11 @@ function VorsPage() {
 
   // task 239: фильтрация по ответственному, объекту и поиску
   let filtered = tenders
-  if (responsibleFilter) filtered = filtered.filter(t => t.vor_responsible?.id === responsibleFilter)
+  if (responsibleFilter === '__unassigned__') {
+    filtered = filtered.filter(t => !t.vor_responsible?.id)
+  } else if (responsibleFilter) {
+    filtered = filtered.filter(t => t.vor_responsible?.id === responsibleFilter)
+  }
   if (objectFilter) filtered = filtered.filter(t => t.object_id === objectFilter)
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase()
@@ -328,6 +332,9 @@ function VorsPage() {
             onChange={(e) => setResponsibleFilter(e.target.value)}
           >
             <option value="">Все ({tenders.length})</option>
+            <option value="__unassigned__">
+              Не назначен ({tenders.filter(t => !t.vor_responsible?.id).length})
+            </option>
             {responsibles.map(r => {
               const cnt = tenders.filter(t => t.vor_responsible?.id === r.id).length
               return (

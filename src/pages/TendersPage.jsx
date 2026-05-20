@@ -402,6 +402,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
       if (error) throw error
 
+      for (const counterpartyId of selectedCounterpartyIds) {
+        const cp = counterparties.find(c => c.id === counterpartyId)
+        const name = cp?.name || null
+        await logTenderEvent(selectedTenderForCounterparty, 'participant_added', {
+          fieldName: 'participants',
+          newValue: { id: counterpartyId, name },
+          description: `Добавлен участник: ${name || '—'}`
+        })
+      }
+
       await fetchTenderCounterparties(selectedTenderForCounterparty)
       fetchTenderProposalCounts()
       setShowAddCounterpartyModal(false)
@@ -628,12 +638,25 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     if (!window.confirm('Удалить контрагента из тендера?')) return
 
     try {
+      const removed = (tenderCounterparties[tenderId] || []).find(tc => tc.id === tenderCounterpartyId)
+      const removedInfo = removed
+        ? { id: removed.counterparty_id, name: removed.counterparties?.name || null }
+        : null
+
       const { error} = await supabase
         .from('tender_counterparties')
         .delete()
         .eq('id', tenderCounterpartyId)
 
       if (error) throw error
+
+      if (removedInfo) {
+        await logTenderEvent(tenderId, 'participant_removed', {
+          fieldName: 'participants',
+          oldValue: removedInfo,
+          description: `Удалён участник: ${removedInfo.name || '—'}`
+        })
+      }
 
       await fetchTenderCounterparties(tenderId)
       fetchTenderProposalCounts()
@@ -1352,7 +1375,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     // Фильтр по объекту
     if (objectFilter && tender.object_id !== objectFilter) return false
     // Фильтр по ответственному
-    if (responsibleFilter && tender.responsible_contact_id !== responsibleFilter) return false
+    if (responsibleFilter === '__unassigned__') {
+      if (tender.responsible_contact_id) return false
+    } else if (responsibleFilter && tender.responsible_contact_id !== responsibleFilter) {
+      return false
+    }
     // Фильтр по статусу
     if (statusFilter && tender.status !== statusFilter) return false
     // Текстовый поиск по наименованию объекта, адресу и описанию работ
@@ -1608,6 +1635,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             }}
           >
             <option value="">Все ответственные</option>
+            <option value="__unassigned__">Не назначен</option>
             {responsibleContacts
               .filter(c => tenders.some(t => t.responsible_contact_id === c.id))
               .map(c => (

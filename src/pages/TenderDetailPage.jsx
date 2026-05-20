@@ -608,6 +608,8 @@ function TenderDetailPage() {
       case 'status_changed': return '🔄'
       case 'winner_assigned': return '🏆'
       case 'field_updated': return '📝'
+      case 'participant_added': return '➕'
+      case 'participant_removed': return '➖'
       default: return '•'
     }
   }
@@ -739,10 +741,30 @@ function TenderDetailPage() {
 
       if (error) throw error
 
+      const role = localStorage.getItem('userRole') || null
+      const logRows = participantsToAdd.map(p => {
+        const cp = availableCounterparties.find(c => c.id === p.counterparty_id)
+        const name = cp?.name || null
+        return {
+          tender_id: tenderId,
+          event_type: 'participant_added',
+          field_name: 'participants',
+          old_value: null,
+          new_value: { id: p.counterparty_id, name },
+          description: `Добавлен участник: ${name || '—'}`,
+          changed_by_role: role,
+          changed_by_name: userProfile?.full_name || null
+        }
+      })
+      if (logRows.length > 0) {
+        await supabase.from('tender_audit_log').insert(logRows)
+      }
+
       setShowAddParticipantModal(false)
       setSelectedParticipants(new Set())
       setParticipantSearchQuery('')
       fetchTenderData()
+      loadAuditLog()
       alert(`Добавлено ${participantsToAdd.length} участников`)
     } catch (error) {
       console.error('Ошибка добавления участников:', error)
