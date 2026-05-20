@@ -168,6 +168,116 @@ const { data } = await supabase
 2. Update corresponding schema file in `supabase/schemas/`
 3. Apply migration via Supabase dashboard SQL editor or CLI
 
+## S3 Document Storage (cloud.ru)
+
+Task 277. Универсальное хранение файлов в S3-совместимом хранилище cloud.ru (bucket `osp`). Архитектура: браузер → Supabase Edge Function `s3-presign` → presigned URL → cloud.ru. Секреты живут только на стороне Edge Function, в браузер не попадают.
+
+### Components
+
+- Таблица `s3_documents` — единая для всех разделов. Привязка через `(owner_type, owner_id)`. Поддерживаемые типы: `'tender'`, `'contract'`, `'object'`, `'customer'`, `'general'` (расширяется в `FOLDER_BY_OWNER` в edge-функции).
+- Edge Function `supabase/functions/s3-presign/index.ts` — операции `upload` / `download` / `delete`. Требует Authorization (Supabase JWT).
+- Frontend сервис [src/services/s3.js](src/services/s3.js): `uploadFile`, `fetchDocuments`, `requestDownloadUrl`, `deleteDocument`, `deleteS3Object`.
+- Универсальный UI-компонент [src/components/S3DocumentList.jsx](src/components/S3DocumentList.jsx): список + загрузка + удаление + превью. Принимает props `{ownerType, ownerId, title, canEdit?}`. По умолчанию `canEdit = isEmployee`, подрядчики только смотрят.
+- Модалка просмотра [src/components/S3DocumentPreview.jsx](src/components/S3DocumentPreview.jsx) — PDF через iframe, изображения через `<img>`, прочие типы — fallback с кнопкой скачать.
+
+### Usage example
+
+```jsx
+import S3DocumentList from '../components/S3DocumentList'
+
+<S3DocumentList ownerType="tender" ownerId={tenderId} title="Документы" />
+```
+
+S3-ключ объекта формируется автоматически: `{folder}/{owner_id}/{uuid}-{file_name}`.
+
+### Environment variables (root `.env`)
+
+Все переменные — и фронта (Vite), и Edge Function — лежат в одном файле `.env` в корне репо. Шаблон — [.env.example](.env.example). Файл `.env` игнорируется git'ом (паттерн `.env*` в `.gitignore`).
+
+| Переменная | Назначение |
+|------------|-----------|
+| `VITE_SUPABASE_URL` | Endpoint Supabase, читается фронтом |
+| `VITE_SUPABASE_ANON_KEY` | Публичный ключ Supabase, читается фронтом |
+| `S3_ENDPOINT` | Endpoint S3 (`https://s3.cloud.ru` для cloud.ru) |
+| `S3_REGION` | Регион бакета (`ru-central-1`) |
+| `S3_BUCKET` | Имя бакета (`osp`) |
+| `S3_ACCESS_KEY_ID` | Access Key ID для S3 |
+| `S3_SECRET_ACCESS_KEY` | Secret Access Key для S3 |
+
+`SUPABASE_URL` и `SUPABASE_ANON_KEY` без префикса `VITE_` Supabase инжектирует в runtime функции автоматически — указывать не нужно.
+
+### Edge Function deployment (one-time setup)
+
+1. Установить Supabase CLI: `npm i -g supabase` (или `scoop install supabase`).
+2. `supabase login` и `supabase link --project-ref <project-ref>` в корне репо.
+3. Скопировать `.env.example` → `.env` в корне и заполнить (см. таблицу выше).
+4. Локально (для разработки функции):
+   ```bash
+   supabase functions serve s3-presign --env-file .env
+   ```
+5. Деплой на прод:
+   ```bash
+   supabase secrets set --env-file .env
+   supabase functions deploy s3-presign
+   ```
+
+`supabase secrets set --env-file .env` пушит **все** ключи из `.env` как секреты функции — `VITE_SUPABASE_*` тоже улетят, но не используются и вреда не приносят.
+
+### CORS на бакете cloud.ru
+
+В консоли cloud.ru: Object Storage → бакет `osp` → раздел «Разрешения» / «Настройки» → секция «CORS». Возможны два формата ввода: JSON-массив правил или форма с полями.
+
+#### Готовый JSON
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "http://localhost:5173",
+      "http://osp.root.sx",
+      "https://osp.root.sx"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "PUT",
+      "HEAD"
+    ],
+    "AllowedHeaders": [
+      "*"
+    ],
+    "ExposeHeaders": [
+      "ETag"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+#### Поля по отдельности (если UI — форма)
+
+| Поле | Значение | Зачем |
+|------|----------|-------|
+| **AllowedOrigins** | `http://localhost:5173`, `http://osp.root.sx`, `https://osp.root.sx` | dev-сервер Vite + прод-домен в обеих схемах (HTTP/HTTPS), чтобы CORS не сломался при переходе на TLS. |
+| **AllowedMethods** | `GET`, `PUT`, `HEAD` | `PUT` — загрузка по presigned URL; `GET` — скачивание / iframe-preview; `HEAD` — некоторые preflight'ы. `DELETE` напрямую с браузера не идёт — через Edge Function. |
+| **AllowedHeaders** | `*` | Браузер при PUT шлёт `Content-Type`, `x-amz-*`. Если cloud.ru не принимает `*` — перечислить: `Content-Type`, `Authorization`, `x-amz-acl`, `x-amz-content-sha256`, `x-amz-date`, `x-amz-security-token`. |
+| **ExposeHeaders** | `ETag` | `Content-Length` / `Content-Type` уже CORS-safelisted и доступны JS-у без явного экспонирования. |
+| **MaxAgeSeconds** | `3600` (1 час) | Кэш preflight-ответа. |
+
+#### Проверка после сохранения
+
+```bash
+curl -i -X OPTIONS https://s3.cloud.ru/osp \
+  -H "Origin: http://localhost:5173" \
+  -H "Access-Control-Request-Method: PUT"
+```
+Должен вернуться `200` с заголовками `Access-Control-Allow-Origin: http://localhost:5173` и `Access-Control-Allow-Methods: GET, PUT, HEAD`.
+
+### Adding a new owner type
+
+1. Добавить ключ в `FOLDER_BY_OWNER` в [supabase/functions/s3-presign/index.ts](supabase/functions/s3-presign/index.ts).
+2. Передавать новый `ownerType` в `<S3DocumentList>`.
+3. Никаких миграций БД не нужно — `owner_type` это свободный TEXT.
+
 ## Excel Import/Export (xlsx)
 
 Used in `TenderDetailPage.jsx`, `ContractorProposalsPage.jsx`, and BSM pages:

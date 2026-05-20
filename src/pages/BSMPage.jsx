@@ -10,7 +10,7 @@ const COLUMN_FIELDS = [
   { key: 'name',           label: 'Наименование',    default: 2 },
   { key: 'unit',           label: 'Ед. изм.',        default: 3 },
   { key: 'workVolume',     label: 'Объём работ',     default: 4 },
-  { key: 'materialVolume', label: 'Расход материала', default: 5 },
+  { key: 'materialVolume', label: 'Объем материалов', default: 5 },
   { key: 'priceMaterial',  label: 'Цена материалов', default: 6 },
   { key: 'priceWork',      label: 'Цена работ',      default: 7 },
   { key: 'notes',          label: 'Примечания',      default: 11 },
