@@ -38,37 +38,72 @@
   flex-wrap: wrap;
 }
 
-/* Task 176: переключатель вариантов раскладки колонок */
-.bsm-variant-switch {
-  display: inline-flex;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  overflow: hidden;
+/* Task 275: раскрывающаяся панель «Столбцы» — сопоставление полей с колонками Excel. */
+.bsm-column-map-wrap {
+  position: relative;
+  display: inline-block;
 }
 
-.bsm-variant-btn {
-  padding: 0.4375rem 0.75rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  background: transparent;
-  color: var(--text-secondary);
-  border: none;
-  border-right: 1px solid var(--border-color);
-  cursor: pointer;
-  transition: background-color 0.12s ease, color 0.12s ease;
-  white-space: nowrap;
-}
-
-.bsm-variant-btn:last-child { border-right: none; }
-
-.bsm-variant-btn:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.bsm-variant-btn.active {
+.bsm-column-map-toggle.active {
   background: var(--primary-color, #2563eb);
   color: #fff;
+  border-color: var(--primary-color, #2563eb);
+}
+
+.bsm-column-map-panel {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  right: 0;
+  z-index: 50;
+  min-width: 360px;
+  max-width: calc(100vw - 2rem);
+  padding: 0.875rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+}
+
+.bsm-column-map-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.625rem;
+}
+
+.bsm-column-map-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4375rem;
+}
+
+.bsm-column-map-row {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bsm-column-map-label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.bsm-column-map-select {
+  width: 100%;
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.bsm-column-map-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .bsm-btn-primary,
