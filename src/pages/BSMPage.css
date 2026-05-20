@@ -53,7 +53,7 @@
 .bsm-column-map-panel {
   position: absolute;
   top: calc(100% + 0.375rem);
-  right: 0;
+  left: 0;
   z-index: 50;
   min-width: 360px;
   max-width: calc(100vw - 2rem);
