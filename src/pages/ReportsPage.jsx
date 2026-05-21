@@ -51,7 +51,9 @@ function ReportsPage() {
       const c = contracts || []
       const today = new Date().toISOString().split('T')[0]
 
-      const isOpen = (x) => x.status !== 'Завершен'
+      // «В работе» считаем только статус 'Идет тендерная процедура' —
+      // «Не начат» сюда не входит (task 288).
+      const isInWork = (x) => x.status === 'Идет тендерная процедура'
       const isClosed = (x) => x.status === 'Завершен'
 
       const tConst = t.filter(x => x.objects?.status === 'main_construction')
@@ -59,9 +61,13 @@ function ReportsPage() {
       const cConst = c.filter(x => x.objects?.status === 'main_construction')
       const cWar = c.filter(x => x.objects?.status === 'warranty_service')
 
+      // Группировка по ответственным — в работу попадают только активные
+      // процедуры, завершённые отдельно. Тендеры со статусом «Не начат» не
+      // учитываются в total ответственного (но видны в KPI «Всего»).
       const groupByResponsible = (rows) => {
         const map = new Map()
         for (const x of rows) {
+          if (!isInWork(x) && !isClosed(x)) continue
           const id = x.responsible_contact_id || '_unassigned'
           const name = x.responsible_contact?.full_name || 'Не назначен'
           if (!map.has(id)) {
@@ -76,8 +82,6 @@ function ReportsPage() {
           .sort((a, b) => b.total - a.total)
       }
 
-      const overdueCount = (rows) =>
-        rows.filter(x => isOpen(x) && x.end_date && x.end_date < today).length
       const unassignedCount = (rows) => rows.filter(x => !x.responsible_contact_id).length
 
       const sumAmount = (rows) => rows.reduce((acc, r) => acc + (Number(r.contract_amount) || 0), 0)
@@ -210,20 +214,17 @@ function ReportsPage() {
       setStats({
         // Тендеры — общие
         tTotal: t.length,
-        tOpen: t.filter(isOpen).length,
+        tOpen: t.filter(isInWork).length,
         tClosed: t.filter(isClosed).length,
-        tOverdue: overdueCount(t),
         tUnassigned: unassignedCount(t),
         // По отделам тендеры
-        tOpenConst: tConst.filter(isOpen).length,
+        tOpenConst: tConst.filter(isInWork).length,
         tClosedConst: tConst.filter(isClosed).length,
         tTotalConst: tConst.length,
-        tOverdueConst: overdueCount(tConst),
         tUnassignedConst: unassignedCount(tConst),
-        tOpenWar: tWar.filter(isOpen).length,
+        tOpenWar: tWar.filter(isInWork).length,
         tClosedWar: tWar.filter(isClosed).length,
         tTotalWar: tWar.length,
-        tOverdueWar: overdueCount(tWar),
         tUnassignedWar: unassignedCount(tWar),
         // По ответственным
         byResponsible: groupByResponsible(t),
@@ -286,7 +287,6 @@ function ReportsPage() {
       total: s.tTotalConst,
       open: s.tOpenConst,
       closed: s.tClosedConst,
-      overdue: s.tOverdueConst,
       unassigned: s.tUnassignedConst,
       byResp: s.byResponsibleConst,
     }
@@ -298,7 +298,6 @@ function ReportsPage() {
         total: s.tTotalWar,
         open: s.tOpenWar,
         closed: s.tClosedWar,
-        overdue: s.tOverdueWar,
         unassigned: s.tUnassignedWar,
         byResp: s.byResponsibleWar,
       }
@@ -360,11 +359,6 @@ function ReportsPage() {
                 <div className="kpi-value accent-success">{s.tClosed}</div>
                 <div className="kpi-foot">{pct(s.tClosed, s.tTotal)}% завершения</div>
               </div>
-              <div className={`kpi-card ${s.tOverdue > 0 ? 'kpi-card--danger' : ''}`}>
-                <div className="kpi-label">Просрочено</div>
-                <div className={`kpi-value ${s.tOverdue > 0 ? 'accent-danger' : ''}`}>{s.tOverdue}</div>
-                <div className="kpi-foot">сроки прошли</div>
-              </div>
               <div className={`kpi-card ${s.tUnassigned > 0 ? 'kpi-card--warn' : ''}`}>
                 <div className="kpi-label">Без ответственного</div>
                 <div className={`kpi-value ${s.tUnassigned > 0 ? 'accent-warn' : ''}`}>{s.tUnassigned}</div>
@@ -401,12 +395,6 @@ function ReportsPage() {
                       <span className="dept-metric-label">Завершено</span>
                       <span className="dept-metric-value accent-success">{s.tClosedConst}</span>
                     </div>
-                    {s.tOverdueConst > 0 && (
-                      <div className="dept-metric">
-                        <span className="dept-metric-label">Просрочено</span>
-                        <span className="dept-metric-value accent-danger">{s.tOverdueConst}</span>
-                      </div>
-                    )}
                   </div>
                   <div className="dept-progress">
                     <ProgressBar value={s.tClosedConst} total={s.tTotalConst} />
@@ -435,12 +423,6 @@ function ReportsPage() {
                       <span className="dept-metric-label">Завершено</span>
                       <span className="dept-metric-value accent-success">{s.tClosedWar}</span>
                     </div>
-                    {s.tOverdueWar > 0 && (
-                      <div className="dept-metric">
-                        <span className="dept-metric-label">Просрочено</span>
-                        <span className="dept-metric-value accent-danger">{s.tOverdueWar}</span>
-                      </div>
-                    )}
                   </div>
                   <div className="dept-progress">
                     <ProgressBar value={s.tClosedWar} total={s.tTotalWar} />
@@ -490,11 +472,6 @@ function ReportsPage() {
                 <div className="kpi-label">Завершено</div>
                 <div className="kpi-value accent-success">{deptData.closed}</div>
                 <div className="kpi-foot">{pct(deptData.closed, deptData.total)}% завершения</div>
-              </div>
-              <div className={`kpi-card ${deptData.overdue > 0 ? 'kpi-card--danger' : ''}`}>
-                <div className="kpi-label">Просрочено</div>
-                <div className={`kpi-value ${deptData.overdue > 0 ? 'accent-danger' : ''}`}>{deptData.overdue}</div>
-                <div className="kpi-foot">сроки прошли</div>
               </div>
               <div className={`kpi-card ${deptData.unassigned > 0 ? 'kpi-card--warn' : ''}`}>
                 <div className="kpi-label">Без ответственного</div>
