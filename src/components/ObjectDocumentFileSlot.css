@@ -112,7 +112,30 @@
   font-size: 0.875rem;
   border-radius: 6px;
   padding: 0;
-  transition: background-color 0.12s ease;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.doc-slot-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.doc-slot-upload-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.doc-slot-file-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.doc-slot-file-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
 }
 
 .doc-slot-action:hover:not(:disabled) {
@@ -153,6 +176,16 @@
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+}
+
+.doc-cell-file-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
 }
 
 .doc-cell-file-btn {
@@ -168,12 +201,39 @@
   font-size: 0.8125rem;
   border-radius: 4px;
   padding: 0;
-  transition: background-color 0.12s ease;
+  flex-shrink: 0;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.doc-cell-file-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .doc-cell-file-btn:hover {
   background: var(--bg-hover, rgba(0, 0, 0, 0.06));
   color: var(--text-primary);
+}
+
+/* Тонкие цветовые акценты на hover: просмотр — синий, скачать — зелёный. */
+.doc-cell-file-btn-view:hover {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.doc-cell-file-btn-download:hover {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.08);
+}
+
+[data-theme='dark'] .doc-cell-file-btn-view:hover {
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.15);
+}
+
+[data-theme='dark'] .doc-cell-file-btn-download:hover {
+  color: #86efac;
+  background: rgba(22, 163, 74, 0.15);
 }
 
 [data-theme='dark'] .doc-slot-upload-btn:hover:not(:disabled) {

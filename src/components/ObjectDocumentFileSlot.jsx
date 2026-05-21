@@ -126,13 +126,28 @@ export default function ObjectDocumentFileSlot({
           onClick={handlePick}
           disabled={disabled || uploading}
         >
-          {uploading ? 'Загрузка…' : '⬆ Загрузить файл'}
+          {uploading ? (
+            'Загрузка…'
+          ) : (
+            <>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <span>Загрузить файл</span>
+            </>
+          )}
         </button>
       ) : (
         <div className="doc-slot-file">
           <div className="doc-slot-file-info">
             <span className="doc-slot-file-name" title={currentDoc.file_name}>
-              📄 {currentDoc.file_name}
+              <svg className="doc-slot-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              {currentDoc.file_name}
             </span>
             {currentDoc.size_bytes != null && (
               <span className="doc-slot-file-size">{formatBytes(currentDoc.size_bytes)}</span>
@@ -145,8 +160,13 @@ export default function ObjectDocumentFileSlot({
               onClick={handleDownload}
               disabled={uploading}
               title="Скачать"
+              aria-label="Скачать"
             >
-              ⬇
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
             </button>
             <button
               type="button"
@@ -154,8 +174,13 @@ export default function ObjectDocumentFileSlot({
               onClick={handlePick}
               disabled={disabled || uploading}
               title="Заменить"
+              aria-label="Заменить"
             >
-              🔄
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
             </button>
             <button
               type="button"
@@ -163,8 +188,14 @@ export default function ObjectDocumentFileSlot({
               onClick={handleRemove}
               disabled={disabled || uploading}
               title="Удалить файл"
+              aria-label="Удалить файл"
             >
-              🗑
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6M14 11v6"/>
+                <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+              </svg>
             </button>
           </div>
         </div>

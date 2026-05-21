@@ -1220,6 +1220,13 @@ tr:hover .btn-delete-row {
   margin-bottom: 1rem;
 }
 
+/* Без min-width: 0 grid-ячейки не сжимаются — длинные имена файлов внутри
+   ObjectDocumentFileSlot выходят за пределы модалки. */
+.form-row-2 > *,
+.form-row-3 > * {
+  min-width: 0;
+}
+
 .form-row-2 label,
 .form-row-3 label {
   display: block;
