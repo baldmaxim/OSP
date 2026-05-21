@@ -382,6 +382,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8125rem;
+  table-layout: fixed;
 }
 
 .doc-table thead th {
@@ -472,14 +473,15 @@
 }
 
 .doc-cell-name {
-  min-width: 200px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .doc-name-line {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .doc-row-tr-attachment .doc-name-text {
@@ -490,6 +492,11 @@
 .doc-name-text {
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
 }
 
 /* Кнопка «+ Приложение» под каждым родительским документом */

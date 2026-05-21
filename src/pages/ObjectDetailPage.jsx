@@ -59,9 +59,9 @@ function DocRow({
         </td>
         <td className="doc-cell-name">
           <div className="doc-name-line">
-            <span className="doc-name-text">{doc.name}</span>
+            <span className="doc-name-text" title={doc.name}>{doc.name}</span>
           </div>
-          {doc.notes && <div className="doc-notes-line">{doc.notes}</div>}
+          {doc.notes && <div className="doc-notes-line" title={doc.notes}>{doc.notes}</div>}
         </td>
         <td className="doc-cell-meta">
           <div>{doc.document_number || <span className="muted">—</span>}</div>
@@ -874,10 +874,10 @@ function ObjectDetailPage() {
                   <thead>
                     <tr>
                       <th style={{ width: '28px' }}></th>
-                      <th>Наименование</th>
+                      <th style={{ width: '320px' }}>Наименование</th>
                       <th style={{ width: '140px' }}>№ / дата</th>
-                      <th style={{ width: '210px' }}>Подписанный</th>
-                      <th style={{ width: '210px' }}>Редактируемый</th>
+                      <th>Подписанный документ</th>
+                      <th>Редактируемый документ</th>
                       <th style={{ width: '100px' }}>Действия</th>
                     </tr>
                   </thead>
@@ -914,10 +914,10 @@ function ObjectDetailPage() {
                   <thead>
                     <tr>
                       <th style={{ width: '28px' }}></th>
-                      <th>Наименование</th>
+                      <th style={{ width: '320px' }}>Наименование</th>
                       <th style={{ width: '140px' }}>№ / дата</th>
-                      <th style={{ width: '210px' }}>Подписанный</th>
-                      <th style={{ width: '210px' }}>Редактируемый</th>
+                      <th>Подписанный документ</th>
+                      <th>Редактируемый документ</th>
                       <th style={{ width: '100px' }}>Действия</th>
                     </tr>
                   </thead>
