@@ -849,7 +849,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           // Если retry основной вставки удалил tender_type / parent_tender_id — миграция не применена,
           // создание дочернего тендера невозможно. Сообщаем пользователю явно.
           if (mainFinalPayload.tender_type === undefined) {
-            alert('Тендер создан, но автосоздание тендера на материалы пропущено: миграция 20260515_add_tender_type_and_parent не применена в БД. Примените её и используйте кнопку «+ Создать» в колонке «Тендер на материалы».')
+            alert('Тендер создан, но автосоздание тендера на материалы пропущено: миграция 20260515_add_tender_type_and_parent не применена в БД. Примените миграцию и пересоздайте основной тендер.')
           } else {
             try {
               const materialsPayload = {
@@ -1025,30 +1025,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   // Открыть форму создания дочернего тендера на материалы для конкретного родительского тендера
-  const handleCreateMaterialsTender = (parentTender) => {
-    setEditingTender(null)
-    setMaterialsParentTender(parentTender)
-    setFormData({
-      object_id: parentTender.object_id || '',
-      work_description: '',
-      status: 'Не начат',
-      start_date: '',
-      end_date: '',
-      tender_package_link: '',
-      responsible_contact_id: '',
-      cost_plan_link: '',
-      cost_plan_responsible_id: '',
-      vor_link: '',
-      vor_responsible_id: '',
-      vor_start_date: '',
-      vor_end_date: '',
-      tender_start_date: '',
-      tender_end_date: '',
-      summary_proposal_link: '',
-      notes: '',
-    })
-    setShowModal(true)
-  }
 
   const handleStatusChange = async (tenderId, newStatus) => {
     // Для тендеров на материалы выбор победителя не требуется — статус ставится напрямую.
@@ -2205,22 +2181,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             )}
                           </div>
                         ) : (
-                          <button
-                            onClick={() => handleCreateMaterialsTender(tender)}
-                            className="btn-link"
-                            style={{
-                              background: 'none',
-                              border: '1px dashed var(--border-color)',
-                              color: 'var(--text-secondary)',
-                              cursor: 'pointer',
-                              padding: '0.25rem 0.5rem',
-                              borderRadius: '4px',
-                              fontSize: '0.75rem'
-                            }}
-                            title="Создать тендер на материалы для этого объекта"
-                          >
-                            + Создать
-                          </button>
+                          // Task 289: ручное создание тендера на материалы запрещено —
+                          // материал создаётся автоматически при создании основного тендера.
+                          // Если у тендера нет материала (исторические данные или ошибка) —
+                          // показываем прочерк, а не предлагаем создать вручную.
+                          <span className="muted" style={{ fontSize: '0.75rem' }} title="Тендер на материалы не создан">—</span>
                         )}
                       </td>
                     )}
