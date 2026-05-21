@@ -1,0 +1,184 @@
+.doc-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.doc-slot-signed {
+  border-left: 3px solid #16a34a;
+}
+
+.doc-slot-editable {
+  border-left: 3px solid #2563eb;
+}
+
+.doc-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.doc-slot-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.doc-slot-status {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.doc-slot-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px dashed var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.doc-slot-upload-btn:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.03));
+  border-color: var(--accent-color, #2563eb);
+  color: var(--text-primary);
+}
+
+.doc-slot-upload-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.doc-slot-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg-primary);
+  border-radius: 6px;
+}
+
+.doc-slot-file-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.doc-slot-file-name {
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-slot-file-size {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: 0.125rem;
+}
+
+.doc-slot-file-actions {
+  display: flex;
+  gap: 0.125rem;
+  flex-shrink: 0;
+}
+
+.doc-slot-action {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  border-radius: 6px;
+  padding: 0;
+  transition: background-color 0.12s ease;
+}
+
+.doc-slot-action:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--text-primary);
+}
+
+.doc-slot-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.doc-slot-action-remove:hover:not(:disabled) {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.doc-slot-error {
+  font-size: 0.75rem;
+  color: #dc2626;
+  padding: 0.25rem 0;
+}
+
+/* Компактный вид файла в ячейке таблицы (вне модалки). */
+.doc-cell-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+}
+
+.doc-cell-file-name {
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+.doc-cell-file-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  border-radius: 4px;
+  padding: 0;
+  transition: background-color 0.12s ease;
+}
+
+.doc-cell-file-btn:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .doc-slot-upload-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme='dark'] .doc-slot-action:hover:not(:disabled),
+[data-theme='dark'] .doc-cell-file-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}

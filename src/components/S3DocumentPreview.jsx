@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { requestDownloadUrl } from '../services/s3'
+import './S3DocumentList.css'
 
 // Модалка просмотра S3-документа. PDF и изображения рендерятся прямо в окне
 // (iframe / <img>). Для остальных типов — fallback с кнопкой скачать.
-// Стили — общий файл S3DocumentList.css.
+// Стили живут в S3DocumentList.css — импортируем здесь, чтобы компонент
+// можно было использовать независимо от S3DocumentList.
 
 function isPdf(mime, name) {
   if (mime === 'application/pdf') return true

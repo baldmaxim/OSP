@@ -2,11 +2,26 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
+import { deleteDocument, requestDownloadUrl } from '../services/s3'
+import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
+import S3DocumentPreview from '../components/S3DocumentPreview'
 import './ObjectDetailPage.css'
 
 // Табличная строка документа (договор/ДС/приложение).
 // Объявлена вне ObjectDetailPage — иначе при каждом рендере родителя пересоздаётся компонент,
 // что приводит к unmount-mount всех строк документа и «вылетающим» модалкам редактирования.
+// Ячейка одного файла в строке документа: имя + просмотр + скачать.
+function DocFileCell({ s3doc, accent, onPreview, onDownload }) {
+  if (!s3doc) return <span className="muted">—</span>
+  return (
+    <div className={`doc-cell-file ${accent === 'signed' ? 'doc-cell-file-signed' : 'doc-cell-file-editable'}`}>
+      <span className="doc-cell-file-name" title={s3doc.file_name}>📄 {s3doc.file_name}</span>
+      <button type="button" className="doc-cell-file-btn" onClick={() => onPreview(s3doc)} title="Просмотр">👁</button>
+      <button type="button" className="doc-cell-file-btn" onClick={() => onDownload(s3doc)} title="Скачать">⬇</button>
+    </div>
+  )
+}
+
 function DocRow({
   doc,
   level = 0,
@@ -17,6 +32,8 @@ function DocRow({
   onAddAttachment,
   onEdit,
   onDelete,
+  onPreviewFile,
+  onDownloadFile,
 }) {
   const isAttachment = level > 0
   const hasAttachments = attachments.length > 0
@@ -51,22 +68,10 @@ function DocRow({
           <div className="doc-date-line">{doc.document_date ? formatDate(doc.document_date) : ''}</div>
         </td>
         <td className="doc-cell-link">
-          {doc.signed_link ? (
-            <a href={doc.signed_link} target="_blank" rel="noopener noreferrer" className="doc-link-btn doc-link-signed">
-              Открыть
-            </a>
-          ) : (
-            <span className="muted">—</span>
-          )}
+          <DocFileCell s3doc={doc.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
         <td className="doc-cell-link">
-          {doc.editable_link ? (
-            <a href={doc.editable_link} target="_blank" rel="noopener noreferrer" className="doc-link-btn doc-link-editable">
-              Открыть
-            </a>
-          ) : (
-            <span className="muted">—</span>
-          )}
+          <DocFileCell s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
         <td className="doc-cell-actions">
           <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">
@@ -89,6 +94,8 @@ function DocRow({
           onAddAttachment={onAddAttachment}
           onEdit={onEdit}
           onDelete={onDelete}
+          onPreviewFile={onPreviewFile}
+          onDownloadFile={onDownloadFile}
         />
       ))}
       {/* Кнопка «+ Приложение» под каждым родительским документом */}
@@ -141,12 +148,19 @@ function ObjectDetailPage() {
   const [documentFormData, setDocumentFormData] = useState({
     document_type: 'general_contract',
     name: '',
-    signed_link: '',
-    editable_link: '',
     document_number: '',
     document_date: '',
     notes: ''
   })
+  // S3-файлы в текущей открытой форме документа.
+  // signed/editable — текущие записи s3_documents (объект или null).
+  // originalIds — что было привязано на момент открытия формы; нужно, чтобы при
+  // отмене понять, какие записи были загружены в этой сессии и подчистить их.
+  const [docFiles, setDocFiles] = useState({ signed: null, editable: null })
+  const [docFilesOriginalIds, setDocFilesOriginalIds] = useState({ signed: null, editable: null })
+  const [docFilesUploading, setDocFilesUploading] = useState({ signed: false, editable: false })
+  // Превью S3-файла в полноэкранной модалке.
+  const [previewDoc, setPreviewDoc] = useState(null)
 
   // Object info modal state
   const [showInfoModal, setShowInfoModal] = useState(false)
@@ -194,7 +208,10 @@ function ObjectDetailPage() {
       setObject(objectData)
 
       const { data: docsData, error: docsError } = await supabase
-        .from('object_documents').select('*').eq('object_id', objectId).order('order_number')
+        .from('object_documents')
+        .select('*, signed:s3_documents!signed_s3_document_id(*), editable:s3_documents!editable_s3_document_id(*)')
+        .eq('object_id', objectId)
+        .order('order_number')
       if (docsError) throw docsError
       const allDocs = docsData || []
       setDocuments(allDocs)
@@ -247,12 +264,12 @@ function ObjectDetailPage() {
     setDocumentFormData({
       document_type: documentType,
       name: '',
-      signed_link: '',
-      editable_link: '',
       document_number: '',
       document_date: '',
       notes: ''
     })
+    setDocFiles({ signed: null, editable: null })
+    setDocFilesOriginalIds({ signed: null, editable: null })
     setShowDocumentModal(true)
   }
 
@@ -262,18 +279,46 @@ function ObjectDetailPage() {
     setDocumentFormData({
       document_type: doc.document_type,
       name: doc.name,
-      signed_link: doc.signed_link || '',
-      editable_link: doc.editable_link || '',
       document_number: doc.document_number || '',
       document_date: doc.document_date || '',
       notes: doc.notes || ''
     })
+    setDocFiles({ signed: doc.signed || null, editable: doc.editable || null })
+    setDocFilesOriginalIds({
+      signed: doc.signed_s3_document_id || null,
+      editable: doc.editable_s3_document_id || null,
+    })
     setShowDocumentModal(true)
+  }
+
+  // Удалить все S3-файлы (signed+editable), привязанные к документу и любому
+  // из его потомков. Используем рекурсивный обход: parent_document_id ON DELETE
+  // CASCADE удалит сами записи в БД, но не подскажет нам, какие s3_documents
+  // нужно подчистить — сделаем это до DELETE.
+  const collectS3DocsToDelete = (rootId, allDocs) => {
+    const result = []
+    const stack = [rootId]
+    const visited = new Set()
+    while (stack.length) {
+      const id = stack.pop()
+      if (visited.has(id)) continue
+      visited.add(id)
+      const node = allDocs.find(d => d.id === id)
+      if (!node) continue
+      if (node.signed) result.push(node.signed)
+      if (node.editable) result.push(node.editable)
+      const children = allDocs.filter(d => d.parent_document_id === id)
+      for (const c of children) stack.push(c.id)
+    }
+    return result
   }
 
   const handleDeleteDocument = async (docId) => {
     if (!window.confirm('Удалить документ и все его приложения?')) return
     try {
+      const s3Docs = collectS3DocsToDelete(docId, documents)
+      // Сначала S3-файлы (best-effort: ошибки логируем, но не блокируем удаление документа).
+      await Promise.allSettled(s3Docs.map(d => deleteDocument(d)))
       const { error } = await supabase.from('object_documents').delete().eq('id', docId)
       if (error) throw error
       fetchObjectData()
@@ -281,6 +326,40 @@ function ObjectDetailPage() {
       alert('Ошибка: ' + error.message)
     }
   }
+
+  // Открытие/скачивание/превью S3-файла из ячейки таблицы.
+  const handlePreviewFile = (s3doc) => setPreviewDoc(s3doc)
+  const handleDownloadFile = async (s3doc) => {
+    try {
+      const { presigned_url } = await requestDownloadUrl(s3doc.s3_key)
+      const a = document.createElement('a')
+      a.href = presigned_url
+      a.download = s3doc.file_name || ''
+      a.target = '_blank'
+      a.rel = 'noopener noreferrer'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    } catch (error) {
+      alert('Ошибка скачивания: ' + error.message)
+    }
+  }
+
+  // Закрытие формы документа — отдельная функция, чтобы корректно подчистить
+  // pending uploads (файлы, загруженные в S3, но не сохранённые в object_documents).
+  const closeDocumentModalWithCleanup = useCallback(async () => {
+    const orphans = []
+    if (docFiles.signed && docFiles.signed.id !== docFilesOriginalIds.signed) {
+      orphans.push(docFiles.signed)
+    }
+    if (docFiles.editable && docFiles.editable.id !== docFilesOriginalIds.editable) {
+      orphans.push(docFiles.editable)
+    }
+    setShowDocumentModal(false)
+    if (orphans.length > 0) {
+      await Promise.allSettled(orphans.map(d => deleteDocument(d)))
+    }
+  }, [docFiles, docFilesOriginalIds])
 
   const handleSubmitDocument = async (e) => {
     e.preventDefault()
@@ -292,12 +371,12 @@ function ObjectDetailPage() {
         parent_document_id: parentDocumentId,
         document_type: documentFormData.document_type,
         name: documentFormData.name.trim(),
-        signed_link: documentFormData.signed_link.trim() || null,
-        editable_link: documentFormData.editable_link.trim() || null,
         document_number: documentFormData.document_number.trim() || null,
         document_date: documentFormData.document_date || null,
         notes: documentFormData.notes?.trim() || null,
-        order_number: editingDocument?.order_number || documents.length + 1
+        order_number: editingDocument?.order_number || documents.length + 1,
+        signed_s3_document_id: docFiles.signed?.id || null,
+        editable_s3_document_id: docFiles.editable?.id || null,
       }
 
       if (editingDocument) {
@@ -308,6 +387,8 @@ function ObjectDetailPage() {
         if (error) throw error
       }
 
+      // Файлы уже привязаны — закрываем без cleanup-а, иначе только что
+      // сохранённые записи будут удалены.
       setShowDocumentModal(false)
       fetchObjectData()
     } catch (error) {
@@ -795,8 +876,8 @@ function ObjectDetailPage() {
                       <th style={{ width: '28px' }}></th>
                       <th>Наименование</th>
                       <th style={{ width: '140px' }}>№ / дата</th>
-                      <th style={{ width: '120px' }}>Подписанный</th>
-                      <th style={{ width: '120px' }}>Редактируемый</th>
+                      <th style={{ width: '210px' }}>Подписанный</th>
+                      <th style={{ width: '210px' }}>Редактируемый</th>
                       <th style={{ width: '100px' }}>Действия</th>
                     </tr>
                   </thead>
@@ -810,6 +891,8 @@ function ObjectDetailPage() {
                       onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
                       onEdit={handleEditDocument}
                       onDelete={handleDeleteDocument}
+                      onPreviewFile={handlePreviewFile}
+                      onDownloadFile={handleDownloadFile}
                     />
                   </tbody>
                 </table>
@@ -833,8 +916,8 @@ function ObjectDetailPage() {
                       <th style={{ width: '28px' }}></th>
                       <th>Наименование</th>
                       <th style={{ width: '140px' }}>№ / дата</th>
-                      <th style={{ width: '120px' }}>Подписанный</th>
-                      <th style={{ width: '120px' }}>Редактируемый</th>
+                      <th style={{ width: '210px' }}>Подписанный</th>
+                      <th style={{ width: '210px' }}>Редактируемый</th>
                       <th style={{ width: '100px' }}>Действия</th>
                     </tr>
                   </thead>
@@ -850,6 +933,8 @@ function ObjectDetailPage() {
                         onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
                         onEdit={handleEditDocument}
                         onDelete={handleDeleteDocument}
+                        onPreviewFile={handlePreviewFile}
+                        onDownloadFile={handleDownloadFile}
                       />
                     ))}
                   </tbody>
@@ -1124,7 +1209,7 @@ function ObjectDetailPage() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editingDocument ? 'Редактировать' : 'Добавить'} {parentDocumentId ? 'приложение' : documentFormData.document_type === 'general_contract' ? 'договор' : 'ДС'}</h3>
-              <button onClick={() => setShowDocumentModal(false)}>×</button>
+              <button onClick={closeDocumentModalWithCleanup}>×</button>
             </div>
             <form onSubmit={handleSubmitDocument}>
               <div className="form-row">
@@ -1141,13 +1226,23 @@ function ObjectDetailPage() {
                   <input type="date" value={documentFormData.document_date} onChange={(e) => setDocumentFormData({ ...documentFormData, document_date: e.target.value })} />
                 </div>
               </div>
-              <div className="form-row">
-                <label>Ссылка на подписанный документ</label>
-                <input type="url" value={documentFormData.signed_link} onChange={(e) => setDocumentFormData({ ...documentFormData, signed_link: e.target.value })} placeholder="https://drive.google.com/..." />
-              </div>
-              <div className="form-row">
-                <label>Ссылка на редактируемый документ</label>
-                <input type="url" value={documentFormData.editable_link} onChange={(e) => setDocumentFormData({ ...documentFormData, editable_link: e.target.value })} placeholder="https://drive.google.com/..." />
+              <div className="form-row-2">
+                <ObjectDocumentFileSlot
+                  slot="signed"
+                  currentDoc={docFiles.signed}
+                  ownerId={objectId}
+                  onUploaded={(s3doc) => setDocFiles(prev => ({ ...prev, signed: s3doc }))}
+                  onRemoved={() => setDocFiles(prev => ({ ...prev, signed: null }))}
+                  onUploadingChange={(v) => setDocFilesUploading(prev => ({ ...prev, signed: v }))}
+                />
+                <ObjectDocumentFileSlot
+                  slot="editable"
+                  currentDoc={docFiles.editable}
+                  ownerId={objectId}
+                  onUploaded={(s3doc) => setDocFiles(prev => ({ ...prev, editable: s3doc }))}
+                  onRemoved={() => setDocFiles(prev => ({ ...prev, editable: null }))}
+                  onUploadingChange={(v) => setDocFilesUploading(prev => ({ ...prev, editable: v }))}
+                />
               </div>
               <div className="form-row">
                 <label>{parentDocumentId ? 'Описание' : 'Примечание'}</label>
@@ -1159,12 +1254,24 @@ function ObjectDetailPage() {
                 />
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn-cancel" onClick={() => setShowDocumentModal(false)}>Отмена</button>
-                <button type="submit" className="btn-save">Сохранить</button>
+                <button type="button" className="btn-cancel" onClick={closeDocumentModalWithCleanup}>Отмена</button>
+                <button
+                  type="submit"
+                  className="btn-save"
+                  disabled={docFilesUploading.signed || docFilesUploading.editable}
+                  title={(docFilesUploading.signed || docFilesUploading.editable) ? 'Дождитесь окончания загрузки файла' : ''}
+                >
+                  Сохранить
+                </button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* Превью S3-файла */}
+      {previewDoc && (
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
       )}
 
       {/* Модальное окно НДС при импорте сметы */}

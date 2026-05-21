@@ -139,7 +139,7 @@ const { data } = await supabase
 | `bsm_contract_rates` | Agreed material rates | `object_id` (CASCADE) |
 | `bsm_supply_rates` | Supply dept rates (has `applied_at` date) | `object_id` (CASCADE) |
 | `bsm_contractor_rates` | Contractor-specific rates | `object_id`, `counterparty_id` (CASCADE) |
-| `object_documents` | Object documents (contracts, agreements, attachments) | `object_id`, `parent_document_id` (CASCADE) |
+| `object_documents` | Object documents (contracts, agreements, attachments). Files via S3 (`signed_s3_document_id`, `editable_s3_document_id` → `s3_documents`, ON DELETE SET NULL). | `object_id`, `parent_document_id` (CASCADE), `signed_s3_document_id`, `editable_s3_document_id` (SET NULL) |
 | `object_cost_plan` | Cost plan items per object | `object_id` (CASCADE) |
 | `object_estimate_items` | Object estimate line items (imported from Excel) | `object_id` (CASCADE) |
 | `object_warranties` | Warranty periods per object (start date + duration in months) | `object_id` (CASCADE) |
@@ -384,6 +384,8 @@ Five tabs: Информация (object fields like dates, area, budget), Док
 ### Hierarchical Documents (ObjectDetailPage)
 
 `object_documents` supports parent-child relationships via `parent_document_id` self-reference. Documents are grouped by type (general contracts → additional agreements/attachments as children). The UI uses expandable rows to show nested documents.
+
+**S3-файлы (task 282):** к каждому документу можно прикрепить два файла — подписанный и редактируемый (`signed_s3_document_id` / `editable_s3_document_id`, FK на `s3_documents` с `ON DELETE SET NULL`). Записи в `s3_documents` создаются с `owner_type='object'`, `owner_id=object_id` — файлы лежат в одной папке `objects/{object_id}/` независимо от того, к какому документу/приложению относятся. UI-слот — [src/components/ObjectDocumentFileSlot.jsx](src/components/ObjectDocumentFileSlot.jsx). При удалении документа (включая каскадно удаляемые приложения) код в [ObjectDetailPage.jsx](src/pages/ObjectDetailPage.jsx) рекурсивно собирает все привязанные `s3_documents` и удаляет их через `deleteDocument()` до DELETE — иначе остаются orphan-файлы в S3. Старые поля `signed_link` / `editable_link` (Google Drive) deprecated, в UI не используются.
 
 ### RLS Pattern (Supabase)
 
