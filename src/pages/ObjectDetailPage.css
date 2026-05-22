@@ -187,6 +187,10 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;
+  /* Не сжиматься во flex-колонке .documents-content: при большом числе
+     приложений панель должна сохранять высоту, а лишнее уходит в скролл
+     родителя, а не обрезаться. */
+  flex-shrink: 0;
 }
 
 .doc-section-header {
@@ -549,18 +553,13 @@
   color: var(--text-tertiary);
 }
 
+/* У приложений в этой ячейке — наименование. Длинный текст переносится
+   на несколько строк (а не обрезается), чтобы было видно целиком. */
 .doc-cell-meta {
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: break-word;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
-  overflow: hidden;
-}
-
-/* Содержимое ячейки «№ / дата» (у приложений тут наименование) обрезаем
-   многоточием, чтобы длинный текст не наезжал на соседний столбец. */
-.doc-cell-meta > div {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .doc-date-line {
