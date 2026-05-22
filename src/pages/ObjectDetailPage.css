@@ -553,6 +553,14 @@
   white-space: nowrap;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+
+/* Содержимое ячейки «№ / дата» (у приложений тут наименование) обрезаем
+   многоточием, чтобы длинный текст не наезжал на соседний столбец. */
+.doc-cell-meta > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .doc-date-line {

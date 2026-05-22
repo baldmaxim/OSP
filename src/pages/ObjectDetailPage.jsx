@@ -904,8 +904,8 @@ function ObjectDetailPage() {
                   <thead>
                     <tr>
                       <th style={{ width: '28px' }}></th>
-                      <th style={{ width: '320px' }}>Наименование</th>
-                      <th style={{ width: '140px' }}>№ / дата</th>
+                      <th style={{ width: '200px' }}>Наименование</th>
+                      <th style={{ width: '260px' }}>№ / дата</th>
                       <th>Подписанный документ</th>
                       <th>Редактируемый документ</th>
                       <th style={{ width: '100px' }}>Действия</th>
@@ -944,8 +944,8 @@ function ObjectDetailPage() {
                   <thead>
                     <tr>
                       <th style={{ width: '28px' }}></th>
-                      <th style={{ width: '320px' }}>Наименование</th>
-                      <th style={{ width: '140px' }}>№ / дата</th>
+                      <th style={{ width: '200px' }}>Наименование</th>
+                      <th style={{ width: '260px' }}>№ / дата</th>
                       <th>Подписанный документ</th>
                       <th>Редактируемый документ</th>
                       <th style={{ width: '100px' }}>Действия</th>
