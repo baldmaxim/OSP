@@ -76,13 +76,22 @@ function DocRow({
         </td>
         <td className="doc-cell-name">
           <div className="doc-name-line">
-            <span className="doc-name-text" title={doc.name}>{doc.name}</span>
+            {/* Для приложений в первой колонке (у стрелочки) — № приложения, наименование уходит правее */}
+            <span className="doc-name-text" title={isAttachment ? (doc.document_number || '') : doc.name}>
+              {isAttachment ? (doc.document_number || <span className="muted">—</span>) : doc.name}
+            </span>
           </div>
           {doc.notes && <div className="doc-notes-line" title={doc.notes}>{doc.notes}</div>}
         </td>
         <td className="doc-cell-meta">
-          <div>{doc.document_number || <span className="muted">—</span>}</div>
-          <div className="doc-date-line">{doc.document_date ? formatDate(doc.document_date) : ''}</div>
+          {isAttachment ? (
+            <div title={doc.name || ''}>{doc.name || <span className="muted">—</span>}</div>
+          ) : (
+            <>
+              <div>{doc.document_number || <span className="muted">—</span>}</div>
+              <div className="doc-date-line">{doc.document_date ? formatDate(doc.document_date) : ''}</div>
+            </>
+          )}
         </td>
         <td className="doc-cell-link">
           <DocFileCell s3doc={doc.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
