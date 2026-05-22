@@ -380,7 +380,11 @@ function ObjectDetailPage() {
 
   const handleSubmitDocument = async (e) => {
     e.preventDefault()
-    if (!documentFormData.name.trim()) return alert('Введите наименование')
+    if (parentDocumentId) {
+      if (!documentFormData.document_number.trim()) return alert('Введите № приложения')
+    } else {
+      if (!documentFormData.name.trim()) return alert('Введите наименование')
+    }
 
     try {
       const dataToSave = {
@@ -1233,12 +1237,12 @@ function ObjectDetailPage() {
                 // Для приложений: № приложения слева, Наименование справа. Дата не нужна.
                 <div className="form-row-2">
                   <div>
-                    <label>№ приложения</label>
-                    <input type="text" value={documentFormData.document_number} onChange={(e) => setDocumentFormData({ ...documentFormData, document_number: e.target.value })} />
+                    <label>№ приложения *</label>
+                    <input type="text" value={documentFormData.document_number} onChange={(e) => setDocumentFormData({ ...documentFormData, document_number: e.target.value })} required />
                   </div>
                   <div>
-                    <label>Наименование приложения *</label>
-                    <input type="text" value={documentFormData.name} onChange={(e) => setDocumentFormData({ ...documentFormData, name: e.target.value })} required />
+                    <label>Наименование приложения</label>
+                    <input type="text" value={documentFormData.name} onChange={(e) => setDocumentFormData({ ...documentFormData, name: e.target.value })} />
                   </div>
                 </div>
               ) : (
