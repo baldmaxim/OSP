@@ -40,15 +40,18 @@ CREATE TABLE IF NOT EXISTS tender_counterparty_proposals (
   UNIQUE(estimate_item_id, counterparty_id)
 );
 
--- Таблица для хранения загруженных Excel файлов
+-- Файлы КП и доп. документов от контрагентов по тендеру (task 290).
+-- Привязка к s3_documents через s3_document_id; метки file_kind / proposal_group_id /
+-- version_label позволяют выделять КП, группировать варианты и нумеровать версии.
 CREATE TABLE IF NOT EXISTS tender_proposal_files (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tender_id UUID NOT NULL REFERENCES tenders(id) ON DELETE CASCADE,
   counterparty_id UUID NOT NULL REFERENCES counterparties(id) ON DELETE CASCADE,
-  file_name VARCHAR(255) NOT NULL,
-  file_url TEXT NOT NULL,
-  file_size INTEGER,
-  uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  s3_document_id UUID NOT NULL REFERENCES s3_documents(id) ON DELETE CASCADE,
+  file_kind TEXT NOT NULL CHECK (file_kind IN ('commercial_proposal', 'attachment')),
+  proposal_group_id UUID,
+  version_label TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Индексы
@@ -60,8 +63,9 @@ CREATE INDEX IF NOT EXISTS idx_tender_counterparty_proposals_tender_id ON tender
 CREATE INDEX IF NOT EXISTS idx_tender_counterparty_proposals_counterparty_id ON tender_counterparty_proposals(counterparty_id);
 CREATE INDEX IF NOT EXISTS idx_tender_counterparty_proposals_estimate_item_id ON tender_counterparty_proposals(estimate_item_id);
 
-CREATE INDEX IF NOT EXISTS idx_tender_proposal_files_tender_id ON tender_proposal_files(tender_id);
-CREATE INDEX IF NOT EXISTS idx_tender_proposal_files_counterparty_id ON tender_proposal_files(counterparty_id);
+CREATE INDEX IF NOT EXISTS idx_tpf_tender_counterparty ON tender_proposal_files(tender_id, counterparty_id);
+CREATE INDEX IF NOT EXISTS idx_tpf_s3_document ON tender_proposal_files(s3_document_id);
+CREATE INDEX IF NOT EXISTS idx_tpf_proposal_group ON tender_proposal_files(proposal_group_id) WHERE proposal_group_id IS NOT NULL;
 
 -- Триггеры для updated_at
 CREATE OR REPLACE FUNCTION update_tender_estimate_items_updated_at()
@@ -102,7 +106,10 @@ CREATE POLICY "Enable all for tender_proposal_files" ON tender_proposal_files FO
 -- Комментарии
 COMMENT ON TABLE tender_estimate_items IS 'Позиции единой сметы тендера';
 COMMENT ON TABLE tender_counterparty_proposals IS 'Ценовые предложения контрагентов по позициям сметы';
-COMMENT ON TABLE tender_proposal_files IS 'Загруженные Excel файлы с КП от контрагентов';
+COMMENT ON TABLE tender_proposal_files IS 'Файлы КП/документов от контрагентов по тендеру (связь с s3_documents)';
+COMMENT ON COLUMN tender_proposal_files.file_kind IS 'commercial_proposal — это КП; attachment — вспомогательный документ';
+COMMENT ON COLUMN tender_proposal_files.proposal_group_id IS 'Идентификатор группы версий одного КП (исходный → со скидкой → ...). NULL для attachment.';
+COMMENT ON COLUMN tender_proposal_files.version_label IS 'Свободная метка версии: исходный, со скидкой 5%, финальный и т.п.';
 
 COMMENT ON COLUMN tender_estimate_items.estimate_name IS 'Название сметы (для группировки нескольких смет в одном тендере)';
 COMMENT ON COLUMN tender_estimate_items.row_number IS '№ п/п';

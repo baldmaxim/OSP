@@ -3242,3 +3242,14 @@
   font-size: 0.75rem;
   color: var(--text-tertiary);
 }
+
+/* Подстрока с файлами КП под каждым участником (task 290). */
+.participant-files-row > td.participant-files-cell {
+  padding: 0.5rem 0.75rem 0.875rem;
+  background: rgba(148, 163, 184, 0.05);
+  border-top: 0;
+}
+
+[data-theme='dark'] .participant-files-row > td.participant-files-cell {
+  background: rgba(255, 255, 255, 0.02);
+}

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
+import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import { copyToClipboard } from '../utils/clipboard'
 import '../components/Tenders.css'
 
@@ -432,28 +433,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         return [...prev, counterpartyId]
       }
     })
-  }
-
-  const handleUpdateCounterpartyProposalLink = async (tenderId, tenderCounterpartyId, currentLink) => {
-    const next = window.prompt('Ссылка на КП (Google/Yandex Drive):', currentLink || '')
-    if (next === null) return // отменили
-    const newValue = next.trim() || null
-    try {
-      const { error } = await supabase
-        .from('tender_counterparties')
-        .update({ proposal_link: newValue })
-        .eq('id', tenderCounterpartyId)
-      if (error) throw error
-      setTenderCounterparties(prev => ({
-        ...prev,
-        [tenderId]: prev[tenderId].map(tc =>
-          tc.id === tenderCounterpartyId ? { ...tc, proposal_link: newValue } : tc
-        )
-      }))
-    } catch (error) {
-      console.error('Ошибка сохранения ссылки на КП:', error.message)
-      alert('Ошибка сохранения: ' + error.message)
-    }
   }
 
   const handleUpdateCounterpartyStatus = async (tenderId, tenderCounterpartyId, newStatus) => {
@@ -2312,14 +2291,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                   <th style={{ width: '13%' }}>Контактные данные</th>
                                   <th style={{ width: '140px' }}>Email</th>
                                   <th style={{ width: '190px' }}>Статус</th>
-                                  <th style={{ width: '120px' }}>КП</th>
                                   <th>Примечание</th>
                                   <th style={{ width: '56px' }}></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {tenderCounterparties[tender.id].map((tc, index) => (
-                                  <tr key={tc.id}>
+                                  <React.Fragment key={tc.id}>
+                                  <tr>
                                     <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>
                                       {index + 1}
                                     </td>
@@ -2435,44 +2414,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       </select>
                                     </td>
                                     <td>
-                                      {tc.proposal_link ? (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                                          <a
-                                            href={tc.proposal_link}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="link"
-                                          >
-                                            Открыть
-                                          </a>
-                                          <button
-                                            className="btn-icon btn-edit"
-                                            onClick={() => handleUpdateCounterpartyProposalLink(tender.id, tc.id, tc.proposal_link)}
-                                            title="Изменить ссылку"
-                                            style={{ fontSize: '0.75rem' }}
-                                          >
-                                            ✏️
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <button
-                                          onClick={() => handleUpdateCounterpartyProposalLink(tender.id, tc.id, '')}
-                                          style={{
-                                            background: 'none',
-                                            border: '1px dashed var(--border-color)',
-                                            borderRadius: '4px',
-                                            padding: '0.1875rem 0.5rem',
-                                            color: 'var(--text-tertiary)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.75rem'
-                                          }}
-                                          title="Добавить ссылку на КП"
-                                        >
-                                          + ссылка
-                                        </button>
-                                      )}
-                                    </td>
-                                    <td>
                                       <textarea
                                         ref={(el) => {
                                           if (el) {
@@ -2520,6 +2461,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       </button>
                                     </td>
                                   </tr>
+                                  <tr className="participant-files-row">
+                                    <td colSpan={7} className="participant-files-cell">
+                                      <TenderCounterpartyFiles
+                                        tenderId={tender.id}
+                                        counterpartyId={tc.counterparty_id}
+                                      />
+                                    </td>
+                                  </tr>
+                                  </React.Fragment>
                                 ))}
                               </tbody>
                             </table>

@@ -895,7 +895,7 @@ function ObjectDetailPage() {
           {/* Договор генподряда */}
           <div className="doc-section">
             <div className="doc-section-header">
-              <span>Договор генподряда</span>
+              <span>Договор Генподряда</span>
               {!generalContract && <button className="btn-add" onClick={() => handleAddDocument('general_contract')}>+ Добавить</button>}
             </div>
             {generalContract ? (
@@ -1267,7 +1267,7 @@ function ObjectDetailPage() {
                     </div>
                     <div>
                       <label>Дата</label>
-                      <input type="date" value={documentFormData.document_date} onChange={(e) => setDocumentFormData({ ...documentFormData, document_date: e.target.value })} />
+                      <input type="date" min="1900-01-01" max="2100-12-31" value={documentFormData.document_date} onChange={(e) => setDocumentFormData({ ...documentFormData, document_date: e.target.value })} />
                     </div>
                   </div>
                 </>

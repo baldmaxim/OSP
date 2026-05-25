@@ -400,6 +400,12 @@
   white-space: nowrap;
 }
 
+/* Полупрозрачные вертикальные разделители колонок — читаются и в light, и в dark. */
+.doc-table th:not(:last-child),
+.doc-row-tr td:not(:last-child) {
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+}
+
 .doc-row-tr td {
   padding: 0.5rem 0.75rem;
   border-top: 1px solid var(--border-color);
