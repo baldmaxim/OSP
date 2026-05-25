@@ -87,6 +87,14 @@
   font-weight: 500;
 }
 
+.cp-card-chip-date {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .cp-card-chip-btn {
   flex-shrink: 0;
   width: 20px;

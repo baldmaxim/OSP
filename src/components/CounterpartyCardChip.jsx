@@ -68,6 +68,15 @@ const IconTrash = (props) => (
   </Icon>
 )
 
+function formatDate(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}.${mm}.${d.getFullYear()}`
+}
+
 export default function CounterpartyCardChip({ counterparty, card, canEdit, onChange }) {
   const fileInputRef = useRef(null)
   const [busy, setBusy] = useState(false)
@@ -153,6 +162,11 @@ export default function CounterpartyCardChip({ counterparty, card, canEdit, onCh
           <IconFile className="cp-card-chip-icon-file" />
           <span className="cp-card-chip-label">Карточка:</span>
           <span className="cp-card-chip-name" title={card.file_name}>{card.file_name}</span>
+          {card.created_at && (
+            <span className="cp-card-chip-date" title={`Загружено ${formatDate(card.created_at)}`}>
+              · {formatDate(card.created_at)}
+            </span>
+          )}
           <button
             type="button"
             className="cp-card-chip-btn"
