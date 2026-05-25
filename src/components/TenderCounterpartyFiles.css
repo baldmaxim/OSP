@@ -21,6 +21,13 @@
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
 
+/* Шапка без заголовка (только кнопка) — без подложечной линии, по правому краю. */
+.tcpf-section-header-no-title {
+  justify-content: flex-end;
+  border-bottom: 0;
+  padding: 0 0 0.125rem;
+}
+
 .tcpf-section-title {
   font-size: 0.75rem;
   font-weight: 600;

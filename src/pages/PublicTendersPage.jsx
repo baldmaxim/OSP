@@ -130,10 +130,10 @@ function PublicTendersPage() {
               <tbody>
                 {visibleTenders.map(t => (
                   <tr key={t.id}>
-                    <td className="col-num">
+                    <td className="col-num" data-label="№">
                       {t.public_tender_number ?? '—'}
                     </td>
-                    <td className="col-object">
+                    <td className="col-object" data-label="Объект">
                       <div className="public-tender-object">{t.objects?.name || 'Объект не указан'}</div>
                       {/* task 195: адрес как гиперссылка на карту вместо отдельного столбца */}
                       {t.objects?.address && (
@@ -152,16 +152,16 @@ function PublicTendersPage() {
                         )
                       )}
                     </td>
-                    <td className="col-desc">
+                    <td className="col-desc" data-label="Описание работ">
                       <div className="public-tender-description">{t.work_description || '—'}</div>
                     </td>
-                    <td className="col-dates">
+                    <td className="col-dates" data-label="Сроки выполнения работ">
                       {formatShortRange(t.start_date, t.end_date)}
                     </td>
-                    <td className="col-dates">
+                    <td className="col-dates" data-label="Приём КП">
                       {t.tender_end_date ? `до ${formatShortDate(t.tender_end_date)}` : '—'}
                     </td>
-                    <td className="col-package">
+                    <td className="col-package" data-label="Тендерный пакет">
                       {t.tender_package_link ? (
                         <a
                           href={t.tender_package_link}

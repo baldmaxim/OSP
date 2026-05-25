@@ -1207,9 +1207,9 @@ function TenderDetailPage() {
                       <th style={{ width: '40px' }}>№</th>
                       <th>Наименование контрагента</th>
                       <th>Контакт</th>
-                      <th>Телефон</th>
+                      <th style={{ width: '140px' }}>Телефон</th>
                       <th style={{ width: '190px' }}>Статус</th>
-                      <th style={{ width: '360px' }}>КП / Документы</th>
+                      <th style={{ width: '280px' }}>КП / Документы</th>
                       <th style={{ minWidth: '350px', width: '35%' }}>Примечание</th>
                     </tr>
                   </thead>
@@ -1247,7 +1247,7 @@ function TenderDetailPage() {
                             {firstContact?.phone ? (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
                                 {firstContact.phone.split(';').map((ph, i) => (
-                                  ph.trim() && <a key={i} href={`tel:${ph.trim()}`} style={{ color: 'var(--primary-color)', textDecoration: 'none', fontSize: '0.8125rem' }}>{ph.trim()}</a>
+                                  ph.trim() && <a key={i} href={`tel:${ph.trim()}`} style={{ color: 'var(--primary-color)', textDecoration: 'none', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>{ph.trim()}</a>
                                 ))}
                               </div>
                             ) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}

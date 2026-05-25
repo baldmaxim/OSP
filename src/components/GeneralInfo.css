@@ -336,8 +336,8 @@
 .people-table th,
 .people-table td {
   border-right: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Без overflow/ellipsis — длинные значения (должности, ФИО) переносятся
+     на следующую строку благодаря word-break: break-word на td ниже. */
 }
 
 .people-table th:last-child,

@@ -2291,7 +2291,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                   <th style={{ width: '13%' }}>Контактные данные</th>
                                   <th style={{ width: '140px' }}>Email</th>
                                   <th style={{ width: '190px' }}>Статус</th>
-                                  <th style={{ width: '360px' }}>КП / Документы</th>
+                                  <th style={{ width: '280px' }}>КП / Документы</th>
                                   <th>Примечание</th>
                                   <th style={{ width: '56px' }}></th>
                                 </tr>

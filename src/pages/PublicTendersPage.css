@@ -385,6 +385,62 @@
   background: var(--bg-secondary);
 }
 
+/* Мобильная адаптация (task 292): таблица превращается в карточки.
+   Заголовок столбца показываем перед значением через ::before { content: attr(data-label) }. */
+@media (max-width: 768px) {
+  .public-tenders-table-wrap {
+    overflow: visible;
+  }
+  .public-tenders-table {
+    min-width: 0;
+    width: 100%;
+    display: block;
+  }
+  .public-tenders-table thead {
+    display: none;
+  }
+  .public-tenders-table tbody {
+    display: block;
+  }
+  .public-tenders-table tbody tr {
+    display: block;
+    margin: 0 0 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+  }
+  .public-tenders-table tbody td {
+    display: grid;
+    grid-template-columns: minmax(120px, 38%) 1fr;
+    column-gap: 0.5rem;
+    padding: 0.375rem 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+    width: auto !important;
+    min-width: 0;
+  }
+  .public-tenders-table tbody td::before {
+    content: attr(data-label);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--text-tertiary);
+    align-self: start;
+  }
+  /* Тулбар (поиск + счётчик) в столбик, поиск во всю ширину. */
+  .public-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  .public-search {
+    width: 100%;
+  }
+}
+
 @media (max-width: 600px) {
   .public-header-inner,
   .public-content {

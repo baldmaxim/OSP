@@ -38,11 +38,17 @@ function ContactsPage() {
 
   const defaultPositions = ['Руководитель', 'Экономист', 'Старший инженер', 'Инженер', 'Прораб']
 
+  // Снимаем шаблон «X и X» (исторические дубли в данных) → оставляем один X.
+  const normalizePosition = (p) => {
+    if (!p) return p
+    return p.replace(/^(.+?)\s+и\s+\1$/i, '$1').trim()
+  }
+
   // Собираем уникальные должности: справочник positions + использованные в контактах + дефолтные
   const allPositions = [...new Set([
     ...defaultPositions,
-    ...positions.map(p => p.name),
-    ...contacts.map(c => c.position).filter(Boolean)
+    ...positions.map(p => normalizePosition(p.name)).filter(Boolean),
+    ...contacts.map(c => normalizePosition(c.position)).filter(Boolean)
   ])].sort()
 
   useEffect(() => {
@@ -354,7 +360,7 @@ function ContactsPage() {
   }
 
   const handleInlinePositionChange = async (contactId, newPosition) => {
-    const value = newPosition?.trim() || null
+    const value = normalizePosition(newPosition?.trim()) || null
     try {
       const { error } = await supabase
         .from('contacts')
@@ -668,21 +674,26 @@ function ContactsPage() {
                         </select>
                       </td>
                       <td>
-                        <select
-                          className="inline-object-select"
-                          value={contact.position || ''}
-                          onChange={(e) => handleInlinePositionChange(contact.id, e.target.value)}
-                          title={contact.position || 'Должность сотрудника'}
-                        >
-                          <option value="">— не указана —</option>
-                          {allPositions.map(pos => (
-                            <option key={pos} value={pos}>{pos}</option>
-                          ))}
-                          {/* Если у контакта установлена должность, которой нет в справочнике — показываем как опцию */}
-                          {contact.position && !allPositions.includes(contact.position) && (
-                            <option value={contact.position}>{contact.position}</option>
-                          )}
-                        </select>
+                        {(() => {
+                          const displayPosition = normalizePosition(contact.position) || ''
+                          return (
+                            <select
+                              className="inline-object-select"
+                              value={displayPosition}
+                              onChange={(e) => handleInlinePositionChange(contact.id, e.target.value)}
+                              title={displayPosition || 'Должность сотрудника'}
+                            >
+                              <option value="">— не указана —</option>
+                              {allPositions.map(pos => (
+                                <option key={pos} value={pos}>{pos}</option>
+                              ))}
+                              {/* Если у контакта должность, которой нет в справочнике — показываем как опцию */}
+                              {displayPosition && !allPositions.includes(displayPosition) && (
+                                <option value={displayPosition}>{displayPosition}</option>
+                              )}
+                            </select>
+                          )
+                        })()}
                       </td>
                       <td>
                         <select

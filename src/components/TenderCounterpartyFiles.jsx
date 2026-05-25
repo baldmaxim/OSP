@@ -208,10 +208,10 @@ export default function TenderCounterpartyFiles({
       <input ref={attachmentRef} type="file" multiple style={{ display: 'none' }} onChange={handleAttachmentFile} />
 
       {/* === КОММЕРЧЕСКИЕ ПРЕДЛОЖЕНИЯ === */}
+      {/* Заголовок секции опущен: столбец таблицы уже подписан «КП / Документы». */}
       <div className="tcpf-section tcpf-section-proposals">
-        <div className="tcpf-section-header">
-          <span className="tcpf-section-title">Коммерческие предложения</span>
-          {canEdit && (
+        {canEdit && (
+          <div className="tcpf-section-header tcpf-section-header-no-title">
             <button
               type="button"
               className="tcpf-btn-primary"
@@ -220,8 +220,8 @@ export default function TenderCounterpartyFiles({
             >
               {uploading ? 'Загрузка…' : '+ Добавить КП'}
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {loading && <div className="tcpf-empty">Загрузка…</div>}
         {error && <div className="tcpf-error">{error}</div>}
