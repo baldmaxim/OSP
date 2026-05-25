@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
@@ -1209,6 +1209,7 @@ function TenderDetailPage() {
                       <th>Контакт</th>
                       <th>Телефон</th>
                       <th style={{ width: '190px' }}>Статус</th>
+                      <th style={{ width: '360px' }}>КП / Документы</th>
                       <th style={{ minWidth: '350px', width: '35%' }}>Примечание</th>
                     </tr>
                   </thead>
@@ -1218,8 +1219,7 @@ function TenderDetailPage() {
                       const isWinner = winnerIds.has(tc.counterparty_id)
                       const winnerScope = winnersList.find(w => w.id === tc.counterparty_id)?.scope || ''
                       return (
-                        <Fragment key={tc.id}>
-                        <tr style={isWinner ? { background: 'rgba(22, 163, 74, 0.08)' } : {}}>
+                        <tr key={tc.id} style={isWinner ? { background: 'rgba(22, 163, 74, 0.08)' } : {}}>
                           <td style={{ textAlign: 'center', fontWeight: 600, color: 'var(--text-tertiary)' }}>{idx + 1}</td>
                           <td>
                             <div style={{ fontWeight: 600 }}>
@@ -1275,6 +1275,12 @@ function TenderDetailPage() {
                             </select>
                           </td>
                           <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
+                            <TenderCounterpartyFiles
+                              tenderId={tenderId}
+                              counterpartyId={tc.counterparty_id}
+                            />
+                          </td>
+                          <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
                             <textarea
                               value={tc.notes || ''}
                               onChange={(e) => {
@@ -1310,15 +1316,6 @@ function TenderDetailPage() {
                             />
                           </td>
                         </tr>
-                        <tr className="participant-files-row">
-                          <td colSpan={6} className="participant-files-cell">
-                            <TenderCounterpartyFiles
-                              tenderId={tenderId}
-                              counterpartyId={tc.counterparty_id}
-                            />
-                          </td>
-                        </tr>
-                        </Fragment>
                       )
                     })}
                   </tbody>

@@ -2291,14 +2291,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                   <th style={{ width: '13%' }}>Контактные данные</th>
                                   <th style={{ width: '140px' }}>Email</th>
                                   <th style={{ width: '190px' }}>Статус</th>
+                                  <th style={{ width: '360px' }}>КП / Документы</th>
                                   <th>Примечание</th>
                                   <th style={{ width: '56px' }}></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {tenderCounterparties[tender.id].map((tc, index) => (
-                                  <React.Fragment key={tc.id}>
-                                  <tr>
+                                  <tr key={tc.id}>
                                     <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>
                                       {index + 1}
                                     </td>
@@ -2413,6 +2413,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                         ))}
                                       </select>
                                     </td>
+                                    <td style={{ verticalAlign: 'top' }}>
+                                      <TenderCounterpartyFiles
+                                        tenderId={tender.id}
+                                        counterpartyId={tc.counterparty_id}
+                                      />
+                                    </td>
                                     <td>
                                       <textarea
                                         ref={(el) => {
@@ -2461,15 +2467,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       </button>
                                     </td>
                                   </tr>
-                                  <tr className="participant-files-row">
-                                    <td colSpan={7} className="participant-files-cell">
-                                      <TenderCounterpartyFiles
-                                        tenderId={tender.id}
-                                        counterpartyId={tc.counterparty_id}
-                                      />
-                                    </td>
-                                  </tr>
-                                  </React.Fragment>
                                 ))}
                               </tbody>
                             </table>
