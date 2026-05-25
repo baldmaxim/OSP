@@ -167,38 +167,40 @@ export default function CounterpartyCardChip({ counterparty, card, canEdit, onCh
               · {formatDate(card.created_at)}
             </span>
           )}
-          <button
-            type="button"
-            className="cp-card-chip-btn"
-            onClick={handlePreview}
-            title="Просмотр"
-            disabled={busy}
-          ><IconEye /></button>
-          <button
-            type="button"
-            className="cp-card-chip-btn"
-            onClick={handleDownload}
-            title="Скачать"
-            disabled={busy}
-          ><IconDownload /></button>
-          {canEdit && (
-            <>
-              <button
-                type="button"
-                className="cp-card-chip-btn"
-                onClick={handlePick}
-                title="Заменить"
-                disabled={busy}
-              ><IconRefresh /></button>
-              <button
-                type="button"
-                className="cp-card-chip-btn cp-card-chip-btn-danger"
-                onClick={handleDelete}
-                title="Удалить"
-                disabled={busy}
-              ><IconTrash /></button>
-            </>
-          )}
+          <span className="cp-card-chip-actions">
+            <button
+              type="button"
+              className="cp-card-chip-btn"
+              onClick={handlePreview}
+              title="Просмотр"
+              disabled={busy}
+            ><IconEye /></button>
+            <button
+              type="button"
+              className="cp-card-chip-btn"
+              onClick={handleDownload}
+              title="Скачать"
+              disabled={busy}
+            ><IconDownload /></button>
+            {canEdit && (
+              <>
+                <button
+                  type="button"
+                  className="cp-card-chip-btn"
+                  onClick={handlePick}
+                  title="Заменить"
+                  disabled={busy}
+                ><IconRefresh /></button>
+                <button
+                  type="button"
+                  className="cp-card-chip-btn cp-card-chip-btn-danger"
+                  onClick={handleDelete}
+                  title="Удалить"
+                  disabled={busy}
+                ><IconTrash /></button>
+              </>
+            )}
+          </span>
         </span>
       ) : canEdit ? (
         <button

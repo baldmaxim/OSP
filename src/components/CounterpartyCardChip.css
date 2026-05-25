@@ -43,14 +43,18 @@
   cursor: progress;
 }
 
-/* Заполненное состояние — inline-строка с иконкой, лейблом, именем и кнопками. */
+/* Заполненное состояние — flex-строка с иконкой, лейблом, именем, датой и блоком
+   кнопок. Разрешаем перенос — в узкой колонке группа кнопок уезжает на новую строку,
+   но остаётся целой (внутри inline-flex с flex-shrink:0). */
 .cp-card-chip-filled {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem;
+  column-gap: 0.25rem;
+  row-gap: 0.1875rem;
   max-width: 100%;
   min-width: 0;
-  padding: 0.125rem 0.375rem;
+  padding: 0.1875rem 0.375rem;
   background: rgba(37, 99, 235, 0.06);
   border: 1px solid rgba(37, 99, 235, 0.2);
   border-radius: 5px;
@@ -93,6 +97,16 @@
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* Группа кнопок-действий — остаётся неразрывным блоком; при переносе
+   уезжает на новую строку целиком, а не по одной кнопке. */
+.cp-card-chip-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .cp-card-chip-btn {
