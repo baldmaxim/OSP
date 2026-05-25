@@ -410,10 +410,10 @@
     border-radius: 8px;
     background: var(--bg-primary);
   }
+  /* Блок-стек: подпись сверху, значение снизу. Работает с любым числом детей в td
+     (в т.ч. с «Объект» — название + ссылка-адрес). */
   .public-tenders-table tbody td {
-    display: grid;
-    grid-template-columns: minmax(120px, 38%) 1fr;
-    column-gap: 0.5rem;
+    display: block;
     padding: 0.375rem 0;
     border: 0;
     text-align: left;
@@ -423,12 +423,13 @@
   }
   .public-tenders-table tbody td::before {
     content: attr(data-label);
+    display: block;
+    margin-bottom: 0.1875rem;
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.02em;
     color: var(--text-tertiary);
-    align-self: start;
   }
   /* Тулбар (поиск + счётчик) в столбик, поиск во всю ширину. */
   .public-toolbar {

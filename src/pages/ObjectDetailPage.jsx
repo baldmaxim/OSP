@@ -155,6 +155,7 @@ function ObjectDetailPage() {
   const [activeTab, setActiveTab] = useState('info')
   const [expandedDocs, setExpandedDocs] = useState(new Set())
   const didInitExpand = useRef(false)
+  const [docSearchQuery, setDocSearchQuery] = useState('')
   const [isEstimateFullscreen, setIsEstimateFullscreen] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState(new Set())
   const estimateFileRef = useRef(null)
@@ -274,6 +275,27 @@ function ObjectDetailPage() {
   useEffect(() => {
     if (objectId) fetchObjectData()
   }, [objectId, fetchObjectData])
+
+  // Автораскрытие групп с совпавшими приложениями при поиске (task 297).
+  useEffect(() => {
+    const q = docSearchQuery.trim().toLowerCase()
+    if (!q) return
+    const idsToExpand = new Set()
+    for (const d of documents) {
+      if (!d.parent_document_id) continue
+      const hay = [d.name, d.document_number, d.notes].filter(Boolean).join(' ').toLowerCase()
+      if (hay.includes(q)) idsToExpand.add(d.parent_document_id)
+    }
+    if (idsToExpand.size === 0) return
+    setExpandedDocs(prev => {
+      let changed = false
+      const next = new Set(prev)
+      for (const id of idsToExpand) {
+        if (!next.has(id)) { next.add(id); changed = true }
+      }
+      return changed ? next : prev
+    })
+  }, [docSearchQuery, documents])
 
   const toggleExpand = (docId) => {
     setExpandedDocs(prev => {
@@ -818,6 +840,28 @@ function ObjectDetailPage() {
   const additionalAgreements = documents.filter(d => d.document_type === 'additional_agreement' && !d.parent_document_id)
   const getAttachments = (parentId) => documents.filter(d => d.parent_document_id === parentId)
 
+  // Фильтрация по поисковому запросу (task 297). Родитель показывается, если совпал
+  // сам или совпало хотя бы одно из его приложений. При совпадении только приложения
+  // — показываем родителя + только совпавшие приложения (контекст).
+  const docQuery = docSearchQuery.trim().toLowerCase()
+  const matchesDocQuery = (doc) => {
+    if (!docQuery) return true
+    const hay = [doc.name, doc.document_number, doc.notes]
+      .filter(Boolean).join(' ').toLowerCase()
+    return hay.includes(docQuery)
+  }
+  const filterDocGroup = (parent, atts) => {
+    if (!docQuery) return { parent, atts }
+    if (matchesDocQuery(parent)) return { parent, atts }
+    const matched = atts.filter(matchesDocQuery)
+    return matched.length > 0 ? { parent, atts: matched } : null
+  }
+  const visibleContract = generalContract ? filterDocGroup(generalContract, contractAttachments) : null
+  const visibleAgreements = additionalAgreements
+    .map(ag => filterDocGroup(ag, getAttachments(ag.id)))
+    .filter(Boolean)
+  const docSearchEmpty = !!docQuery && !visibleContract && visibleAgreements.length === 0
+
   if (loading) return <div className="loading">Загрузка...</div>
   if (!object) return (
     <div className="object-detail-page">
@@ -892,88 +936,120 @@ function ObjectDetailPage() {
       {/* Документы */}
       {activeTab === 'documents' && (
         <div className="tab-content documents-content">
-          {/* Договор генподряда */}
-          <div className="doc-section">
-            <div className="doc-section-header">
-              <span>Договор Генподряда</span>
-              {!generalContract && <button className="btn-add" onClick={() => handleAddDocument('general_contract')}>+ Добавить</button>}
-            </div>
-            {generalContract ? (
-              <div className="doc-table-wrap">
-                <table className="doc-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '28px' }}></th>
-                      <th style={{ width: '200px' }}>Наименование</th>
-                      <th style={{ width: '260px' }}>№ / дата</th>
-                      <th>Подписанный документ</th>
-                      <th>Редактируемый документ</th>
-                      <th style={{ width: '100px' }}>Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <DocRow
-                      doc={generalContract}
-                      attachments={contractAttachments}
-                      expandedDocs={expandedDocs}
-                      toggleExpand={toggleExpand}
-                      formatDate={formatDate}
-                      onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
-                      onEdit={handleEditDocument}
-                      onDelete={handleDeleteDocument}
-                      onPreviewFile={handlePreviewFile}
-                      onDownloadFile={handleDownloadFile}
-                    />
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="doc-empty">Не добавлен</div>
+          {/* Поиск по документам (task 297) */}
+          <div className="docs-search-toolbar">
+            <span className="docs-search-icon" aria-hidden>🔍</span>
+            <input
+              type="search"
+              className="docs-search-input"
+              placeholder="Поиск по документам..."
+              value={docSearchQuery}
+              onChange={(e) => setDocSearchQuery(e.target.value)}
+            />
+            {docSearchQuery && (
+              <button
+                type="button"
+                className="docs-search-clear"
+                onClick={() => setDocSearchQuery('')}
+                title="Очистить"
+              >×</button>
             )}
           </div>
 
-          {/* Дополнительные соглашения */}
-          <div className="doc-section">
-            <div className="doc-section-header">
-              <span>Дополнительные соглашения ({additionalAgreements.length})</span>
-              <button className="btn-add" onClick={() => handleAddDocument('additional_agreement')}>+ Добавить</button>
+          {docSearchEmpty ? (
+            <div className="docs-empty-state">
+              По запросу «{docSearchQuery}» ничего не найдено
             </div>
-            {additionalAgreements.length > 0 ? (
-              <div className="doc-table-wrap">
-                <table className="doc-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '28px' }}></th>
-                      <th style={{ width: '200px' }}>Наименование</th>
-                      <th style={{ width: '260px' }}>№ / дата</th>
-                      <th>Подписанный документ</th>
-                      <th>Редактируемый документ</th>
-                      <th style={{ width: '100px' }}>Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {additionalAgreements.map(doc => (
-                      <DocRow
-                        key={doc.id}
-                        doc={doc}
-                        attachments={getAttachments(doc.id)}
-                        expandedDocs={expandedDocs}
-                        toggleExpand={toggleExpand}
-                        formatDate={formatDate}
-                        onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
-                        onEdit={handleEditDocument}
-                        onDelete={handleDeleteDocument}
-                        onPreviewFile={handlePreviewFile}
-                        onDownloadFile={handleDownloadFile}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="doc-empty">Нет</div>
-            )}
-          </div>
+          ) : (
+            <>
+              {/* Договор Генподряда */}
+              {(!docQuery || visibleContract) && (
+                <div className="doc-section">
+                  <div className="doc-section-header">
+                    <span>Договор Генподряда</span>
+                    {!generalContract && <button className="btn-add" onClick={() => handleAddDocument('general_contract')}>+ Добавить</button>}
+                  </div>
+                  {visibleContract ? (
+                    <div className="doc-table-wrap">
+                      <table className="doc-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '28px' }}></th>
+                            <th style={{ width: '200px' }}>Наименование</th>
+                            <th style={{ width: '260px' }}>№ / дата</th>
+                            <th>Подписанный документ</th>
+                            <th>Редактируемый документ</th>
+                            <th style={{ width: '100px' }}>Действия</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <DocRow
+                            doc={visibleContract.parent}
+                            attachments={visibleContract.atts}
+                            expandedDocs={expandedDocs}
+                            toggleExpand={toggleExpand}
+                            formatDate={formatDate}
+                            onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
+                            onEdit={handleEditDocument}
+                            onDelete={handleDeleteDocument}
+                            onPreviewFile={handlePreviewFile}
+                            onDownloadFile={handleDownloadFile}
+                          />
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="doc-empty">Не добавлен</div>
+                  )}
+                </div>
+              )}
+
+              {/* Дополнительные соглашения */}
+              {(!docQuery || visibleAgreements.length > 0) && (
+                <div className="doc-section">
+                  <div className="doc-section-header">
+                    <span>Дополнительные соглашения ({additionalAgreements.length})</span>
+                    <button className="btn-add" onClick={() => handleAddDocument('additional_agreement')}>+ Добавить</button>
+                  </div>
+                  {visibleAgreements.length > 0 ? (
+                    <div className="doc-table-wrap">
+                      <table className="doc-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '28px' }}></th>
+                            <th style={{ width: '200px' }}>Наименование</th>
+                            <th style={{ width: '260px' }}>№ / дата</th>
+                            <th>Подписанный документ</th>
+                            <th>Редактируемый документ</th>
+                            <th style={{ width: '100px' }}>Действия</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleAgreements.map(g => (
+                            <DocRow
+                              key={g.parent.id}
+                              doc={g.parent}
+                              attachments={g.atts}
+                              expandedDocs={expandedDocs}
+                              toggleExpand={toggleExpand}
+                              formatDate={formatDate}
+                              onAddAttachment={(parentId) => handleAddDocument('attachment', parentId)}
+                              onEdit={handleEditDocument}
+                              onDelete={handleDeleteDocument}
+                              onPreviewFile={handlePreviewFile}
+                              onDownloadFile={handleDownloadFile}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="doc-empty">Нет</div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
