@@ -4,11 +4,12 @@ import * as XLSX from 'xlsx'
 import { formatPhone } from '../utils/phoneFormat'
 import { generateUUID } from '../utils/uuid'
 import { useRole } from '../contexts/RoleContext'
+import CounterpartyCardChip from '../components/CounterpartyCardChip'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
 function CounterpartiesPage() {
-  const { isAdmin } = useRole()
+  const { isAdmin, isEmployee } = useRole()
   const [counterparties, setCounterparties] = useState([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -22,6 +23,8 @@ function CounterpartiesPage() {
   const [selectedCounterpartyIds, setSelectedCounterpartyIds] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
   const [workTypeFilter, setWorkTypeFilter] = useState('')
+  // task 302: карточки компаний (s3_documents owner_type='counterparty') — map по owner_id, latest first.
+  const [cardsByCp, setCardsByCp] = useState(() => new Map())
   const fileInputRef = useRef(null)
 
   const [counterpartyFormData, setCounterpartyFormData] = useState({
@@ -110,6 +113,23 @@ function CounterpartiesPage() {
 
       if (error) throw error
       setCounterparties(data || [])
+
+      // task 302: одним запросом загружаем все карточки компаний.
+      const { data: cards, error: cardsError } = await supabase
+        .from('s3_documents')
+        .select('*')
+        .eq('owner_type', 'counterparty')
+        .order('created_at', { ascending: false })
+      if (cardsError) {
+        console.warn('Не удалось загрузить карточки компаний:', cardsError.message)
+        setCardsByCp(new Map())
+      } else {
+        const map = new Map()
+        for (const c of cards || []) {
+          if (!map.has(c.owner_id)) map.set(c.owner_id, c) // latest first из order
+        }
+        setCardsByCp(map)
+      }
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error.message)
     } finally {
@@ -1229,6 +1249,17 @@ function CounterpartiesPage() {
                           </td>
                           <td className="col-name">
                             <span className="company-name">{counterparty.name}</span>
+                            <CounterpartyCardChip
+                              counterparty={counterparty}
+                              card={cardsByCp.get(counterparty.id) || null}
+                              canEdit={isEmployee}
+                              onChange={(newCard) => setCardsByCp(prev => {
+                                const next = new Map(prev)
+                                if (newCard) next.set(counterparty.id, newCard)
+                                else next.delete(counterparty.id)
+                                return next
+                              })}
+                            />
                           </td>
                           <td className="col-worktype">
                             {counterparty.work_type ? (

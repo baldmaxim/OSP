@@ -1252,6 +1252,15 @@
   white-space: nowrap;
 }
 
+/* task 302: длинные email не помещаются в колонку и обрезаются — разрешаем
+   перенос по любому символу. */
+.col-contact-email,
+.contacts-stack-emails .phone-cell,
+.contacts-stack-emails .contact-link {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
 /* Примечание */
 .col-notes .notes-text {
   display: -webkit-box;

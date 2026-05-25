@@ -248,7 +248,7 @@ export default function TenderCounterpartyFiles({
       {!loading && !error && (
         <button
           type="button"
-          className="tcpf-toggle-header"
+          className={`tcpf-toggle-header${!isEmpty ? ' tcpf-toggle-header-active' : ''}`}
           onClick={() => setIsExpanded(v => !v)}
           aria-expanded={isExpanded}
         >

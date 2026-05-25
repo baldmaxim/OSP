@@ -1,0 +1,115 @@
+/* CounterpartyCardChip — компактный inline-чип «Карточка компании»
+   под наименованием контрагента в реестре (task 302). */
+
+.cp-card-chip {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+/* Пустое состояние — маленькая dashed-кнопка «+ Карточка компании». */
+.cp-card-chip-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.cp-card-chip-empty:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.cp-card-chip-empty:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+/* Заполненное состояние — inline-строка с иконкой, лейблом, именем и кнопками. */
+.cp-card-chip-filled {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.125rem 0.375rem;
+  background: rgba(37, 99, 235, 0.06);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 5px;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+}
+
+[data-theme='dark'] .cp-card-chip-filled {
+  background: rgba(96, 165, 250, 0.10);
+  border-color: rgba(96, 165, 250, 0.30);
+}
+
+.cp-card-chip-icon {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+
+.cp-card-chip-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.cp-card-chip-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.cp-card-chip-btn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.cp-card-chip-btn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--text-primary);
+}
+
+.cp-card-chip-btn-danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+.cp-card-chip-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cp-card-chip-busy {
+  opacity: 0.7;
+}
