@@ -38,33 +38,34 @@
   border-color: rgba(148, 163, 184, 0.35);
 }
 
-/* Активный тоггл — у контрагента уже есть хоть один файл (task 301). */
+/* Активный тоггл — у контрагента уже есть хоть один файл (task 301).
+   Палитра — спокойный «emerald», как у .doc-link-signed в карточке объекта. */
 .tcpf-toggle-header-active {
-  background: rgba(37, 99, 235, 0.10);
-  border-color: rgba(37, 99, 235, 0.35);
-  color: #1d4ed8;
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.30);
+  color: #15803d;
 }
 .tcpf-toggle-header-active:hover {
-  background: rgba(37, 99, 235, 0.15);
-  border-color: rgba(37, 99, 235, 0.55);
-  color: #1d4ed8;
+  background: rgba(22, 163, 74, 0.13);
+  border-color: rgba(22, 163, 74, 0.45);
+  color: #15803d;
 }
 .tcpf-toggle-header-active .tcpf-chev,
 .tcpf-toggle-header-active .tcpf-summary {
-  color: #1d4ed8;
+  color: #15803d;
   font-weight: 600;
 }
 [data-theme='dark'] .tcpf-toggle-header-active {
-  background: rgba(96, 165, 250, 0.18);
-  border-color: rgba(96, 165, 250, 0.45);
-  color: #93c5fd;
+  background: rgba(22, 163, 74, 0.18);
+  border-color: rgba(22, 163, 74, 0.40);
+  color: #86efac;
 }
 [data-theme='dark'] .tcpf-toggle-header-active:hover {
-  background: rgba(96, 165, 250, 0.25);
+  background: rgba(22, 163, 74, 0.25);
 }
 [data-theme='dark'] .tcpf-toggle-header-active .tcpf-chev,
 [data-theme='dark'] .tcpf-toggle-header-active .tcpf-summary {
-  color: #bfdbfe;
+  color: #bbf7d0;
 }
 
 .tcpf-toggle-header .tcpf-chev {
