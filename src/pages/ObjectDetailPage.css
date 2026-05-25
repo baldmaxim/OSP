@@ -686,6 +686,31 @@
   color: #93c5fd;
 }
 
+/* Icon-заголовки колонок «Подписанный» / «Редактируемый» в ДС-таблице.
+   Цвет матчит акцент колонки — так визуально явно, какая иконка к какой колонке. */
+.doc-th-file-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.doc-th-file-icon-signed {
+  color: #15803d;
+}
+
+.doc-th-file-icon-editable {
+  color: #1d4ed8;
+}
+
+[data-theme='dark'] .doc-th-file-icon-signed {
+  color: #86efac;
+}
+
+[data-theme='dark'] .doc-th-file-icon-editable {
+  color: #93c5fd;
+}
+
 .doc-link-btn {
   display: inline-flex;
   align-items: center;

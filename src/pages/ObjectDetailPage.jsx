@@ -190,7 +190,9 @@ function AgreementRow({
           ) : null}
         </td>
         <td className="doc-cell-name">
-          <span className="doc-name-text" title={doc.name}>{doc.name}</span>
+          <div className="doc-name-line">
+            <span className="doc-name-text" title={doc.name}>{doc.name}</span>
+          </div>
         </td>
         <td className="doc-cell-date">
           {doc.document_date ? formatDate(doc.document_date) : <span className="muted">—</span>}
@@ -205,7 +207,6 @@ function AgreementRow({
           <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
         <td className="doc-cell-actions">
-          <button type="button" className="doc-action-btn" onClick={() => onAddAttachment(doc.id)} title="Добавить приложение">➕</button>
           <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">✏️</button>
           <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(doc.id)} title="Удалить">🗑️</button>
         </td>
@@ -216,9 +217,11 @@ function AgreementRow({
             <span className="doc-attachment-marker" aria-hidden>↳</span>
           </td>
           <td className="doc-cell-name">
-            <span className="doc-name-text" title={att.document_number || ''}>
-              {att.document_number || <span className="muted">—</span>}
-            </span>
+            <div className="doc-name-line">
+              <span className="doc-name-text" title={att.document_number || ''}>
+                {att.document_number || <span className="muted">—</span>}
+              </span>
+            </div>
           </td>
           <td className="doc-cell-date"></td>
           <td className="doc-cell-desc">
@@ -237,6 +240,20 @@ function AgreementRow({
           </td>
         </tr>
       ))}
+      {/* Кнопка «+ Приложение» отдельной строкой под ДС — как у Договора Генподряда. */}
+      <tr className="doc-row-tr-add-attachment">
+        <td colSpan={7}>
+          <button
+            type="button"
+            className="doc-add-attachment-btn"
+            onClick={() => onAddAttachment(doc.id)}
+            title="Добавить приложение к этому документу"
+          >
+            <span aria-hidden>+</span>
+            <span>Приложение</span>
+          </button>
+        </td>
+      </tr>
     </>
   )
 }
@@ -1114,12 +1131,22 @@ function ObjectDetailPage() {
                         <thead>
                           <tr>
                             <th style={{ width: '28px' }}></th>
-                            <th style={{ width: '110px' }}>Наименование</th>
+                            <th style={{ width: '130px' }}>Наименование</th>
                             <th style={{ width: '100px' }}>Дата</th>
                             <th>Описание ДС</th>
-                            <th style={{ width: '120px' }}>Подписанный</th>
-                            <th style={{ width: '120px' }}>Редактируемый</th>
-                            <th style={{ width: '100px' }}>Действия</th>
+                            <th style={{ width: '90px' }} title="Подписанный документ">
+                              <svg className="doc-th-file-icon doc-th-file-icon-signed" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="Подписанный документ">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                              </svg>
+                            </th>
+                            <th style={{ width: '90px' }} title="Редактируемый документ">
+                              <svg className="doc-th-file-icon doc-th-file-icon-editable" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="Редактируемый документ">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                              </svg>
+                            </th>
+                            <th style={{ width: '80px' }}>Действия</th>
                           </tr>
                         </thead>
                         <tbody>
