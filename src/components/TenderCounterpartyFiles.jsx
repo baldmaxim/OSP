@@ -11,8 +11,7 @@ import './TenderCounterpartyFiles.css'
 
 // Файлы КП и сопутствующие документы одного контрагента в рамках тендера (task 290).
 // Используется и в раскрытой строке списка тендеров, и на детальной странице тендера.
-// Сверху — блок «Коммерческие предложения» с группировкой версий (последняя сверху,
-// старые под катом «Версии (N)»). Ниже — блок «Документы» (плоский список).
+// Task 300: список свёрнут под тоггл, загрузка КП — через модалку.
 
 function formatBytes(bytes) {
   if (bytes == null) return '—'
@@ -89,6 +88,11 @@ export default function TenderCounterpartyFiles({
   const [uploading, setUploading] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState(() => new Set())
   const [previewDoc, setPreviewDoc] = useState(null)
+  // task 300: список файлов свёрнут по умолчанию.
+  const [isExpanded, setIsExpanded] = useState(false)
+  // task 300: модалка для ввода метки версии при загрузке КП.
+  // null | { file, proposalGroupId, label }
+  const [uploadModal, setUploadModal] = useState(null)
 
   const newProposalRef = useRef(null)
   const variationRef = useRef(null)
@@ -117,17 +121,22 @@ export default function TenderCounterpartyFiles({
     else newProposalRef.current?.click()
   }
 
-  const handleProposalFile = async (e) => {
+  // task 300: после выбора файла открываем модалку для ввода метки версии,
+  // а не window.prompt. Загрузка происходит в handleUploadConfirm.
+  const handleProposalFile = (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
     const groupId = pendingGroupId.current
     pendingGroupId.current = null
-    const promptText = groupId
-      ? 'Метка вариации (опционально): «со скидкой 5%», «финальный»…'
-      : 'Метка КП (опционально): «исходный», «версия 1»…'
-    const label = window.prompt(promptText, '')
-    if (label === null) return  // Cancel в prompt — отмена загрузки
+    setUploadModal({ file, proposalGroupId: groupId, label: '' })
+  }
+
+  const handleUploadCancel = () => setUploadModal(null)
+
+  const handleUploadConfirm = async () => {
+    if (!uploadModal) return
+    const { file, proposalGroupId, label } = uploadModal
     setUploading(true)
     try {
       await addProposalFile({
@@ -135,12 +144,16 @@ export default function TenderCounterpartyFiles({
         counterpartyId,
         file,
         fileKind: 'commercial_proposal',
-        proposalGroupId: groupId,
+        proposalGroupId,
         versionLabel: label,
       })
-      // Автоматически разворачиваем только что обновлённую группу (если это вариация),
-      // чтобы пользователь сразу видел весь стек версий.
-      if (groupId) setExpandedGroups(prev => new Set(prev).add(groupId))
+      // Автораскрытие группы при добавлении вариации — чтобы стек версий был сразу виден.
+      if (proposalGroupId) {
+        setExpandedGroups(prev => new Set(prev).add(proposalGroupId))
+      }
+      // При первой загрузке полезно сразу показать список целиком.
+      setIsExpanded(true)
+      setUploadModal(null)
       await reload()
     } catch (err) {
       alert('Ошибка загрузки: ' + (err.message || err))
@@ -158,6 +171,8 @@ export default function TenderCounterpartyFiles({
       for (const file of files) {
         await addProposalFile({ tenderId, counterpartyId, file, fileKind: 'attachment' })
       }
+      // Раскрыть список — чтобы пользователь сразу увидел добавленные документы.
+      setIsExpanded(true)
       await reload()
     } catch (err) {
       alert('Ошибка загрузки: ' + (err.message || err))
@@ -200,113 +215,197 @@ export default function TenderCounterpartyFiles({
     })
   }
 
+  const proposalsCount = data.proposals.length
+  const attachmentsCount = data.attachments.length
+  const isEmpty = proposalsCount === 0 && attachmentsCount === 0
+
   return (
     <div className="tcpf">
       {/* Скрытые file-input'ы — клики на видимые кнопки делегируются на них. */}
       <input ref={newProposalRef} type="file" style={{ display: 'none' }} onChange={handleProposalFile} />
-      <input ref={variationRef} type="file" style={{ display: 'none' }} onChange={handleProposalFile} />
-      <input ref={attachmentRef} type="file" multiple style={{ display: 'none' }} onChange={handleAttachmentFile} />
+      <input ref={variationRef}   type="file" style={{ display: 'none' }} onChange={handleProposalFile} />
+      <input ref={attachmentRef}  type="file" multiple style={{ display: 'none' }} onChange={handleAttachmentFile} />
 
-      {/* === КОММЕРЧЕСКИЕ ПРЕДЛОЖЕНИЯ === */}
-      {/* Заголовок секции опущен: столбец таблицы уже подписан «КП / Документы». */}
-      <div className="tcpf-section tcpf-section-proposals">
-        {canEdit && (
-          <div className="tcpf-section-header tcpf-section-header-no-title">
-            <button
-              type="button"
-              className="tcpf-btn-primary"
-              onClick={() => pickProposal(null)}
-              disabled={uploading}
-            >
-              {uploading ? 'Загрузка…' : '+ Добавить КП'}
-            </button>
-          </div>
-        )}
+      {/* Быстрые действия — всегда видны, доступны без раскрытия списка. */}
+      {canEdit && (
+        <div className="tcpf-quick-actions">
+          <button
+            type="button"
+            className="tcpf-btn-primary"
+            onClick={() => pickProposal(null)}
+            disabled={uploading || !!uploadModal}
+          >+ КП</button>
+          <button
+            type="button"
+            className="tcpf-btn-secondary"
+            onClick={() => attachmentRef.current?.click()}
+            disabled={uploading || !!uploadModal}
+          >+ Документ</button>
+        </div>
+      )}
 
-        {loading && <div className="tcpf-empty">Загрузка…</div>}
-        {error && <div className="tcpf-error">{error}</div>}
-        {!loading && !error && data.proposals.length === 0 && (
-          <div className="tcpf-empty">КП не загружены</div>
-        )}
+      {/* Компактный тоггл-сводка. */}
+      {!loading && !error && (
+        <button
+          type="button"
+          className="tcpf-toggle-header"
+          onClick={() => setIsExpanded(v => !v)}
+          aria-expanded={isExpanded}
+        >
+          <span className="tcpf-chev" aria-hidden>{isExpanded ? '▼' : '▶'}</span>
+          <span className="tcpf-summary">
+            {isEmpty
+              ? 'Файлов нет'
+              : `Файлы: ${proposalsCount} КП · ${attachmentsCount} док.`}
+          </span>
+        </button>
+      )}
+      {loading && <div className="tcpf-empty">Загрузка…</div>}
+      {error && <div className="tcpf-error">{error}</div>}
 
-        {data.proposals.map(group => {
-          const isExpanded = expandedGroups.has(group.groupId)
-          return (
-            <div key={group.groupId} className="tcpf-group">
-              <FileRow
-                file={group.latest}
-                variant="primary"
-                onDownload={handleDownload}
-                onPreview={setPreviewDoc}
-                onDelete={canEdit ? handleDelete : null}
-              />
-              {group.older.length > 0 && (
-                <>
+      {/* Раскрытое содержимое */}
+      {isExpanded && !loading && !error && !isEmpty && (
+        <div className="tcpf-expanded">
+          {/* КП-группы */}
+          {data.proposals.map(group => {
+            const groupExpanded = expandedGroups.has(group.groupId)
+            return (
+              <div key={group.groupId} className="tcpf-group">
+                <FileRow
+                  file={group.latest}
+                  variant="primary"
+                  onDownload={handleDownload}
+                  onPreview={setPreviewDoc}
+                  onDelete={canEdit ? handleDelete : null}
+                />
+                {group.older.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="tcpf-toggle"
+                      onClick={() => toggleGroup(group.groupId)}
+                    >
+                      {groupExpanded ? '▼' : '▶'} Версии ({group.older.length})
+                    </button>
+                    {groupExpanded && (
+                      <div className="tcpf-older">
+                        {group.older.map(f => (
+                          <FileRow
+                            key={f.id}
+                            file={f}
+                            variant="muted"
+                            onDownload={handleDownload}
+                            onPreview={setPreviewDoc}
+                            onDelete={canEdit ? handleDelete : null}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                {canEdit && (
                   <button
                     type="button"
-                    className="tcpf-toggle"
-                    onClick={() => toggleGroup(group.groupId)}
-                  >
-                    {isExpanded ? '▼' : '▶'} Версии ({group.older.length})
-                  </button>
-                  {isExpanded && (
-                    <div className="tcpf-older">
-                      {group.older.map(f => (
-                        <FileRow
-                          key={f.id}
-                          file={f}
-                          variant="muted"
-                          onDownload={handleDownload}
-                          onPreview={setPreviewDoc}
-                          onDelete={canEdit ? handleDelete : null}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-              {canEdit && (
-                <button
-                  type="button"
-                  className="tcpf-btn-secondary"
-                  onClick={() => pickProposal(group.groupId)}
-                  disabled={uploading}
-                >+ Добавить вариацию</button>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                    className="tcpf-btn-secondary"
+                    onClick={() => pickProposal(group.groupId)}
+                    disabled={uploading || !!uploadModal}
+                  >+ Добавить вариацию</button>
+                )}
+              </div>
+            )
+          })}
 
-      {/* === ДОКУМЕНТЫ === */}
-      <div className="tcpf-section">
-        <div className="tcpf-section-header">
-          <span className="tcpf-section-title">Документы</span>
-          {canEdit && (
-            <button
-              type="button"
-              className="tcpf-btn-secondary"
-              onClick={() => attachmentRef.current?.click()}
-              disabled={uploading}
-            >+ Добавить документ</button>
+          {/* Раздел вложений (только если есть оба типа — нужен явный разделитель) */}
+          {attachmentsCount > 0 && proposalsCount > 0 && (
+            <div className="tcpf-attachments-divider">Документы</div>
           )}
+          {data.attachments.map(file => (
+            <FileRow
+              key={file.id}
+              file={file}
+              onDownload={handleDownload}
+              onPreview={setPreviewDoc}
+              onDelete={canEdit ? handleDelete : null}
+            />
+          ))}
         </div>
-        {!loading && data.attachments.length === 0 && (
-          <div className="tcpf-empty tcpf-empty-small">Нет вложений</div>
-        )}
-        {data.attachments.map(file => (
-          <FileRow
-            key={file.id}
-            file={file}
-            onDownload={handleDownload}
-            onPreview={setPreviewDoc}
-            onDelete={canEdit ? handleDelete : null}
-          />
-        ))}
-      </div>
+      )}
 
       {previewDoc && (
         <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+      )}
+
+      {/* Модалка загрузки КП */}
+      {uploadModal && (
+        <div
+          className="tcpf-modal-overlay"
+          onClick={handleUploadCancel}
+          onKeyDown={(e) => { if (e.key === 'Escape') handleUploadCancel() }}
+          role="presentation"
+        >
+          <div
+            className="tcpf-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="tcpf-modal-header">
+              <h3 className="tcpf-modal-title">
+                {uploadModal.proposalGroupId ? 'Загрузка вариации КП' : 'Загрузка КП'}
+              </h3>
+              <button
+                type="button"
+                className="tcpf-modal-close"
+                onClick={handleUploadCancel}
+                aria-label="Закрыть"
+              >×</button>
+            </div>
+            <div className="tcpf-modal-body">
+              <div className="tcpf-modal-file">
+                <span className="tcpf-modal-file-icon" aria-hidden>📄</span>
+                <div className="tcpf-modal-file-info">
+                  <span className="tcpf-modal-file-name" title={uploadModal.file.name}>
+                    {uploadModal.file.name}
+                  </span>
+                  <span className="tcpf-modal-file-size">
+                    {formatBytes(uploadModal.file.size)}
+                  </span>
+                </div>
+              </div>
+              <label className="tcpf-modal-field">
+                <span className="tcpf-modal-field-label">Метка версии (опционально)</span>
+                <input
+                  type="text"
+                  value={uploadModal.label}
+                  onChange={(e) => setUploadModal(s => s ? { ...s, label: e.target.value } : s)}
+                  placeholder={uploadModal.proposalGroupId
+                    ? 'например: со скидкой 5%, финальный'
+                    : 'например: исходный, версия 1'}
+                  className="tcpf-modal-input"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); handleUploadConfirm() }
+                    if (e.key === 'Escape') { e.preventDefault(); handleUploadCancel() }
+                  }}
+                />
+              </label>
+            </div>
+            <div className="tcpf-modal-footer">
+              <button
+                type="button"
+                className="tcpf-btn-secondary"
+                onClick={handleUploadCancel}
+                disabled={uploading}
+              >Отмена</button>
+              <button
+                type="button"
+                className="tcpf-btn-primary"
+                onClick={handleUploadConfirm}
+                disabled={uploading}
+              >{uploading ? 'Загрузка…' : 'Загрузить'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
