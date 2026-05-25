@@ -655,10 +655,35 @@
   text-align: center;
 }
 
-/* Компактный вариант файловой ячейки — только две кнопки 👁 ⬇, без имени файла. */
+/* Компактный вариант файловой ячейки — иконка-документ + две кнопки 👁 ⬇,
+   без имени файла. Центрирована в своей колонке. */
 .doc-cell-file-compact {
   justify-content: center;
-  gap: 0.125rem;
+  align-items: center;
+  gap: 0.1875rem;
+}
+
+.doc-cell-file-icon-compact {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.doc-cell-file-compact.doc-cell-file-signed .doc-cell-file-icon-compact {
+  color: #15803d;
+}
+
+.doc-cell-file-compact.doc-cell-file-editable .doc-cell-file-icon-compact {
+  color: #1d4ed8;
+}
+
+[data-theme='dark'] .doc-cell-file-compact.doc-cell-file-signed .doc-cell-file-icon-compact {
+  color: #86efac;
+}
+
+[data-theme='dark'] .doc-cell-file-compact.doc-cell-file-editable .doc-cell-file-icon-compact {
+  color: #93c5fd;
 }
 
 .doc-link-btn {

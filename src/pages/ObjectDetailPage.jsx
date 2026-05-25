@@ -18,7 +18,14 @@ function DocFileCell({ s3doc, accent, onPreview, onDownload, compact = false }) 
       className={`doc-cell-file ${accent === 'signed' ? 'doc-cell-file-signed' : 'doc-cell-file-editable'}${compact ? ' doc-cell-file-compact' : ''}`}
       title={compact ? s3doc.file_name : undefined}
     >
-      {!compact && (
+      {compact ? (
+        // В компакт-режиме показываем только иконку документа — визуальный маркер
+        // «файл есть» — без имени; кнопки идут сразу следом.
+        <svg className="doc-cell-file-icon doc-cell-file-icon-compact" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+      ) : (
         <span className="doc-cell-file-name" title={s3doc.file_name}>
           <svg className="doc-cell-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -198,6 +205,7 @@ function AgreementRow({
           <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
         <td className="doc-cell-actions">
+          <button type="button" className="doc-action-btn" onClick={() => onAddAttachment(doc.id)} title="Добавить приложение">➕</button>
           <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">✏️</button>
           <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(doc.id)} title="Удалить">🗑️</button>
         </td>
@@ -229,19 +237,6 @@ function AgreementRow({
           </td>
         </tr>
       ))}
-      <tr className="doc-row-tr-add-attachment">
-        <td colSpan={7}>
-          <button
-            type="button"
-            className="doc-add-attachment-btn"
-            onClick={() => onAddAttachment(doc.id)}
-            title="Добавить приложение к этому документу"
-          >
-            <span aria-hidden>+</span>
-            <span>Приложение</span>
-          </button>
-        </td>
-      </tr>
     </>
   )
 }
@@ -1122,9 +1117,9 @@ function ObjectDetailPage() {
                             <th style={{ width: '110px' }}>Наименование</th>
                             <th style={{ width: '100px' }}>Дата</th>
                             <th>Описание ДС</th>
-                            <th style={{ width: '70px' }}>Подп.</th>
-                            <th style={{ width: '70px' }}>Ред.</th>
-                            <th style={{ width: '80px' }}>Действия</th>
+                            <th style={{ width: '120px' }}>Подписанный</th>
+                            <th style={{ width: '120px' }}>Редактируемый</th>
+                            <th style={{ width: '100px' }}>Действия</th>
                           </tr>
                         </thead>
                         <tbody>
