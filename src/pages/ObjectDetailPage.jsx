@@ -1134,18 +1134,8 @@ function ObjectDetailPage() {
                             <th style={{ width: '130px' }}>Наименование</th>
                             <th style={{ width: '100px' }}>Дата</th>
                             <th>Описание ДС</th>
-                            <th style={{ width: '90px' }} title="Подписанный документ">
-                              <svg className="doc-th-file-icon doc-th-file-icon-signed" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="Подписанный документ">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                <polyline points="14 2 14 8 20 8"/>
-                              </svg>
-                            </th>
-                            <th style={{ width: '90px' }} title="Редактируемый документ">
-                              <svg className="doc-th-file-icon doc-th-file-icon-editable" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="Редактируемый документ">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                <polyline points="14 2 14 8 20 8"/>
-                              </svg>
-                            </th>
+                            <th style={{ width: '130px' }}>Подписанный</th>
+                            <th style={{ width: '130px' }}>Редактируемый</th>
                             <th style={{ width: '80px' }}>Действия</th>
                           </tr>
                         </thead>
