@@ -11,17 +11,22 @@ import './ObjectDetailPage.css'
 // Объявлена вне ObjectDetailPage — иначе при каждом рендере родителя пересоздаётся компонент,
 // что приводит к unmount-mount всех строк документа и «вылетающим» модалкам редактирования.
 // Ячейка одного файла в строке документа: имя + просмотр + скачать.
-function DocFileCell({ s3doc, accent, onPreview, onDownload }) {
+function DocFileCell({ s3doc, accent, onPreview, onDownload, compact = false }) {
   if (!s3doc) return <span className="muted">—</span>
   return (
-    <div className={`doc-cell-file ${accent === 'signed' ? 'doc-cell-file-signed' : 'doc-cell-file-editable'}`}>
-      <span className="doc-cell-file-name" title={s3doc.file_name}>
-        <svg className="doc-cell-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-          <polyline points="14 2 14 8 20 8"/>
-        </svg>
-        {s3doc.file_name}
-      </span>
+    <div
+      className={`doc-cell-file ${accent === 'signed' ? 'doc-cell-file-signed' : 'doc-cell-file-editable'}${compact ? ' doc-cell-file-compact' : ''}`}
+      title={compact ? s3doc.file_name : undefined}
+    >
+      {!compact && (
+        <span className="doc-cell-file-name" title={s3doc.file_name}>
+          <svg className="doc-cell-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          {s3doc.file_name}
+        </span>
+      )}
       <button type="button" className="doc-cell-file-btn doc-cell-file-btn-view" onClick={() => onPreview(s3doc)} title="Просмотр" aria-label="Просмотр">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/>
@@ -140,6 +145,103 @@ function DocRow({
           </td>
         </tr>
       )}
+    </>
+  )
+}
+
+// AgreementRow — компактный 7-колоночный ряд для таблицы «Дополнительные соглашения».
+// Отдельно от DocRow, потому что у ДС-таблицы свой layout: убран «Номер», добавлен
+// «Описание ДС», компактные файловые ячейки (только иконки).
+function AgreementRow({
+  doc,
+  attachments = [],
+  expandedDocs,
+  toggleExpand,
+  formatDate,
+  onAddAttachment,
+  onEdit,
+  onDelete,
+  onPreviewFile,
+  onDownloadFile,
+}) {
+  const hasAttachments = attachments.length > 0
+  const isExpanded = expandedDocs.has(doc.id)
+  return (
+    <>
+      <tr className="doc-row-tr">
+        <td className="doc-cell-marker">
+          {hasAttachments ? (
+            <button
+              type="button"
+              className="doc-expand-btn"
+              onClick={() => toggleExpand(doc.id)}
+              title={isExpanded ? 'Свернуть приложения' : `Развернуть приложения (${attachments.length})`}
+              aria-label={isExpanded ? 'Свернуть' : 'Развернуть'}
+            >
+              {isExpanded ? '▼' : '▶'}
+            </button>
+          ) : null}
+        </td>
+        <td className="doc-cell-name">
+          <span className="doc-name-text" title={doc.name}>{doc.name}</span>
+        </td>
+        <td className="doc-cell-date">
+          {doc.document_date ? formatDate(doc.document_date) : <span className="muted">—</span>}
+        </td>
+        <td className="doc-cell-desc">
+          {doc.notes || <span className="muted">—</span>}
+        </td>
+        <td className="doc-cell-link-compact">
+          <DocFileCell compact s3doc={doc.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
+        </td>
+        <td className="doc-cell-link-compact">
+          <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
+        </td>
+        <td className="doc-cell-actions">
+          <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">✏️</button>
+          <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(doc.id)} title="Удалить">🗑️</button>
+        </td>
+      </tr>
+      {isExpanded && attachments.map(att => (
+        <tr key={att.id} className="doc-row-tr doc-row-tr-attachment">
+          <td className="doc-cell-marker" style={{ paddingLeft: '22px' }}>
+            <span className="doc-attachment-marker" aria-hidden>↳</span>
+          </td>
+          <td className="doc-cell-name">
+            <span className="doc-name-text" title={att.document_number || ''}>
+              {att.document_number || <span className="muted">—</span>}
+            </span>
+          </td>
+          <td className="doc-cell-date"></td>
+          <td className="doc-cell-desc">
+            <div title={att.name || ''}>{att.name || <span className="muted">—</span>}</div>
+            {att.notes && <div className="doc-notes-line" title={att.notes}>{att.notes}</div>}
+          </td>
+          <td className="doc-cell-link-compact">
+            <DocFileCell compact s3doc={att.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
+          </td>
+          <td className="doc-cell-link-compact">
+            <DocFileCell compact s3doc={att.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
+          </td>
+          <td className="doc-cell-actions">
+            <button type="button" className="doc-action-btn" onClick={() => onEdit(att)} title="Редактировать">✏️</button>
+            <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(att.id)} title="Удалить">🗑️</button>
+          </td>
+        </tr>
+      ))}
+      <tr className="doc-row-tr-add-attachment">
+        <td colSpan={7}>
+          <button
+            type="button"
+            className="doc-add-attachment-btn"
+            onClick={() => onAddAttachment(doc.id)}
+            title="Добавить приложение к этому документу"
+          >
+            <span aria-hidden>+</span>
+            <span>Приложение</span>
+          </button>
+        </td>
+      </tr>
     </>
   )
 }
@@ -1017,16 +1119,17 @@ function ObjectDetailPage() {
                         <thead>
                           <tr>
                             <th style={{ width: '28px' }}></th>
-                            <th style={{ width: '200px' }}>Наименование</th>
-                            <th style={{ width: '260px' }}>№ / дата</th>
-                            <th>Подписанный документ</th>
-                            <th>Редактируемый документ</th>
-                            <th style={{ width: '100px' }}>Действия</th>
+                            <th style={{ width: '110px' }}>Наименование</th>
+                            <th style={{ width: '100px' }}>Дата</th>
+                            <th>Описание ДС</th>
+                            <th style={{ width: '70px' }}>Подп.</th>
+                            <th style={{ width: '70px' }}>Ред.</th>
+                            <th style={{ width: '80px' }}>Действия</th>
                           </tr>
                         </thead>
                         <tbody>
                           {visibleAgreements.map(g => (
-                            <DocRow
+                            <AgreementRow
                               key={g.parent.id}
                               doc={g.parent}
                               attachments={g.atts}
@@ -1336,16 +1439,24 @@ function ObjectDetailPage() {
                     <label>Наименование *</label>
                     <input type="text" value={documentFormData.name} onChange={(e) => setDocumentFormData({ ...documentFormData, name: e.target.value })} required />
                   </div>
-                  <div className="form-row-2">
-                    <div>
-                      <label>Номер</label>
-                      <input type="text" value={documentFormData.document_number} onChange={(e) => setDocumentFormData({ ...documentFormData, document_number: e.target.value })} />
-                    </div>
-                    <div>
+                  {documentFormData.document_type === 'additional_agreement' ? (
+                    // Для ДС «Номер» не нужен — он дублирует «Наименование» (ДС №00.0).
+                    <div className="form-row">
                       <label>Дата</label>
                       <input type="date" min="1900-01-01" max="2100-12-31" value={documentFormData.document_date} onChange={(e) => setDocumentFormData({ ...documentFormData, document_date: e.target.value })} />
                     </div>
-                  </div>
+                  ) : (
+                    <div className="form-row-2">
+                      <div>
+                        <label>Номер</label>
+                        <input type="text" value={documentFormData.document_number} onChange={(e) => setDocumentFormData({ ...documentFormData, document_number: e.target.value })} />
+                      </div>
+                      <div>
+                        <label>Дата</label>
+                        <input type="date" min="1900-01-01" max="2100-12-31" value={documentFormData.document_date} onChange={(e) => setDocumentFormData({ ...documentFormData, document_date: e.target.value })} />
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               <div className="form-row-2">
@@ -1367,12 +1478,20 @@ function ObjectDetailPage() {
                 />
               </div>
               <div className="form-row">
-                <label>{parentDocumentId ? 'Описание' : 'Примечание'}</label>
+                <label>
+                  {parentDocumentId
+                    ? 'Описание'
+                    : (documentFormData.document_type === 'additional_agreement' ? 'Описание ДС' : 'Примечание')}
+                </label>
                 <input
                   type="text"
                   value={documentFormData.notes}
                   onChange={(e) => setDocumentFormData({ ...documentFormData, notes: e.target.value })}
-                  placeholder={parentDocumentId ? 'Описание приложения' : 'Дополнительная информация'}
+                  placeholder={parentDocumentId
+                    ? 'Описание приложения'
+                    : (documentFormData.document_type === 'additional_agreement'
+                      ? 'Назначение ДС, краткое описание'
+                      : 'Дополнительная информация')}
                 />
               </div>
               <div className="modal-footer">

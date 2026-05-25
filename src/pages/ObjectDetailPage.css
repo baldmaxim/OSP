@@ -634,6 +634,33 @@
   white-space: nowrap;
 }
 
+/* === Колонки ДС-таблицы (компактный layout AgreementRow) === */
+.doc-cell-date {
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+}
+
+.doc-cell-desc {
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.doc-cell-link-compact {
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* Компактный вариант файловой ячейки — только две кнопки 👁 ⬇, без имени файла. */
+.doc-cell-file-compact {
+  justify-content: center;
+  gap: 0.125rem;
+}
+
 .doc-link-btn {
   display: inline-flex;
   align-items: center;
