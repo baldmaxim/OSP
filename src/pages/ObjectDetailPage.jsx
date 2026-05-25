@@ -105,11 +105,11 @@ function DocRow({
             </>
           )}
         </td>
-        <td className="doc-cell-link">
-          <DocFileCell s3doc={doc.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
+        <td className="doc-cell-link-compact">
+          <DocFileCell compact s3doc={doc.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
-        <td className="doc-cell-link">
-          <DocFileCell s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
+        <td className="doc-cell-link-compact">
+          <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
         <td className="doc-cell-actions">
           <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">
@@ -1090,10 +1090,10 @@ function ObjectDetailPage() {
                           <tr>
                             <th style={{ width: '28px' }}></th>
                             <th style={{ width: '200px' }}>Наименование</th>
-                            <th style={{ width: '260px' }}>№ / дата</th>
-                            <th>Подписанный документ</th>
-                            <th>Редактируемый документ</th>
-                            <th style={{ width: '100px' }}>Действия</th>
+                            <th>№ / дата</th>
+                            <th style={{ width: '130px' }}>Подписанный</th>
+                            <th style={{ width: '130px' }}>Редактируемый</th>
+                            <th style={{ width: '80px' }}>Действия</th>
                           </tr>
                         </thead>
                         <tbody>
