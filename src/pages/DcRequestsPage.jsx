@@ -465,7 +465,7 @@ function DcRequestsPage() {
                 <th style={{ width: '40px' }}>№</th>
                 <th style={{ minWidth: '160px' }}>Объект</th>
                 <th style={{ minWidth: '160px' }}>Контрагент</th>
-                <th style={{ width: '110px' }}>№ ДС</th>
+                <th style={{ width: '110px', textAlign: 'center' }}>№ ДС</th>
                 <th style={{ minWidth: '200px' }}>Выполняемые работы</th>
                 <th style={{ width: '140px' }}>Статус</th>
                 <th style={{ width: '150px' }}>Ответственный</th>
@@ -519,7 +519,7 @@ function DcRequestsPage() {
                         )}
                       </td>
                       <td>{req.counterparties?.name || <span className="muted-dash">—</span>}</td>
-                      <td>{req.ds_number || <span className="muted-dash">—</span>}</td>
+                      <td style={{ textAlign: 'center' }}>{req.ds_number || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
                       <td>
                         <div className="dcr-status-wrap">
@@ -660,8 +660,20 @@ function DcRequestsPage() {
                               aria-expanded={docsOpen}
                             >
                               <span className="dcr-docs-chev" aria-hidden>{docsOpen ? '▼' : '▶'}</span>
+                              <svg
+                                className="dcr-docs-icon"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                              </svg>
                               <span className="dcr-docs-summary">
-                                📎 Файлы: <strong>{docs.length}</strong>
+                                Файлы: <strong>{docs.length}</strong>
                               </span>
                             </button>
                           )}
@@ -857,7 +869,7 @@ function DcRequestsPage() {
                 />
               </label>
             </div>
-            <div className="modal-footer">
+            <div className="dcr-doc-modal-footer">
               <button
                 type="button"
                 className="btn-secondary"

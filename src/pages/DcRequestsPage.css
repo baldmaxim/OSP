@@ -326,6 +326,13 @@
   flex-shrink: 0;
 }
 
+.dcr-docs-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
 .dcr-docs-summary strong {
   font-variant-numeric: tabular-nums;
 }
@@ -504,6 +511,26 @@
 .dcr-doc-modal-field textarea:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+/* Футер модалки документа — собственная стилизация, без наследования
+   «полного» бордера от глобального .modal-footer. */
+.dcr-doc-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  padding: 0.875rem 1.5rem;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.dcr-doc-modal-footer .btn-primary,
+.dcr-doc-modal-footer .btn-secondary {
+  min-width: 96px;
+  padding: 0.5rem 1.125rem;
+  font-size: 0.875rem;
 }
 
 .dcr-cell-works {
