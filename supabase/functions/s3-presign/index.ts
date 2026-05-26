@@ -28,6 +28,7 @@ const FOLDER_BY_OWNER: Record<string, string> = {
   object: 'objects',
   customer: 'customers',
   counterparty: 'counterparties',
+  dc_request: 'dc-requests',
   general: 'general',
 }
 

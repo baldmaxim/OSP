@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
+import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
 import '../components/ContractRegistry.css'
 import './DcRequestsPage.css'
 
-// Task 306 + 307. Реестр «Заявок на ДС» — независимая сущность.
+// Task 306 + 307 + 309 + 310. Реестр «Заявок на ДС» — независимая сущность.
 // Только для основного строительства (objects.status='main_construction').
 // У каждой заявки несколько задач (dc_request_tasks) с парой «текст / ответ» и
 // признаком выполнения (is_completed). Сама заявка имеет status: in_work | completed.
+// Документы хранятся в s3_documents с owner_type='dc_request', notes = описание.
 
 const EMPTY_FORM = {
   object_id: '',
@@ -39,6 +41,16 @@ function formatShortDate(iso) {
   return `${dd}.${mm}.${d.getFullYear()}`
 }
 
+function formatBytes(bytes) {
+  if (bytes == null) return ''
+  if (bytes === 0) return '0 Б'
+  const units = ['Б', 'КБ', 'МБ', 'ГБ']
+  let v = Number(bytes)
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
 function DcRequestsPage() {
   const { isEmployee, userProfile } = useRole()
 
@@ -60,12 +72,35 @@ function DcRequestsPage() {
   // Раскрытые блоки задач: Set<requestId>
   const [expandedTasks, setExpandedTasks] = useState(() => new Set())
 
+  // task 310 — статус в виде клик-попапа.
+  const [statusPopoverFor, setStatusPopoverFor] = useState(null)
+
+  // task 310 — документы заявки.
+  // docsByReq: Map<requestId, s3_documents[]>
+  const [docsByReq, setDocsByReq] = useState(() => new Map())
+  const [expandedDocs, setExpandedDocs] = useState(() => new Set())
+  // Модалка загрузки документа: { requestId, file, description } | null
+  const [docUpload, setDocUpload] = useState(null)
+  const [docUploadBusy, setDocUploadBusy] = useState(false)
+
   useEffect(() => {
     fetchRequests()
     fetchObjects()
     fetchCounterparties()
     fetchContacts()
+    fetchAllDocs()
   }, [])
+
+  // Закрытие попапа статуса по клику вне его.
+  useEffect(() => {
+    if (!statusPopoverFor) return
+    const onMousedown = (e) => {
+      if (!e.target.closest('.dcr-status-wrap')) setStatusPopoverFor(null)
+    }
+    // Откладываем на тик, чтобы открывающий клик не закрыл попап мгновенно.
+    const t = setTimeout(() => document.addEventListener('mousedown', onMousedown), 0)
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', onMousedown) }
+  }, [statusPopoverFor])
 
   const fetchRequests = async () => {
     try {
@@ -120,6 +155,27 @@ function DcRequestsPage() {
     if (!error) setContacts(data || [])
   }
 
+  // Один запрос за всеми документами всех заявок — складываем в Map по owner_id.
+  const fetchAllDocs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('s3_documents')
+        .select('*')
+        .eq('owner_type', 'dc_request')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const map = new Map()
+      for (const d of data || []) {
+        const arr = map.get(d.owner_id) || []
+        arr.push(d)
+        map.set(d.owner_id, arr)
+      }
+      setDocsByReq(map)
+    } catch (err) {
+      console.error('Ошибка загрузки документов заявок:', err.message)
+    }
+  }
+
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
@@ -160,7 +216,6 @@ function DcRequestsPage() {
         const { error } = await supabase.from('dc_requests').update(payload).eq('id', editing.id)
         if (error) throw error
       } else {
-        // Снимок имени автора — нужен для «📅 25.05.2026 · ФИО» под Объектом (task 309).
         const { error } = await supabase.from('dc_requests').insert([{
           ...payload,
           created_by_name: userProfile?.full_name || null,
@@ -190,11 +245,17 @@ function DcRequestsPage() {
   }
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Удалить заявку? Все её задачи также будут удалены.')) return
+    if (!window.confirm('Удалить заявку? Все её задачи и документы также будут удалены.')) return
     try {
+      // Сначала S3-документы заявки удаляем явно (нет FK-каскада с s3_documents).
+      const docs = docsByReq.get(id) || []
+      for (const d of docs) {
+        try { await deleteDocument(d) } catch { /* best effort */ }
+      }
       const { error } = await supabase.from('dc_requests').delete().eq('id', id)
       if (error) throw error
       fetchRequests()
+      fetchAllDocs()
     } catch (err) {
       alert('Ошибка удаления: ' + (err.message || err))
     }
@@ -202,6 +263,14 @@ function DcRequestsPage() {
 
   const toggleTasksExpanded = (requestId) => {
     setExpandedTasks(prev => {
+      const next = new Set(prev)
+      if (next.has(requestId)) next.delete(requestId); else next.add(requestId)
+      return next
+    })
+  }
+
+  const toggleDocsExpanded = (requestId) => {
+    setExpandedDocs(prev => {
       const next = new Set(prev)
       if (next.has(requestId)) next.delete(requestId); else next.add(requestId)
       return next
@@ -224,7 +293,6 @@ function DcRequestsPage() {
       }])
       if (error) throw error
       setNewTaskTexts(prev => ({ ...prev, [requestId]: '' }))
-      // Авто-раскрываем блок задач, чтобы видна была свежая.
       setExpandedTasks(prev => new Set(prev).add(requestId))
       fetchRequests()
     } catch (err) {
@@ -261,6 +329,80 @@ function DcRequestsPage() {
     }
   }
 
+  // Docs upload
+  const handleDocPick = (requestId) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.style.display = 'none'
+    input.onchange = (e) => {
+      const file = e.target.files?.[0]
+      if (file) {
+        setDocUpload({ requestId, file, description: '' })
+      }
+    }
+    document.body.appendChild(input)
+    input.click()
+    setTimeout(() => input.remove(), 1000)
+  }
+
+  const handleDocUploadConfirm = async () => {
+    if (!docUpload) return
+    setDocUploadBusy(true)
+    try {
+      const newDoc = await uploadFile({
+        file: docUpload.file,
+        ownerType: 'dc_request',
+        ownerId: docUpload.requestId,
+        notes: docUpload.description.trim() || null,
+      })
+      // Локально добавляем в docsByReq, чтобы не делать полный refetch.
+      setDocsByReq(prev => {
+        const next = new Map(prev)
+        const arr = next.get(docUpload.requestId) || []
+        next.set(docUpload.requestId, [newDoc, ...arr])
+        return next
+      })
+      setExpandedDocs(prev => new Set(prev).add(docUpload.requestId))
+      setDocUpload(null)
+    } catch (err) {
+      alert('Ошибка загрузки: ' + (err.message || err))
+    } finally {
+      setDocUploadBusy(false)
+    }
+  }
+
+  const handleDocDownload = async (doc) => {
+    try {
+      const { presigned_url } = await requestDownloadUrl(doc.s3_key)
+      const a = document.createElement('a')
+      a.href = presigned_url
+      a.download = doc.file_name
+      a.target = '_blank'
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } catch (err) {
+      alert('Ошибка скачивания: ' + (err.message || err))
+    }
+  }
+
+  const handleDocDelete = async (doc) => {
+    if (!window.confirm(`Удалить файл «${doc.file_name}»?`)) return
+    try {
+      await deleteDocument(doc)
+      setDocsByReq(prev => {
+        const next = new Map(prev)
+        const arr = (next.get(doc.owner_id) || []).filter(d => d.id !== doc.id)
+        if (arr.length > 0) next.set(doc.owner_id, arr)
+        else next.delete(doc.owner_id)
+        return next
+      })
+    } catch (err) {
+      alert('Ошибка удаления: ' + (err.message || err))
+    }
+  }
+
   // Фильтрация: сначала по табу, потом по поиску.
   const filtered = requests
     .filter(r => activeTab === 'all' || (r.status || 'in_work') === activeTab)
@@ -275,7 +417,6 @@ function DcRequestsPage() {
       )
     })
 
-  // Счётчики для табов — по всему массиву (без фильтра поиска).
   const counts = {
     all: requests.length,
     in_work: requests.filter(r => (r.status || 'in_work') === 'in_work').length,
@@ -325,17 +466,18 @@ function DcRequestsPage() {
                 <th style={{ minWidth: '160px' }}>Объект</th>
                 <th style={{ minWidth: '160px' }}>Контрагент</th>
                 <th style={{ width: '110px' }}>№ ДС</th>
-                <th style={{ minWidth: '220px' }}>Выполняемые работы</th>
+                <th style={{ minWidth: '200px' }}>Выполняемые работы</th>
                 <th style={{ width: '140px' }}>Статус</th>
-                <th style={{ width: '160px' }}>Ответственный</th>
-                <th style={{ minWidth: '360px' }}>Задачи и ответы</th>
+                <th style={{ width: '150px' }}>Ответственный</th>
+                <th style={{ minWidth: '300px' }}>Задачи и ответы</th>
+                <th style={{ minWidth: '200px' }}>Документы</th>
                 <th style={{ width: '72px' }}>Действия</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="no-data" style={{ textAlign: 'center' }}>
+                  <td colSpan="10" className="no-data" style={{ textAlign: 'center' }}>
                     {searchQuery
                       ? 'Ничего не найдено.'
                       : (activeTab === 'all'
@@ -349,6 +491,13 @@ function DcRequestsPage() {
                   const totalTasks = tasks.length
                   const completedTasks = tasks.filter(t => t.is_completed).length
                   const isExpanded = expandedTasks.has(req.id)
+                  const currentStatus = req.status || 'in_work'
+                  const statusOpt = STATUS_OPTIONS.find(o => o.value === currentStatus)
+                  const isStatusOpen = statusPopoverFor === req.id
+
+                  const docs = docsByReq.get(req.id) || []
+                  const docsOpen = expandedDocs.has(req.id)
+
                   return (
                     <tr key={req.id}>
                       <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
@@ -373,20 +522,42 @@ function DcRequestsPage() {
                       <td>{req.ds_number || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
                       <td>
-                        <div className="dcr-status-seg" role="group" aria-label="Статус заявки">
-                          {STATUS_OPTIONS.map(opt => {
-                            const isActive = (req.status || 'in_work') === opt.value
-                            return (
-                              <button
-                                key={opt.value}
-                                type="button"
-                                className={`dcr-status-seg-btn${isActive ? ` active ${opt.className}` : ''}`}
-                                onClick={() => isEmployee && !isActive && handleStatusChange(req.id, opt.value)}
-                                disabled={!isEmployee}
-                                title={opt.label}
-                              >{opt.label}</button>
-                            )
-                          })}
+                        <div className="dcr-status-wrap">
+                          <button
+                            type="button"
+                            className={`dcr-status-chip ${statusOpt?.className || ''}${isStatusOpen ? ' is-open' : ''}`}
+                            onClick={() => isEmployee && setStatusPopoverFor(isStatusOpen ? null : req.id)}
+                            disabled={!isEmployee}
+                            aria-haspopup="listbox"
+                            aria-expanded={isStatusOpen}
+                          >
+                            <span>{STATUS_LABEL[currentStatus]}</span>
+                            <span className="dcr-status-chev" aria-hidden>▾</span>
+                          </button>
+                          {isStatusOpen && (
+                            <div className="dcr-status-popover" role="listbox">
+                              {STATUS_OPTIONS.map(opt => {
+                                const isCurrent = opt.value === currentStatus
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={isCurrent}
+                                    className={`dcr-status-popover-item ${opt.className}${isCurrent ? ' is-current' : ''}`}
+                                    onClick={() => {
+                                      if (!isCurrent) handleStatusChange(req.id, opt.value)
+                                      setStatusPopoverFor(null)
+                                    }}
+                                  >
+                                    <span className="dcr-status-popover-dot" />
+                                    {opt.label}
+                                    {isCurrent && <span className="dcr-status-popover-check" aria-hidden>✓</span>}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td>{req.responsible?.full_name || <span className="muted-dash">—</span>}</td>
@@ -479,6 +650,63 @@ function DcRequestsPage() {
                           )}
                         </div>
                       </td>
+                      <td className="dcr-cell-docs">
+                        <div className="dcr-docs">
+                          {docs.length > 0 && (
+                            <button
+                              type="button"
+                              className="dcr-docs-toggle"
+                              onClick={() => toggleDocsExpanded(req.id)}
+                              aria-expanded={docsOpen}
+                            >
+                              <span className="dcr-docs-chev" aria-hidden>{docsOpen ? '▼' : '▶'}</span>
+                              <span className="dcr-docs-summary">
+                                📎 Файлы: <strong>{docs.length}</strong>
+                              </span>
+                            </button>
+                          )}
+                          {(docsOpen || docs.length === 0) && docs.map(doc => (
+                            <div key={doc.id} className="dcr-doc-row">
+                              <div className="dcr-doc-info">
+                                <span className="dcr-doc-name" title={doc.file_name}>
+                                  📄 {doc.file_name}
+                                </span>
+                                {doc.notes && (
+                                  <span className="dcr-doc-desc" title={doc.notes}>{doc.notes}</span>
+                                )}
+                                <span className="dcr-doc-meta">
+                                  {formatBytes(doc.size_bytes)}
+                                  {doc.uploaded_by_name && ` · ${doc.uploaded_by_name}`}
+                                </span>
+                              </div>
+                              <div className="dcr-doc-actions">
+                                <button
+                                  type="button"
+                                  className="dcr-doc-btn"
+                                  onClick={() => handleDocDownload(doc)}
+                                  title="Скачать"
+                                >⬇</button>
+                                {isEmployee && (
+                                  <button
+                                    type="button"
+                                    className="dcr-doc-btn dcr-doc-btn-danger"
+                                    onClick={() => handleDocDelete(doc)}
+                                    title="Удалить"
+                                  >×</button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          {isEmployee && (
+                            <button
+                              type="button"
+                              className="dcr-doc-add"
+                              onClick={() => handleDocPick(req.id)}
+                              title="Добавить документ"
+                            >+ Документ</button>
+                          )}
+                        </div>
+                      </td>
                       <td className="actions-cell">
                         {isEmployee && (
                           <>
@@ -496,6 +724,7 @@ function DcRequestsPage() {
         </div>
       )}
 
+      {/* Модалка создания/редактирования заявки */}
       {showModal && (
         <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -588,6 +817,60 @@ function DcRequestsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка загрузки документа */}
+      {docUpload && (
+        <div
+          className="modal-overlay"
+          onClick={() => !docUploadBusy && setDocUpload(null)}
+        >
+          <div className="modal dcr-doc-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Загрузка документа</h3>
+              <button
+                className="modal-close"
+                onClick={() => !docUploadBusy && setDocUpload(null)}
+                disabled={docUploadBusy}
+              >×</button>
+            </div>
+            <div className="dcr-doc-modal-body">
+              <div className="dcr-doc-modal-file">
+                <span className="dcr-doc-modal-icon" aria-hidden>📄</span>
+                <div className="dcr-doc-modal-fileinfo">
+                  <span className="dcr-doc-modal-filename" title={docUpload.file.name}>
+                    {docUpload.file.name}
+                  </span>
+                  <span className="dcr-doc-modal-filesize">{formatBytes(docUpload.file.size)}</span>
+                </div>
+              </div>
+              <label className="dcr-doc-modal-field">
+                <span>Описание документа (опционально)</span>
+                <textarea
+                  rows="3"
+                  value={docUpload.description}
+                  onChange={(e) => setDocUpload(s => s ? { ...s, description: e.target.value } : s)}
+                  placeholder="Кратко — что внутри файла"
+                  autoFocus
+                />
+              </label>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setDocUpload(null)}
+                disabled={docUploadBusy}
+              >Отмена</button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleDocUploadConfirm}
+                disabled={docUploadBusy}
+              >{docUploadBusy ? 'Загрузка…' : 'Загрузить'}</button>
+            </div>
           </div>
         </div>
       )}

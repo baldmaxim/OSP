@@ -159,64 +159,351 @@
   color: var(--text-secondary);
 }
 
-/* ===== Статус — segmented control (task 309) ===== */
-.dcr-status-seg {
-  display: inline-flex;
-  padding: 2px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  gap: 0;
+/* ===== Статус — клик-чип с popover (task 310) ===== */
+.dcr-status-wrap {
+  position: relative;
+  display: inline-block;
 }
 
-.dcr-status-seg-btn {
-  padding: 0.1875rem 0.625rem;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
+.dcr-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid transparent;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition: filter 0.12s ease, box-shadow 0.12s ease;
 }
 
-.dcr-status-seg-btn:hover:not(:disabled):not(.active) {
+.dcr-status-chip.status-in-work {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.30);
+}
+
+.dcr-status-chip.status-completed {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+  border-color: rgba(22, 163, 74, 0.30);
+}
+
+[data-theme='dark'] .dcr-status-chip.status-in-work {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+  border-color: rgba(96, 165, 250, 0.40);
+}
+
+[data-theme='dark'] .dcr-status-chip.status-completed {
+  background: rgba(22, 163, 74, 0.22);
+  color: #86efac;
+  border-color: rgba(22, 163, 74, 0.40);
+}
+
+.dcr-status-chip:hover:not(:disabled),
+.dcr-status-chip.is-open {
+  filter: brightness(0.97);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
+}
+
+.dcr-status-chip:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.dcr-status-chev {
+  font-size: 0.625rem;
+  opacity: 0.7;
+}
+
+/* Поповер выбора статуса */
+.dcr-status-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 160px;
+  padding: 0.25rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  animation: dcr-pop-in 0.1s ease;
+}
+
+@keyframes dcr-pop-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.dcr-status-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.625rem;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
   color: var(--text-primary);
-  background: rgba(148, 163, 184, 0.1);
+  font-size: 0.8125rem;
+  text-align: left;
+  transition: background-color 0.1s ease;
 }
 
-.dcr-status-seg-btn.active {
+.dcr-status-popover-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.dcr-status-popover-item.is-current {
   font-weight: 600;
+  background: rgba(148, 163, 184, 0.08);
   cursor: default;
 }
 
-.dcr-status-seg-btn.active.status-in-work {
-  background: rgba(37, 99, 235, 0.12);
-  color: #1d4ed8;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+.dcr-status-popover-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.dcr-status-seg-btn.active.status-completed {
-  background: rgba(22, 163, 74, 0.12);
-  color: #15803d;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+.dcr-status-popover-item.status-in-work .dcr-status-popover-dot {
+  background: #2563eb;
 }
 
-[data-theme='dark'] .dcr-status-seg-btn.active.status-in-work {
-  background: rgba(37, 99, 235, 0.22);
-  color: #93c5fd;
+.dcr-status-popover-item.status-completed .dcr-status-popover-dot {
+  background: #16a34a;
 }
 
-[data-theme='dark'] .dcr-status-seg-btn.active.status-completed {
-  background: rgba(22, 163, 74, 0.22);
-  color: #86efac;
+.dcr-status-popover-check {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
 }
 
-.dcr-status-seg-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
+/* ===== Документы заявки (task 310) ===== */
+.dcr-cell-docs {
+  background: rgba(148, 163, 184, 0.03);
+}
+
+.dcr-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.dcr-docs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  align-self: flex-start;
+  padding: 0.25rem 0.625rem;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.dcr-docs-toggle:hover {
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--text-primary);
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.dcr-docs-chev {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.dcr-docs-summary strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.dcr-doc-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+}
+
+.dcr-doc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.dcr-doc-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dcr-doc-desc {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+
+.dcr-doc-meta {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+}
+
+.dcr-doc-actions {
+  display: inline-flex;
+  gap: 0.125rem;
+  flex-shrink: 0;
+}
+
+.dcr-doc-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1;
+  padding: 0;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.dcr-doc-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.dcr-doc-btn-danger:hover {
+  background: rgba(220, 38, 38, 0.10);
+  color: #dc2626;
+}
+
+.dcr-doc-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.dcr-doc-add:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+/* Модалка загрузки документа */
+.dcr-doc-modal {
+  max-width: 480px;
+}
+
+.dcr-doc-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1rem 1.5rem;
+}
+
+.dcr-doc-modal-file {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.dcr-doc-modal-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.dcr-doc-modal-fileinfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.dcr-doc-modal-filename {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dcr-doc-modal-filesize {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.dcr-doc-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+
+.dcr-doc-modal-field > span {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.dcr-doc-modal-field textarea {
+  padding: 0.5rem 0.625rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.dcr-doc-modal-field textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 .dcr-cell-works {
