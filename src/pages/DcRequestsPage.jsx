@@ -67,6 +67,9 @@ function DcRequestsPage() {
   const [formData, setFormData] = useState(EMPTY_FORM)
 
   const [searchQuery, setSearchQuery] = useState('')
+  // Фильтры в тулбаре (task 311).
+  const [filterObjectId, setFilterObjectId] = useState('')
+  const [filterResponsibleId, setFilterResponsibleId] = useState('')
   // Inline-добавление задачи: { [requestId]: 'строка задачи' }
   const [newTaskTexts, setNewTaskTexts] = useState({})
   // Раскрытые блоки задач: Set<requestId>
@@ -403,9 +406,11 @@ function DcRequestsPage() {
     }
   }
 
-  // Фильтрация: сначала по табу, потом по поиску.
+  // Фильтрация: таб → объект → ответственный → поиск.
   const filtered = requests
     .filter(r => activeTab === 'all' || (r.status || 'in_work') === activeTab)
+    .filter(r => !filterObjectId || r.object_id === filterObjectId)
+    .filter(r => !filterResponsibleId || r.responsible_contact_id === filterResponsibleId)
     .filter(r => {
       const q = searchQuery.trim().toLowerCase()
       if (!q) return true
@@ -453,6 +458,36 @@ function DcRequestsPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
+        <select
+          className="dcr-filter"
+          value={filterObjectId}
+          onChange={(e) => setFilterObjectId(e.target.value)}
+          title="Фильтр по объекту"
+        >
+          <option value="">🏢 Все объекты</option>
+          {objects.map(o => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+        <select
+          className="dcr-filter"
+          value={filterResponsibleId}
+          onChange={(e) => setFilterResponsibleId(e.target.value)}
+          title="Фильтр по ответственному"
+        >
+          <option value="">👤 Все ответственные</option>
+          {contacts.map(c => (
+            <option key={c.id} value={c.id}>{c.full_name}</option>
+          ))}
+        </select>
+        {(filterObjectId || filterResponsibleId) && (
+          <button
+            type="button"
+            className="dcr-filter-clear"
+            onClick={() => { setFilterObjectId(''); setFilterResponsibleId('') }}
+            title="Сбросить фильтры"
+          >×</button>
+        )}
       </div>
 
       {loading ? (
@@ -677,38 +712,53 @@ function DcRequestsPage() {
                               </span>
                             </button>
                           )}
-                          {(docsOpen || docs.length === 0) && docs.map(doc => (
-                            <div key={doc.id} className="dcr-doc-row">
-                              <div className="dcr-doc-info">
-                                <span className="dcr-doc-name" title={doc.file_name}>
-                                  📄 {doc.file_name}
-                                </span>
-                                {doc.notes && (
-                                  <span className="dcr-doc-desc" title={doc.notes}>{doc.notes}</span>
-                                )}
-                                <span className="dcr-doc-meta">
-                                  {formatBytes(doc.size_bytes)}
-                                  {doc.uploaded_by_name && ` · ${doc.uploaded_by_name}`}
-                                </span>
-                              </div>
-                              <div className="dcr-doc-actions">
-                                <button
-                                  type="button"
-                                  className="dcr-doc-btn"
-                                  onClick={() => handleDocDownload(doc)}
-                                  title="Скачать"
-                                >⬇</button>
-                                {isEmployee && (
-                                  <button
-                                    type="button"
-                                    className="dcr-doc-btn dcr-doc-btn-danger"
-                                    onClick={() => handleDocDelete(doc)}
-                                    title="Удалить"
-                                  >×</button>
-                                )}
-                              </div>
+                          {docsOpen && docs.length > 0 && (
+                            <div className="dcr-doc-chips">
+                              {docs.map(doc => {
+                                const tooltip = [
+                                  doc.file_name,
+                                  doc.notes,
+                                  [formatBytes(doc.size_bytes), doc.uploaded_by_name].filter(Boolean).join(' · '),
+                                ].filter(Boolean).join('\n')
+                                return (
+                                  <div key={doc.id} className="dcr-doc-chip">
+                                    <button
+                                      type="button"
+                                      className="dcr-doc-chip-main"
+                                      onClick={() => handleDocDownload(doc)}
+                                      title={tooltip}
+                                    >
+                                      <svg
+                                        className="dcr-doc-chip-icon"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        aria-hidden="true"
+                                      >
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                        <polyline points="14 2 14 8 20 8" />
+                                      </svg>
+                                      {doc.notes && (
+                                        <span className="dcr-doc-chip-desc">{doc.notes}</span>
+                                      )}
+                                    </button>
+                                    {isEmployee && (
+                                      <button
+                                        type="button"
+                                        className="dcr-doc-chip-del"
+                                        onClick={() => handleDocDelete(doc)}
+                                        title="Удалить"
+                                        aria-label="Удалить"
+                                      >×</button>
+                                    )}
+                                  </div>
+                                )
+                              })}
                             </div>
-                          ))}
+                          )}
                           {isEmployee && (
                             <button
                               type="button"
