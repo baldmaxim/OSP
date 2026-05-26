@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   ds_number VARCHAR(100),
   works_description TEXT,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'in_work' CHECK (status IN ('in_work', 'completed')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS dc_request_tasks (
   request_id UUID NOT NULL REFERENCES dc_requests(id) ON DELETE CASCADE,
   task_text TEXT NOT NULL,
   response_text TEXT,
+  is_completed BOOLEAN NOT NULL DEFAULT FALSE,
   order_number INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS dc_request_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_dc_requests_object ON dc_requests(object_id);
 CREATE INDEX IF NOT EXISTS idx_dc_requests_counterparty ON dc_requests(counterparty_id);
+CREATE INDEX IF NOT EXISTS idx_dc_requests_status ON dc_requests(status);
 CREATE INDEX IF NOT EXISTS idx_dc_request_tasks_request ON dc_request_tasks(request_id, order_number);
 
 ALTER TABLE dc_requests ENABLE ROW LEVEL SECURITY;

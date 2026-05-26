@@ -4,9 +4,10 @@ import { useRole } from '../contexts/RoleContext'
 import '../components/ContractRegistry.css'
 import './DcRequestsPage.css'
 
-// Task 306. Реестр «Заявок на ДС» — независимая сущность.
+// Task 306 + 307. Реестр «Заявок на ДС» — независимая сущность.
 // Только для основного строительства (objects.status='main_construction').
-// У каждой заявки несколько задач (dc_request_tasks) с парой «текст / ответ».
+// У каждой заявки несколько задач (dc_request_tasks) с парой «текст / ответ» и
+// признаком выполнения (is_completed). Сама заявка имеет status: in_work | completed.
 
 const EMPTY_FORM = {
   object_id: '',
@@ -14,7 +15,20 @@ const EMPTY_FORM = {
   ds_number: '',
   works_description: '',
   responsible_contact_id: '',
+  status: 'in_work',
 }
+
+const STATUS_OPTIONS = [
+  { value: 'in_work', label: 'В работе', className: 'status-in-work' },
+  { value: 'completed', label: 'Завершено', className: 'status-completed' },
+]
+const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(o => [o.value, o.label]))
+
+const TABS = [
+  { key: 'all', label: 'Все заявки' },
+  { key: 'in_work', label: 'В работе' },
+  { key: 'completed', label: 'Завершено' },
+]
 
 function DcRequestsPage() {
   const { isEmployee } = useRole()
@@ -25,6 +39,8 @@ function DcRequestsPage() {
   const [contacts, setContacts] = useState([])
   const [loading, setLoading] = useState(false)
 
+  const [activeTab, setActiveTab] = useState('all')
+
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
   const [formData, setFormData] = useState(EMPTY_FORM)
@@ -32,6 +48,8 @@ function DcRequestsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   // Inline-добавление задачи: { [requestId]: 'строка задачи' }
   const [newTaskTexts, setNewTaskTexts] = useState({})
+  // Раскрытые блоки задач: Set<requestId>
+  const [expandedTasks, setExpandedTasks] = useState(() => new Set())
 
   useEffect(() => {
     fetchRequests()
@@ -50,7 +68,7 @@ function DcRequestsPage() {
           objects(id, name),
           counterparties(id, name),
           responsible:contacts!responsible_contact_id(id, full_name),
-          dc_request_tasks(id, task_text, response_text, order_number)
+          dc_request_tasks(id, task_text, response_text, is_completed, order_number)
         `)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -112,6 +130,7 @@ function DcRequestsPage() {
       ds_number: req.ds_number || '',
       works_description: req.works_description || '',
       responsible_contact_id: req.responsible_contact_id || '',
+      status: req.status || 'in_work',
     })
     setShowModal(true)
   }
@@ -125,6 +144,7 @@ function DcRequestsPage() {
         ds_number: formData.ds_number.trim() || null,
         works_description: formData.works_description.trim() || null,
         responsible_contact_id: formData.responsible_contact_id || null,
+        status: formData.status || 'in_work',
         updated_at: new Date().toISOString(),
       }
       if (editing) {
@@ -143,6 +163,19 @@ function DcRequestsPage() {
     }
   }
 
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('dc_requests')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r))
+    } catch (err) {
+      alert('Ошибка смены статуса: ' + (err.message || err))
+    }
+  }
+
   const handleDelete = async (id) => {
     if (!window.confirm('Удалить заявку? Все её задачи также будут удалены.')) return
     try {
@@ -152,6 +185,14 @@ function DcRequestsPage() {
     } catch (err) {
       alert('Ошибка удаления: ' + (err.message || err))
     }
+  }
+
+  const toggleTasksExpanded = (requestId) => {
+    setExpandedTasks(prev => {
+      const next = new Set(prev)
+      if (next.has(requestId)) next.delete(requestId); else next.add(requestId)
+      return next
+    })
   }
 
   // Tasks CRUD
@@ -170,6 +211,8 @@ function DcRequestsPage() {
       }])
       if (error) throw error
       setNewTaskTexts(prev => ({ ...prev, [requestId]: '' }))
+      // Авто-раскрываем блок задач, чтобы видна была свежая.
+      setExpandedTasks(prev => new Set(prev).add(requestId))
       fetchRequests()
     } catch (err) {
       alert('Ошибка добавления задачи: ' + (err.message || err))
@@ -183,7 +226,6 @@ function DcRequestsPage() {
         .update({ [field]: value, updated_at: new Date().toISOString() })
         .eq('id', taskId)
       if (error) throw error
-      // Локальное обновление без refetch — чтобы textarea не «прыгал».
       setRequests(prev => prev.map(r => ({
         ...r,
         dc_request_tasks: (r.dc_request_tasks || []).map(t =>
@@ -206,16 +248,26 @@ function DcRequestsPage() {
     }
   }
 
-  const filtered = requests.filter(r => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return true
-    return (
-      (r.objects?.name || '').toLowerCase().includes(q) ||
-      (r.counterparties?.name || '').toLowerCase().includes(q) ||
-      (r.ds_number || '').toLowerCase().includes(q) ||
-      (r.works_description || '').toLowerCase().includes(q)
-    )
-  })
+  // Фильтрация: сначала по табу, потом по поиску.
+  const filtered = requests
+    .filter(r => activeTab === 'all' || (r.status || 'in_work') === activeTab)
+    .filter(r => {
+      const q = searchQuery.trim().toLowerCase()
+      if (!q) return true
+      return (
+        (r.objects?.name || '').toLowerCase().includes(q) ||
+        (r.counterparties?.name || '').toLowerCase().includes(q) ||
+        (r.ds_number || '').toLowerCase().includes(q) ||
+        (r.works_description || '').toLowerCase().includes(q)
+      )
+    })
+
+  // Счётчики для табов — по всему массиву (без фильтра поиска).
+  const counts = {
+    all: requests.length,
+    in_work: requests.filter(r => (r.status || 'in_work') === 'in_work').length,
+    completed: requests.filter(r => r.status === 'completed').length,
+  }
 
   return (
     <div className="dc-requests-page contract-registry">
@@ -226,6 +278,19 @@ function DcRequestsPage() {
         )}
       </div>
 
+      <div className="status-tabs">
+        {TABS.map(tab => (
+          <button
+            key={tab.key}
+            className={`status-tab ${activeTab === tab.key ? 'active' : ''}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.label}
+            <span className="tab-count">{counts[tab.key]}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="dcr-toolbar">
         <input
           type="search"
@@ -234,7 +299,6 @@ function DcRequestsPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
-        <div className="dcr-count">Всего: {requests.length}</div>
       </div>
 
       {loading ? (
@@ -249,104 +313,150 @@ function DcRequestsPage() {
                 <th style={{ minWidth: '160px' }}>Контрагент</th>
                 <th style={{ width: '110px' }}>№ ДС</th>
                 <th style={{ minWidth: '220px' }}>Выполняемые работы</th>
+                <th style={{ width: '140px' }}>Статус</th>
                 <th style={{ width: '160px' }}>Ответственный</th>
-                <th style={{ minWidth: '420px' }}>Задачи и ответы</th>
+                <th style={{ minWidth: '360px' }}>Задачи и ответы</th>
                 <th style={{ width: '72px' }}>Действия</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="no-data" style={{ textAlign: 'center' }}>
+                  <td colSpan="9" className="no-data" style={{ textAlign: 'center' }}>
                     {searchQuery
                       ? 'Ничего не найдено.'
-                      : 'Заявок пока нет. Нажмите «+ Добавить заявку».'}
+                      : (activeTab === 'all'
+                        ? 'Заявок пока нет. Нажмите «+ Добавить заявку».'
+                        : `Нет заявок со статусом «${STATUS_LABEL[activeTab]}».`)}
                   </td>
                 </tr>
               ) : (
-                filtered.map((req, idx) => (
-                  <tr key={req.id}>
-                    <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
-                    <td>{req.objects?.name || <span className="muted-dash">—</span>}</td>
-                    <td>{req.counterparties?.name || <span className="muted-dash">—</span>}</td>
-                    <td>{req.ds_number || <span className="muted-dash">—</span>}</td>
-                    <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
-                    <td>{req.responsible?.full_name || <span className="muted-dash">—</span>}</td>
-                    <td className="dcr-cell-tasks">
-                      <div className="dcr-tasks">
-                        {(req.dc_request_tasks || []).map(task => (
-                          <div key={task.id} className="dcr-task-row">
-                            <textarea
-                              className="dcr-task-text"
-                              defaultValue={task.task_text}
-                              placeholder="Задача…"
-                              rows={1}
-                              disabled={!isEmployee}
-                              onBlur={(e) => {
-                                if (e.target.value !== task.task_text) {
-                                  handleSaveTaskField(task.id, 'task_text', e.target.value)
-                                }
-                              }}
-                              onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
-                              ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
-                            />
-                            <textarea
-                              className="dcr-task-response"
-                              defaultValue={task.response_text || ''}
-                              placeholder="Ответ…"
-                              rows={1}
-                              disabled={!isEmployee}
-                              onBlur={(e) => {
-                                if (e.target.value !== (task.response_text || '')) {
-                                  handleSaveTaskField(task.id, 'response_text', e.target.value)
-                                }
-                              }}
-                              onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
-                              ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
-                            />
-                            {isEmployee && (
-                              <button
-                                type="button"
-                                className="dcr-task-delete"
-                                onClick={() => handleDeleteTask(task.id)}
-                                title="Удалить задачу"
-                                aria-label="Удалить задачу"
-                              >×</button>
-                            )}
-                          </div>
-                        ))}
-                        {isEmployee && (
-                          <div className="dcr-task-add">
-                            <input
-                              type="text"
-                              placeholder="+ Добавить задачу…"
-                              value={newTaskTexts[req.id] || ''}
-                              onChange={(e) => setNewTaskTexts(prev => ({ ...prev, [req.id]: e.target.value }))}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') { e.preventDefault(); handleAddTask(req.id) }
-                              }}
-                            />
+                filtered.map((req, idx) => {
+                  const tasks = req.dc_request_tasks || []
+                  const totalTasks = tasks.length
+                  const completedTasks = tasks.filter(t => t.is_completed).length
+                  const isExpanded = expandedTasks.has(req.id)
+                  const statusOpt = STATUS_OPTIONS.find(o => o.value === (req.status || 'in_work'))
+                  return (
+                    <tr key={req.id}>
+                      <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
+                      <td>{req.objects?.name || <span className="muted-dash">—</span>}</td>
+                      <td>{req.counterparties?.name || <span className="muted-dash">—</span>}</td>
+                      <td>{req.ds_number || <span className="muted-dash">—</span>}</td>
+                      <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
+                      <td>
+                        <select
+                          className={`status-select ${statusOpt?.className || ''}`}
+                          value={req.status || 'in_work'}
+                          onChange={(e) => handleStatusChange(req.id, e.target.value)}
+                          disabled={!isEmployee}
+                        >
+                          {STATUS_OPTIONS.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>{req.responsible?.full_name || <span className="muted-dash">—</span>}</td>
+                      <td className="dcr-cell-tasks">
+                        <div className="dcr-tasks">
+                          {totalTasks > 0 && (
                             <button
                               type="button"
-                              className="dcr-task-add-btn"
-                              onClick={() => handleAddTask(req.id)}
-                              disabled={!(newTaskTexts[req.id] || '').trim()}
-                              title="Добавить задачу"
-                            >+</button>
-                          </div>
+                              className={`dcr-tasks-toggle${completedTasks === totalTasks && totalTasks > 0 ? ' dcr-tasks-toggle-done' : ''}`}
+                              onClick={() => toggleTasksExpanded(req.id)}
+                              aria-expanded={isExpanded}
+                            >
+                              <span className="dcr-tasks-chev" aria-hidden>{isExpanded ? '▼' : '▶'}</span>
+                              <span className="dcr-tasks-summary">
+                                Задачи: <strong>{completedTasks}/{totalTasks}</strong>
+                              </span>
+                            </button>
+                          )}
+                          {isExpanded && tasks.map(task => (
+                            <div
+                              key={task.id}
+                              className={`dcr-task-row${task.is_completed ? ' dcr-task-row-done' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="dcr-task-check"
+                                checked={!!task.is_completed}
+                                onChange={(e) => handleSaveTaskField(task.id, 'is_completed', e.target.checked)}
+                                disabled={!isEmployee}
+                                title={task.is_completed ? 'Снять отметку' : 'Отметить выполненной'}
+                              />
+                              <textarea
+                                className="dcr-task-text"
+                                defaultValue={task.task_text}
+                                placeholder="Задача…"
+                                rows={1}
+                                disabled={!isEmployee}
+                                onBlur={(e) => {
+                                  if (e.target.value !== task.task_text) {
+                                    handleSaveTaskField(task.id, 'task_text', e.target.value)
+                                  }
+                                }}
+                                onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
+                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
+                              />
+                              <textarea
+                                className="dcr-task-response"
+                                defaultValue={task.response_text || ''}
+                                placeholder="Ответ…"
+                                rows={1}
+                                disabled={!isEmployee}
+                                onBlur={(e) => {
+                                  if (e.target.value !== (task.response_text || '')) {
+                                    handleSaveTaskField(task.id, 'response_text', e.target.value)
+                                  }
+                                }}
+                                onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
+                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
+                              />
+                              {isEmployee && (
+                                <button
+                                  type="button"
+                                  className="dcr-task-delete"
+                                  onClick={() => handleDeleteTask(task.id)}
+                                  title="Удалить задачу"
+                                  aria-label="Удалить задачу"
+                                >×</button>
+                              )}
+                            </div>
+                          ))}
+                          {isEmployee && (
+                            <div className="dcr-task-add">
+                              <input
+                                type="text"
+                                placeholder={totalTasks === 0 ? '+ Добавить первую задачу…' : '+ Добавить задачу…'}
+                                value={newTaskTexts[req.id] || ''}
+                                onChange={(e) => setNewTaskTexts(prev => ({ ...prev, [req.id]: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') { e.preventDefault(); handleAddTask(req.id) }
+                                }}
+                              />
+                              <button
+                                type="button"
+                                className="dcr-task-add-btn"
+                                onClick={() => handleAddTask(req.id)}
+                                disabled={!(newTaskTexts[req.id] || '').trim()}
+                                title="Добавить задачу"
+                              >+</button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="actions-cell">
+                        {isEmployee && (
+                          <>
+                            <button className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать">✏️</button>
+                            <button className="btn-icon btn-delete" onClick={() => handleDelete(req.id)} title="Удалить">🗑️</button>
+                          </>
                         )}
-                      </div>
-                    </td>
-                    <td className="actions-cell">
-                      {isEmployee && (
-                        <>
-                          <button className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать">✏️</button>
-                          <button className="btn-icon btn-delete" onClick={() => handleDelete(req.id)} title="Удалить">🗑️</button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
@@ -400,6 +510,15 @@ function DcRequestsPage() {
                 </div>
 
                 <div className="form-group">
+                  <label>Статус</label>
+                  <select name="status" value={formData.status} onChange={handleInputChange}>
+                    {STATUS_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group full-width">
                   <label>Ответственный сотрудник</label>
                   <select
                     name="responsible_contact_id"
