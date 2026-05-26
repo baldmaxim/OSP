@@ -1533,7 +1533,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               backgroundPosition: 'right 0.375rem center'
             }}
           >
-            <option value="">Все объекты</option>
+            <option value="">🏢 Все объекты</option>
             {tenderObjects.map(obj => (
               <option key={obj.id} value={obj.id}>{obj.name}</option>
             ))}
@@ -1562,7 +1562,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               backgroundPosition: 'right 0.375rem center'
             }}
           >
-            <option value="">Все статусы</option>
+            <option value="">🏷 Все статусы</option>
             {currentStatusOptions.map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
@@ -1589,8 +1589,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               backgroundPosition: 'right 0.375rem center'
             }}
           >
-            <option value="">Все ответственные</option>
-            <option value="__unassigned__">Не назначен</option>
+            <option value="">👤 Все ответственные</option>
+            <option value="__unassigned__">— Не назначен —</option>
             {responsibleContacts
               .filter(c => tenders.some(t => t.responsible_contact_id === c.id))
               .map(c => (
