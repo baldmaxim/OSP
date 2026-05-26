@@ -6,7 +6,7 @@ import './Sidebar.css'
 function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { logout, canView, isAdmin, isSuperAdmin, role, roleLabels } = useRole()
+  const { logout, canView, isAdmin, isSuperAdmin, isEmployee, role, roleLabels } = useRole()
 
   // task 254: «Тендеры» — единый пункт-ссылка на страницу-хаб /tenders.
   // Подсвечиваем его активным на любой странице раздела тендеров.
@@ -50,7 +50,7 @@ function Sidebar() {
           </NavLink>
         )}
 
-        {/* Анализ КП */}
+        {/* Анализ ВОР/КП */}
         {canView('analysis_kp') && (
           <NavLink
             to="/analysis-kp"
@@ -59,11 +59,11 @@ function Sidebar() {
             }
           >
             <span className="sidebar-icon">📊</span>
-            <span className="sidebar-label">Анализ КП</span>
+            <span className="sidebar-label">Анализ ВОР/КП</span>
           </NavLink>
         )}
 
-        {/* Договоры */}
+        {/* Договоры и ДС */}
         {canView('contracts') && (
           <NavLink
             to="/contracts"
@@ -72,7 +72,20 @@ function Sidebar() {
             }
           >
             <span className="sidebar-icon">📋</span>
-            <span className="sidebar-label">Договоры</span>
+            <span className="sidebar-label">Договоры и ДС</span>
+          </NavLink>
+        )}
+
+        {/* Заявка на ДС (task 306) — отдельный реестр под Договорами. */}
+        {isEmployee && (
+          <NavLink
+            to="/dc-requests"
+            className={({ isActive }) =>
+              `sidebar-item ${isActive ? 'active' : ''}`
+            }
+          >
+            <span className="sidebar-icon">📝</span>
+            <span className="sidebar-label">Заявка на ДС</span>
           </NavLink>
         )}
 

@@ -58,6 +58,11 @@
 
 .section-icon {
   font-size: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.5rem;
+  color: var(--primary-color, #2563eb);
 }
 
 .section-name {

@@ -411,7 +411,7 @@ function ContactsPage() {
   return (
     <div className="general-info">
       <div className="general-info-header">
-        <h2>Контактные данные сотрудников</h2>
+        <h2>Сотрудники СУ-10</h2>
       </div>
 
       <div className="contacts-tabs">
@@ -642,7 +642,7 @@ function ContactsPage() {
                     return (
                       <tr>
                         <td colSpan="9" className="no-data" style={{ textAlign: 'center' }}>
-                          Нет контактов. Добавьте первый контакт.
+                          Сотрудников нет. Добавьте первого.
                         </td>
                       </tr>
                     )
@@ -765,7 +765,7 @@ function ContactsPage() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
-                {editingContact ? 'Редактировать контакт' : 'Добавить новый контакт'}
+                {editingContact ? 'Редактировать сотрудника' : 'Добавить нового сотрудника'}
               </h3>
               <button
                 className="modal-close"
