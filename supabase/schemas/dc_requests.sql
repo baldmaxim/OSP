@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   works_description TEXT,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'in_work' CHECK (status IN ('in_work', 'completed')),
+  created_by_name TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

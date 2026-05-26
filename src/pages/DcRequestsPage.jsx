@@ -30,8 +30,17 @@ const TABS = [
   { key: 'completed', label: 'Завершено' },
 ]
 
+function formatShortDate(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}.${mm}.${d.getFullYear()}`
+}
+
 function DcRequestsPage() {
-  const { isEmployee } = useRole()
+  const { isEmployee, userProfile } = useRole()
 
   const [requests, setRequests] = useState([])
   const [objects, setObjects] = useState([])
@@ -151,7 +160,11 @@ function DcRequestsPage() {
         const { error } = await supabase.from('dc_requests').update(payload).eq('id', editing.id)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('dc_requests').insert([payload])
+        // Снимок имени автора — нужен для «📅 25.05.2026 · ФИО» под Объектом (task 309).
+        const { error } = await supabase.from('dc_requests').insert([{
+          ...payload,
+          created_by_name: userProfile?.full_name || null,
+        }])
         if (error) throw error
       }
       setShowModal(false)
@@ -336,25 +349,45 @@ function DcRequestsPage() {
                   const totalTasks = tasks.length
                   const completedTasks = tasks.filter(t => t.is_completed).length
                   const isExpanded = expandedTasks.has(req.id)
-                  const statusOpt = STATUS_OPTIONS.find(o => o.value === (req.status || 'in_work'))
                   return (
                     <tr key={req.id}>
                       <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
-                      <td>{req.objects?.name || <span className="muted-dash">—</span>}</td>
+                      <td>
+                        <div className="dcr-object-name">
+                          {req.objects?.name || <span className="muted-dash">—</span>}
+                        </div>
+                        {(req.created_at || req.created_by_name) && (
+                          <div className="dcr-meta-line" title={req.created_by_name ? `Создал: ${req.created_by_name}` : undefined}>
+                            <span className="dcr-meta-icon" aria-hidden>🕒</span>
+                            {req.created_at && formatShortDate(req.created_at)}
+                            {req.created_by_name && (
+                              <>
+                                <span className="dcr-meta-sep">·</span>
+                                <span className="dcr-meta-author">{req.created_by_name}</span>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td>{req.counterparties?.name || <span className="muted-dash">—</span>}</td>
                       <td>{req.ds_number || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
                       <td>
-                        <select
-                          className={`status-select ${statusOpt?.className || ''}`}
-                          value={req.status || 'in_work'}
-                          onChange={(e) => handleStatusChange(req.id, e.target.value)}
-                          disabled={!isEmployee}
-                        >
-                          {STATUS_OPTIONS.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
+                        <div className="dcr-status-seg" role="group" aria-label="Статус заявки">
+                          {STATUS_OPTIONS.map(opt => {
+                            const isActive = (req.status || 'in_work') === opt.value
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                className={`dcr-status-seg-btn${isActive ? ` active ${opt.className}` : ''}`}
+                                onClick={() => isEmployee && !isActive && handleStatusChange(req.id, opt.value)}
+                                disabled={!isEmployee}
+                                title={opt.label}
+                              >{opt.label}</button>
+                            )
+                          })}
+                        </div>
                       </td>
                       <td>{req.responsible?.full_name || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-tasks">

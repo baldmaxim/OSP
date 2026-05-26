@@ -6,6 +6,52 @@
   padding: 1rem;
 }
 
+/* ===== Компактные табы (task 309) — pill-style вместо громоздкого подчёркивания. ===== */
+.dc-requests-page .status-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0 0 0.875rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.dc-requests-page .status-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.dc-requests-page .status-tab:hover {
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
+.dc-requests-page .status-tab.active {
+  color: #fff;
+  background: var(--primary-color, #2563eb);
+  border-color: var(--primary-color, #2563eb);
+}
+
+.dc-requests-page .status-tab.active:hover {
+  filter: brightness(1.05);
+}
+
+/* Убираем подчёркивание-индикатор, унаследованное от ContractRegistry. */
+.dc-requests-page .status-tab::after {
+  display: none !important;
+}
+
 .dcr-toolbar {
   display: flex;
   align-items: center;
@@ -75,6 +121,102 @@
 
 .dcr-table tbody tr:hover {
   background: var(--bg-tertiary);
+}
+
+/* Полупрозрачные вертикальные разделители колонок (task 309). */
+.dcr-table th:not(:last-child),
+.dcr-table td:not(:last-child) {
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+/* Имя объекта и мета-строка «создал/когда» под ним. */
+.dcr-object-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dcr-meta-line {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.dcr-meta-icon {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.dcr-meta-sep {
+  opacity: 0.5;
+}
+
+.dcr-meta-author {
+  color: var(--text-secondary);
+}
+
+/* ===== Статус — segmented control (task 309) ===== */
+.dcr-status-seg {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  gap: 0;
+}
+
+.dcr-status-seg-btn {
+  padding: 0.1875rem 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.dcr-status-seg-btn:hover:not(:disabled):not(.active) {
+  color: var(--text-primary);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.dcr-status-seg-btn.active {
+  font-weight: 600;
+  cursor: default;
+}
+
+.dcr-status-seg-btn.active.status-in-work {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.dcr-status-seg-btn.active.status-completed {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme='dark'] .dcr-status-seg-btn.active.status-in-work {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+}
+
+[data-theme='dark'] .dcr-status-seg-btn.active.status-completed {
+  background: rgba(22, 163, 74, 0.22);
+  color: #86efac;
+}
+
+.dcr-status-seg-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .dcr-cell-works {
