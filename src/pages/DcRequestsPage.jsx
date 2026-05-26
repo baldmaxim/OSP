@@ -469,7 +469,7 @@ function DcRequestsPage() {
           onChange={(e) => setSearchQuery(e.target.value)}
         />
         <select
-          className="dcr-filter"
+          className={`dcr-filter${filterObjectId ? ' is-active' : ''}`}
           value={filterObjectId}
           onChange={(e) => setFilterObjectId(e.target.value)}
           title="Фильтр по объекту"
@@ -480,7 +480,7 @@ function DcRequestsPage() {
           ))}
         </select>
         <select
-          className="dcr-filter"
+          className={`dcr-filter${filterResponsibleId ? ' is-active' : ''}`}
           value={filterResponsibleId}
           onChange={(e) => setFilterResponsibleId(e.target.value)}
           title="Фильтр по ответственному"

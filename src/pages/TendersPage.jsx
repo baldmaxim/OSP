@@ -7,6 +7,23 @@ import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import { copyToClipboard } from '../utils/clipboard'
 import '../components/Tenders.css'
 
+// task 312: единый стиль фильтр-селектов с подсветкой активного состояния.
+const FILTER_SELECT_CHEVRON = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")"
+const filterSelectStyle = (isActive) => ({
+  padding: '0.375rem 1.5rem 0.375rem 0.5rem',
+  fontSize: '0.8125rem',
+  border: `1px solid ${isActive ? '#2563eb' : 'var(--border-color)'}`,
+  borderRadius: '4px',
+  backgroundColor: isActive ? 'rgba(37, 99, 235, 0.10)' : 'var(--bg-secondary)',
+  color: isActive ? '#1d4ed8' : 'var(--text-primary)',
+  fontWeight: isActive ? 600 : 400,
+  cursor: 'pointer',
+  appearance: 'none',
+  backgroundImage: FILTER_SELECT_CHEVRON,
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 0.375rem center',
+})
+
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
   const { scopedObjectId, userProfile, isAdmin } = useRole()
@@ -1519,19 +1536,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <select
             value={objectFilter}
             onChange={(e) => setObjectFilter(e.target.value)}
-            style={{
-              padding: '0.375rem 1.5rem 0.375rem 0.5rem',
-              fontSize: '0.8125rem',
-              border: '1px solid var(--border-color)',
-              borderRadius: '4px',
-              background: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-              cursor: 'pointer',
-              appearance: 'none',
-              backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")",
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 0.375rem center'
-            }}
+            style={filterSelectStyle(!!objectFilter)}
           >
             <option value="">🏢 Все объекты</option>
             {tenderObjects.map(obj => (
@@ -1548,19 +1553,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            style={{
-              padding: '0.375rem 1.5rem 0.375rem 0.5rem',
-              fontSize: '0.8125rem',
-              border: '1px solid var(--border-color)',
-              borderRadius: '4px',
-              background: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-              cursor: 'pointer',
-              appearance: 'none',
-              backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")",
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 0.375rem center'
-            }}
+            style={filterSelectStyle(!!statusFilter)}
           >
             <option value="">🏷 Все статусы</option>
             {currentStatusOptions.map(s => (
@@ -1575,19 +1568,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <select
             value={responsibleFilter}
             onChange={(e) => setResponsibleFilter(e.target.value)}
-            style={{
-              padding: '0.375rem 1.5rem 0.375rem 0.5rem',
-              fontSize: '0.8125rem',
-              border: '1px solid var(--border-color)',
-              borderRadius: '4px',
-              background: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-              cursor: 'pointer',
-              appearance: 'none',
-              backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")",
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 0.375rem center'
-            }}
+            style={filterSelectStyle(!!responsibleFilter)}
           >
             <option value="">👤 Все ответственные</option>
             <option value="__unassigned__">— Не назначен —</option>
