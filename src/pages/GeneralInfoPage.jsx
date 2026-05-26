@@ -27,7 +27,7 @@ function GeneralInfoPage() {
 
   const sections = [
     { path: '/general/objects', label: 'Объекты', icon: '🏢', description: 'Строительные объекты' },
-    { path: '/general/contacts', label: 'Сотрудники СУ-10', icon: <UsersIcon />, description: 'Сотрудники СУ-10 и подрядчиков' },
+    { path: '/general/contacts', label: 'Сотрудники СУ-10', icon: <UsersIcon />, description: 'Контактные данные сотрудников' },
     { path: '/general/counterparties', label: 'Контрагенты', icon: '🏛️', description: 'Организации-подрядчики' },
   ]
 
