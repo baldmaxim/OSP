@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
+import S3DocumentPreview from '../components/S3DocumentPreview'
 import '../components/ContractRegistry.css'
 import './DcRequestsPage.css'
 
@@ -85,6 +86,8 @@ function DcRequestsPage() {
   // Модалка загрузки документа: { requestId, file, description } | null
   const [docUpload, setDocUpload] = useState(null)
   const [docUploadBusy, setDocUploadBusy] = useState(false)
+  // Документ открытый в превью (S3DocumentPreview).
+  const [previewDoc, setPreviewDoc] = useState(null)
 
   useEffect(() => {
     fetchRequests()
@@ -428,6 +431,12 @@ function DcRequestsPage() {
     completed: requests.filter(r => r.status === 'completed').length,
   }
 
+  // Фильтр ответственных — только те сотрудники, что реально назначены хотя бы на одну заявку.
+  const usedResponsibleIds = new Set(
+    requests.map(r => r.responsible_contact_id).filter(Boolean)
+  )
+  const responsibleFilterOptions = contacts.filter(c => usedResponsibleIds.has(c.id))
+
   return (
     <div className="dc-requests-page contract-registry">
       <div className="registry-header">
@@ -474,9 +483,10 @@ function DcRequestsPage() {
           value={filterResponsibleId}
           onChange={(e) => setFilterResponsibleId(e.target.value)}
           title="Фильтр по ответственному"
+          disabled={responsibleFilterOptions.length === 0}
         >
           <option value="">👤 Все ответственные</option>
-          {contacts.map(c => (
+          {responsibleFilterOptions.map(c => (
             <option key={c.id} value={c.id}>{c.full_name}</option>
           ))}
         </select>
@@ -720,12 +730,14 @@ function DcRequestsPage() {
                                   doc.notes,
                                   [formatBytes(doc.size_bytes), doc.uploaded_by_name].filter(Boolean).join(' · '),
                                 ].filter(Boolean).join('\n')
+                                const mime = (doc.mime_type || '').toLowerCase()
+                                const previewable = mime === 'application/pdf' || mime.startsWith('image/')
                                 return (
                                   <div key={doc.id} className="dcr-doc-chip">
                                     <button
                                       type="button"
                                       className="dcr-doc-chip-main"
-                                      onClick={() => handleDocDownload(doc)}
+                                      onClick={() => previewable ? setPreviewDoc(doc) : handleDocDownload(doc)}
                                       title={tooltip}
                                     >
                                       <svg
@@ -741,9 +753,36 @@ function DcRequestsPage() {
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                         <polyline points="14 2 14 8 20 8" />
                                       </svg>
-                                      {doc.notes && (
-                                        <span className="dcr-doc-chip-desc">{doc.notes}</span>
-                                      )}
+                                      {doc.notes
+                                        ? <span className="dcr-doc-chip-desc">{doc.notes}</span>
+                                        : <span className="dcr-doc-chip-desc dcr-doc-chip-desc-empty" title={doc.file_name}>{doc.file_name}</span>}
+                                    </button>
+                                    {previewable && (
+                                      <button
+                                        type="button"
+                                        className="dcr-doc-chip-action"
+                                        onClick={() => setPreviewDoc(doc)}
+                                        title="Просмотр"
+                                        aria-label="Просмотр"
+                                      >
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                          <circle cx="12" cy="12" r="3" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="dcr-doc-chip-action"
+                                      onClick={() => handleDocDownload(doc)}
+                                      title="Скачать"
+                                      aria-label="Скачать"
+                                    >
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                      </svg>
                                     </button>
                                     {isEmployee && (
                                       <button
@@ -881,6 +920,10 @@ function DcRequestsPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {previewDoc && (
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
       )}
 
       {/* Модалка загрузки документа */}

@@ -139,7 +139,7 @@
 }
 
 .dcr-table thead th {
-  text-align: left;
+  text-align: center;
   padding: 0.625rem 0.75rem;
   font-size: 0.6875rem;
   text-transform: uppercase;
@@ -381,12 +381,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Icon-чипы документов (task 311). Компактно, без переполнения, описание
-   опционально как text-метка справа от иконки. */
+/* Icon-чипы документов — каждый на отдельной строке (task 311+). */
 .dcr-doc-chips {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .dcr-doc-chip {
@@ -434,8 +433,14 @@
   color: var(--text-secondary);
 }
 
+.dcr-doc-chip-desc-empty {
+  font-style: normal;
+  color: var(--text-primary);
+}
+
+.dcr-doc-chip-action,
 .dcr-doc-chip-del {
-  width: 22px;
+  width: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -444,11 +449,24 @@
   border-left: 1px solid var(--border-color);
   cursor: pointer;
   color: var(--text-tertiary);
-  font-size: 0.875rem;
   line-height: 1;
   padding: 0;
   transition: background-color 0.12s ease, color 0.12s ease;
   flex-shrink: 0;
+}
+
+.dcr-doc-chip-action svg {
+  width: 13px;
+  height: 13px;
+}
+
+.dcr-doc-chip-action:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.dcr-doc-chip-del {
+  font-size: 0.875rem;
 }
 
 .dcr-doc-chip-del:hover {
