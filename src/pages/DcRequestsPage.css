@@ -736,10 +736,18 @@
 .dcr-table .actions-cell {
   white-space: nowrap;
   text-align: center;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
 }
 
+/* Компактные иконки действий в ДС-таблице (task 311). */
 .dcr-table .actions-cell .btn-icon {
+  width: 22px;
+  height: 22px;
   margin: 0 0.0625rem;
+  font-size: 0.75rem;
+  padding: 0;
+  line-height: 1;
 }
 
 .dcr-table .no-data {

@@ -164,11 +164,12 @@ function DcRequestsPage() {
   // Один запрос за всеми документами всех заявок — складываем в Map по owner_id.
   const fetchAllDocs = async () => {
     try {
+      // Хронологический порядок: первый загруженный — наверху, новые — снизу.
       const { data, error } = await supabase
         .from('s3_documents')
         .select('*')
         .eq('owner_type', 'dc_request')
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: true })
       if (error) throw error
       const map = new Map()
       for (const d of data || []) {
@@ -361,11 +362,11 @@ function DcRequestsPage() {
         ownerId: docUpload.requestId,
         notes: docUpload.description.trim() || null,
       })
-      // Локально добавляем в docsByReq, чтобы не делать полный refetch.
+      // Локально добавляем в docsByReq (в конец — сохраняем хронологический порядок).
       setDocsByReq(prev => {
         const next = new Map(prev)
         const arr = next.get(docUpload.requestId) || []
-        next.set(docUpload.requestId, [newDoc, ...arr])
+        next.set(docUpload.requestId, [...arr, newDoc])
         return next
       })
       setExpandedDocs(prev => new Set(prev).add(docUpload.requestId))
@@ -510,13 +511,13 @@ function DcRequestsPage() {
                 <th style={{ width: '40px' }}>№</th>
                 <th style={{ minWidth: '160px' }}>Объект</th>
                 <th style={{ minWidth: '160px' }}>Контрагент</th>
-                <th style={{ width: '110px', textAlign: 'center' }}>№ ДС</th>
+                <th style={{ width: '80px', textAlign: 'center' }}>№ ДС</th>
                 <th style={{ minWidth: '200px' }}>Выполняемые работы</th>
-                <th style={{ width: '140px' }}>Статус</th>
+                <th style={{ width: '110px' }}>Статус</th>
                 <th style={{ width: '150px' }}>Ответственный</th>
-                <th style={{ minWidth: '300px' }}>Задачи и ответы</th>
+                <th style={{ minWidth: '380px' }}>Задачи и ответы</th>
                 <th style={{ minWidth: '200px' }}>Документы</th>
-                <th style={{ width: '72px' }}>Действия</th>
+                <th style={{ width: '60px' }}>Действия</th>
               </tr>
             </thead>
             <tbody>
