@@ -76,8 +76,10 @@ function Sidebar() {
           </NavLink>
         )}
 
-        {/* Заявка на ДС (task 306) — отдельный реестр под Договорами. */}
-        {isEmployee && (
+        {/* Заявка на ДС (task 306) — отдельный реестр под Договорами.
+            task 333: гейтим через canView('dc_requests'), чтобы права из админки
+            реально управляли отображением пункта. */}
+        {isEmployee && canView('dc_requests') && (
           <NavLink
             to="/dc-requests"
             className={({ isActive }) =>

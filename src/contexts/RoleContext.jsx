@@ -32,6 +32,8 @@ export const SECTIONS = {
   counterparties: 'Контрагенты',
   tenders: 'Тендеры',
   contracts: 'Договоры',
+  // task 333: реестр заявок на ДС — отдельный раздел с настраиваемыми правами.
+  dc_requests: 'Заявка на ДС',
   bsm: 'БСМ',
   analysis_kp: 'Анализ КП',
   acceptance: 'Приёмка',
