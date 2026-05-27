@@ -1417,8 +1417,11 @@
   flex-direction: column;
   justify-content: center;
   gap: 0.0625rem;
-  padding: 0.25rem 0.5rem 0.4375rem;
-  min-height: 2.4em;
+  padding: 0.375rem 0.5rem 0.5rem;
+  /* task 328: единая высота строки контакта во всех трёх колонках
+     (контакты / телефон / email), чтобы border-bottom разделители
+     стояли строго на одной высоте. */
+  min-height: 3.25rem;
   border-left: 2px solid var(--border-color);
   /* task 200 + 327: видимая разделительная черта снизу — отделяет контакты
      друг от друга. Не dashed/alpha (был незаметен), а solid + чуть темнее. */
@@ -1471,18 +1474,20 @@
   font-size: 0.75rem;
 }
 
-/* task 200 + 327: разделители между контактами в колонках телефон/email.
-   JSX оборачивает и телефоны, и email в .phone-cell — единое правило ниже. */
+/* task 200 + 327 + 328: разделители между контактами в колонках телефон/email.
+   Высота строки и padding такие же, как у .contact-stack-item — тогда нижние
+   border-bottom оказываются на одной Y-координате во всех трёх колонках. */
 .contacts-stack-phones .phone-cell,
 .contacts-stack-emails .phone-cell {
   display: flex;
   flex-direction: column;
   gap: 0.0625rem;
-  min-height: 2.4em;
-  padding-bottom: 0.4375rem;
+  min-height: 3.25rem;
+  padding: 0.375rem 0 0.5rem;
   justify-content: center;
   word-break: break-word;
   border-bottom: 1px solid var(--border-color);
+  box-sizing: border-box;
 }
 
 .contacts-stack-phones > .phone-cell:last-of-type,
@@ -1490,18 +1495,18 @@
 .contacts-stack-emails > .phone-cell:last-of-type,
 .contacts-stack-emails > .empty-cell:last-of-type {
   border-bottom: none;
-  padding-bottom: 0;
 }
 
 .contacts-stack-phones > .empty-cell,
 .contacts-stack-emails > .empty-cell {
   display: flex;
   align-items: center;
-  min-height: 2.4em;
+  min-height: 3.25rem;
+  padding: 0.375rem 0 0.5rem;
   line-height: 1.35;
   word-break: break-word;
-  padding-bottom: 0.4375rem;
   border-bottom: 1px solid var(--border-color);
+  box-sizing: border-box;
 }
 
 .contacts-stack-phones .phone-cell .contact-link {
