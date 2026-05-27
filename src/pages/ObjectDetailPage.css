@@ -501,6 +501,16 @@
   font-size: 0.875rem;
 }
 
+/* task 332: для строк-приложений центрируем ↳-стрелку и уменьшаем боковые
+   паддинги — стандартные 0.75rem с двух сторон не помещаются в 28px ячейку.
+   Линия колонки остаётся ровной, стрелка визуально «привязана» к номеру справа. */
+.doc-row-tr-attachment .doc-cell-marker {
+  text-align: center;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+  vertical-align: middle;
+}
+
 .doc-expand-btn {
   width: 22px;
   height: 22px;

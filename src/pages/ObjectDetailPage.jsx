@@ -71,9 +71,16 @@ function DocRow({
   return (
     <>
       <tr className={`doc-row-tr ${isAttachment ? 'doc-row-tr-attachment' : ''}`}>
-        <td className="doc-cell-marker" style={{ paddingLeft: `${level * 14 + 8}px` }}>
+        <td className="doc-cell-marker">
           {isAttachment ? (
-            <span className="doc-attachment-marker" aria-hidden>↳</span>
+            /* task 332: индент глубоко-вложенных приложений на span (margin-left),
+               а сама ↳-стрелка центрируется в ячейке через CSS — без inline-padding,
+               иначе при узкой ячейке стрелка выходит за правый край колонки. */
+            <span
+              className="doc-attachment-marker"
+              style={level > 1 ? { marginLeft: `${(level - 1) * 14}px` } : undefined}
+              aria-hidden
+            >↳</span>
           ) : hasAttachments ? (
             <button
               type="button"
@@ -267,7 +274,7 @@ function AgreementRow({
             onDrop?.(draggedId, doc.id)
           }}
         >
-          <td className="doc-cell-marker" style={{ paddingLeft: '22px' }}>
+          <td className="doc-cell-marker">
             <span className="doc-attachment-marker" aria-hidden>↳</span>
           </td>
           <td className="doc-cell-name">
