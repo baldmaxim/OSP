@@ -54,6 +54,9 @@ function CounterpartiesPage() {
 
   // Виды работ (множественный выбор; task 321 — подтягиваются только из справочника)
   const [workTypes, setWorkTypes] = useState([])
+  // task 322: поиск по справочнику видов работ внутри модалки контрагента
+  const [wtSearch, setWtSearch] = useState('')
+  const [wtDropdownOpen, setWtDropdownOpen] = useState(false)
 
   // Связи между контрагентами
   const [relations, setRelations] = useState([]) // [{counterparty_id, related_counterparty_id}]
@@ -445,6 +448,8 @@ function CounterpartiesPage() {
       ? counterparty.work_type.split(',').map(wt => wt.trim()).filter(wt => wt)
       : []
     setWorkTypes(parsedWorkTypes)
+    setWtSearch('')
+    setWtDropdownOpen(false)
     // Загружаем существующие контакты в tempContacts
     setTempContacts(counterparty.counterparty_contacts || [])
     setShowCounterpartyModal(true)
@@ -682,6 +687,8 @@ function CounterpartiesPage() {
       notes: '',
     })
     setWorkTypes([])
+    setWtSearch('')
+    setWtDropdownOpen(false)
     setTempContacts([])
     setContactFormData({
       full_name: '',
@@ -1711,34 +1718,67 @@ function CounterpartiesPage() {
                         ))}
                       </div>
                     )}
-                    {/* task 321: dropdown подтягивается из справочника work_types,
-                        а не из значений по counterparties. Чтобы добавить новый вид
-                        работ, нужно перейти на вкладку «Виды работ». */}
-                    {workTypesDirectory.filter(wt => !workTypes.includes(wt.name)).length > 0 ? (
-                      <div className="work-type-input-row">
-                        <select
-                          value=""
-                          onChange={(e) => {
-                            if (e.target.value && !workTypes.includes(e.target.value)) {
-                              setWorkTypes([...workTypes, e.target.value])
-                            }
-                          }}
-                        >
-                          <option value="">Выбрать из справочника...</option>
-                          {workTypesDirectory
-                            .filter(wt => !workTypes.includes(wt.name))
-                            .map(wt => (
-                              <option key={wt.id} value={wt.name}>{wt.name}</option>
-                            ))}
-                        </select>
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-                        {workTypesDirectory.length === 0
-                          ? 'Справочник видов работ пуст. Добавьте записи на вкладке «Виды работ».'
-                          : 'Все виды работ из справочника уже выбраны.'}
-                      </div>
-                    )}
+                    {/* task 321 + 322: поиск по справочнику work_types.
+                        Чтобы добавить новый вид работ — перейти на вкладку «Виды работ». */}
+                    {(() => {
+                      const available = workTypesDirectory.filter(wt => !workTypes.includes(wt.name))
+                      const q = wtSearch.trim().toLowerCase()
+                      const filtered = !q
+                        ? available
+                        : available.filter(wt => (wt.name || '').toLowerCase().includes(q))
+                      if (workTypesDirectory.length === 0) {
+                        return (
+                          <div style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                            Справочник видов работ пуст. Добавьте записи на вкладке «Виды работ».
+                          </div>
+                        )
+                      }
+                      if (available.length === 0) {
+                        return (
+                          <div style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                            Все виды работ из справочника уже выбраны.
+                          </div>
+                        )
+                      }
+                      return (
+                        <div className="wt-search-wrap">
+                          <input
+                            type="text"
+                            className="wt-search-input"
+                            value={wtSearch}
+                            placeholder="Начните вводить название вида работ…"
+                            onChange={(e) => { setWtSearch(e.target.value); setWtDropdownOpen(true) }}
+                            onFocus={() => setWtDropdownOpen(true)}
+                            onBlur={() => setTimeout(() => setWtDropdownOpen(false), 150)}
+                          />
+                          {wtDropdownOpen && (
+                            <div className="wt-search-dropdown">
+                              {filtered.length === 0 ? (
+                                <div className="wt-search-empty">
+                                  Ничего не найдено по запросу «{wtSearch}»
+                                </div>
+                              ) : (
+                                filtered.map(wt => (
+                                  <button
+                                    key={wt.id}
+                                    type="button"
+                                    className="wt-search-item"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                      setWorkTypes([...workTypes, wt.name])
+                                      setWtSearch('')
+                                      setWtDropdownOpen(false)
+                                    }}
+                                  >
+                                    {wt.name}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.375rem' }}>
                       Новые виды работ добавляются на вкладке <strong>«Виды работ»</strong>.
                     </div>

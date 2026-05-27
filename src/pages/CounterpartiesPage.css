@@ -1151,6 +1151,64 @@
   border-bottom-color: var(--primary-color);
 }
 
+/* task 322: поиск вида работ из справочника в карточке контрагента.
+   Текстовый input + выпадающий фильтрованный список (по name). */
+.wt-search-wrap {
+  position: relative;
+  width: 100%;
+}
+.wt-search-input {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+.wt-search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.10);
+}
+.wt-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+}
+.wt-search-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+.wt-search-item:last-child { border-bottom: none; }
+.wt-search-item:hover,
+.wt-search-item.active {
+  background: rgba(8, 145, 178, 0.08);
+}
+.wt-search-empty {
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
 /* task 321: панель справочника видов работ.
    Родитель .counterparties-content — flex-column с overflow:hidden и min-height:0,
    поэтому панель тоже flex-column во всю высоту, а внутренний .table-wrapper
