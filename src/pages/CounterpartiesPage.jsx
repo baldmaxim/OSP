@@ -82,6 +82,8 @@ function CounterpartiesPage() {
   const [showWorkTypeModal, setShowWorkTypeModal] = useState(false)
   const [editingWorkType, setEditingWorkType] = useState(null)
   const [workTypeForm, setWorkTypeForm] = useState({ name: '', description: '' })
+  // task 326: поиск по справочнику видов работ
+  const [wtDirSearch, setWtDirSearch] = useState('')
 
   const TENDER_STATUS_LABEL = {
     request_sent: 'Запрос отправлен',
@@ -1374,6 +1376,24 @@ function CounterpartiesPage() {
           <div className="work-types-directory">
             <div className="work-types-directory-toolbar">
               <h3 className="work-types-directory-title">Справочник видов работ</h3>
+              {/* task 326: поиск по справочнику */}
+              <div className="work-types-directory-search">
+                <svg className="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input
+                  type="text"
+                  placeholder="Поиск по названию или описанию…"
+                  value={wtDirSearch}
+                  onChange={(e) => setWtDirSearch(e.target.value)}
+                />
+                {wtDirSearch && (
+                  <button
+                    type="button"
+                    className="work-types-directory-search-clear"
+                    onClick={() => setWtDirSearch('')}
+                    title="Очистить"
+                  >×</button>
+                )}
+              </div>
               <button className="btn-add" onClick={handleOpenAddWorkType}>+ Добавить вид работ</button>
             </div>
             {workTypesDirectory.length === 0 ? (
@@ -1384,7 +1404,15 @@ function CounterpartiesPage() {
                 </p>
                 <button className="btn-add" onClick={handleOpenAddWorkType}>+ Добавить вид работ</button>
               </div>
-            ) : (
+            ) : (() => {
+              const q = wtDirSearch.trim().toLowerCase()
+              const filteredWt = !q
+                ? workTypesDirectory
+                : workTypesDirectory.filter(wt =>
+                    (wt.name || '').toLowerCase().includes(q) ||
+                    (wt.description || '').toLowerCase().includes(q)
+                  )
+              return (
               <div className="table-wrapper">
                 <table className="compact-table work-types-table">
                   <thead>
@@ -1397,7 +1425,13 @@ function CounterpartiesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {workTypesDirectory.map((wt, idx) => {
+                    {filteredWt.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                          Ничего не найдено по запросу «{wtDirSearch}»
+                        </td>
+                      </tr>
+                    ) : filteredWt.map((wt, idx) => {
                       const used = counterparties.filter(cp => {
                         if (cp.deleted_at) return false
                         const list = (cp.work_type || '').split(',').map(x => x.trim())
@@ -1433,7 +1467,8 @@ function CounterpartiesPage() {
                   </tbody>
                 </table>
               </div>
-            )}
+              )
+            })()}
           </div>
         </div>
       ) : (
