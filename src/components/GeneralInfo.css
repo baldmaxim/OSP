@@ -588,6 +588,10 @@ body.modal-open {
 .form-group {
   display: flex;
   flex-direction: column;
+  /* Без min-width: 0 grid-колонка раздувается под intrinsic-ширину select-а
+     с длинными option-ами (например длинные имена объектов/отделов) — модалка
+     получает горизонтальный скролл. */
+  min-width: 0;
 }
 
 .form-group.full-width {
@@ -612,6 +616,11 @@ body.modal-open {
   transition: border-color 0.2s;
   background-color: var(--bg-secondary);
   color: var(--text-primary);
+  /* Гарантируем, что инпуты/селекты не вылезают за пределы .form-group. */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .form-group input:focus,
@@ -657,6 +666,8 @@ body.modal-open {
 .input-with-action select,
 .input-with-action input[type="text"] {
   flex: 1;
+  /* Без min-width: 0 select с длинными option-ами раздувает родителя. */
+  min-width: 0;
 }
 
 .input-with-action .btn-icon {
