@@ -367,8 +367,26 @@
   opacity: 0.7;
 }
 
+/* task 341: визуальная «связь» развернутой строки контрагента с блоком
+   истории под ней. Главная строка получает синий left-accent + фон, чтобы
+   глаз сразу видел: «эта строка раскрыта, история ниже принадлежит ей». */
 .table-row.expanded {
   background: var(--bg-tertiary);
+  box-shadow: inset 3px 0 0 0 var(--primary-color, #2563eb);
+}
+.table-row.expanded .col-num {
+  color: var(--primary-color, #2563eb);
+  font-weight: 700;
+}
+.table-row.expanded .company-name {
+  color: var(--primary-color, #2563eb);
+}
+[data-theme='dark'] .table-row.expanded {
+  box-shadow: inset 3px 0 0 0 #60a5fa;
+}
+[data-theme='dark'] .table-row.expanded .col-num,
+[data-theme='dark'] .table-row.expanded .company-name {
+  color: #93c5fd;
 }
 
 /* Checkbox */
@@ -614,14 +632,36 @@
 .expanded-row td {
   padding: 0 !important;
   background: var(--bg-tertiary);
+  /* task 341: продолжение синего left-accent с родительской строки */
+  box-shadow: inset 3px 0 0 0 var(--primary-color, #2563eb);
+}
+[data-theme='dark'] .expanded-row td {
+  box-shadow: inset 3px 0 0 0 #60a5fa;
 }
 
 .expanded-content {
-  padding: 0.5rem 1rem 0.5rem 3rem;
+  padding: 0.625rem 1rem 0.875rem 2.25rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   animation: slideDown 0.15s ease-out;
+  position: relative;
+}
+
+/* task 341: «коннектор» — короткая горизонтальная линия от левого синего
+   accent'а к секции истории, как indent-bracket в дерево-структурах. */
+.expanded-content::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 1.625rem;
+  width: 1.625rem;
+  height: 1px;
+  background: var(--primary-color, #2563eb);
+  opacity: 0.45;
+}
+[data-theme='dark'] .expanded-content::before {
+  background: #60a5fa;
 }
 
 @keyframes slideDown {
@@ -1577,13 +1617,16 @@
   background: rgba(8, 145, 178, 0.12);
 }
 
-/* ===== task 340: «История участия в тендерах» — enterprise-стиль =====
-   Без декоративных пилюль, плоская таблица, status-дот вместо плашки. */
+/* ===== task 340 + 341: «История участия в тендерах» — enterprise-стиль =====
+   Без декоративных пилюль, плоская таблица, status-дот вместо плашки.
+   Шапка с лёгким primary-tint фоном — визуально привязывает секцию к
+   развёрнутой строке контрагента (которая тоже primary-accent сверху). */
 .tender-history-section {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .tender-history-section-head {
@@ -1593,7 +1636,18 @@
   gap: 1rem;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+  background: linear-gradient(
+    180deg,
+    rgba(37, 99, 235, 0.04) 0%,
+    rgba(37, 99, 235, 0) 100%
+  );
+}
+[data-theme='dark'] .tender-history-section-head {
+  background: linear-gradient(
+    180deg,
+    rgba(96, 165, 250, 0.08) 0%,
+    rgba(96, 165, 250, 0) 100%
+  );
 }
 
 .tender-history-section-title {
@@ -1689,6 +1743,13 @@
   word-break: break-word;
   color: var(--text-primary);
   line-height: 1.4;
+}
+
+/* task 341: тонкие вертикальные разделители — мягкие, чтобы упорядочить
+   взгляд но не «расчертить» таблицу как Excel. */
+.tender-history-table th:not(:last-child),
+.tender-history-table td:not(:last-child) {
+  border-right: 1px solid rgba(148, 163, 184, 0.20);
 }
 
 .tender-history-table tbody tr:last-child td {
