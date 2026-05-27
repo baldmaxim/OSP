@@ -1373,6 +1373,14 @@ tr:hover .btn-delete-row {
   opacity: 0.7;
 }
 
+/* task 335: одно-колоночный ряд формы — для полей вроде «Email объекта»,
+   которые не парятся с чем-то рядом. Использует те же визуальные правила,
+   что и form-row-2 (см. ниже общие селекторы). */
+.form-row-1 {
+  display: block;
+  margin-bottom: 1rem;
+}
+
 .form-row-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1394,6 +1402,7 @@ tr:hover .btn-delete-row {
   min-width: 0;
 }
 
+.form-row-1 label,
 .form-row-2 label,
 .form-row-3 label {
   display: block;
@@ -1403,6 +1412,7 @@ tr:hover .btn-delete-row {
   margin-bottom: 0.375rem;
 }
 
+.form-row-1 input,
 .form-row-2 input,
 .form-row-3 input {
   width: 100%;
@@ -1413,8 +1423,10 @@ tr:hover .btn-delete-row {
   background: var(--bg-primary);
   color: var(--text-primary);
   transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
 }
 
+.form-row-1 input:focus,
 .form-row-2 input:focus,
 .form-row-3 input:focus {
   outline: none;
@@ -1422,6 +1434,7 @@ tr:hover .btn-delete-row {
   box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
 }
 
+.form-row-1 input::placeholder,
 .form-row-2 input::placeholder,
 .form-row-3 input::placeholder {
   color: var(--text-tertiary);
@@ -1472,6 +1485,7 @@ tr:hover .btn-delete-row {
 }
 
 [data-theme='dark'] .form-row input:focus,
+[data-theme='dark'] .form-row-1 input:focus,
 [data-theme='dark'] .form-row-2 input:focus,
 [data-theme='dark'] .form-row-3 input:focus {
   box-shadow: 0 0 0 3px rgba(94, 234, 212, 0.15);

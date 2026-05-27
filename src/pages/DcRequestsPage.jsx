@@ -133,7 +133,7 @@ function DcRequestsPage() {
           objects(id, name),
           counterparties(id, name),
           responsible:contacts!responsible_contact_id(id, full_name),
-          dc_request_tasks(id, task_text, response_text, is_completed, order_number)
+          dc_request_tasks(id, task_text, response_text, is_completed, order_number, created_at, created_by_name, responded_by_name, responded_at)
         `)
         // task 325: хронология добавления — старые сверху (№1), новые внизу.
         .order('created_at', { ascending: true })
@@ -351,6 +351,8 @@ function DcRequestsPage() {
         request_id: requestId,
         task_text: text,
         order_number: maxOrder + 1,
+        // task 337: snapshot ФИО автора задачи
+        created_by_name: userProfile?.full_name || null,
       }])
       if (error) throw error
       setNewTaskTexts(prev => ({ ...prev, [requestId]: '' }))
@@ -362,15 +364,28 @@ function DcRequestsPage() {
 
   const handleSaveTaskField = async (taskId, field, value) => {
     try {
+      // task 337: при сохранении ответа фиксируем автора и время.
+      const patch = { [field]: value, updated_at: new Date().toISOString() }
+      if (field === 'response_text') {
+        const trimmed = (value || '').trim()
+        if (trimmed) {
+          patch.responded_by_name = userProfile?.full_name || null
+          patch.responded_at = new Date().toISOString()
+        } else {
+          // Очистка ответа — снимаем подпись.
+          patch.responded_by_name = null
+          patch.responded_at = null
+        }
+      }
       const { error } = await supabase
         .from('dc_request_tasks')
-        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .update(patch)
         .eq('id', taskId)
       if (error) throw error
       setRequests(prev => prev.map(r => ({
         ...r,
         dc_request_tasks: (r.dc_request_tasks || []).map(t =>
-          t.id === taskId ? { ...t, [field]: value } : t
+          t.id === taskId ? { ...t, ...patch } : t
         ),
       })))
     } catch (err) {
@@ -1131,23 +1146,45 @@ function DcRequestsPage() {
 
                         <div className="dcr-task-card-body">
                           <div className="dcr-task-card-section dcr-task-card-section-task">
-                            <div className="dcr-task-card-label">Задача</div>
+                            <div className="dcr-task-card-label">
+                              <span>📝 Задача</span>
+                            </div>
                             <AutoGrowTextarea
                               className="dcr-task-text"
                               defaultValue={task.task_text}
                               placeholder="Опишите задачу…"
                               disabled={!canEditDc}
-                              minHeight={28}
+                              minHeight={60}
                               onBlur={(e) => {
                                 if (e.target.value !== task.task_text) {
                                   handleSaveTaskField(task.id, 'task_text', e.target.value)
                                 }
                               }}
                             />
+                            {/* task 337: автор задачи и дата постановки */}
+                            {(task.created_by_name || task.created_at) && (
+                              <div className="dcr-task-card-meta">
+                                <span className="dcr-task-card-meta-icon" aria-hidden>👤</span>
+                                <span>
+                                  Поставил:{' '}
+                                  {task.created_by_name
+                                    ? <strong>{task.created_by_name}</strong>
+                                    : <em className="dcr-task-card-meta-muted">не указан</em>}
+                                </span>
+                                {task.created_at && (
+                                  <span className="dcr-task-card-meta-sep">·</span>
+                                )}
+                                {task.created_at && (
+                                  <span className="dcr-task-card-meta-date">
+                                    {formatShortDate(task.created_at)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <div className="dcr-task-card-section dcr-task-card-section-response">
                             <div className="dcr-task-card-label">
-                              💬 Ответ
+                              <span>💬 Ответ</span>
                               {task.response_text && task.response_text.trim() && (
                                 <span className="dcr-task-card-label-tag">заполнено</span>
                               )}
@@ -1157,13 +1194,30 @@ function DcRequestsPage() {
                               defaultValue={task.response_text || ''}
                               placeholder="Введите ответ или комментарий…"
                               disabled={!canEditDc}
-                              minHeight={28}
+                              minHeight={60}
                               onBlur={(e) => {
                                 if (e.target.value !== (task.response_text || '')) {
                                   handleSaveTaskField(task.id, 'response_text', e.target.value)
                                 }
                               }}
                             />
+                            {/* task 337: автор ответа и дата ответа */}
+                            {task.responded_by_name && (
+                              <div className="dcr-task-card-meta">
+                                <span className="dcr-task-card-meta-icon" aria-hidden>✍️</span>
+                                <span>
+                                  Ответил: <strong>{task.responded_by_name}</strong>
+                                </span>
+                                {task.responded_at && (
+                                  <span className="dcr-task-card-meta-sep">·</span>
+                                )}
+                                {task.responded_at && (
+                                  <span className="dcr-task-card-meta-date">
+                                    {formatShortDate(task.responded_at)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </li>
