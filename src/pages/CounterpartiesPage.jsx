@@ -57,6 +57,9 @@ function CounterpartiesPage() {
   // task 322: поиск по справочнику видов работ внутри модалки контрагента
   const [wtSearch, setWtSearch] = useState('')
   const [wtDropdownOpen, setWtDropdownOpen] = useState(false)
+  // task 323: поисковый фильтр «Виды работ» в верхнем тулбаре
+  const [wtfSearch, setWtfSearch] = useState('')
+  const [wtfOpen, setWtfOpen] = useState(false)
 
   // Связи между контрагентами
   const [relations, setRelations] = useState([]) // [{counterparty_id, related_counterparty_id}]
@@ -1227,16 +1230,63 @@ function CounterpartiesPage() {
                 />
               </div>
 
-              <select
-                className={`filter-select ${workTypeFilter ? 'active' : ''}`}
-                value={workTypeFilter}
-                onChange={(e) => setWorkTypeFilter(e.target.value)}
-              >
-                <option value="">Все виды работ</option>
-                {uniqueWorkTypes.map(workType => (
-                  <option key={workType} value={workType}>{workType}</option>
-                ))}
-              </select>
+              {/* task 323: поисковый dropdown по видам работ. Источник — uniqueWorkTypes
+                  (значения, реально используемые в counterparties), чтобы фильтр не
+                  предлагал заведомо «пустые» варианты. */}
+              {(() => {
+                const q = wtfSearch.trim().toLowerCase()
+                const opts = !q
+                  ? uniqueWorkTypes
+                  : uniqueWorkTypes.filter(wt => wt.toLowerCase().includes(q))
+                const displayValue = wtfOpen ? wtfSearch : workTypeFilter
+                return (
+                  <div className={`wt-filter-wrap ${workTypeFilter ? 'has-value' : ''}`}>
+                    <input
+                      type="text"
+                      className={`wt-filter-input ${workTypeFilter ? 'active' : ''}`}
+                      value={displayValue}
+                      placeholder="Все виды работ"
+                      onChange={(e) => { setWtfSearch(e.target.value); setWtfOpen(true) }}
+                      onFocus={() => { setWtfSearch(''); setWtfOpen(true) }}
+                      onBlur={() => setTimeout(() => setWtfOpen(false), 150)}
+                    />
+                    {workTypeFilter && !wtfOpen && (
+                      <button
+                        type="button"
+                        className="wt-filter-clear"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setWorkTypeFilter(''); setWtfSearch('') }}
+                        title="Сбросить фильтр"
+                      >×</button>
+                    )}
+                    {wtfOpen && (
+                      <div className="wt-filter-dropdown">
+                        <button
+                          type="button"
+                          className={`wt-filter-item ${!workTypeFilter ? 'is-current' : ''}`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => { setWorkTypeFilter(''); setWtfSearch(''); setWtfOpen(false) }}
+                        >Все виды работ</button>
+                        {opts.length === 0 ? (
+                          <div className="wt-filter-empty">
+                            Ничего не найдено по запросу «{wtfSearch}»
+                          </div>
+                        ) : (
+                          opts.map(wt => (
+                            <button
+                              key={wt}
+                              type="button"
+                              className={`wt-filter-item ${workTypeFilter === wt ? 'is-current' : ''}`}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => { setWorkTypeFilter(wt); setWtfSearch(''); setWtfOpen(false) }}
+                            >{wt}</button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
             </div>
 
