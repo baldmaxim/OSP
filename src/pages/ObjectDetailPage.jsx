@@ -193,19 +193,12 @@ function AgreementRow({
       <tr
         className={[
           'doc-row-tr',
-          'doc-row-draggable',
           isDragging ? 'doc-row-dragging' : '',
           /* task 331: индикатор «before» рисуется на главной строке ДС.
              «after» рисуется ниже — на строке «+ Приложение», чтобы линия
              всегда стояла между блоками ДС, а не между ДС и его приложением. */
           dragOverPosition === 'before' ? 'doc-row-drop-before' : '',
         ].filter(Boolean).join(' ')}
-        draggable={true}
-        onDragStart={(e) => {
-          e.dataTransfer.effectAllowed = 'move'
-          e.dataTransfer.setData('text/plain', doc.id)
-          onDragStart?.(doc.id)
-        }}
         onDragOver={(e) => {
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
@@ -214,7 +207,6 @@ function AgreementRow({
           onDragOver?.(doc.id, isAbove ? 'before' : 'after')
         }}
         onDragLeave={() => onDragLeave?.(doc.id)}
-        onDragEnd={() => onDragEnd?.()}
         onDrop={(e) => {
           e.preventDefault()
           const draggedId = e.dataTransfer.getData('text/plain')
@@ -222,7 +214,20 @@ function AgreementRow({
         }}
       >
         <td className="doc-cell-marker">
-          <span className="doc-drag-handle" title="Перетащите для изменения порядка" aria-hidden>⋮⋮</span>
+          {/* task 332: только handle тащит строку, не вся строка. */}
+          <span
+            className="doc-drag-handle"
+            role="button"
+            tabIndex={-1}
+            draggable={true}
+            title="Перетащите для изменения порядка"
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move'
+              e.dataTransfer.setData('text/plain', doc.id)
+              onDragStart?.(doc.id)
+            }}
+            onDragEnd={() => onDragEnd?.()}
+          >⋮⋮</span>
           {hasAttachments ? (
             <button
               type="button"
@@ -619,6 +624,11 @@ function ObjectDetailPage() {
 
   const handleAgreementDragStart = (id) => setDraggedAgreementId(id)
   const handleAgreementDragOver = (id, position) => {
+    // task 332: на исходной строке индикатор не рисуем (на самого себя дроп не делаем).
+    if (id === draggedAgreementId) {
+      setAgreementDragOver(prev => prev ? null : prev)
+      return
+    }
     setAgreementDragOver(prev => (prev?.id === id && prev?.position === position) ? prev : { id, position })
   }
   const handleAgreementDragLeave = (id) => {
