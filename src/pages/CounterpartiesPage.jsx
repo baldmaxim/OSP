@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useDeferredValue } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import { formatPhone } from '../utils/phoneFormat'
@@ -25,6 +25,11 @@ function CounterpartiesPage() {
   const [editingContact, setEditingContact] = useState(null)
   const [selectedCounterpartyIds, setSelectedCounterpartyIds] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
+  // task 339: useDeferredValue — фильтрация большой таблицы (500+ строк)
+  // переезжает в low-priority render, инпут остаётся отзывчивым на каждый
+  // keystroke. React не ждёт окончания пересборки таблицы перед отрисовкой
+  // нового значения в input.
+  const deferredSearchQuery = useDeferredValue(searchQuery)
   const [workTypeFilter, setWorkTypeFilter] = useState('')
   // task 302: карточки компаний (s3_documents owner_type='counterparty') — map по owner_id, latest first.
   const [cardsByCp, setCardsByCp] = useState(() => new Map())
@@ -1128,10 +1133,10 @@ function CounterpartiesPage() {
       if (!types.includes(workTypeFilter)) return false
     }
 
-    // Поиск по всем полям
-    if (!searchQuery.trim()) return true
+    // task 339: фильтрация по deferred-значению — отвязана от ввода в input
+    if (!deferredSearchQuery.trim()) return true
 
-    const query = searchQuery.toLowerCase()
+    const query = deferredSearchQuery.toLowerCase()
 
     // Поиск по основным полям контрагента
     const matchesCounterparty =
@@ -1159,7 +1164,7 @@ function CounterpartiesPage() {
     if (a.status !== 'blacklist' && b.status === 'blacklist') return -1
     // Если статусы одинаковые, сортируем по имени
     return (a.name || '').localeCompare(b.name || '', 'ru')
-  }), [counterparties, workTypeFilter, searchQuery, activeTab])
+  }), [counterparties, workTypeFilter, deferredSearchQuery, activeTab])
 
   const activeCount = counterparties.filter(c => !c.deleted_at && c.status !== 'blacklist').length
   const blacklistCount = counterparties.filter(c => !c.deleted_at && c.status === 'blacklist').length

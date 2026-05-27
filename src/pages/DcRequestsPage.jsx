@@ -1039,38 +1039,54 @@ function DcRequestsPage() {
               className="modal dcr-tasks-modal"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* task 336: красивая шапка с заголовком, контекстом и прогресс-баром. */}
+              {/* task 338: профессиональная шапка — без эмодзи, без gradient,
+                  как в Jira/Linear: заголовок + breadcrumb-метаданные + KPI справа. */}
               <div className="dcr-tasks-modal-header">
                 <div className="dcr-tasks-modal-head-row">
                   <div className="dcr-tasks-modal-title">
-                    <div className="dcr-tasks-modal-title-row">
-                      <span className="dcr-tasks-modal-icon" aria-hidden>📋</span>
-                      <h3>Задачи и ответы</h3>
-                    </div>
-                    <div className="dcr-tasks-modal-subtitle">
+                    <div className="dcr-tasks-modal-eyebrow">Чек-лист</div>
+                    <h3>Задачи и ответы</h3>
+                    <div className="dcr-tasks-modal-meta">
                       {req.ds_number && (
-                        <span className="dcr-tasks-modal-chip">
-                          <span className="dcr-tasks-modal-chip-label">ДС №</span>
-                          <strong>{req.ds_number}</strong>
+                        <span className="dcr-tasks-modal-meta-item">
+                          <span className="dcr-tasks-modal-meta-key">ДС</span>
+                          <span className="dcr-tasks-modal-meta-val">№{req.ds_number}</span>
                         </span>
                       )}
-                      {objName && <span className="dcr-tasks-modal-chip">🏗 {objName}</span>}
-                      {cpName && <span className="dcr-tasks-modal-chip">🏢 {cpName}</span>}
+                      {objName && (
+                        <span className="dcr-tasks-modal-meta-item">
+                          <span className="dcr-tasks-modal-meta-key">Объект</span>
+                          <span className="dcr-tasks-modal-meta-val">{objName}</span>
+                        </span>
+                      )}
+                      {cpName && (
+                        <span className="dcr-tasks-modal-meta-item">
+                          <span className="dcr-tasks-modal-meta-key">Контрагент</span>
+                          <span className="dcr-tasks-modal-meta-val">{cpName}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
-                  <div
-                    className={`dcr-tasks-modal-counter${
-                      totalTasks > 0 && completedTasks === totalTasks ? ' is-complete' : ''
-                    }`}
-                    title="Выполнено / всего"
-                  >
-                    <span className="dcr-tasks-modal-counter-done">{completedTasks}</span>
-                    <span className="dcr-tasks-modal-counter-sep">/</span>
-                    <span className="dcr-tasks-modal-counter-total">{totalTasks}</span>
+                  <div className="dcr-tasks-modal-kpi">
+                    <div className="dcr-tasks-modal-kpi-label">Выполнено</div>
+                    <div
+                      className={`dcr-tasks-modal-counter${
+                        totalTasks > 0 && completedTasks === totalTasks ? ' is-complete' : ''
+                      }`}
+                    >
+                      <span className="dcr-tasks-modal-counter-done">{completedTasks}</span>
+                      <span className="dcr-tasks-modal-counter-sep">/</span>
+                      <span className="dcr-tasks-modal-counter-total">{totalTasks}</span>
+                    </div>
                   </div>
-                  <button className="modal-close" onClick={() => setTasksModalFor(null)} aria-label="Закрыть">×</button>
+                  <button className="modal-close" onClick={() => setTasksModalFor(null)} aria-label="Закрыть">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
                 </div>
-                {/* Прогресс-бар прогресса выполнения */}
+                {/* Тонкая прогресс-полоса — без подписей и без gradient */}
                 <div className="dcr-tasks-modal-progress" aria-hidden>
                   <div className="dcr-tasks-modal-progress-bar">
                     <div
@@ -1081,7 +1097,7 @@ function DcRequestsPage() {
                     />
                   </div>
                   <span className="dcr-tasks-modal-progress-label">
-                    {totalTasks === 0 ? 'Нет задач' : `${progressPct}% выполнено`}
+                    {totalTasks === 0 ? 'Нет задач' : `${progressPct}%`}
                   </span>
                 </div>
               </div>
@@ -1089,13 +1105,18 @@ function DcRequestsPage() {
               <div className="dcr-tasks-modal-body">
                 {totalTasks === 0 && (
                   <div className="dcr-tasks-modal-empty">
-                    <div className="dcr-tasks-modal-empty-icon" aria-hidden>✨</div>
+                    <div className="dcr-tasks-modal-empty-icon" aria-hidden>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" />
+                        <path d="M9 11l3 3 7-7" />
+                      </svg>
+                    </div>
                     <div className="dcr-tasks-modal-empty-title">
-                      {canEditDc ? 'Здесь будут задачи по заявке' : 'Задач пока нет'}
+                      {canEditDc ? 'Задачи не поставлены' : 'Задач пока нет'}
                     </div>
                     <div className="dcr-tasks-modal-empty-hint">
                       {canEditDc
-                        ? 'Добавьте первую задачу в поле ниже и отслеживайте её выполнение.'
+                        ? 'Создайте первую задачу в поле ниже, чтобы зафиксировать её и отслеживать статус выполнения.'
                         : 'Сотрудник пока не добавил задачи к этой заявке.'}
                     </div>
                   </div>
@@ -1146,45 +1167,40 @@ function DcRequestsPage() {
 
                         <div className="dcr-task-card-body">
                           <div className="dcr-task-card-section dcr-task-card-section-task">
-                            <div className="dcr-task-card-label">
-                              <span>📝 Задача</span>
-                            </div>
+                            <div className="dcr-task-card-label">Описание задачи</div>
                             <AutoGrowTextarea
                               className="dcr-task-text"
                               defaultValue={task.task_text}
-                              placeholder="Опишите задачу…"
+                              placeholder="Опишите что нужно сделать…"
                               disabled={!canEditDc}
-                              minHeight={60}
+                              minHeight={68}
                               onBlur={(e) => {
                                 if (e.target.value !== task.task_text) {
                                   handleSaveTaskField(task.id, 'task_text', e.target.value)
                                 }
                               }}
                             />
-                            {/* task 337: автор задачи и дата постановки */}
+                            {/* task 337 + 338: автор и дата постановки */}
                             {(task.created_by_name || task.created_at) && (
                               <div className="dcr-task-card-meta">
-                                <span className="dcr-task-card-meta-icon" aria-hidden>👤</span>
-                                <span>
-                                  Поставил:{' '}
-                                  {task.created_by_name
-                                    ? <strong>{task.created_by_name}</strong>
-                                    : <em className="dcr-task-card-meta-muted">не указан</em>}
+                                <span className="dcr-task-card-meta-label">Поставил:</span>
+                                <span className="dcr-task-card-meta-val">
+                                  {task.created_by_name || <em className="dcr-task-card-meta-muted">не указан</em>}
                                 </span>
                                 {task.created_at && (
-                                  <span className="dcr-task-card-meta-sep">·</span>
-                                )}
-                                {task.created_at && (
-                                  <span className="dcr-task-card-meta-date">
-                                    {formatShortDate(task.created_at)}
-                                  </span>
+                                  <>
+                                    <span className="dcr-task-card-meta-sep">·</span>
+                                    <span className="dcr-task-card-meta-date">
+                                      {formatShortDate(task.created_at)}
+                                    </span>
+                                  </>
                                 )}
                               </div>
                             )}
                           </div>
                           <div className="dcr-task-card-section dcr-task-card-section-response">
                             <div className="dcr-task-card-label">
-                              <span>💬 Ответ</span>
+                              <span>Ответ исполнителя</span>
                               {task.response_text && task.response_text.trim() && (
                                 <span className="dcr-task-card-label-tag">заполнено</span>
                               )}
@@ -1194,27 +1210,25 @@ function DcRequestsPage() {
                               defaultValue={task.response_text || ''}
                               placeholder="Введите ответ или комментарий…"
                               disabled={!canEditDc}
-                              minHeight={60}
+                              minHeight={68}
                               onBlur={(e) => {
                                 if (e.target.value !== (task.response_text || '')) {
                                   handleSaveTaskField(task.id, 'response_text', e.target.value)
                                 }
                               }}
                             />
-                            {/* task 337: автор ответа и дата ответа */}
+                            {/* task 337 + 338: автор и дата ответа */}
                             {task.responded_by_name && (
                               <div className="dcr-task-card-meta">
-                                <span className="dcr-task-card-meta-icon" aria-hidden>✍️</span>
-                                <span>
-                                  Ответил: <strong>{task.responded_by_name}</strong>
-                                </span>
+                                <span className="dcr-task-card-meta-label">Ответил:</span>
+                                <span className="dcr-task-card-meta-val">{task.responded_by_name}</span>
                                 {task.responded_at && (
-                                  <span className="dcr-task-card-meta-sep">·</span>
-                                )}
-                                {task.responded_at && (
-                                  <span className="dcr-task-card-meta-date">
-                                    {formatShortDate(task.responded_at)}
-                                  </span>
+                                  <>
+                                    <span className="dcr-task-card-meta-sep">·</span>
+                                    <span className="dcr-task-card-meta-date">
+                                      {formatShortDate(task.responded_at)}
+                                    </span>
+                                  </>
                                 )}
                               </div>
                             )}
@@ -1227,11 +1241,16 @@ function DcRequestsPage() {
 
                 {canEditDc && (
                   <div className="dcr-task-add-card">
-                    <span className="dcr-task-add-card-icon" aria-hidden>＋</span>
+                    <span className="dcr-task-add-card-icon" aria-hidden>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </span>
                     <input
                       type="text"
                       className="dcr-task-add-card-input"
-                      placeholder={totalTasks === 0 ? 'Добавить первую задачу…' : 'Добавить ещё задачу…'}
+                      placeholder={totalTasks === 0 ? 'Поставить первую задачу…' : 'Поставить новую задачу…'}
                       value={newTaskTexts[req.id] || ''}
                       onChange={(e) => setNewTaskTexts(prev => ({ ...prev, [req.id]: e.target.value }))}
                       onKeyDown={(e) => {
