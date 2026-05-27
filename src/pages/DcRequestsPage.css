@@ -168,6 +168,16 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8125rem;
+  /* Фиксированная раскладка: колонки строго своих ширин (см. inline в JSX),
+     длинный текст переносится внутри ячейки — без горизонтального скролла. */
+  table-layout: fixed;
+}
+
+/* Жёсткий перенос для любого текста: word-break ломает длинные слова,
+   overflow-wrap страхует от непрерывных строк (URL, длинные имена файлов). */
+.dcr-table tbody td {
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .dcr-table thead th {

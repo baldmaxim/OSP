@@ -533,16 +533,16 @@ function DcRequestsPage() {
           <table className="dcr-table">
             <thead>
               <tr>
-                <th style={{ width: '40px' }}>№</th>
-                <th style={{ minWidth: '160px' }}>Объект</th>
-                <th style={{ minWidth: '160px' }}>Контрагент</th>
-                <th style={{ width: '80px', textAlign: 'center' }}>№ ДС</th>
-                <th style={{ minWidth: '200px' }}>Описание ДС</th>
-                <th style={{ width: '110px' }}>Статус</th>
-                <th style={{ width: '150px' }}>Ответственный</th>
-                <th style={{ minWidth: '380px' }}>Задачи и ответы</th>
-                <th style={{ minWidth: '200px' }}>Документы</th>
-                <th style={{ width: '60px' }}>Действия</th>
+                <th style={{ width: '3%' }}>№</th>
+                <th style={{ width: '11%' }}>Объект</th>
+                <th style={{ width: '11%' }}>Контрагент</th>
+                <th style={{ width: '6%', textAlign: 'center' }}>№ ДС</th>
+                <th style={{ width: '14%' }}>Описание ДС</th>
+                <th style={{ width: '8%' }}>Статус</th>
+                <th style={{ width: '10%' }}>Ответственный</th>
+                <th style={{ width: '20%' }}>Задачи и ответы</th>
+                <th style={{ width: '13%' }}>Документы</th>
+                <th style={{ width: '4%' }}>Действия</th>
               </tr>
             </thead>
             <tbody>
