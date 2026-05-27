@@ -367,12 +367,11 @@
   opacity: 0.7;
 }
 
-/* task 341: визуальная «связь» развернутой строки контрагента с блоком
-   истории под ней. Главная строка получает синий left-accent + фон, чтобы
-   глаз сразу видел: «эта строка раскрыта, история ниже принадлежит ей». */
-.table-row.expanded {
-  background: var(--bg-tertiary);
-  box-shadow: inset 3px 0 0 0 var(--primary-color, #2563eb);
+/* task 341/342: визуальная «активность» раскрытой строки — без полосок и
+   стрипов слева. Только лёгкий primary-tint фон, который продолжается на
+   блок истории под ней. Глаз сразу видит вертикальный «кластер» одного цвета. */
+.table-row.expanded td {
+  background: rgba(37, 99, 235, 0.04);
 }
 .table-row.expanded .col-num {
   color: var(--primary-color, #2563eb);
@@ -381,8 +380,8 @@
 .table-row.expanded .company-name {
   color: var(--primary-color, #2563eb);
 }
-[data-theme='dark'] .table-row.expanded {
-  box-shadow: inset 3px 0 0 0 #60a5fa;
+[data-theme='dark'] .table-row.expanded td {
+  background: rgba(96, 165, 250, 0.08);
 }
 [data-theme='dark'] .table-row.expanded .col-num,
 [data-theme='dark'] .table-row.expanded .company-name {
@@ -628,40 +627,21 @@
   color: #dc2626;
 }
 
-/* Expanded row */
+/* Expanded row — продолжение primary-tint фона с родительской строки */
 .expanded-row td {
   padding: 0 !important;
-  background: var(--bg-tertiary);
-  /* task 341: продолжение синего left-accent с родительской строки */
-  box-shadow: inset 3px 0 0 0 var(--primary-color, #2563eb);
+  background: rgba(37, 99, 235, 0.04);
 }
 [data-theme='dark'] .expanded-row td {
-  box-shadow: inset 3px 0 0 0 #60a5fa;
+  background: rgba(96, 165, 250, 0.08);
 }
 
 .expanded-content {
-  padding: 0.625rem 1rem 0.875rem 2.25rem;
+  padding: 0.625rem 1rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   animation: slideDown 0.15s ease-out;
-  position: relative;
-}
-
-/* task 341: «коннектор» — короткая горизонтальная линия от левого синего
-   accent'а к секции истории, как indent-bracket в дерево-структурах. */
-.expanded-content::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 1.625rem;
-  width: 1.625rem;
-  height: 1px;
-  background: var(--primary-color, #2563eb);
-  opacity: 0.45;
-}
-[data-theme='dark'] .expanded-content::before {
-  background: #60a5fa;
 }
 
 @keyframes slideDown {
@@ -1636,18 +1616,7 @@
   gap: 1rem;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(
-    180deg,
-    rgba(37, 99, 235, 0.04) 0%,
-    rgba(37, 99, 235, 0) 100%
-  );
-}
-[data-theme='dark'] .tender-history-section-head {
-  background: linear-gradient(
-    180deg,
-    rgba(96, 165, 250, 0.08) 0%,
-    rgba(96, 165, 250, 0) 100%
-  );
+  background: var(--bg-secondary);
 }
 
 .tender-history-section-title {
