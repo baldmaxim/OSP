@@ -5,6 +5,7 @@ import { formatPhone } from '../utils/phoneFormat'
 import { generateUUID } from '../utils/uuid'
 import { useRole } from '../contexts/RoleContext'
 import CounterpartyCardChip from '../components/CounterpartyCardChip'
+import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
@@ -1645,23 +1646,16 @@ function CounterpartiesPage() {
                           {/* task 203 + 330: редактируемое примечание прямо в таблице
                               с авторасширением по контенту (без ручного drag). */}
                           <td className="col-notes" onClick={(e) => e.stopPropagation()}>
-                            {/* task 333: read-only режим — отдаём текстом без textarea */}
+                            {/* task 333: read-only режим — отдаём текстом без textarea.
+                                Перф: AutoGrowTextarea с useLayoutEffect вместо inline ref —
+                                иначе на странице с сотнями строк каждый ввод вызывал
+                                тысячи принудительных layout-вычислений. */}
                             {canEditCp ? (
-                              <textarea
+                              <AutoGrowTextarea
                                 className="notes-edit"
                                 defaultValue={counterparty.notes || ''}
                                 placeholder="Примечание…"
-                                rows={1}
-                                ref={(el) => {
-                                  if (el) {
-                                    el.style.height = 'auto'
-                                    el.style.height = Math.max(el.scrollHeight, 32) + 'px'
-                                  }
-                                }}
-                                onInput={(e) => {
-                                  e.target.style.height = 'auto'
-                                  e.target.style.height = Math.max(e.target.scrollHeight, 32) + 'px'
-                                }}
+                                minHeight={32}
                                 onBlur={(e) => {
                                   if (e.target.value.trim() !== (counterparty.notes || '')) {
                                     handleNotesChange(counterparty.id, e.target.value)

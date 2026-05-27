@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
+import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import { formatPhone } from '../utils/phoneFormat'
 import '../components/GeneralInfo.css'
 
@@ -753,18 +754,10 @@ function ContactsPage() {
                       <td>{contact.phone || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>—</span>}</td>
                       <td>{contact.email}</td>
                       <td>
-                        <textarea
-                          ref={(el) => {
-                            if (el) {
-                              el.style.height = 'auto'
-                              el.style.height = Math.max(el.scrollHeight, 32) + 'px'
-                            }
-                          }}
+                        {/* перф: AutoGrowTextarea с useLayoutEffect, чтобы не
+                            пересчитывать layout каждой строки на каждый рендер таблицы. */}
+                        <AutoGrowTextarea
                           defaultValue={contact.notes || ''}
-                          onInput={(e) => {
-                            e.target.style.height = 'auto'
-                            e.target.style.height = Math.max(e.target.scrollHeight, 32) + 'px'
-                          }}
                           onBlur={(e) => {
                             const next = e.target.value
                             if ((contact.notes || '') !== next) {
@@ -772,8 +765,8 @@ function ContactsPage() {
                             }
                           }}
                           placeholder="Примечание…"
-                          rows={1}
                           className="contact-notes-input"
+                          minHeight={32}
                           disabled={!canEditContacts}
                           readOnly={!canEditContacts}
                         />

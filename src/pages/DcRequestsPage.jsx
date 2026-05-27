@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
 import S3DocumentPreview from '../components/S3DocumentPreview'
+import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import '../components/ContractRegistry.css'
 import './DcRequestsPage.css'
 
@@ -1061,33 +1062,27 @@ function DcRequestsPage() {
                       disabled={!canEditDc}
                       title={task.is_completed ? 'Снять отметку' : 'Отметить выполненной'}
                     />
-                    <textarea
+                    <AutoGrowTextarea
                       className="dcr-task-text"
                       defaultValue={task.task_text}
                       placeholder="Задача…"
-                      rows={1}
                       disabled={!canEditDc}
                       onBlur={(e) => {
                         if (e.target.value !== task.task_text) {
                           handleSaveTaskField(task.id, 'task_text', e.target.value)
                         }
                       }}
-                      onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
-                      ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                     />
-                    <textarea
+                    <AutoGrowTextarea
                       className="dcr-task-response"
                       defaultValue={task.response_text || ''}
                       placeholder="Ответ…"
-                      rows={1}
                       disabled={!canEditDc}
                       onBlur={(e) => {
                         if (e.target.value !== (task.response_text || '')) {
                           handleSaveTaskField(task.id, 'response_text', e.target.value)
                         }
                       }}
-                      onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
-                      ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
                     />
                     {canEditDc && (
                       <button
