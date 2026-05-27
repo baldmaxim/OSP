@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
+import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl } from '../services/s3'
 import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
 import S3DocumentPreview from '../components/S3DocumentPreview'
@@ -63,6 +64,7 @@ function DocRow({
   onDelete,
   onPreviewFile,
   onDownloadFile,
+  canEdit = true, // task 333: гейт edit/delete/add-attachment действий
 }) {
   const isAttachment = level > 0
   const hasAttachments = attachments.length > 0
@@ -119,12 +121,16 @@ function DocRow({
           <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
         <td className="doc-cell-actions">
-          <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">
-            ✏️
-          </button>
-          <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(doc.id)} title="Удалить">
-            🗑️
-          </button>
+          {canEdit && (
+            <>
+              <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">
+                ✏️
+              </button>
+              <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(doc.id)} title="Удалить">
+                🗑️
+              </button>
+            </>
+          )}
         </td>
       </tr>
       {/* Вложенные приложения — показываются только если родитель развёрнут */}
@@ -141,10 +147,11 @@ function DocRow({
           onDelete={onDelete}
           onPreviewFile={onPreviewFile}
           onDownloadFile={onDownloadFile}
+          canEdit={canEdit}
         />
       ))}
       {/* Кнопка «+ Приложение» под каждым родительским документом */}
-      {!isAttachment && (
+      {!isAttachment && canEdit && (
         <tr className="doc-row-tr-add-attachment">
           <td colSpan={6}>
             <button
@@ -185,6 +192,8 @@ function AgreementRow({
   onDragLeave,
   onDragEnd,
   onDrop,
+  // task 333: гейт edit/delete/add-attachment/drag-handle
+  canEdit = true,
 }) {
   const hasAttachments = attachments.length > 0
   const isExpanded = expandedDocs.has(doc.id)
@@ -214,20 +223,23 @@ function AgreementRow({
         }}
       >
         <td className="doc-cell-marker">
-          {/* task 332: только handle тащит строку, не вся строка. */}
-          <span
-            className="doc-drag-handle"
-            role="button"
-            tabIndex={-1}
-            draggable={true}
-            title="Перетащите для изменения порядка"
-            onDragStart={(e) => {
-              e.dataTransfer.effectAllowed = 'move'
-              e.dataTransfer.setData('text/plain', doc.id)
-              onDragStart?.(doc.id)
-            }}
-            onDragEnd={() => onDragEnd?.()}
-          >⋮⋮</span>
+          {/* task 332: только handle тащит строку, не вся строка.
+              task 333: при read-only handle скрыт — перетаскивание не доступно. */}
+          {canEdit && (
+            <span
+              className="doc-drag-handle"
+              role="button"
+              tabIndex={-1}
+              draggable={true}
+              title="Перетащите для изменения порядка"
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', doc.id)
+                onDragStart?.(doc.id)
+              }}
+              onDragEnd={() => onDragEnd?.()}
+            >⋮⋮</span>
+          )}
           {hasAttachments ? (
             <button
               type="button"
@@ -258,8 +270,12 @@ function AgreementRow({
           <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
         </td>
         <td className="doc-cell-actions">
-          <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">✏️</button>
-          <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(doc.id)} title="Удалить">🗑️</button>
+          {canEdit && (
+            <>
+              <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">✏️</button>
+              <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(doc.id)} title="Удалить">🗑️</button>
+            </>
+          )}
         </td>
       </tr>
       {isExpanded && attachments.map(att => (
@@ -301,14 +317,20 @@ function AgreementRow({
             <DocFileCell compact s3doc={att.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
           </td>
           <td className="doc-cell-actions">
-            <button type="button" className="doc-action-btn" onClick={() => onEdit(att)} title="Редактировать">✏️</button>
-            <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(att.id)} title="Удалить">🗑️</button>
+            {canEdit && (
+              <>
+                <button type="button" className="doc-action-btn" onClick={() => onEdit(att)} title="Редактировать">✏️</button>
+                <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(att.id)} title="Удалить">🗑️</button>
+              </>
+            )}
           </td>
         </tr>
       ))}
       {/* Кнопка «+ Приложение» отдельной строкой под ДС — как у Договора Генподряда.
           task 331: это последняя строка блока ДС, поэтому индикатор «after» рисуется
-          именно здесь — линия оказывается между блоками двух соседних ДС. */}
+          именно здесь — линия оказывается между блоками двух соседних ДС.
+          task 333: скрываем при read-only. */}
+      {canEdit && (
       <tr
         className={[
           'doc-row-tr-add-attachment',
@@ -337,6 +359,7 @@ function AgreementRow({
           </button>
         </td>
       </tr>
+      )}
     </>
   )
 }
@@ -344,6 +367,9 @@ function AgreementRow({
 function ObjectDetailPage() {
   const { objectId } = useParams()
   const navigate = useNavigate()
+  // task 333: гейт add/edit/delete документов, гарантий, удержаний, сметы.
+  const { canEdit } = useRole()
+  const canEditObj = canEdit('objects')
 
   const [object, setObject] = useState(null)
   const [documents, setDocuments] = useState([])
@@ -1188,7 +1214,9 @@ function ObjectDetailPage() {
         <div className="tab-content info-content">
           <div className="info-header">
             <span>Информация об объекте</span>
-            <button className="btn-add" onClick={handleEditInfo} title="Редактировать">✏️</button>
+            {canEditObj && (
+              <button className="btn-add" onClick={handleEditInfo} title="Редактировать">✏️</button>
+            )}
           </div>
           <div className="info-grid">
             <div className="info-item">
@@ -1245,7 +1273,7 @@ function ObjectDetailPage() {
                 <div className="doc-section">
                   <div className="doc-section-header">
                     <span>Договор Генподряда</span>
-                    {!generalContract && <button className="btn-add" onClick={() => handleAddDocument('general_contract')}>+ Добавить</button>}
+                    {!generalContract && canEditObj && <button className="btn-add" onClick={() => handleAddDocument('general_contract')}>+ Добавить</button>}
                   </div>
                   {visibleContract ? (
                     <div className="doc-table-wrap">
@@ -1272,6 +1300,7 @@ function ObjectDetailPage() {
                             onDelete={handleDeleteDocument}
                             onPreviewFile={handlePreviewFile}
                             onDownloadFile={handleDownloadFile}
+                            canEdit={canEditObj}
                           />
                         </tbody>
                       </table>
@@ -1287,7 +1316,7 @@ function ObjectDetailPage() {
                 <div className="doc-section">
                   <div className="doc-section-header">
                     <span>Дополнительные соглашения ({additionalAgreements.length})</span>
-                    <button className="btn-add" onClick={() => handleAddDocument('additional_agreement')}>+ Добавить</button>
+                    {canEditObj && <button className="btn-add" onClick={() => handleAddDocument('additional_agreement')}>+ Добавить</button>}
                   </div>
                   {visibleAgreements.length > 0 ? (
                     <div className="doc-table-wrap">
@@ -1324,6 +1353,7 @@ function ObjectDetailPage() {
                               onDragLeave={handleAgreementDragLeave}
                               onDragEnd={handleAgreementDragEnd}
                               onDrop={handleAgreementDrop}
+                              canEdit={canEditObj}
                             />
                           ))}
                         </tbody>
@@ -1344,7 +1374,7 @@ function ObjectDetailPage() {
         <div className="tab-content">
           <div className="cost-header">
             <span>Гарантийные сроки</span>
-            <button className="btn-add" onClick={handleAddWarranty} title="Добавить">+</button>
+            {canEditObj && <button className="btn-add" onClick={handleAddWarranty} title="Добавить">+</button>}
           </div>
           <table className="cost-table">
             <thead>
@@ -1366,8 +1396,12 @@ function ObjectDetailPage() {
                   <td className="center">{item.warranty_months} мес.</td>
                   <td className="center">{getWarrantyEndDate(item.start_date, item.warranty_months)}</td>
                   <td className="actions">
-                    <button onClick={() => handleEditWarranty(item)}>✏️</button>
-                    <button onClick={() => handleDeleteWarranty(item.id)}>🗑️</button>
+                    {canEditObj && (
+                      <>
+                        <button onClick={() => handleEditWarranty(item)}>✏️</button>
+                        <button onClick={() => handleDeleteWarranty(item.id)}>🗑️</button>
+                      </>
+                    )}
                   </td>
                 </tr>
               )) : (
@@ -1383,7 +1417,7 @@ function ObjectDetailPage() {
         <div className="tab-content">
           <div className="cost-header">
             <span>Гарантийные удержания</span>
-            <button className="btn-add" onClick={handleAddRetention} title="Добавить">+</button>
+            {canEditObj && <button className="btn-add" onClick={handleAddRetention} title="Добавить">+</button>}
           </div>
           <table className="cost-table">
             <thead>
@@ -1403,8 +1437,12 @@ function ObjectDetailPage() {
                   <td>{item.retention_period || '-'}</td>
                   <td className="notes-cell">{item.notes || '-'}</td>
                   <td className="actions">
-                    <button onClick={() => handleEditRetention(item)}>✏️</button>
-                    <button onClick={() => handleDeleteRetention(item.id)}>🗑️</button>
+                    {canEditObj && (
+                      <>
+                        <button onClick={() => handleEditRetention(item)}>✏️</button>
+                        <button onClick={() => handleDeleteRetention(item.id)}>🗑️</button>
+                      </>
+                    )}
                   </td>
                 </tr>
               )) : (
@@ -1440,17 +1478,17 @@ function ObjectDetailPage() {
                   <button className="btn-icon" onClick={() => setIsEstimateFullscreen(f => !f)} title={isEstimateFullscreen ? 'Свернуть (Esc)' : 'Развернуть'}>
                     {isEstimateFullscreen ? '✕' : '⛶'}
                   </button>
-                  {isEstimateApproved ? (
+                  {canEditObj && (isEstimateApproved ? (
                     <button className="btn-secondary-sm" onClick={handleRevokeApproval}>Снять утверждение</button>
                   ) : (
                     <>
                       <button className="btn-success-sm" onClick={handleApproveEstimate}>Утвердить</button>
                       <button className="btn-danger-sm" onClick={handleClearEstimate}>Очистить</button>
                     </>
-                  )}
+                  ))}
                 </>
               )}
-              {!isEstimateApproved && (
+              {!isEstimateApproved && canEditObj && (
                 <label className="btn-add-label">
                   Импорт из Excel
                   <input
@@ -1491,7 +1529,7 @@ function ObjectDetailPage() {
                       </>
                     )}
                     <th className="col-notes">Примечание</th>
-                    {!isEstimateApproved && <th className="col-actions"></th>}
+                    {!isEstimateApproved && canEditObj && <th className="col-actions"></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1529,7 +1567,7 @@ function ObjectDetailPage() {
                               </>
                             )}
                             <td className="notes-cell"></td>
-                            {!isEstimateApproved && <td className="center"><button className="btn-delete-row" onClick={() => handleDeleteEstimateItem(item.id)} title="Удалить">×</button></td>}
+                            {!isEstimateApproved && canEditObj && <td className="center"><button className="btn-delete-row" onClick={() => handleDeleteEstimateItem(item.id)} title="Удалить">×</button></td>}
                           </>
                         ) : (
                           <>
@@ -1554,7 +1592,7 @@ function ObjectDetailPage() {
                               </>
                             )}
                             <td className="notes-cell">{item.notes || ''}</td>
-                            {!isEstimateApproved && <td className="center"><button className="btn-delete-row" onClick={() => handleDeleteEstimateItem(item.id)} title="Удалить">×</button></td>}
+                            {!isEstimateApproved && canEditObj && <td className="center"><button className="btn-delete-row" onClick={() => handleDeleteEstimateItem(item.id)} title="Удалить">×</button></td>}
                           </>
                         )}
                       </tr>

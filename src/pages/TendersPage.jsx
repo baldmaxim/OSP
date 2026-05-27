@@ -26,7 +26,9 @@ const filterSelectStyle = (isActive) => ({
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
-  const { scopedObjectId, userProfile, isAdmin } = useRole()
+  const { scopedObjectId, userProfile, isAdmin, canEdit } = useRole()
+  // task 333: гейт add/edit/delete для раздела «tenders»
+  const canEditTenders = canEdit('tenders')
   const [tenders, setTenders] = useState([])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
@@ -1449,9 +1451,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <span>{compactView ? 'Все столбцы' : 'Компактный вид'}</span>
             </button>
           )}
-          <button className="btn-primary" onClick={handleAddNew}>
-            + Добавить тендер
-          </button>
+          {canEditTenders && (
+            <button className="btn-primary" onClick={handleAddNew}>
+              + Добавить тендер
+            </button>
+          )}
         </div>
       </div>
 
@@ -1669,15 +1673,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             ))}
                           </select>
                         ) : (
-                          <button
-                            className="responsible-display"
-                            onClick={() => setEditingResponsibleTenderId(tender.id)}
-                            title="Назначить ответственного"
-                          >
-                            {tender.responsible_contact?.full_name || (
-                              <span className="responsible-empty">— не назначен —</span>
-                            )}
-                          </button>
+                          canEditTenders ? (
+                            <button
+                              className="responsible-display"
+                              onClick={() => setEditingResponsibleTenderId(tender.id)}
+                              title="Назначить ответственного"
+                            >
+                              {tender.responsible_contact?.full_name || (
+                                <span className="responsible-empty">— не назначен —</span>
+                              )}
+                            </button>
+                          ) : (
+                            <span className="responsible-display" style={{ cursor: 'default' }}>
+                              {tender.responsible_contact?.full_name || (
+                                <span className="responsible-empty">— не назначен —</span>
+                              )}
+                            </span>
+                          )
                         )}
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -1685,6 +1697,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           type="date"
                           value={tender.materials_proposal_deadline || ''}
                           onChange={(e) => handleUpdateMaterialsDeadline(tender.id, e.target.value)}
+                          disabled={!canEditTenders}
+                          readOnly={!canEditTenders}
                           style={{
                             width: '100%',
                             padding: '0.25rem 0.375rem',
@@ -1709,35 +1723,41 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             >
                               Открыть
                             </a>
-                            <button
-                              className="btn-icon btn-edit"
-                              onClick={() => handleUpdateMaterialsLink(tender.id, tender.materials_proposal_link)}
-                              title="Изменить ссылку"
-                              style={{ fontSize: '0.75rem' }}
-                            >
-                              ✏️
-                            </button>
+                            {canEditTenders && (
+                              <button
+                                className="btn-icon btn-edit"
+                                onClick={() => handleUpdateMaterialsLink(tender.id, tender.materials_proposal_link)}
+                                title="Изменить ссылку"
+                                style={{ fontSize: '0.75rem' }}
+                              >
+                                ✏️
+                              </button>
+                            )}
                           </div>
                         ) : (
-                          <button
-                            onClick={() => handleUpdateMaterialsLink(tender.id, '')}
-                            style={{
-                              background: 'none',
-                              border: '1px dashed var(--border-color)',
-                              borderRadius: '4px',
-                              padding: '0.1875rem 0.5rem',
-                              color: 'var(--text-tertiary)',
-                              cursor: 'pointer',
-                              fontSize: '0.75rem'
-                            }}
-                            title="Добавить ссылку на КП"
-                          >
-                            + ссылка
-                          </button>
+                          canEditTenders ? (
+                            <button
+                              onClick={() => handleUpdateMaterialsLink(tender.id, '')}
+                              style={{
+                                background: 'none',
+                                border: '1px dashed var(--border-color)',
+                                borderRadius: '4px',
+                                padding: '0.1875rem 0.5rem',
+                                color: 'var(--text-tertiary)',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem'
+                              }}
+                              title="Добавить ссылку на КП"
+                            >
+                              + ссылка
+                            </button>
+                          ) : (
+                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                          )
                         )}
                       </td>
                       <td>
-                        {isCompletedTab ? (
+                        {isCompletedTab || !canEditTenders ? (
                           <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ display: 'inline-block', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
                             {tender.status}
                           </span>
@@ -1757,13 +1777,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               кнопка открытия его собственной карточки убрана */}
                           {activeTab === 'deleted' ? (
                             <>
-                              <button
-                                className="btn-icon"
-                                onClick={() => handleRestoreTender(tender.id, tender.objects?.name)}
-                                title="Восстановить"
-                              >
-                                ♻️
-                              </button>
+                              {canEditTenders && (
+                                <button
+                                  className="btn-icon"
+                                  onClick={() => handleRestoreTender(tender.id, tender.objects?.name)}
+                                  title="Восстановить"
+                                >
+                                  ♻️
+                                </button>
+                              )}
                               {isAdmin && (
                                 <button
                                   className="btn-icon btn-delete"
@@ -1920,18 +1942,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     </td>
                     {activeTab !== 'completed' && (
                       <td>
-                        <StatusDropdown
-                          value={tender.status}
-                          options={statusOptions}
-                          onChange={(next) => handleStatusChange(tender.id, next)}
-                          getBadgeClass={getStatusBadgeClass}
-                          getDisplay={(s) =>
-                            s === 'Идет тендерная процедура'
-                              ? <>Идет тендерная<br />процедура</>
-                              : s
-                          }
-                          ariaLabel="Статус тендера"
-                        />
+                        {canEditTenders ? (
+                          <StatusDropdown
+                            value={tender.status}
+                            options={statusOptions}
+                            onChange={(next) => handleStatusChange(tender.id, next)}
+                            getBadgeClass={getStatusBadgeClass}
+                            getDisplay={(s) =>
+                              s === 'Идет тендерная процедура'
+                                ? <>Идет тендерная<br />процедура</>
+                                : s
+                            }
+                            ariaLabel="Статус тендера"
+                          />
+                        ) : (
+                          <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ display: 'inline-block', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
+                            {tender.status}
+                          </span>
+                        )}
                       </td>
                     )}
                     {isCompletedTab && (
@@ -1993,15 +2021,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           ))}
                         </select>
                       ) : (
-                        <button
-                          className="responsible-display"
-                          onClick={() => setEditingResponsibleTenderId(tender.id)}
-                          title="Назначить ответственного"
-                        >
-                          {getResponsibleName(tender) || (
-                            <span className="responsible-empty">— не назначен —</span>
-                          )}
-                        </button>
+                        canEditTenders ? (
+                          <button
+                            className="responsible-display"
+                            onClick={() => setEditingResponsibleTenderId(tender.id)}
+                            title="Назначить ответственного"
+                          >
+                            {getResponsibleName(tender) || (
+                              <span className="responsible-empty">— не назначен —</span>
+                            )}
+                          </button>
+                        ) : (
+                          <span className="responsible-display" style={{ cursor: 'default' }}>
+                            {getResponsibleName(tender) || (
+                              <span className="responsible-empty">— не назначен —</span>
+                            )}
+                          </span>
+                        )
                       )}
                     </td>
                     {/* ВОРы и РД */}
@@ -2050,27 +2086,33 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             >
                               Открыть
                             </a>
-                            <button
-                              className="btn-icon btn-edit"
-                              onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', tender.tender_package_link)}
-                              title="Изменить ссылку"
-                              style={{ fontSize: '0.75rem' }}
-                            >✏️</button>
+                            {canEditTenders && (
+                              <button
+                                className="btn-icon btn-edit"
+                                onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', tender.tender_package_link)}
+                                title="Изменить ссылку"
+                                style={{ fontSize: '0.75rem' }}
+                              >✏️</button>
+                            )}
                           </div>
                         ) : (
-                          <button
-                            onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', '')}
-                            style={{
-                              background: 'none',
-                              border: '1px dashed var(--border-color)',
-                              borderRadius: '4px',
-                              padding: '0.1875rem 0.5rem',
-                              color: 'var(--text-tertiary)',
-                              cursor: 'pointer',
-                              fontSize: '0.75rem'
-                            }}
-                            title="Добавить ссылку на тендерный пакет"
-                          >+ ссылка</button>
+                          canEditTenders ? (
+                            <button
+                              onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', '')}
+                              style={{
+                                background: 'none',
+                                border: '1px dashed var(--border-color)',
+                                borderRadius: '4px',
+                                padding: '0.1875rem 0.5rem',
+                                color: 'var(--text-tertiary)',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem'
+                              }}
+                              title="Добавить ссылку на тендерный пакет"
+                            >+ ссылка</button>
+                          ) : (
+                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                          )
                         )}
                       </td>
                     {/* План затрат */}
@@ -2162,41 +2204,49 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             >
                               Открыть
                             </a>
-                            <button
-                              className="btn-icon btn-edit"
-                              onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', tender.summary_proposal_link)}
-                              title="Изменить ссылку"
-                              style={{ fontSize: '0.75rem' }}
-                            >✏️</button>
+                            {canEditTenders && (
+                              <button
+                                className="btn-icon btn-edit"
+                                onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', tender.summary_proposal_link)}
+                                title="Изменить ссылку"
+                                style={{ fontSize: '0.75rem' }}
+                              >✏️</button>
+                            )}
                           </div>
                         ) : (
-                          <button
-                            onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', '')}
-                            style={{
-                              background: 'none',
-                              border: '1px dashed var(--border-color)',
-                              borderRadius: '4px',
-                              padding: '0.1875rem 0.5rem',
-                              color: 'var(--text-tertiary)',
-                              cursor: 'pointer',
-                              fontSize: '0.75rem'
-                            }}
-                            title="Добавить ссылку на сводную КП"
-                          >+ ссылка</button>
+                          canEditTenders ? (
+                            <button
+                              onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', '')}
+                              style={{
+                                background: 'none',
+                                border: '1px dashed var(--border-color)',
+                                borderRadius: '4px',
+                                padding: '0.1875rem 0.5rem',
+                                color: 'var(--text-tertiary)',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem'
+                              }}
+                              title="Добавить ссылку на сводную КП"
+                            >+ ссылка</button>
+                          ) : (
+                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                          )
                         )}
                       </td>
                     )}
                     <td className="actions-cell">
                       {activeTab === 'deleted' ? (
                         <>
-                          <button
-                            className="btn-icon"
-                            onClick={() => handleRestoreTender(tender.id, tender.objects?.name || 'тендер')}
-                            title="Восстановить"
-                            style={{ fontSize: '0.875rem' }}
-                          >
-                            ↩️
-                          </button>
+                          {canEditTenders && (
+                            <button
+                              className="btn-icon"
+                              onClick={() => handleRestoreTender(tender.id, tender.objects?.name || 'тендер')}
+                              title="Восстановить"
+                              style={{ fontSize: '0.875rem' }}
+                            >
+                              ↩️
+                            </button>
+                          )}
                           {isAdmin && (
                             <button
                               className="btn-icon btn-delete"
@@ -2217,13 +2267,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           >
                             ✉️
                           </button>
-                          <button
-                            className="btn-icon btn-edit"
-                            onClick={() => handleEditTender(tender)}
-                            title="Редактировать"
-                          >
-                            ✏️
-                          </button>
+                          {canEditTenders && (
+                            <button
+                              className="btn-icon btn-edit"
+                              onClick={() => handleEditTender(tender)}
+                              title="Редактировать"
+                            >
+                              ✏️
+                            </button>
+                          )}
                           {isAdmin && (
                             <button
                               className="btn-icon btn-delete"
@@ -2243,15 +2295,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     <tr>
                       <td colSpan={compactView ? 8 : (isCompletedTab ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9)))} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
-                          <button
-                            className="btn-primary"
-                            onClick={() => {
-                              setSelectedTenderForCounterparty(tender.id)
-                              setShowAddCounterpartyModal(true)
-                            }}
-                          >
-                            + Добавить контрагента
-                          </button>
+                          {canEditTenders && (
+                            <button
+                              className="btn-primary"
+                              onClick={() => {
+                                setSelectedTenderForCounterparty(tender.id)
+                                setShowAddCounterpartyModal(true)
+                              }}
+                            >
+                              + Добавить контрагента
+                            </button>
+                          )}
                           {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 && (
                             <button
                               className="btn-secondary"
@@ -2370,6 +2424,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       <select
                                         value={tc.status || 'request_sent'}
                                         onChange={(e) => handleUpdateCounterpartyStatus(tender.id, tc.id, e.target.value)}
+                                        disabled={!canEditTenders}
                                         style={{
                                           padding: '0.25rem 0.5rem',
                                           fontSize: '0.75rem',
@@ -2379,7 +2434,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                           borderRadius: '4px',
                                           backgroundColor: 'var(--bg-secondary)',
                                           color: getCounterpartyStatusColor(tc.status || 'request_sent'),
-                                          cursor: 'pointer',
+                                          cursor: canEditTenders ? 'pointer' : 'default',
                                           width: '100%'
                                         }}
                                       >
@@ -2398,6 +2453,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       <TenderCounterpartyFiles
                                         tenderId={tender.id}
                                         counterpartyId={tc.counterparty_id}
+                                        canEdit={canEditTenders}
                                       />
                                     </td>
                                     <td>
@@ -2421,6 +2477,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                         }}
                                         placeholder="Примечание…"
                                         rows={1}
+                                        readOnly={!canEditTenders}
+                                        disabled={!canEditTenders}
                                         style={{
                                           width: '100%',
                                           minHeight: '30px',
@@ -2439,13 +2497,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       />
                                     </td>
                                     <td style={{ textAlign: 'center' }}>
-                                      <button
-                                        className="btn-icon btn-delete"
-                                        onClick={() => handleRemoveCounterpartyFromTender(tender.id, tc.id)}
-                                        title="Удалить из тендера"
-                                      >
-                                        🗑️
-                                      </button>
+                                      {canEditTenders && (
+                                        <button
+                                          className="btn-icon btn-delete"
+                                          onClick={() => handleRemoveCounterpartyFromTender(tender.id, tc.id)}
+                                          title="Удалить из тендера"
+                                        >
+                                          🗑️
+                                        </button>
+                                      )}
                                     </td>
                                   </tr>
                                 ))}
@@ -2512,6 +2572,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <textarea
             value={letterTemplate}
             onChange={(e) => setLetterTemplate(e.target.value)}
+            readOnly={!canEditTenders}
+            disabled={!canEditTenders}
             style={{
               width: '100%',
               minHeight: '400px',
@@ -2528,12 +2590,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             }}
           />
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
-            <button className="btn-primary" onClick={handleSaveTemplate}>
-              {templateSaved ? 'Сохранено!' : 'Сохранить шаблон'}
-            </button>
-            <button className="btn-secondary" onClick={handleResetTemplate}>
-              По умолчанию
-            </button>
+            {canEditTenders && (
+              <>
+                <button className="btn-primary" onClick={handleSaveTemplate}>
+                  {templateSaved ? 'Сохранено!' : 'Сохранить шаблон'}
+                </button>
+                <button className="btn-secondary" onClick={handleResetTemplate}>
+                  По умолчанию
+                </button>
+              </>
+            )}
             {templateSaved && (
               <span style={{ fontSize: '0.8125rem', color: '#16a34a' }}>Шаблон сохранён</span>
             )}

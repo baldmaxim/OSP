@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
+import { useRole } from '../contexts/RoleContext'
 import './BSMRatesPage.css'
 
 function BSMRatesPage() {
+  const { canEdit } = useRole()
+  const canEditBsm = canEdit('bsm')
   const [objects, setObjects] = useState([])
   const [selectedObjectId, setSelectedObjectId] = useState('')
   const [rates, setRates] = useState([])
@@ -501,34 +504,38 @@ function BSMRatesPage() {
               <span className="rates-count">
                 Найдено: {filteredRates.length} из {rates.length}
               </span>
-              {selectedRates.size > 0 && (
+              {canEditBsm && selectedRates.size > 0 && (
                 <button onClick={handleDeleteSelected} className="btn-delete-selected">
                   Удалить выбранные ({selectedRates.size})
                 </button>
               )}
             </div>
             <div className="toolbar-right">
-              <button onClick={() => setShowAddForm(true)} className="btn-add">
-                + Добавить
-              </button>
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleImportExcel}
-                ref={fileInputRef}
-                style={{ display: 'none' }}
-                id="import-rates"
-              />
-              <label htmlFor="import-rates" className="btn-import">
-                Импорт из Excel
-              </label>
-              <button
-                onClick={() => setShowImportHelp(!showImportHelp)}
-                className="btn-help"
-                title="Инструкция по импорту"
-              >
-                ?
-              </button>
+              {canEditBsm && (
+                <>
+                  <button onClick={() => setShowAddForm(true)} className="btn-add">
+                    + Добавить
+                  </button>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleImportExcel}
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    id="import-rates"
+                  />
+                  <label htmlFor="import-rates" className="btn-import">
+                    Импорт из Excel
+                  </label>
+                  <button
+                    onClick={() => setShowImportHelp(!showImportHelp)}
+                    className="btn-help"
+                    title="Инструкция по импорту"
+                  >
+                    ?
+                  </button>
+                </>
+              )}
               <button onClick={handleExportExcel} className="btn-export" disabled={rates.length === 0}>
                 Экспорт в Excel
               </button>
@@ -775,32 +782,36 @@ function BSMRatesPage() {
               <table className="rates-table">
                 <thead>
                   <tr>
-                    <th className="col-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={selectedRates.size === filteredRates.length && filteredRates.length > 0}
-                        onChange={toggleSelectAll}
-                        title="Выбрать все"
-                      />
-                    </th>
+                    {canEditBsm && (
+                      <th className="col-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={selectedRates.size === filteredRates.length && filteredRates.length > 0}
+                          onChange={toggleSelectAll}
+                          title="Выбрать все"
+                        />
+                      </th>
+                    )}
                     <th className="col-num">№</th>
                     <th className="col-name">Наименование материала</th>
                     <th className="col-unit">Ед. изм.</th>
                     <th className="col-price">Цена от снабжения</th>
                     <th className="col-date">Дата применения</th>
-                    <th className="col-actions">Действия</th>
+                    {canEditBsm && <th className="col-actions">Действия</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRates.map((rate, idx) => (
                     <tr key={rate.id} className={selectedRates.has(rate.id) ? 'selected-row' : ''}>
-                      <td className="col-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={selectedRates.has(rate.id)}
-                          onChange={() => toggleSelectRate(rate.id)}
-                        />
-                      </td>
+                      {canEditBsm && (
+                        <td className="col-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={selectedRates.has(rate.id)}
+                            onChange={() => toggleSelectRate(rate.id)}
+                          />
+                        </td>
+                      )}
                       <td className="col-num">{idx + 1}</td>
                       <td className="col-name">
                         {editingRate === rate.id ? (
@@ -847,16 +858,18 @@ function BSMRatesPage() {
                           rate.applied_at ? new Date(rate.applied_at).toLocaleDateString('ru-RU') : '—'
                         )}
                       </td>
-                      <td className="col-actions">
-                        {editingRate === rate.id ? (
-                          <button onClick={() => setEditingRate(null)} className="btn-done">✓</button>
-                        ) : (
-                          <>
-                            <button onClick={() => setEditingRate(rate.id)} className="btn-edit">✎</button>
-                            <button onClick={() => handleDeleteRate(rate.id)} className="btn-delete">✕</button>
-                          </>
-                        )}
-                      </td>
+                      {canEditBsm && (
+                        <td className="col-actions">
+                          {editingRate === rate.id ? (
+                            <button onClick={() => setEditingRate(null)} className="btn-done">✓</button>
+                          ) : (
+                            <>
+                              <button onClick={() => setEditingRate(rate.id)} className="btn-edit">✎</button>
+                              <button onClick={() => handleDeleteRate(rate.id)} className="btn-delete">✕</button>
+                            </>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { useRole } from '../contexts/RoleContext'
 import { formatPhone } from '../utils/phoneFormat'
 import '../components/GeneralInfo.css'
 
 function ContactsPage() {
+  // task 333: гейт add/edit/delete и inline-editing для раздела «contacts».
+  const { canEdit } = useRole()
+  const canEditContacts = canEdit('contacts')
   const [contacts, setContacts] = useState([])
   const [objects, setObjects] = useState([])
   const [loading, setLoading] = useState(true)
@@ -442,9 +446,12 @@ function ContactsPage() {
       ) : activeTab === 'departments' ? (
         <div className="section-content">
           <div className="section-actions contacts-toolbar">
-            <button className="btn-primary" onClick={handleOpenAddDept}>
-              + Добавить отдел
-            </button>
+            {/* task 333: add только при can_edit */}
+            {canEditContacts && (
+              <button className="btn-primary" onClick={handleOpenAddDept}>
+                + Добавить отдел
+              </button>
+            )}
           </div>
           <div className="table-container">
             <table className="data-table contacts-table">
@@ -470,16 +477,20 @@ function ContactsPage() {
                       <td>{dept.name}</td>
                       <td className="muted">{dept.description || '—'}</td>
                       <td className="actions-cell">
-                        <button
-                          className="btn-icon btn-edit"
-                          onClick={() => handleOpenEditDept(dept)}
-                          title="Редактировать"
-                        >✏️</button>
-                        <button
-                          className="btn-icon btn-delete"
-                          onClick={() => handleDeleteDept(dept)}
-                          title="Удалить"
-                        >🗑️</button>
+                        {canEditContacts && (
+                          <>
+                            <button
+                              className="btn-icon btn-edit"
+                              onClick={() => handleOpenEditDept(dept)}
+                              title="Редактировать"
+                            >✏️</button>
+                            <button
+                              className="btn-icon btn-delete"
+                              onClick={() => handleDeleteDept(dept)}
+                              title="Удалить"
+                            >🗑️</button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -491,9 +502,11 @@ function ContactsPage() {
       ) : activeTab === 'positions' ? (
         <div className="section-content">
           <div className="section-actions contacts-toolbar">
-            <button className="btn-primary" onClick={handleOpenAddPos}>
-              + Добавить должность
-            </button>
+            {canEditContacts && (
+              <button className="btn-primary" onClick={handleOpenAddPos}>
+                + Добавить должность
+              </button>
+            )}
           </div>
           <div className="table-container">
             <table className="data-table contacts-table">
@@ -523,16 +536,20 @@ function ContactsPage() {
                         <td className="muted">{pos.description || '—'}</td>
                         <td className="num-cell">{used}</td>
                         <td className="actions-cell">
-                          <button
-                            className="btn-icon btn-edit"
-                            onClick={() => handleOpenEditPos(pos)}
-                            title="Редактировать"
-                          >✏️</button>
-                          <button
-                            className="btn-icon btn-delete"
-                            onClick={() => handleDeletePos(pos)}
-                            title="Удалить"
-                          >🗑️</button>
+                          {canEditContacts && (
+                            <>
+                              <button
+                                className="btn-icon btn-edit"
+                                onClick={() => handleOpenEditPos(pos)}
+                                title="Редактировать"
+                              >✏️</button>
+                              <button
+                                className="btn-icon btn-delete"
+                                onClick={() => handleDeletePos(pos)}
+                                title="Удалить"
+                              >🗑️</button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     )
@@ -595,9 +612,11 @@ function ContactsPage() {
                 </select>
               </div>
             </div>
-            <button className="btn-primary" onClick={handleAddNewContact}>
-              + Добавить
-            </button>
+            {canEditContacts && (
+              <button className="btn-primary" onClick={handleAddNewContact}>
+                + Добавить
+              </button>
+            )}
           </div>
 
           <div className="table-container">
@@ -674,6 +693,7 @@ function ContactsPage() {
                                 value={contact.object_id || ''}
                                 onChange={(e) => handleInlineObjectChange(contact.id, e.target.value)}
                                 aria-label="Привязать к объекту или оставить «Офис»"
+                                disabled={!canEditContacts}
                               >
                                 <option value="">Офис</option>
                                 {objects.map(obj => (
@@ -701,6 +721,7 @@ function ContactsPage() {
                                 value={displayPosition}
                                 onChange={(e) => handleInlinePositionChange(contact.id, e.target.value)}
                                 aria-label="Должность сотрудника"
+                                disabled={!canEditContacts}
                               >
                                 <option value="">— не указана —</option>
                                 {allPositions.map(pos => (
@@ -721,6 +742,7 @@ function ContactsPage() {
                           value={contact.department_id || ''}
                           onChange={(e) => handleInlineDepartmentChange(contact.id, e.target.value)}
                           title="Отдел сотрудника"
+                          disabled={!canEditContacts}
                         >
                           <option value="">— не указан —</option>
                           {departments.map(dept => (
@@ -752,23 +774,29 @@ function ContactsPage() {
                           placeholder="Примечание…"
                           rows={1}
                           className="contact-notes-input"
+                          disabled={!canEditContacts}
+                          readOnly={!canEditContacts}
                         />
                       </td>
                       <td className="actions-cell">
-                        <button
-                          className="btn-icon btn-edit"
-                          onClick={() => handleEditContact(contact)}
-                          title="Редактировать"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          className="btn-icon btn-delete"
-                          onClick={() => handleDeleteContact(contact.id, contact.full_name)}
-                          title="Удалить"
-                        >
-                          🗑️
-                        </button>
+                        {canEditContacts && (
+                          <>
+                            <button
+                              className="btn-icon btn-edit"
+                              onClick={() => handleEditContact(contact)}
+                              title="Редактировать"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              className="btn-icon btn-delete"
+                              onClick={() => handleDeleteContact(contact.id, contact.full_name)}
+                              title="Удалить"
+                            >
+                              🗑️
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))

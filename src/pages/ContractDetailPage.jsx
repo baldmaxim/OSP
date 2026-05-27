@@ -22,7 +22,9 @@ const EVENT_LABEL = {
 function ContractDetailPage() {
   const { contractId } = useParams()
   const navigate = useNavigate()
-  const { userProfile } = useRole()
+  const { userProfile, canEdit } = useRole()
+  // task 333: гейт редактирования раздела «contracts»
+  const canEditContracts = canEdit('contracts')
   const [contract, setContract] = useState(null)
   const [attachments, setAttachments] = useState([])
   const [auditLog, setAuditLog] = useState([])
@@ -236,26 +238,30 @@ function ContractDetailPage() {
             onChange={(e) => setNotesDraft(e.target.value)}
             placeholder="Свободный текст: важные нюансы, договорённости, статус согласования и т.п."
             rows={4}
+            readOnly={!canEditContracts}
+            disabled={!canEditContracts}
           />
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={handleSaveNotes}
-              disabled={savingNotes || (contract.notes || '') === notesDraft.trim()}
-            >
-              {savingNotes ? 'Сохранение…' : 'Сохранить'}
-            </button>
-            {contract.notes && contract.notes !== notesDraft && (
+          {canEditContracts && (
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
               <button
                 type="button"
-                className="btn-secondary"
-                onClick={() => setNotesDraft(contract.notes || '')}
+                className="btn-primary"
+                onClick={handleSaveNotes}
+                disabled={savingNotes || (contract.notes || '') === notesDraft.trim()}
               >
-                Отменить
+                {savingNotes ? 'Сохранение…' : 'Сохранить'}
               </button>
-            )}
-          </div>
+              {contract.notes && contract.notes !== notesDraft && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setNotesDraft(contract.notes || '')}
+                >
+                  Отменить
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Task 187: история */}

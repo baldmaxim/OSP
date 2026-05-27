@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
+import { useRole } from '../contexts/RoleContext'
 import './BSMPage.css'
 
 // Поля, которые подтягиваются из Excel. Пользователь сам выбирает столбец для каждого
@@ -110,6 +111,8 @@ function cleanNumericLocal(value) {
 }
 
 function BSMPage() {
+  const { canEdit } = useRole()
+  const canEditKp = canEdit('analysis_kp')
   const [fileName, setFileName] = useState('')
   const [workbook, setWorkbook] = useState(null)         // Сам workbook — храним, чтобы переключать листы и резолвить формулы.
   const [sheetNames, setSheetNames] = useState([])       // Список листов в файле.
@@ -175,6 +178,7 @@ function BSMPage() {
   }
 
   const handleDragOver = (e) => {
+    if (!canEditKp) return
     if (!e.dataTransfer?.types?.includes('Files')) return
     e.preventDefault()
     if (!isDragActive) setIsDragActive(true)
@@ -186,6 +190,7 @@ function BSMPage() {
   }
 
   const handleDrop = (e) => {
+    if (!canEditKp) return
     e.preventDefault()
     setIsDragActive(false)
     const file = e.dataTransfer?.files?.[0]
@@ -558,9 +563,11 @@ function BSMPage() {
             style={{ display: 'none' }}
           />
           {!workbook ? (
-            <button className="bsm-btn-primary" onClick={() => fileInputRef.current?.click()}>
-              📂 Загрузить Excel
-            </button>
+            canEditKp && (
+              <button className="bsm-btn-primary" onClick={() => fileInputRef.current?.click()}>
+                📂 Загрузить Excel
+              </button>
+            )
           ) : (
             <>
               <span className="bsm-file-chip" title={fileName}>
@@ -580,9 +587,11 @@ function BSMPage() {
                   </select>
                 </label>
               )}
-              <button className="bsm-btn-secondary" onClick={() => fileInputRef.current?.click()}>
-                Заменить
-              </button>
+              {canEditKp && (
+                <button className="bsm-btn-secondary" onClick={() => fileInputRef.current?.click()}>
+                  Заменить
+                </button>
+              )}
               <button
                 className="bsm-btn-secondary"
                 onClick={handleExportExcel}
@@ -591,9 +600,11 @@ function BSMPage() {
               >
                 📥 Скачать Excel
               </button>
-              <button className="bsm-btn-ghost" onClick={handleClear}>
-                Очистить
-              </button>
+              {canEditKp && (
+                <button className="bsm-btn-ghost" onClick={handleClear}>
+                  Очистить
+                </button>
+              )}
             </>
           )}
         </div>

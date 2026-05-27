@@ -42,7 +42,9 @@ const EMPTY_FORM = {
 
 function ContractRegistry() {
   const navigate = useNavigate()
-  const { isAdmin, userProfile } = useRole()
+  const { isAdmin, userProfile, canEdit } = useRole()
+  // task 333: гейт add/edit/delete для раздела «contracts»
+  const canEditContracts = canEdit('contracts')
 
   const [department, setDepartment] = useState(null) // null | 'construction' | 'warranty'
   const [activeTab, setActiveTab] = useState('new_request')
@@ -612,7 +614,7 @@ function ContractRegistry() {
           >
             📎 Приложения объектов
           </button>
-          {!isDeletedTab && (
+          {!isDeletedTab && canEditContracts && (
             <button className="btn-primary" onClick={handleAddNew}>
               + Добавить договор
             </button>
@@ -732,11 +734,13 @@ function ContractRegistry() {
                   <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
                       <>
-                        <button
-                          className="btn-icon btn-restore"
-                          onClick={() => handleRestoreContract(contract.id, contract.contract_number)}
-                          title="Восстановить"
-                        >↩</button>
+                        {canEditContracts && (
+                          <button
+                            className="btn-icon btn-restore"
+                            onClick={() => handleRestoreContract(contract.id, contract.contract_number)}
+                            title="Восстановить"
+                          >↩</button>
+                        )}
                         {isAdmin && (
                           <button
                             className="btn-icon btn-delete"
@@ -745,7 +749,7 @@ function ContractRegistry() {
                           >🗑️</button>
                         )}
                       </>
-                    ) : (
+                    ) : canEditContracts ? (
                       <>
                         <button
                           className="btn-icon btn-edit"
@@ -758,7 +762,7 @@ function ContractRegistry() {
                           title="В корзину"
                         >🗑️</button>
                       </>
-                    )}
+                    ) : null}
                   </td>
                 </tr>
                 {isExpanded && (
@@ -1068,13 +1072,16 @@ function ContractRegistry() {
                               </a>
                             )}
                           </div>
-                          <button type="button" className="btn-icon btn-delete"
-                            onClick={() => handleDeleteAttachment(a.id)}
-                            title="Удалить">🗑️</button>
+                          {canEditContracts && (
+                            <button type="button" className="btn-icon btn-delete"
+                              onClick={() => handleDeleteAttachment(a.id)}
+                              title="Удалить">🗑️</button>
+                          )}
                         </div>
                       ))
                     )}
                   </div>
+                  {canEditContracts && (
                   <div className="attachment-add-row">
                     <input
                       type="text"
@@ -1099,6 +1106,7 @@ function ContractRegistry() {
                       Добавить
                     </button>
                   </div>
+                  )}
                 </section>
               )}
             </div>

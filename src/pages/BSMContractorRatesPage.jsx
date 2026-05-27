@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
+import { useRole } from '../contexts/RoleContext'
 import './BSMRatesPage.css'
 import './BSMPage.css'
 
 function BSMContractorRatesPage() {
+  const { canEdit } = useRole()
+  const canEditBsm = canEdit('bsm')
   // Режим отображения: 'list' - список БСМ, 'detail' - детальный просмотр расценок
   const [viewMode, setViewMode] = useState('list')
 
@@ -782,10 +785,12 @@ function BSMContractorRatesPage() {
                 Ведомость стоимости материалов по подрядчикам
               </p>
             </div>
-            <button className="btn-add-bsm" onClick={() => setShowAddBsmModal(true)}>
-              <span className="btn-icon-plus">+</span>
-              <span>Добавить БСМ</span>
-            </button>
+            {canEditBsm && (
+              <button className="btn-add-bsm" onClick={() => setShowAddBsmModal(true)}>
+                <span className="btn-icon-plus">+</span>
+                <span>Добавить БСМ</span>
+              </button>
+            )}
           </div>
 
           {/* Статистика */}
@@ -928,13 +933,15 @@ function BSMContractorRatesPage() {
                       >
                         👁️
                       </button>
-                      <button
-                        className="btn-action btn-delete"
-                        onClick={() => handleDeleteBsm(bsm.object_id, bsm.counterparty_id)}
-                        title="Удалить"
-                      >
-                        🗑️
-                      </button>
+                      {canEditBsm && (
+                        <button
+                          className="btn-action btn-delete"
+                          onClick={() => handleDeleteBsm(bsm.object_id, bsm.counterparty_id)}
+                          title="Удалить"
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1039,24 +1046,28 @@ function BSMContractorRatesPage() {
                   <span className="rates-count">
                     Найдено: {filteredRates.length} из {rates.length}
                   </span>
-                  {selectedRates.size > 0 && (
+                  {canEditBsm && selectedRates.size > 0 && (
                     <button onClick={handleDeleteSelected} className="btn-delete-selected">
                       Удалить выбранные ({selectedRates.size})
                     </button>
                   )}
                 </div>
                 <div className="toolbar-right">
-                  <button onClick={() => setShowAddForm(true)} className="btn-add">+ Добавить</button>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleImportRatesExcel}
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                    id="import-rates"
-                  />
-                  <label htmlFor="import-rates" className="btn-import">Импорт из Excel</label>
-                  <button onClick={() => setShowImportHelp(!showImportHelp)} className="btn-help" title="Инструкция">?</button>
+                  {canEditBsm && (
+                    <>
+                      <button onClick={() => setShowAddForm(true)} className="btn-add">+ Добавить</button>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={handleImportRatesExcel}
+                        ref={fileInputRef}
+                        style={{ display: 'none' }}
+                        id="import-rates"
+                      />
+                      <label htmlFor="import-rates" className="btn-import">Импорт из Excel</label>
+                      <button onClick={() => setShowImportHelp(!showImportHelp)} className="btn-help" title="Инструкция">?</button>
+                    </>
+                  )}
                   <button onClick={handleExportRates} className="btn-export" disabled={rates.length === 0}>Экспорт в Excel</button>
                 </div>
               </div>
@@ -1114,22 +1125,26 @@ function BSMContractorRatesPage() {
                   <table className="rates-table">
                     <thead>
                       <tr>
-                        <th className="col-checkbox">
-                          <input type="checkbox" checked={selectedRates.size === filteredRates.length && filteredRates.length > 0} onChange={toggleSelectAll} />
-                        </th>
+                        {canEditBsm && (
+                          <th className="col-checkbox">
+                            <input type="checkbox" checked={selectedRates.size === filteredRates.length && filteredRates.length > 0} onChange={toggleSelectAll} />
+                          </th>
+                        )}
                         <th className="col-num">№</th>
                         <th className="col-name">Наименование материала</th>
                         <th className="col-unit">Ед. изм.</th>
                         <th className="col-price">Цена от подрядчика</th>
-                        <th className="col-actions">Действия</th>
+                        {canEditBsm && <th className="col-actions">Действия</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {filteredRates.map((rate, idx) => (
                         <tr key={rate.id} className={selectedRates.has(rate.id) ? 'selected-row' : ''}>
-                          <td className="col-checkbox">
-                            <input type="checkbox" checked={selectedRates.has(rate.id)} onChange={() => toggleSelectRate(rate.id)} />
-                          </td>
+                          {canEditBsm && (
+                            <td className="col-checkbox">
+                              <input type="checkbox" checked={selectedRates.has(rate.id)} onChange={() => toggleSelectRate(rate.id)} />
+                            </td>
+                          )}
                           <td className="col-num">{idx + 1}</td>
                           <td className="col-name">
                             {editingRate === rate.id ? (
@@ -1146,16 +1161,18 @@ function BSMContractorRatesPage() {
                               <input type="number" step="0.01" defaultValue={rate.contractor_price} onBlur={(e) => handleUpdateRate(rate.id, { contractor_price: parseFloat(e.target.value) })} />
                             ) : formatNumber(rate.contractor_price)}
                           </td>
-                          <td className="col-actions">
-                            {editingRate === rate.id ? (
-                              <button onClick={() => setEditingRate(null)} className="btn-done">✓</button>
-                            ) : (
-                              <>
-                                <button onClick={() => setEditingRate(rate.id)} className="btn-edit">✎</button>
-                                <button onClick={() => handleDeleteRate(rate.id)} className="btn-delete">✕</button>
-                              </>
-                            )}
-                          </td>
+                          {canEditBsm && (
+                            <td className="col-actions">
+                              {editingRate === rate.id ? (
+                                <button onClick={() => setEditingRate(null)} className="btn-done">✓</button>
+                              ) : (
+                                <>
+                                  <button onClick={() => setEditingRate(rate.id)} className="btn-edit">✎</button>
+                                  <button onClick={() => handleDeleteRate(rate.id)} className="btn-delete">✕</button>
+                                </>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

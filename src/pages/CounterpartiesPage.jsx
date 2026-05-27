@@ -9,7 +9,9 @@ import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
 function CounterpartiesPage() {
-  const { isAdmin, isEmployee } = useRole()
+  const { isAdmin, canEdit } = useRole()
+  // task 333: гейт add/edit/delete и inline-editing для раздела «counterparties».
+  const canEditCp = canEdit('counterparties')
   const [counterparties, setCounterparties] = useState([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -1293,10 +1295,15 @@ function CounterpartiesPage() {
             </div>
 
             <div className="toolbar-actions">
-              <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
-              <button className="btn-import" onClick={handleImportClick} disabled={importing}>
-                {importing ? '...' : 'Импорт'}
-              </button>
+              {/* task 333: add/import только при can_edit. Export — admin-only. */}
+              {canEditCp && (
+                <>
+                  <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
+                  <button className="btn-import" onClick={handleImportClick} disabled={importing}>
+                    {importing ? '...' : 'Импорт'}
+                  </button>
+                </>
+              )}
               {isAdmin && (
                 <button
                   className="btn-import"
@@ -1311,7 +1318,7 @@ function CounterpartiesPage() {
           </div>
         )}
 
-        {activeTab !== 'work_types' && selectedCounterpartyIds.length > 0 && (
+        {activeTab !== 'work_types' && canEditCp && selectedCounterpartyIds.length > 0 && (
           <div className="toolbar-selection">
             <span>Выбрано: {selectedCounterpartyIds.length}</span>
             <button className="btn-link" onClick={handleSelectAll}>
@@ -1394,15 +1401,22 @@ function CounterpartiesPage() {
                   >×</button>
                 )}
               </div>
-              <button className="btn-add" onClick={handleOpenAddWorkType}>+ Добавить вид работ</button>
+              {/* task 333: добавление/правка справочника — только при can_edit */}
+              {canEditCp && (
+                <button className="btn-add" onClick={handleOpenAddWorkType}>+ Добавить вид работ</button>
+              )}
             </div>
             {workTypesDirectory.length === 0 ? (
               <div className="empty-state">
                 <p className="empty-title">Справочник пуст</p>
                 <p className="empty-hint">
-                  Добавьте первый вид работ — он станет доступен в карточке любого контрагента.
+                  {canEditCp
+                    ? 'Добавьте первый вид работ — он станет доступен в карточке любого контрагента.'
+                    : 'У вас нет прав на редактирование. Обратитесь к администратору.'}
                 </p>
-                <button className="btn-add" onClick={handleOpenAddWorkType}>+ Добавить вид работ</button>
+                {canEditCp && (
+                  <button className="btn-add" onClick={handleOpenAddWorkType}>+ Добавить вид работ</button>
+                )}
               </div>
             ) : (() => {
               const q = wtDirSearch.trim().toLowerCase()
@@ -1444,22 +1458,24 @@ function CounterpartiesPage() {
                           <td style={{ color: 'var(--text-secondary)' }}>{wt.description || '—'}</td>
                           <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{used}</td>
                           <td className="col-actions">
-                            <div className="actions-group">
-                              <button
-                                className="btn-action"
-                                onClick={() => handleOpenEditWorkType(wt)}
-                                title="Редактировать"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                              </button>
-                              <button
-                                className="btn-action delete"
-                                onClick={() => handleDeleteWorkType(wt)}
-                                title="Удалить"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                              </button>
-                            </div>
+                            {canEditCp ? (
+                              <div className="actions-group">
+                                <button
+                                  className="btn-action"
+                                  onClick={() => handleOpenEditWorkType(wt)}
+                                  title="Редактировать"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                </button>
+                                <button
+                                  className="btn-action delete"
+                                  onClick={() => handleDeleteWorkType(wt)}
+                                  title="Удалить"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                </button>
+                              </div>
+                            ) : null}
                           </td>
                         </tr>
                       )
@@ -1478,7 +1494,7 @@ function CounterpartiesPage() {
               <p className="empty-title">
                 {searchQuery.trim() || workTypeFilter ? 'Ничего не найдено' : 'Нет контрагентов'}
               </p>
-              {!searchQuery.trim() && !workTypeFilter && (
+              {!searchQuery.trim() && !workTypeFilter && canEditCp && (
                 <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
               )}
             </div>
@@ -1521,18 +1537,21 @@ function CounterpartiesPage() {
                         >
                           <td className="col-num">{cpIndex + 1}</td>
                           <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={selectedCounterpartyIds.includes(counterparty.id)}
-                              onChange={() => handleSelectCounterparty(counterparty.id)}
-                            />
+                            {/* task 333: bulk-select только с правом редактирования */}
+                            {canEditCp && (
+                              <input
+                                type="checkbox"
+                                checked={selectedCounterpartyIds.includes(counterparty.id)}
+                                onChange={() => handleSelectCounterparty(counterparty.id)}
+                              />
+                            )}
                           </td>
                           <td className="col-name">
                             <span className="company-name">{counterparty.name}</span>
                             <CounterpartyCardChip
                               counterparty={counterparty}
                               card={cardsByCp.get(counterparty.id) || null}
-                              canEdit={isEmployee}
+                              canEdit={canEditCp}
                               onChange={(newCard) => setCardsByCp(prev => {
                                 const next = new Map(prev)
                                 if (newCard) next.set(counterparty.id, newCard)
@@ -1564,17 +1583,21 @@ function CounterpartiesPage() {
                                     <div className="contact-name">{c.full_name}</div>
                                   </div>
                                 ))}
-                                <button
-                                  className="btn-add-contact-inline"
-                                  onClick={() => handleAddContact(counterparty)}
-                                  title="Добавить контакт"
-                                >+ контакт</button>
+                                {canEditCp && (
+                                  <button
+                                    className="btn-add-contact-inline"
+                                    onClick={() => handleAddContact(counterparty)}
+                                    title="Добавить контакт"
+                                  >+ контакт</button>
+                                )}
                               </div>
-                            ) : (
+                            ) : canEditCp ? (
                               <button
                                 className="btn-add-contact-inline btn-add-contact-empty"
                                 onClick={() => handleAddContact(counterparty)}
                               >+ контакт</button>
+                            ) : (
+                              <span className="empty-cell">—</span>
                             )}
                           </td>
                           {/* task 199: телефоны — отдельный столбец */}
@@ -1622,52 +1645,64 @@ function CounterpartiesPage() {
                           {/* task 203 + 330: редактируемое примечание прямо в таблице
                               с авторасширением по контенту (без ручного drag). */}
                           <td className="col-notes" onClick={(e) => e.stopPropagation()}>
-                            <textarea
-                              className="notes-edit"
-                              defaultValue={counterparty.notes || ''}
-                              placeholder="Примечание…"
-                              rows={1}
-                              ref={(el) => {
-                                if (el) {
-                                  el.style.height = 'auto'
-                                  el.style.height = Math.max(el.scrollHeight, 32) + 'px'
-                                }
-                              }}
-                              onInput={(e) => {
-                                e.target.style.height = 'auto'
-                                e.target.style.height = Math.max(e.target.scrollHeight, 32) + 'px'
-                              }}
-                              onBlur={(e) => {
-                                if (e.target.value.trim() !== (counterparty.notes || '')) {
-                                  handleNotesChange(counterparty.id, e.target.value)
-                                }
-                              }}
-                            />
+                            {/* task 333: read-only режим — отдаём текстом без textarea */}
+                            {canEditCp ? (
+                              <textarea
+                                className="notes-edit"
+                                defaultValue={counterparty.notes || ''}
+                                placeholder="Примечание…"
+                                rows={1}
+                                ref={(el) => {
+                                  if (el) {
+                                    el.style.height = 'auto'
+                                    el.style.height = Math.max(el.scrollHeight, 32) + 'px'
+                                  }
+                                }}
+                                onInput={(e) => {
+                                  e.target.style.height = 'auto'
+                                  e.target.style.height = Math.max(e.target.scrollHeight, 32) + 'px'
+                                }}
+                                onBlur={(e) => {
+                                  if (e.target.value.trim() !== (counterparty.notes || '')) {
+                                    handleNotesChange(counterparty.id, e.target.value)
+                                  }
+                                }}
+                              />
+                            ) : (
+                              counterparty.notes
+                                ? <span className="notes-readonly">{counterparty.notes}</span>
+                                : <span className="empty-cell">—</span>
+                            )}
                           </td>
                           <td className="col-status" onClick={(e) => e.stopPropagation()}>
+                            {/* task 333: select становится disabled при read-only */}
                             <select
                               className={`status-select-mini ${counterparty.status === 'blacklist' ? 'blacklist' : 'active'}`}
                               value={counterparty.status || 'active'}
                               onChange={(e) => handleStatusChange(counterparty.id, e.target.value)}
+                              disabled={!canEditCp}
                             >
                               <option value="active">Активный</option>
                               <option value="blacklist">ЧС</option>
                             </select>
                           </td>
                           <td className="col-actions" onClick={(e) => e.stopPropagation()}>
+                            {/* task 333: actions только для can_edit (hard-delete — отдельно admin-only) */}
                             <div className="actions-group">
                               {activeTab === 'deleted' ? (
                                 <>
-                                  <button className="btn-action btn-action-restore" onClick={() => handleRestoreCounterparty(counterparty.id)} title="Восстановить">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>
-                                  </button>
+                                  {canEditCp && (
+                                    <button className="btn-action btn-action-restore" onClick={() => handleRestoreCounterparty(counterparty.id)} title="Восстановить">
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>
+                                    </button>
+                                  )}
                                   {isAdmin && (
                                     <button className="btn-action delete" onClick={() => handleHardDeleteCounterparty(counterparty.id, counterparty.name)} title="Удалить безвозвратно (админ)">
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                                     </button>
                                   )}
                                 </>
-                              ) : (
+                              ) : canEditCp ? (
                                 <>
                                   {/* task 196: иконка открытия полной карточки компании */}
                                   <button className="btn-action btn-action-card" onClick={() => handleEditCounterparty(counterparty)} title="Открыть полную карточку">
@@ -1677,7 +1712,7 @@ function CounterpartiesPage() {
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                                   </button>
                                 </>
-                              )}
+                              ) : null}
                             </div>
                           </td>
                         </tr>

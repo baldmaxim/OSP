@@ -53,7 +53,10 @@ function formatBytes(bytes) {
 }
 
 function DcRequestsPage() {
-  const { isEmployee, userProfile } = useRole()
+  const { userProfile, canEdit } = useRole()
+  // task 333: гейт add/edit/delete и inline-editing на этой странице.
+  // Сам факт показа страницы контролируется EmployeeLayout (по App.jsx).
+  const canEditDc = canEdit('dc_requests')
 
   const [requests, setRequests] = useState([])
   const [objects, setObjects] = useState([])
@@ -76,8 +79,9 @@ function DcRequestsPage() {
   const [filterResponsibleId, setFilterResponsibleId] = useState('')
   // Inline-добавление задачи: { [requestId]: 'строка задачи' }
   const [newTaskTexts, setNewTaskTexts] = useState({})
-  // Раскрытые блоки задач: Set<requestId>
-  const [expandedTasks, setExpandedTasks] = useState(() => new Set())
+  // task 334: задачи открываются в отдельной модалке. Храним id заявки,
+  // чьи задачи сейчас открыты (или null).
+  const [tasksModalFor, setTasksModalFor] = useState(null)
 
   // task 310 — статус в виде клик-попапа.
   const [statusPopoverFor, setStatusPopoverFor] = useState(null)
@@ -325,14 +329,6 @@ function DcRequestsPage() {
     }
   }
 
-  const toggleTasksExpanded = (requestId) => {
-    setExpandedTasks(prev => {
-      const next = new Set(prev)
-      if (next.has(requestId)) next.delete(requestId); else next.add(requestId)
-      return next
-    })
-  }
-
   const toggleDocsExpanded = (requestId) => {
     setExpandedDocs(prev => {
       const next = new Set(prev)
@@ -357,7 +353,6 @@ function DcRequestsPage() {
       }])
       if (error) throw error
       setNewTaskTexts(prev => ({ ...prev, [requestId]: '' }))
-      setExpandedTasks(prev => new Set(prev).add(requestId))
       fetchRequests()
     } catch (err) {
       alert('Ошибка добавления задачи: ' + (err.message || err))
@@ -524,7 +519,7 @@ function DcRequestsPage() {
               <span aria-hidden>🔗</span>
               <span>Общая таблица отделов</span>
             </a>
-          ) : isEmployee && (
+          ) : canEditDc && (
             <button
               type="button"
               className="dcr-link-btn dcr-link-btn-empty"
@@ -535,7 +530,7 @@ function DcRequestsPage() {
               <span>Указать ссылку</span>
             </button>
           )}
-          {isEmployee && externalLink && (
+          {canEditDc && externalLink && (
             <button
               type="button"
               className="dcr-link-edit"
@@ -549,7 +544,7 @@ function DcRequestsPage() {
               </svg>
             </button>
           )}
-          {isEmployee && (
+          {canEditDc && (
             <button className="btn-primary" onClick={handleAddNew}>+ Добавить заявку</button>
           )}
         </div>
@@ -620,11 +615,14 @@ function DcRequestsPage() {
                 <th style={{ width: '11%' }}>Объект</th>
                 <th style={{ width: '11%' }}>Контрагент</th>
                 <th style={{ width: '6%', textAlign: 'center' }}>№ ДС</th>
-                <th style={{ width: '14%' }}>Описание ДС</th>
+                <th style={{ width: '19%' }}>Описание ДС</th>
                 <th style={{ width: '8%' }}>Статус</th>
                 <th style={{ width: '10%' }}>Ответственный</th>
-                <th style={{ width: '19%' }}>Задачи и ответы</th>
-                <th style={{ width: '13%' }}>Документы</th>
+                {/* task 334: было «Задачи и ответы» (inline) — теперь только счётчик-кнопка,
+                    подробности в модалке. Колонка сильно компактнее, освобождённое место —
+                    в «Описание ДС» и «Документы». */}
+                <th style={{ width: '9%', textAlign: 'center' }}>Задачи</th>
+                <th style={{ width: '18%' }}>Документы</th>
                 <th style={{ width: '5%', textAlign: 'right' }}>Действия</th>
               </tr>
             </thead>
@@ -644,7 +642,6 @@ function DcRequestsPage() {
                   const tasks = req.dc_request_tasks || []
                   const totalTasks = tasks.length
                   const completedTasks = tasks.filter(t => t.is_completed).length
-                  const isExpanded = expandedTasks.has(req.id)
                   const currentStatus = req.status || 'in_work'
                   const statusOpt = STATUS_OPTIONS.find(o => o.value === currentStatus)
                   const isStatusOpen = statusPopoverFor === req.id
@@ -680,8 +677,8 @@ function DcRequestsPage() {
                           <button
                             type="button"
                             className={`dcr-status-chip ${statusOpt?.className || ''}${isStatusOpen ? ' is-open' : ''}`}
-                            onClick={() => isEmployee && setStatusPopoverFor(isStatusOpen ? null : req.id)}
-                            disabled={!isEmployee}
+                            onClick={() => canEditDc && setStatusPopoverFor(isStatusOpen ? null : req.id)}
+                            disabled={!canEditDc}
                             aria-haspopup="listbox"
                             aria-expanded={isStatusOpen}
                           >
@@ -716,93 +713,29 @@ function DcRequestsPage() {
                       </td>
                       <td>{req.responsible?.full_name || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-tasks">
-                        <div className="dcr-tasks">
-                          {totalTasks > 0 && (
-                            <button
-                              type="button"
-                              className={`dcr-tasks-toggle${completedTasks === totalTasks && totalTasks > 0 ? ' dcr-tasks-toggle-done' : ''}`}
-                              onClick={() => toggleTasksExpanded(req.id)}
-                              aria-expanded={isExpanded}
-                            >
-                              <span className="dcr-tasks-chev" aria-hidden>{isExpanded ? '▼' : '▶'}</span>
-                              <span className="dcr-tasks-summary">
-                                Задачи: <strong>{completedTasks}/{totalTasks}</strong>
-                              </span>
-                            </button>
+                        {/* task 334: кнопка-счётчик. Клик открывает модалку
+                            со списком задач (общий контейнер на странице). */}
+                        <button
+                          type="button"
+                          className={[
+                            'dcr-tasks-pill',
+                            totalTasks === 0 ? 'dcr-tasks-pill-empty' : '',
+                            totalTasks > 0 && completedTasks === totalTasks ? 'dcr-tasks-pill-done' : '',
+                          ].filter(Boolean).join(' ')}
+                          onClick={() => setTasksModalFor(req.id)}
+                          title={totalTasks === 0 ? 'Добавить задачи' : 'Открыть задачи'}
+                        >
+                          <span className="dcr-tasks-pill-icon" aria-hidden>📋</span>
+                          {totalTasks > 0 ? (
+                            <span className="dcr-tasks-pill-counter">
+                              {completedTasks}<span className="dcr-tasks-pill-sep">/</span>{totalTasks}
+                            </span>
+                          ) : (
+                            <span className="dcr-tasks-pill-empty-label">
+                              {canEditDc ? '+ Добавить' : 'Нет задач'}
+                            </span>
                           )}
-                          {isExpanded && tasks.map(task => (
-                            <div
-                              key={task.id}
-                              className={`dcr-task-row${task.is_completed ? ' dcr-task-row-done' : ''}`}
-                            >
-                              <input
-                                type="checkbox"
-                                className="dcr-task-check"
-                                checked={!!task.is_completed}
-                                onChange={(e) => handleSaveTaskField(task.id, 'is_completed', e.target.checked)}
-                                disabled={!isEmployee}
-                                title={task.is_completed ? 'Снять отметку' : 'Отметить выполненной'}
-                              />
-                              <textarea
-                                className="dcr-task-text"
-                                defaultValue={task.task_text}
-                                placeholder="Задача…"
-                                rows={1}
-                                disabled={!isEmployee}
-                                onBlur={(e) => {
-                                  if (e.target.value !== task.task_text) {
-                                    handleSaveTaskField(task.id, 'task_text', e.target.value)
-                                  }
-                                }}
-                                onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
-                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
-                              />
-                              <textarea
-                                className="dcr-task-response"
-                                defaultValue={task.response_text || ''}
-                                placeholder="Ответ…"
-                                rows={1}
-                                disabled={!isEmployee}
-                                onBlur={(e) => {
-                                  if (e.target.value !== (task.response_text || '')) {
-                                    handleSaveTaskField(task.id, 'response_text', e.target.value)
-                                  }
-                                }}
-                                onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
-                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
-                              />
-                              {isEmployee && (
-                                <button
-                                  type="button"
-                                  className="dcr-task-delete"
-                                  onClick={() => handleDeleteTask(task.id)}
-                                  title="Удалить задачу"
-                                  aria-label="Удалить задачу"
-                                >×</button>
-                              )}
-                            </div>
-                          ))}
-                          {isEmployee && (
-                            <div className="dcr-task-add">
-                              <input
-                                type="text"
-                                placeholder={totalTasks === 0 ? '+ Добавить первую задачу…' : '+ Добавить задачу…'}
-                                value={newTaskTexts[req.id] || ''}
-                                onChange={(e) => setNewTaskTexts(prev => ({ ...prev, [req.id]: e.target.value }))}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') { e.preventDefault(); handleAddTask(req.id) }
-                                }}
-                              />
-                              <button
-                                type="button"
-                                className="dcr-task-add-btn"
-                                onClick={() => handleAddTask(req.id)}
-                                disabled={!(newTaskTexts[req.id] || '').trim()}
-                                title="Добавить задачу"
-                              >+</button>
-                            </div>
-                          )}
-                        </div>
+                        </button>
                       </td>
                       <td className="dcr-cell-docs">
                         <div className="dcr-docs">
@@ -893,7 +826,7 @@ function DcRequestsPage() {
                                         <line x1="12" y1="15" x2="12" y2="3" />
                                       </svg>
                                     </button>
-                                    {isEmployee && (
+                                    {canEditDc && (
                                       <button
                                         type="button"
                                         className="dcr-doc-chip-del"
@@ -907,7 +840,7 @@ function DcRequestsPage() {
                               })}
                             </div>
                           )}
-                          {isEmployee && (
+                          {canEditDc && (
                             <button
                               type="button"
                               className="dcr-doc-add"
@@ -918,7 +851,7 @@ function DcRequestsPage() {
                         </div>
                       </td>
                       <td className="actions-cell">
-                        {isEmployee && (
+                        {canEditDc && (
                           <>
                             <button className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать">✏️</button>
                             <button className="btn-icon btn-delete" onClick={() => handleDelete(req.id)} title="Удалить">🗑️</button>
@@ -1073,6 +1006,126 @@ function DcRequestsPage() {
       {previewDoc && (
         <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
       )}
+
+      {/* task 334: модалка задач и ответов для выбранной заявки */}
+      {tasksModalFor && (() => {
+        const req = requests.find(r => r.id === tasksModalFor)
+        if (!req) return null
+        const tasks = req.dc_request_tasks || []
+        const totalTasks = tasks.length
+        const completedTasks = tasks.filter(t => t.is_completed).length
+        const cpName = req.counterparties?.name || ''
+        const objName = req.objects?.name || ''
+        return (
+          <div className="modal-overlay" onClick={() => setTasksModalFor(null)}>
+            <div
+              className="modal dcr-tasks-modal"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="modal-header">
+                <div className="dcr-tasks-modal-title">
+                  <h3>Задачи и ответы</h3>
+                  <div className="dcr-tasks-modal-subtitle">
+                    {req.ds_number && <span>ДС № <strong>{req.ds_number}</strong></span>}
+                    {objName && <span>{objName}</span>}
+                    {cpName && <span>{cpName}</span>}
+                  </div>
+                </div>
+                <div className="dcr-tasks-modal-counter" title="Выполнено / всего">
+                  <span className="dcr-tasks-modal-counter-done">{completedTasks}</span>
+                  <span className="dcr-tasks-modal-counter-sep">/</span>
+                  <span className="dcr-tasks-modal-counter-total">{totalTasks}</span>
+                </div>
+                <button className="modal-close" onClick={() => setTasksModalFor(null)} aria-label="Закрыть">×</button>
+              </div>
+
+              <div className="dcr-tasks-modal-body">
+                {totalTasks === 0 && (
+                  <div className="dcr-tasks-modal-empty">
+                    {canEditDc
+                      ? 'Задач пока нет. Добавьте первую ниже.'
+                      : 'Задач пока нет.'}
+                  </div>
+                )}
+                {tasks.map((task, taskIdx) => (
+                  <div
+                    key={task.id}
+                    className={`dcr-task-row dcr-task-row-modal${task.is_completed ? ' dcr-task-row-done' : ''}`}
+                  >
+                    <div className="dcr-task-num" aria-hidden>{taskIdx + 1}</div>
+                    <input
+                      type="checkbox"
+                      className="dcr-task-check"
+                      checked={!!task.is_completed}
+                      onChange={(e) => handleSaveTaskField(task.id, 'is_completed', e.target.checked)}
+                      disabled={!canEditDc}
+                      title={task.is_completed ? 'Снять отметку' : 'Отметить выполненной'}
+                    />
+                    <textarea
+                      className="dcr-task-text"
+                      defaultValue={task.task_text}
+                      placeholder="Задача…"
+                      rows={1}
+                      disabled={!canEditDc}
+                      onBlur={(e) => {
+                        if (e.target.value !== task.task_text) {
+                          handleSaveTaskField(task.id, 'task_text', e.target.value)
+                        }
+                      }}
+                      onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
+                      ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
+                    />
+                    <textarea
+                      className="dcr-task-response"
+                      defaultValue={task.response_text || ''}
+                      placeholder="Ответ…"
+                      rows={1}
+                      disabled={!canEditDc}
+                      onBlur={(e) => {
+                        if (e.target.value !== (task.response_text || '')) {
+                          handleSaveTaskField(task.id, 'response_text', e.target.value)
+                        }
+                      }}
+                      onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
+                      ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
+                    />
+                    {canEditDc && (
+                      <button
+                        type="button"
+                        className="dcr-task-delete"
+                        onClick={() => handleDeleteTask(task.id)}
+                        title="Удалить задачу"
+                        aria-label="Удалить задачу"
+                      >×</button>
+                    )}
+                  </div>
+                ))}
+
+                {canEditDc && (
+                  <div className="dcr-task-add dcr-task-add-modal">
+                    <input
+                      type="text"
+                      placeholder={totalTasks === 0 ? '+ Добавить первую задачу…' : '+ Добавить задачу…'}
+                      value={newTaskTexts[req.id] || ''}
+                      onChange={(e) => setNewTaskTexts(prev => ({ ...prev, [req.id]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleAddTask(req.id) }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="dcr-task-add-btn"
+                      onClick={() => handleAddTask(req.id)}
+                      disabled={!(newTaskTexts[req.id] || '').trim()}
+                      title="Добавить задачу"
+                    >+</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* task 324: модалка редактирования ссылки на общую таблицу с отделами */}
       {showLinkModal && (

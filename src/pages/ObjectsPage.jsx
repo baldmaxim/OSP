@@ -10,7 +10,9 @@ import '../components/GeneralInfo.css'
 let mapInstance = null
 
 function ObjectsPage() {
-  const { scopedObjectId } = useRole()
+  const { scopedObjectId, canEdit } = useRole()
+  // task 333: гейт add/edit/delete объектов
+  const canEditObjects = canEdit('objects')
   const [objects, setObjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -469,16 +471,21 @@ function ObjectsPage() {
           </div>
 
           <div className="section-actions">
-            <button className="btn-primary" onClick={handleAddNewObject}>
-              + Добавить объект
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={handleImportClick}
-              disabled={importing}
-            >
-              {importing ? 'Импорт...' : '📥 Импорт из Excel'}
-            </button>
+            {/* task 333: add/import только при can_edit */}
+            {canEditObjects && (
+              <>
+                <button className="btn-primary" onClick={handleAddNewObject}>
+                  + Добавить объект
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={handleImportClick}
+                  disabled={importing}
+                >
+                  {importing ? 'Импорт...' : '📥 Импорт из Excel'}
+                </button>
+              </>
+            )}
             <button
               className="btn-secondary"
               onClick={() => setShowMapModal(true)}
@@ -544,25 +551,27 @@ function ObjectsPage() {
                     title="Открыть карточку объекта (Ctrl+клик или средняя кнопка — в новой вкладке)"
                     style={{ textDecoration: 'none', color: 'inherit' }}
                   >
-                    <div
-                      className="object-card-actions"
-                      onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
-                    >
-                      <button
-                        className="object-card-action-btn"
-                        onClick={() => handleEditObject(object)}
-                        title="Редактировать"
+                    {canEditObjects && (
+                      <div
+                        className="object-card-actions"
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
                       >
-                        ✏️
-                      </button>
-                      <button
-                        className="object-card-action-btn"
-                        onClick={() => handleDeleteObject(object.id, object.name)}
-                        title="Удалить"
-                      >
-                        🗑️
-                      </button>
-                    </div>
+                        <button
+                          className="object-card-action-btn"
+                          onClick={() => handleEditObject(object)}
+                          title="Редактировать"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          className="object-card-action-btn"
+                          onClick={() => handleDeleteObject(object.id, object.name)}
+                          title="Удалить"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    )}
 
                     {object.cover_image_url ? (
                       <div className="object-card-cover">

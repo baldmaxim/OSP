@@ -210,7 +210,9 @@ function AggregateTable({ items, type }) {
 function TenderDetailPage() {
   const { tenderId } = useParams()
   const navigate = useNavigate()
-  const { userProfile } = useRole()
+  const { userProfile, canEdit } = useRole()
+  // task 333: гейт add/edit/delete для раздела «tenders»
+  const canEditTenders = canEdit('tenders')
 
   const [tender, setTender] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState([])
@@ -1044,6 +1046,8 @@ function TenderDetailPage() {
             onBlur={handleSaveNotes}
             placeholder="Свободные заметки по тендеру: ход переговоров, особые условия, риски, договорённости…"
             rows={2}
+            readOnly={!canEditTenders}
+            disabled={!canEditTenders}
           />
         </div>
       </div>
@@ -1081,17 +1085,19 @@ function TenderDetailPage() {
             <div className="section-header">
               <h3>ВОР тендера</h3>
               <div className="section-actions">
-                <label className="btn-primary estimate-import-label">
-                  {estimateItems.length > 0 || parsedEstimate ? 'Заменить (импорт Excel)' : 'Импорт из Excel'}
-                  <input
-                    ref={estimateFileRef}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleEstimateFileSelect}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-                {estimateItems.length > 0 && !parsedEstimate && (
+                {canEditTenders && (
+                  <label className="btn-primary estimate-import-label">
+                    {estimateItems.length > 0 || parsedEstimate ? 'Заменить (импорт Excel)' : 'Импорт из Excel'}
+                    <input
+                      ref={estimateFileRef}
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleEstimateFileSelect}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                )}
+                {canEditTenders && estimateItems.length > 0 && !parsedEstimate && (
                   <button className="btn-secondary" onClick={handleClearEstimate}>
                     Удалить ВОР
                   </button>
@@ -1185,12 +1191,14 @@ function TenderDetailPage() {
             <div className="section-header">
               <h3>Участники тендера</h3>
               <div className="section-actions">
-                <button
-                  className="btn-primary"
-                  onClick={handleOpenAddParticipantModal}
-                >
-                  + Пригласить участников
-                </button>
+                {canEditTenders && (
+                  <button
+                    className="btn-primary"
+                    onClick={handleOpenAddParticipantModal}
+                  >
+                    + Пригласить участников
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1256,6 +1264,7 @@ function TenderDetailPage() {
                             <select
                               value={tc.status || 'request_sent'}
                               onChange={(e) => handleUpdateParticipantStatus(tc.id, e.target.value)}
+                              disabled={!canEditTenders}
                               style={{
                                 padding: '0.25rem 0.5rem',
                                 borderRadius: '4px',
@@ -1264,7 +1273,7 @@ function TenderDetailPage() {
                                 color: getCounterpartyStatusColor(tc.status || 'request_sent'),
                                 fontWeight: 600,
                                 fontSize: '0.8125rem',
-                                cursor: 'pointer',
+                                cursor: canEditTenders ? 'pointer' : 'default',
                                 width: '100%'
                               }}
                             >
@@ -1278,6 +1287,7 @@ function TenderDetailPage() {
                             <TenderCounterpartyFiles
                               tenderId={tenderId}
                               counterpartyId={tc.counterparty_id}
+                              canEdit={canEditTenders}
                             />
                           </td>
                           <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
@@ -1298,6 +1308,8 @@ function TenderDetailPage() {
                                 }
                               }}
                               placeholder="Даты обзвонов, комментарии..."
+                              readOnly={!canEditTenders}
+                              disabled={!canEditTenders}
                               style={{
                                 width: '100%',
                                 minHeight: '60px',
