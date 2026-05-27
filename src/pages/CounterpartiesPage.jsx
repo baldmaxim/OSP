@@ -1721,59 +1721,84 @@ function CounterpartiesPage() {
                           <tr className="expanded-row">
                             <td colSpan="12">
                               <div className="expanded-content">
-                                <div className="tender-history-header">
-                                  <span className="detail-label">История участия в тендерах</span>
-                                  {tenderHistoryMap[counterparty.id] && (
-                                    <span className="tender-history-count">
-                                      Всего: {tenderHistoryMap[counterparty.id].length}
-                                    </span>
+                                {/* task 340: enterprise-стиль секции «История тендеров» */}
+                                <div className="tender-history-section">
+                                  <div className="tender-history-section-head">
+                                    <div className="tender-history-section-title">
+                                      <span className="tender-history-section-eyebrow">Участие в тендерах</span>
+                                      <span className="tender-history-section-name">
+                                        История участия — {counterparty.name}
+                                      </span>
+                                    </div>
+                                    {tenderHistoryMap[counterparty.id] && tenderHistoryMap[counterparty.id].length > 0 && (
+                                      <span className="tender-history-section-count">
+                                        {tenderHistoryMap[counterparty.id].length}
+                                        <span className="tender-history-section-count-label">записей</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                  {tenderHistoryLoadingId === counterparty.id ? (
+                                    <div className="tender-history-loading">Загрузка истории…</div>
+                                  ) : !tenderHistoryMap[counterparty.id] || tenderHistoryMap[counterparty.id].length === 0 ? (
+                                    <div className="tender-history-empty">Контрагент пока не участвовал в тендерах.</div>
+                                  ) : (
+                                    <div className="tender-history-table-wrap">
+                                      <table className="tender-history-table">
+                                        <thead>
+                                          <tr>
+                                            <th className="th-num">№</th>
+                                            <th className="th-obj">Объект</th>
+                                            <th className="th-desc">Описание работ</th>
+                                            <th className="th-status">Статус</th>
+                                            <th className="th-dates">Сроки процедуры</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {tenderHistoryMap[counterparty.id].map((h, i) => {
+                                            const status = h.status || 'request_sent'
+                                            const formatDate = (iso) => iso
+                                              ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                              : null
+                                            const startDate = formatDate(h.tender_start_date)
+                                            const endDate = formatDate(h.tender_end_date)
+                                            return (
+                                              <tr key={h.tender_id}>
+                                                <td className="tender-history-num">{i + 1}</td>
+                                                <td className="tender-history-obj">{h.object_name}</td>
+                                                <td>
+                                                  <a
+                                                    href={`/tenders/${h.tender_id}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="tender-history-link"
+                                                    title="Открыть тендер в новой вкладке"
+                                                  >
+                                                    {h.work_description || '—'}
+                                                  </a>
+                                                </td>
+                                                <td>
+                                                  <span className={`tender-history-status status-${status}`}>
+                                                    <span className="tender-history-status-dot" aria-hidden />
+                                                    {TENDER_STATUS_LABEL[status] || status}
+                                                  </span>
+                                                </td>
+                                                <td className="tender-history-dates">
+                                                  {startDate || endDate ? (
+                                                    <span className="tender-history-dates-range">
+                                                      <span>{startDate || '—'}</span>
+                                                      <span className="tender-history-dates-sep">→</span>
+                                                      <span>{endDate || '—'}</span>
+                                                    </span>
+                                                  ) : <span className="muted-dash">—</span>}
+                                                </td>
+                                              </tr>
+                                            )
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
                                   )}
                                 </div>
-                                {tenderHistoryLoadingId === counterparty.id ? (
-                                  <div className="tender-history-loading">Загрузка истории…</div>
-                                ) : !tenderHistoryMap[counterparty.id] || tenderHistoryMap[counterparty.id].length === 0 ? (
-                                  <div className="tender-history-empty">Контрагент пока не участвовал в тендерах.</div>
-                                ) : (
-                                  <table className="tender-history-table">
-                                    <thead>
-                                      <tr>
-                                        <th style={{ width: '52px' }}>№</th>
-                                        <th style={{ width: '22%' }}>Объект</th>
-                                        <th style={{ width: '42%' }}>Описание работ</th>
-                                        <th style={{ width: '140px' }}>Статус</th>
-                                        <th style={{ width: '170px' }}>Сроки тендерной<br />процедуры</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {tenderHistoryMap[counterparty.id].map((h, i) => (
-                                        <tr key={h.tender_id}>
-                                          <td className="tender-history-num">{i + 1}</td>
-                                          <td>{h.object_name}</td>
-                                          <td>
-                                            <a
-                                              href={`/tenders/${h.tender_id}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="contact-link"
-                                            >
-                                              {h.work_description || '—'}
-                                            </a>
-                                          </td>
-                                          <td>
-                                            <span className={`tender-history-status status-${h.status || 'request_sent'}`}>
-                                              {TENDER_STATUS_LABEL[h.status] || h.status || '—'}
-                                            </span>
-                                          </td>
-                                          <td className="tender-history-dates">
-                                            {h.tender_start_date || h.tender_end_date
-                                              ? `${h.tender_start_date ? new Date(h.tender_start_date).toLocaleDateString('ru-RU') : '—'} — ${h.tender_end_date ? new Date(h.tender_end_date).toLocaleDateString('ru-RU') : '—'}`
-                                              : '—'}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                )}
                               </div>
                             </td>
                           </tr>
