@@ -445,11 +445,23 @@ function DcRequestsPage() {
     completed: requests.filter(r => r.status === 'completed').length,
   }
 
+  // В таблице contacts один сотрудник может встречаться несколько раз
+  // (по записи на каждый объект). В UI показываем по одной строке на ФИО.
+  const dedupedContacts = (() => {
+    const seen = new Set()
+    return contacts.filter(c => {
+      const key = (c.full_name || '').trim().toLowerCase()
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  })()
+
   // Фильтр ответственных — только те сотрудники, что реально назначены хотя бы на одну заявку.
   const usedResponsibleIds = new Set(
     requests.map(r => r.responsible_contact_id).filter(Boolean)
   )
-  const responsibleFilterOptions = contacts.filter(c => usedResponsibleIds.has(c.id))
+  const responsibleFilterOptions = dedupedContacts.filter(c => usedResponsibleIds.has(c.id))
 
   return (
     <div className="dc-requests-page contract-registry">
@@ -942,7 +954,7 @@ function DcRequestsPage() {
                     onChange={handleInputChange}
                   >
                     <option value="">— Не назначен —</option>
-                    {contacts.map(c => (
+                    {dedupedContacts.map(c => (
                       <option key={c.id} value={c.id}>{c.full_name}</option>
                     ))}
                   </select>

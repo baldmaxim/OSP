@@ -196,10 +196,23 @@
 .form-group {
   display: flex;
   flex-direction: column;
+  /* Без min-width: 0 grid-колонка раздувается под intrinsic-ширину select-а
+     с длинными option-ами (например длинные имена объектов/отделов). */
+  min-width: 0;
 }
 
 .form-group.full-width {
   grid-column: 1 / -1;
+}
+
+/* Гарантируем, что инпуты не вылезают за границы своего .form-group. */
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .form-group label {
