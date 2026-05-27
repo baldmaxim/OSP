@@ -52,9 +52,8 @@ function CounterpartiesPage() {
   const [editingTempContactIndex, setEditingTempContactIndex] = useState(null)
   const [expandedRows, setExpandedRows] = useState(new Set())
 
-  // Виды работ (множественный выбор)
+  // Виды работ (множественный выбор; task 321 — подтягиваются только из справочника)
   const [workTypes, setWorkTypes] = useState([])
-  const [newWorkType, setNewWorkType] = useState('')
 
   // Связи между контрагентами
   const [relations, setRelations] = useState([]) // [{counterparty_id, related_counterparty_id}]
@@ -69,7 +68,14 @@ function CounterpartiesPage() {
   const [tenderHistoryLoadingId, setTenderHistoryLoadingId] = useState(null)
 
   // task 197: вкладка «Активные» / «Удалённые»
-  const [activeTab, setActiveTab] = useState('active') // 'active' | 'deleted'
+  // task 321: добавлена вкладка «Виды работ» — справочник work_types
+  const [activeTab, setActiveTab] = useState('active') // 'active' | 'blacklist' | 'deleted' | 'work_types'
+
+  // task 321: справочник видов работ
+  const [workTypesDirectory, setWorkTypesDirectory] = useState([])
+  const [showWorkTypeModal, setShowWorkTypeModal] = useState(false)
+  const [editingWorkType, setEditingWorkType] = useState(null)
+  const [workTypeForm, setWorkTypeForm] = useState({ name: '', description: '' })
 
   const TENDER_STATUS_LABEL = {
     request_sent: 'Запрос отправлен',
@@ -81,10 +87,11 @@ function CounterpartiesPage() {
   useEffect(() => {
     fetchCounterparties()
     fetchRelations()
+    fetchWorkTypesDirectory()
   }, [])
 
   // Блокируем скролл body при открытой модалке
-  const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showRelationModal || importResult
+  const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showRelationModal || showWorkTypeModal || importResult
   useEffect(() => {
     if (anyModalOpen) {
       document.body.classList.add('modal-open')
@@ -147,6 +154,109 @@ function CounterpartiesPage() {
       setRelations(data || [])
     } catch (error) {
       console.error('Ошибка загрузки связей:', error.message)
+    }
+  }
+
+  // task 321: справочник видов работ.
+  const fetchWorkTypesDirectory = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('work_types')
+        .select('*')
+        .order('name', { ascending: true })
+      if (error) throw error
+      setWorkTypesDirectory(data || [])
+    } catch (err) {
+      console.warn('Не удалось загрузить справочник видов работ (таблица work_types?):', err.message)
+      setWorkTypesDirectory([])
+    }
+  }
+
+  const handleOpenAddWorkType = () => {
+    setEditingWorkType(null)
+    setWorkTypeForm({ name: '', description: '' })
+    setShowWorkTypeModal(true)
+  }
+
+  const handleOpenEditWorkType = (wt) => {
+    setEditingWorkType(wt)
+    setWorkTypeForm({ name: wt.name, description: wt.description || '' })
+    setShowWorkTypeModal(true)
+  }
+
+  const handleSubmitWorkType = async (e) => {
+    e.preventDefault()
+    const name = workTypeForm.name.trim()
+    if (!name) {
+      alert('Укажите название вида работ')
+      return
+    }
+    const payload = {
+      name,
+      description: workTypeForm.description.trim() || null,
+      updated_at: new Date().toISOString(),
+    }
+    try {
+      if (editingWorkType) {
+        const { error } = await supabase
+          .from('work_types')
+          .update(payload)
+          .eq('id', editingWorkType.id)
+        if (error) throw error
+        // Если у вида работ было старое имя — синхронизируем все counterparties.work_type,
+        // где это значение упоминается в comma-separated списке.
+        if (editingWorkType.name !== name) {
+          const old = editingWorkType.name
+          const affected = counterparties.filter(cp => {
+            const list = (cp.work_type || '').split(',').map(x => x.trim())
+            return list.includes(old)
+          })
+          for (const cp of affected) {
+            const newList = (cp.work_type || '')
+              .split(',')
+              .map(x => x.trim())
+              .map(x => (x === old ? name : x))
+              .filter(Boolean)
+            const uniq = [...new Set(newList)]
+            await supabase
+              .from('counterparties')
+              .update({ work_type: uniq.join(', ') })
+              .eq('id', cp.id)
+          }
+        }
+      } else {
+        const { error } = await supabase.from('work_types').insert([payload])
+        if (error) throw error
+      }
+      setShowWorkTypeModal(false)
+      setEditingWorkType(null)
+      setWorkTypeForm({ name: '', description: '' })
+      fetchWorkTypesDirectory()
+      fetchCounterparties()
+    } catch (err) {
+      if (err.code === '23505') {
+        alert('Вид работ с таким названием уже существует')
+      } else {
+        alert('Ошибка сохранения вида работ: ' + err.message)
+      }
+    }
+  }
+
+  const handleDeleteWorkType = async (wt) => {
+    const used = counterparties.filter(cp => {
+      const list = (cp.work_type || '').split(',').map(x => x.trim())
+      return list.includes(wt.name)
+    }).length
+    const msg = used > 0
+      ? `Вид работ «${wt.name}» используется у ${used} контрагент(ов). Удалить из справочника? У контрагентов значение останется текстом до ручной правки.`
+      : `Удалить вид работ «${wt.name}»?`
+    if (!window.confirm(msg)) return
+    try {
+      const { error } = await supabase.from('work_types').delete().eq('id', wt.id)
+      if (error) throw error
+      fetchWorkTypesDirectory()
+    } catch (err) {
+      alert('Ошибка удаления: ' + err.message)
     }
   }
 
@@ -335,7 +445,6 @@ function CounterpartiesPage() {
       ? counterparty.work_type.split(',').map(wt => wt.trim()).filter(wt => wt)
       : []
     setWorkTypes(parsedWorkTypes)
-    setNewWorkType('')
     // Загружаем существующие контакты в tempContacts
     setTempContacts(counterparty.counterparty_contacts || [])
     setShowCounterpartyModal(true)
@@ -573,7 +682,6 @@ function CounterpartiesPage() {
       notes: '',
     })
     setWorkTypes([])
-    setNewWorkType('')
     setTempContacts([])
     setContactFormData({
       full_name: '',
@@ -1092,55 +1200,59 @@ function CounterpartiesPage() {
     <div className="counterparties-page">
       {/* Toolbar */}
       <div className="counterparties-toolbar">
-        <div className="toolbar-row">
-          <div className="toolbar-left">
-            <h2 className="page-title">Контрагенты</h2>
-            <span className="counter-badge">{filteredCounterparties.length}</span>
-          </div>
-
-          <div className="toolbar-center">
-            <div className="search-container">
-              <svg className="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input
-                type="text"
-                placeholder="Поиск..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+        {/* task 321: тулбар с поиском/фильтром/импортом релевантен только для
+            вкладок с контрагентами. На «Виды работ» прячем — там свой тулбар. */}
+        {activeTab !== 'work_types' && (
+          <div className="toolbar-row">
+            <div className="toolbar-left">
+              <h2 className="page-title">Контрагенты</h2>
+              <span className="counter-badge">{filteredCounterparties.length}</span>
             </div>
 
-            <select
-              className={`filter-select ${workTypeFilter ? 'active' : ''}`}
-              value={workTypeFilter}
-              onChange={(e) => setWorkTypeFilter(e.target.value)}
-            >
-              <option value="">Все виды работ</option>
-              {uniqueWorkTypes.map(workType => (
-                <option key={workType} value={workType}>{workType}</option>
-              ))}
-            </select>
+            <div className="toolbar-center">
+              <div className="search-container">
+                <svg className="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input
+                  type="text"
+                  placeholder="Поиск..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
 
-          </div>
-
-          <div className="toolbar-actions">
-            <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
-            <button className="btn-import" onClick={handleImportClick} disabled={importing}>
-              {importing ? '...' : 'Импорт'}
-            </button>
-            {isAdmin && (
-              <button
-                className="btn-import"
-                onClick={handleExportToExcel}
-                disabled={counterparties.length === 0}
-                title="Скачать всех контрагентов в Excel"
+              <select
+                className={`filter-select ${workTypeFilter ? 'active' : ''}`}
+                value={workTypeFilter}
+                onChange={(e) => setWorkTypeFilter(e.target.value)}
               >
-                📥 Экспорт
-              </button>
-            )}
-          </div>
-        </div>
+                <option value="">Все виды работ</option>
+                {uniqueWorkTypes.map(workType => (
+                  <option key={workType} value={workType}>{workType}</option>
+                ))}
+              </select>
 
-        {selectedCounterpartyIds.length > 0 && (
+            </div>
+
+            <div className="toolbar-actions">
+              <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
+              <button className="btn-import" onClick={handleImportClick} disabled={importing}>
+                {importing ? '...' : 'Импорт'}
+              </button>
+              {isAdmin && (
+                <button
+                  className="btn-import"
+                  onClick={handleExportToExcel}
+                  disabled={counterparties.length === 0}
+                  title="Скачать всех контрагентов в Excel"
+                >
+                  📥 Экспорт
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab !== 'work_types' && selectedCounterpartyIds.length > 0 && (
           <div className="toolbar-selection">
             <span>Выбрано: {selectedCounterpartyIds.length}</span>
             <button className="btn-link" onClick={handleSelectAll}>
@@ -1175,6 +1287,14 @@ function CounterpartiesPage() {
             Удалённые
             {deletedCount > 0 && <span className="cp-tab-count">{deletedCount}</span>}
           </button>
+          {/* task 321: справочник видов работ — отдельная вкладка */}
+          <button
+            className={`cp-tab cp-tab-worktypes ${activeTab === 'work_types' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('work_types'); setSelectedCounterpartyIds([]); setExpandedRows(new Set()) }}
+          >
+            Виды работ
+            {workTypesDirectory.length > 0 && <span className="cp-tab-count">{workTypesDirectory.length}</span>}
+          </button>
         </div>
       </div>
 
@@ -1190,6 +1310,74 @@ function CounterpartiesPage() {
       {loading ? (
         <div className="loading-container">
           <div className="loading-spinner"></div>
+        </div>
+      ) : activeTab === 'work_types' ? (
+        /* task 321: справочник видов работ */
+        <div className="counterparties-content">
+          <div className="work-types-directory">
+            <div className="work-types-directory-toolbar">
+              <h3 className="work-types-directory-title">Справочник видов работ</h3>
+              <button className="btn-add" onClick={handleOpenAddWorkType}>+ Добавить вид работ</button>
+            </div>
+            {workTypesDirectory.length === 0 ? (
+              <div className="empty-state">
+                <p className="empty-title">Справочник пуст</p>
+                <p className="empty-hint">
+                  Добавьте первый вид работ — он станет доступен в карточке любого контрагента.
+                </p>
+                <button className="btn-add" onClick={handleOpenAddWorkType}>+ Добавить вид работ</button>
+              </div>
+            ) : (
+              <div className="table-wrapper">
+                <table className="compact-table work-types-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '52px', textAlign: 'center' }}>№</th>
+                      <th>Название</th>
+                      <th>Описание</th>
+                      <th style={{ width: '140px', textAlign: 'right' }}>Контрагентов</th>
+                      <th style={{ width: '90px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workTypesDirectory.map((wt, idx) => {
+                      const used = counterparties.filter(cp => {
+                        if (cp.deleted_at) return false
+                        const list = (cp.work_type || '').split(',').map(x => x.trim())
+                        return list.includes(wt.name)
+                      }).length
+                      return (
+                        <tr key={wt.id}>
+                          <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
+                          <td><strong>{wt.name}</strong></td>
+                          <td style={{ color: 'var(--text-secondary)' }}>{wt.description || '—'}</td>
+                          <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{used}</td>
+                          <td className="col-actions">
+                            <div className="actions-group">
+                              <button
+                                className="btn-action"
+                                onClick={() => handleOpenEditWorkType(wt)}
+                                title="Редактировать"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+                              <button
+                                className="btn-action delete"
+                                onClick={() => handleDeleteWorkType(wt)}
+                                title="Удалить"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="counterparties-content">
@@ -1523,8 +1711,10 @@ function CounterpartiesPage() {
                         ))}
                       </div>
                     )}
-                    {/* Выбор из существующих */}
-                    {uniqueWorkTypes.filter(wt => !workTypes.includes(wt)).length > 0 && (
+                    {/* task 321: dropdown подтягивается из справочника work_types,
+                        а не из значений по counterparties. Чтобы добавить новый вид
+                        работ, нужно перейти на вкладку «Виды работ». */}
+                    {workTypesDirectory.filter(wt => !workTypes.includes(wt.name)).length > 0 ? (
                       <div className="work-type-input-row">
                         <select
                           value=""
@@ -1534,44 +1724,23 @@ function CounterpartiesPage() {
                             }
                           }}
                         >
-                          <option value="">Выбрать из существующих...</option>
-                          {uniqueWorkTypes
-                            .filter(wt => !workTypes.includes(wt))
+                          <option value="">Выбрать из справочника...</option>
+                          {workTypesDirectory
+                            .filter(wt => !workTypes.includes(wt.name))
                             .map(wt => (
-                              <option key={wt} value={wt}>{wt}</option>
+                              <option key={wt.id} value={wt.name}>{wt.name}</option>
                             ))}
                         </select>
                       </div>
+                    ) : (
+                      <div style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                        {workTypesDirectory.length === 0
+                          ? 'Справочник видов работ пуст. Добавьте записи на вкладке «Виды работ».'
+                          : 'Все виды работ из справочника уже выбраны.'}
+                      </div>
                     )}
-                    {/* Или добавить новый */}
-                    <div className="work-type-input-row">
-                      <input
-                        type="text"
-                        value={newWorkType}
-                        onChange={(e) => setNewWorkType(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            if (newWorkType.trim() && !workTypes.includes(newWorkType.trim())) {
-                              setWorkTypes([...workTypes, newWorkType.trim()])
-                              setNewWorkType('')
-                            }
-                          }
-                        }}
-                        placeholder="Или введите новый вид работ"
-                      />
-                      <button
-                        type="button"
-                        className="btn-add-work-type"
-                        onClick={() => {
-                          if (newWorkType.trim() && !workTypes.includes(newWorkType.trim())) {
-                            setWorkTypes([...workTypes, newWorkType.trim()])
-                            setNewWorkType('')
-                          }
-                        }}
-                      >
-                        +
-                      </button>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.375rem' }}>
+                      Новые виды работ добавляются на вкладке <strong>«Виды работ»</strong>.
                     </div>
                   </div>
                 </div>
@@ -2058,6 +2227,57 @@ function CounterpartiesPage() {
                 </button>
                 <button type="submit" className="btn-primary">
                   {editingContact ? 'Сохранить' : 'Добавить'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* task 321: модалка добавления/редактирования вида работ */}
+      {showWorkTypeModal && (
+        <div className="modal-overlay" onClick={() => setShowWorkTypeModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3>{editingWorkType ? 'Редактировать вид работ' : 'Новый вид работ'}</h3>
+              <button
+                className="modal-close"
+                onClick={() => { setShowWorkTypeModal(false); setEditingWorkType(null) }}
+              >×</button>
+            </div>
+            <form onSubmit={handleSubmitWorkType}>
+              <div className="form-grid">
+                <div className="form-group full-width">
+                  <label>Название *</label>
+                  <input
+                    type="text"
+                    value={workTypeForm.name}
+                    onChange={(e) => setWorkTypeForm({ ...workTypeForm, name: e.target.value })}
+                    required
+                    autoFocus
+                    placeholder="Например, Строительно-монтажные работы"
+                  />
+                </div>
+                <div className="form-group full-width">
+                  <label>Описание</label>
+                  <textarea
+                    value={workTypeForm.description}
+                    onChange={(e) => setWorkTypeForm({ ...workTypeForm, description: e.target.value })}
+                    rows={3}
+                    placeholder="Краткое описание вида работ (необязательно)"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => { setShowWorkTypeModal(false); setEditingWorkType(null) }}
+                >
+                  Отмена
+                </button>
+                <button type="submit" className="btn-primary">
+                  {editingWorkType ? 'Сохранить' : 'Добавить'}
                 </button>
               </div>
             </form>

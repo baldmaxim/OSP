@@ -1137,6 +1137,47 @@
 [data-theme='dark'] .cp-tab-deleted { color: #fca5a5; }
 [data-theme='dark'] .cp-tab-deleted.active { color: #fecaca; border-bottom-color: #fca5a5; }
 
+/* task 321: вкладка «Виды работ» — справочник, визуально отделим лёгкой
+   границей слева от status-tabs группы. */
+.cp-tab-worktypes {
+  margin-left: 0.5rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+.cp-tab-worktypes:hover { color: var(--text-primary); }
+.cp-tab-worktypes.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+/* task 321: панель справочника видов работ */
+.work-types-directory {
+  padding: 1rem 1.25rem 1.5rem;
+}
+.work-types-directory-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.work-types-directory-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.work-types-table tbody td {
+  padding: 0.625rem 0.75rem;
+  vertical-align: middle;
+}
+.work-types-table .actions-group {
+  display: flex;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
 /* Кнопка «Восстановить» (task 197) */
 .btn-action-restore {
   color: #16a34a;

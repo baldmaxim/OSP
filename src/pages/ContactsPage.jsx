@@ -661,37 +661,57 @@ function ContactsPage() {
                       <td className="num-cell">{idx + 1}</td>
                       <td>{contact.full_name}</td>
                       <td>
-                        <select
-                          className="inline-object-select"
-                          value={contact.object_id || ''}
-                          onChange={(e) => handleInlineObjectChange(contact.id, e.target.value)}
-                          title="Привязать к объекту или оставить «Офис»"
-                        >
-                          <option value="">Офис</option>
-                          {objects.map(obj => (
-                            <option key={obj.id} value={obj.id}>{obj.name}</option>
-                          ))}
-                        </select>
+                        {(() => {
+                          const objName = contact.objects?.name || ''
+                          const displayValue = contact.object_id ? objName : 'Офис'
+                          return (
+                            <div className="wrapped-select">
+                              <div className="wrapped-select-display" title={displayValue}>
+                                {displayValue}
+                              </div>
+                              <select
+                                className="wrapped-select-native"
+                                value={contact.object_id || ''}
+                                onChange={(e) => handleInlineObjectChange(contact.id, e.target.value)}
+                                aria-label="Привязать к объекту или оставить «Офис»"
+                              >
+                                <option value="">Офис</option>
+                                {objects.map(obj => (
+                                  <option key={obj.id} value={obj.id}>{obj.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td>
                         {(() => {
                           const displayPosition = normalizePosition(contact.position) || ''
+                          const isEmpty = !displayPosition
                           return (
-                            <select
-                              className="inline-object-select"
-                              value={displayPosition}
-                              onChange={(e) => handleInlinePositionChange(contact.id, e.target.value)}
-                              title={displayPosition || 'Должность сотрудника'}
-                            >
-                              <option value="">— не указана —</option>
-                              {allPositions.map(pos => (
-                                <option key={pos} value={pos}>{pos}</option>
-                              ))}
-                              {/* Если у контакта должность, которой нет в справочнике — показываем как опцию */}
-                              {displayPosition && !allPositions.includes(displayPosition) && (
-                                <option value={displayPosition}>{displayPosition}</option>
-                              )}
-                            </select>
+                            <div className="wrapped-select">
+                              <div
+                                className={`wrapped-select-display ${isEmpty ? 'is-placeholder' : ''}`}
+                                title={displayPosition || 'Должность сотрудника'}
+                              >
+                                {displayPosition || '— не указана —'}
+                              </div>
+                              <select
+                                className="wrapped-select-native"
+                                value={displayPosition}
+                                onChange={(e) => handleInlinePositionChange(contact.id, e.target.value)}
+                                aria-label="Должность сотрудника"
+                              >
+                                <option value="">— не указана —</option>
+                                {allPositions.map(pos => (
+                                  <option key={pos} value={pos}>{pos}</option>
+                                ))}
+                                {/* Если у контакта должность, которой нет в справочнике — показываем как опцию */}
+                                {displayPosition && !allPositions.includes(displayPosition) && (
+                                  <option value={displayPosition}>{displayPosition}</option>
+                                )}
+                              </select>
+                            </div>
                           )
                         })()}
                       </td>

@@ -540,9 +540,9 @@ function DcRequestsPage() {
                 <th style={{ width: '14%' }}>Описание ДС</th>
                 <th style={{ width: '8%' }}>Статус</th>
                 <th style={{ width: '10%' }}>Ответственный</th>
-                <th style={{ width: '20%' }}>Задачи и ответы</th>
+                <th style={{ width: '17%' }}>Задачи и ответы</th>
                 <th style={{ width: '13%' }}>Документы</th>
-                <th style={{ width: '4%' }}>Действия</th>
+                <th style={{ width: '7%' }}>Действия</th>
               </tr>
             </thead>
             <tbody>
