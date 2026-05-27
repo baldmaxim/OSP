@@ -180,6 +180,22 @@
   overflow-wrap: anywhere;
 }
 
+/* Контейнер таблицы — глушим горизонтальный скролл. При table-layout: fixed
+   ширины колонок гарантированы, и любое микропереполнение от вложенных
+   inline-flex / grid (textarea, чипы) просто обрезается, а не разъезжается. */
+.dc-requests-page .table-container {
+  overflow-x: hidden;
+}
+
+/* Внутренние grid-контейнеры в ячейках должны уметь ужиматься, чтобы их
+   1fr-колонки не раздувались под intrinsic-content. */
+.dcr-task-row { min-width: 0; }
+.dcr-task-text,
+.dcr-task-response,
+.dcr-task-row > * { min-width: 0; }
+.dcr-doc-chip,
+.dcr-doc-chips { max-width: 100%; min-width: 0; }
+
 .dcr-table thead th {
   text-align: center;
   padding: 0.625rem 0.75rem;
