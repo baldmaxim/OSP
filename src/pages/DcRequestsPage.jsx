@@ -92,12 +92,19 @@ function DcRequestsPage() {
   // Документ открытый в превью (S3DocumentPreview).
   const [previewDoc, setPreviewDoc] = useState(null)
 
+  // task 324: ссылка на общую таблицу с отделами. Хранится в app_settings
+  // под ключом 'dc_requests_external_link'. Редактируется через модалку.
+  const [externalLink, setExternalLink] = useState('')
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [linkInput, setLinkInput] = useState('')
+
   useEffect(() => {
     fetchRequests()
     fetchObjects()
     fetchCounterparties()
     fetchContacts()
     fetchAllDocs()
+    fetchExternalLink()
   }, [])
 
   // Закрытие попапа статуса по клику вне его.
@@ -123,7 +130,8 @@ function DcRequestsPage() {
           responsible:contacts!responsible_contact_id(id, full_name),
           dc_request_tasks(id, task_text, response_text, is_completed, order_number)
         `)
-        .order('created_at', { ascending: false })
+        // task 325: хронология добавления — старые сверху (№1), новые внизу.
+        .order('created_at', { ascending: true })
       if (error) throw error
       const sorted = (data || []).map(r => ({
         ...r,
@@ -162,6 +170,42 @@ function DcRequestsPage() {
       .select('id, full_name')
       .order('full_name', { ascending: true })
     if (!error) setContacts(data || [])
+  }
+
+  // task 324: ссылка на общую таблицу с отделами.
+  const fetchExternalLink = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'dc_requests_external_link')
+        .maybeSingle()
+      if (error) throw error
+      setExternalLink(data?.value || '')
+    } catch (err) {
+      console.warn('Не удалось загрузить ссылку на общую таблицу (app_settings?):', err.message)
+      setExternalLink('')
+    }
+  }
+
+  const openLinkEditor = () => {
+    setLinkInput(externalLink || '')
+    setShowLinkModal(true)
+  }
+
+  const saveExternalLink = async (e) => {
+    e.preventDefault()
+    const value = linkInput.trim() || null
+    try {
+      const { error } = await supabase
+        .from('app_settings')
+        .upsert({ key: 'dc_requests_external_link', value, updated_at: new Date().toISOString() })
+      if (error) throw error
+      setExternalLink(value || '')
+      setShowLinkModal(false)
+    } catch (err) {
+      alert('Не удалось сохранить ссылку: ' + (err.message || err))
+    }
   }
 
   // Один запрос за всеми документами всех заявок — складываем в Map по owner_id.
@@ -467,9 +511,48 @@ function DcRequestsPage() {
     <div className="dc-requests-page contract-registry">
       <div className="registry-header">
         <h2>Заявка на ДС</h2>
-        {isEmployee && (
-          <button className="btn-primary" onClick={handleAddNew}>+ Добавить заявку</button>
-        )}
+        <div className="dcr-header-actions">
+          {/* task 324: ссылка на общую таблицу с отделами (хранится в app_settings) */}
+          {externalLink ? (
+            <a
+              href={externalLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="dcr-link-btn"
+              title={externalLink}
+            >
+              <span aria-hidden>🔗</span>
+              <span>Общая таблица отделов</span>
+            </a>
+          ) : isEmployee && (
+            <button
+              type="button"
+              className="dcr-link-btn dcr-link-btn-empty"
+              onClick={openLinkEditor}
+              title="Задать ссылку на общую таблицу"
+            >
+              <span aria-hidden>🔗</span>
+              <span>Указать ссылку</span>
+            </button>
+          )}
+          {isEmployee && externalLink && (
+            <button
+              type="button"
+              className="dcr-link-edit"
+              onClick={openLinkEditor}
+              title="Изменить ссылку"
+              aria-label="Изменить ссылку"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+          )}
+          {isEmployee && (
+            <button className="btn-primary" onClick={handleAddNew}>+ Добавить заявку</button>
+          )}
+        </div>
       </div>
 
       <div className="status-tabs">
@@ -989,6 +1072,41 @@ function DcRequestsPage() {
 
       {previewDoc && (
         <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+      )}
+
+      {/* task 324: модалка редактирования ссылки на общую таблицу с отделами */}
+      {showLinkModal && (
+        <div className="modal-overlay" onClick={() => setShowLinkModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <div className="modal-header">
+              <h3>{externalLink ? 'Изменить ссылку на общую таблицу' : 'Указать ссылку на общую таблицу'}</h3>
+              <button className="modal-close" onClick={() => setShowLinkModal(false)}>×</button>
+            </div>
+            <form onSubmit={saveExternalLink}>
+              <div className="form-grid">
+                <div className="form-group full-width">
+                  <label>URL общей таблицы отделов</label>
+                  <input
+                    type="url"
+                    value={linkInput}
+                    onChange={(e) => setLinkInput(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/…"
+                    autoFocus
+                  />
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.375rem' }}>
+                    Оставьте поле пустым, чтобы удалить ссылку.
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn-secondary" onClick={() => setShowLinkModal(false)}>
+                  Отмена
+                </button>
+                <button type="submit" className="btn-primary">Сохранить</button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Модалка загрузки документа */}
