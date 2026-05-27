@@ -170,13 +170,50 @@ function AgreementRow({
   onDelete,
   onPreviewFile,
   onDownloadFile,
+  // task 329: drag-drop reorder props (passed from ObjectDetailPage)
+  isDragging,
+  dragOverPosition, // 'before' | 'after' | null
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDragEnd,
+  onDrop,
 }) {
   const hasAttachments = attachments.length > 0
   const isExpanded = expandedDocs.has(doc.id)
   return (
     <>
-      <tr className="doc-row-tr">
+      <tr
+        className={[
+          'doc-row-tr',
+          'doc-row-draggable',
+          isDragging ? 'doc-row-dragging' : '',
+          dragOverPosition === 'before' ? 'doc-row-drop-before' : '',
+          dragOverPosition === 'after' ? 'doc-row-drop-after' : '',
+        ].filter(Boolean).join(' ')}
+        draggable={true}
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', doc.id)
+          onDragStart?.(doc.id)
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          const rect = e.currentTarget.getBoundingClientRect()
+          const isAbove = (e.clientY - rect.top) < rect.height / 2
+          onDragOver?.(doc.id, isAbove ? 'before' : 'after')
+        }}
+        onDragLeave={() => onDragLeave?.(doc.id)}
+        onDragEnd={() => onDragEnd?.()}
+        onDrop={(e) => {
+          e.preventDefault()
+          const draggedId = e.dataTransfer.getData('text/plain')
+          onDrop?.(draggedId, doc.id)
+        }}
+      >
         <td className="doc-cell-marker">
+          <span className="doc-drag-handle" title="Перетащите для изменения порядка" aria-hidden>⋮⋮</span>
           {hasAttachments ? (
             <button
               type="button"
@@ -270,6 +307,9 @@ function ObjectDetailPage() {
   const [expandedDocs, setExpandedDocs] = useState(new Set())
   const didInitExpand = useRef(false)
   const [docSearchQuery, setDocSearchQuery] = useState('')
+  // task 329: drag-drop порядка дополнительных соглашений.
+  const [draggedAgreementId, setDraggedAgreementId] = useState(null)
+  const [agreementDragOver, setAgreementDragOver] = useState(null) // {id, position: 'before'|'after'}
   const [isEstimateFullscreen, setIsEstimateFullscreen] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState(new Set())
   const estimateFileRef = useRef(null)
@@ -352,7 +392,11 @@ function ObjectDetailPage() {
         .from('object_documents')
         .select('*, signed:s3_documents!signed_s3_document_id(*), editable:s3_documents!editable_s3_document_id(*)')
         .eq('object_id', objectId)
-        .order('order_number')
+        // task 329: при равных order_number сортируем по дате создания —
+        // это гарантирует стабильный порядок для документов, у которых ещё не
+        // выставлен ручной порядок (все DEFAULT 0).
+        .order('order_number', { ascending: true })
+        .order('created_at', { ascending: true })
       if (docsError) throw docsError
       const allDocs = docsData || []
       setDocuments(allDocs)
@@ -487,6 +531,67 @@ function ObjectDetailPage() {
     } catch (error) {
       alert('Ошибка: ' + error.message)
     }
+  }
+
+  // task 329: переупорядочивание дополнительных соглашений drag-and-drop.
+  // Сохраняем order_number кратным 10 — есть запас для будущих ручных вставок
+  // без необходимости перенумеровывать соседей.
+  const reorderAgreements = async (draggedId, targetId, position) => {
+    if (!draggedId || draggedId === targetId) return
+    // Берём актуальный отсортированный список ДС (без приложений).
+    const ordered = documents
+      .filter(d => d.document_type === 'additional_agreement' && !d.parent_document_id)
+      .sort((a, b) => {
+        const o = (a.order_number || 0) - (b.order_number || 0)
+        if (o !== 0) return o
+        return (a.created_at || '').localeCompare(b.created_at || '')
+      })
+    const fromIdx = ordered.findIndex(a => a.id === draggedId)
+    if (fromIdx === -1) return
+    const [moved] = ordered.splice(fromIdx, 1)
+    let toIdx = ordered.findIndex(a => a.id === targetId)
+    if (toIdx === -1) {
+      ordered.splice(fromIdx, 0, moved) // вернуть как было
+      return
+    }
+    if (position === 'after') toIdx += 1
+    ordered.splice(toIdx, 0, moved)
+
+    // Optimistic update — сразу обновляем локальный массив, чтобы UI не дёргался.
+    const newOrderMap = new Map(ordered.map((a, idx) => [a.id, (idx + 1) * 10]))
+    setDocuments(prev => prev.map(d =>
+      newOrderMap.has(d.id) ? { ...d, order_number: newOrderMap.get(d.id) } : d
+    ))
+
+    try {
+      await Promise.all(ordered.map((a, idx) =>
+        supabase
+          .from('object_documents')
+          .update({ order_number: (idx + 1) * 10 })
+          .eq('id', a.id)
+      ))
+    } catch (err) {
+      alert('Не удалось сохранить новый порядок: ' + (err.message || err))
+      fetchObjectData()
+    }
+  }
+
+  const handleAgreementDragStart = (id) => setDraggedAgreementId(id)
+  const handleAgreementDragOver = (id, position) => {
+    setAgreementDragOver(prev => (prev?.id === id && prev?.position === position) ? prev : { id, position })
+  }
+  const handleAgreementDragLeave = (id) => {
+    setAgreementDragOver(prev => prev?.id === id ? null : prev)
+  }
+  const handleAgreementDragEnd = () => {
+    setDraggedAgreementId(null)
+    setAgreementDragOver(null)
+  }
+  const handleAgreementDrop = async (draggedId, targetId) => {
+    const position = agreementDragOver?.position || 'before'
+    setDraggedAgreementId(null)
+    setAgreementDragOver(null)
+    await reorderAgreements(draggedId, targetId, position)
   }
 
   // Открытие/скачивание/превью S3-файла из ячейки таблицы.
@@ -1153,6 +1258,13 @@ function ObjectDetailPage() {
                               onDelete={handleDeleteDocument}
                               onPreviewFile={handlePreviewFile}
                               onDownloadFile={handleDownloadFile}
+                              isDragging={draggedAgreementId === g.parent.id}
+                              dragOverPosition={agreementDragOver?.id === g.parent.id ? agreementDragOver.position : null}
+                              onDragStart={handleAgreementDragStart}
+                              onDragOver={handleAgreementDragOver}
+                              onDragLeave={handleAgreementDragLeave}
+                              onDragEnd={handleAgreementDragEnd}
+                              onDrop={handleAgreementDrop}
                             />
                           ))}
                         </tbody>

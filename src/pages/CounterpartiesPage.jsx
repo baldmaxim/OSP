@@ -1619,13 +1619,24 @@ function CounterpartiesPage() {
                               </a>
                             ) : <span className="empty-cell">--</span>}
                           </td>
-                          {/* task 203: редактируемое примечание прямо в таблице */}
+                          {/* task 203 + 330: редактируемое примечание прямо в таблице
+                              с авторасширением по контенту (без ручного drag). */}
                           <td className="col-notes" onClick={(e) => e.stopPropagation()}>
                             <textarea
                               className="notes-edit"
                               defaultValue={counterparty.notes || ''}
                               placeholder="Примечание…"
-                              rows={2}
+                              rows={1}
+                              ref={(el) => {
+                                if (el) {
+                                  el.style.height = 'auto'
+                                  el.style.height = Math.max(el.scrollHeight, 32) + 'px'
+                                }
+                              }}
+                              onInput={(e) => {
+                                e.target.style.height = 'auto'
+                                e.target.style.height = Math.max(e.target.scrollHeight, 32) + 'px'
+                              }}
                               onBlur={(e) => {
                                 if (e.target.value.trim() !== (counterparty.notes || '')) {
                                   handleNotesChange(counterparty.id, e.target.value)

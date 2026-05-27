@@ -1534,11 +1534,12 @@
   line-height: 1.35;
 }
 
-/* task 203: редактируемое примечание прямо в таблице */
+/* task 203 + 330: редактируемое примечание прямо в таблице.
+   resize: none — высота управляется автоматически из JS по scrollHeight. */
 .col-notes textarea.notes-edit {
   width: 100%;
   box-sizing: border-box;
-  min-height: 2.4em;
+  min-height: 2rem;
   padding: 0.25rem 0.375rem;
   font: inherit;
   font-size: 0.75rem;
@@ -1547,7 +1548,8 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
-  resize: vertical;
+  resize: none;
+  overflow: hidden;
   transition: border-color 0.15s, background 0.15s;
 }
 
