@@ -188,8 +188,10 @@ function AgreementRow({
           'doc-row-tr',
           'doc-row-draggable',
           isDragging ? 'doc-row-dragging' : '',
+          /* task 331: индикатор «before» рисуется на главной строке ДС.
+             «after» рисуется ниже — на строке «+ Приложение», чтобы линия
+             всегда стояла между блоками ДС, а не между ДС и его приложением. */
           dragOverPosition === 'before' ? 'doc-row-drop-before' : '',
-          dragOverPosition === 'after' ? 'doc-row-drop-after' : '',
         ].filter(Boolean).join(' ')}
         draggable={true}
         onDragStart={(e) => {
@@ -249,7 +251,22 @@ function AgreementRow({
         </td>
       </tr>
       {isExpanded && attachments.map(att => (
-        <tr key={att.id} className="doc-row-tr doc-row-tr-attachment">
+        <tr
+          key={att.id}
+          className="doc-row-tr doc-row-tr-attachment"
+          /* task 331: hover на строку-приложение во время drag = «after» родительского ДС.
+             Сами приложения не реордерим — это только проксирование позиции. */
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            onDragOver?.(doc.id, 'after')
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            const draggedId = e.dataTransfer.getData('text/plain')
+            onDrop?.(draggedId, doc.id)
+          }}
+        >
           <td className="doc-cell-marker" style={{ paddingLeft: '22px' }}>
             <span className="doc-attachment-marker" aria-hidden>↳</span>
           </td>
@@ -277,8 +294,25 @@ function AgreementRow({
           </td>
         </tr>
       ))}
-      {/* Кнопка «+ Приложение» отдельной строкой под ДС — как у Договора Генподряда. */}
-      <tr className="doc-row-tr-add-attachment">
+      {/* Кнопка «+ Приложение» отдельной строкой под ДС — как у Договора Генподряда.
+          task 331: это последняя строка блока ДС, поэтому индикатор «after» рисуется
+          именно здесь — линия оказывается между блоками двух соседних ДС. */}
+      <tr
+        className={[
+          'doc-row-tr-add-attachment',
+          dragOverPosition === 'after' ? 'doc-row-drop-after' : '',
+        ].filter(Boolean).join(' ')}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          onDragOver?.(doc.id, 'after')
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          const draggedId = e.dataTransfer.getData('text/plain')
+          onDrop?.(draggedId, doc.id)
+        }}
+      >
         <td colSpan={7}>
           <button
             type="button"
@@ -1056,7 +1090,15 @@ function ObjectDetailPage() {
   // Группируем документы
   const generalContract = documents.find(d => d.document_type === 'general_contract' && !d.parent_document_id)
   const contractAttachments = documents.filter(d => d.parent_document_id === generalContract?.id)
-  const additionalAgreements = documents.filter(d => d.document_type === 'additional_agreement' && !d.parent_document_id)
+  // task 329 + 331: явная сортировка после optimistic update reorderAgreements —
+  // порядок массива documents не меняется, переупорядочивание считаем по order_number.
+  const additionalAgreements = documents
+    .filter(d => d.document_type === 'additional_agreement' && !d.parent_document_id)
+    .sort((a, b) => {
+      const o = (a.order_number || 0) - (b.order_number || 0)
+      if (o !== 0) return o
+      return (a.created_at || '').localeCompare(b.created_at || '')
+    })
   const getAttachments = (parentId) => documents.filter(d => d.parent_document_id === parentId)
 
   // Фильтрация по поисковому запросу (task 297). Родитель показывается, если совпал
