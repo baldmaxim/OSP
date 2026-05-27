@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS objects (
   cover_image_url TEXT,                 -- Ссылка на обложку/фото объекта (Supabase Storage)
   contract_template_link TEXT,          -- Ссылка на .docx-шаблон договора (Google Drive)
   contract_template_name TEXT,          -- Отображаемое имя шаблона договора
+  email VARCHAR(255),                   -- Контактный email объекта (task 335)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

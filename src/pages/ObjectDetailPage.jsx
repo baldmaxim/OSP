@@ -421,7 +421,8 @@ function ObjectDetailPage() {
     planned_start_date: '',
     planned_end_date: '',
     total_area: '',
-    budget: ''
+    budget: '',
+    email: '' // task 335
   })
 
   // Warranty state
@@ -977,7 +978,8 @@ function ObjectDetailPage() {
       planned_start_date: object.planned_start_date || '',
       planned_end_date: object.planned_end_date || '',
       total_area: object.total_area || '',
-      budget: object.budget || ''
+      budget: object.budget || '',
+      email: object.email || '' // task 335
     })
     setShowInfoModal(true)
   }
@@ -991,7 +993,8 @@ function ObjectDetailPage() {
           planned_start_date: infoFormData.planned_start_date || null,
           planned_end_date: infoFormData.planned_end_date || null,
           total_area: parseFloat(infoFormData.total_area) || null,
-          budget: parseFloat(infoFormData.budget) || null
+          budget: parseFloat(infoFormData.budget) || null,
+          email: infoFormData.email.trim() || null // task 335
         })
         .eq('id', objectId)
       if (error) throw error
@@ -1234,6 +1237,15 @@ function ObjectDetailPage() {
             <div className="info-item">
               <span className="info-label">Бюджет</span>
               <span className="info-value">{formatBudget(object.budget)}</span>
+            </div>
+            {/* task 335: email объекта */}
+            <div className="info-item">
+              <span className="info-label">Email объекта</span>
+              <span className="info-value">
+                {object.email
+                  ? <a href={`mailto:${object.email}`}>{object.email}</a>
+                  : <span className="muted">—</span>}
+              </span>
             </div>
           </div>
         </div>
@@ -1829,6 +1841,16 @@ function ObjectDetailPage() {
                   <label>Бюджет (₽)</label>
                   <input type="number" step="0.01" value={infoFormData.budget} onChange={(e) => setInfoFormData({ ...infoFormData, budget: e.target.value })} placeholder="10000000" />
                 </div>
+              </div>
+              {/* task 335: контактный email объекта */}
+              <div className="form-row-1">
+                <label>Email объекта</label>
+                <input
+                  type="email"
+                  value={infoFormData.email}
+                  onChange={(e) => setInfoFormData({ ...infoFormData, email: e.target.value })}
+                  placeholder="object@example.com"
+                />
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn-cancel" onClick={() => setShowInfoModal(false)}>Отмена</button>

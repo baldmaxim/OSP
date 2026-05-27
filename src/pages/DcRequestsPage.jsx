@@ -1017,90 +1017,167 @@ function DcRequestsPage() {
         const completedTasks = tasks.filter(t => t.is_completed).length
         const cpName = req.counterparties?.name || ''
         const objName = req.objects?.name || ''
+        const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
         return (
           <div className="modal-overlay" onClick={() => setTasksModalFor(null)}>
             <div
               className="modal dcr-tasks-modal"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="modal-header">
-                <div className="dcr-tasks-modal-title">
-                  <h3>Задачи и ответы</h3>
-                  <div className="dcr-tasks-modal-subtitle">
-                    {req.ds_number && <span>ДС № <strong>{req.ds_number}</strong></span>}
-                    {objName && <span>{objName}</span>}
-                    {cpName && <span>{cpName}</span>}
+              {/* task 336: красивая шапка с заголовком, контекстом и прогресс-баром. */}
+              <div className="dcr-tasks-modal-header">
+                <div className="dcr-tasks-modal-head-row">
+                  <div className="dcr-tasks-modal-title">
+                    <div className="dcr-tasks-modal-title-row">
+                      <span className="dcr-tasks-modal-icon" aria-hidden>📋</span>
+                      <h3>Задачи и ответы</h3>
+                    </div>
+                    <div className="dcr-tasks-modal-subtitle">
+                      {req.ds_number && (
+                        <span className="dcr-tasks-modal-chip">
+                          <span className="dcr-tasks-modal-chip-label">ДС №</span>
+                          <strong>{req.ds_number}</strong>
+                        </span>
+                      )}
+                      {objName && <span className="dcr-tasks-modal-chip">🏗 {objName}</span>}
+                      {cpName && <span className="dcr-tasks-modal-chip">🏢 {cpName}</span>}
+                    </div>
                   </div>
+                  <div
+                    className={`dcr-tasks-modal-counter${
+                      totalTasks > 0 && completedTasks === totalTasks ? ' is-complete' : ''
+                    }`}
+                    title="Выполнено / всего"
+                  >
+                    <span className="dcr-tasks-modal-counter-done">{completedTasks}</span>
+                    <span className="dcr-tasks-modal-counter-sep">/</span>
+                    <span className="dcr-tasks-modal-counter-total">{totalTasks}</span>
+                  </div>
+                  <button className="modal-close" onClick={() => setTasksModalFor(null)} aria-label="Закрыть">×</button>
                 </div>
-                <div className="dcr-tasks-modal-counter" title="Выполнено / всего">
-                  <span className="dcr-tasks-modal-counter-done">{completedTasks}</span>
-                  <span className="dcr-tasks-modal-counter-sep">/</span>
-                  <span className="dcr-tasks-modal-counter-total">{totalTasks}</span>
+                {/* Прогресс-бар прогресса выполнения */}
+                <div className="dcr-tasks-modal-progress" aria-hidden>
+                  <div className="dcr-tasks-modal-progress-bar">
+                    <div
+                      className={`dcr-tasks-modal-progress-fill${
+                        totalTasks > 0 && completedTasks === totalTasks ? ' is-complete' : ''
+                      }`}
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                  <span className="dcr-tasks-modal-progress-label">
+                    {totalTasks === 0 ? 'Нет задач' : `${progressPct}% выполнено`}
+                  </span>
                 </div>
-                <button className="modal-close" onClick={() => setTasksModalFor(null)} aria-label="Закрыть">×</button>
               </div>
 
               <div className="dcr-tasks-modal-body">
                 {totalTasks === 0 && (
                   <div className="dcr-tasks-modal-empty">
-                    {canEditDc
-                      ? 'Задач пока нет. Добавьте первую ниже.'
-                      : 'Задач пока нет.'}
+                    <div className="dcr-tasks-modal-empty-icon" aria-hidden>✨</div>
+                    <div className="dcr-tasks-modal-empty-title">
+                      {canEditDc ? 'Здесь будут задачи по заявке' : 'Задач пока нет'}
+                    </div>
+                    <div className="dcr-tasks-modal-empty-hint">
+                      {canEditDc
+                        ? 'Добавьте первую задачу в поле ниже и отслеживайте её выполнение.'
+                        : 'Сотрудник пока не добавил задачи к этой заявке.'}
+                    </div>
                   </div>
                 )}
-                {tasks.map((task, taskIdx) => (
-                  <div
-                    key={task.id}
-                    className={`dcr-task-row dcr-task-row-modal${task.is_completed ? ' dcr-task-row-done' : ''}`}
-                  >
-                    <div className="dcr-task-num" aria-hidden>{taskIdx + 1}</div>
-                    <input
-                      type="checkbox"
-                      className="dcr-task-check"
-                      checked={!!task.is_completed}
-                      onChange={(e) => handleSaveTaskField(task.id, 'is_completed', e.target.checked)}
-                      disabled={!canEditDc}
-                      title={task.is_completed ? 'Снять отметку' : 'Отметить выполненной'}
-                    />
-                    <AutoGrowTextarea
-                      className="dcr-task-text"
-                      defaultValue={task.task_text}
-                      placeholder="Задача…"
-                      disabled={!canEditDc}
-                      onBlur={(e) => {
-                        if (e.target.value !== task.task_text) {
-                          handleSaveTaskField(task.id, 'task_text', e.target.value)
-                        }
-                      }}
-                    />
-                    <AutoGrowTextarea
-                      className="dcr-task-response"
-                      defaultValue={task.response_text || ''}
-                      placeholder="Ответ…"
-                      disabled={!canEditDc}
-                      onBlur={(e) => {
-                        if (e.target.value !== (task.response_text || '')) {
-                          handleSaveTaskField(task.id, 'response_text', e.target.value)
-                        }
-                      }}
-                    />
-                    {canEditDc && (
-                      <button
-                        type="button"
-                        className="dcr-task-delete"
-                        onClick={() => handleDeleteTask(task.id)}
-                        title="Удалить задачу"
-                        aria-label="Удалить задачу"
-                      >×</button>
-                    )}
-                  </div>
-                ))}
+
+                {tasks.length > 0 && (
+                  <ul className="dcr-tasks-list">
+                    {tasks.map((task, taskIdx) => (
+                      <li
+                        key={task.id}
+                        className={`dcr-task-card${task.is_completed ? ' is-done' : ''}`}
+                      >
+                        <div className="dcr-task-card-head">
+                          <label
+                            className={`dcr-task-checkbox${task.is_completed ? ' is-checked' : ''}${!canEditDc ? ' is-disabled' : ''}`}
+                            title={task.is_completed ? 'Снять отметку' : 'Отметить выполненной'}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!task.is_completed}
+                              onChange={(e) => handleSaveTaskField(task.id, 'is_completed', e.target.checked)}
+                              disabled={!canEditDc}
+                            />
+                            <span className="dcr-task-checkbox-box" aria-hidden>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="5 13 10 18 19 7" />
+                              </svg>
+                            </span>
+                          </label>
+                          <span className="dcr-task-card-num">№{taskIdx + 1}</span>
+                          <span className="dcr-task-card-spacer" />
+                          {canEditDc && (
+                            <button
+                              type="button"
+                              className="dcr-task-card-delete"
+                              onClick={() => handleDeleteTask(task.id)}
+                              title="Удалить задачу"
+                              aria-label="Удалить задачу"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18" />
+                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="dcr-task-card-body">
+                          <div className="dcr-task-card-section dcr-task-card-section-task">
+                            <div className="dcr-task-card-label">Задача</div>
+                            <AutoGrowTextarea
+                              className="dcr-task-text"
+                              defaultValue={task.task_text}
+                              placeholder="Опишите задачу…"
+                              disabled={!canEditDc}
+                              minHeight={28}
+                              onBlur={(e) => {
+                                if (e.target.value !== task.task_text) {
+                                  handleSaveTaskField(task.id, 'task_text', e.target.value)
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="dcr-task-card-section dcr-task-card-section-response">
+                            <div className="dcr-task-card-label">
+                              💬 Ответ
+                              {task.response_text && task.response_text.trim() && (
+                                <span className="dcr-task-card-label-tag">заполнено</span>
+                              )}
+                            </div>
+                            <AutoGrowTextarea
+                              className="dcr-task-response"
+                              defaultValue={task.response_text || ''}
+                              placeholder="Введите ответ или комментарий…"
+                              disabled={!canEditDc}
+                              minHeight={28}
+                              onBlur={(e) => {
+                                if (e.target.value !== (task.response_text || '')) {
+                                  handleSaveTaskField(task.id, 'response_text', e.target.value)
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
                 {canEditDc && (
-                  <div className="dcr-task-add dcr-task-add-modal">
+                  <div className="dcr-task-add-card">
+                    <span className="dcr-task-add-card-icon" aria-hidden>＋</span>
                     <input
                       type="text"
-                      placeholder={totalTasks === 0 ? '+ Добавить первую задачу…' : '+ Добавить задачу…'}
+                      className="dcr-task-add-card-input"
+                      placeholder={totalTasks === 0 ? 'Добавить первую задачу…' : 'Добавить ещё задачу…'}
                       value={newTaskTexts[req.id] || ''}
                       onChange={(e) => setNewTaskTexts(prev => ({ ...prev, [req.id]: e.target.value }))}
                       onKeyDown={(e) => {
@@ -1109,11 +1186,11 @@ function DcRequestsPage() {
                     />
                     <button
                       type="button"
-                      className="dcr-task-add-btn"
+                      className="dcr-task-add-card-btn"
                       onClick={() => handleAddTask(req.id)}
                       disabled={!(newTaskTexts[req.id] || '').trim()}
-                      title="Добавить задачу"
-                    >+</button>
+                      title="Добавить задачу (Enter)"
+                    >Добавить</button>
                   </div>
                 )}
               </div>
