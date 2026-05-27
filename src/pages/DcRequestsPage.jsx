@@ -66,6 +66,9 @@ function DcRequestsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
   const [formData, setFormData] = useState(EMPTY_FORM)
+  // task 314: поиск контрагента в модалке.
+  const [cpSearch, setCpSearch] = useState('')
+  const [cpDropdownOpen, setCpDropdownOpen] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
   // Фильтры в тулбаре (task 311).
@@ -148,7 +151,7 @@ function DcRequestsPage() {
   const fetchCounterparties = async () => {
     const { data, error } = await supabase
       .from('counterparties')
-      .select('id, name')
+      .select('id, name, inn')
       .order('name', { ascending: true })
     if (!error) setCounterparties(data || [])
   }
@@ -191,6 +194,8 @@ function DcRequestsPage() {
   const handleAddNew = () => {
     setEditing(null)
     setFormData(EMPTY_FORM)
+    setCpSearch('')
+    setCpDropdownOpen(false)
     setShowModal(true)
   }
 
@@ -204,7 +209,15 @@ function DcRequestsPage() {
       responsible_contact_id: req.responsible_contact_id || '',
       status: req.status || 'in_work',
     })
+    setCpSearch(req.counterparties?.name || '')
+    setCpDropdownOpen(false)
     setShowModal(true)
+  }
+
+  const handleSelectCp = (cp) => {
+    setFormData(prev => ({ ...prev, counterparty_id: cp.id }))
+    setCpSearch(cp.name || '')
+    setCpDropdownOpen(false)
   }
 
   const handleSubmit = async (e) => {
@@ -512,7 +525,7 @@ function DcRequestsPage() {
                 <th style={{ minWidth: '160px' }}>Объект</th>
                 <th style={{ minWidth: '160px' }}>Контрагент</th>
                 <th style={{ width: '80px', textAlign: 'center' }}>№ ДС</th>
-                <th style={{ minWidth: '200px' }}>Выполняемые работы</th>
+                <th style={{ minWidth: '200px' }}>Описание ДС</th>
                 <th style={{ width: '110px' }}>Статус</th>
                 <th style={{ width: '150px' }}>Ответственный</th>
                 <th style={{ minWidth: '380px' }}>Задачи и ответы</th>
@@ -854,12 +867,51 @@ function DcRequestsPage() {
 
                 <div className="form-group full-width">
                   <label>Контрагент *</label>
-                  <select name="counterparty_id" value={formData.counterparty_id} onChange={handleInputChange} required>
-                    <option value="">Выберите контрагента</option>
-                    {counterparties.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                  <div className="cp-search-wrap">
+                    <input
+                      type="text"
+                      className="cp-search-input"
+                      placeholder="Начните вводить название или ИНН…"
+                      value={cpSearch}
+                      onChange={(e) => {
+                        setCpSearch(e.target.value)
+                        setCpDropdownOpen(true)
+                        // Если пользователь чистит / правит — снимаем выбор, чтобы required снова сработал.
+                        if (formData.counterparty_id) {
+                          setFormData(prev => ({ ...prev, counterparty_id: '' }))
+                        }
+                      }}
+                      onFocus={() => setCpDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setCpDropdownOpen(false), 150)}
+                      required={!formData.counterparty_id}
+                    />
+                    {cpDropdownOpen && (() => {
+                      const q = cpSearch.trim().toLowerCase()
+                      const filtered = !q ? counterparties : counterparties.filter(cp =>
+                        (cp.name || '').toLowerCase().includes(q) ||
+                        (cp.inn || '').toLowerCase().includes(q)
+                      )
+                      return (
+                        <div className="cp-search-dropdown">
+                          {filtered.length === 0 ? (
+                            <div className="cp-search-empty">Ничего не найдено</div>
+                          ) : (
+                            filtered.slice(0, 50).map(cp => (
+                              <button
+                                type="button"
+                                key={cp.id}
+                                className={`cp-search-item ${cp.id === formData.counterparty_id ? 'active' : ''}`}
+                                onMouseDown={() => handleSelectCp(cp)}
+                              >
+                                <div className="cp-search-name">{cp.name}</div>
+                                {cp.inn && <div className="cp-search-inn">ИНН: {cp.inn}</div>}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
                 </div>
 
                 <div className="form-group">
@@ -897,13 +949,13 @@ function DcRequestsPage() {
                 </div>
 
                 <div className="form-group full-width">
-                  <label>Выполняемые работы</label>
+                  <label>Описание ДС</label>
                   <textarea
                     name="works_description"
                     rows="3"
                     value={formData.works_description}
                     onChange={handleInputChange}
-                    placeholder="Описание работ по заявке на ДС"
+                    placeholder="Краткое описание ДС"
                   />
                 </div>
               </div>
