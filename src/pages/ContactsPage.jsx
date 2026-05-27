@@ -36,20 +36,20 @@ function ContactsPage() {
   })
   const [isCustomPosition, setIsCustomPosition] = useState(false)
 
-  const defaultPositions = ['Руководитель', 'Экономист', 'Старший инженер', 'Инженер', 'Прораб']
-
   // Снимаем шаблон «X и X» (исторические дубли в данных) → оставляем один X.
   const normalizePosition = (p) => {
     if (!p) return p
     return p.replace(/^(.+?)\s+и\s+\1$/i, '$1').trim()
   }
 
-  // Собираем уникальные должности: справочник positions + использованные в контактах + дефолтные
-  const allPositions = [...new Set([
-    ...defaultPositions,
-    ...positions.map(p => normalizePosition(p.name)).filter(Boolean),
-    ...contacts.map(c => normalizePosition(c.position)).filter(Boolean)
-  ])].sort()
+  // task 318: список должностей берём ТОЛЬКО из официального справочника
+  // (таблица «positions»). Хардкод-дефолты и исторические значения из contacts.position
+  // больше не подмешиваем — иначе в дропдауне всплывают опечатки/переименованные/
+  // удалённые должности. Если у конкретного контакта стоит non-standard должность,
+  // она дополнительно отрисовывается как отдельная option в селекте этого контакта.
+  const allPositions = [...new Set(
+    positions.map(p => normalizePosition(p.name)).filter(Boolean)
+  )].sort()
 
   useEffect(() => {
     fetchContacts()
