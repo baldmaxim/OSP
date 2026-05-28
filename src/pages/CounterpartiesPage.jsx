@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useDeferredValue } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useDeferredValue, useTransition, useCallback } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import { formatPhone } from '../utils/phoneFormat'
@@ -84,6 +84,17 @@ function CounterpartiesPage() {
   // task 197: вкладка «Активные» / «Удалённые»
   // task 321: добавлена вкладка «Виды работ» — справочник work_types
   const [activeTab, setActiveTab] = useState('active') // 'active' | 'blacklist' | 'deleted' | 'work_types'
+  // task 343: переключение табов через useTransition — кнопка-таб становится
+  // активной мгновенно, перерисовка тяжёлой таблицы (~500 строк) уходит в
+  // low-priority render и не блокирует клик/визуальный отклик.
+  const [isTabPending, startTabTransition] = useTransition()
+  const switchTab = useCallback((tab) => {
+    startTabTransition(() => {
+      setActiveTab(tab)
+      setSelectedCounterpartyIds([])
+      setExpandedRows(new Set())
+    })
+  }, [])
 
   // task 321: справочник видов работ
   const [workTypesDirectory, setWorkTypesDirectory] = useState([])
@@ -1336,25 +1347,27 @@ function CounterpartiesPage() {
           </div>
         )}
 
-        {/* task 197 + 201: вкладки Активные / Чёрный список / Удалённые */}
-        <div className="counterparties-tabs">
+        {/* task 197 + 201: вкладки Активные / Чёрный список / Удалённые.
+            task 343: switchTab оборачивает в startTransition — клик мгновенный,
+            таблица перерисовывается в фоне. isTabPending → лёгкая полупрозрачность. */}
+        <div className={`counterparties-tabs${isTabPending ? ' is-pending' : ''}`}>
           <button
             className={`cp-tab ${activeTab === 'active' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('active'); setSelectedCounterpartyIds([]); setExpandedRows(new Set()) }}
+            onClick={() => switchTab('active')}
           >
             Активные
             <span className="cp-tab-count">{activeCount}</span>
           </button>
           <button
             className={`cp-tab cp-tab-blacklist ${activeTab === 'blacklist' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('blacklist'); setSelectedCounterpartyIds([]); setExpandedRows(new Set()) }}
+            onClick={() => switchTab('blacklist')}
           >
             Чёрный список
             {blacklistCount > 0 && <span className="cp-tab-count">{blacklistCount}</span>}
           </button>
           <button
             className={`cp-tab cp-tab-deleted ${activeTab === 'deleted' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('deleted'); setSelectedCounterpartyIds([]); setExpandedRows(new Set()) }}
+            onClick={() => switchTab('deleted')}
           >
             Удалённые
             {deletedCount > 0 && <span className="cp-tab-count">{deletedCount}</span>}
@@ -1362,7 +1375,7 @@ function CounterpartiesPage() {
           {/* task 321: справочник видов работ — отдельная вкладка */}
           <button
             className={`cp-tab cp-tab-worktypes ${activeTab === 'work_types' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('work_types'); setSelectedCounterpartyIds([]); setExpandedRows(new Set()) }}
+            onClick={() => switchTab('work_types')}
           >
             Виды работ
             {workTypesDirectory.length > 0 && <span className="cp-tab-count">{workTypesDirectory.length}</span>}

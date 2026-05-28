@@ -1086,6 +1086,15 @@
    ==================================================================== */
 
 /* Вкладки «Активные / Удалённые» (task 197) */
+/* task 343: pending-стейт пока React готовит новую таблицу в background.
+   Едва заметная opacity-полусекунда — пользователь понимает «процесс идёт»,
+   но не блокирует UI. */
+.counterparties-tabs.is-pending {
+  opacity: 0.78;
+  cursor: progress;
+  transition: opacity 0.12s ease;
+}
+
 .counterparties-tabs {
   display: flex;
   gap: 0.25rem;
