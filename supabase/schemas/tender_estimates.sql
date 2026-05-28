@@ -14,10 +14,12 @@ CREATE TABLE IF NOT EXISTS tender_estimate_items (
   material_consumption DECIMAL(15, 4),            -- Общий расход по материалу
   is_section BOOLEAN DEFAULT FALSE,               -- Признак заголовка раздела
   outline_level INTEGER NOT NULL DEFAULT 0,       -- Уровень группировки из Excel (ws.!rows[i].level)
-  original_row_number VARCHAR(20),                -- Оригинальный номер строки из Excel
+  original_row_number TEXT,                       -- Оригинальный номер строки из Excel (для разделов — иерархический заголовок)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(tender_id, row_number)
+  -- task 348: уникальность row_number в рамках одного документа (estimate_name),
+  -- а не всего тендера — иначе нельзя сохранить несколько ВОРов (Электрика, ОВ…).
+  UNIQUE(tender_id, estimate_name, row_number)
 );
 
 -- Таблица tender_counterparty_proposals (Предложения контрагентов по позициям сметы)
