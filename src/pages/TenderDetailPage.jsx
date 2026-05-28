@@ -687,26 +687,28 @@ function TenderDetailPage() {
   const collapseAllSections = () => setCollapsedSections(new Set(estimateSectionKeys))
   const expandAllSections = () => setCollapsedSections(new Set())
 
-  // task 352: экспорт текущего ВОР в Excel — отдельный документ или объединённый.
+  // task 352: экспорт текущего ВОР в Excel — 3 листа (Исходный / Материалы / Работы).
   const handleExportEstimate = () => {
     if (!currentEstimate || currentEstimate.length === 0) {
       alert('Нечего экспортировать.')
       return
     }
-    const headers = ['№ п/п', 'КОД', 'Наименование затрат', 'Ед. изм.', 'Объём работ', 'Объём материалов']
-    const rows = [headers]
+    const wb = XLSX.utils.book_new()
+
+    // ===== Лист 1: Исходный ВОР =====
+    const sourceHeaders = ['№ п/п', 'КОД', 'Наименование затрат', 'Ед. изм.', 'Объём работ', 'Объём материалов']
+    const sourceRows = [sourceHeaders]
     let workCount = 0
     let matCount = 0
     for (const it of currentEstimate) {
       if (it._isDocDivider) {
-        // Визуальный разделитель «=== ВОР: НАЗВАНИЕ (N позиций) ===» как отдельная строка.
-        rows.push([`=== ВОР: ${it._docName} (${it._docCount} позиций) ===`, '', '', '', '', ''])
+        sourceRows.push([`=== ВОР: ${it._docName} (${it._docCount} позиций) ===`, '', '', '', '', ''])
         workCount = 0
         matCount = 0
         continue
       }
       if (it.is_section) {
-        rows.push(['', '', it.cost_name || '', '', '', ''])
+        sourceRows.push(['', '', it.cost_name || '', '', '', ''])
         continue
       }
       let num
@@ -718,7 +720,7 @@ function TenderDetailPage() {
         matCount++
         num = workCount > 0 ? `${workCount}.${matCount}` : String(matCount)
       }
-      rows.push([
+      sourceRows.push([
         num,
         it.code || '',
         it.cost_name || '',
@@ -727,13 +729,51 @@ function TenderDetailPage() {
         it.material_consumption ?? '',
       ])
     }
-    const ws = XLSX.utils.aoa_to_sheet(rows)
-    ws['!cols'] = [
+    const wsSource = XLSX.utils.aoa_to_sheet(sourceRows)
+    wsSource['!cols'] = [
       { wch: 8 }, { wch: 10 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
     ]
-    const wb = XLSX.utils.book_new()
-    const sheetName = (selectedDocName === 'all' ? 'Объединённый ВОР' : selectedDocName).slice(0, 31)
-    XLSX.utils.book_append_sheet(wb, ws, sheetName)
+    XLSX.utils.book_append_sheet(wb, wsSource, 'Исходный ВОР')
+
+    // ===== Листы 2 и 3: Материалы / Работы (агрегированные по name+unit) =====
+    const buildAggregateRows = (type) => {
+      const map = new Map()
+      for (const it of currentEstimate) {
+        if (it.is_section || it._isDocDivider) continue
+        const work = isWorkItem(it)
+        if (type === 'works' && !work) continue
+        if (type === 'materials' && work) continue
+        const name = (it.cost_name || '').trim()
+        if (!name) continue
+        const unit = (it.unit || '').trim()
+        const key = `${name.toLowerCase()}∣${unit.toLowerCase()}`
+        const vol = type === 'works' ? it.work_volume : it.material_consumption
+        const cur = map.get(key) || { name, unit, total: 0, count: 0 }
+        cur.total += Number(vol) || 0
+        cur.count += 1
+        map.set(key, cur)
+      }
+      const rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+      const grandTotal = rows.reduce((s, r) => s + r.total, 0)
+      const grandCount = rows.reduce((s, r) => s + r.count, 0)
+      const out = [
+        ['№', 'Наименование', 'Ед. изм.', 'Объём (сумма)', 'Кол-во позиций'],
+        ...rows.map((r, i) => [i + 1, r.name, r.unit || '', r.total, r.count]),
+        ['', 'ИТОГО', '', grandTotal, grandCount],
+      ]
+      return out
+    }
+
+    const materialsRows = buildAggregateRows('materials')
+    const wsMaterials = XLSX.utils.aoa_to_sheet(materialsRows)
+    wsMaterials['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 16 }, { wch: 16 }]
+    XLSX.utils.book_append_sheet(wb, wsMaterials, 'Материалы')
+
+    const worksRows = buildAggregateRows('works')
+    const wsWorks = XLSX.utils.aoa_to_sheet(worksRows)
+    wsWorks['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 16 }, { wch: 16 }]
+    XLSX.utils.book_append_sheet(wb, wsWorks, 'Работы')
+
     const tenderLabel = tender?.work_description
       ? `_${tender.work_description.slice(0, 30).replace(/[\\/:*?"<>|]/g, '')}`
       : ''

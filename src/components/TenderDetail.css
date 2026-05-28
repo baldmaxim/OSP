@@ -3139,11 +3139,16 @@
   border-color: var(--text-tertiary);
 }
 
+/* task 352: единая палитра с табами документов — slate-600 вместо primary blue */
 .tender-detail-page .estimate-subtab.active {
-  background: var(--primary-color);
-  border-color: var(--primary-color);
+  background: #475569;
+  border-color: #475569;
   color: #fff;
   font-weight: 600;
+}
+[data-theme='dark'] .tender-detail-page .estimate-subtab.active {
+  background: #64748b;
+  border-color: #64748b;
 }
 
 .tender-detail-page .estimate-collapse-controls {
