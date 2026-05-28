@@ -28,6 +28,7 @@ const BSMComparisonPage = lazy(() => import('./pages/BSMComparisonPage'))
 const BSMContractorRatesPage = lazy(() => import('./pages/BSMContractorRatesPage'))
 const GeneralInfoPage = lazy(() => import('./pages/GeneralInfoPage'))
 const BSMSelectionPage = lazy(() => import('./pages/BSMSelectionPage'))
+const RatesRegistryPage = lazy(() => import('./pages/RatesRegistryPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const ContractDetailPage = lazy(() => import('./pages/ContractDetailPage'))
@@ -77,6 +78,7 @@ function EmployeeLayout() {
             <Route path="/contracts/:contractId" element={<ContractDetailPage />} />
             <Route path="/dc-requests" element={<DcRequestsPage />} />
             <Route path="/document-check" element={<DocumentCheckPage />} />
+            <Route path="/rates-registry" element={<RatesRegistryPage />} />
             <Route path="/bsm" element={<BSMSelectionPage />} />
             <Route path="/bsm/comparison" element={<BSMComparisonPage />} />
             <Route path="/bsm/contract-rates" element={<BSMContractRatesPage />} />

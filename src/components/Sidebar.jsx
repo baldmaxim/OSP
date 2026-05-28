@@ -102,6 +102,19 @@ function Sidebar() {
           <span className="sidebar-label">Проверка ДП/ДС</span>
         </NavLink>
 
+        {/* task 356: Реестр расценок — общий список расценок из всех источников */}
+        {canView('rates_registry') && (
+          <NavLink
+            to="/rates-registry"
+            className={({ isActive }) =>
+              `sidebar-item ${isActive ? 'active' : ''}`
+            }
+          >
+            <span className="sidebar-icon">💲</span>
+            <span className="sidebar-label">Реестр расценок</span>
+          </NavLink>
+        )}
+
         {/* Материалы (БСМ) */}
         {canView('bsm') && (
           <NavLink
