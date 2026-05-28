@@ -1396,9 +1396,15 @@ function CounterpartiesPage() {
         <div className="loading-container">
           <div className="loading-spinner"></div>
         </div>
-      ) : activeTab === 'work_types' ? (
-        /* task 321: справочник видов работ */
-        <div className="counterparties-content">
+      ) : (
+        /* task 343/344: рендерим обе панели всегда, переключаем через display.
+           Это убирает дорогой unmount/mount всей таблицы (~500 строк) при
+           переходе из «Видов работ» обратно в «Активные». */
+        <>
+        <div
+          className="counterparties-content"
+          style={{ display: activeTab === 'work_types' ? 'flex' : 'none' }}
+        >
           <div className="work-types-directory">
             <div className="work-types-directory-toolbar">
               <h3 className="work-types-directory-title">Справочник видов работ</h3>
@@ -1506,8 +1512,11 @@ function CounterpartiesPage() {
             })()}
           </div>
         </div>
-      ) : (
-        <div className="counterparties-content">
+
+        <div
+          className="counterparties-content"
+          style={{ display: activeTab !== 'work_types' ? 'block' : 'none' }}
+        >
           {filteredCounterparties.length === 0 ? (
             <div className="empty-state">
               <p className="empty-title">
@@ -1824,6 +1833,7 @@ function CounterpartiesPage() {
             </div>
           )}
         </div>
+        </>
       )}
 
       {/* Modal для добавления/редактирования контрагента */}
