@@ -220,8 +220,44 @@
   font-weight: 600;
   color: var(--text-primary);
 }
-.proposals-summary-row-total {
+/* Секционная строка «Материалы» / «Работы» — заголовок группы */
+.proposals-summary-row-section {
   margin-top: 0.1875rem;
+}
+.proposals-summary-row-section .proposals-summary-row-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+/* task 351: вложенная разбивка по ВОРам внутри Материалы/Работы */
+.proposals-summary-row-sub {
+  padding-left: 0.5rem;
+  font-size: 0.6875rem;
+  margin-top: 0.0625rem;
+}
+.proposals-summary-row-sub-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proposals-summary-row-sub-bullet {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+  font-size: 0.6875rem;
+  flex-shrink: 0;
+}
+.proposals-summary-row-sub-val {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.proposals-summary-row-total {
+  margin-top: 0.3125rem;
   padding-top: 0.3125rem;
   border-top: 1px dashed var(--border-color);
 }

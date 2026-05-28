@@ -116,19 +116,30 @@ function TenderProposalsCompare({
     return m
   }, [proposals, itemIds])
 
-  // Итоги по контрагенту: материалы / работы / итого.
+  // Итоги по контрагенту + разбивка по ВОРам (task 351).
+  // В режиме selectedDoc === 'all' карточка показывает: «Материалы 59 ₽» с
+  // вложенным списком «АК 49 ₽, АСУД 9.5 ₽, …». Так же для работ.
   const totalsByCp = useMemo(() => {
-    const m = new Map() // cp_id → { totalMat, totalWork, totalCost }
+    const m = new Map() // cp_id → { totalMat, totalWork, totalCost, byDoc: Map<docName, {mat, work}> }
     for (const cp of counterpartiesInScope) {
       let mat = 0, wrk = 0, all = 0
+      const byDoc = new Map()
       for (const it of itemsOfScope) {
         const p = proposalLookup.get(`${it.id}__${cp.id}`)
         if (!p) continue
-        mat += Number(p.total_materials) || 0
-        wrk += Number(p.total_works) || 0
-        all += Number(p.total_cost) || 0
+        const m_ = Number(p.total_materials) || 0
+        const w_ = Number(p.total_works) || 0
+        const c_ = Number(p.total_cost) || 0
+        mat += m_
+        wrk += w_
+        all += c_
+        const docName = it.estimate_name || 'Основная смета'
+        const cur = byDoc.get(docName) || { mat: 0, work: 0 }
+        cur.mat += m_
+        cur.work += w_
+        byDoc.set(docName, cur)
       }
-      m.set(cp.id, { totalMat: mat, totalWork: wrk, totalCost: all })
+      m.set(cp.id, { totalMat: mat, totalWork: wrk, totalCost: all, byDoc })
     }
     return m
   }, [counterpartiesInScope, itemsOfScope, proposalLookup])
@@ -343,11 +354,20 @@ function TenderProposalsCompare({
         </div>
       ) : (
         <>
-          {/* Summary с разбивкой Материалы / Работы / Итого */}
+          {/* Summary с разбивкой Материалы / Работы / Итого.
+              task 351: в режиме «Объединённый» внутри каждой суммы
+              показываем построчно разбивку по ВОРам. */}
           <div className="proposals-summary">
             {counterpartiesInScope.map(cp => {
-              const t = totalsByCp.get(cp.id) || { totalMat: 0, totalWork: 0, totalCost: 0 }
+              const t = totalsByCp.get(cp.id) || { totalMat: 0, totalWork: 0, totalCost: 0, byDoc: new Map() }
               const isMin = t.totalCost > 0 && t.totalCost === minTotalCost
+              const showBreakdown = selectedDoc === 'all' && t.byDoc.size > 1
+              // Сортируем ВОРы по убыванию материалов (показываем самые «дорогие» сверху).
+              const sortedDocs = showBreakdown
+                ? [...t.byDoc.entries()].sort((a, b) =>
+                    (b[1].mat + b[1].work) - (a[1].mat + a[1].work)
+                  )
+                : []
               return (
                 <div key={cp.id} className={`proposals-summary-card${isMin ? ' is-min' : ''}`}>
                   <div className="proposals-summary-head">
@@ -357,14 +377,37 @@ function TenderProposalsCompare({
                     )}
                   </div>
                   <div className="proposals-summary-rows">
-                    <div className="proposals-summary-row">
+                    {/* Материалы */}
+                    <div className="proposals-summary-row proposals-summary-row-section">
                       <span className="proposals-summary-row-label">Материалы</span>
                       <span className="proposals-summary-row-val">{fmtMoney(t.totalMat)} ₽</span>
                     </div>
-                    <div className="proposals-summary-row">
+                    {showBreakdown && sortedDocs.filter(([, v]) => v.mat > 0).map(([docName, v]) => (
+                      <div key={`mat:${docName}`} className="proposals-summary-row proposals-summary-row-sub">
+                        <span className="proposals-summary-row-label proposals-summary-row-sub-label">
+                          <span className="proposals-summary-row-sub-bullet" aria-hidden>↳</span>
+                          {docName}
+                        </span>
+                        <span className="proposals-summary-row-val proposals-summary-row-sub-val">{fmtMoney(v.mat)} ₽</span>
+                      </div>
+                    ))}
+
+                    {/* Работы */}
+                    <div className="proposals-summary-row proposals-summary-row-section">
                       <span className="proposals-summary-row-label">Работы</span>
                       <span className="proposals-summary-row-val">{fmtMoney(t.totalWork)} ₽</span>
                     </div>
+                    {showBreakdown && sortedDocs.filter(([, v]) => v.work > 0).map(([docName, v]) => (
+                      <div key={`work:${docName}`} className="proposals-summary-row proposals-summary-row-sub">
+                        <span className="proposals-summary-row-label proposals-summary-row-sub-label">
+                          <span className="proposals-summary-row-sub-bullet" aria-hidden>↳</span>
+                          {docName}
+                        </span>
+                        <span className="proposals-summary-row-val proposals-summary-row-sub-val">{fmtMoney(v.work)} ₽</span>
+                      </div>
+                    ))}
+
+                    {/* Итого */}
                     <div className="proposals-summary-row proposals-summary-row-total">
                       <span className="proposals-summary-row-label">Итого</span>
                       <span className="proposals-summary-row-val">{fmtMoney(t.totalCost)} ₽</span>
