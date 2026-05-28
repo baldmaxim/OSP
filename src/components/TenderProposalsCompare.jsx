@@ -354,90 +354,17 @@ function TenderProposalsCompare({
         </div>
       ) : (
         <>
-          {/* Summary с разбивкой Материалы / Работы / Итого.
-              task 351: в режиме «Объединённый» внутри каждой суммы
-              показываем построчно разбивку по ВОРам. */}
-          <div className="proposals-summary">
-            {counterpartiesInScope.map(cp => {
-              const t = totalsByCp.get(cp.id) || { totalMat: 0, totalWork: 0, totalCost: 0, byDoc: new Map() }
-              const isMin = t.totalCost > 0 && t.totalCost === minTotalCost
-              const showMatrix = selectedDoc === 'all' && t.byDoc.size > 1
-              // Сортируем ВОРы по убыванию общей стоимости — самые «дорогие» сверху.
-              const sortedDocs = showMatrix
-                ? [...t.byDoc.entries()].sort((a, b) =>
-                    (b[1].mat + b[1].work) - (a[1].mat + a[1].work)
-                  )
-                : []
-              return (
-                <div key={cp.id} className={`proposals-summary-card${isMin ? ' is-min' : ''}${showMatrix ? ' has-matrix' : ''}`}>
-                  <div className="proposals-summary-head">
-                    <div className="proposals-summary-name" title={cp.name}>{cp.name}</div>
-                    {cp.latestDate && (
-                      <div className="proposals-summary-date">КП от {fmtDate(cp.latestDate)}</div>
-                    )}
-                  </div>
-
-                  {showMatrix ? (
-                    // task 353: матрица ВОР × (Материалы / Работы / Итого).
-                    // Не дублируем «АК» отдельно в Материалах и Работах — он одной строкой.
-                    <table className="proposals-summary-matrix">
-                      <thead>
-                        <tr>
-                          <th className="psm-th-doc">ВОР</th>
-                          <th className="psm-th-num">Материалы</th>
-                          <th className="psm-th-num">Работы</th>
-                          <th className="psm-th-num psm-th-total">Итого</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sortedDocs.map(([docName, v]) => (
-                          <tr key={docName}>
-                            <td className="psm-td-doc" title={docName}>{docName}</td>
-                            <td className="psm-td-num">{v.mat > 0 ? `${fmtMoney(v.mat)} ₽` : '—'}</td>
-                            <td className="psm-td-num">{v.work > 0 ? `${fmtMoney(v.work)} ₽` : '—'}</td>
-                            <td className="psm-td-num psm-td-total">{fmtMoney(v.mat + v.work)} ₽</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td className="psm-tf-label">Итого</td>
-                          <td className="psm-tf-num">{fmtMoney(t.totalMat)} ₽</td>
-                          <td className="psm-tf-num">{fmtMoney(t.totalWork)} ₽</td>
-                          <td className="psm-tf-num psm-tf-total">{fmtMoney(t.totalCost)} ₽</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  ) : (
-                    // Один ВОР (или selectedDoc != 'all') — просто три строки.
-                    <div className="proposals-summary-rows">
-                      <div className="proposals-summary-row proposals-summary-row-section">
-                        <span className="proposals-summary-row-label">Материалы</span>
-                        <span className="proposals-summary-row-val">{fmtMoney(t.totalMat)} ₽</span>
-                      </div>
-                      <div className="proposals-summary-row proposals-summary-row-section">
-                        <span className="proposals-summary-row-label">Работы</span>
-                        <span className="proposals-summary-row-val">{fmtMoney(t.totalWork)} ₽</span>
-                      </div>
-                      <div className="proposals-summary-row proposals-summary-row-total">
-                        <span className="proposals-summary-row-label">Итого</span>
-                        <span className="proposals-summary-row-val">{fmtMoney(t.totalCost)} ₽</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {canEdit && (
-                    <button
-                      className="proposals-summary-remove"
-                      onClick={() => handleClearCpProposals(cp.id, cp.name)}
-                      title="Удалить КП этого контрагента в текущем scope"
-                      aria-label="Удалить"
-                    >×</button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+          {/* task 354: сводная сопоставительная матрица «ВОР × контрагенты».
+              Строки — ВОРы, колонки — каждый контрагент (Мат / Раб / Итого).
+              Если контрагент не давал КП по ВОРу — клетка пустая (—). */}
+          <SummaryMatrixTable
+            docNames={docNames}
+            selectedDoc={selectedDoc}
+            counterpartiesInScope={counterpartiesInScope}
+            totalsByCp={totalsByCp}
+            canEdit={canEdit}
+            onClearCp={handleClearCpProposals}
+          />
 
           {/* Sub-tabs */}
           <div className="proposals-subtabs">
@@ -488,6 +415,128 @@ function TenderProposalsCompare({
           onSaved={() => { setShowUploadModal(false); loadProposals() }}
         />
       )}
+    </div>
+  )
+}
+
+// ===== Подкомпонент: сводная матрица «ВОР × контрагенты» (task 354) =====
+// Строки — ВОРы текущего scope. Колонки — каждый контрагент с 3 sub-cells
+// (Материалы / Работы / Итого). Если КП по ВОРу не подавалось — клетка «—».
+// Минимальный «Итого» по строке ВОРа подсвечен зелёным. В footer — Σ по
+// контрагенту с подсветкой минимального общего предложения.
+function SummaryMatrixTable({
+  docNames, selectedDoc, counterpartiesInScope, totalsByCp, canEdit, onClearCp,
+}) {
+  // ВОРы для строк: в режиме «Объединённый» — все, иначе только выбранный.
+  const docsToShow = useMemo(
+    () => (selectedDoc === 'all' ? docNames : [selectedDoc]),
+    [selectedDoc, docNames]
+  )
+
+  // Минимальный totalCost по тендеру — для подсветки итоговой строки.
+  const minTotalCost = useMemo(() => {
+    let min = Infinity
+    for (const cp of counterpartiesInScope) {
+      const v = totalsByCp.get(cp.id)?.totalCost || 0
+      if (v > 0 && v < min) min = v
+    }
+    return min === Infinity ? 0 : min
+  }, [counterpartiesInScope, totalsByCp])
+
+  // Минимум по строке ВОРа — для подсветки лучшего контрагента в ВОР'е.
+  const minByDoc = useMemo(() => {
+    const m = new Map()
+    for (const docName of docsToShow) {
+      let min = Infinity
+      for (const cp of counterpartiesInScope) {
+        const v = totalsByCp.get(cp.id)?.byDoc.get(docName)
+        const total = (v?.mat || 0) + (v?.work || 0)
+        if (total > 0 && total < min) min = total
+      }
+      if (min !== Infinity) m.set(docName, min)
+    }
+    return m
+  }, [docsToShow, counterpartiesInScope, totalsByCp])
+
+  if (counterpartiesInScope.length === 0) return null
+
+  return (
+    <div className="proposals-summary-matrix-wrap">
+      <table className="proposals-summary-matrix-table">
+        <thead>
+          <tr>
+            <th rowSpan={2} className="psmt-th-doc">ВОР</th>
+            {counterpartiesInScope.map(cp => (
+              <th key={cp.id} colSpan={3} className="psmt-th-cp">
+                <div className="psmt-th-cp-name" title={cp.name}>{cp.name}</div>
+                {cp.latestDate && <div className="psmt-th-cp-date">КП от {fmtDate(cp.latestDate)}</div>}
+                {canEdit && (
+                  <button
+                    type="button"
+                    className="psmt-th-cp-remove"
+                    onClick={() => onClearCp(cp.id, cp.name)}
+                    title={`Удалить КП «${cp.name}» в текущем scope`}
+                    aria-label="Удалить"
+                  >×</button>
+                )}
+              </th>
+            ))}
+          </tr>
+          <tr>
+            {counterpartiesInScope.map(cp => (
+              <React.Fragment key={cp.id}>
+                <th className="psmt-th-sub">Материалы, ₽</th>
+                <th className="psmt-th-sub">Работы, ₽</th>
+                <th className="psmt-th-sub psmt-th-sub-total">Итого, ₽</th>
+              </React.Fragment>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {docsToShow.map(docName => {
+            const minDoc = minByDoc.get(docName)
+            return (
+              <tr key={docName}>
+                <td className="psmt-td-doc" title={docName}>{docName}</td>
+                {counterpartiesInScope.map(cp => {
+                  const v = totalsByCp.get(cp.id)?.byDoc.get(docName)
+                  const mat = v?.mat || 0
+                  const work = v?.work || 0
+                  const total = mat + work
+                  const isMin = total > 0 && minDoc != null && total === minDoc
+                  return (
+                    <React.Fragment key={cp.id}>
+                      <td className="psmt-td-num psmt-td-mat">{mat > 0 ? fmtMoney(mat) : '—'}</td>
+                      <td className="psmt-td-num">{work > 0 ? fmtMoney(work) : '—'}</td>
+                      <td className={`psmt-td-num psmt-td-total${isMin ? ' is-min' : ''}`}>
+                        {total > 0 ? fmtMoney(total) : '—'}
+                      </td>
+                    </React.Fragment>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="psmt-tf-row">
+            <td className="psmt-tf-label">ИТОГО, ₽</td>
+            {counterpartiesInScope.map(cp => {
+              const t = totalsByCp.get(cp.id) || { totalMat: 0, totalWork: 0, totalCost: 0 }
+              const isMin = t.totalCost > 0 && t.totalCost === minTotalCost
+              return (
+                <React.Fragment key={cp.id}>
+                  <td className="psmt-tf-num psmt-td-mat">{fmtMoney(t.totalMat)}</td>
+                  <td className="psmt-tf-num">{fmtMoney(t.totalWork)}</td>
+                  <td className={`psmt-tf-num psmt-tf-total${isMin ? ' is-min' : ''}`}>
+                    {fmtMoney(t.totalCost)}
+                  </td>
+                </React.Fragment>
+              )
+            })}
+          </tr>
+        </tfoot>
+      </table>
     </div>
   )
 }

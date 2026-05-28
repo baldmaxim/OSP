@@ -157,114 +157,172 @@
   background: var(--bg-secondary);
 }
 
-/* ===== Summary-карточки контрагентов с разбивкой Мат/Раб/Итого ===== */
-.proposals-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.625rem;
+/* ===== task 354: сводная матрица «ВОР × контрагенты» =====
+   Заменяет отдельные карточки контрагентов на одну сравнительную таблицу. */
+.proposals-summary-matrix-wrap {
+  overflow-x: auto;
   margin-bottom: 0.875rem;
-}
-.proposals-summary-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-width: 220px;
-  padding: 0.625rem 1.5rem 0.625rem 0.75rem;
-  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
+  background: var(--bg-secondary);
 }
-.proposals-summary-card.is-min {
-  border-color: #16a34a;
-  background: rgba(22, 163, 74, 0.06);
+.proposals-summary-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
 }
-.proposals-summary-head {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  padding-bottom: 0.4375rem;
+.proposals-summary-matrix-table thead th {
+  padding: 0.5rem 0.625rem;
+  background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: bottom;
+  font-weight: 600;
+  color: var(--text-primary);
 }
-.proposals-summary-name {
+.proposals-summary-matrix-table .psmt-th-doc {
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  min-width: 200px;
+  max-width: 280px;
+}
+.proposals-summary-matrix-table .psmt-th-cp {
+  position: relative;
+  text-align: center;
+  border-left: 2px solid var(--border-color);
+  padding: 0.625rem 0.5rem 0.4375rem;
+}
+.proposals-summary-matrix-table .psmt-th-cp-name {
+  display: block;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-primary);
+  padding-right: 1rem; /* место для × */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 240px;
 }
-.proposals-summary-date {
+.proposals-summary-matrix-table .psmt-th-cp-date {
+  display: block;
+  margin-top: 0.125rem;
   font-size: 0.6875rem;
+  font-weight: 500;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
-.proposals-summary-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1875rem;
-}
-.proposals-summary-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-}
-.proposals-summary-row-label {
-  color: var(--text-tertiary);
-}
-.proposals-summary-row-val {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-/* Секционная строка «Материалы» / «Работы» — для упрощённого вида (1 ВОР) */
-.proposals-summary-row-section {
-  margin-top: 0.1875rem;
-}
-.proposals-summary-row-section .proposals-summary-row-label {
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-.proposals-summary-row-total {
-  margin-top: 0.3125rem;
-  padding-top: 0.3125rem;
-  border-top: 1px dashed var(--border-color);
-}
-.proposals-summary-row-total .proposals-summary-row-label {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-.proposals-summary-row-total .proposals-summary-row-val {
-  font-size: 0.9375rem;
-  font-weight: 700;
-}
-.proposals-summary-card.is-min .proposals-summary-row-total .proposals-summary-row-val {
-  color: #15803d;
-}
-.proposals-summary-remove {
+.proposals-summary-matrix-table .psmt-th-cp-remove {
   position: absolute;
-  top: 0.25rem;
-  right: 0.25rem;
-  width: 20px;
-  height: 20px;
+  top: 0.3125rem;
+  right: 0.3125rem;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--text-tertiary);
   font-size: 0.875rem;
+  line-height: 1;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 3px;
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, background 0.12s;
 }
-.proposals-summary-card:hover .proposals-summary-remove {
-  opacity: 1;
+.proposals-summary-matrix-table .psmt-th-cp:hover .psmt-th-cp-remove {
+  opacity: 0.7;
 }
-.proposals-summary-remove:hover {
+.proposals-summary-matrix-table .psmt-th-cp-remove:hover {
+  opacity: 1;
   color: #dc2626;
   background: rgba(220, 38, 38, 0.10);
+}
+.proposals-summary-matrix-table .psmt-th-sub {
+  text-align: right;
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text-tertiary);
+  padding: 0.25rem 0.5rem 0.4375rem;
+  white-space: nowrap;
+}
+.proposals-summary-matrix-table .psmt-th-sub-total {
+  border-right: 2px solid var(--border-color);
+}
+.proposals-summary-matrix-table tbody td {
+  padding: 0.4375rem 0.625rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+.proposals-summary-matrix-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.proposals-summary-matrix-table tbody tr:hover td {
+  background: rgba(71, 85, 105, 0.04);
+}
+.proposals-summary-matrix-table .psmt-td-doc {
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+.proposals-summary-matrix-table .psmt-td-num {
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.proposals-summary-matrix-table .psmt-td-mat {
+  border-left: 2px solid var(--border-color);
+}
+.proposals-summary-matrix-table .psmt-td-total {
+  font-weight: 700;
+  color: var(--text-primary);
+  border-right: 2px solid var(--border-color);
+}
+.proposals-summary-matrix-table .psmt-td-total.is-min {
+  background: rgba(22, 163, 74, 0.10);
+  color: #15803d;
+}
+[data-theme='dark'] .proposals-summary-matrix-table .psmt-td-total.is-min {
+  background: rgba(22, 163, 74, 0.18);
+  color: #4ade80;
+}
+.proposals-summary-matrix-table tfoot td {
+  padding: 0.5625rem 0.625rem;
+  background: var(--bg-tertiary);
+  border-top: 2px solid var(--border-color);
+  font-variant-numeric: tabular-nums;
+}
+.proposals-summary-matrix-table .psmt-tf-label {
+  font-weight: 700;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+.proposals-summary-matrix-table .psmt-tf-num {
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.proposals-summary-matrix-table .psmt-tf-total {
+  font-weight: 800;
+  font-size: 0.9375rem;
+  border-right: 2px solid var(--border-color);
+}
+.proposals-summary-matrix-table .psmt-tf-total.is-min {
+  background: rgba(22, 163, 74, 0.15);
+  color: #15803d;
+}
+[data-theme='dark'] .proposals-summary-matrix-table .psmt-tf-total.is-min {
+  background: rgba(22, 163, 74, 0.25);
+  color: #4ade80;
 }
 
 /* ===== Sub-tabs: Исходный КП / Материалы / Работы ===== */
@@ -456,83 +514,6 @@
 [data-theme='dark'] .proposals-table tfoot .td-total-cp.is-min {
   background: rgba(22, 163, 74, 0.25);
   color: #4ade80;
-}
-
-/* task 353: матрица ВОР × (Материалы / Работы / Итого) внутри summary-карточки.
-   В режиме «Объединённый КП» удобнее одна компактная таблица, чем
-   дубль «АК» в секциях Материалы и Работы. */
-.proposals-summary-card.has-matrix {
-  min-width: 360px;
-  padding-right: 1rem;
-}
-.proposals-summary-matrix {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.75rem;
-}
-.proposals-summary-matrix thead th {
-  padding: 0.3125rem 0.4375rem;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  text-align: right;
-  border-bottom: 1px solid var(--border-color);
-  background: transparent;
-}
-.proposals-summary-matrix thead .psm-th-doc {
-  text-align: left;
-}
-.proposals-summary-matrix thead .psm-th-total {
-  color: var(--text-primary);
-}
-.proposals-summary-matrix tbody td {
-  padding: 0.3125rem 0.4375rem;
-  border-bottom: 1px dashed var(--border-color);
-}
-.proposals-summary-matrix tbody tr:last-child td {
-  border-bottom: 1px solid var(--border-color);
-}
-.proposals-summary-matrix .psm-td-doc {
-  color: var(--text-secondary);
-  font-weight: 500;
-  font-size: 0.75rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 180px;
-}
-.proposals-summary-matrix .psm-td-num {
-  text-align: right;
-  color: var(--text-primary);
-  font-weight: 500;
-}
-.proposals-summary-matrix .psm-td-total {
-  font-weight: 700;
-  color: var(--text-primary);
-}
-.proposals-summary-matrix tfoot td {
-  padding: 0.4375rem 0.4375rem;
-  background: var(--bg-tertiary);
-  font-weight: 700;
-  border-top: 1px solid var(--border-color);
-}
-.proposals-summary-matrix .psm-tf-label {
-  color: var(--text-primary);
-  font-size: 0.75rem;
-}
-.proposals-summary-matrix .psm-tf-num {
-  text-align: right;
-  color: var(--text-primary);
-  font-size: 0.8125rem;
-}
-.proposals-summary-matrix .psm-tf-total {
-  font-size: 0.9375rem;
-}
-.proposals-summary-card.is-min .proposals-summary-matrix .psm-tf-total {
-  color: #15803d;
 }
 
 /* task 350: группа-разделитель по ВОРу в агрегированном виде */
