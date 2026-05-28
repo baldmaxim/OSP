@@ -19,10 +19,8 @@ const isWorkItem = (it) => {
 
 const sectionKey = (it, idx) => (it.id != null ? `id:${it.id}` : `idx:${idx}`)
 
-// task 345: полноценное сопоставление столбцов Excel — как в «Анализ ВОР/КП».
-// Пользователь выбирает индекс столбца для каждого поля. workVolume +
-// materialVolume — раздельные столбцы (v1-стиль); если задан только volume —
-// тип определяется по коду (Р→работа, иначе материал, v2-стиль).
+// task 345 + 346: сопоставление столбцов Excel — как в «Анализ ВОР/КП».
+// Объёмы только раздельные: workVolume + materialVolume. Общий объём не нужен.
 const VOR_COLUMN_FIELDS = [
   { key: 'num',            label: '№ п/п',              default: 0 },
   { key: 'code',           label: 'КОД (мат./Р)',       default: 1 },
@@ -30,7 +28,6 @@ const VOR_COLUMN_FIELDS = [
   { key: 'unit',           label: 'Ед. изм.',           default: 3 },
   { key: 'workVolume',     label: 'Объём работ',        default: 4 },
   { key: 'materialVolume', label: 'Объём материалов',   default: 5 },
-  { key: 'volume',         label: 'Объём (общий)',      default: null },
   { key: 'note',           label: 'Примечание',         default: null },
 ]
 const VOR_DEFAULT_COLUMN_MAP = Object.fromEntries(VOR_COLUMN_FIELDS.map(f => [f.key, f.default]))
@@ -355,44 +352,50 @@ function TenderDetailPage() {
       const items = []
       let rowNum = 1
       let runSecLvl = 0 // текущий уровень последнего встреченного раздела (для нумерации)
+      // Определяет, выглядит ли строка как «голый номер» (1, 1.1, 2-3 и т.п.).
+      // Если в столбце А только цифры/точки/тире — это номер позиции, не текст раздела.
+      const looksLikeBareNumber = (s) => !s ? true : /^[\d.\-)\s]+$/.test(String(s))
       for (let i = start; i < end; i++) {
         const row = rows[i]
         if (!row || row.length === 0) continue
         // № п/п: пользователь может задать свой столбец (по умолчанию A=0).
         const numA = cell(row, c.num != null ? c.num : 0)
         const code = cell(row, c.code)
-        const name = cell(row, c.name)
-        if (!name) continue
+        let name = cell(row, c.name)
         const unit = cell(row, c.unit)
         const note = c.note != null ? cell(row, c.note) : ''
 
-        // Стратегия объёмов:
-        // - Если задан workVolume или materialVolume → используем раздельные столбцы.
-        // - Иначе если задан общий volume → тип по коду (Р→работа, иначе материал).
-        let workVolume = null
-        let materialConsumption = null
-        const hasSplitVolumes = c.workVolume != null || c.materialVolume != null
-        if (hasSplitVolumes) {
-          workVolume = c.workVolume != null ? cleanNumericValue(row[c.workVolume]) : null
-          materialConsumption = c.materialVolume != null ? cleanNumericValue(row[c.materialVolume]) : null
-        } else if (c.volume != null) {
-          const vol = cleanNumericValue(row[c.volume])
-          const isWork = (code || '').trim().toUpperCase().startsWith('Р')
-          workVolume = isWork ? vol : null
-          materialConsumption = isWork ? null : vol
-        }
+        const workVolume = c.workVolume != null ? cleanNumericValue(row[c.workVolume]) : null
+        const materialConsumption = c.materialVolume != null ? cleanNumericValue(row[c.materialVolume]) : null
 
-        // Раздел: только наименование, без кода/ед.изм./чисел
-        const isSection = !code && !unit && workVolume == null && materialConsumption == null
+        // task 346: разделы/подразделы Excel часто пишутся текстом в столбце А
+        // (с объединёнными ячейками: «Часть 10. Субподрядные работы», «Раздел 10.03Б…»,
+        // «Подраздел 10.03Б.02…», «Заголовок…», «Подзаголовок…», «10.03Б.02.01.07.01.01.
+        // Подготовительные работы»). Наименование (C) у них пустое — раньше такие
+        // строки SKIPались. Теперь если в А есть нетривиальный текст и нет других
+        // данных строки → это секция, переносим текст из А в name.
+        const isSectionByA = !name && !code && !unit
+          && workVolume == null && materialConsumption == null
+          && numA && !looksLikeBareNumber(numA)
+        if (isSectionByA) name = numA
+        if (!name) continue
 
-        // task 265: уровень = группировка Excel (приоритет), иначе по иерархической
+        // Секция: либо детектирована по А, либо строка только с наименованием.
+        const isSection = isSectionByA
+          || (!code && !unit && workVolume == null && materialConsumption == null)
+
+        // task 265 + 346: уровень = группировка Excel (приоритет), иначе по иерархической
         // нумерации столбца A (1 / 1.1 / 1.1.1), иначе эвристика раздел/позиция.
+        // Для секций из А берём depth по ведущему числовому коду названия.
         const exLvl = levelAt(i)
         let lvl
         if (exLvl > 0) {
           lvl = exLvl
         } else if (isSection) {
-          const d = numberDepth(numA)
+          // Для секций детектированных по А — берём depth из самого названия
+          // (там обычно «10.03Б.02.01.07.01.01. Подготовительные работы»).
+          const source = isSectionByA ? name : numA
+          const d = numberDepth(source)
           lvl = d > 0 ? d - 1 : runSecLvl
           runSecLvl = lvl
         } else {
