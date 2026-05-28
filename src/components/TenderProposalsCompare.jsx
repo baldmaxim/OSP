@@ -116,30 +116,46 @@ function TenderProposalsCompare({
     return m
   }, [proposals, itemIds])
 
-  // Итоги по контрагенту + разбивка по ВОРам (task 351).
-  // В режиме selectedDoc === 'all' карточка показывает: «Материалы 59 ₽» с
-  // вложенным списком «АК 49 ₽, АСУД 9.5 ₽, …». Так же для работ.
+  // Итоги по контрагенту + разбивка по ВОРам + покрытие позиций (task 355).
+  // matTotal/matCovered — сколько позиций МАТЕРИАЛОВ (с material_consumption > 0)
+  //   и сколько из них реально расценено (unit_price_materials > 0).
+  // Если matCovered < matTotal — есть «дыры», итог нерепрезентативный → подсветка.
+  // Аналогично работы.
   const totalsByCp = useMemo(() => {
-    const m = new Map() // cp_id → { totalMat, totalWork, totalCost, byDoc: Map<docName, {mat, work}> }
+    const m = new Map()
     for (const cp of counterpartiesInScope) {
       let mat = 0, wrk = 0, all = 0
+      let matCoveredAll = 0, matTotalAll = 0, workCoveredAll = 0, workTotalAll = 0
       const byDoc = new Map()
       for (const it of itemsOfScope) {
+        const docName = it.estimate_name || 'Основная смета'
+        let cur = byDoc.get(docName)
+        if (!cur) {
+          cur = { mat: 0, work: 0, matTotal: 0, matCovered: 0, workTotal: 0, workCovered: 0 }
+          byDoc.set(docName, cur)
+        }
+        const hasMatVol = Number(it.material_consumption) > 0
+        const hasWorkVol = Number(it.work_volume) > 0
+        if (hasMatVol) { cur.matTotal++; matTotalAll++ }
+        if (hasWorkVol) { cur.workTotal++; workTotalAll++ }
+
         const p = proposalLookup.get(`${it.id}__${cp.id}`)
         if (!p) continue
         const m_ = Number(p.total_materials) || 0
         const w_ = Number(p.total_works) || 0
         const c_ = Number(p.total_cost) || 0
-        mat += m_
-        wrk += w_
-        all += c_
-        const docName = it.estimate_name || 'Основная смета'
-        const cur = byDoc.get(docName) || { mat: 0, work: 0 }
+        mat += m_; wrk += w_; all += c_
         cur.mat += m_
         cur.work += w_
-        byDoc.set(docName, cur)
+        const priceMat = Number(p.unit_price_materials) || 0
+        const priceWork = Number(p.unit_price_works) || 0
+        if (hasMatVol && priceMat > 0) { cur.matCovered++; matCoveredAll++ }
+        if (hasWorkVol && priceWork > 0) { cur.workCovered++; workCoveredAll++ }
       }
-      m.set(cp.id, { totalMat: mat, totalWork: wrk, totalCost: all, byDoc })
+      m.set(cp.id, {
+        totalMat: mat, totalWork: wrk, totalCost: all, byDoc,
+        matCoveredAll, matTotalAll, workCoveredAll, workTotalAll,
+      })
     }
     return m
   }, [counterpartiesInScope, itemsOfScope, proposalLookup])
@@ -206,19 +222,29 @@ function TenderProposalsCompare({
       row.totalVol += vol
 
       for (const cp of counterpartiesInScope) {
-        const p = proposalLookup.get(`${it.id}__${cp.id}`)
-        if (!p) continue
-        const cur = row.cpData.get(cp.id) || { totalCost: 0, weightedPriceSum: 0, weightedVolSum: 0 }
-        const cost = isWork ? (Number(p.total_works) || 0) : (Number(p.total_materials) || 0)
-        const price = isWork ? (Number(p.unit_price_works) || 0) : (Number(p.unit_price_materials) || 0)
-        cur.totalCost += cost
-        cur.weightedPriceSum += price * vol
-        cur.weightedVolSum += vol
-        row.cpData.set(cp.id, cur)
+        const cur = row.cpData.get(cp.id) || {
+          totalCost: 0, weightedPriceSum: 0, weightedVolSum: 0,
+          // task 355: счётчики покрытия для row в разрезе контрагента
+          itemsTotal: 0, itemsCovered: 0,
+        }
+        // Учитываем только позиции с положительным объёмом — иначе они не
+        // требуют расценки и не должны подсвечиваться как «дыра».
+        if (vol > 0) cur.itemsTotal += 1
 
-        // Подытог по ВОРу
-        const prev = group.subtotalByCp.get(cp.id) || 0
-        group.subtotalByCp.set(cp.id, prev + cost)
+        const p = proposalLookup.get(`${it.id}__${cp.id}`)
+        if (p) {
+          const cost = isWork ? (Number(p.total_works) || 0) : (Number(p.total_materials) || 0)
+          const price = isWork ? (Number(p.unit_price_works) || 0) : (Number(p.unit_price_materials) || 0)
+          cur.totalCost += cost
+          cur.weightedPriceSum += price * vol
+          cur.weightedVolSum += vol
+          if (vol > 0 && price > 0) cur.itemsCovered += 1
+
+          // Подытог по ВОРу
+          const prev = group.subtotalByCp.get(cp.id) || 0
+          group.subtotalByCp.set(cp.id, prev + cost)
+        }
+        row.cpData.set(cp.id, cur)
       }
     }
 
@@ -504,11 +530,34 @@ function SummaryMatrixTable({
                   const work = v?.work || 0
                   const total = mat + work
                   const isMin = total > 0 && minDoc != null && total === minDoc
+                  // task 355: подсветка неполного покрытия по этому ВОРу.
+                  const hasPart = (v?.mat || v?.work || 0) > 0
+                  const matIncomplete = hasPart && v && v.matTotal > 0 && v.matCovered < v.matTotal
+                  const workIncomplete = hasPart && v && v.workTotal > 0 && v.workCovered < v.workTotal
+                  const matTip = matIncomplete ? `Расценено ${v.matCovered} из ${v.matTotal} позиций материалов` : null
+                  const workTip = workIncomplete ? `Расценено ${v.workCovered} из ${v.workTotal} позиций работ` : null
                   return (
                     <React.Fragment key={cp.id}>
-                      <td className="psmt-td-num psmt-td-mat">{mat > 0 ? fmtMoney(mat) : '—'}</td>
-                      <td className="psmt-td-num">{work > 0 ? fmtMoney(work) : '—'}</td>
-                      <td className={`psmt-td-num psmt-td-total${isMin ? ' is-min' : ''}`}>
+                      <td
+                        className={`psmt-td-num psmt-td-mat${matIncomplete ? ' is-incomplete' : ''}`}
+                        title={matTip || undefined}
+                      >
+                        {mat > 0 ? fmtMoney(mat) : '—'}
+                      </td>
+                      <td
+                        className={`psmt-td-num${workIncomplete ? ' is-incomplete' : ''}`}
+                        title={workTip || undefined}
+                      >
+                        {work > 0 ? fmtMoney(work) : '—'}
+                      </td>
+                      <td
+                        className={`psmt-td-num psmt-td-total${isMin ? ' is-min' : ''}${(matIncomplete || workIncomplete) ? ' is-incomplete' : ''}`}
+                        title={
+                          (matIncomplete || workIncomplete)
+                            ? `Итог нерепрезентативный: ${[matTip, workTip].filter(Boolean).join('; ')}`
+                            : undefined
+                        }
+                      >
                         {total > 0 ? fmtMoney(total) : '—'}
                       </td>
                     </React.Fragment>
@@ -522,13 +571,42 @@ function SummaryMatrixTable({
           <tr className="psmt-tf-row">
             <td className="psmt-tf-label">ИТОГО, ₽</td>
             {counterpartiesInScope.map(cp => {
-              const t = totalsByCp.get(cp.id) || { totalMat: 0, totalWork: 0, totalCost: 0 }
+              const t = totalsByCp.get(cp.id) || {
+                totalMat: 0, totalWork: 0, totalCost: 0,
+                matCoveredAll: 0, matTotalAll: 0, workCoveredAll: 0, workTotalAll: 0,
+              }
               const isMin = t.totalCost > 0 && t.totalCost === minTotalCost
+              // task 355: общий итог подсвечен если хоть где-то материалы/работы недорасценены.
+              const matIncomplete = t.matTotalAll > 0 && t.matCoveredAll < t.matTotalAll
+              const workIncomplete = t.workTotalAll > 0 && t.workCoveredAll < t.workTotalAll
+              const matTip = matIncomplete
+                ? `Расценено ${t.matCoveredAll} из ${t.matTotalAll} позиций материалов по всем ВОРам`
+                : null
+              const workTip = workIncomplete
+                ? `Расценено ${t.workCoveredAll} из ${t.workTotalAll} позиций работ по всем ВОРам`
+                : null
               return (
                 <React.Fragment key={cp.id}>
-                  <td className="psmt-tf-num psmt-td-mat">{fmtMoney(t.totalMat)}</td>
-                  <td className="psmt-tf-num">{fmtMoney(t.totalWork)}</td>
-                  <td className={`psmt-tf-num psmt-tf-total${isMin ? ' is-min' : ''}`}>
+                  <td
+                    className={`psmt-tf-num psmt-td-mat${matIncomplete ? ' is-incomplete' : ''}`}
+                    title={matTip || undefined}
+                  >
+                    {fmtMoney(t.totalMat)}
+                  </td>
+                  <td
+                    className={`psmt-tf-num${workIncomplete ? ' is-incomplete' : ''}`}
+                    title={workTip || undefined}
+                  >
+                    {fmtMoney(t.totalWork)}
+                  </td>
+                  <td
+                    className={`psmt-tf-num psmt-tf-total${isMin ? ' is-min' : ''}${(matIncomplete || workIncomplete) ? ' is-incomplete' : ''}`}
+                    title={
+                      (matIncomplete || workIncomplete)
+                        ? `Итог нерепрезентативный: ${[matTip, workTip].filter(Boolean).join('; ')}`
+                        : undefined
+                    }
+                  >
                     {fmtMoney(t.totalCost)}
                   </td>
                 </React.Fragment>
@@ -723,10 +801,28 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
                         const avgPrice = d && d.weightedVolSum > 0 ? d.weightedPriceSum / d.weightedVolSum : 0
                         const total = d?.totalCost || 0
                         const isMin = total > 0 && minCost != null && total === minCost
+                        // task 355: подсветка нерасценённой позиции у контрагента.
+                        // Если itemsTotal > itemsCovered — есть «дыра» в покрытии
+                        // (одно и то же название с разными подключёнными позициями).
+                        const isIncomplete = d && d.itemsTotal > d.itemsCovered
+                        const hasPrice = !!d && total > 0
+                        const incompleteTip = isIncomplete
+                          ? `Расценено ${d.itemsCovered} из ${d.itemsTotal} позиций — итог неполный`
+                          : null
                         return (
                           <React.Fragment key={cp.id}>
-                            <td className="td-price td-cp-first">{d ? fmtMoney(avgPrice) : '—'}</td>
-                            <td className={`td-price td-total${isMin ? ' is-min' : ''}`}>{d ? fmtMoney(total) : '—'}</td>
+                            <td
+                              className={`td-price td-cp-first${isIncomplete ? ' is-incomplete' : ''}`}
+                              title={incompleteTip || undefined}
+                            >
+                              {hasPrice ? fmtMoney(avgPrice) : '—'}
+                            </td>
+                            <td
+                              className={`td-price td-total${isMin ? ' is-min' : ''}${isIncomplete ? ' is-incomplete' : ''}`}
+                              title={incompleteTip || undefined}
+                            >
+                              {hasPrice ? fmtMoney(total) : '—'}
+                            </td>
                           </React.Fragment>
                         )
                       })}
@@ -741,8 +837,24 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
                     {counterpartiesInScope.map(cp => {
                       const v = group.subtotalByCp.get(cp.id) || 0
                       const isMin = v > 0 && minSub != null && v === minSub
+                      // task 355: подсветка если в группе есть нерасценённые позиции.
+                      let incompleteCovered = 0, incompleteTotal = 0
+                      for (const r of group.rows) {
+                        const d = r.cpData.get(cp.id)
+                        if (!d) continue
+                        incompleteTotal += d.itemsTotal
+                        incompleteCovered += d.itemsCovered
+                      }
+                      const isIncomplete = incompleteTotal > 0 && incompleteCovered < incompleteTotal
                       return (
-                        <td key={cp.id} colSpan={2} className={`td-group-subtotal${isMin ? ' is-min' : ''}`}>
+                        <td
+                          key={cp.id}
+                          colSpan={2}
+                          className={`td-group-subtotal${isMin ? ' is-min' : ''}${isIncomplete ? ' is-incomplete' : ''}`}
+                          title={isIncomplete
+                            ? `Расценено ${incompleteCovered} из ${incompleteTotal} позиций — подытог неполный`
+                            : undefined}
+                        >
                           {v > 0 ? fmtMoney(v) : '—'}
                         </td>
                       )

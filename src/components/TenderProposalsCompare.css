@@ -157,6 +157,38 @@
   background: var(--bg-secondary);
 }
 
+/* task 355: подсветка «итог нерепрезентативный — есть нерасценённые позиции».
+   Мягкий жёлтый фон + warning-цвет текста. Применяется в матрице сверху,
+   агрегированных таблицах и подытогах групп. */
+.psmt-td-num.is-incomplete,
+.psmt-tf-num.is-incomplete,
+.proposals-table .td-price.is-incomplete,
+.proposals-table .td-total.is-incomplete,
+.proposals-group-subtotal .td-group-subtotal.is-incomplete {
+  background: rgba(234, 179, 8, 0.14) !important;
+  color: #a16207 !important;
+  position: relative;
+}
+[data-theme='dark'] .psmt-td-num.is-incomplete,
+[data-theme='dark'] .psmt-tf-num.is-incomplete,
+[data-theme='dark'] .proposals-table .td-price.is-incomplete,
+[data-theme='dark'] .proposals-table .td-total.is-incomplete,
+[data-theme='dark'] .proposals-group-subtotal .td-group-subtotal.is-incomplete {
+  background: rgba(234, 179, 8, 0.22) !important;
+  color: #fde047 !important;
+}
+/* Если позиция одновременно «минимум» и «неполная» — приоритет жёлтый
+   (вводит в заблуждение что итог самый низкий, хотя цены не все указаны). */
+.psmt-td-num.psmt-td-total.is-incomplete.is-min,
+.psmt-tf-num.psmt-tf-total.is-incomplete.is-min {
+  background: rgba(234, 179, 8, 0.22) !important;
+  color: #a16207 !important;
+}
+[data-theme='dark'] .psmt-td-num.psmt-td-total.is-incomplete.is-min,
+[data-theme='dark'] .psmt-tf-num.psmt-tf-total.is-incomplete.is-min {
+  color: #fde047 !important;
+}
+
 /* ===== task 354: сводная матрица «ВОР × контрагенты» =====
    Заменяет отдельные карточки контрагентов на одну сравнительную таблицу. */
 .proposals-summary-matrix-wrap {
