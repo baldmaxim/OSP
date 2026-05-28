@@ -687,6 +687,60 @@ function TenderDetailPage() {
   const collapseAllSections = () => setCollapsedSections(new Set(estimateSectionKeys))
   const expandAllSections = () => setCollapsedSections(new Set())
 
+  // task 352: экспорт текущего ВОР в Excel — отдельный документ или объединённый.
+  const handleExportEstimate = () => {
+    if (!currentEstimate || currentEstimate.length === 0) {
+      alert('Нечего экспортировать.')
+      return
+    }
+    const headers = ['№ п/п', 'КОД', 'Наименование затрат', 'Ед. изм.', 'Объём работ', 'Объём материалов']
+    const rows = [headers]
+    let workCount = 0
+    let matCount = 0
+    for (const it of currentEstimate) {
+      if (it._isDocDivider) {
+        // Визуальный разделитель «=== ВОР: НАЗВАНИЕ (N позиций) ===» как отдельная строка.
+        rows.push([`=== ВОР: ${it._docName} (${it._docCount} позиций) ===`, '', '', '', '', ''])
+        workCount = 0
+        matCount = 0
+        continue
+      }
+      if (it.is_section) {
+        rows.push(['', '', it.cost_name || '', '', '', ''])
+        continue
+      }
+      let num
+      if (isWorkItem(it)) {
+        workCount++
+        matCount = 0
+        num = String(workCount)
+      } else {
+        matCount++
+        num = workCount > 0 ? `${workCount}.${matCount}` : String(matCount)
+      }
+      rows.push([
+        num,
+        it.code || '',
+        it.cost_name || '',
+        it.unit || '',
+        it.work_volume ?? '',
+        it.material_consumption ?? '',
+      ])
+    }
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    ws['!cols'] = [
+      { wch: 8 }, { wch: 10 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
+    ]
+    const wb = XLSX.utils.book_new()
+    const sheetName = (selectedDocName === 'all' ? 'Объединённый ВОР' : selectedDocName).slice(0, 31)
+    XLSX.utils.book_append_sheet(wb, ws, sheetName)
+    const tenderLabel = tender?.work_description
+      ? `_${tender.work_description.slice(0, 30).replace(/[\\/:*?"<>|]/g, '')}`
+      : ''
+    const docLabel = selectedDocName === 'all' ? 'Объединённый' : selectedDocName.replace(/[\\/:*?"<>|]/g, '')
+    XLSX.writeFile(wb, `ВОР_${docLabel}${tenderLabel}.xlsx`)
+  }
+
   const fetchTenderData = async () => {
     setLoading(true)
     try {
@@ -1434,13 +1488,32 @@ function TenderDetailPage() {
                       onClick={() => setEstimateSubTab('works')}
                     >Работы</button>
                   </div>
-                  {estimateSubTab === 'source' && estimateSectionKeys.length > 0 && (
+                  {estimateSubTab === 'source' && (
                     <div className="estimate-collapse-controls">
-                      <button className="btn-secondary btn-sm" onClick={collapseAllSections}>
-                        Свернуть всё
-                      </button>
-                      <button className="btn-secondary btn-sm" onClick={expandAllSections}>
-                        Развернуть всё
+                      {estimateSectionKeys.length > 0 && (
+                        <>
+                          <button className="btn-secondary btn-sm" onClick={collapseAllSections}>
+                            Свернуть всё
+                          </button>
+                          <button className="btn-secondary btn-sm" onClick={expandAllSections}>
+                            Развернуть всё
+                          </button>
+                        </>
+                      )}
+                      {/* task 352: экспорт текущего вида в Excel (отдельный ВОР или объединённый) */}
+                      <button
+                        className="btn-secondary btn-sm estimate-export-btn"
+                        onClick={handleExportEstimate}
+                        title={selectedDocName === 'all'
+                          ? 'Скачать объединённый ВОР (все документы)'
+                          : `Скачать ВОР «${selectedDocName}»`}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        Скачать Excel
                       </button>
                     </div>
                   )}

@@ -3414,13 +3414,18 @@
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
 .estimate-doc-tab:hover {
-  border-color: var(--primary-color, #2563eb);
+  border-color: #475569;
   color: var(--text-primary);
 }
+/* task 352: спокойный slate-600 вместо ярко-синего primary */
 .estimate-doc-tab.active {
-  background: var(--primary-color, #2563eb);
-  border-color: var(--primary-color, #2563eb);
+  background: #475569;
+  border-color: #475569;
   color: #fff;
+}
+[data-theme='dark'] .estimate-doc-tab.active {
+  background: #64748b;
+  border-color: #64748b;
 }
 .estimate-doc-tab-label {
   white-space: nowrap;
@@ -3464,7 +3469,7 @@
   height: 22px;
   border-radius: 4px;
   background: var(--bg-tertiary);
-  color: var(--primary-color, #2563eb);
+  color: #475569;
   flex-shrink: 0;
 }
 .estimate-doc-tab-parent.active .estimate-doc-tab-parent-icon {
@@ -3528,15 +3533,15 @@
   background: var(--bg-secondary);
 }
 
-/* task 350: разделитель документа внутри «Объединённого ВОР» исходного вида.
-   Визуально явная граница между ВОРами + быстрый переход на отдельный ВОР. */
+/* task 350 + 352: разделитель документа внутри «Объединённого ВОР».
+   Тонко-серый slate-фон вместо ярко-синего — спокойнее для глаз. */
 .estimate-doc-divider-row {
-  background: rgba(37, 99, 235, 0.06) !important;
-  border-top: 2px solid var(--primary-color, #2563eb);
+  background: rgba(71, 85, 105, 0.06) !important;
+  border-top: 2px solid #475569;
 }
 [data-theme='dark'] .estimate-doc-divider-row {
-  background: rgba(96, 165, 250, 0.10) !important;
-  border-top-color: #60a5fa;
+  background: rgba(148, 163, 184, 0.10) !important;
+  border-top-color: #64748b;
 }
 .estimate-doc-divider-row td {
   padding: 0.625rem 0.875rem !important;
@@ -3557,12 +3562,15 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--primary-color, #2563eb);
+  color: #475569;
   padding: 0.125rem 0.4375rem;
   background: var(--bg-primary);
   border: 1px solid currentColor;
   border-radius: 3px;
   line-height: 1;
+}
+[data-theme='dark'] .estimate-doc-divider-eyebrow {
+  color: #94a3b8;
 }
 .estimate-doc-divider-name {
   font-weight: 600;
@@ -3588,11 +3596,24 @@
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
 .estimate-doc-divider-link:hover {
-  border-color: var(--primary-color, #2563eb);
-  color: var(--primary-color, #2563eb);
+  border-color: #475569;
+  color: #1e293b;
   background: var(--bg-primary);
 }
+[data-theme='dark'] .estimate-doc-divider-link:hover {
+  color: #cbd5e1;
+}
 .estimate-doc-toggle {
-  color: var(--primary-color, #2563eb);
+  color: #475569;
   font-weight: 700;
+}
+[data-theme='dark'] .estimate-doc-toggle {
+  color: #94a3b8;
+}
+
+/* task 352: кнопка «Скачать Excel» в правом блоке управления */
+.estimate-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
 }
