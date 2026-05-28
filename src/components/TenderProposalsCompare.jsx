@@ -43,17 +43,6 @@ function TenderProposalsCompare({
   const [selectedDoc, setSelectedDoc] = useState('all')
   const [subTab, setSubTab] = useState('source') // 'source' | 'materials' | 'works'
   const [showUploadModal, setShowUploadModal] = useState(false)
-  // task 352: раскрытые разбивки по ВОРам в summary-карточках.
-  // Ключ — `${cpId}:mat` или `${cpId}:work`. По умолчанию свёрнуто.
-  const [expandedBreakdowns, setExpandedBreakdowns] = useState(() => new Set())
-  const toggleBreakdown = (key) => {
-    setExpandedBreakdowns(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }
 
   // Если активный ВОР пропал — переключаемся на 'all'.
   useEffect(() => {
@@ -372,90 +361,71 @@ function TenderProposalsCompare({
             {counterpartiesInScope.map(cp => {
               const t = totalsByCp.get(cp.id) || { totalMat: 0, totalWork: 0, totalCost: 0, byDoc: new Map() }
               const isMin = t.totalCost > 0 && t.totalCost === minTotalCost
-              const showBreakdown = selectedDoc === 'all' && t.byDoc.size > 1
-              // Сортируем ВОРы по убыванию материалов (показываем самые «дорогие» сверху).
-              const sortedDocs = showBreakdown
+              const showMatrix = selectedDoc === 'all' && t.byDoc.size > 1
+              // Сортируем ВОРы по убыванию общей стоимости — самые «дорогие» сверху.
+              const sortedDocs = showMatrix
                 ? [...t.byDoc.entries()].sort((a, b) =>
                     (b[1].mat + b[1].work) - (a[1].mat + a[1].work)
                   )
                 : []
-              const matKey = `${cp.id}:mat`
-              const workKey = `${cp.id}:work`
-              const matExpanded = expandedBreakdowns.has(matKey)
-              const workExpanded = expandedBreakdowns.has(workKey)
-              const hasMatBreakdown = showBreakdown && sortedDocs.some(([, v]) => v.mat > 0)
-              const hasWorkBreakdown = showBreakdown && sortedDocs.some(([, v]) => v.work > 0)
               return (
-                <div key={cp.id} className={`proposals-summary-card${isMin ? ' is-min' : ''}`}>
+                <div key={cp.id} className={`proposals-summary-card${isMin ? ' is-min' : ''}${showMatrix ? ' has-matrix' : ''}`}>
                   <div className="proposals-summary-head">
                     <div className="proposals-summary-name" title={cp.name}>{cp.name}</div>
                     {cp.latestDate && (
                       <div className="proposals-summary-date">КП от {fmtDate(cp.latestDate)}</div>
                     )}
                   </div>
-                  <div className="proposals-summary-rows">
-                    {/* Материалы — со стрелкой раскрытия слева, если есть разбивка */}
-                    <div className="proposals-summary-row proposals-summary-row-section">
-                      <span className="proposals-summary-row-label">
-                        {hasMatBreakdown ? (
-                          <button
-                            type="button"
-                            className={`proposals-summary-toggle${matExpanded ? ' is-expanded' : ''}`}
-                            onClick={() => toggleBreakdown(matKey)}
-                            title={matExpanded ? 'Свернуть разбивку по ВОРам' : 'Развернуть разбивку по ВОРам'}
-                            aria-expanded={matExpanded}
-                          >▸</button>
-                        ) : (
-                          <span className="proposals-summary-toggle-spacer" aria-hidden />
-                        )}
-                        Материалы
-                      </span>
-                      <span className="proposals-summary-row-val">{fmtMoney(t.totalMat)} ₽</span>
-                    </div>
-                    {hasMatBreakdown && matExpanded && sortedDocs.filter(([, v]) => v.mat > 0).map(([docName, v]) => (
-                      <div key={`mat:${docName}`} className="proposals-summary-row proposals-summary-row-sub">
-                        <span className="proposals-summary-row-label proposals-summary-row-sub-label">
-                          <span className="proposals-summary-row-sub-bullet" aria-hidden>↳</span>
-                          {docName}
-                        </span>
-                        <span className="proposals-summary-row-val proposals-summary-row-sub-val">{fmtMoney(v.mat)} ₽</span>
-                      </div>
-                    ))}
 
-                    {/* Работы — то же со стрелкой */}
-                    <div className="proposals-summary-row proposals-summary-row-section">
-                      <span className="proposals-summary-row-label">
-                        {hasWorkBreakdown ? (
-                          <button
-                            type="button"
-                            className={`proposals-summary-toggle${workExpanded ? ' is-expanded' : ''}`}
-                            onClick={() => toggleBreakdown(workKey)}
-                            title={workExpanded ? 'Свернуть разбивку по ВОРам' : 'Развернуть разбивку по ВОРам'}
-                            aria-expanded={workExpanded}
-                          >▸</button>
-                        ) : (
-                          <span className="proposals-summary-toggle-spacer" aria-hidden />
-                        )}
-                        Работы
-                      </span>
-                      <span className="proposals-summary-row-val">{fmtMoney(t.totalWork)} ₽</span>
-                    </div>
-                    {hasWorkBreakdown && workExpanded && sortedDocs.filter(([, v]) => v.work > 0).map(([docName, v]) => (
-                      <div key={`work:${docName}`} className="proposals-summary-row proposals-summary-row-sub">
-                        <span className="proposals-summary-row-label proposals-summary-row-sub-label">
-                          <span className="proposals-summary-row-sub-bullet" aria-hidden>↳</span>
-                          {docName}
-                        </span>
-                        <span className="proposals-summary-row-val proposals-summary-row-sub-val">{fmtMoney(v.work)} ₽</span>
+                  {showMatrix ? (
+                    // task 353: матрица ВОР × (Материалы / Работы / Итого).
+                    // Не дублируем «АК» отдельно в Материалах и Работах — он одной строкой.
+                    <table className="proposals-summary-matrix">
+                      <thead>
+                        <tr>
+                          <th className="psm-th-doc">ВОР</th>
+                          <th className="psm-th-num">Материалы</th>
+                          <th className="psm-th-num">Работы</th>
+                          <th className="psm-th-num psm-th-total">Итого</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedDocs.map(([docName, v]) => (
+                          <tr key={docName}>
+                            <td className="psm-td-doc" title={docName}>{docName}</td>
+                            <td className="psm-td-num">{v.mat > 0 ? `${fmtMoney(v.mat)} ₽` : '—'}</td>
+                            <td className="psm-td-num">{v.work > 0 ? `${fmtMoney(v.work)} ₽` : '—'}</td>
+                            <td className="psm-td-num psm-td-total">{fmtMoney(v.mat + v.work)} ₽</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td className="psm-tf-label">Итого</td>
+                          <td className="psm-tf-num">{fmtMoney(t.totalMat)} ₽</td>
+                          <td className="psm-tf-num">{fmtMoney(t.totalWork)} ₽</td>
+                          <td className="psm-tf-num psm-tf-total">{fmtMoney(t.totalCost)} ₽</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  ) : (
+                    // Один ВОР (или selectedDoc != 'all') — просто три строки.
+                    <div className="proposals-summary-rows">
+                      <div className="proposals-summary-row proposals-summary-row-section">
+                        <span className="proposals-summary-row-label">Материалы</span>
+                        <span className="proposals-summary-row-val">{fmtMoney(t.totalMat)} ₽</span>
                       </div>
-                    ))}
-
-                    {/* Итого */}
-                    <div className="proposals-summary-row proposals-summary-row-total">
-                      <span className="proposals-summary-row-label">Итого</span>
-                      <span className="proposals-summary-row-val">{fmtMoney(t.totalCost)} ₽</span>
+                      <div className="proposals-summary-row proposals-summary-row-section">
+                        <span className="proposals-summary-row-label">Работы</span>
+                        <span className="proposals-summary-row-val">{fmtMoney(t.totalWork)} ₽</span>
+                      </div>
+                      <div className="proposals-summary-row proposals-summary-row-total">
+                        <span className="proposals-summary-row-label">Итого</span>
+                        <span className="proposals-summary-row-val">{fmtMoney(t.totalCost)} ₽</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
                   {canEdit && (
                     <button
                       className="proposals-summary-remove"
@@ -522,107 +492,87 @@ function TenderProposalsCompare({
   )
 }
 
-// ===== Подкомпонент: «Исходный КП» — транспонированная компоновка (task 353) =====
-// Каждая позиция → N строк (по числу контрагентов с КП). Контекстные поля
-// (№, ВОР, КОД, Наименование, Ед., Объёмы) объединены rowSpan'ом.
-// Денежных колонок всего три: Материалы, Работы, Итого — плюс «Цена/ед» в каждой
-// для контекста. Так таблица не «разъезжается» при 5+ контрагентах.
+// ===== Подкомпонент: «Исходный КП» =====
+// Контрагенты — колонками. Для каждого 5 sub-cells:
+//   Ц.мат / Стоим.мат / Ц.раб / Стоим.раб / Итого.
 function SourceTable({
   itemsOfScope, counterpartiesInScope, proposalLookup,
   minByItem, totalsByCp, minTotalCost, showDocColumn,
 }) {
   return (
     <div className="proposals-table-wrap">
-      <table className="proposals-table proposals-table-transposed">
+      <table className="proposals-table">
         <thead>
           <tr>
-            <th className="th-num">№</th>
-            {showDocColumn && <th className="th-doc">ВОР</th>}
-            <th className="th-code">КОД</th>
-            <th className="th-name">Наименование</th>
-            <th className="th-unit">Ед.</th>
-            <th className="th-vol">Объём раб.</th>
-            <th className="th-vol">Объём мат.</th>
-            <th className="th-cp-col">Контрагент</th>
-            <th className="th-sub">Ц.мат, ₽/ед</th>
-            <th className="th-sub th-money-section">Материалы, ₽</th>
-            <th className="th-sub">Ц.раб, ₽/ед</th>
-            <th className="th-sub th-money-section">Работы, ₽</th>
-            <th className="th-sub th-money-total">Итого, ₽</th>
+            <th rowSpan={2} className="th-num">№</th>
+            {showDocColumn && <th rowSpan={2} className="th-doc">ВОР</th>}
+            <th rowSpan={2} className="th-code">КОД</th>
+            <th rowSpan={2} className="th-name">Наименование</th>
+            <th rowSpan={2} className="th-unit">Ед.</th>
+            <th rowSpan={2} className="th-vol">Объём раб.</th>
+            <th rowSpan={2} className="th-vol">Объём мат.</th>
+            {counterpartiesInScope.map(cp => (
+              <th key={cp.id} colSpan={5} className="th-cp">
+                <div className="th-cp-name" title={cp.name}>{cp.name}</div>
+                {cp.latestDate && <div className="th-cp-date">КП от {fmtDate(cp.latestDate)}</div>}
+              </th>
+            ))}
+          </tr>
+          <tr>
+            {counterpartiesInScope.map(cp => (
+              <React.Fragment key={cp.id}>
+                <th className="th-sub" title="Цена материала за ед.">Ц.мат, ₽/ед</th>
+                <th className="th-sub" title="Стоимость материалов = Ц.мат × Объём мат.">Стоим.мат, ₽</th>
+                <th className="th-sub" title="Цена работ за ед.">Ц.раб, ₽/ед</th>
+                <th className="th-sub" title="Стоимость работ = Ц.раб × Объём раб.">Стоим.раб, ₽</th>
+                <th className="th-sub th-sub-total" title="Итого по позиции">Итого, ₽</th>
+              </React.Fragment>
+            ))}
           </tr>
         </thead>
         <tbody>
           {itemsOfScope.map((it, idx) => {
             const minPrice = minByItem.get(it.id)
-            // Контрагенты, у которых есть КП по этой позиции (для подсветки).
-            const cpsForItem = counterpartiesInScope.filter(
-              cp => proposalLookup.has(`${it.id}__${cp.id}`)
-            )
-            // Если ни одного КП нет — показываем одну строку с пустыми ячейками.
-            const rowsToRender = cpsForItem.length > 0 ? cpsForItem : [null]
-            return rowsToRender.map((cp, cpIdx) => {
-              const p = cp ? proposalLookup.get(`${it.id}__${cp.id}`) : null
-              const total = p ? Number(p.total_cost) || 0 : 0
-              const isMin = total > 0 && minPrice != null && total === minPrice
-              const isFirstRow = cpIdx === 0
-              const rowSpan = rowsToRender.length
-              const trClass = `proposals-item-row${isFirstRow ? ' is-item-first' : ''}${idx % 2 === 1 ? ' is-zebra' : ''}`
-              return (
-                <tr key={`${it.id}__${cp ? cp.id : 'empty'}`} className={trClass}>
-                  {isFirstRow && (
-                    <>
-                      <td className="td-num" rowSpan={rowSpan}>{idx + 1}</td>
-                      {showDocColumn && <td className="td-doc" rowSpan={rowSpan}>{it.estimate_name || '—'}</td>}
-                      <td className="td-code" rowSpan={rowSpan}>{it.code || '—'}</td>
-                      <td className="td-name" rowSpan={rowSpan} title={it.cost_name}>{it.cost_name}</td>
-                      <td className="td-unit" rowSpan={rowSpan}>{it.unit || '—'}</td>
-                      <td className="td-vol" rowSpan={rowSpan}>{fmtMoney(it.work_volume)}</td>
-                      <td className="td-vol" rowSpan={rowSpan}>{fmtMoney(it.material_consumption)}</td>
-                    </>
-                  )}
-                  <td className="td-cp-col" title={cp?.name || ''}>
-                    {cp ? (
-                      <>
-                        <span className="td-cp-col-name">{cp.name}</span>
-                        {cp.latestDate && <span className="td-cp-col-date">{fmtDate(cp.latestDate)}</span>}
-                      </>
-                    ) : <span className="muted">— нет КП —</span>}
-                  </td>
-                  <td className="td-price">{p ? fmtMoney(p.unit_price_materials) : '—'}</td>
-                  <td className="td-price td-sum">{p ? fmtMoney(p.total_materials) : '—'}</td>
-                  <td className="td-price">{p ? fmtMoney(p.unit_price_works) : '—'}</td>
-                  <td className="td-price td-sum">{p ? fmtMoney(p.total_works) : '—'}</td>
-                  <td className={`td-price td-total${isMin ? ' is-min' : ''}`}>{p ? fmtMoney(total) : '—'}</td>
-                </tr>
-              )
-            })
-          })}
-        </tbody>
-        <tfoot>
-          {/* ИТОГО по каждому контрагенту — отдельной строкой */}
-          {counterpartiesInScope.map(cp => {
-            const t = totalsByCp.get(cp.id) || { totalMat: 0, totalWork: 0, totalCost: 0 }
-            const isMin = t.totalCost > 0 && t.totalCost === minTotalCost
             return (
-              <tr key={cp.id} className={`proposals-total-cp-row${isMin ? ' is-min' : ''}`}>
-                <td colSpan={(showDocColumn ? 7 : 6) + 1} style={{ textAlign: 'right' }}>
-                  <strong>ИТОГО по «{cp.name}», ₽</strong>
-                </td>
-                <td />
-                <td className="td-price td-sum"><strong>{fmtMoney(t.totalMat)}</strong></td>
-                <td />
-                <td className="td-price td-sum"><strong>{fmtMoney(t.totalWork)}</strong></td>
-                <td className="td-price td-total"><strong>{fmtMoney(t.totalCost)}</strong></td>
+              <tr key={it.id}>
+                <td className="td-num">{idx + 1}</td>
+                {showDocColumn && <td className="td-doc">{it.estimate_name || '—'}</td>}
+                <td className="td-code">{it.code || '—'}</td>
+                <td className="td-name" title={it.cost_name}>{it.cost_name}</td>
+                <td className="td-unit">{it.unit || '—'}</td>
+                <td className="td-vol">{fmtMoney(it.work_volume)}</td>
+                <td className="td-vol">{fmtMoney(it.material_consumption)}</td>
+                {counterpartiesInScope.map(cp => {
+                  const p = proposalLookup.get(`${it.id}__${cp.id}`)
+                  const total = p ? Number(p.total_cost) || 0 : 0
+                  const isMin = total > 0 && minPrice != null && total === minPrice
+                  return (
+                    <React.Fragment key={cp.id}>
+                      <td className="td-price td-cp-first">{p ? fmtMoney(p.unit_price_materials) : '—'}</td>
+                      <td className="td-price td-sum">{p ? fmtMoney(p.total_materials) : '—'}</td>
+                      <td className="td-price">{p ? fmtMoney(p.unit_price_works) : '—'}</td>
+                      <td className="td-price td-sum">{p ? fmtMoney(p.total_works) : '—'}</td>
+                      <td className={`td-price td-total${isMin ? ' is-min' : ''}`}>{p ? fmtMoney(total) : '—'}</td>
+                    </React.Fragment>
+                  )
+                })}
               </tr>
             )
           })}
-          {counterpartiesInScope.length === 0 && (
-            <tr className="proposals-total-row">
-              <td colSpan={(showDocColumn ? 7 : 6) + 6} style={{ textAlign: 'center' }}>
-                Нет загруженных КП.
-              </td>
-            </tr>
-          )}
+        </tbody>
+        <tfoot>
+          <tr className="proposals-total-row">
+            <td colSpan={showDocColumn ? 7 : 6} style={{ textAlign: 'right' }}>ИТОГО, ₽:</td>
+            {counterpartiesInScope.map(cp => {
+              const total = totalsByCp.get(cp.id)?.totalCost || 0
+              const isMin = total > 0 && total === minTotalCost
+              return (
+                <td key={cp.id} colSpan={5} className={`td-total-cp${isMin ? ' is-min' : ''}`}>
+                  {fmtMoney(total)}
+                </td>
+              )
+            })}
+          </tr>
         </tfoot>
       </table>
     </div>

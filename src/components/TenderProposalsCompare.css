@@ -220,77 +220,13 @@
   font-weight: 600;
   color: var(--text-primary);
 }
-/* Секционная строка «Материалы» / «Работы» — заголовок группы */
+/* Секционная строка «Материалы» / «Работы» — для упрощённого вида (1 ВОР) */
 .proposals-summary-row-section {
   margin-top: 0.1875rem;
 }
 .proposals-summary-row-section .proposals-summary-row-label {
   color: var(--text-secondary);
   font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3125rem;
-}
-/* Кнопка-шеврон «развернуть разбивку по ВОРам» */
-.proposals-summary-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-tertiary);
-  font-size: 0.625rem;
-  line-height: 1;
-  cursor: pointer;
-  border-radius: 3px;
-  transition: transform 0.15s ease, color 0.12s, background 0.12s;
-}
-.proposals-summary-toggle:hover {
-  background: var(--bg-tertiary);
-  color: #475569;
-}
-.proposals-summary-toggle.is-expanded {
-  transform: rotate(90deg);
-  color: #475569;
-}
-[data-theme='dark'] .proposals-summary-toggle.is-expanded {
-  color: #94a3b8;
-}
-.proposals-summary-toggle-spacer {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-}
-/* task 351: вложенная разбивка по ВОРам внутри Материалы/Работы */
-.proposals-summary-row-sub {
-  padding-left: 0.5rem;
-  font-size: 0.6875rem;
-  margin-top: 0.0625rem;
-}
-.proposals-summary-row-sub-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3125rem;
-  color: var(--text-tertiary);
-  font-weight: 500;
-  max-width: 70%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.proposals-summary-row-sub-bullet {
-  color: var(--text-tertiary);
-  opacity: 0.6;
-  font-size: 0.6875rem;
-  flex-shrink: 0;
-}
-.proposals-summary-row-sub-val {
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--text-secondary);
 }
 .proposals-summary-row-total {
   margin-top: 0.3125rem;
@@ -522,96 +458,81 @@
   color: #4ade80;
 }
 
-/* task 353: транспонированная компоновка «Исходный КП».
-   Контрагенты идут построчно под каждой позицией ВОР, объединяющие колонки
-   (№, КОД, Наименование, Ед., Объёмы) — через rowSpan. */
-.proposals-table-transposed .th-cp-col {
+/* task 353: матрица ВОР × (Материалы / Работы / Итого) внутри summary-карточки.
+   В режиме «Объединённый КП» удобнее одна компактная таблица, чем
+   дубль «АК» в секциях Материалы и Работы. */
+.proposals-summary-card.has-matrix {
+  min-width: 360px;
+  padding-right: 1rem;
+}
+.proposals-summary-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+}
+.proposals-summary-matrix thead th {
+  padding: 0.3125rem 0.4375rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  text-align: right;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+}
+.proposals-summary-matrix thead .psm-th-doc {
   text-align: left;
-  border-left: 2px solid var(--border-color);
-  background: var(--bg-tertiary);
-  min-width: 160px;
 }
-.proposals-table-transposed .th-money-section {
-  border-left: 1px solid var(--border-color);
-}
-.proposals-table-transposed .th-money-total {
-  border-left: 2px solid var(--border-color);
-  border-right: 2px solid var(--border-color);
-}
-
-/* Граница каждой позиции — visible-разделитель между group'ами строк */
-.proposals-table-transposed tbody tr.is-item-first td {
-  border-top: 2px solid var(--border-color);
-}
-.proposals-table-transposed tbody tr.is-item-first:first-child td {
-  border-top: none;
-}
-/* Зебра по позициям (не по строкам внутри одной позиции) */
-.proposals-table-transposed tbody tr.is-zebra td {
-  background: rgba(71, 85, 105, 0.025);
-}
-[data-theme='dark'] .proposals-table-transposed tbody tr.is-zebra td {
-  background: rgba(148, 163, 184, 0.04);
-}
-/* Hover подсвечивает целую строку контрагента (не всю позицию) */
-.proposals-table-transposed tbody tr:hover td {
-  background: rgba(71, 85, 105, 0.06);
-}
-
-/* Колонка контрагента — выделена */
-.proposals-table-transposed .td-cp-col {
-  border-left: 2px solid var(--border-color);
-  background: var(--bg-secondary);
-  padding: 0.4375rem 0.625rem;
-}
-.proposals-table-transposed .td-cp-col-name {
-  display: block;
-  font-weight: 600;
-  font-size: 0.8125rem;
+.proposals-summary-matrix thead .psm-th-total {
   color: var(--text-primary);
+}
+.proposals-summary-matrix tbody td {
+  padding: 0.3125rem 0.4375rem;
+  border-bottom: 1px dashed var(--border-color);
+}
+.proposals-summary-matrix tbody tr:last-child td {
+  border-bottom: 1px solid var(--border-color);
+}
+.proposals-summary-matrix .psm-td-doc {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.75rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 200px;
+  max-width: 180px;
 }
-.proposals-table-transposed .td-cp-col-date {
-  display: block;
-  font-size: 0.6875rem;
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-  margin-top: 0.0625rem;
+.proposals-summary-matrix .psm-td-num {
+  text-align: right;
+  color: var(--text-primary);
+  font-weight: 500;
 }
-.proposals-table-transposed .muted {
-  color: var(--text-tertiary);
-  font-style: italic;
-  font-size: 0.75rem;
+.proposals-summary-matrix .psm-td-total {
+  font-weight: 700;
+  color: var(--text-primary);
 }
-
-/* td-total в транспонированной — общая правая граница */
-.proposals-table-transposed .td-total {
-  border-right: 2px solid var(--border-color);
-}
-
-/* Итоговая строка на каждого контрагента */
-.proposals-total-cp-row td {
-  padding: 0.5rem 0.625rem !important;
+.proposals-summary-matrix tfoot td {
+  padding: 0.4375rem 0.4375rem;
   background: var(--bg-tertiary);
-  font-variant-numeric: tabular-nums;
+  font-weight: 700;
   border-top: 1px solid var(--border-color);
 }
-.proposals-total-cp-row:first-child td {
-  border-top: 2px solid var(--border-color);
+.proposals-summary-matrix .psm-tf-label {
+  color: var(--text-primary);
+  font-size: 0.75rem;
 }
-.proposals-total-cp-row.is-min td {
-  background: rgba(22, 163, 74, 0.08);
+.proposals-summary-matrix .psm-tf-num {
+  text-align: right;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
 }
-.proposals-total-cp-row.is-min .td-total {
-  background: rgba(22, 163, 74, 0.18);
+.proposals-summary-matrix .psm-tf-total {
+  font-size: 0.9375rem;
+}
+.proposals-summary-card.is-min .proposals-summary-matrix .psm-tf-total {
   color: #15803d;
-}
-[data-theme='dark'] .proposals-total-cp-row.is-min .td-total {
-  background: rgba(22, 163, 74, 0.28);
-  color: #4ade80;
 }
 
 /* task 350: группа-разделитель по ВОРу в агрегированном виде */
