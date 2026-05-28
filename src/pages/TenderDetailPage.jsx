@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
+import TenderProposalsCompare from '../components/TenderProposalsCompare'
 import '../components/TenderDetail.css'
 
 // task 261: числа выводим с округлением до сотых
@@ -322,7 +323,9 @@ function TenderDetailPage() {
   const [tender, setTender] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'participants' | 'history'
+  const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'proposals' | 'participants' | 'history'
+  // task 346: число контрагентов с загруженными КП — обновляет дочерний компонент.
+  const [proposalsCount, setProposalsCount] = useState(0)
 
   // task 259: смета тендера (импорт из Excel → проверка → сохранение)
   const [estimateItems, setEstimateItems] = useState([])
@@ -1377,6 +1380,14 @@ function TenderDetailPage() {
           ВОР
           {estimateItems.length > 0 && <span className="tab-count">{estimateItems.length}</span>}
         </button>
+        {/* task 346: Сравнение КП — между ВОР и Участники */}
+        <button
+          className={`tender-tab ${activeTab === 'proposals' ? 'active' : ''}`}
+          onClick={() => setActiveTab('proposals')}
+        >
+          Сравнение КП
+          {proposalsCount > 0 && <span className="tab-count">{proposalsCount}</span>}
+        </button>
         <button
           className={`tender-tab ${activeTab === 'participants' ? 'active' : ''}`}
           onClick={() => setActiveTab('participants')}
@@ -1585,6 +1596,18 @@ function TenderDetailPage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* task 346: Вкладка Сравнение КП */}
+        {activeTab === 'proposals' && (
+          <TenderProposalsCompare
+            tenderId={tenderId}
+            estimateItems={estimateItems}
+            docNames={docNames}
+            tenderCounterparties={tenderCounterparties}
+            canEdit={canEditTenders}
+            onCountChange={setProposalsCount}
+          />
         )}
 
         {/* Вкладка Участники */}
