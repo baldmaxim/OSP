@@ -1366,38 +1366,56 @@ function TenderDetailPage() {
                     Скрыто во время предпросмотра (parsedEstimate) — там
                     показывается ещё не сохранённый документ. */}
                 {!parsedEstimate && docNames.length > 0 && (
+                  /* task 351: tree-layout — Объединённый сверху, под ним
+                      «дочерние» ВОРы с branch-индикаторами (как файловое дерево). */
                   <div className="estimate-doc-tabs" role="tablist" aria-label="Документы ВОР">
                     <button
                       type="button"
                       role="tab"
                       aria-selected={selectedDocName === 'all'}
-                      className={`estimate-doc-tab ${selectedDocName === 'all' ? 'active' : ''}`}
+                      className={`estimate-doc-tab estimate-doc-tab-parent ${selectedDocName === 'all' ? 'active' : ''}`}
                       onClick={() => setSelectedDocName('all')}
                       title="Объединённый ВОР — все документы вместе"
                     >
+                      <span className="estimate-doc-tab-parent-icon" aria-hidden>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 7h18" />
+                          <path d="M3 12h18" />
+                          <path d="M3 17h18" />
+                        </svg>
+                      </span>
                       <span className="estimate-doc-tab-label">Объединённый ВОР</span>
                       <span className="estimate-doc-tab-count">{estimateItems.length}</span>
+                      <span className="estimate-doc-tab-parent-hint">
+                        состоит из {docNames.length}{' '}
+                        {docNames.length === 1 ? 'документа' : docNames.length < 5 ? 'документов' : 'документов'}
+                      </span>
                     </button>
-                    <span className="estimate-doc-tabs-sep" aria-hidden />
-                    {docNames.map(name => {
-                      const count = estimateItems.filter(it =>
-                        (it.estimate_name || 'Основная смета') === name
-                      ).length
-                      return (
-                        <button
-                          key={name}
-                          type="button"
-                          role="tab"
-                          aria-selected={selectedDocName === name}
-                          className={`estimate-doc-tab ${selectedDocName === name ? 'active' : ''}`}
-                          onClick={() => setSelectedDocName(name)}
-                          title={`Открыть ВОР «${name}»`}
-                        >
-                          <span className="estimate-doc-tab-label">{name}</span>
-                          <span className="estimate-doc-tab-count">{count}</span>
-                        </button>
-                      )
-                    })}
+                    {docNames.length > 0 && (
+                      <div className="estimate-doc-tabs-children">
+                        {docNames.map((name, i) => {
+                          const count = estimateItems.filter(it =>
+                            (it.estimate_name || 'Основная смета') === name
+                          ).length
+                          const isLast = i === docNames.length - 1
+                          return (
+                            <button
+                              key={name}
+                              type="button"
+                              role="tab"
+                              aria-selected={selectedDocName === name}
+                              className={`estimate-doc-tab estimate-doc-tab-child ${selectedDocName === name ? 'active' : ''} ${isLast ? 'is-last' : ''}`}
+                              onClick={() => setSelectedDocName(name)}
+                              title={`Открыть ВОР «${name}»`}
+                            >
+                              <span className="estimate-doc-tab-branch" aria-hidden />
+                              <span className="estimate-doc-tab-label">{name}</span>
+                              <span className="estimate-doc-tab-count">{count}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
 
