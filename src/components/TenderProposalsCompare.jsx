@@ -158,31 +158,42 @@ function TenderProposalsCompare({
     return m
   }, [itemsOfScope, counterpartiesInScope, proposalLookup])
 
-  // Агрегация для вкладок «Материалы» / «Работы» — по name+unit, чтобы
-  // одинаковые позиции из разных ВОРов суммировались.
-  const aggregatedRows = useMemo(() => {
-    const map = new Map() // key → { name, unit, totalVol, cpData: Map<cpId, {totalCost, sumPriceXVol}> }
+  // Агрегация для «Материалы» / «Работы» — по name+unit внутри каждого ВОРа.
+  // В режиме «Объединённый КП» группируем по estimate_name + считаем подытоги.
+  // В режиме конкретного ВОРа — одна группа без явного заголовка.
+  // task 350: на «Объединённом» хочется видеть Σ по каждому ВОРу + общий ИТОГО.
+  const aggregatedGroups = useMemo(() => {
+    if (subTab === 'source') return []
+    const wantWork = subTab === 'works'
+    // groupKey (estimate_name) → { name, rowsMap: Map<key, row>, subtotalByCp: Map<cpId, number> }
+    const groups = new Map()
     for (const it of itemsOfScope) {
       const isWork = isWorkRow(it)
-      if (subTab === 'materials' && isWork) continue
-      if (subTab === 'works' && !isWork) continue
-      if (subTab === 'source') continue // не нужно для исходного
+      if (wantWork && !isWork) continue
+      if (!wantWork && isWork) continue
       const vol = isWork
         ? Number(it.work_volume) || 0
         : Number(it.material_consumption) || 0
-      if (vol <= 0 && !counterpartiesInScope.some(cp => proposalLookup.get(`${it.id}__${cp.id}`))) {
-        // позиция без объёма и без КП — пропускаем
-        continue
+      const hasAnyProposal = counterpartiesInScope.some(cp => proposalLookup.get(`${it.id}__${cp.id}`))
+      if (vol <= 0 && !hasAnyProposal) continue
+
+      const groupName = it.estimate_name || 'Основная смета'
+      let group = groups.get(groupName)
+      if (!group) {
+        group = { name: groupName, rowsMap: new Map(), subtotalByCp: new Map() }
+        groups.set(groupName, group)
       }
+
       const name = (it.cost_name || '').trim()
       const unit = (it.unit || '').trim()
-      const key = `${normalizeKey(name)}|${normalizeKey(unit)}`
-      let row = map.get(key)
+      const rowKey = `${normalizeKey(name)}|${normalizeKey(unit)}`
+      let row = group.rowsMap.get(rowKey)
       if (!row) {
         row = { name, unit, totalVol: 0, cpData: new Map() }
-        map.set(key, row)
+        group.rowsMap.set(rowKey, row)
       }
       row.totalVol += vol
+
       for (const cp of counterpartiesInScope) {
         const p = proposalLookup.get(`${it.id}__${cp.id}`)
         if (!p) continue
@@ -190,13 +201,25 @@ function TenderProposalsCompare({
         const cost = isWork ? (Number(p.total_works) || 0) : (Number(p.total_materials) || 0)
         const price = isWork ? (Number(p.unit_price_works) || 0) : (Number(p.unit_price_materials) || 0)
         cur.totalCost += cost
-        // средневзвешенная цена за единицу
         cur.weightedPriceSum += price * vol
         cur.weightedVolSum += vol
         row.cpData.set(cp.id, cur)
+
+        // Подытог по ВОРу
+        const prev = group.subtotalByCp.get(cp.id) || 0
+        group.subtotalByCp.set(cp.id, prev + cost)
       }
     }
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+
+    // Сортируем группы по имени ВОРа, строки внутри — по наименованию.
+    const out = []
+    const sortedGroupNames = [...groups.keys()].sort((a, b) => a.localeCompare(b, 'ru'))
+    for (const gName of sortedGroupNames) {
+      const g = groups.get(gName)
+      const rows = [...g.rowsMap.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+      out.push({ name: g.name, rows, subtotalByCp: g.subtotalByCp })
+    }
+    return out
   }, [itemsOfScope, counterpartiesInScope, proposalLookup, subTab])
 
   // Удалить все КП контрагента в scope.
@@ -390,10 +413,10 @@ function TenderProposalsCompare({
           {(subTab === 'materials' || subTab === 'works') && (
             <AggregateView
               kind={subTab}
-              rows={aggregatedRows}
+              groups={aggregatedGroups}
               counterpartiesInScope={counterpartiesInScope}
               totalsByCp={totalsByCp}
-              minTotalCost={minTotalCost}
+              showGroupHeaders={selectedDoc === 'all'}
             />
           )}
         </>
@@ -499,30 +522,45 @@ function SourceTable({
 }
 
 // ===== Подкомпонент: «Материалы» / «Работы» (агрегированный) =====
-function AggregateView({ kind, rows, counterpartiesInScope, totalsByCp, minTotalCost }) {
+// task 350: в режиме «Объединённый» рендерим по группам ВОРов с подытогами,
+// потом общий ИТОГО. В режиме одного ВОРа — плоский список (одна группа,
+// заголовок группы скрывается).
+function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGroupHeaders }) {
   const isMaterials = kind === 'materials'
   const totalKey = isMaterials ? 'totalMat' : 'totalWork'
-  // Минимум по агрегированной строке для подсветки.
-  const minByAggRow = useMemo(() => {
-    const out = new Map()
-    rows.forEach((r, idx) => {
-      let min = Infinity
-      for (const cp of counterpartiesInScope) {
-        const v = r.cpData.get(cp.id)?.totalCost || 0
-        if (v > 0 && v < min) min = v
-      }
-      if (min !== Infinity) out.set(idx, min)
-    })
-    return out
-  }, [rows, counterpartiesInScope])
 
-  if (rows.length === 0) {
+  // Минимум по строке (среди контрагентов с непустыми ценами) — для подсветки.
+  const computeMinByRow = (row) => {
+    let min = Infinity
+    for (const cp of counterpartiesInScope) {
+      const v = row.cpData.get(cp.id)?.totalCost || 0
+      if (v > 0 && v < min) min = v
+    }
+    return min === Infinity ? null : min
+  }
+  // Минимум по подытогу группы — подсветка лучшего контрагента ПО ЭТОМУ ВОРу.
+  const computeMinSubtotal = (group) => {
+    let min = Infinity
+    for (const cp of counterpartiesInScope) {
+      const v = group.subtotalByCp.get(cp.id) || 0
+      if (v > 0 && v < min) min = v
+    }
+    return min === Infinity ? null : min
+  }
+
+  if (groups.length === 0) {
     return (
       <div className="proposals-empty">
         <p>{isMaterials ? 'Материалов нет в выбранном scope.' : 'Работ нет в выбранном scope.'}</p>
       </div>
     )
   }
+
+  // Минимальный итог по контрагенту (общий ИТОГО снизу).
+  const allTotals = counterpartiesInScope.map(c => totalsByCp.get(c.id)?.[totalKey] || 0)
+  const minTotal = allTotals.length > 0
+    ? Math.min(...allTotals.filter(v => v > 0).concat(Infinity))
+    : Infinity
 
   return (
     <div className="proposals-table-wrap">
@@ -550,39 +588,72 @@ function AggregateView({ kind, rows, counterpartiesInScope, totalsByCp, minTotal
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, idx) => {
-            const minCost = minByAggRow.get(idx)
+          {groups.map((group, gi) => {
+            const minSub = computeMinSubtotal(group)
             return (
-              <tr key={`${r.name}|${r.unit}|${idx}`}>
-                <td className="td-num">{idx + 1}</td>
-                <td className="td-name" title={r.name}>{r.name}</td>
-                <td className="td-unit">{r.unit || '—'}</td>
-                <td className="td-vol">{fmtMoney(r.totalVol)}</td>
-                {counterpartiesInScope.map(cp => {
-                  const d = r.cpData.get(cp.id)
-                  const avgPrice = d && d.weightedVolSum > 0 ? d.weightedPriceSum / d.weightedVolSum : 0
-                  const total = d?.totalCost || 0
-                  const isMin = total > 0 && minCost != null && total === minCost
+              <React.Fragment key={`g:${group.name}|${gi}`}>
+                {showGroupHeaders && (
+                  <tr className="proposals-group-header">
+                    <td colSpan={4 + counterpartiesInScope.length * 2}>
+                      <span className="proposals-group-header-label">ВОР</span>
+                      <span className="proposals-group-header-name">{group.name}</span>
+                      <span className="proposals-group-header-count">
+                        {group.rows.length} {isMaterials ? 'позиций материалов' : 'позиций работ'}
+                      </span>
+                    </td>
+                  </tr>
+                )}
+                {group.rows.map((r, ri) => {
+                  const minCost = computeMinByRow(r)
                   return (
-                    <React.Fragment key={cp.id}>
-                      <td className="td-price td-cp-first">{d ? fmtMoney(avgPrice) : '—'}</td>
-                      <td className={`td-price td-total${isMin ? ' is-min' : ''}`}>{d ? fmtMoney(total) : '—'}</td>
-                    </React.Fragment>
+                    <tr key={`${group.name}|${r.name}|${r.unit}|${ri}`}>
+                      <td className="td-num">{ri + 1}</td>
+                      <td className="td-name" title={r.name}>{r.name}</td>
+                      <td className="td-unit">{r.unit || '—'}</td>
+                      <td className="td-vol">{fmtMoney(r.totalVol)}</td>
+                      {counterpartiesInScope.map(cp => {
+                        const d = r.cpData.get(cp.id)
+                        const avgPrice = d && d.weightedVolSum > 0 ? d.weightedPriceSum / d.weightedVolSum : 0
+                        const total = d?.totalCost || 0
+                        const isMin = total > 0 && minCost != null && total === minCost
+                        return (
+                          <React.Fragment key={cp.id}>
+                            <td className="td-price td-cp-first">{d ? fmtMoney(avgPrice) : '—'}</td>
+                            <td className={`td-price td-total${isMin ? ' is-min' : ''}`}>{d ? fmtMoney(total) : '—'}</td>
+                          </React.Fragment>
+                        )
+                      })}
+                    </tr>
                   )
                 })}
-              </tr>
+                {showGroupHeaders && (
+                  <tr className="proposals-group-subtotal">
+                    <td colSpan={4} style={{ textAlign: 'right' }}>
+                      Подытог по «{group.name}», ₽:
+                    </td>
+                    {counterpartiesInScope.map(cp => {
+                      const v = group.subtotalByCp.get(cp.id) || 0
+                      const isMin = v > 0 && minSub != null && v === minSub
+                      return (
+                        <td key={cp.id} colSpan={2} className={`td-group-subtotal${isMin ? ' is-min' : ''}`}>
+                          {v > 0 ? fmtMoney(v) : '—'}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )}
+              </React.Fragment>
             )
           })}
         </tbody>
         <tfoot>
           <tr className="proposals-total-row">
-            <td colSpan={4} style={{ textAlign: 'right' }}>ИТОГО, ₽:</td>
+            <td colSpan={4} style={{ textAlign: 'right' }}>
+              ОБЩИЙ ИТОГО по {isMaterials ? 'материалам' : 'работам'}, ₽:
+            </td>
             {counterpartiesInScope.map(cp => {
               const total = totalsByCp.get(cp.id)?.[totalKey] || 0
-              // Подсветка по итогу — сравниваем только totals того же типа.
-              const allTotals = counterpartiesInScope.map(c => totalsByCp.get(c.id)?.[totalKey] || 0)
-              const min = Math.min(...allTotals.filter(v => v > 0))
-              const isMin = total > 0 && total === min
+              const isMin = total > 0 && total === minTotal
               return (
                 <td key={cp.id} colSpan={2} className={`td-total-cp${isMin ? ' is-min' : ''}`}>
                   {fmtMoney(total)}
@@ -593,9 +664,9 @@ function AggregateView({ kind, rows, counterpartiesInScope, totalsByCp, minTotal
         </tfoot>
       </table>
       <small className="proposals-aggregate-hint">
-        В таблице суммированы одинаковые наименования из всех ВОРов scope. Цена за единицу — средневзвешенная по объёму.
-        Итог снизу — общая сумма по {isMaterials ? 'материалам' : 'работам'} соответствующего контрагента (НЕ зависит от
-        фильтра в таблице — берётся из {minTotalCost > 0 ? 'данных всех КП' : 'нуля'}).
+        {showGroupHeaders
+          ? 'Строки сгруппированы по ВОРам. Внутри группы одинаковые наименования суммируются. Подытог — сумма по группе для каждого контрагента, ИТОГО снизу — по всем группам.'
+          : 'В таблице суммированы одинаковые наименования из всех позиций ВОРа. Цена за единицу — средневзвешенная по объёму.'}
       </small>
     </div>
   )
