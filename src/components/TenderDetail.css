@@ -3451,3 +3451,72 @@
   background: var(--border-color);
   margin: 0 0.25rem;
 }
+
+/* task 350: разделитель документа внутри «Объединённого ВОР» исходного вида.
+   Визуально явная граница между ВОРами + быстрый переход на отдельный ВОР. */
+.estimate-doc-divider-row {
+  background: rgba(37, 99, 235, 0.06) !important;
+  border-top: 2px solid var(--primary-color, #2563eb);
+}
+[data-theme='dark'] .estimate-doc-divider-row {
+  background: rgba(96, 165, 250, 0.10) !important;
+  border-top-color: #60a5fa;
+}
+.estimate-doc-divider-row td {
+  padding: 0.625rem 0.875rem !important;
+  vertical-align: middle;
+}
+.estimate-doc-divider-row.is-collapsed {
+  border-top-style: dashed;
+  background: var(--bg-secondary) !important;
+}
+.estimate-doc-divider-content {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+.estimate-doc-divider-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary-color, #2563eb);
+  padding: 0.125rem 0.4375rem;
+  background: var(--bg-primary);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  line-height: 1;
+}
+.estimate-doc-divider-name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.estimate-doc-divider-count {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.estimate-doc-divider-link {
+  margin-left: auto;
+  padding: 0.25rem 0.625rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.estimate-doc-divider-link:hover {
+  border-color: var(--primary-color, #2563eb);
+  color: var(--primary-color, #2563eb);
+  background: var(--bg-primary);
+}
+.estimate-doc-toggle {
+  color: var(--primary-color, #2563eb);
+  font-weight: 700;
+}

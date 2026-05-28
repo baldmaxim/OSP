@@ -19,15 +19,12 @@ const isWorkItem = (it) => {
 
 const sectionKey = (it, idx) => (it.id != null ? `id:${it.id}` : `idx:${idx}`)
 
-// task 349: «Объединённый ВОР» в исходном виде — это простая конкатенация
-// всех документов друг за другом, в порядке их имён, без дедупликации
-// заголовков. У каждого ВОРа сохраняются свои разделы/подразделы как есть.
-// Агрегирование (суммирование одинаковых позиций) делает AggregateTable
-// только для вкладок «Материалы» / «Работы».
+// task 349 + 350: «Объединённый ВОР» в исходном виде — конкатенация документов
+// друг за другом со специальными разделителями-заголовками между ними.
+// Каждый разделитель сворачивается + позволяет перейти к отдельной вкладке доку.
+// AggregateTable (Материалы/Работы) разделители игнорирует (_isDocDivider).
 function concatCombinedEstimate(items) {
   if (!items || items.length === 0) return items
-  // Группируем по estimate_name, сохраняя внутри документа порядок row_number
-  // (он уже отсортирован при fetch).
   const groups = new Map()
   for (const it of items) {
     const name = it.estimate_name || 'Основная смета'
@@ -37,10 +34,20 @@ function concatCombinedEstimate(items) {
   const sortedNames = [...groups.keys()].sort((a, b) => a.localeCompare(b, 'ru'))
   const out = []
   for (const name of sortedNames) {
+    out.push({
+      _isDocDivider: true,
+      _docName: name,
+      _docCount: groups.get(name).length,
+      id: `__doc-divider:${name}`,
+      cost_name: name,
+      is_section: false,
+      outline_level: 0,
+    })
     for (const it of groups.get(name)) out.push(it)
   }
   return out
 }
+const docDividerKey = (name) => `__doc:${name}`
 
 // task 345 + 346: сопоставление столбцов Excel — как в «Анализ ВОР/КП».
 // Объёмы только раздельные: workVolume + materialVolume. Общий объём не нужен.
@@ -96,7 +103,7 @@ function getHeaderKeys(items) {
 }
 
 // task 260/262: смета с многоуровневой группировкой/сворачиванием (как в Excel)
-function EstimateTable({ items, collapsedSections, onToggleSection }) {
+function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDoc }) {
   const lvlOf = makeLevelOf(items)
   const collapseStack = [] // активные свёрнутые заголовки: их уровни
   const rendered = []
@@ -106,13 +113,66 @@ function EstimateTable({ items, collapsedSections, onToggleSection }) {
   // секцией) — чтобы нумерация была стабильна при сворачивании.
   let workCount = 0
   let matCount = 0
+  // task 350: видимость разделителя документа (если он свёрнут — все items
+  // ВОРа до следующего разделителя пропускаются при рендере).
+  let docHidden = false
+  let docHiddenKey = null
   for (let idx = 0; idx < items.length; idx++) {
     const it = items[idx]
+
+    // task 350: разделитель документа — особая строка, не участвует в section-логике.
+    if (it._isDocDivider) {
+      // Сброс счётчиков для каждого документа — в исходном виде нумерация
+      // должна начинаться с 1 в каждом ВОРе.
+      workCount = 0
+      matCount = 0
+      const dkey = docDividerKey(it._docName)
+      docHidden = collapsedSections.has(dkey)
+      docHiddenKey = it._docName
+      rendered.push(
+        <tr key={`doc:${it._docName}`} className={`estimate-doc-divider-row${docHidden ? ' is-collapsed' : ''}`}>
+          <td className="estimate-num">
+            <button
+              type="button"
+              className="estimate-group-toggle estimate-doc-toggle"
+              onClick={() => onToggleSection(dkey)}
+              title={docHidden ? 'Развернуть документ' : 'Свернуть документ'}
+              aria-expanded={!docHidden}
+            >
+              {docHidden ? '▶' : '▼'}
+            </button>
+          </td>
+          <td colSpan={5}>
+            <div className="estimate-doc-divider-content">
+              <span className="estimate-doc-divider-eyebrow">ВОР</span>
+              <span className="estimate-doc-divider-name">{it._docName}</span>
+              <span className="estimate-doc-divider-count">{it._docCount} позиций</span>
+              {onSwitchToDoc && (
+                <button
+                  type="button"
+                  className="estimate-doc-divider-link"
+                  onClick={() => onSwitchToDoc(it._docName)}
+                  title={`Открыть «${it._docName}» отдельно`}
+                >Открыть отдельно →</button>
+              )}
+            </div>
+          </td>
+        </tr>
+      )
+      // Любые активные section-collapse сбрасываем на границе документа.
+      collapseStack.length = 0
+      continue
+    }
+
+    // Если активный документ свёрнут — пропускаем его items.
+    if (docHidden) continue
+
     const L = lvlOf(it)
     while (collapseStack.length && L <= collapseStack[collapseStack.length - 1]) collapseStack.pop()
     const hidden = collapseStack.length > 0
     const next = items[idx + 1]
-    const isHeader = !!next && lvlOf(next) > L
+    // Игнорируем доку-разделитель при поиске следующего «уровня».
+    const isHeader = !!next && !next._isDocDivider && lvlOf(next) > L
     const key = sectionKey(it, idx)
     const collapsed = collapsedSections.has(key)
     const isSectionLike = it.is_section || isHeader
@@ -166,6 +226,8 @@ function EstimateTable({ items, collapsedSections, onToggleSection }) {
     }
     if (isHeader && collapsed && !hidden) collapseStack.push(L)
   }
+  // suppress unused warning
+  void docHiddenKey
   return (
     <div className="table-container">
       <table className="data-table estimate-table">
@@ -190,6 +252,7 @@ function AggregateTable({ items, type }) {
   const map = new Map()
   for (const it of items) {
     if (it.is_section) continue
+    if (it._isDocDivider) continue // task 350: разделители документов в агрегации не участвуют
     const work = isWorkItem(it)
     if (type === 'works' && !work) continue
     if (type === 'materials' && work) continue
@@ -1370,6 +1433,7 @@ function TenderDetailPage() {
                     items={currentEstimate}
                     collapsedSections={collapsedSections}
                     onToggleSection={toggleSection}
+                    onSwitchToDoc={selectedDocName === 'all' ? setSelectedDocName : undefined}
                   />
                 )}
                 {estimateSubTab === 'materials' && (
