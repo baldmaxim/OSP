@@ -19,21 +19,23 @@ const isWorkItem = (it) => {
 
 const sectionKey = (it, idx) => (it.id != null ? `id:${it.id}` : `idx:${idx}`)
 
-// task 264: 2 варианта раскладки колонок Excel (как в «Анализ КП»/БСМ)
-// Вариант 1: A=№, B=КОД, C=Наименование, D=Ед.изм., E=Объём по виду работ, F=Общий расход
-// Вариант 2: A=№, B=КОД, C=Наименование, D=Примечание, E=Ед.изм., F=Объём (единый)
-const VOR_VARIANTS = {
-  v1: {
-    title: 'Вариант 1',
-    desc: 'A — №, B — КОД, C — Наименование, D — Ед. изм., E — Объём по виду работ, F — Общий расход',
-    cols: { code: 1, name: 2, unit: 3, workVolume: 4, materialVolume: 5, note: null },
-  },
-  v2: {
-    title: 'Вариант 2',
-    desc: 'A — №, B — КОД, C — Наименование, D — Примечание, E — Ед. изм., F — Объём (единый)',
-    cols: { code: 1, name: 2, note: 3, unit: 4, volume: 5 },
-  },
-}
+// task 345: полноценное сопоставление столбцов Excel — как в «Анализ ВОР/КП».
+// Пользователь выбирает индекс столбца для каждого поля. workVolume +
+// materialVolume — раздельные столбцы (v1-стиль); если задан только volume —
+// тип определяется по коду (Р→работа, иначе материал, v2-стиль).
+const VOR_COLUMN_FIELDS = [
+  { key: 'num',            label: '№ п/п',              default: 0 },
+  { key: 'code',           label: 'КОД (мат./Р)',       default: 1 },
+  { key: 'name',           label: 'Наименование',       default: 2 },
+  { key: 'unit',           label: 'Ед. изм.',           default: 3 },
+  { key: 'workVolume',     label: 'Объём работ',        default: 4 },
+  { key: 'materialVolume', label: 'Объём материалов',   default: 5 },
+  { key: 'volume',         label: 'Объём (общий)',      default: null },
+  { key: 'note',           label: 'Примечание',         default: null },
+]
+const VOR_DEFAULT_COLUMN_MAP = Object.fromEntries(VOR_COLUMN_FIELDS.map(f => [f.key, f.default]))
+const VOR_COLUMN_CHOICES_COUNT = 26
+const VOR_COLUMN_MAP_STORAGE_KEY = 'tender-vor-column-map'
 
 // Глубина иерархической нумерации: «1» → 1, «1.2» → 2, «1.2.3» → 3.
 // Берём ведущий числовой токен (поддержка . - ) как разделителей).
@@ -232,7 +234,28 @@ function TenderDetailPage() {
   const [estimateSaving, setEstimateSaving] = useState(false)
   const [estimateSubTab, setEstimateSubTab] = useState('source') // 'source' | 'materials' | 'works'
   const [collapsedSections, setCollapsedSections] = useState(new Set())
-  const [estVariant, setEstVariant] = useState('v1') // task 264: вариант раскладки колонок
+  // task 345: сопоставление столбцов Excel — persist в localStorage между сессиями.
+  const [estColumnMap, setEstColumnMap] = useState(() => {
+    try {
+      const saved = localStorage.getItem(VOR_COLUMN_MAP_STORAGE_KEY)
+      if (!saved) return { ...VOR_DEFAULT_COLUMN_MAP }
+      const parsed = JSON.parse(saved)
+      const result = { ...VOR_DEFAULT_COLUMN_MAP }
+      for (const f of VOR_COLUMN_FIELDS) {
+        const v = parsed?.[f.key]
+        if (v === null) result[f.key] = null
+        else if (Number.isInteger(v) && v >= 0 && v < VOR_COLUMN_CHOICES_COUNT) result[f.key] = v
+      }
+      return result
+    } catch {
+      return { ...VOR_DEFAULT_COLUMN_MAP }
+    }
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem(VOR_COLUMN_MAP_STORAGE_KEY, JSON.stringify(estColumnMap)) }
+    catch { /* localStorage недоступен — игнорируем */ }
+  }, [estColumnMap])
 
   // Состояния для добавления участников
   const [showAddParticipantModal, setShowAddParticipantModal] = useState(false)
@@ -325,8 +348,8 @@ function TenderDetailPage() {
       const start = Math.max(0, (parseInt(estStartRow) || 2) - 1)
       const end = estEndRow ? Math.min(rows.length, parseInt(estEndRow) || rows.length) : rows.length
 
-      const v = VOR_VARIANTS[estVariant] || VOR_VARIANTS.v1
-      const c = v.cols
+      // task 345: используем пользовательский маппинг столбцов
+      const c = estColumnMap
       const cell = (row, idx) => (idx != null && row[idx] != null) ? String(row[idx]).trim() : ''
 
       const items = []
@@ -335,23 +358,28 @@ function TenderDetailPage() {
       for (let i = start; i < end; i++) {
         const row = rows[i]
         if (!row || row.length === 0) continue
-        const numA = cell(row, 0) // столбец A — № п/п (часто иерархический: 1 / 1.1 / 1.1.1)
+        // № п/п: пользователь может задать свой столбец (по умолчанию A=0).
+        const numA = cell(row, c.num != null ? c.num : 0)
         const code = cell(row, c.code)
         const name = cell(row, c.name)
         if (!name) continue
         const unit = cell(row, c.unit)
         const note = c.note != null ? cell(row, c.note) : ''
 
-        let workVolume, materialConsumption
-        if (estVariant === 'v2') {
-          // Единый столбец объёма: для работ → work_volume, для материалов → material_consumption
+        // Стратегия объёмов:
+        // - Если задан workVolume или materialVolume → используем раздельные столбцы.
+        // - Иначе если задан общий volume → тип по коду (Р→работа, иначе материал).
+        let workVolume = null
+        let materialConsumption = null
+        const hasSplitVolumes = c.workVolume != null || c.materialVolume != null
+        if (hasSplitVolumes) {
+          workVolume = c.workVolume != null ? cleanNumericValue(row[c.workVolume]) : null
+          materialConsumption = c.materialVolume != null ? cleanNumericValue(row[c.materialVolume]) : null
+        } else if (c.volume != null) {
           const vol = cleanNumericValue(row[c.volume])
           const isWork = (code || '').trim().toUpperCase().startsWith('Р')
           workVolume = isWork ? vol : null
           materialConsumption = isWork ? null : vol
-        } else {
-          workVolume = cleanNumericValue(row[c.workVolume])
-          materialConsumption = cleanNumericValue(row[c.materialVolume])
         }
 
         // Раздел: только наименование, без кода/ед.изм./чисел
@@ -448,6 +476,39 @@ function TenderDetailPage() {
       alert('Ошибка удаления ВОР: ' + error.message)
     }
   }
+
+  // task 345: превью первой непустой ячейки каждого столбца — подсказка
+  // «A — № п/п», «C — Наименование» в выпадающих списках сопоставления.
+  const estColumnPreviews = useMemo(() => {
+    const empty = Array(VOR_COLUMN_CHOICES_COUNT).fill('')
+    if (!pendingWorkbook || !estSelectedSheet) return empty
+    const sheet = pendingWorkbook.Sheets[estSelectedSheet]
+    if (!sheet) return empty
+    const result = []
+    for (let col = 0; col < VOR_COLUMN_CHOICES_COUNT; col++) {
+      let preview = ''
+      for (let r = 0; r < 6; r++) {
+        const ref = XLSX.utils.encode_cell({ r, c: col })
+        const cell = sheet[ref]
+        if (cell && cell.v !== undefined && cell.v !== '') {
+          preview = String(cell.v).replace(/\s+/g, ' ').trim()
+          if (preview) break
+        }
+      }
+      if (preview.length > 28) preview = preview.slice(0, 28) + '…'
+      result.push(preview)
+    }
+    return result
+  }, [pendingWorkbook, estSelectedSheet])
+
+  const updateEstColumnMap = (fieldKey, value) => {
+    setEstColumnMap(prev => ({
+      ...prev,
+      [fieldKey]: value === '' ? null : Number(value),
+    }))
+  }
+
+  const resetEstColumnMap = () => setEstColumnMap({ ...VOR_DEFAULT_COLUMN_MAP })
 
   // task 260: текущий набор позиций (предпросмотр имеет приоритет над сохранённым)
   const currentEstimate = parsedEstimate || estimateItems
@@ -1677,7 +1738,7 @@ function TenderDetailPage() {
       {/* task 259: модал параметров импорта сметы */}
       {showEstimateModal && (
         <div className="modal-overlay">
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '460px' }}>
+          <div className="modal vor-import-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Импорт ВОР</h3>
               <button
@@ -1687,68 +1748,81 @@ function TenderDetailPage() {
             </div>
             <form
               onSubmit={(e) => { e.preventDefault(); handleParseEstimate() }}
-              style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}
+              className="vor-import-form"
             >
-              <div>
-                <label className="info-label" style={{ display: 'block', marginBottom: '0.375rem' }}>
-                  Вариант раскладки колонок
-                </label>
-                <div className="estimate-variant-cards">
-                  {Object.entries(VOR_VARIANTS).map(([key, v]) => (
-                    <button
-                      type="button"
-                      key={key}
-                      className={`estimate-variant-card ${estVariant === key ? 'active' : ''}`}
-                      onClick={() => setEstVariant(key)}
+              {/* Лист + диапазон строк — в одну линию */}
+              <div className="vor-import-row">
+                {estSheetNames.length > 1 && (
+                  <div className="vor-import-field" style={{ flex: 2 }}>
+                    <label>Лист Excel</label>
+                    <select
+                      value={estSelectedSheet}
+                      onChange={(e) => setEstSelectedSheet(e.target.value)}
                     >
-                      <span className="estimate-variant-radio" aria-hidden>
-                        {estVariant === key ? '●' : '○'}
-                      </span>
-                      <span className="estimate-variant-text">
-                        <strong>{v.title}</strong>
-                        <small>{v.desc}</small>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {estSheetNames.length > 1 && (
-                <div>
-                  <label className="info-label" style={{ display: 'block', marginBottom: '0.375rem' }}>Лист Excel</label>
-                  <select
-                    value={estSelectedSheet}
-                    onChange={(e) => setEstSelectedSheet(e.target.value)}
-                    style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
-                  >
-                    {estSheetNames.map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label className="info-label" style={{ display: 'block', marginBottom: '0.375rem' }}>Со строки</label>
+                      {estSheetNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="vor-import-field">
+                  <label>Со строки</label>
                   <input
                     type="number" min="1" value={estStartRow}
                     onChange={(e) => setEstStartRow(e.target.value)}
                     placeholder="2"
-                    style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', boxSizing: 'border-box' }}
                   />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label className="info-label" style={{ display: 'block', marginBottom: '0.375rem' }}>По строку</label>
+                <div className="vor-import-field">
+                  <label>По строку</label>
                   <input
                     type="number" min="1" value={estEndRow}
                     onChange={(e) => setEstEndRow(e.target.value)}
                     placeholder="Все"
-                    style={{ width: '100%', padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', boxSizing: 'border-box' }}
                   />
                 </div>
               </div>
-              <p className="hint" style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
-                Столбцы: A — № п/п, B — КОД, C — Наименование затрат, D — Ед. изм.,
-                E — Объём по виду работ, F — Общий расход.
-              </p>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+
+              {/* task 345: сопоставление полей со столбцами Excel */}
+              <div className="vor-import-section">
+                <div className="vor-import-section-head">
+                  <span className="vor-import-section-title">Сопоставление столбцов</span>
+                  <button
+                    type="button"
+                    className="vor-import-reset"
+                    onClick={resetEstColumnMap}
+                    title="Сбросить к A/B/C/D/E/F"
+                  >Сбросить</button>
+                </div>
+                <p className="vor-import-hint">
+                  Выберите, из какого столбца Excel брать значение для каждого поля.
+                  Если задан общий «Объём» вместо раздельных — тип позиции определяется по
+                  коду (Р → работа, иначе материал).
+                </p>
+                <div className="vor-column-map-grid">
+                  {VOR_COLUMN_FIELDS.map(f => (
+                    <label key={f.key} className="vor-column-map-row">
+                      <span className="vor-column-map-label">{f.label}</span>
+                      <select
+                        className="vor-column-map-select"
+                        value={estColumnMap[f.key] ?? ''}
+                        onChange={(e) => updateEstColumnMap(f.key, e.target.value)}
+                      >
+                        <option value="">— не использовать</option>
+                        {Array.from({ length: VOR_COLUMN_CHOICES_COUNT }, (_, idx) => {
+                          const letter = XLSX.utils.encode_col(idx)
+                          const preview = estColumnPreviews[idx]
+                          return (
+                            <option key={idx} value={idx}>
+                              {letter}{preview ? ` — ${preview}` : ''}
+                            </option>
+                          )
+                        })}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="vor-import-actions">
                 <button
                   type="button"
                   className="btn-secondary"
