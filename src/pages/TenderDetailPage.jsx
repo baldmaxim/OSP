@@ -77,6 +77,12 @@ function EstimateTable({ items, collapsedSections, onToggleSection }) {
   const lvlOf = makeLevelOf(items)
   const collapseStack = [] // активные свёрнутые заголовки: их уровни
   const rendered = []
+  // task 347: иерархическая нумерация — работы 1, 2, 3…; материалы под ними
+  // 1.1, 1.2, 1.3… Разделы/подразделы не считаются. Счётчики инкрементятся
+  // в порядке обхода (для всех элементов, видимых или скрытых под свёрнутой
+  // секцией) — чтобы нумерация была стабильна при сворачивании.
+  let workCount = 0
+  let matCount = 0
   for (let idx = 0; idx < items.length; idx++) {
     const it = items[idx]
     const L = lvlOf(it)
@@ -86,10 +92,24 @@ function EstimateTable({ items, collapsedSections, onToggleSection }) {
     const isHeader = !!next && lvlOf(next) > L
     const key = sectionKey(it, idx)
     const collapsed = collapsedSections.has(key)
+    const isSectionLike = it.is_section || isHeader
+
+    // Считаем номер заранее — даже для скрытых, чтобы порядок не «прыгал».
+    let displayNum = ''
+    if (!isSectionLike) {
+      if (isWorkItem(it)) {
+        workCount++
+        matCount = 0
+        displayNum = String(workCount)
+      } else {
+        matCount++
+        displayNum = workCount > 0 ? `${workCount}.${matCount}` : String(matCount)
+      }
+    }
 
     if (!hidden) {
       const indent = { paddingLeft: `${0.625 + L * 1.1}rem` }
-      if (it.is_section || isHeader) {
+      if (isSectionLike) {
         rendered.push(
           <tr key={it.id || idx} className="estimate-section-row">
             <td className="estimate-num">
@@ -111,7 +131,7 @@ function EstimateTable({ items, collapsedSections, onToggleSection }) {
       } else {
         rendered.push(
           <tr key={it.id || idx}>
-            <td className="estimate-num">{it.row_number}</td>
+            <td className="estimate-num">{displayNum}</td>
             <td>{it.code || '—'}</td>
             <td style={indent}>{it.cost_name}</td>
             <td>{it.unit || '—'}</td>
@@ -128,12 +148,12 @@ function EstimateTable({ items, collapsedSections, onToggleSection }) {
       <table className="data-table estimate-table">
         <thead>
           <tr>
-            <th style={{ width: '52px' }}>№</th>
+            <th style={{ width: '64px' }}>№</th>
             <th style={{ width: '110px' }}>КОД</th>
             <th>Наименование затрат</th>
             <th style={{ width: '90px' }}>Ед. изм.</th>
-            <th style={{ width: '130px' }}>Объём</th>
-            <th style={{ width: '130px' }}>Общий расход</th>
+            <th style={{ width: '130px' }}>Объём работ</th>
+            <th style={{ width: '130px' }}>Объём материалов</th>
           </tr>
         </thead>
         <tbody>{rendered}</tbody>

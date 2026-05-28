@@ -623,16 +623,19 @@ function ContactsPage() {
           <div className="table-container">
             <table className="data-table contacts-table people-table">
               <thead>
+                {/* task 344: сумма фикс. ширин ~930px → таблица помещается
+                    даже на 1280×… после сайдбара и паддингов, без скролла.
+                    Длинные значения (должности, email) word-wrap'аются. */}
                 <tr>
-                  <th style={{ width: '40px', textAlign: 'center' }}>№</th>
-                  <th style={{ width: '180px' }}>ФИО</th>
-                  <th style={{ width: '190px' }}>Объект/Офис</th>
-                  <th style={{ width: '230px' }}>Должность</th>
-                  <th style={{ width: '150px' }}>Отдел</th>
-                  <th style={{ width: '140px' }}>Телефон</th>
-                  <th style={{ width: '170px' }}>Email</th>
-                  <th>Примечания</th>
-                  <th style={{ width: '64px' }}></th>
+                  <th style={{ width: '36px', textAlign: 'center' }}>№</th>
+                  <th style={{ width: '150px' }}>ФИО</th>
+                  <th style={{ width: '140px' }}>Объект/Офис</th>
+                  <th style={{ width: '160px' }}>Должность</th>
+                  <th style={{ width: '110px' }}>Отдел</th>
+                  <th style={{ width: '120px' }}>Телефон</th>
+                  <th style={{ width: '160px' }}>Email</th>
+                  <th style={{ minWidth: '110px' }}>Примечания</th>
+                  <th style={{ width: '52px' }}></th>
                 </tr>
               </thead>
               <tbody>
