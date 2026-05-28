@@ -19,73 +19,26 @@ const isWorkItem = (it) => {
 
 const sectionKey = (it, idx) => (it.id != null ? `id:${it.id}` : `idx:${idx}`)
 
-// task 349: объединение items нескольких ВОРов в одну плоскую ленту с
-// дедупликацией секций. Секция считается «той же» если совпадает её полный
-// путь (родительские названия + собственное название). Items из всех ВОРов,
-// относящиеся к одной секции, собираются под ней подряд (в порядке загрузки).
-// Уникальные секции (есть только в одном документе) остаются как есть.
-function normalizeSectionName(s) {
-  return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase()
-}
-function mergeCombinedEstimate(items) {
+// task 349: «Объединённый ВОР» в исходном виде — это простая конкатенация
+// всех документов друг за другом, в порядке их имён, без дедупликации
+// заголовков. У каждого ВОРа сохраняются свои разделы/подразделы как есть.
+// Агрегирование (суммирование одинаковых позиций) делает AggregateTable
+// только для вкладок «Материалы» / «Работы».
+function concatCombinedEstimate(items) {
   if (!items || items.length === 0) return items
-  // 1) Декорируем каждый item его path-key (на основе ancestor sections).
-  const decorated = []
-  const stack = [] // [{ key, level, name, originalIdx }]
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i]
-    const L = Number.isFinite(it.outline_level) ? it.outline_level : (it.is_section ? 0 : 1)
-    // Pop section ancestors на том же или большем level — они вышли из scope.
-    while (stack.length && stack[stack.length - 1].level >= L) stack.pop()
-    if (it.is_section) {
-      const ownKey = normalizeSectionName(it.cost_name)
-      const parentPath = stack.map(s => s.key).join('▶')
-      const fullPath = parentPath ? `${parentPath}▶${ownKey}` : ownKey
-      decorated.push({ it, fullPath, parentPath, isSection: true, originalIdx: i })
-      stack.push({ key: ownKey, level: L })
-    } else {
-      const parentPath = stack.map(s => s.key).join('▶')
-      decorated.push({ it, fullPath: null, parentPath, isSection: false, originalIdx: i })
-    }
+  // Группируем по estimate_name, сохраняя внутри документа порядок row_number
+  // (он уже отсортирован при fetch).
+  const groups = new Map()
+  for (const it of items) {
+    const name = it.estimate_name || 'Основная смета'
+    if (!groups.has(name)) groups.set(name, [])
+    groups.get(name).push(it)
   }
-
-  // 2) Строим дерево: для каждой уникальной section path — node {section, items[], children[]}.
-  const nodes = new Map() // fullPath → node
-  const rootChildren = []
-  const ensureNode = (fullPath, sectionItem) => {
-    let n = nodes.get(fullPath)
-    if (!n) {
-      n = { fullPath, section: sectionItem, items: [], children: [] }
-      nodes.set(fullPath, n)
-    }
-    return n
-  }
-  const rootItems = [] // items без секции-предка
-  for (const d of decorated) {
-    if (d.isSection) {
-      const node = ensureNode(d.fullPath, d.it)
-      const parent = d.parentPath ? nodes.get(d.parentPath) : null
-      if (parent) {
-        if (!parent.children.includes(node)) parent.children.push(node)
-      } else {
-        if (!rootChildren.includes(node)) rootChildren.push(node)
-      }
-    } else {
-      const parent = d.parentPath ? nodes.get(d.parentPath) : null
-      if (parent) parent.items.push(d.it)
-      else rootItems.push(d.it)
-    }
-  }
-
-  // 3) DFS-обход дерева → плоский список (секция → её items → дочерние секции).
+  const sortedNames = [...groups.keys()].sort((a, b) => a.localeCompare(b, 'ru'))
   const out = []
-  for (const it of rootItems) out.push(it)
-  const visit = (n) => {
-    if (n.section) out.push(n.section)
-    for (const it of n.items) out.push(it)
-    for (const child of n.children) visit(child)
+  for (const name of sortedNames) {
+    for (const it of groups.get(name)) out.push(it)
   }
-  for (const root of rootChildren) visit(root)
   return out
 }
 
@@ -647,7 +600,7 @@ function TenderDetailPage() {
 
   const currentEstimate = useMemo(() => {
     if (parsedEstimate) return parsedEstimate
-    if (selectedDocName === 'all') return mergeCombinedEstimate(estimateItems)
+    if (selectedDocName === 'all') return concatCombinedEstimate(estimateItems)
     return estimateItems.filter(it => (it.estimate_name || 'Основная смета') === selectedDocName)
   }, [parsedEstimate, estimateItems, selectedDocName])
 
