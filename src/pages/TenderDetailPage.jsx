@@ -246,6 +246,10 @@ function TenderDetailPage() {
   const [estSelectedSheet, setEstSelectedSheet] = useState('')
   const [estStartRow, setEstStartRow] = useState('2')
   const [estEndRow, setEstEndRow] = useState('')
+  // task 348: название текущего загружаемого ВОРа (например, «Электрика», «ОВ»)
+  // и название выбранного для просмотра (или 'all' для объединённого ВОРа).
+  const [estDocName, setEstDocName] = useState('')
+  const [selectedDocName, setSelectedDocName] = useState('all')
   const [showEstimateModal, setShowEstimateModal] = useState(false)
   const [parsedEstimate, setParsedEstimate] = useState(null) // предпросмотр до сохранения
   const [estimateSaving, setEstimateSaving] = useState(false)
@@ -343,6 +347,10 @@ function TenderDetailPage() {
       setEstSelectedSheet(names[0] || '')
       setEstStartRow('2')
       setEstEndRow('')
+      // task 348: дефолт названия документа — имя файла без расширения.
+      // Пользователь может переименовать перед сохранением.
+      const baseName = file.name.replace(/\.[^.]+$/, '').trim() || 'ВОР'
+      setEstDocName(baseName)
       setShowEstimateModal(true)
     } catch (error) {
       alert('Ошибка чтения файла: ' + error.message)
@@ -449,20 +457,24 @@ function TenderDetailPage() {
     }
   }
 
-  // Сохранение проверенной сметы в тендер (заменяет предыдущую)
+  // Сохранение проверенной сметы в тендер.
+  // task 348: каждый ВОР сохраняется со своим estimate_name → несколько
+  // документов сосуществуют. Перезаписываем только items с этим же именем.
   const handleSaveEstimate = async () => {
     if (!parsedEstimate || parsedEstimate.length === 0) return
+    const docName = (estDocName || '').trim() || 'Основная смета'
     setEstimateSaving(true)
     try {
       const { error: delErr } = await supabase
         .from('tender_estimate_items')
         .delete()
         .eq('tender_id', tenderId)
+        .eq('estimate_name', docName)
       if (delErr) throw delErr
       const payload = parsedEstimate.map(it => ({
         ...it,
         tender_id: tenderId,
-        estimate_name: 'Основная смета',
+        estimate_name: docName,
       }))
       let { error: insErr } = await supabase
         .from('tender_estimate_items')
@@ -477,7 +489,8 @@ function TenderDetailPage() {
       setParsedEstimate(null)
       setPendingWorkbook(null)
       await fetchEstimateItems()
-      alert(`ВОР сохранён: ${payload.length} позиций`)
+      setSelectedDocName(docName) // показать только что сохранённый документ
+      alert(`ВОР «${docName}» сохранён: ${payload.length} позиций`)
     } catch (error) {
       console.error('Ошибка сохранения ВОР:', error.message)
       alert('Ошибка сохранения ВОР: ' + error.message)
@@ -486,15 +499,24 @@ function TenderDetailPage() {
     }
   }
 
+  // task 348: удаляем либо выбранный документ, либо все ВОРы тендера.
   const handleClearEstimate = async () => {
-    if (!window.confirm('Удалить сохранённый ВОР тендера?')) return
+    const isAll = selectedDocName === 'all'
+    const msg = isAll
+      ? 'Удалить ВСЕ ВОРы тендера? Это действие нельзя отменить.'
+      : `Удалить ВОР «${selectedDocName}»? Остальные документы останутся.`
+    if (!window.confirm(msg)) return
     try {
-      const { error } = await supabase
-        .from('tender_estimate_items')
-        .delete()
-        .eq('tender_id', tenderId)
+      let q = supabase.from('tender_estimate_items').delete().eq('tender_id', tenderId)
+      if (!isAll) q = q.eq('estimate_name', selectedDocName)
+      const { error } = await q
       if (error) throw error
-      setEstimateItems([])
+      if (isAll) {
+        setEstimateItems([])
+      } else {
+        setEstimateItems(prev => prev.filter(it => it.estimate_name !== selectedDocName))
+        setSelectedDocName('all')
+      }
     } catch (error) {
       alert('Ошибка удаления ВОР: ' + error.message)
     }
@@ -534,7 +556,25 @@ function TenderDetailPage() {
   const resetEstColumnMap = () => setEstColumnMap({ ...VOR_DEFAULT_COLUMN_MAP })
 
   // task 260: текущий набор позиций (предпросмотр имеет приоритет над сохранённым)
-  const currentEstimate = parsedEstimate || estimateItems
+  // task 348: фильтрация по выбранному документу. 'all' = объединённый ВОР,
+  // конкретное имя = только items этого документа.
+  const docNames = useMemo(() => {
+    const set = new Set(estimateItems.map(it => it.estimate_name || 'Основная смета'))
+    return [...set].sort((a, b) => a.localeCompare(b, 'ru'))
+  }, [estimateItems])
+
+  const currentEstimate = useMemo(() => {
+    if (parsedEstimate) return parsedEstimate
+    if (selectedDocName === 'all') return estimateItems
+    return estimateItems.filter(it => (it.estimate_name || 'Основная смета') === selectedDocName)
+  }, [parsedEstimate, estimateItems, selectedDocName])
+
+  // Если активный документ удалён или ещё не выбран — переключаемся на 'all'.
+  useEffect(() => {
+    if (selectedDocName === 'all') return
+    if (!docNames.includes(selectedDocName)) setSelectedDocName('all')
+  }, [docNames, selectedDocName])
+
   // task 262: ключи всех свёртываемых заголовков (учитывает группировку Excel)
   const estimateSectionKeys = getHeaderKeys(currentEstimate)
 
@@ -1171,7 +1211,9 @@ function TenderDetailPage() {
               <div className="section-actions">
                 {canEditTenders && (
                   <label className="btn-primary estimate-import-label">
-                    {estimateItems.length > 0 || parsedEstimate ? 'Заменить (импорт Excel)' : 'Импорт из Excel'}
+                    {/* task 348: всегда «Добавить ВОР» — несколько документов
+                        могут сосуществовать (каждый со своим estimate_name). */}
+                    {estimateItems.length > 0 || parsedEstimate ? '+ Добавить ВОР' : 'Импорт из Excel'}
                     <input
                       ref={estimateFileRef}
                       type="file"
@@ -1182,8 +1224,14 @@ function TenderDetailPage() {
                   </label>
                 )}
                 {canEditTenders && estimateItems.length > 0 && !parsedEstimate && (
-                  <button className="btn-secondary" onClick={handleClearEstimate}>
-                    Удалить ВОР
+                  <button
+                    className="btn-secondary"
+                    onClick={handleClearEstimate}
+                    title={selectedDocName === 'all'
+                      ? 'Удалить все ВОРы тендера'
+                      : `Удалить ВОР «${selectedDocName}»`}
+                  >
+                    {selectedDocName === 'all' ? 'Удалить все ВОРы' : `Удалить «${selectedDocName}»`}
                   </button>
                 )}
               </div>
@@ -1215,6 +1263,46 @@ function TenderDetailPage() {
 
             {(parsedEstimate || estimateItems.length > 0) ? (
               <>
+                {/* task 348: документы ВОР — переключение между ними и
+                    «Объединённый» (агрегированный из всех документов).
+                    Скрыто во время предпросмотра (parsedEstimate) — там
+                    показывается ещё не сохранённый документ. */}
+                {!parsedEstimate && docNames.length > 0 && (
+                  <div className="estimate-doc-tabs" role="tablist" aria-label="Документы ВОР">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={selectedDocName === 'all'}
+                      className={`estimate-doc-tab ${selectedDocName === 'all' ? 'active' : ''}`}
+                      onClick={() => setSelectedDocName('all')}
+                      title="Объединённый ВОР — все документы вместе"
+                    >
+                      <span className="estimate-doc-tab-label">Объединённый ВОР</span>
+                      <span className="estimate-doc-tab-count">{estimateItems.length}</span>
+                    </button>
+                    <span className="estimate-doc-tabs-sep" aria-hidden />
+                    {docNames.map(name => {
+                      const count = estimateItems.filter(it =>
+                        (it.estimate_name || 'Основная смета') === name
+                      ).length
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          role="tab"
+                          aria-selected={selectedDocName === name}
+                          className={`estimate-doc-tab ${selectedDocName === name ? 'active' : ''}`}
+                          onClick={() => setSelectedDocName(name)}
+                          title={`Открыть ВОР «${name}»`}
+                        >
+                          <span className="estimate-doc-tab-label">{name}</span>
+                          <span className="estimate-doc-tab-count">{count}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
                 <div className="estimate-subtabs">
                   <div className="estimate-subtabs-left">
                     <button
@@ -1773,6 +1861,24 @@ function TenderDetailPage() {
               onSubmit={(e) => { e.preventDefault(); handleParseEstimate() }}
               className="vor-import-form"
             >
+              {/* task 348: имя ВОРа — обязательное. На один тендер можно
+                  загрузить несколько документов (Электрика, ОВ, ВК и т.п.). */}
+              <div className="vor-import-field">
+                <label>Название документа (системы) <span style={{ color: '#dc2626' }}>*</span></label>
+                <input
+                  type="text"
+                  value={estDocName}
+                  onChange={(e) => setEstDocName(e.target.value)}
+                  placeholder="Например: Электрика, ОВ, ВК, Слаботочные системы"
+                  required
+                />
+                {docNames.includes((estDocName || '').trim()) && (
+                  <small style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                    ⚠ ВОР с таким названием уже есть — будет перезаписан.
+                  </small>
+                )}
+              </div>
+
               {/* Лист + диапазон строк — в одну линию */}
               <div className="vor-import-row">
                 {estSheetNames.length > 1 && (
