@@ -72,13 +72,15 @@ export function buildDisplayNumberMap(itemsOfVor) {
 }
 
 // ===== Формат A: по позициям ВОР =====
-// columnMap: { num, priceMaterial, priceWork, note } — индексы колонок (0-based).
+// columnMap: { num, code, name, priceMaterial, priceWork, note }.
 // rowRange: { start: 1-based, end: 1-based|null }.
 //
-// task 347: матчим по иерархической display-нумерации (1, 1.1, 1.2…),
-// а не по «row_number» из БД через parseInt. Старый код:
-//   parseInt('1.1') → 1 → перезаписывал цену работы №1 ценой материала!
-// Новый: точный string-match по той же нумерации, что видит пользователь в UI.
+// task 347 + 348: матчинг устойчив к тому, что в реальных КП материалы
+// часто идут БЕЗ № в колонке А (нумерованы только работы). Поэтому:
+//   - если есть № — матчим по нему (приоритет, hierarchical displayNum);
+//   - если нет — берём следующую позицию ВОР по порядку (sequential cursor);
+//   - если указаны код/наименование — дополнительно сверяем (warning при mismatch);
+//   - строки-разделы (нет num, нет кода, нет цен) пропускаются автоматически.
 export function parseByPosition({
   workbook,
   sheetName,
@@ -99,55 +101,92 @@ export function parseByPosition({
   const start = Math.max(0, (parseInt(rowRange.start) || 2) - 1)
   const end = rowRange.end ? Math.min(rows.length, parseInt(rowRange.end)) : rows.length
 
-  // Только позиции этого ВОРа, исключая разделы.
+  // Только позиции этого ВОРа, исключая разделы. Sorted by row_number (как fetched).
   const itemsOfVor = estimateItems.filter(
     it => (it.estimate_name || 'Основная смета') === docName && !it.is_section
   )
-  // Главный матчинг — по hierarchical displayNum («1», «1.1»).
   const itemsByDisplay = buildDisplayNumberMap(itemsOfVor)
-  // Fallback — по row_number из БД (для совместимости со старыми шаблонами).
   const itemsByRowNum = new Map(itemsOfVor.map(it => [String(it.row_number), it]))
 
   const cell = (row, idx) => (idx != null && row[idx] != null) ? row[idx] : null
-
-  // Защита от перезаписи: каждая позиция должна попасть в records только 1 раз.
-  // Если две строки Excel матчатся в одну позицию — пропускаем второе вхождение.
   const seenItemIds = new Set()
+  let cursor = -1 // индекс в itemsOfVor последней матченной позиции
+
+  const normalizeNum = (s) => {
+    if (s == null || s === '') return ''
+    return String(s).trim().replace(',', '.').replace(/\.$/, '').replace(/^0+(\d)/, '$1')
+  }
 
   for (let i = start; i < end; i++) {
     const row = rows[i]
     if (!row || row.length === 0) continue
 
     const rawNum = cell(row, columnMap.num)
-    if (rawNum == null || rawNum === '') continue
-
-    // Нормализуем ключ: «1,1» → «1.1», «  2.3  » → «2.3», «1.» → «1»,
-    // «01.02» → «1.2» (ведущие нули отрезаем). Числовые из Excel могут
-    // прийти как float — приводим к строке через toString().
-    let key = String(rawNum).trim().replace(',', '.').replace(/\.$/, '')
-    // Если float (1.1 → "1.1" корректно, но 1 → "1"; "01.02" → "01.02"):
-    key = key.replace(/^0+(\d)/, '$1') // убираем ведущие нули перед цифрой
-    if (!key) continue
-
-    const item = itemsByDisplay.get(key) || itemsByRowNum.get(key)
-    if (!item) {
-      unmatched.push({ row: i + 1, rowNumber: key, reason: 'нет позиции с таким №' })
-      continue
-    }
-    if (seenItemIds.has(item.id)) {
-      warnings.push(
-        `Строка ${i + 1}: позиция «${key}» (${item.cost_name}) уже была — повторное вхождение пропущено.`
-      )
-      continue
-    }
-
+    const rawCode = columnMap.code != null ? cell(row, columnMap.code) : null
+    const rawName = columnMap.name != null ? cell(row, columnMap.name) : null
     const priceMat = round2(cleanNumeric(cell(row, columnMap.priceMaterial)))
     const priceWork = round2(cleanNumeric(cell(row, columnMap.priceWork)))
     const note = columnMap.note != null
       ? String(cell(row, columnMap.note) || '').trim() || null
       : null
 
-    if (priceMat === 0 && priceWork === 0 && !note) continue // пустая строка цены — пропускаем
+    const hasNum = rawNum != null && String(rawNum).trim() !== ''
+    const hasCode = rawCode != null && String(rawCode).trim() !== ''
+    const hasName = rawName != null && String(rawName).trim() !== ''
+    const hasPrice = priceMat > 0 || priceWork > 0
+
+    // Строка-раздел: нет ни №, ни кода, ни цен — типично «Часть 10…» или
+    // «10.03Б.02.01.07.01.02. Монтаж…». Пропускаем без unmatched.
+    if (!hasNum && !hasCode && !hasPrice) continue
+
+    let item = null
+
+    // 1. Приоритет: матчинг по явному № (если он есть).
+    if (hasNum) {
+      const key = normalizeNum(rawNum)
+      item = itemsByDisplay.get(key) || itemsByRowNum.get(key)
+      if (item) {
+        cursor = itemsOfVor.indexOf(item)
+      } else {
+        // № указан, но не нашлось — НЕ переходим на sequential
+        // (может это была опечатка или нумерация другая) — отчёт в unmatched.
+        unmatched.push({ row: i + 1, rowNumber: key, reason: 'нет позиции с таким №' })
+        continue
+      }
+    } else {
+      // 2. Нет № — берём следующий ВОР-item.
+      cursor++
+      item = itemsOfVor[cursor]
+      if (!item) {
+        unmatched.push({ row: i + 1, name: hasName ? String(rawName) : '', reason: 'строк в Excel больше, чем позиций в ВОР' })
+        continue
+      }
+
+      // Опциональная сверка наименования (warning при сильном расхождении).
+      if (hasName) {
+        const want = normalizeKey(item.cost_name)
+        const got = normalizeKey(String(rawName))
+        // Простая мера схожести: совпадение по началу или общему фрагменту.
+        const matches = want === got
+          || want.includes(got)
+          || got.includes(want)
+          || (got.length >= 8 && want.length >= 8 && want.slice(0, 8) === got.slice(0, 8))
+        if (!matches) {
+          warnings.push(
+            `Строка ${i + 1}: наименование «${String(rawName).slice(0, 40)}…» не похоже на ВОР-позицию «${item.cost_name.slice(0, 40)}…» — возможно, сбился порядок строк.`
+          )
+        }
+      }
+    }
+
+    if (seenItemIds.has(item.id)) {
+      warnings.push(
+        `Строка ${i + 1}: позиция «${item.cost_name.slice(0, 40)}…» уже была — повторное вхождение пропущено.`
+      )
+      continue
+    }
+
+    if (priceMat === 0 && priceWork === 0 && !note) continue
 
     const workVol = Number(item.work_volume) || 0
     const matVol = Number(item.material_consumption) || 0

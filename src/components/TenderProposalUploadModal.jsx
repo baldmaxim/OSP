@@ -13,10 +13,14 @@ import {
 
 const COLUMN_COUNT = 26
 
+// task 348: добавлены опциональные code/name — позволяют парсеру корректно
+// обрабатывать материалы (у них в Excel часто нет №) и сверять наименование.
 const A_FIELDS = [
-  { key: 'num',           label: '№ п/п',          default: 0 },
-  { key: 'priceMaterial', label: 'Цена материалов', default: 8 },
-  { key: 'priceWork',     label: 'Цена работ',      default: 9 },
+  { key: 'num',           label: '№ п/п',           default: 0 },
+  { key: 'code',          label: 'КОД (Р/мат.)',    default: 1 },
+  { key: 'name',          label: 'Наименование',    default: 2 },
+  { key: 'priceMaterial', label: 'Цена материалов', default: 6 },
+  { key: 'priceWork',     label: 'Цена работ',      default: 7 },
   { key: 'note',          label: 'Примечание',      default: null },
 ]
 const A_DEFAULTS = Object.fromEntries(A_FIELDS.map(f => [f.key, f.default]))
@@ -411,7 +415,7 @@ function TenderProposalUploadModal({
                 </div>
                 <div className="vor-column-map-grid">
                   {currentFields.map(f => {
-                    const required = (format === 'A' && (f.key === 'num' || f.key === 'priceMaterial' || f.key === 'priceWork'))
+                    const required = (format === 'A' && (f.key === 'priceMaterial' || f.key === 'priceWork'))
                       || (format === 'B' && (f.key === 'name' || f.key === 'price'))
                     const optionalIfNotColumn = format === 'B' && f.key === 'kind' && kindHint !== 'column'
                     return (
