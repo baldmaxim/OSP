@@ -66,6 +66,14 @@ function TenderProposalUploadModal({
   const [docName, setDocName] = useState(docNames[0] || '')
   const [format, setFormat] = useState('A') // 'A' | 'B'
   const [kindHint, setKindHint] = useState('auto') // для формата B: auto | materials | works | column
+  // task 347: дата предоставления КП — обязательное поле. Дефолт — сегодня.
+  const [proposalDate, setProposalDate] = useState(() => {
+    const d = new Date()
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  })
 
   const fileRef = useRef(null)
   const [workbook, setWorkbook] = useState(null)
@@ -141,6 +149,10 @@ function TenderProposalUploadModal({
       alert('Выберите контрагента.')
       return
     }
+    if (!proposalDate) {
+      alert('Укажите дату предоставления КП.')
+      return
+    }
     setSaving(true)
     try {
       // ID позиций только этого ВОРа.
@@ -161,10 +173,17 @@ function TenderProposalUploadModal({
         ...r,
         tender_id: tenderId,
         counterparty_id: counterpartyId,
+        proposal_date: proposalDate, // task 347
       }))
-      const { error: insErr } = await supabase
+      let { error: insErr } = await supabase
         .from('tender_counterparty_proposals')
         .insert(payload)
+      // Подстраховка: миграция proposal_date ещё не применена — повторяем без поля.
+      if (insErr && /proposal_date/i.test(insErr.message || '')) {
+        const stripped = payload.map(({ proposal_date, ...rest }) => rest) // eslint-disable-line no-unused-vars
+        const retry = await supabase.from('tender_counterparty_proposals').insert(stripped)
+        insErr = retry.error
+      }
       if (insErr) throw insErr
 
       // Обновляем статус участника на 'proposal_provided' (валидное значение ENUM).
@@ -241,7 +260,7 @@ function TenderProposalUploadModal({
           onSubmit={(e) => { e.preventDefault(); handleRecognize() }}
           className="vor-import-form"
         >
-          {/* Контрагент + ВОР */}
+          {/* Контрагент + ВОР + Дата КП */}
           <div className="vor-import-row">
             <div className="vor-import-field" style={{ flex: 2 }}>
               <label>Контрагент *</label>
@@ -266,6 +285,15 @@ function TenderProposalUploadModal({
               >
                 {docNames.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
+            </div>
+            <div className="vor-import-field" style={{ flex: 1 }}>
+              <label>Дата КП *</label>
+              <input
+                type="date"
+                value={proposalDate}
+                onChange={(e) => setProposalDate(e.target.value)}
+                required
+              />
             </div>
           </div>
 

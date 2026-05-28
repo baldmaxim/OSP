@@ -68,19 +68,32 @@ function TenderProposalsCompare({
   const itemIds = useMemo(() => new Set(itemsOfDoc.map(it => it.id)), [itemsOfDoc])
 
   // Контрагенты, у которых есть хоть один proposal в этом ВОРе.
+  // Берём latest proposal_date по контрагенту для отображения в шапке.
   const counterpartiesInDoc = useMemo(() => {
-    const map = new Map() // cp_id → { id, name }
+    const map = new Map() // cp_id → { id, name, latestDate }
     for (const p of proposals) {
       if (!itemIds.has(p.estimate_item_id)) continue
-      if (!map.has(p.counterparty_id)) {
+      const cur = map.get(p.counterparty_id)
+      const date = p.proposal_date || null
+      if (!cur) {
         map.set(p.counterparty_id, {
           id: p.counterparty_id,
           name: p.counterparties?.name || p.counterparty_id,
+          latestDate: date,
         })
+      } else if (date && (!cur.latestDate || date > cur.latestDate)) {
+        cur.latestDate = date
       }
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
   }, [proposals, itemIds])
+
+  const fmtDate = (iso) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('ru-RU')
+  }
 
   // Lookup: estimate_item_id × counterparty_id → proposal row.
   const proposalLookup = useMemo(() => {
@@ -106,14 +119,15 @@ function TenderProposalsCompare({
     return m
   }, [counterpartiesInDoc, itemsOfDoc, proposalLookup])
 
-  // Минимальный total_unit_price по каждой позиции — для подсветки.
+  // Минимальный total_cost (стоимость позиции с учётом объёма) по каждой
+  // строке — для подсветки самого выгодного предложения.
   const minByItem = useMemo(() => {
     const m = new Map()
     for (const it of itemsOfDoc) {
       let min = Infinity
       for (const cp of counterpartiesInDoc) {
         const p = proposalLookup.get(`${it.id}__${cp.id}`)
-        const v = p ? Number(p.total_unit_price) || 0 : 0
+        const v = p ? Number(p.total_cost) || 0 : 0
         if (v > 0 && v < min) min = v
       }
       if (min !== Infinity) m.set(it.id, min)
@@ -239,7 +253,8 @@ function TenderProposalsCompare({
             })}
           </div>
 
-          {/* Таблица сравнения */}
+          {/* Таблица сравнения — 5 sub-cells на контрагента:
+              Ц.мат / Стоим.мат / Ц.раб / Стоим.раб / Итого. */}
           <div className="proposals-table-wrap">
             <table className="proposals-table">
               <thead>
@@ -251,17 +266,22 @@ function TenderProposalsCompare({
                   <th rowSpan={2} className="th-vol">Объём раб.</th>
                   <th rowSpan={2} className="th-vol">Объём мат.</th>
                   {counterpartiesInDoc.map(cp => (
-                    <th key={cp.id} colSpan={3} className="th-cp">
-                      <span className="th-cp-name" title={cp.name}>{cp.name}</span>
+                    <th key={cp.id} colSpan={5} className="th-cp">
+                      <div className="th-cp-name" title={cp.name}>{cp.name}</div>
+                      {cp.latestDate && (
+                        <div className="th-cp-date">КП от {fmtDate(cp.latestDate)}</div>
+                      )}
                     </th>
                   ))}
                 </tr>
                 <tr>
                   {counterpartiesInDoc.map(cp => (
                     <React.Fragment key={cp.id}>
-                      <th className="th-sub" title="Цена за ед. материалов">Ц.мат</th>
-                      <th className="th-sub" title="Цена за ед. работ">Ц.раб</th>
-                      <th className="th-sub" title="Итого за ед. (мат+раб)">Итого/ед</th>
+                      <th className="th-sub" title="Цена материала за ед.">Ц.мат, ₽/ед</th>
+                      <th className="th-sub" title="Стоимость материалов = Ц.мат × Объём мат.">Стоим.мат, ₽</th>
+                      <th className="th-sub" title="Цена работ за ед.">Ц.раб, ₽/ед</th>
+                      <th className="th-sub" title="Стоимость работ = Ц.раб × Объём раб.">Стоим.раб, ₽</th>
+                      <th className="th-sub th-sub-total" title="Итого по позиции (стоим.мат + стоим.раб)">Итого, ₽</th>
                     </React.Fragment>
                   ))}
                 </tr>
@@ -279,14 +299,16 @@ function TenderProposalsCompare({
                       <td className="td-vol">{fmtMoney(it.material_consumption)}</td>
                       {counterpartiesInDoc.map(cp => {
                         const p = proposalLookup.get(`${it.id}__${cp.id}`)
-                        const totalUnit = p ? Number(p.total_unit_price) || 0 : 0
-                        const isMin = totalUnit > 0 && minPrice != null && totalUnit === minPrice
+                        const total = p ? Number(p.total_cost) || 0 : 0
+                        const isMin = total > 0 && minPrice != null && total === minPrice
                         return (
                           <React.Fragment key={cp.id}>
-                            <td className="td-price">{p ? fmtMoney(p.unit_price_materials) : '—'}</td>
+                            <td className="td-price td-cp-first">{p ? fmtMoney(p.unit_price_materials) : '—'}</td>
+                            <td className="td-price td-sum">{p ? fmtMoney(p.total_materials) : '—'}</td>
                             <td className="td-price">{p ? fmtMoney(p.unit_price_works) : '—'}</td>
+                            <td className="td-price td-sum">{p ? fmtMoney(p.total_works) : '—'}</td>
                             <td className={`td-price td-total${isMin ? ' is-min' : ''}`}>
-                              {p ? fmtMoney(totalUnit) : '—'}
+                              {p ? fmtMoney(total) : '—'}
                             </td>
                           </React.Fragment>
                         )
@@ -303,7 +325,7 @@ function TenderProposalsCompare({
                     const min = Math.min(...counterpartiesInDoc.map(c => totalsByCp.get(c.id) || Infinity))
                     const isMin = total > 0 && total === min
                     return (
-                      <td key={cp.id} colSpan={3} className={`td-total-cp${isMin ? ' is-min' : ''}`}>
+                      <td key={cp.id} colSpan={5} className={`td-total-cp${isMin ? ' is-min' : ''}`}>
                         {fmtMoney(total)}
                       </td>
                     )

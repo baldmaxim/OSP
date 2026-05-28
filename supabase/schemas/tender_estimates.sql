@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS tender_counterparty_proposals (
   total_works DECIMAL(15, 2) DEFAULT 0,          -- Стоимость СМР/ПНР = unit_price_works * объем
   total_cost DECIMAL(15, 2) DEFAULT 0,           -- ИТОГО стоимость = total_materials + total_works
   participant_note TEXT,                          -- Примечание участника тендера
+  proposal_date DATE,                             -- task 347: дата предоставления КП
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(estimate_item_id, counterparty_id)

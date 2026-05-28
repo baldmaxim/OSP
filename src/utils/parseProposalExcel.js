@@ -41,9 +41,44 @@ export function normalizeKey(s) {
     .trim()
 }
 
+// Определение типа позиции по КОД («Р» / «р-…» → работа, иначе материал).
+function isWorkRow(item) {
+  const c = String(item.code || '').trim().toLowerCase()
+  return c === 'р' || c.startsWith('р-') || c.startsWith('р ') || c.startsWith('раб')
+}
+
+// task 347: иерархическая нумерация позиций ВОР — точно та же логика, что
+// показывается в UI (EstimateTable). Работы «1, 2, 3…», материалы под работой
+// «1.1, 1.2…». Возвращает Map<displayNum, item>. Контрагент в Excel видит эту
+// нумерацию и заполняет цены по ней.
+export function buildDisplayNumberMap(itemsOfVor) {
+  const map = new Map()
+  let workCount = 0
+  let matCount = 0
+  for (const it of itemsOfVor) {
+    if (it.is_section) continue
+    let key
+    if (isWorkRow(it)) {
+      workCount++
+      matCount = 0
+      key = String(workCount)
+    } else {
+      matCount++
+      key = workCount > 0 ? `${workCount}.${matCount}` : String(matCount)
+    }
+    map.set(key, it)
+  }
+  return map
+}
+
 // ===== Формат A: по позициям ВОР =====
 // columnMap: { num, priceMaterial, priceWork, note } — индексы колонок (0-based).
 // rowRange: { start: 1-based, end: 1-based|null }.
+//
+// task 347: матчим по иерархической display-нумерации (1, 1.1, 1.2…),
+// а не по «row_number» из БД через parseInt. Старый код:
+//   parseInt('1.1') → 1 → перезаписывал цену работы №1 ценой материала!
+// Новый: точный string-match по той же нумерации, что видит пользователь в UI.
 export function parseByPosition({
   workbook,
   sheetName,
@@ -68,9 +103,16 @@ export function parseByPosition({
   const itemsOfVor = estimateItems.filter(
     it => (it.estimate_name || 'Основная смета') === docName && !it.is_section
   )
-  const itemsByRowNum = new Map(itemsOfVor.map(it => [it.row_number, it]))
+  // Главный матчинг — по hierarchical displayNum («1», «1.1»).
+  const itemsByDisplay = buildDisplayNumberMap(itemsOfVor)
+  // Fallback — по row_number из БД (для совместимости со старыми шаблонами).
+  const itemsByRowNum = new Map(itemsOfVor.map(it => [String(it.row_number), it]))
 
   const cell = (row, idx) => (idx != null && row[idx] != null) ? row[idx] : null
+
+  // Защита от перезаписи: каждая позиция должна попасть в records только 1 раз.
+  // Если две строки Excel матчатся в одну позицию — пропускаем второе вхождение.
+  const seenItemIds = new Set()
 
   for (let i = start; i < end; i++) {
     const row = rows[i]
@@ -78,12 +120,24 @@ export function parseByPosition({
 
     const rawNum = cell(row, columnMap.num)
     if (rawNum == null || rawNum === '') continue
-    const rowNum = parseInt(rawNum)
-    if (isNaN(rowNum)) continue
 
-    const item = itemsByRowNum.get(rowNum)
+    // Нормализуем ключ: «1,1» → «1.1», «  2.3  » → «2.3», «1.» → «1»,
+    // «01.02» → «1.2» (ведущие нули отрезаем). Числовые из Excel могут
+    // прийти как float — приводим к строке через toString().
+    let key = String(rawNum).trim().replace(',', '.').replace(/\.$/, '')
+    // Если float (1.1 → "1.1" корректно, но 1 → "1"; "01.02" → "01.02"):
+    key = key.replace(/^0+(\d)/, '$1') // убираем ведущие нули перед цифрой
+    if (!key) continue
+
+    const item = itemsByDisplay.get(key) || itemsByRowNum.get(key)
     if (!item) {
-      unmatched.push({ row: i + 1, rowNumber: rowNum, reason: 'нет позиции с таким №' })
+      unmatched.push({ row: i + 1, rowNumber: key, reason: 'нет позиции с таким №' })
+      continue
+    }
+    if (seenItemIds.has(item.id)) {
+      warnings.push(
+        `Строка ${i + 1}: позиция «${key}» (${item.cost_name}) уже была — повторное вхождение пропущено.`
+      )
       continue
     }
 
@@ -110,6 +164,7 @@ export function parseByPosition({
       total_cost: round2(totalMaterials + totalWorks),
       participant_note: note,
     })
+    seenItemIds.add(item.id)
   }
 
   if (records.length === 0 && unmatched.length === 0) {
