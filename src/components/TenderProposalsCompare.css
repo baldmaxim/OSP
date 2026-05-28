@@ -522,6 +522,98 @@
   color: #4ade80;
 }
 
+/* task 353: транспонированная компоновка «Исходный КП».
+   Контрагенты идут построчно под каждой позицией ВОР, объединяющие колонки
+   (№, КОД, Наименование, Ед., Объёмы) — через rowSpan. */
+.proposals-table-transposed .th-cp-col {
+  text-align: left;
+  border-left: 2px solid var(--border-color);
+  background: var(--bg-tertiary);
+  min-width: 160px;
+}
+.proposals-table-transposed .th-money-section {
+  border-left: 1px solid var(--border-color);
+}
+.proposals-table-transposed .th-money-total {
+  border-left: 2px solid var(--border-color);
+  border-right: 2px solid var(--border-color);
+}
+
+/* Граница каждой позиции — visible-разделитель между group'ами строк */
+.proposals-table-transposed tbody tr.is-item-first td {
+  border-top: 2px solid var(--border-color);
+}
+.proposals-table-transposed tbody tr.is-item-first:first-child td {
+  border-top: none;
+}
+/* Зебра по позициям (не по строкам внутри одной позиции) */
+.proposals-table-transposed tbody tr.is-zebra td {
+  background: rgba(71, 85, 105, 0.025);
+}
+[data-theme='dark'] .proposals-table-transposed tbody tr.is-zebra td {
+  background: rgba(148, 163, 184, 0.04);
+}
+/* Hover подсвечивает целую строку контрагента (не всю позицию) */
+.proposals-table-transposed tbody tr:hover td {
+  background: rgba(71, 85, 105, 0.06);
+}
+
+/* Колонка контрагента — выделена */
+.proposals-table-transposed .td-cp-col {
+  border-left: 2px solid var(--border-color);
+  background: var(--bg-secondary);
+  padding: 0.4375rem 0.625rem;
+}
+.proposals-table-transposed .td-cp-col-name {
+  display: block;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.proposals-table-transposed .td-cp-col-date {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.0625rem;
+}
+.proposals-table-transposed .muted {
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: 0.75rem;
+}
+
+/* td-total в транспонированной — общая правая граница */
+.proposals-table-transposed .td-total {
+  border-right: 2px solid var(--border-color);
+}
+
+/* Итоговая строка на каждого контрагента */
+.proposals-total-cp-row td {
+  padding: 0.5rem 0.625rem !important;
+  background: var(--bg-tertiary);
+  font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--border-color);
+}
+.proposals-total-cp-row:first-child td {
+  border-top: 2px solid var(--border-color);
+}
+.proposals-total-cp-row.is-min td {
+  background: rgba(22, 163, 74, 0.08);
+}
+.proposals-total-cp-row.is-min .td-total {
+  background: rgba(22, 163, 74, 0.18);
+  color: #15803d;
+}
+[data-theme='dark'] .proposals-total-cp-row.is-min .td-total {
+  background: rgba(22, 163, 74, 0.28);
+  color: #4ade80;
+}
+
 /* task 350: группа-разделитель по ВОРу в агрегированном виде */
 .proposals-group-header td {
   padding: 0.625rem 0.75rem !important;
