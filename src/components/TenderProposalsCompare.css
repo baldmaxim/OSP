@@ -227,6 +227,42 @@
 .proposals-summary-row-section .proposals-summary-row-label {
   color: var(--text-secondary);
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+}
+/* Кнопка-шеврон «развернуть разбивку по ВОРам» */
+.proposals-summary-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.625rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: transform 0.15s ease, color 0.12s, background 0.12s;
+}
+.proposals-summary-toggle:hover {
+  background: var(--bg-tertiary);
+  color: #475569;
+}
+.proposals-summary-toggle.is-expanded {
+  transform: rotate(90deg);
+  color: #475569;
+}
+[data-theme='dark'] .proposals-summary-toggle.is-expanded {
+  color: #94a3b8;
+}
+.proposals-summary-toggle-spacer {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
 }
 /* task 351: вложенная разбивка по ВОРам внутри Материалы/Работы */
 .proposals-summary-row-sub {

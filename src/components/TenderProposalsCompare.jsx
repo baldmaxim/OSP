@@ -43,6 +43,17 @@ function TenderProposalsCompare({
   const [selectedDoc, setSelectedDoc] = useState('all')
   const [subTab, setSubTab] = useState('source') // 'source' | 'materials' | 'works'
   const [showUploadModal, setShowUploadModal] = useState(false)
+  // task 352: раскрытые разбивки по ВОРам в summary-карточках.
+  // Ключ — `${cpId}:mat` или `${cpId}:work`. По умолчанию свёрнуто.
+  const [expandedBreakdowns, setExpandedBreakdowns] = useState(() => new Set())
+  const toggleBreakdown = (key) => {
+    setExpandedBreakdowns(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   // Если активный ВОР пропал — переключаемся на 'all'.
   useEffect(() => {
@@ -368,6 +379,12 @@ function TenderProposalsCompare({
                     (b[1].mat + b[1].work) - (a[1].mat + a[1].work)
                   )
                 : []
+              const matKey = `${cp.id}:mat`
+              const workKey = `${cp.id}:work`
+              const matExpanded = expandedBreakdowns.has(matKey)
+              const workExpanded = expandedBreakdowns.has(workKey)
+              const hasMatBreakdown = showBreakdown && sortedDocs.some(([, v]) => v.mat > 0)
+              const hasWorkBreakdown = showBreakdown && sortedDocs.some(([, v]) => v.work > 0)
               return (
                 <div key={cp.id} className={`proposals-summary-card${isMin ? ' is-min' : ''}`}>
                   <div className="proposals-summary-head">
@@ -377,12 +394,25 @@ function TenderProposalsCompare({
                     )}
                   </div>
                   <div className="proposals-summary-rows">
-                    {/* Материалы */}
+                    {/* Материалы — со стрелкой раскрытия слева, если есть разбивка */}
                     <div className="proposals-summary-row proposals-summary-row-section">
-                      <span className="proposals-summary-row-label">Материалы</span>
+                      <span className="proposals-summary-row-label">
+                        {hasMatBreakdown ? (
+                          <button
+                            type="button"
+                            className={`proposals-summary-toggle${matExpanded ? ' is-expanded' : ''}`}
+                            onClick={() => toggleBreakdown(matKey)}
+                            title={matExpanded ? 'Свернуть разбивку по ВОРам' : 'Развернуть разбивку по ВОРам'}
+                            aria-expanded={matExpanded}
+                          >▸</button>
+                        ) : (
+                          <span className="proposals-summary-toggle-spacer" aria-hidden />
+                        )}
+                        Материалы
+                      </span>
                       <span className="proposals-summary-row-val">{fmtMoney(t.totalMat)} ₽</span>
                     </div>
-                    {showBreakdown && sortedDocs.filter(([, v]) => v.mat > 0).map(([docName, v]) => (
+                    {hasMatBreakdown && matExpanded && sortedDocs.filter(([, v]) => v.mat > 0).map(([docName, v]) => (
                       <div key={`mat:${docName}`} className="proposals-summary-row proposals-summary-row-sub">
                         <span className="proposals-summary-row-label proposals-summary-row-sub-label">
                           <span className="proposals-summary-row-sub-bullet" aria-hidden>↳</span>
@@ -392,12 +422,25 @@ function TenderProposalsCompare({
                       </div>
                     ))}
 
-                    {/* Работы */}
+                    {/* Работы — то же со стрелкой */}
                     <div className="proposals-summary-row proposals-summary-row-section">
-                      <span className="proposals-summary-row-label">Работы</span>
+                      <span className="proposals-summary-row-label">
+                        {hasWorkBreakdown ? (
+                          <button
+                            type="button"
+                            className={`proposals-summary-toggle${workExpanded ? ' is-expanded' : ''}`}
+                            onClick={() => toggleBreakdown(workKey)}
+                            title={workExpanded ? 'Свернуть разбивку по ВОРам' : 'Развернуть разбивку по ВОРам'}
+                            aria-expanded={workExpanded}
+                          >▸</button>
+                        ) : (
+                          <span className="proposals-summary-toggle-spacer" aria-hidden />
+                        )}
+                        Работы
+                      </span>
                       <span className="proposals-summary-row-val">{fmtMoney(t.totalWork)} ₽</span>
                     </div>
-                    {showBreakdown && sortedDocs.filter(([, v]) => v.work > 0).map(([docName, v]) => (
+                    {hasWorkBreakdown && workExpanded && sortedDocs.filter(([, v]) => v.work > 0).map(([docName, v]) => (
                       <div key={`work:${docName}`} className="proposals-summary-row proposals-summary-row-sub">
                         <span className="proposals-summary-row-label proposals-summary-row-sub-label">
                           <span className="proposals-summary-row-sub-bullet" aria-hidden>↳</span>
