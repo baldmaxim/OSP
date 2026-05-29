@@ -1593,30 +1593,14 @@ function ObjectDetailPage() {
                     </td>
                     <td className="center">
                       {(() => {
-                        const needsAct = Boolean(item.end_date_override) && !item.start_date
+                        // task 363: кнопка «Загрузить документ…» доступна для каждой
+                        //   строки гарантии независимо от end_date_override. Если акт
+                        //   уже привязан — показываем чип «Итоговый акт» + 👁/⬇.
                         const hasAct = Boolean(item.actual_start_doc)
-                        if (needsAct) {
-                          // task 357: акт ещё не подписан — кнопка вместо текста.
-                          return canEditObj ? (
-                            <button
-                              type="button"
-                              className="warranty-act-btn"
-                              onClick={() => setSignActWarranty(item)}
-                              title="Указать дату подписания и прикрепить файл акта"
-                            >
-                              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                              </svg>
-                              Загрузить документ подтверждающий начало гарантийного срока
-                            </button>
-                          ) : (
-                            <span className="warranty-act-placeholder">рассчитается после загрузки документа</span>
-                          )
-                        }
                         return (
                           <div className="warranty-duration-cell">
                             <div>{getWarrantyDurationDisplay(item)}</div>
-                            {hasAct && (
+                            {hasAct ? (
                               <div className="warranty-act-row">
                                 <button
                                   type="button"
@@ -1648,6 +1632,20 @@ function ObjectDetailPage() {
                                   ⬇
                                 </button>
                               </div>
+                            ) : canEditObj ? (
+                              <button
+                                type="button"
+                                className="warranty-act-btn"
+                                onClick={() => setSignActWarranty(item)}
+                                title="Указать дату подписания и прикрепить файл акта"
+                              >
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                                </svg>
+                                Загрузить документ подтверждающий начало гарантийного срока
+                              </button>
+                            ) : (
+                              <span className="warranty-act-placeholder">Акт не загружен</span>
                             )}
                           </div>
                         )
