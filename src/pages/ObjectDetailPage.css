@@ -953,6 +953,16 @@
   max-width: 300px;
 }
 
+/* task 356: в табе «Гарантия» столбцу «Примечание» нужна большая ширина,
+   потому что туда уходят длинные оговорки из договорной таблицы. */
+.cost-table td.notes-cell.notes-cell-wide {
+  max-width: 520px;
+  min-width: 320px;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
 .cost-table tfoot tr {
   background: var(--bg-tertiary);
 }
@@ -1766,5 +1776,14 @@ tr:hover .btn-delete-row {
   font-size: 0.75rem;
   color: var(--text-tertiary);
   line-height: 1.4;
+}
+
+/* task 355: textarea, которая сама растёт по содержимому. Высоту считает JS
+   (см. useEffect в ObjectDetailPage.jsx) — CSS только убирает ручной ресайз
+   и внутренний скролл. */
+.warranty-autosize {
+  resize: none;
+  overflow-y: hidden;
+  min-height: 60px;
 }
 

@@ -443,6 +443,11 @@ function ObjectDetailPage() {
     notes: ''
   })
 
+  // task 355: ref'ы для авто-расширения textarea внутри модалки гарантии.
+  //   Высота подстраивается под содержимое — без полосы прокрутки внутри.
+  const warrantyNotesRef = useRef(null)
+  const warrantyEventTextRef = useRef(null)
+
   // Warranty retentions state
   const [retentions, setRetentions] = useState([])
   const [showRetentionModal, setShowRetentionModal] = useState(false)
@@ -514,6 +519,23 @@ function ObjectDetailPage() {
   useEffect(() => {
     if (objectId) fetchObjectData()
   }, [objectId, fetchObjectData])
+
+  // task 355: autosize для textarea «Примечание» и «Описание события» в модалке гарантии.
+  //   Срабатывает при изменении значения и при открытии модалки (тогда editingWarranty
+  //   подставляет уже непустой текст — высоту надо подстроить сразу).
+  useEffect(() => {
+    const el = warrantyNotesRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [warrantyFormData.notes, showWarrantyModal])
+
+  useEffect(() => {
+    const el = warrantyEventTextRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [warrantyFormData.start_event_text, warrantyFormData.start_type, showWarrantyModal])
 
   // Автораскрытие групп с совпавшими приложениями при поиске (task 297).
   useEffect(() => {
@@ -1168,6 +1190,25 @@ function ObjectDetailPage() {
     return '-'
   }
 
+  // task 355: отображение «Гарантийный срок» — если задана фиксированная дата
+  //   окончания, ручной срок не используется. После того как пользователь укажет
+  //   фактическую дату начала (подписания акта), срок вычисляется автоматически.
+  const getWarrantyDurationDisplay = (w) => {
+    if (!w) return '-'
+    if (w.end_date_override) {
+      if (w.start_date) {
+        const start = new Date(w.start_date)
+        const end = new Date(w.end_date_override)
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start) {
+          const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())
+          return `${months} мес.`
+        }
+      }
+      return 'рассчитается после подписания акта'
+    }
+    return w.warranty_months ? `${w.warranty_months} мес.` : '-'
+  }
+
   // task 353: отображение «Начало гарантийного срока» с учётом типа и факта.
   const getWarrantyStartDisplay = (w) => {
     if (!w) return '-'
@@ -1488,14 +1529,14 @@ function ObjectDetailPage() {
                         </div>
                       )}
                     </td>
-                    <td className="center">{item.warranty_months} мес.</td>
+                    <td className="center">{getWarrantyDurationDisplay(item)}</td>
                     <td
                       className="center"
                       title={endByOverride ? 'Указана фиксированная дата окончания' : undefined}
                     >
                       {getWarrantyEndDisplay(item)}
                     </td>
-                    <td className="notes-cell" title={item.notes || ''}>{item.notes || ''}</td>
+                    <td className="notes-cell notes-cell-wide" title={item.notes || ''}>{item.notes || ''}</td>
                     <td className="actions">
                       {canEditObj && (
                         <>
@@ -1992,58 +2033,73 @@ function ObjectDetailPage() {
                 </div>
               </div>
 
-              {warrantyFormData.start_type === 'date' ? (
-                <div className="form-row-2">
-                  <div>
-                    <label>Дата начала *</label>
-                    <input type="date" value={warrantyFormData.start_date} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })} />
-                  </div>
-                  <div>
-                    <label>Гарантийный срок (мес.)</label>
-                    <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="form-row">
-                    <label>Описание события *</label>
-                    <textarea
-                      rows="3"
-                      value={warrantyFormData.start_event_text}
-                      onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_event_text: e.target.value })}
-                      placeholder="с даты подписания Акта о практическом завершении Работ по Объекту (Акт № 3), но в любом случае не позднее даты подписания Второго передаточного Акта…"
-                    />
-                  </div>
-                  <div className="form-row">
-                    <label>Связанный документ (опционально)</label>
-                    <select
-                      value={warrantyFormData.start_document_id}
-                      onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_document_id: e.target.value })}
-                    >
-                      <option value="">— не выбран —</option>
-                      {documents.map(d => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}{d.document_number ? ` (№ ${d.document_number})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-row-2">
-                    <div>
-                      <label>Фактическая дата начала (опционально)</label>
-                      <input
-                        type="date"
-                        value={warrantyFormData.start_date}
-                        onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })}
+              {/* task 355: если задана фиксированная дата окончания, поле «Гарантийный
+                  срок (мес.)» прячется — срок будет вычислен автоматически после того,
+                  как пользователь укажет фактическую дату начала (подписания акта). */}
+              {(() => {
+                const hasEndOverride = Boolean(warrantyFormData.end_date_override)
+                if (warrantyFormData.start_type === 'date') {
+                  return (
+                    <div className={hasEndOverride ? 'form-row' : 'form-row-2'}>
+                      <div>
+                        <label>Дата начала *</label>
+                        <input type="date" value={warrantyFormData.start_date} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })} />
+                      </div>
+                      {!hasEndOverride && (
+                        <div>
+                          <label>Гарантийный срок (мес.)</label>
+                          <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+                return (
+                  <>
+                    <div className="form-row">
+                      <label>Описание события *</label>
+                      <textarea
+                        ref={warrantyEventTextRef}
+                        className="warranty-autosize"
+                        rows="3"
+                        value={warrantyFormData.start_event_text}
+                        onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_event_text: e.target.value })}
+                        placeholder="с даты подписания Акта о практическом завершении Работ по Объекту (Акт № 3), но в любом случае не позднее даты подписания Второго передаточного Акта…"
                       />
                     </div>
-                    <div>
-                      <label>Гарантийный срок (мес.)</label>
-                      <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
+                    <div className="form-row">
+                      <label>Связанный документ (опционально)</label>
+                      <select
+                        value={warrantyFormData.start_document_id}
+                        onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_document_id: e.target.value })}
+                      >
+                        <option value="">— не выбран —</option>
+                        {documents.map(d => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}{d.document_number ? ` (№ ${d.document_number})` : ''}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
-                </>
-              )}
+                    <div className={hasEndOverride ? 'form-row' : 'form-row-2'}>
+                      <div>
+                        <label>Фактическая дата начала (опционально)</label>
+                        <input
+                          type="date"
+                          value={warrantyFormData.start_date}
+                          onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })}
+                        />
+                      </div>
+                      {!hasEndOverride && (
+                        <div>
+                          <label>Гарантийный срок (мес.)</label>
+                          <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )
+              })()}
 
               <div className="form-row">
                 <label>Фиксированная дата окончания (опционально)</label>
@@ -2052,12 +2108,18 @@ function ObjectDetailPage() {
                   value={warrantyFormData.end_date_override}
                   onChange={(e) => setWarrantyFormData({ ...warrantyFormData, end_date_override: e.target.value })}
                 />
-                <small className="form-hint">Если указана — перекрывает авторасчёт «дата начала + срок».</small>
+                <small className="form-hint">
+                  {warrantyFormData.end_date_override
+                    ? 'Гарантийный срок рассчитается автоматически после того, как будет указана фактическая дата подписания акта.'
+                    : 'Если указана — перекрывает авторасчёт «дата начала + срок».'}
+                </small>
               </div>
 
               <div className="form-row">
                 <label>Примечание</label>
                 <textarea
+                  ref={warrantyNotesRef}
+                  className="warranty-autosize"
                   rows="2"
                   value={warrantyFormData.notes}
                   onChange={(e) => setWarrantyFormData({ ...warrantyFormData, notes: e.target.value })}
