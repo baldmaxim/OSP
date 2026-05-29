@@ -1787,3 +1787,136 @@ tr:hover .btn-delete-row {
   min-height: 60px;
 }
 
+/* task 357: «Подписать акт» — кнопка в колонке «Гарантийный срок» когда
+   гарантия имеет фиксированную дату окончания, но фактическая дата начала
+   ещё не указана. */
+.warranty-act-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px dashed #2563eb;
+  background: rgba(37, 99, 235, 0.06);
+  color: #2563eb;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.warranty-act-btn:hover {
+  background: rgba(37, 99, 235, 0.12);
+  border-style: solid;
+}
+[data-theme='dark'] .warranty-act-btn {
+  border-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.08);
+  color: #93c5fd;
+}
+[data-theme='dark'] .warranty-act-btn:hover {
+  background: rgba(96, 165, 250, 0.18);
+}
+.warranty-act-placeholder {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* task 357: чип с привязанным актом — кнопка под значением срока */
+.warranty-duration-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+.warranty-act-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid transparent;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.warranty-act-chip:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.16);
+  border-color: rgba(37, 99, 235, 0.30);
+}
+.warranty-act-chip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+[data-theme='dark'] .warranty-act-chip {
+  background: rgba(96, 165, 250, 0.14);
+  color: #bfdbfe;
+}
+[data-theme='dark'] .warranty-act-chip:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.24);
+  border-color: rgba(96, 165, 250, 0.40);
+}
+
+/* task 357: блоки в WarrantyActSignModal */
+.warranty-act-info {
+  padding: 0.625rem 0.875rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.warranty-act-current {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.warranty-act-current-icon {
+  font-size: 1rem;
+  flex: 0 0 auto;
+}
+.warranty-act-current-link {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: #2563eb;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.warranty-act-current-link:hover {
+  color: #1d4ed8;
+}
+[data-theme='dark'] .warranty-act-current-link {
+  color: #93c5fd;
+}
+[data-theme='dark'] .warranty-act-current-link:hover {
+  color: #bfdbfe;
+}
+.warranty-act-unlink-btn {
+  margin-right: auto;
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.30);
+}
+.warranty-act-unlink-btn:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+

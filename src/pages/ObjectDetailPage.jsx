@@ -6,6 +6,7 @@ import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl } from '../services/s3'
 import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
 import S3DocumentPreview from '../components/S3DocumentPreview'
+import WarrantyActSignModal from '../components/WarrantyActSignModal'
 import './ObjectDetailPage.css'
 
 // Табличная строка документа (договор/ДС/приложение).
@@ -448,6 +449,10 @@ function ObjectDetailPage() {
   const warrantyNotesRef = useRef(null)
   const warrantyEventTextRef = useRef(null)
 
+  // task 357: модалка подписания акта для конкретной строки гарантии.
+  //   Если null — модалка закрыта. Иначе содержит саму строку гарантии.
+  const [signActWarranty, setSignActWarranty] = useState(null)
+
   // Warranty retentions state
   const [retentions, setRetentions] = useState([])
   const [showRetentionModal, setShowRetentionModal] = useState(false)
@@ -502,8 +507,13 @@ function ObjectDetailPage() {
         .from('object_estimate_items').select('*').eq('object_id', objectId).order('row_number')
       if (!estimateError) setEstimateItems(estimateData || [])
 
+      // task 357: подтягиваем s3-документ подписанного акта (если есть)
+      //   как нэстед-поле actual_start_doc — отдельный SELECT не нужен.
       const { data: warrantyData, error: warrantyError } = await supabase
-        .from('object_warranties').select('*').eq('object_id', objectId).order('order_number')
+        .from('object_warranties')
+        .select('*, actual_start_doc:s3_documents!actual_start_document_id(*)')
+        .eq('object_id', objectId)
+        .order('order_number')
       if (!warrantyError) setWarranties(warrantyData || [])
 
       const { data: retentionData, error: retentionError } = await supabase
@@ -1529,7 +1539,45 @@ function ObjectDetailPage() {
                         </div>
                       )}
                     </td>
-                    <td className="center">{getWarrantyDurationDisplay(item)}</td>
+                    <td className="center">
+                      {(() => {
+                        const needsAct = Boolean(item.end_date_override) && !item.start_date
+                        const hasAct = Boolean(item.actual_start_doc)
+                        if (needsAct) {
+                          // task 357: акт ещё не подписан — кнопка вместо текста.
+                          return canEditObj ? (
+                            <button
+                              type="button"
+                              className="warranty-act-btn"
+                              onClick={() => setSignActWarranty(item)}
+                              title="Указать дату подписания и прикрепить файл акта"
+                            >
+                              📎 Подписать акт
+                            </button>
+                          ) : (
+                            <span className="warranty-act-placeholder">рассчитается после подписания акта</span>
+                          )
+                        }
+                        return (
+                          <div className="warranty-duration-cell">
+                            <div>{getWarrantyDurationDisplay(item)}</div>
+                            {hasAct && (
+                              <button
+                                type="button"
+                                className="warranty-act-chip"
+                                onClick={() => canEditObj && setSignActWarranty(item)}
+                                disabled={!canEditObj}
+                                title={canEditObj
+                                  ? `Изменить или скачать акт: ${item.actual_start_doc.file_name}`
+                                  : item.actual_start_doc.file_name}
+                              >
+                                📄 {item.actual_start_doc.file_name}
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })()}
+                    </td>
                     <td
                       className="center"
                       title={endByOverride ? 'Указана фиксированная дата окончания' : undefined}
@@ -2133,6 +2181,19 @@ function ObjectDetailPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* task 357: модалка подписания акта для строки гарантии */}
+      {signActWarranty && (
+        <WarrantyActSignModal
+          warranty={signActWarranty}
+          objectId={objectId}
+          onClose={() => setSignActWarranty(null)}
+          onSaved={() => {
+            setSignActWarranty(null)
+            fetchObjectData()
+          }}
+        />
       )}
 
       {/* Модальное окно гарантийных удержаний */}
