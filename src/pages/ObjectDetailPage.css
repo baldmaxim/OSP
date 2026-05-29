@@ -2013,6 +2013,17 @@ tr:hover .btn-delete-row {
   background: rgba(220, 38, 38, 0.08);
 }
 
+/* task 362: компактная иконка-крестик «Открепить» рядом с текущим файлом в форме */
+.warranty-act-unlink-inline {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.30);
+}
+.warranty-act-unlink-inline:hover {
+  background: rgba(220, 38, 38, 0.10);
+  border-color: #dc2626;
+  color: #b91c1c;
+}
+
 /* task 359: модалка просмотра связанного документа (подпис. + ред.) */
 .warranty-linked-doc-body {
   padding: 1.25rem 1.75rem 0.5rem;

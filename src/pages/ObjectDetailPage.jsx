@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
-import { deleteDocument, requestDownloadUrl } from '../services/s3'
+import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
 import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import WarrantyActSignModal from '../components/WarrantyActSignModal'
@@ -431,18 +431,22 @@ function ObjectDetailPage() {
   const [warranties, setWarranties] = useState([])
   const [showWarrantyModal, setShowWarrantyModal] = useState(false)
   const [editingWarranty, setEditingWarranty] = useState(null)
-  // task 353: расширённая модель — поддерживает событийное начало (с привязкой
-  //   к документу-акту), фактическую дату начала, фиксированную дату окончания
-  //   (override) и примечание.
+  // task 353 + 362: модель формы. По задаче 362 пользователь не выбирает тип
+  //   старта — всегда «по событию» (start_type='event'). Радио-переключатель
+  //   из UI убран; в БД поле сохраняется как 'event'.
+  //   Поля actual_start_* — task 362: загрузка/открепление акта прямо в этой
+  //   модалке, без отдельной WarrantyActSignModal.
   const [warrantyFormData, setWarrantyFormData] = useState({
     work_name: '',
-    start_type: 'date',         // 'date' | 'event'
-    start_date: '',             // для 'date' — обязателен; для 'event' — фактическая дата (опц.)
-    start_event_text: '',       // только для 'event'
-    start_document_id: '',      // только для 'event', опционально
+    start_date: '',             // фактическая дата начала (опц.)
+    start_event_text: '',       // описание события — теперь обязательное
+    start_document_id: '',      // форма документа о начале гарантии (опц.)
     warranty_months: '12',
-    end_date_override: '',      // фиксированная дата окончания (приоритет над авторасчётом)
-    notes: ''
+    end_date_override: '',      // фиксированная дата окончания (приоритет)
+    notes: '',
+    actual_start_file: null,    // новый файл к загрузке
+    actual_start_existing: null, // s3_documents текущего акта (при редактировании)
+    actual_start_unlinked: false // флаг — открепить существующий акт
   })
 
   // task 355 + 359: ref'ы для авто-расширения textarea внутри модалки гарантии.
@@ -551,7 +555,7 @@ function ObjectDetailPage() {
     if (!el) return
     el.style.height = 'auto'
     el.style.height = el.scrollHeight + 'px'
-  }, [warrantyFormData.start_event_text, warrantyFormData.start_type, showWarrantyModal])
+  }, [warrantyFormData.start_event_text, showWarrantyModal])
 
   useEffect(() => {
     const el = warrantyWorkNameRef.current
@@ -1063,13 +1067,15 @@ function ObjectDetailPage() {
     setEditingWarranty(null)
     setWarrantyFormData({
       work_name: '',
-      start_type: 'date',
       start_date: '',
       start_event_text: '',
       start_document_id: '',
       warranty_months: '12',
       end_date_override: '',
-      notes: ''
+      notes: '',
+      actual_start_file: null,
+      actual_start_existing: null,
+      actual_start_unlinked: false
     })
     setShowWarrantyModal(true)
   }
@@ -1078,13 +1084,15 @@ function ObjectDetailPage() {
     setEditingWarranty(item)
     setWarrantyFormData({
       work_name: item.work_name,
-      start_type: item.start_type || 'date',
       start_date: item.start_date || '',
       start_event_text: item.start_event_text || '',
       start_document_id: item.start_document_id || '',
       warranty_months: String(item.warranty_months || 12),
       end_date_override: item.end_date_override || '',
-      notes: item.notes || ''
+      notes: item.notes || '',
+      actual_start_file: null,
+      actual_start_existing: item.actual_start_doc || null,
+      actual_start_unlinked: false
     })
     setShowWarrantyModal(true)
   }
@@ -1104,24 +1112,49 @@ function ObjectDetailPage() {
     e.preventDefault()
     const fd = warrantyFormData
     if (!fd.work_name.trim()) return alert('Введите наименование работ')
-    // task 353: валидация начала гарантии — обязательное поле в зависимости от типа.
-    if (fd.start_type === 'date' && !fd.start_date) {
-      return alert('Укажите дату начала гарантийного срока')
-    }
-    if (fd.start_type === 'event' && !fd.start_event_text.trim()) {
-      return alert('Опишите событие начала гарантии (например, «с даты подписания Акта № 3»)')
+    // task 362: тип старта всегда 'event' — текст «с какого момента» обязателен.
+    if (!fd.start_event_text.trim()) {
+      return alert('Опишите, с какого момента начинается гарантийный срок (например, «с даты подписания Акта № 3»)')
     }
     try {
+      // task 362: загрузка/открепление акта (actual_start_document_id) прямо
+      //   из этой модалки — без отдельной WarrantyActSignModal.
+      let actualStartDocId = editingWarranty?.actual_start_document_id || null
+
+      // 1) Открепление существующего акта (если пользователь нажал «Открепить»
+      //    и не выбрал новый файл).
+      if (fd.actual_start_unlinked && !fd.actual_start_file && fd.actual_start_existing) {
+        try { await deleteDocument(fd.actual_start_existing) } catch { /* лучшее усилие */ }
+        actualStartDocId = null
+      }
+
+      // 2) Загрузка нового файла. Если он есть — старый удаляем после успешного
+      //    PUT'а (race-safe порядок: сначала uploadFile создаёт новый, затем
+      //    deleteDocument сносит старый).
+      if (fd.actual_start_file) {
+        const uploaded = await uploadFile({
+          file: fd.actual_start_file,
+          ownerType: 'object',
+          ownerId: objectId,
+          notes: 'Акт начала гарантии'
+        })
+        actualStartDocId = uploaded.id
+        if (fd.actual_start_existing) {
+          try { await deleteDocument(fd.actual_start_existing) } catch { /* лучшее усилие */ }
+        }
+      }
+
       const dataToSave = {
         object_id: objectId,
         work_name: fd.work_name.trim(),
-        start_type: fd.start_type,
+        start_type: 'event',
         start_date: fd.start_date || null,
-        start_event_text: fd.start_type === 'event' ? (fd.start_event_text.trim() || null) : null,
-        start_document_id: fd.start_type === 'event' ? (fd.start_document_id || null) : null,
+        start_event_text: fd.start_event_text.trim() || null,
+        start_document_id: fd.start_document_id || null,
         warranty_months: parseInt(fd.warranty_months) || 12,
         end_date_override: fd.end_date_override || null,
         notes: fd.notes.trim() || null,
+        actual_start_document_id: actualStartDocId,
         order_number: editingWarranty?.order_number || warranties.length + 1
       }
       if (editingWarranty) {
@@ -2104,94 +2137,100 @@ function ObjectDetailPage() {
                 />
               </div>
 
-              {/* task 353: тип начала гарантии — по дате или по событию */}
+              {/* task 362: переключатель типа старта убран — всегда «по событию». */}
               <div className="form-row">
-                <label>Тип начала гарантии *</label>
-                <div className="warranty-start-radio">
-                  <label className="radio-inline">
-                    <input
-                      type="radio"
-                      name="warranty-start-type"
-                      value="date"
-                      checked={warrantyFormData.start_type === 'date'}
-                      onChange={() => setWarrantyFormData({ ...warrantyFormData, start_type: 'date' })}
-                    />
-                    По конкретной дате
-                  </label>
-                  <label className="radio-inline">
-                    <input
-                      type="radio"
-                      name="warranty-start-type"
-                      value="event"
-                      checked={warrantyFormData.start_type === 'event'}
-                      onChange={() => setWarrantyFormData({ ...warrantyFormData, start_type: 'event' })}
-                    />
-                    По событию (например, подписание акта)
-                  </label>
-                </div>
+                <label>С какого момента начинается гарантийный срок *</label>
+                <textarea
+                  ref={warrantyEventTextRef}
+                  className="warranty-autosize"
+                  rows="3"
+                  value={warrantyFormData.start_event_text}
+                  onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_event_text: e.target.value })}
+                  placeholder="с даты подписания Акта о практическом завершении Работ по Объекту (Акт № 3), но в любом случае не позднее даты подписания Второго передаточного Акта…"
+                />
               </div>
-
-              {/* task 355: если задана фиксированная дата окончания, поле «Гарантийный
-                  срок (мес.)» прячется — срок будет вычислен автоматически после того,
-                  как пользователь укажет фактическую дату начала (подписания акта). */}
+              <div className="form-row">
+                <label>Форма документа о начале гарантии (опционально)</label>
+                <WarrantyDocSelect
+                  value={warrantyFormData.start_document_id}
+                  onChange={(id) => setWarrantyFormData({ ...warrantyFormData, start_document_id: id })}
+                  documents={documents}
+                />
+              </div>
+              {/* task 355 + 362: фактическая дата + срок (срок скрыт если задан override) */}
               {(() => {
                 const hasEndOverride = Boolean(warrantyFormData.end_date_override)
-                if (warrantyFormData.start_type === 'date') {
-                  return (
-                    <div className={hasEndOverride ? 'form-row' : 'form-row-2'}>
-                      <div>
-                        <label>Дата начала *</label>
-                        <input type="date" value={warrantyFormData.start_date} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })} />
-                      </div>
-                      {!hasEndOverride && (
-                        <div>
-                          <label>Гарантийный срок (мес.)</label>
-                          <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
-                        </div>
-                      )}
-                    </div>
-                  )
-                }
                 return (
-                  <>
-                    <div className="form-row">
-                      <label>Описание события *</label>
-                      <textarea
-                        ref={warrantyEventTextRef}
-                        className="warranty-autosize"
-                        rows="3"
-                        value={warrantyFormData.start_event_text}
-                        onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_event_text: e.target.value })}
-                        placeholder="с даты подписания Акта о практическом завершении Работ по Объекту (Акт № 3), но в любом случае не позднее даты подписания Второго передаточного Акта…"
+                  <div className={hasEndOverride ? 'form-row' : 'form-row-2'}>
+                    <div>
+                      <label>Фактическая дата начала (опционально)</label>
+                      <input
+                        type="date"
+                        value={warrantyFormData.start_date}
+                        onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })}
                       />
                     </div>
-                    <div className="form-row">
-                      <label>Форма документа о начале гарантии (опционально)</label>
-                      <WarrantyDocSelect
-                        value={warrantyFormData.start_document_id}
-                        onChange={(id) => setWarrantyFormData({ ...warrantyFormData, start_document_id: id })}
-                        documents={documents}
-                      />
-                    </div>
-                    <div className={hasEndOverride ? 'form-row' : 'form-row-2'}>
+                    {!hasEndOverride && (
                       <div>
-                        <label>Фактическая дата начала (опционально)</label>
-                        <input
-                          type="date"
-                          value={warrantyFormData.start_date}
-                          onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })}
-                        />
+                        <label>Гарантийный срок (мес.)</label>
+                        <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
                       </div>
-                      {!hasEndOverride && (
-                        <div>
-                          <label>Гарантийный срок (мес.)</label>
-                          <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
-                        </div>
-                      )}
-                    </div>
-                  </>
+                    )}
+                  </div>
                 )
               })()}
+
+              {/* task 362: загрузка акта прямо в модалке — без перехода в WarrantyActSignModal */}
+              <div className="form-row">
+                <label>Документ подтверждающий начало гарантийного срока (опционально)</label>
+                {warrantyFormData.actual_start_existing && !warrantyFormData.actual_start_unlinked && (
+                  <div className="warranty-act-current" style={{ marginBottom: '0.5rem' }}>
+                    <span className="warranty-act-current-icon" aria-hidden>📄</span>
+                    <button
+                      type="button"
+                      className="warranty-act-current-link"
+                      onClick={() => handlePreviewFile(warrantyFormData.actual_start_existing)}
+                      title="Просмотр текущего файла"
+                    >
+                      {warrantyFormData.actual_start_existing.file_name}
+                    </button>
+                    <button
+                      type="button"
+                      className="warranty-act-icon-btn"
+                      onClick={() => handleDownloadFile(warrantyFormData.actual_start_existing)}
+                      title="Скачать"
+                      aria-label="Скачать"
+                    >⬇</button>
+                    <button
+                      type="button"
+                      className="warranty-act-icon-btn warranty-act-unlink-inline"
+                      onClick={() => setWarrantyFormData({ ...warrantyFormData, actual_start_unlinked: true, actual_start_file: null })}
+                      title="Открепить файл"
+                      aria-label="Открепить файл"
+                    >✕</button>
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  onChange={(e) => setWarrantyFormData({
+                    ...warrantyFormData,
+                    actual_start_file: e.target.files?.[0] || null,
+                    actual_start_unlinked: false
+                  })}
+                />
+                {warrantyFormData.actual_start_file && (
+                  <small className="form-hint">
+                    Будет загружен: <strong>{warrantyFormData.actual_start_file.name}</strong>{' '}
+                    ({Math.ceil(warrantyFormData.actual_start_file.size / 1024)} KB)
+                  </small>
+                )}
+                {warrantyFormData.actual_start_unlinked && !warrantyFormData.actual_start_file && (
+                  <small className="form-hint" style={{ color: '#dc2626' }}>
+                    Текущий файл будет откреплён при сохранении.
+                  </small>
+                )}
+              </div>
 
               <div className="form-row">
                 <label>Фиксированная дата окончания (опционально)</label>
