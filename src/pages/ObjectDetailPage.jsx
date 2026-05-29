@@ -444,14 +444,19 @@ function ObjectDetailPage() {
     notes: ''
   })
 
-  // task 355: ref'ы для авто-расширения textarea внутри модалки гарантии.
+  // task 355 + 359: ref'ы для авто-расширения textarea внутри модалки гарантии.
   //   Высота подстраивается под содержимое — без полосы прокрутки внутри.
   const warrantyNotesRef = useRef(null)
   const warrantyEventTextRef = useRef(null)
+  const warrantyWorkNameRef = useRef(null)
 
   // task 357: модалка подписания акта для конкретной строки гарантии.
   //   Если null — модалка закрыта. Иначе содержит саму строку гарантии.
   const [signActWarranty, setSignActWarranty] = useState(null)
+
+  // task 359: модалка просмотра связанного документа (для скрепки в строке гарантии).
+  //   Если не null — содержит запись object_documents с подгруженными signed/editable.
+  const [linkedDocPreview, setLinkedDocPreview] = useState(null)
 
   // Warranty retentions state
   const [retentions, setRetentions] = useState([])
@@ -546,6 +551,13 @@ function ObjectDetailPage() {
     el.style.height = 'auto'
     el.style.height = el.scrollHeight + 'px'
   }, [warrantyFormData.start_event_text, warrantyFormData.start_type, showWarrantyModal])
+
+  useEffect(() => {
+    const el = warrantyWorkNameRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [warrantyFormData.work_name, showWarrantyModal])
 
   // Автораскрытие групп с совпавшими приложениями при поиске (task 297).
   useEffect(() => {
@@ -1522,13 +1534,20 @@ function ObjectDetailPage() {
                         <div>{item.start_date ? formatDate(item.start_date) : '—'}</div>
                       )}
                       {linkedDoc && (
-                        <div
+                        <button
+                          type="button"
                           className="warranty-doc-chip"
-                          title={linkedDoc.name + (linkedDoc.document_number ? ` (№ ${linkedDoc.document_number})` : '')}
+                          onClick={() => setLinkedDocPreview(linkedDoc)}
+                          title={`Открыть файлы документа: ${linkedDoc.name}${linkedDoc.document_number ? ` (№ ${linkedDoc.document_number})` : ''}`}
                         >
-                          📎 {linkedDoc.name}
-                          {linkedDoc.document_number ? ` (№ ${linkedDoc.document_number})` : ''}
-                        </div>
+                          <svg className="warranty-doc-chip-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                          </svg>
+                          <span className="warranty-doc-chip-text">
+                            {linkedDoc.name}
+                            {linkedDoc.document_number ? ` (№ ${linkedDoc.document_number})` : ''}
+                          </span>
+                        </button>
                       )}
                       {item.start_type === 'event' && item.start_date && (
                         <div className="warranty-fact-date" title="Дата, с которой реально начинается гарантийный срок">
@@ -2070,7 +2089,15 @@ function ObjectDetailPage() {
             <form onSubmit={handleSubmitWarranty}>
               <div className="form-row">
                 <label>Наименование работ *</label>
-                <input type="text" value={warrantyFormData.work_name} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, work_name: e.target.value })} placeholder="Например: Строительные и монтажные работы" required />
+                <textarea
+                  ref={warrantyWorkNameRef}
+                  className="warranty-autosize warranty-autosize-compact"
+                  rows="1"
+                  value={warrantyFormData.work_name}
+                  onChange={(e) => setWarrantyFormData({ ...warrantyFormData, work_name: e.target.value })}
+                  placeholder="Например: Строительные и монтажные работы"
+                  required
+                />
               </div>
 
               {/* task 353: тип начала гарантии — по дате или по событию */}
@@ -2198,6 +2225,62 @@ function ObjectDetailPage() {
                 <button type="submit" className="btn-save">Сохранить</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* task 359: модалка просмотра связанного документа из строки гарантии.
+          Показывает подписанный и редактируемый файлы (если они привязаны к
+          object_documents) с кнопками просмотра и скачивания. */}
+      {linkedDocPreview && (
+        <div className="modal-overlay" onClick={() => setLinkedDocPreview(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Связанный документ</h3>
+              <button onClick={() => setLinkedDocPreview(null)}>×</button>
+            </div>
+            <div className="warranty-linked-doc-body">
+              <div className="warranty-linked-doc-title">
+                {linkedDocPreview.name}
+                {linkedDocPreview.document_number && (
+                  <span className="warranty-linked-doc-num"> (№ {linkedDocPreview.document_number})</span>
+                )}
+              </div>
+              {[
+                { key: 'signed',   label: 'Подписанный',  doc: linkedDocPreview.signed },
+                { key: 'editable', label: 'Редактируемый', doc: linkedDocPreview.editable },
+              ].map(slot => (
+                <div key={slot.key} className="warranty-linked-doc-slot">
+                  <div className="warranty-linked-doc-slot-label">{slot.label}</div>
+                  {slot.doc ? (
+                    <div className="warranty-linked-doc-slot-row">
+                      <span className="warranty-linked-doc-filename" title={slot.doc.file_name}>
+                        📄 {slot.doc.file_name}
+                      </span>
+                      <button
+                        type="button"
+                        className="warranty-act-icon-btn"
+                        onClick={() => handlePreviewFile(slot.doc)}
+                        title="Просмотр"
+                        aria-label="Просмотр"
+                      >👁</button>
+                      <button
+                        type="button"
+                        className="warranty-act-icon-btn"
+                        onClick={() => handleDownloadFile(slot.doc)}
+                        title="Скачать"
+                        aria-label="Скачать"
+                      >⬇</button>
+                    </div>
+                  ) : (
+                    <div className="warranty-linked-doc-empty">Файл не загружен</div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn-cancel" onClick={() => setLinkedDocPreview(null)}>Закрыть</button>
+            </div>
           </div>
         </div>
       )}
