@@ -1597,9 +1597,15 @@ function ObjectDetailPage() {
                         //   строки гарантии независимо от end_date_override. Если акт
                         //   уже привязан — показываем чип «Итоговый акт» + 👁/⬇.
                         const hasAct = Boolean(item.actual_start_doc)
+                        const durationText = getWarrantyDurationDisplay(item)
+                        // task 363: значение «N мес.» — главный акцент; текстовый
+                        //   плейсхолдер («рассчитается после…») — мелкий серый курсив.
+                        const isPlaceholder = !/мес\./.test(durationText)
                         return (
                           <div className="warranty-duration-cell">
-                            <div>{getWarrantyDurationDisplay(item)}</div>
+                            <div className={`warranty-duration-value${isPlaceholder ? ' warranty-duration-value--placeholder' : ''}`}>
+                              {durationText}
+                            </div>
                             {hasAct ? (
                               <div className="warranty-act-row">
                                 <button
