@@ -7,6 +7,7 @@ import { deleteDocument, requestDownloadUrl } from '../services/s3'
 import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import WarrantyActSignModal from '../components/WarrantyActSignModal'
+import WarrantyDocSelect from '../components/WarrantyDocSelect'
 import './ObjectDetailPage.css'
 
 // Табличная строка документа (договор/ДС/приложение).
@@ -2166,17 +2167,11 @@ function ObjectDetailPage() {
                     </div>
                     <div className="form-row">
                       <label>Форма документа о начале гарантии (опционально)</label>
-                      <select
+                      <WarrantyDocSelect
                         value={warrantyFormData.start_document_id}
-                        onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_document_id: e.target.value })}
-                      >
-                        <option value="">— не выбран —</option>
-                        {documents.map(d => (
-                          <option key={d.id} value={d.id}>
-                            {d.name}{d.document_number ? ` (№ ${d.document_number})` : ''}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(id) => setWarrantyFormData({ ...warrantyFormData, start_document_id: id })}
+                        documents={documents}
+                      />
                     </div>
                     <div className={hasEndOverride ? 'form-row' : 'form-row-2'}>
                       <div>
