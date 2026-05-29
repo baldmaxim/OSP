@@ -464,13 +464,16 @@ function ObjectDetailPage() {
   const [linkedDocPreview, setLinkedDocPreview] = useState(null)
 
   // Warranty retentions state
+  // task 364: retentionFormData.payments — массив { portion_text, condition_text }.
+  //   Каждая часть выплаты хранится в отдельной строке object_warranty_retention_payments.
   const [retentions, setRetentions] = useState([])
   const [showRetentionModal, setShowRetentionModal] = useState(false)
   const [editingRetention, setEditingRetention] = useState(null)
   const [retentionFormData, setRetentionFormData] = useState({
     retention_percent: '',
     retention_period: '',
-    notes: ''
+    notes: '',
+    payments: []
   })
 
   useEffect(() => {
@@ -526,9 +529,23 @@ function ObjectDetailPage() {
         .order('order_number')
       if (!warrantyError) setWarranties(warrantyData || [])
 
+      // task 364: подгружаем части выплат вместе с удержанием. payments отдельно
+      //   сортируем по order_number — порядок дочерней relation Supabase
+      //   гарантирует не всегда, надёжнее досортировать в JS.
       const { data: retentionData, error: retentionError } = await supabase
-        .from('object_warranty_retentions').select('*').eq('object_id', objectId).order('order_number')
-      if (!retentionError) setRetentions(retentionData || [])
+        .from('object_warranty_retentions')
+        .select('*, payments:object_warranty_retention_payments(*)')
+        .eq('object_id', objectId)
+        .order('order_number')
+      if (!retentionError) {
+        const normalized = (retentionData || []).map(r => ({
+          ...r,
+          payments: (r.payments || []).slice().sort(
+            (a, b) => (a.order_number ?? 0) - (b.order_number ?? 0)
+          )
+        }))
+        setRetentions(normalized)
+      }
     } catch (error) {
       console.error('Ошибка загрузки данных:', error.message)
     } finally {
@@ -1174,7 +1191,12 @@ function ObjectDetailPage() {
   // Warranty retention handlers
   const handleAddRetention = () => {
     setEditingRetention(null)
-    setRetentionFormData({ retention_percent: '', retention_period: '', notes: '' })
+    setRetentionFormData({
+      retention_percent: '',
+      retention_period: '',
+      notes: '',
+      payments: []
+    })
     setShowRetentionModal(true)
   }
 
@@ -1183,7 +1205,12 @@ function ObjectDetailPage() {
     setRetentionFormData({
       retention_percent: String(item.retention_percent || ''),
       retention_period: item.retention_period || '',
-      notes: item.notes || ''
+      notes: item.notes || '',
+      payments: (item.payments || []).map(p => ({
+        id: p.id, // помечаем id чтобы сохранить order при пересохранении (для UX)
+        portion_text: p.portion_text || '',
+        condition_text: p.condition_text || ''
+      }))
     })
     setShowRetentionModal(true)
   }
@@ -1199,9 +1226,38 @@ function ObjectDetailPage() {
     }
   }
 
+  // task 364: хелперы для динамического списка частей выплаты в модалке
+  const addRetentionPayment = () => {
+    setRetentionFormData(fd => ({
+      ...fd,
+      payments: [...fd.payments, { portion_text: '', condition_text: '' }]
+    }))
+  }
+  const updateRetentionPayment = (idx, field, value) => {
+    setRetentionFormData(fd => ({
+      ...fd,
+      payments: fd.payments.map((p, i) => i === idx ? { ...p, [field]: value } : p)
+    }))
+  }
+  const removeRetentionPayment = (idx) => {
+    setRetentionFormData(fd => ({
+      ...fd,
+      payments: fd.payments.filter((_, i) => i !== idx)
+    }))
+  }
+
   const handleSubmitRetention = async (e) => {
     e.preventDefault()
     if (!retentionFormData.retention_percent) return alert('Введите процент удержания')
+    // task 364: валидация частей выплаты — обе колонки обязательны если строка есть.
+    const paymentsClean = retentionFormData.payments
+      .map(p => ({ portion_text: p.portion_text.trim(), condition_text: p.condition_text.trim() }))
+      .filter(p => p.portion_text || p.condition_text)
+    for (const p of paymentsClean) {
+      if (!p.portion_text || !p.condition_text) {
+        return alert('Заполните долю и условие для каждой части выплаты, либо удалите пустую строку')
+      }
+    }
     try {
       const dataToSave = {
         object_id: objectId,
@@ -1210,12 +1266,41 @@ function ObjectDetailPage() {
         notes: retentionFormData.notes.trim() || null,
         order_number: editingRetention?.order_number || retentions.length + 1
       }
+      // Получаем id записи (для UPDATE он известен, для INSERT — берём из inserted).
+      let retentionId = editingRetention?.id
       if (editingRetention) {
         const { error } = await supabase.from('object_warranty_retentions').update(dataToSave).eq('id', editingRetention.id)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('object_warranty_retentions').insert([dataToSave])
+        const { data: inserted, error } = await supabase
+          .from('object_warranty_retentions')
+          .insert([dataToSave])
+          .select('id')
+          .single()
         if (error) throw error
+        retentionId = inserted.id
+      }
+      // task 364: пересохраняем части выплаты. Для простоты — delete+insert,
+      //   т.к. порядок и количество частей пользователь меняет редко, а так
+      //   не приходится синхронизировать по id.
+      if (editingRetention) {
+        const { error: delErr } = await supabase
+          .from('object_warranty_retention_payments')
+          .delete()
+          .eq('retention_id', retentionId)
+        if (delErr) throw delErr
+      }
+      if (paymentsClean.length > 0) {
+        const paymentsToInsert = paymentsClean.map((p, i) => ({
+          retention_id: retentionId,
+          portion_text: p.portion_text,
+          condition_text: p.condition_text,
+          order_number: i + 1
+        }))
+        const { error: insErr } = await supabase
+          .from('object_warranty_retention_payments')
+          .insert(paymentsToInsert)
+        if (insErr) throw insErr
       }
       setShowRetentionModal(false)
       fetchObjectData()
@@ -1689,12 +1774,13 @@ function ObjectDetailPage() {
             <span>Гарантийные удержания</span>
             {canEditObj && <button className="btn-add" onClick={handleAddRetention} title="Добавить">+</button>}
           </div>
-          <table className="cost-table">
+          <table className="cost-table retentions-table">
             <thead>
               <tr>
                 <th>#</th>
-                <th>% удержания</th>
-                <th>Срок удержания</th>
+                <th className="ret-th-percent">Гарантийное удержание, %</th>
+                <th>Срок гарантийного удержания</th>
+                <th>Выплата</th>
                 <th>Примечание</th>
                 <th></th>
               </tr>
@@ -1703,9 +1789,25 @@ function ObjectDetailPage() {
               {retentions.length > 0 ? retentions.map((item, i) => (
                 <tr key={item.id}>
                   <td className="center">{i + 1}</td>
-                  <td className="center">{item.retention_percent}%</td>
-                  <td>{item.retention_period || '-'}</td>
-                  <td className="notes-cell">{item.notes || '-'}</td>
+                  <td className="center ret-td-percent">
+                    <span className="ret-percent-value">{item.retention_percent}%</span>
+                  </td>
+                  <td className="ret-td-period">{item.retention_period || '—'}</td>
+                  <td className="ret-td-payments">
+                    {item.payments && item.payments.length > 0 ? (
+                      <ul className="ret-payments-list">
+                        {item.payments.map(p => (
+                          <li key={p.id} className="ret-payment-item">
+                            <span className="ret-payment-portion">{p.portion_text}</span>
+                            <span className="ret-payment-condition">{p.condition_text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="ret-payments-empty">—</span>
+                    )}
+                  </td>
+                  <td className="notes-cell notes-cell-wide">{item.notes || ''}</td>
                   <td className="actions">
                     {canEditObj && (
                       <>
@@ -1716,7 +1818,7 @@ function ObjectDetailPage() {
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan="5" className="empty">Нет данных об удержаниях</td></tr>
+                <tr><td colSpan="6" className="empty">Нет данных об удержаниях</td></tr>
               )}
             </tbody>
           </table>
@@ -2340,7 +2442,15 @@ function ObjectDetailPage() {
       )}
 
       {/* Модальное окно гарантийных удержаний */}
-      {showRetentionModal && (
+      {showRetentionModal && (() => {
+        // task 364: autosize для textarea — вызывается в ref-callback (initial mount)
+        //   и в onChange (при вводе). Работает и для динамического списка частей.
+        const autosize = (el) => {
+          if (!el) return
+          el.style.height = 'auto'
+          el.style.height = el.scrollHeight + 'px'
+        }
+        return (
         <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -2348,19 +2458,98 @@ function ObjectDetailPage() {
               <button onClick={() => setShowRetentionModal(false)}>×</button>
             </div>
             <form onSubmit={handleSubmitRetention}>
-              <div className="form-row-2">
-                <div>
-                  <label>% удержания *</label>
-                  <input type="number" step="0.01" min="0" max="100" value={retentionFormData.retention_percent} onChange={(e) => setRetentionFormData({ ...retentionFormData, retention_percent: e.target.value })} placeholder="5.00" required />
-                </div>
-                <div>
-                  <label>Срок удержания</label>
-                  <input type="text" value={retentionFormData.retention_period} onChange={(e) => setRetentionFormData({ ...retentionFormData, retention_period: e.target.value })} placeholder="Например: 24 мес." />
-                </div>
+              <div className="form-row">
+                <label>Гарантийное удержание, % *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={retentionFormData.retention_percent}
+                  onChange={(e) => setRetentionFormData({ ...retentionFormData, retention_percent: e.target.value })}
+                  placeholder="5.00"
+                  required
+                />
               </div>
               <div className="form-row">
+                <label>Срок гарантийного удержания</label>
+                <textarea
+                  ref={autosize}
+                  className="warranty-autosize"
+                  rows="2"
+                  value={retentionFormData.retention_period}
+                  onChange={(e) => {
+                    setRetentionFormData({ ...retentionFormData, retention_period: e.target.value })
+                    autosize(e.target)
+                  }}
+                  placeholder="Например: По истечении 12 месяцев с даты получения Разрешения на ввод объекта в эксплуатацию…"
+                />
+              </div>
+
+              {/* task 364: динамический список частей выплаты */}
+              <div className="form-row">
+                <label>Условия выплаты</label>
+                <div className="ret-payments-editor">
+                  {retentionFormData.payments.length === 0 && (
+                    <div className="ret-payments-editor-empty">
+                      Удержание выплачивается одной суммой. Если выплата дробится по частям —
+                      нажмите «+ Добавить условие выплаты».
+                    </div>
+                  )}
+                  {retentionFormData.payments.map((p, idx) => (
+                    <div className="ret-payment-edit-row" key={idx}>
+                      <input
+                        type="text"
+                        className="ret-payment-edit-portion"
+                        value={p.portion_text}
+                        onChange={(e) => updateRetentionPayment(idx, 'portion_text', e.target.value)}
+                        placeholder="1/3"
+                        aria-label="Доля выплаты"
+                      />
+                      <textarea
+                        ref={autosize}
+                        className="warranty-autosize ret-payment-edit-condition"
+                        rows="1"
+                        value={p.condition_text}
+                        onChange={(e) => {
+                          updateRetentionPayment(idx, 'condition_text', e.target.value)
+                          autosize(e.target)
+                        }}
+                        placeholder="с даты получения Разрешения на ввод объекта в эксплуатацию"
+                        aria-label="Условие выплаты"
+                      />
+                      <button
+                        type="button"
+                        className="ret-payment-edit-remove"
+                        onClick={() => removeRetentionPayment(idx)}
+                        title="Удалить часть выплаты"
+                        aria-label="Удалить часть выплаты"
+                      >🗑️</button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="ret-payment-add-btn"
+                    onClick={addRetentionPayment}
+                  >
+                    + Добавить условие выплаты
+                  </button>
+                </div>
+              </div>
+
+              <div className="form-row">
                 <label>Примечание</label>
-                <input type="text" value={retentionFormData.notes} onChange={(e) => setRetentionFormData({ ...retentionFormData, notes: e.target.value })} placeholder="Дополнительная информация" />
+                <textarea
+                  ref={autosize}
+                  className="warranty-autosize"
+                  rows="2"
+                  value={retentionFormData.notes}
+                  onChange={(e) => {
+                    setRetentionFormData({ ...retentionFormData, notes: e.target.value })
+                    autosize(e.target)
+                  }}
+                  placeholder="Сноски, банковская гарантия, исключения…"
+                />
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn-cancel" onClick={() => setShowRetentionModal(false)}>Отмена</button>
@@ -2369,7 +2558,8 @@ function ObjectDetailPage() {
             </form>
           </div>
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
