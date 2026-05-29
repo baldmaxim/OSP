@@ -429,10 +429,18 @@ function ObjectDetailPage() {
   const [warranties, setWarranties] = useState([])
   const [showWarrantyModal, setShowWarrantyModal] = useState(false)
   const [editingWarranty, setEditingWarranty] = useState(null)
+  // task 353: расширённая модель — поддерживает событийное начало (с привязкой
+  //   к документу-акту), фактическую дату начала, фиксированную дату окончания
+  //   (override) и примечание.
   const [warrantyFormData, setWarrantyFormData] = useState({
     work_name: '',
-    start_date: '',
-    warranty_months: '12'
+    start_type: 'date',         // 'date' | 'event'
+    start_date: '',             // для 'date' — обязателен; для 'event' — фактическая дата (опц.)
+    start_event_text: '',       // только для 'event'
+    start_document_id: '',      // только для 'event', опционально
+    warranty_months: '12',
+    end_date_override: '',      // фиксированная дата окончания (приоритет над авторасчётом)
+    notes: ''
   })
 
   // Warranty retentions state
@@ -1008,7 +1016,16 @@ function ObjectDetailPage() {
   // Warranty handlers
   const handleAddWarranty = () => {
     setEditingWarranty(null)
-    setWarrantyFormData({ work_name: '', start_date: '', warranty_months: '12' })
+    setWarrantyFormData({
+      work_name: '',
+      start_type: 'date',
+      start_date: '',
+      start_event_text: '',
+      start_document_id: '',
+      warranty_months: '12',
+      end_date_override: '',
+      notes: ''
+    })
     setShowWarrantyModal(true)
   }
 
@@ -1016,8 +1033,13 @@ function ObjectDetailPage() {
     setEditingWarranty(item)
     setWarrantyFormData({
       work_name: item.work_name,
+      start_type: item.start_type || 'date',
       start_date: item.start_date || '',
-      warranty_months: String(item.warranty_months || 12)
+      start_event_text: item.start_event_text || '',
+      start_document_id: item.start_document_id || '',
+      warranty_months: String(item.warranty_months || 12),
+      end_date_override: item.end_date_override || '',
+      notes: item.notes || ''
     })
     setShowWarrantyModal(true)
   }
@@ -1035,13 +1057,26 @@ function ObjectDetailPage() {
 
   const handleSubmitWarranty = async (e) => {
     e.preventDefault()
-    if (!warrantyFormData.work_name.trim()) return alert('Введите наименование работ')
+    const fd = warrantyFormData
+    if (!fd.work_name.trim()) return alert('Введите наименование работ')
+    // task 353: валидация начала гарантии — обязательное поле в зависимости от типа.
+    if (fd.start_type === 'date' && !fd.start_date) {
+      return alert('Укажите дату начала гарантийного срока')
+    }
+    if (fd.start_type === 'event' && !fd.start_event_text.trim()) {
+      return alert('Опишите событие начала гарантии (например, «с даты подписания Акта № 3»)')
+    }
     try {
       const dataToSave = {
         object_id: objectId,
-        work_name: warrantyFormData.work_name.trim(),
-        start_date: warrantyFormData.start_date || null,
-        warranty_months: parseInt(warrantyFormData.warranty_months) || 12,
+        work_name: fd.work_name.trim(),
+        start_type: fd.start_type,
+        start_date: fd.start_date || null,
+        start_event_text: fd.start_type === 'event' ? (fd.start_event_text.trim() || null) : null,
+        start_document_id: fd.start_type === 'event' ? (fd.start_document_id || null) : null,
+        warranty_months: parseInt(fd.warranty_months) || 12,
+        end_date_override: fd.end_date_override || null,
+        notes: fd.notes.trim() || null,
         order_number: editingWarranty?.order_number || warranties.length + 1
       }
       if (editingWarranty) {
@@ -1111,11 +1146,42 @@ function ObjectDetailPage() {
     }
   }
 
-  const getWarrantyEndDate = (startDate, months) => {
-    if (!startDate || !months) return '-'
-    const date = new Date(startDate)
-    date.setMonth(date.getMonth() + months)
-    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  // task 353: расчёт окончания гарантии по приоритетам.
+  //   1) end_date_override → берём его;
+  //   2) start_date + warranty_months → авторасчёт;
+  //   3) start_type='event' + warranty_months → плейсхолдер «после события + N мес.»;
+  //   4) иначе — прочерк.
+  const getWarrantyEndDisplay = (w) => {
+    if (!w) return '-'
+    if (w.end_date_override) {
+      return new Date(w.end_date_override).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    }
+    const months = Number(w.warranty_months) || 0
+    if (w.start_date && months > 0) {
+      const date = new Date(w.start_date)
+      date.setMonth(date.getMonth() + months)
+      return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    }
+    if (w.start_type === 'event' && months > 0) {
+      return `после события + ${months} мес.`
+    }
+    return '-'
+  }
+
+  // task 353: отображение «Начало гарантийного срока» с учётом типа и факта.
+  const getWarrantyStartDisplay = (w) => {
+    if (!w) return '-'
+    if (w.start_type === 'event') {
+      let txt = w.start_event_text || '— (по событию)'
+      if (w.start_date) {
+        const fact = new Date(w.start_date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        txt += ` (фактически ${fact})`
+      }
+      return txt
+    }
+    return w.start_date
+      ? new Date(w.start_date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '-'
   }
 
   const formatDate = (date) => {
@@ -1396,28 +1462,52 @@ function ObjectDetailPage() {
                 <th>Начало гарантийного срока</th>
                 <th>Гарантийный срок</th>
                 <th>Окончание гарантии</th>
+                <th>Примечание</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {warranties.length > 0 ? warranties.map((item, i) => (
-                <tr key={item.id}>
-                  <td className="center">{i + 1}</td>
-                  <td>{item.work_name}</td>
-                  <td className="center">{formatDate(item.start_date)}</td>
-                  <td className="center">{item.warranty_months} мес.</td>
-                  <td className="center">{getWarrantyEndDate(item.start_date, item.warranty_months)}</td>
-                  <td className="actions">
-                    {canEditObj && (
-                      <>
-                        <button onClick={() => handleEditWarranty(item)}>✏️</button>
-                        <button onClick={() => handleDeleteWarranty(item.id)}>🗑️</button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              )) : (
-                <tr><td colSpan="6" className="empty">Нет данных о гарантии</td></tr>
+              {warranties.length > 0 ? warranties.map((item, i) => {
+                const linkedDoc = item.start_document_id
+                  ? documents.find(d => d.id === item.start_document_id)
+                  : null
+                const endByOverride = Boolean(item.end_date_override)
+                return (
+                  <tr key={item.id}>
+                    <td className="center">{i + 1}</td>
+                    <td>{item.work_name}</td>
+                    <td>
+                      <div>{getWarrantyStartDisplay(item)}</div>
+                      {linkedDoc && (
+                        <div
+                          className="warranty-doc-chip"
+                          title={linkedDoc.name + (linkedDoc.document_number ? ` (№ ${linkedDoc.document_number})` : '')}
+                        >
+                          📎 {linkedDoc.name}
+                          {linkedDoc.document_number ? ` (№ ${linkedDoc.document_number})` : ''}
+                        </div>
+                      )}
+                    </td>
+                    <td className="center">{item.warranty_months} мес.</td>
+                    <td
+                      className="center"
+                      title={endByOverride ? 'Указана фиксированная дата окончания' : undefined}
+                    >
+                      {getWarrantyEndDisplay(item)}
+                    </td>
+                    <td className="notes-cell" title={item.notes || ''}>{item.notes || ''}</td>
+                    <td className="actions">
+                      {canEditObj && (
+                        <>
+                          <button onClick={() => handleEditWarranty(item)}>✏️</button>
+                          <button onClick={() => handleDeleteWarranty(item.id)}>🗑️</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                )
+              }) : (
+                <tr><td colSpan="7" className="empty">Нет данных о гарантии</td></tr>
               )}
             </tbody>
           </table>
@@ -1872,18 +1962,108 @@ function ObjectDetailPage() {
             <form onSubmit={handleSubmitWarranty}>
               <div className="form-row">
                 <label>Наименование работ *</label>
-                <input type="text" value={warrantyFormData.work_name} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, work_name: e.target.value })} placeholder="Например: Общестроительные работы" required />
+                <input type="text" value={warrantyFormData.work_name} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, work_name: e.target.value })} placeholder="Например: Строительные и монтажные работы" required />
               </div>
-              <div className="form-row-2">
-                <div>
-                  <label>Начало гарантийного срока</label>
-                  <input type="date" value={warrantyFormData.start_date} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })} />
-                </div>
-                <div>
-                  <label>Гарантийный срок (мес.)</label>
-                  <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
+
+              {/* task 353: тип начала гарантии — по дате или по событию */}
+              <div className="form-row">
+                <label>Тип начала гарантии *</label>
+                <div className="warranty-start-radio">
+                  <label className="radio-inline">
+                    <input
+                      type="radio"
+                      name="warranty-start-type"
+                      value="date"
+                      checked={warrantyFormData.start_type === 'date'}
+                      onChange={() => setWarrantyFormData({ ...warrantyFormData, start_type: 'date' })}
+                    />
+                    По конкретной дате
+                  </label>
+                  <label className="radio-inline">
+                    <input
+                      type="radio"
+                      name="warranty-start-type"
+                      value="event"
+                      checked={warrantyFormData.start_type === 'event'}
+                      onChange={() => setWarrantyFormData({ ...warrantyFormData, start_type: 'event' })}
+                    />
+                    По событию (например, подписание акта)
+                  </label>
                 </div>
               </div>
+
+              {warrantyFormData.start_type === 'date' ? (
+                <div className="form-row-2">
+                  <div>
+                    <label>Дата начала *</label>
+                    <input type="date" value={warrantyFormData.start_date} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })} />
+                  </div>
+                  <div>
+                    <label>Гарантийный срок (мес.)</label>
+                    <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="form-row">
+                    <label>Описание события *</label>
+                    <textarea
+                      rows="3"
+                      value={warrantyFormData.start_event_text}
+                      onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_event_text: e.target.value })}
+                      placeholder="с даты подписания Акта о практическом завершении Работ по Объекту (Акт № 3), но в любом случае не позднее даты подписания Второго передаточного Акта…"
+                    />
+                  </div>
+                  <div className="form-row">
+                    <label>Связанный документ (опционально)</label>
+                    <select
+                      value={warrantyFormData.start_document_id}
+                      onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_document_id: e.target.value })}
+                    >
+                      <option value="">— не выбран —</option>
+                      {documents.map(d => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}{d.document_number ? ` (№ ${d.document_number})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-row-2">
+                    <div>
+                      <label>Фактическая дата начала (опционально)</label>
+                      <input
+                        type="date"
+                        value={warrantyFormData.start_date}
+                        onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_date: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label>Гарантийный срок (мес.)</label>
+                      <input type="number" min="1" value={warrantyFormData.warranty_months} onChange={(e) => setWarrantyFormData({ ...warrantyFormData, warranty_months: e.target.value })} />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="form-row">
+                <label>Фиксированная дата окончания (опционально)</label>
+                <input
+                  type="date"
+                  value={warrantyFormData.end_date_override}
+                  onChange={(e) => setWarrantyFormData({ ...warrantyFormData, end_date_override: e.target.value })}
+                />
+                <small className="form-hint">Если указана — перекрывает авторасчёт «дата начала + срок».</small>
+              </div>
+
+              <div className="form-row">
+                <label>Примечание</label>
+                <textarea
+                  rows="2"
+                  value={warrantyFormData.notes}
+                  onChange={(e) => setWarrantyFormData({ ...warrantyFormData, notes: e.target.value })}
+                />
+              </div>
+
               <div className="modal-footer">
                 <button type="button" className="btn-cancel" onClick={() => setShowWarrantyModal(false)}>Отмена</button>
                 <button type="submit" className="btn-save">Сохранить</button>

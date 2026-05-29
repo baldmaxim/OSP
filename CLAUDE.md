@@ -142,7 +142,7 @@ const { data } = await supabase
 | `object_documents` | Object documents (contracts, agreements, attachments). Files via S3 (`signed_s3_document_id`, `editable_s3_document_id` → `s3_documents`, ON DELETE SET NULL). | `object_id`, `parent_document_id` (CASCADE), `signed_s3_document_id`, `editable_s3_document_id` (SET NULL) |
 | `object_cost_plan` | Cost plan items per object | `object_id` (CASCADE) |
 | `object_estimate_items` | Object estimate line items (imported from Excel) | `object_id` (CASCADE) |
-| `object_warranties` | Warranty periods per object (start date + duration in months) | `object_id` (CASCADE) |
+| `object_warranties` | Warranty periods per object — поддерживает начало по дате ИЛИ по событию (`start_type`, `start_event_text`), привязку к документу-акту (`start_document_id`), фиксированную дату окончания `end_date_override` и `notes` | `object_id` (CASCADE), `start_document_id` (SET NULL) |
 | `object_warranty_retentions` | Warranty retention terms (percentage + period) | `object_id` (CASCADE) |
 
 **Key ENUMs:**
@@ -380,6 +380,12 @@ BSMPage expects Excel files with this column structure:
 ### ObjectDetailPage Tabs
 
 Five tabs: Информация (object fields like dates, area, budget), Документы (hierarchical documents), Гарантия (warranty periods), Гарантийные удержания (retention percentages), Смета (estimate with materials/works pricing and VAT support).
+
+**Гарантия (task 353):** каждая строка — отдельный вид работ. Начало гарантии бывает двух типов:
+- **По дате** (`start_type='date'`) — обычный datepicker.
+- **По событию** (`start_type='event'`) — текстовое описание (`start_event_text`, например «с даты подписания Акта о практическом завершении Работ (Акт № 3)»), опциональная привязка к документу из `object_documents` (`start_document_id`, FK с `ON DELETE SET NULL`) и опциональная фактическая дата начала (заполняется когда событие наступит).
+
+Срок хранится в месяцах (`warranty_months`). Дата окончания вычисляется по приоритетам: (1) `end_date_override` если задан, (2) `start_date + warranty_months`, (3) для события без даты — плейсхолдер «после события + N мес.», (4) прочерк. Поле `notes` — отдельная колонка «Примечание» в таблице. Хелперы расчёта — `getWarrantyEndDisplay()` / `getWarrantyStartDisplay()` в [ObjectDetailPage.jsx](src/pages/ObjectDetailPage.jsx).
 
 ### Hierarchical Documents (ObjectDetailPage)
 
