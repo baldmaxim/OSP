@@ -1219,21 +1219,9 @@ function ObjectDetailPage() {
     return w.warranty_months ? `${w.warranty_months} мес.` : '-'
   }
 
-  // task 353: отображение «Начало гарантийного срока» с учётом типа и факта.
-  const getWarrantyStartDisplay = (w) => {
-    if (!w) return '-'
-    if (w.start_type === 'event') {
-      let txt = w.start_event_text || '— (по событию)'
-      if (w.start_date) {
-        const fact = new Date(w.start_date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
-        txt += ` (фактически ${fact})`
-      }
-      return txt
-    }
-    return w.start_date
-      ? new Date(w.start_date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
-      : '-'
-  }
+  // task 358: «Начало гарантийного срока» теперь рендерится JSX'ом прямо в
+  //   таблице (см. рендер row'а в табе 'warranty') — с отдельным «Гарантия с:»
+  //   badge'м для фактической даты. Старый текстовый хелпер заменён на inline-разметку.
 
   const formatDate = (date) => {
     if (!date) return '-'
@@ -1528,7 +1516,11 @@ function ObjectDetailPage() {
                     <td className="center">{i + 1}</td>
                     <td>{item.work_name}</td>
                     <td>
-                      <div>{getWarrantyStartDisplay(item)}</div>
+                      {item.start_type === 'event' ? (
+                        <div className="warranty-start-event">{item.start_event_text || '— (по событию)'}</div>
+                      ) : (
+                        <div>{item.start_date ? formatDate(item.start_date) : '—'}</div>
+                      )}
                       {linkedDoc && (
                         <div
                           className="warranty-doc-chip"
@@ -1536,6 +1528,13 @@ function ObjectDetailPage() {
                         >
                           📎 {linkedDoc.name}
                           {linkedDoc.document_number ? ` (№ ${linkedDoc.document_number})` : ''}
+                        </div>
+                      )}
+                      {item.start_type === 'event' && item.start_date && (
+                        <div className="warranty-fact-date" title="Дата, с которой реально начинается гарантийный срок">
+                          <span className="warranty-fact-icon" aria-hidden>📅</span>
+                          <span className="warranty-fact-label">Гарантия с:</span>
+                          <span className="warranty-fact-value">{formatDate(item.start_date)}</span>
                         </div>
                       )}
                     </td>
@@ -1562,17 +1561,37 @@ function ObjectDetailPage() {
                           <div className="warranty-duration-cell">
                             <div>{getWarrantyDurationDisplay(item)}</div>
                             {hasAct && (
-                              <button
-                                type="button"
-                                className="warranty-act-chip"
-                                onClick={() => canEditObj && setSignActWarranty(item)}
-                                disabled={!canEditObj}
-                                title={canEditObj
-                                  ? `Изменить или скачать акт: ${item.actual_start_doc.file_name}`
-                                  : item.actual_start_doc.file_name}
-                              >
-                                📄 {item.actual_start_doc.file_name}
-                              </button>
+                              <div className="warranty-act-row">
+                                <button
+                                  type="button"
+                                  className="warranty-act-chip"
+                                  onClick={() => canEditObj && setSignActWarranty(item)}
+                                  disabled={!canEditObj}
+                                  title={canEditObj
+                                    ? `Изменить акт: ${item.actual_start_doc.file_name}`
+                                    : item.actual_start_doc.file_name}
+                                >
+                                  📄 Итоговый акт
+                                </button>
+                                <button
+                                  type="button"
+                                  className="warranty-act-icon-btn"
+                                  onClick={() => handlePreviewFile(item.actual_start_doc)}
+                                  title="Просмотр"
+                                  aria-label="Просмотр акта"
+                                >
+                                  👁
+                                </button>
+                                <button
+                                  type="button"
+                                  className="warranty-act-icon-btn"
+                                  onClick={() => handleDownloadFile(item.actual_start_doc)}
+                                  title="Скачать"
+                                  aria-label="Скачать акт"
+                                >
+                                  ⬇
+                                </button>
+                              </div>
                             )}
                           </div>
                         )
