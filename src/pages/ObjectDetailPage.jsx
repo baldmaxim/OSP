@@ -2162,7 +2162,7 @@ function ObjectDetailPage() {
                       />
                     </div>
                     <div className="form-row">
-                      <label>Связанный документ (опционально)</label>
+                      <label>Форма документа о начале гарантии (опционально)</label>
                       <select
                         value={warrantyFormData.start_document_id}
                         onChange={(e) => setWarrantyFormData({ ...warrantyFormData, start_document_id: e.target.value })}
