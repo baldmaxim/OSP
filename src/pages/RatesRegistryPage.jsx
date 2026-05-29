@@ -197,20 +197,20 @@ function RatesRegistryPage() {
         <>
           {/* task 354: панель фильтров — поиск слева, селекты справа, сброс в конце */}
           <div className="rr-filters">
-            <div className="rr-filter-group rr-filter-group-search">
+            <div className={`rr-filter-group rr-filter-group-search ${search ? 'is-active' : ''}`}>
               <label className="rr-filter-label">Поиск</label>
               <input
                 type="search"
-                className="rr-filter-search"
+                className={`rr-filter-search ${search ? 'is-active' : ''}`}
                 placeholder="🔍 По наименованию, описанию работ, ед. изм.…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="rr-filter-group">
+            <div className={`rr-filter-group ${selectedObject ? 'is-active' : ''}`}>
               <label className="rr-filter-label">Объект</label>
               <select
-                className="rr-filter-select"
+                className={`rr-filter-select ${selectedObject ? 'is-active' : ''}`}
                 value={selectedObject}
                 onChange={(e) => setSelectedObject(e.target.value)}
               >
@@ -218,10 +218,10 @@ function RatesRegistryPage() {
                 {objectOptions.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
-            <div className="rr-filter-group">
+            <div className={`rr-filter-group ${selectedCounterparty ? 'is-active' : ''}`}>
               <label className="rr-filter-label">Контрагент</label>
               <select
-                className="rr-filter-select"
+                className={`rr-filter-select ${selectedCounterparty ? 'is-active' : ''}`}
                 value={selectedCounterparty}
                 onChange={(e) => setSelectedCounterparty(e.target.value)}
               >
@@ -285,7 +285,7 @@ function RatesRegistryPage() {
                       {kindTab === 'materials' ? 'Наименование материалов' : 'Наименование работ'}
                     </th>
                     <th className="rr-th-tender">Описание работ (тендер)</th>
-                    <th className="rr-th-unit">Ед.</th>
+                    <th className="rr-th-unit">Ед. изм.</th>
                     <th className="rr-th-price">
                       {kindTab === 'materials' ? 'Цена за материал, ₽' : 'Цена за работу, ₽'}
                     </th>
