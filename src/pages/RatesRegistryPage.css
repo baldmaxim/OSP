@@ -71,10 +71,10 @@
   border-color: #64748b;
 }
 
-/* ===== task 354: панель фильтров ===== */
+/* ===== task 354: панель фильтров — поиск слева, селекты справа ===== */
 .rr-filters {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(200px, 1.4fr) minmax(240px, 1.8fr) auto;
+  grid-template-columns: minmax(240px, 1.8fr) minmax(180px, 1.2fr) minmax(200px, 1.4fr) auto;
   align-items: end;
   gap: 0.75rem;
   margin-bottom: 0.875rem;
@@ -89,7 +89,7 @@
   gap: 0.3125rem;
   min-width: 0;
 }
-.rr-filter-group-search { flex: 1 1 240px; }
+.rr-filter-group-search { min-width: 0; }
 
 .rr-filter-label {
   font-size: 0.6875rem;
@@ -217,9 +217,11 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   border-bottom: 2px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
   text-align: left;
   white-space: nowrap;
 }
+.rr-table thead th:last-child { border-right: 0; }
 .rr-table .rr-th-num          { width: 64px;  text-align: center; }
 .rr-table .rr-th-object       { min-width: 160px; }
 .rr-table .rr-th-counterparty { min-width: 200px; }
@@ -232,9 +234,11 @@
 .rr-table tbody td {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
   vertical-align: middle;
   color: var(--text-primary);
 }
+.rr-table tbody td:last-child { border-right: 0; }
 .rr-table tbody tr:last-child td { border-bottom: 0; }
 .rr-table tbody tr:nth-child(even) td { background: rgba(71, 85, 105, 0.025); }
 .rr-table tbody tr:hover td { background: rgba(71, 85, 105, 0.075); }
@@ -406,4 +410,5 @@
 }
 @media (max-width: 600px) {
   .rr-filters { grid-template-columns: 1fr; }
+  .rr-filter-reset { justify-self: stretch; }
 }

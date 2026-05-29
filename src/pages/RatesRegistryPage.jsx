@@ -195,8 +195,18 @@ function RatesRegistryPage() {
         </div>
       ) : (
         <>
-          {/* task 354: панель фильтров — объект + контрагент + поиск + сброс */}
+          {/* task 354: панель фильтров — поиск слева, селекты справа, сброс в конце */}
           <div className="rr-filters">
+            <div className="rr-filter-group rr-filter-group-search">
+              <label className="rr-filter-label">Поиск</label>
+              <input
+                type="search"
+                className="rr-filter-search"
+                placeholder="🔍 По наименованию, описанию работ, ед. изм.…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
             <div className="rr-filter-group">
               <label className="rr-filter-label">Объект</label>
               <select
@@ -218,16 +228,6 @@ function RatesRegistryPage() {
                 <option value="">Все контрагенты ({counterpartyOptions.length})</option>
                 {counterpartyOptions.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-            </div>
-            <div className="rr-filter-group rr-filter-group-search">
-              <label className="rr-filter-label">Поиск</label>
-              <input
-                type="search"
-                className="rr-filter-search"
-                placeholder="🔍 По наименованию, описанию работ, ед. изм.…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
             </div>
             {hasActiveFilters && (
               <button
