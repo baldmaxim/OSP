@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import './RatesRegistryPage.css'
 
@@ -6,6 +7,9 @@ import './RatesRegistryPage.css'
 //   1) От подрядчиков (КП) — выгрузка из tender_counterparty_proposals.
 //   2) От подрядчиков (ДП и ДС) — в разработке.
 //   3) От снабжения СУ-10 — в разработке.
+//
+// task 354: добавлены фильтры по объекту/контрагенту, колонка «Описание работ»
+//   с гиперссылкой на тендер, переработан стиль таблицы.
 
 const fmtMoney = (n) => {
   if (n == null || n === '' || isNaN(n)) return ''
@@ -19,14 +23,15 @@ const fmtDate = (iso) => {
 }
 
 function RatesRegistryPage() {
-  const [topTab, setTopTab] = useState('kp') // 'kp' | 'dp_ds' | 'supply'
+  const [topTab, setTopTab] = useState('kp')          // 'kp' | 'dp_ds' | 'supply'
   const [kindTab, setKindTab] = useState('materials') // 'materials' | 'works'
   const [search, setSearch] = useState('')
   const deferredSearch = useDeferredValue(search)
+  const [selectedObject, setSelectedObject] = useState('')         // task 354
+  const [selectedCounterparty, setSelectedCounterparty] = useState('') // task 354
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
 
-  // task 356: загрузка только для вкладки «КП» — две другие вкладки заглушки.
   const loadKpRates = useCallback(async () => {
     setLoading(true)
     try {
@@ -39,7 +44,7 @@ function RatesRegistryPage() {
           proposal_date,
           counterparties(name),
           tender_estimate_items(cost_name, unit, code, material_consumption, work_volume),
-          tenders(id, objects(name))
+          tenders(id, work_description, objects(name))
         `)
       if (error) throw error
       setRows(data || [])
@@ -56,9 +61,6 @@ function RatesRegistryPage() {
   }, [topTab, loadKpRates])
 
   // Разбиваем proposals на материалы и работы.
-  // Один proposal-row может одновременно иметь и unit_price_materials, и
-  // unit_price_works — тогда попадает в обе ветки (логически это одна позиция,
-  // но материал и работа учитываются отдельно).
   const { materialEntries, workEntries } = useMemo(() => {
     const materials = []
     const works = []
@@ -67,37 +69,29 @@ function RatesRegistryPage() {
       if (!item) continue
       const objectName = p.tenders?.objects?.name || '—'
       const counterparty = p.counterparties?.name || '—'
+      const tenderId = p.tenders?.id || null
+      const tenderDesc = p.tenders?.work_description || ''
       const matVol = Number(item.material_consumption) || 0
       const matPrice = Number(p.unit_price_materials) || 0
       const workVol = Number(item.work_volume) || 0
       const workPrice = Number(p.unit_price_works) || 0
 
+      const base = {
+        object: objectName,
+        counterparty,
+        name: item.cost_name || '',
+        unit: item.unit || '',
+        proposalDate: p.proposal_date,
+        tenderId,
+        tenderDesc,
+      }
       if (matVol > 0 && matPrice > 0) {
-        materials.push({
-          id: `${p.id}:mat`,
-          object: objectName,
-          counterparty,
-          name: item.cost_name || '',
-          unit: item.unit || '',
-          price: matPrice,
-          proposalDate: p.proposal_date,
-          tenderId: p.tenders?.id,
-        })
+        materials.push({ ...base, id: `${p.id}:mat`, price: matPrice })
       }
       if (workVol > 0 && workPrice > 0) {
-        works.push({
-          id: `${p.id}:work`,
-          object: objectName,
-          counterparty,
-          name: item.cost_name || '',
-          unit: item.unit || '',
-          price: workPrice,
-          proposalDate: p.proposal_date,
-          tenderId: p.tenders?.id,
-        })
+        works.push({ ...base, id: `${p.id}:work`, price: workPrice })
       }
     }
-    // Сортируем: по наименованию, потом по дате (свежие сверху для одного имени).
     const sortFn = (a, b) => {
       const n = (a.name || '').localeCompare(b.name || '', 'ru')
       if (n !== 0) return n
@@ -108,18 +102,46 @@ function RatesRegistryPage() {
     return { materialEntries: materials, workEntries: works }
   }, [rows])
 
-  // Поиск по любому полю.
+  // task 354: уникальные списки для фильтров по текущему виду (мат./раб.).
+  const { objectOptions, counterpartyOptions } = useMemo(() => {
+    const all = kindTab === 'materials' ? materialEntries : workEntries
+    const objs = new Set()
+    const cps = new Set()
+    for (const r of all) {
+      if (r.object && r.object !== '—') objs.add(r.object)
+      if (r.counterparty && r.counterparty !== '—') cps.add(r.counterparty)
+    }
+    const ru = (a, b) => a.localeCompare(b, 'ru')
+    return {
+      objectOptions: Array.from(objs).sort(ru),
+      counterpartyOptions: Array.from(cps).sort(ru),
+    }
+  }, [materialEntries, workEntries, kindTab])
+
+  // task 354: применяем все фильтры — поиск + объект + контрагент.
   const filtered = useMemo(() => {
     const all = kindTab === 'materials' ? materialEntries : workEntries
     const q = deferredSearch.trim().toLowerCase()
-    if (!q) return all
-    return all.filter(r =>
-      (r.name || '').toLowerCase().includes(q) ||
-      (r.counterparty || '').toLowerCase().includes(q) ||
-      (r.object || '').toLowerCase().includes(q) ||
-      (r.unit || '').toLowerCase().includes(q)
-    )
-  }, [materialEntries, workEntries, kindTab, deferredSearch])
+    return all.filter(r => {
+      if (selectedObject && r.object !== selectedObject) return false
+      if (selectedCounterparty && r.counterparty !== selectedCounterparty) return false
+      if (!q) return true
+      return (
+        (r.name || '').toLowerCase().includes(q) ||
+        (r.counterparty || '').toLowerCase().includes(q) ||
+        (r.object || '').toLowerCase().includes(q) ||
+        (r.unit || '').toLowerCase().includes(q) ||
+        (r.tenderDesc || '').toLowerCase().includes(q)
+      )
+    })
+  }, [materialEntries, workEntries, kindTab, deferredSearch, selectedObject, selectedCounterparty])
+
+  const resetFilters = () => {
+    setSearch('')
+    setSelectedObject('')
+    setSelectedCounterparty('')
+  }
+  const hasActiveFilters = Boolean(search || selectedObject || selectedCounterparty)
 
   return (
     <div className="rates-registry">
@@ -173,37 +195,74 @@ function RatesRegistryPage() {
         </div>
       ) : (
         <>
-          {/* Тулбар: поиск + sub-tabs */}
-          <div className="rr-toolbar">
-            <input
-              type="search"
-              className="rr-search"
-              placeholder="🔍 Поиск по наименованию, контрагенту, объекту…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <div className="rr-sub-tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={kindTab === 'materials'}
-                className={`rr-sub-tab ${kindTab === 'materials' ? 'active' : ''}`}
-                onClick={() => setKindTab('materials')}
+          {/* task 354: панель фильтров — объект + контрагент + поиск + сброс */}
+          <div className="rr-filters">
+            <div className="rr-filter-group">
+              <label className="rr-filter-label">Объект</label>
+              <select
+                className="rr-filter-select"
+                value={selectedObject}
+                onChange={(e) => setSelectedObject(e.target.value)}
               >
-                Материалы
-                <span className="rr-sub-count">{materialEntries.length}</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={kindTab === 'works'}
-                className={`rr-sub-tab ${kindTab === 'works' ? 'active' : ''}`}
-                onClick={() => setKindTab('works')}
-              >
-                Работы
-                <span className="rr-sub-count">{workEntries.length}</span>
-              </button>
+                <option value="">Все объекты ({objectOptions.length})</option>
+                {objectOptions.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
             </div>
+            <div className="rr-filter-group">
+              <label className="rr-filter-label">Контрагент</label>
+              <select
+                className="rr-filter-select"
+                value={selectedCounterparty}
+                onChange={(e) => setSelectedCounterparty(e.target.value)}
+              >
+                <option value="">Все контрагенты ({counterpartyOptions.length})</option>
+                {counterpartyOptions.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="rr-filter-group rr-filter-group-search">
+              <label className="rr-filter-label">Поиск</label>
+              <input
+                type="search"
+                className="rr-filter-search"
+                placeholder="🔍 По наименованию, описанию работ, ед. изм.…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                className="rr-filter-reset"
+                onClick={resetFilters}
+                title="Сбросить все фильтры"
+              >
+                ✕ Сбросить
+              </button>
+            )}
+          </div>
+
+          {/* Sub-tabs — материалы / работы */}
+          <div className="rr-sub-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={kindTab === 'materials'}
+              className={`rr-sub-tab ${kindTab === 'materials' ? 'active' : ''}`}
+              onClick={() => setKindTab('materials')}
+            >
+              Материалы
+              <span className="rr-sub-count">{materialEntries.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={kindTab === 'works'}
+              className={`rr-sub-tab ${kindTab === 'works' ? 'active' : ''}`}
+              onClick={() => setKindTab('works')}
+            >
+              Работы
+              <span className="rr-sub-count">{workEntries.length}</span>
+            </button>
           </div>
 
           {loading ? (
@@ -212,7 +271,7 @@ function RatesRegistryPage() {
             <div className="rr-empty">
               {rows.length === 0
                 ? 'Расценок ещё нет. Загрузите КП в тендерах — данные подтянутся сюда автоматически.'
-                : 'По вашему запросу ничего не найдено.'}
+                : 'По заданным фильтрам ничего не найдено.'}
             </div>
           ) : (
             <div className="rr-table-wrap">
@@ -221,10 +280,11 @@ function RatesRegistryPage() {
                   <tr>
                     <th className="rr-th-num">№ п/п</th>
                     <th className="rr-th-object">Объект</th>
-                    <th className="rr-th-counterparty">Наименование контрагента</th>
+                    <th className="rr-th-counterparty">Контрагент</th>
                     <th className="rr-th-name">
                       {kindTab === 'materials' ? 'Наименование материалов' : 'Наименование работ'}
                     </th>
+                    <th className="rr-th-tender">Описание работ (тендер)</th>
                     <th className="rr-th-unit">Ед.</th>
                     <th className="rr-th-price">
                       {kindTab === 'materials' ? 'Цена за материал, ₽' : 'Цена за работу, ₽'}
@@ -236,9 +296,23 @@ function RatesRegistryPage() {
                   {filtered.map((r, idx) => (
                     <tr key={r.id}>
                       <td className="rr-td-num">{idx + 1}</td>
-                      <td className="rr-td-object" title={r.object}>{r.object}</td>
-                      <td className="rr-td-counterparty" title={r.counterparty}>{r.counterparty}</td>
+                      <td className="rr-td-object">
+                        <span className="rr-chip rr-chip-object" title={r.object}>{r.object}</span>
+                      </td>
+                      <td className="rr-td-counterparty">
+                        <span className="rr-chip rr-chip-cp" title={r.counterparty}>{r.counterparty}</span>
+                      </td>
                       <td className="rr-td-name" title={r.name}>{r.name}</td>
+                      <td className="rr-td-tender" title={r.tenderDesc}>
+                        {r.tenderId && r.tenderDesc
+                          ? (
+                            <Link to={`/tenders/${r.tenderId}`} className="rr-tender-link">
+                              <span className="rr-tender-icon" aria-hidden>🔗</span>
+                              <span className="rr-tender-text">{r.tenderDesc}</span>
+                            </Link>
+                          )
+                          : <span className="rr-tender-empty">—</span>}
+                      </td>
                       <td className="rr-td-unit">{r.unit || '—'}</td>
                       <td className="rr-td-price">{fmtMoney(r.price)}</td>
                       <td className="rr-td-date">{fmtDate(r.proposalDate)}</td>

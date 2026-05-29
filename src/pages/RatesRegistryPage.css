@@ -1,4 +1,4 @@
-/* task 356: «Реестр расценок» — общая страница для всех источников. */
+/* task 356 + 354: «Реестр расценок» — общая страница для всех источников. */
 
 .rates-registry {
   background: var(--bg-secondary);
@@ -71,34 +71,77 @@
   border-color: #64748b;
 }
 
-/* ===== Тулбар: поиск + sub-tabs ===== */
-.rr-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+/* ===== task 354: панель фильтров ===== */
+.rr-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(200px, 1.4fr) minmax(240px, 1.8fr) auto;
+  align-items: end;
+  gap: 0.75rem;
   margin-bottom: 0.875rem;
-  flex-wrap: wrap;
+  padding: 0.875rem 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
 }
-.rr-search {
-  flex: 1;
-  min-width: 280px;
-  max-width: 460px;
+.rr-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+  min-width: 0;
+}
+.rr-filter-group-search { flex: 1 1 240px; }
+
+.rr-filter-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  padding-left: 0.125rem;
+}
+.rr-filter-select,
+.rr-filter-search {
+  width: 100%;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--bg-secondary);
   color: var(--text-primary);
   font-size: 0.875rem;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
-.rr-search:focus {
+.rr-filter-select:focus,
+.rr-filter-search:focus {
   outline: none;
-  border-color: var(--primary-color, #2563eb);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+  border-color: #475569;
+  box-shadow: 0 0 0 3px rgba(71, 85, 105, 0.15);
 }
+.rr-filter-reset {
+  align-self: end;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.rr-filter-reset:hover {
+  border-color: #475569;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+/* ===== Sub-tabs (Материалы / Работы) ===== */
 .rr-sub-tabs {
   display: flex;
   gap: 0.4375rem;
-  margin-left: auto;
+  margin-bottom: 0.875rem;
 }
 .rr-sub-tab {
   display: inline-flex;
@@ -152,65 +195,70 @@
 .rr-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--bg-secondary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 .rr-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 0.8125rem;
 }
 .rr-table thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 0.5rem 0.625rem;
+  padding: 0.625rem 0.75rem;
   background: var(--bg-tertiary);
   color: var(--text-tertiary);
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
   text-align: left;
   white-space: nowrap;
 }
-.rr-table .rr-th-num    { width: 56px; text-align: center; }
-.rr-table .rr-th-object { min-width: 160px; }
+.rr-table .rr-th-num          { width: 64px;  text-align: center; }
+.rr-table .rr-th-object       { min-width: 160px; }
 .rr-table .rr-th-counterparty { min-width: 200px; }
-.rr-table .rr-th-name { min-width: 280px; }
-.rr-table .rr-th-unit { width: 70px; text-align: center; }
-.rr-table .rr-th-price { width: 150px; text-align: right; }
-.rr-table .rr-th-date  { width: 120px; text-align: center; }
+.rr-table .rr-th-name         { min-width: 260px; }
+.rr-table .rr-th-tender       { min-width: 240px; }
+.rr-table .rr-th-unit         { width: 70px;  text-align: center; }
+.rr-table .rr-th-price        { width: 160px; text-align: right; }
+.rr-table .rr-th-date         { width: 120px; text-align: center; }
 
 .rr-table tbody td {
-  padding: 0.4375rem 0.625rem;
+  padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border-color);
   vertical-align: middle;
   color: var(--text-primary);
 }
-.rr-table tbody tr:last-child td {
-  border-bottom: 0;
+.rr-table tbody tr:last-child td { border-bottom: 0; }
+.rr-table tbody tr:nth-child(even) td { background: rgba(71, 85, 105, 0.025); }
+.rr-table tbody tr:hover td { background: rgba(71, 85, 105, 0.075); }
+[data-theme='dark'] .rr-table tbody tr:nth-child(even) td {
+  background: rgba(148, 163, 184, 0.04);
 }
-.rr-table tbody tr:hover td {
-  background: rgba(71, 85, 105, 0.04);
+[data-theme='dark'] .rr-table tbody tr:hover td {
+  background: rgba(148, 163, 184, 0.10);
 }
+
+/* Колонки с фиксированным форматом */
 .rr-table .rr-td-num {
   text-align: center;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
   font-size: 0.75rem;
+  font-weight: 600;
 }
-.rr-table .rr-td-object,
-.rr-table .rr-td-counterparty,
 .rr-table .rr-td-name {
+  font-weight: 500;
   max-width: 360px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.rr-table .rr-td-name {
-  font-weight: 500;
 }
 .rr-table .rr-td-unit {
   text-align: center;
@@ -221,11 +269,90 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  color: var(--text-primary);
 }
 .rr-table .rr-td-date {
   text-align: center;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+}
+
+/* task 354: чипы для объекта и контрагента */
+.rr-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  border: 1px solid transparent;
+}
+/* Объект — мягкий синий */
+.rr-chip-object {
+  background: rgba(37, 99, 235, 0.10);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.20);
+}
+[data-theme='dark'] .rr-chip-object {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.30);
+}
+/* Контрагент — нейтральный slate */
+.rr-chip-cp {
+  background: rgba(71, 85, 105, 0.10);
+  color: #334155;
+  border-color: rgba(71, 85, 105, 0.20);
+}
+[data-theme='dark'] .rr-chip-cp {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+/* task 354: ссылка-описание тендера */
+.rr-tender-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  color: #2563eb;
+  text-decoration: none;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: color 0.12s;
+}
+.rr-tender-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+[data-theme='dark'] .rr-tender-link {
+  color: #93c5fd;
+}
+[data-theme='dark'] .rr-tender-link:hover {
+  color: #bfdbfe;
+}
+.rr-tender-icon {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+.rr-tender-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.rr-tender-empty {
+  color: var(--text-tertiary);
+}
+.rr-td-tender {
+  max-width: 320px;
 }
 
 /* ===== Пустое состояние и заглушки ===== */
@@ -262,4 +389,21 @@
   max-width: 540px;
   margin: 0 auto;
   line-height: 1.5;
+}
+
+/* ===== Адаптивность ===== */
+@media (max-width: 900px) {
+  .rr-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+  .rr-filter-group-search {
+    grid-column: 1 / -1;
+  }
+  .rr-filter-reset {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
+@media (max-width: 600px) {
+  .rr-filters { grid-template-columns: 1fr; }
 }
