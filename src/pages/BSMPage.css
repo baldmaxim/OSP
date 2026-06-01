@@ -642,9 +642,146 @@
   border-color: rgba(22, 163, 74, 0.35);
 }
 
+/* ВОР/КП (task 368): карточки документов — каждый документ настраивается отдельно,
+   данные объединяются в один анализ. «1 документ заканчивается — сразу за ним 2-й». */
+.bsm-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.bsm-doc-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.bsm-doc-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  padding: 0.625rem 0.75rem;
+}
+
+.bsm-doc-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--primary-color);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.bsm-doc-range {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bsm-doc-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.bsm-doc-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  padding: 0;
+  font-size: 0.9375rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.bsm-doc-remove:hover {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+[data-theme='dark'] .bsm-doc-remove:hover {
+  color: #fecaca;
+  border-color: rgba(220, 38, 38, 0.4);
+  background: rgba(220, 38, 38, 0.15);
+}
+
+.bsm-doc-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.bsm-doc-add:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+/* Инлайновая панель сопоставления столбцов внутри карточки (не всплывающий popover) */
+.bsm-column-map-panel--inline {
+  position: static;
+  z-index: auto;
+  min-width: 0;
+  max-width: none;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg-primary);
+}
+
+.bsm-column-map-panel--inline .bsm-column-map-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.5rem 1.25rem;
+}
+
+/* Метка документа-источника */
+.bsm-name-sources {
+  margin-top: 0.1875rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.bsm-table td.bsm-source {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
 @media (max-width: 720px) {
   .bsm-controls {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .bsm-doc-card-actions {
+    margin-left: 0;
   }
 }

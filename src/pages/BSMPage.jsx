@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
 import './BSMPage.css'
 
 // Поля, которые подтягиваются из Excel. Пользователь сам выбирает столбец для каждого
-// в панели «Столбцы» (шапка страницы). Дефолтная раскладка — A/B/C/D/E/F/G/H/L.
+// в панели «Столбцы» (внутри карточки документа). Дефолтная раскладка — A/B/C/D/E/F/G/H/L.
 const COLUMN_FIELDS = [
   { key: 'num',            label: '№ п/п',           default: 0 },
   { key: 'code',           label: 'КОД (мат./Р)',    default: 1 },
@@ -110,72 +110,278 @@ function cleanNumericLocal(value) {
   return isNaN(n) ? 0 : n
 }
 
+// Чтение/запись «шаблона» раскладки столбцов в localStorage.
+// Первый документ сессии наследует этот шаблон; каждый следующий — раскладку предыдущего документа.
+function loadColumnTemplate() {
+  try {
+    const saved = localStorage.getItem(COLUMN_MAP_STORAGE_KEY)
+    if (!saved) return { ...DEFAULT_COLUMN_MAP }
+    const parsed = JSON.parse(saved)
+    // Валидация: все ключи из COLUMN_FIELDS, значения — null или 0..COLUMN_CHOICES_COUNT-1.
+    const result = { ...DEFAULT_COLUMN_MAP }
+    for (const f of COLUMN_FIELDS) {
+      const v = parsed?.[f.key]
+      if (v === null) result[f.key] = null
+      else if (Number.isInteger(v) && v >= 0 && v < COLUMN_CHOICES_COUNT) result[f.key] = v
+    }
+    return result
+  } catch {
+    return { ...DEFAULT_COLUMN_MAP }
+  }
+}
+
+function saveColumnTemplate(map) {
+  try {
+    localStorage.setItem(COLUMN_MAP_STORAGE_KEY, JSON.stringify(map))
+  } catch { /* localStorage может быть недоступен (приватный режим) — игнорируем */ }
+}
+
+// Парсинг одного листа по заданной раскладке столбцов. Чистая функция —
+// используется независимо для каждого документа.
+// Возвращает { rows, defaultFrom } — defaultFrom — первая строка с непустым наименованием (1-based).
+function parseSheetRows(workbook, sheetName, columnMap) {
+  const empty = { rows: [], defaultFrom: 1 }
+  if (!workbook || !sheetName) return empty
+  const sheet = workbook.Sheets[sheetName]
+  if (!sheet) return empty
+  const COL = columnMap
+  let maxR = 0
+  for (const k of Object.keys(sheet)) {
+    if (k.startsWith('!')) continue
+    const cell = XLSX.utils.decode_cell(k)
+    if (cell.r > maxR) maxR = cell.r
+  }
+  // pickCell: 1) .v 2) .w 3) если есть .f — резолвим ссылку на ячейку другого листа.
+  const pickCell = (rowIdx, colIdx) => {
+    if (colIdx === null || colIdx === undefined) return { value: 0, raw: '' }
+    const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
+    const cell = sheet[ref]
+    if (!cell) return { value: 0, raw: '' }
+    const rawV = cell.v
+    const a = cleanNumeric(rawV)
+    if (a > 0) return { value: a, raw: rawV }
+    const b = cleanNumeric(cell.w)
+    if (b > 0) return { value: b, raw: cell.w }
+    // Формула со ссылкой на другую ячейку/лист — пробуем разрешить вручную.
+    if (cell.f) {
+      const r = resolveFormula(workbook, sheetName, cell.f)
+      if (r && r.value > 0) return { value: r.value, raw: `${r.raw} (← ${r.source})` }
+    }
+    const display = (rawV !== undefined && rawV !== '' ? rawV : cell.w) ?? ''
+    return { value: 0, raw: display }
+  }
+  const getText = (rowIdx, colIdx) => {
+    if (colIdx === undefined || colIdx === null) return ''
+    const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
+    const cell = sheet[ref]
+    if (!cell) return ''
+    return cell.v !== undefined && cell.v !== '' ? String(cell.v) : String(cell.w || '')
+  }
+  const parsed = []
+  for (let r = 0; r <= maxR; r++) {
+    const pm = pickCell(r, COL.priceMaterial)
+    const pw = pickCell(r, COL.priceWork)
+    const codeText = getText(r, COL.code)
+    const wv = pickCell(r, COL.workVolume)
+    const mv = pickCell(r, COL.materialVolume)
+    parsed.push({
+      excelRow: r + 1,
+      num: getText(r, COL.num),
+      code: codeText,
+      name: getText(r, COL.name).trim(),
+      unit: getText(r, COL.unit).trim(),
+      workVolume: wv.value,
+      materialVolume: mv.value,
+      priceMaterial: pm.value,
+      priceWork: pw.value,
+      rawPriceMaterial: pm.raw,
+      rawPriceWork: pw.raw,
+      rawWorkVolume: wv.raw,
+      rawMaterialVolume: mv.raw,
+      notes: getText(r, COL.notes).trim(),
+      kind: detectKind(codeText),
+    })
+  }
+  const firstDataRow = parsed.findIndex(r => r.name) + 1
+  return { rows: parsed, defaultFrom: firstDataRow > 0 ? firstDataRow : 1 }
+}
+
+// Превью первой непустой ячейки в каждом столбце (по первым 6 строкам) — подсказка
+// в выпадающем списке: «A — № п/п», «C — Наименование» и т. д.
+function computeColumnPreviews(workbook, sheetName) {
+  const empty = Array(COLUMN_CHOICES_COUNT).fill('')
+  if (!workbook || !sheetName) return empty
+  const sheet = workbook.Sheets[sheetName]
+  if (!sheet) return empty
+  const result = []
+  for (let c = 0; c < COLUMN_CHOICES_COUNT; c++) {
+    let preview = ''
+    for (let r = 0; r < 6; r++) {
+      const ref = XLSX.utils.encode_cell({ r, c })
+      const cell = sheet[ref]
+      if (cell && cell.v !== undefined && cell.v !== '') {
+        preview = String(cell.v).replace(/\s+/g, ' ').trim()
+        if (preview) break
+      }
+    }
+    if (preview.length > 28) preview = preview.slice(0, 28) + '…'
+    result.push(preview)
+  }
+  return result
+}
+
+// Собирает объект документа из прочитанного workbook (первый лист, переданная раскладка столбцов).
+function makeDocument(id, fileName, workbook, columnMap) {
+  const sheetNames = workbook.SheetNames || []
+  const selectedSheet = sheetNames[0] || ''
+  const { rows, defaultFrom } = parseSheetRows(workbook, selectedSheet, columnMap)
+  return {
+    id,
+    fileName,
+    workbook,
+    sheetNames,
+    selectedSheet,
+    columnMap,
+    allRows: rows,
+    rangeFrom: defaultFrom,
+    rangeTo: rows.length || 1,
+    showColumnPanel: false,
+  }
+}
+
+// Диапазон строк документа с клампом к фактической длине.
+function docRange(doc) {
+  const len = doc.allRows.length
+  if (!len) return { from: 1, to: 0 }
+  const from = Math.max(1, Math.min(Number(doc.rangeFrom) || 1, len))
+  const to = Math.max(from, Math.min(Number(doc.rangeTo) || len, len))
+  return { from, to }
+}
+
 function BSMPage() {
   const { canEdit } = useRole()
   const canEditKp = canEdit('analysis_kp')
-  const [fileName, setFileName] = useState('')
-  const [workbook, setWorkbook] = useState(null)         // Сам workbook — храним, чтобы переключать листы и резолвить формулы.
-  const [sheetNames, setSheetNames] = useState([])       // Список листов в файле.
-  const [selectedSheet, setSelectedSheet] = useState('') // Активный лист.
-  const [allRows, setAllRows] = useState([])
-  const [rangeFrom, setRangeFrom] = useState(1)
-  const [rangeTo, setRangeTo] = useState(1)
+
+  const [documents, setDocuments] = useState([])
+  const nextDocId = useRef(1)                 // стабильные id без Math.random
   const [mainTab, setMainTab] = useState('material')
   const [subTab, setSubTab] = useState('summary')
   const [error, setError] = useState(null)
   const [isDragActive, setIsDragActive] = useState(false)
-  // Маппинг полей анализа КП на столбцы Excel. Пользователь меняет в панели «Столбцы».
-  const [columnMap, setColumnMap] = useState(() => {
-    try {
-      const saved = localStorage.getItem(COLUMN_MAP_STORAGE_KEY)
-      if (!saved) return { ...DEFAULT_COLUMN_MAP }
-      const parsed = JSON.parse(saved)
-      // Валидация: все ключи из COLUMN_FIELDS, значения — null или 0..COLUMN_CHOICES_COUNT-1.
-      const result = { ...DEFAULT_COLUMN_MAP }
-      for (const f of COLUMN_FIELDS) {
-        const v = parsed?.[f.key]
-        if (v === null) result[f.key] = null
-        else if (Number.isInteger(v) && v >= 0 && v < COLUMN_CHOICES_COUNT) result[f.key] = v
-      }
-      return result
-    } catch {
-      return { ...DEFAULT_COLUMN_MAP }
-    }
-  })
-  const [showColumnPanel, setShowColumnPanel] = useState(false)
+
   const fileInputRef = useRef(null)
+  // Куда применить выбранный файл: добавить новый документ или заменить файл конкретного.
+  const pendingAction = useRef({ mode: 'add', id: null })
 
-  // Сохраняем маппинг в localStorage при каждом изменении.
-  useEffect(() => {
-    try {
-      localStorage.setItem(COLUMN_MAP_STORAGE_KEY, JSON.stringify(columnMap))
-    } catch { /* localStorage может быть недоступен (приватный режим) — игнорируем */ }
-  }, [columnMap])
+  // Шаблон раскладки для пустого состояния (последняя использованная / дефолт).
+  const startTemplate = useMemo(() => loadColumnTemplate(), [])
 
-  const processFile = async (file) => {
+  const hasDocuments = documents.length > 0
+
+  // ----- Загрузка / добавление документов -----
+
+  const readWorkbook = async (file) => {
+    const buf = await file.arrayBuffer()
+    return XLSX.read(buf, { type: 'array' })
+  }
+
+  const addDocument = async (file) => {
     if (!file) return
     setError(null)
     try {
-      const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf, { type: 'array' })
-      setWorkbook(wb)
-      setSheetNames(wb.SheetNames)
-      setFileName(file.name)
-      setSelectedSheet(wb.SheetNames[0] || '')
+      const wb = await readWorkbook(file)
+      const id = nextDocId.current++
+      setDocuments(prev => {
+        // Новый документ наследует раскладку последнего; первый — сохранённый шаблон.
+        const template = prev.length ? prev[prev.length - 1].columnMap : loadColumnTemplate()
+        return [...prev, makeDocument(id, file.name, wb, { ...template })]
+      })
     } catch (err) {
       console.error('Ошибка чтения Excel:', err)
       setError('Не удалось прочитать файл. Проверьте формат (нужен .xlsx или .xls).')
     }
   }
 
-  const handleFile = async (event) => {
-    const file = event.target.files?.[0]
+  const replaceDocumentFile = async (id, file) => {
+    if (!file) return
+    setError(null)
     try {
-      await processFile(file)
+      const wb = await readWorkbook(file)
+      setDocuments(prev => prev.map(d =>
+        d.id === id ? makeDocument(id, file.name, wb, { ...d.columnMap }) : d
+      ))
+    } catch (err) {
+      console.error('Ошибка чтения Excel:', err)
+      setError('Не удалось прочитать файл. Проверьте формат (нужен .xlsx или .xls).')
+    }
+  }
+
+  const openFilePicker = (mode, id = null) => {
+    pendingAction.current = { mode, id }
+    fileInputRef.current?.click()
+  }
+
+  const handleFileInput = async (event) => {
+    const file = event.target.files?.[0]
+    const { mode, id } = pendingAction.current
+    try {
+      if (file) {
+        if (mode === 'replace' && id != null) await replaceDocumentFile(id, file)
+        else await addDocument(file)
+      }
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
+
+  // ----- Настройка документа -----
+
+  const removeDocument = (id) => setDocuments(prev => prev.filter(d => d.id !== id))
+
+  const setDocumentSheet = (id, sheet) => {
+    setDocuments(prev => prev.map(d => {
+      if (d.id !== id) return d
+      const { rows, defaultFrom } = parseSheetRows(d.workbook, sheet, d.columnMap)
+      return { ...d, selectedSheet: sheet, allRows: rows, rangeFrom: defaultFrom, rangeTo: rows.length || 1 }
+    }))
+  }
+
+  const updateDocumentColumn = (id, fieldKey, value) => {
+    const nextValue = value === '' ? null : Number(value)
+    setDocuments(prev => prev.map(d => {
+      if (d.id !== id) return d
+      const columnMap = { ...d.columnMap, [fieldKey]: nextValue }
+      const { rows } = parseSheetRows(d.workbook, d.selectedSheet, columnMap)
+      // Диапазон сохраняем, но клампим к новой длине.
+      const rangeTo = Math.max(1, Math.min(Number(d.rangeTo) || rows.length || 1, rows.length || 1))
+      const rangeFrom = Math.max(1, Math.min(Number(d.rangeFrom) || 1, rangeTo))
+      saveColumnTemplate(columnMap)
+      return { ...d, columnMap, allRows: rows, rangeFrom, rangeTo }
+    }))
+  }
+
+  const resetDocumentColumnMap = (id) => {
+    setDocuments(prev => prev.map(d => {
+      if (d.id !== id) return d
+      const columnMap = { ...DEFAULT_COLUMN_MAP }
+      const { rows, defaultFrom } = parseSheetRows(d.workbook, d.selectedSheet, columnMap)
+      saveColumnTemplate(columnMap)
+      return { ...d, columnMap, allRows: rows, rangeFrom: defaultFrom, rangeTo: rows.length || 1 }
+    }))
+  }
+
+  const setDocumentRange = (id, patch) =>
+    setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d))
+
+  const toggleDocumentColumnPanel = (id) =>
+    setDocuments(prev => prev.map(d => d.id === id ? { ...d, showColumnPanel: !d.showColumnPanel } : d))
+
+  const handleClear = () => {
+    setDocuments([])
+    setError(null)
+  }
+
+  // ----- Drag & drop (только для пустого состояния) -----
 
   const handleDragOver = (e) => {
     if (!canEditKp) return
@@ -199,138 +405,30 @@ function BSMPage() {
       setError('Поддерживаются только файлы .xlsx и .xls.')
       return
     }
-    processFile(file)
+    addDocument(file)
   }
 
-  // Парсим выбранный лист. Запускается при изменении workbook, selectedSheet или columnMap.
-  useEffect(() => {
-    if (!workbook || !selectedSheet) return
-    const sheet = workbook.Sheets[selectedSheet]
-    if (!sheet) return
-    const COL = columnMap
-    let maxR = 0
-    for (const k of Object.keys(sheet)) {
-      if (k.startsWith('!')) continue
-      const cell = XLSX.utils.decode_cell(k)
-      if (cell.r > maxR) maxR = cell.r
-    }
-    // pickCell: 1) .v 2) .w 3) если есть .f — резолвим ссылку на ячейку другого листа.
-    const pickCell = (rowIdx, colIdx) => {
-      if (colIdx === null || colIdx === undefined) return { value: 0, raw: '' }
-      const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
-      const cell = sheet[ref]
-      if (!cell) return { value: 0, raw: '' }
-      const rawV = cell.v
-      const a = cleanNumeric(rawV)
-      if (a > 0) return { value: a, raw: rawV }
-      const b = cleanNumeric(cell.w)
-      if (b > 0) return { value: b, raw: cell.w }
-      // Формула со ссылкой на другую ячейку/лист — пробуем разрешить вручную.
-      if (cell.f) {
-        const r = resolveFormula(workbook, selectedSheet, cell.f)
-        if (r && r.value > 0) return { value: r.value, raw: `${r.raw} (← ${r.source})` }
+  // ----- Объединённый датасет по всем документам -----
+
+  // Строки всех документов в выбранных диапазонах, помеченные источником.
+  const combinedRangeRows = useMemo(() => {
+    const out = []
+    for (const doc of documents) {
+      const { from, to } = docRange(doc)
+      if (to < from) continue
+      for (const r of doc.allRows.slice(from - 1, to)) {
+        out.push({ ...r, sourceFile: doc.fileName, sourceId: doc.id })
       }
-      const display = (rawV !== undefined && rawV !== '' ? rawV : cell.w) ?? ''
-      return { value: 0, raw: display }
     }
-    const getText = (rowIdx, colIdx) => {
-      if (colIdx === undefined || colIdx === null) return ''
-      const ref = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx })
-      const cell = sheet[ref]
-      if (!cell) return ''
-      return cell.v !== undefined && cell.v !== '' ? String(cell.v) : String(cell.w || '')
-    }
-    const parsed = []
-    for (let r = 0; r <= maxR; r++) {
-      const pm = pickCell(r, COL.priceMaterial)
-      const pw = pickCell(r, COL.priceWork)
-      const codeText = getText(r, COL.code)
-      const wv = pickCell(r, COL.workVolume)
-      const mv = pickCell(r, COL.materialVolume)
-      parsed.push({
-        excelRow: r + 1,
-        num: getText(r, COL.num),
-        code: codeText,
-        name: getText(r, COL.name).trim(),
-        unit: getText(r, COL.unit).trim(),
-        workVolume: wv.value,
-        materialVolume: mv.value,
-        priceMaterial: pm.value,
-        priceWork: pw.value,
-        rawPriceMaterial: pm.raw,
-        rawPriceWork: pw.raw,
-        rawWorkVolume: wv.raw,
-        rawMaterialVolume: mv.raw,
-        notes: getText(r, COL.notes).trim(),
-        kind: detectKind(codeText),
-      })
-    }
-    setAllRows(parsed)
-    // По умолчанию пытаемся пропустить шапку: первая строка с непустым наименованием.
-    const firstDataRow = parsed.findIndex(r => r.name) + 1
-    setRangeFrom(firstDataRow > 0 ? firstDataRow : 1)
-    setRangeTo(parsed.length || 1)
-  }, [workbook, selectedSheet, columnMap])
-
-  const handleClear = () => {
-    setFileName('')
-    setWorkbook(null)
-    setSheetNames([])
-    setSelectedSheet('')
-    setAllRows([])
-    setRangeFrom(1)
-    setRangeTo(1)
-    setError(null)
-  }
-
-  // Превью первой непустой ячейки в каждом столбце (по первым 6 строкам) — для
-  // подсказки в выпадающем списке: «A — № п/п», «C — Наименование» и т. д.
-  const columnPreviews = useMemo(() => {
-    const empty = Array(COLUMN_CHOICES_COUNT).fill('')
-    if (!workbook || !selectedSheet) return empty
-    const sheet = workbook.Sheets[selectedSheet]
-    if (!sheet) return empty
-    const result = []
-    for (let c = 0; c < COLUMN_CHOICES_COUNT; c++) {
-      let preview = ''
-      for (let r = 0; r < 6; r++) {
-        const ref = XLSX.utils.encode_cell({ r, c })
-        const cell = sheet[ref]
-        if (cell && cell.v !== undefined && cell.v !== '') {
-          preview = String(cell.v).replace(/\s+/g, ' ').trim()
-          if (preview) break
-        }
-      }
-      if (preview.length > 28) preview = preview.slice(0, 28) + '…'
-      result.push(preview)
-    }
-    return result
-  }, [workbook, selectedSheet])
-
-  const updateColumnMap = (fieldKey, value) => {
-    setColumnMap(prev => ({
-      ...prev,
-      [fieldKey]: value === '' ? null : Number(value)
-    }))
-  }
-
-  const handleResetColumnMap = () => setColumnMap({ ...DEFAULT_COLUMN_MAP })
-
-  // Строки, попавшие в выбранный диапазон.
-  const rangeRows = useMemo(() => {
-    if (allRows.length === 0) return []
-    const from = Math.max(1, Math.min(rangeFrom, allRows.length))
-    const to = Math.max(from, Math.min(rangeTo, allRows.length))
-    return allRows.slice(from - 1, to)
-  }, [allRows, rangeFrom, rangeTo])
+    return out
+  }, [documents])
 
   // Группировка по наименованию для текущей вкладки (материалы/работы).
-  // Для материалов берём materialVolume × priceMaterial.
-  // Для работ — workVolume × priceWork.
+  // Для материалов берём materialVolume × priceMaterial, для работ — workVolume × priceWork.
   const grouped = useMemo(() => {
-    if (rangeRows.length === 0) return []
+    if (combinedRangeRows.length === 0) return []
     const isMaterial = mainTab === 'material'
-    const filtered = rangeRows.filter(r => r.kind === (isMaterial ? 'material' : 'work') && r.name)
+    const filtered = combinedRangeRows.filter(r => r.kind === (isMaterial ? 'material' : 'work') && r.name)
     const map = new Map()
     for (const r of filtered) {
       const key = r.name.toLowerCase()
@@ -343,6 +441,7 @@ function BSMPage() {
           name: r.name,
           unitsSet: new Set(),
           pricesSet: new Set(),
+          sourcesSet: new Set(),
           totalVolume: 0,
           count: 0,
           items: [],
@@ -352,11 +451,13 @@ function BSMPage() {
       const g = map.get(key)
       if (r.unit) g.unitsSet.add(r.unit)
       if (price > 0) g.pricesSet.add(round2(price))
+      if (r.sourceFile) g.sourcesSet.add(r.sourceFile)
       g.totalVolume = round2(g.totalVolume + volume)
       g.count += 1
       g.lastPrice = price > 0 ? round2(price) : g.lastPrice
       g.items.push({
         excelRow: r.excelRow,
+        sourceFile: r.sourceFile,
         unit: r.unit,
         volume,
         price,
@@ -379,6 +480,7 @@ function BSMPage() {
           name: g.name,
           units: Array.from(g.unitsSet),
           prices,
+          sources: Array.from(g.sourcesSet),
           unitPrice,
           totalVolume: g.totalVolume,
           totalSum,
@@ -389,7 +491,7 @@ function BSMPage() {
         }
       })
       .sort((a, b) => b.totalSum - a.totalSum)
-  }, [rangeRows, mainTab])
+  }, [combinedRangeRows, mainTab])
 
   const differentPrices = useMemo(() => grouped.filter(g => g.hasDifferentPrices), [grouped])
   const differentUnits = useMemo(() => grouped.filter(g => g.hasDifferentUnits), [grouped])
@@ -397,16 +499,17 @@ function BSMPage() {
   const notPriced = useMemo(() => grouped.filter(g => g.prices.length === 0), [grouped])
 
   const stats = useMemo(() => {
-    const totalRows = rangeRows.length
+    const totalRows = combinedRangeRows.length
     const matched = grouped.length
     const totalSum = round2(grouped.reduce((s, g) => s + g.totalSum, 0))
     const totalVolume = round2(grouped.reduce((s, g) => s + g.totalVolume, 0))
     const sourcePositions = grouped.reduce((s, g) => s + g.count, 0)
     return { totalRows, matched, totalSum, totalVolume, sourcePositions }
-  }, [grouped, rangeRows])
+  }, [grouped, combinedRangeRows])
 
-  const hasData = allRows.length > 0
+  const hasData = combinedRangeRows.length > 0
   const subTabsAvailable = hasData
+  const multipleDocs = documents.length > 1
 
   // Экспорт текущего состояния анализа в Excel: все 4 раздела в отдельных листах.
   const handleExportExcel = () => {
@@ -422,7 +525,7 @@ function BSMPage() {
 
     // Лист 1: «Сводная»
     const summaryRows = [
-      ['№', 'Наименование', 'Ед. изм.', volumeHeader, priceHeader, 'Сумма, ₽', 'Позиций', 'Предупреждения'],
+      ['№', 'Наименование', 'Ед. изм.', volumeHeader, priceHeader, 'Сумма, ₽', 'Позиций', 'Документы', 'Предупреждения'],
       ...grouped.map((g, idx) => [
         idx + 1,
         g.name,
@@ -431,6 +534,7 @@ function BSMPage() {
         round2(g.unitPrice),
         round2(g.totalSum),
         g.count,
+        g.sources.join(', '),
         [
           g.hasDifferentPrices ? 'разные цены' : null,
           g.hasDifferentUnits ? 'разные ед.' : null,
@@ -440,60 +544,62 @@ function BSMPage() {
       [],
       ['', 'ИТОГО', '', round2(grouped.reduce((s, r) => s + r.totalVolume, 0)), '',
         round2(grouped.reduce((s, r) => s + r.totalSum, 0)),
-        grouped.reduce((s, r) => s + r.count, 0), ''],
+        grouped.reduce((s, r) => s + r.count, 0), '', ''],
     ]
     const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows)
-    summarySheet['!cols'] = [{ wch: 5 }, { wch: 55 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 9 }, { wch: 24 }]
+    summarySheet['!cols'] = [{ wch: 5 }, { wch: 55 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 9 }, { wch: 28 }, { wch: 24 }]
     XLSX.utils.book_append_sheet(wb, summarySheet, `${tabLabel} — Сводная`)
 
     // Лист 2: «Разные цены»
     if (differentPrices.length > 0) {
-      const rows = [['Наименование', 'Стр. Excel', 'Ед. изм.', 'Объём', 'Цена, ₽', 'Сумма, ₽']]
+      const rows = [['Наименование', 'Стр. Excel', 'Документ', 'Ед. изм.', 'Объём', 'Цена, ₽', 'Сумма, ₽']]
       for (const g of differentPrices) {
-        rows.push([g.name, '', '', round2(g.totalVolume), '', round2(g.totalSum)])
+        rows.push([g.name, '', '', '', round2(g.totalVolume), '', round2(g.totalSum)])
         for (const it of g.items) {
-          rows.push(['  → исходная строка', it.excelRow, it.unit, round2(it.volume), round2(it.price), round2(it.sum)])
+          rows.push(['  → исходная строка', it.excelRow, it.sourceFile, it.unit, round2(it.volume), round2(it.price), round2(it.sum)])
         }
       }
       const sh = XLSX.utils.aoa_to_sheet(rows)
-      sh['!cols'] = [{ wch: 55 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 16 }]
+      sh['!cols'] = [{ wch: 55 }, { wch: 10 }, { wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 16 }]
       XLSX.utils.book_append_sheet(wb, sh, `${tabLabel} — Разные цены`)
     }
 
     // Лист 3: «Разные ед.изм.»
     if (differentUnits.length > 0) {
-      const rows = [['Наименование', 'Стр. Excel', 'Ед. изм.', 'Объём', 'Цена, ₽', 'Сумма, ₽']]
+      const rows = [['Наименование', 'Стр. Excel', 'Документ', 'Ед. изм.', 'Объём', 'Цена, ₽', 'Сумма, ₽']]
       for (const g of differentUnits) {
-        rows.push([g.name, '', '', round2(g.totalVolume), '', round2(g.totalSum)])
+        rows.push([g.name, '', '', '', round2(g.totalVolume), '', round2(g.totalSum)])
         for (const it of g.items) {
-          rows.push(['  → исходная строка', it.excelRow, it.unit, round2(it.volume), round2(it.price), round2(it.sum)])
+          rows.push(['  → исходная строка', it.excelRow, it.sourceFile, it.unit, round2(it.volume), round2(it.price), round2(it.sum)])
         }
       }
       const sh = XLSX.utils.aoa_to_sheet(rows)
-      sh['!cols'] = [{ wch: 55 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 }]
+      sh['!cols'] = [{ wch: 55 }, { wch: 10 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 }]
       XLSX.utils.book_append_sheet(wb, sh, `${tabLabel} — Разные ед.`)
     }
 
     // Лист 4: «Не расценены»
     if (notPriced.length > 0) {
-      const rows = [['Наименование', 'Ед. изм.', 'Объём', 'Позиций', 'Стр. Excel']]
+      const rows = [['Наименование', 'Ед. изм.', 'Объём', 'Позиций', 'Документы', 'Стр. Excel']]
       for (const g of notPriced) {
         rows.push([
           g.name,
           g.units.join(', '),
           round2(g.totalVolume),
           g.count,
+          g.sources.join(', '),
           g.items.map(it => it.excelRow).join(', '),
         ])
       }
       const sh = XLSX.utils.aoa_to_sheet(rows)
-      sh['!cols'] = [{ wch: 55 }, { wch: 12 }, { wch: 12 }, { wch: 9 }, { wch: 30 }]
+      sh['!cols'] = [{ wch: 55 }, { wch: 12 }, { wch: 12 }, { wch: 9 }, { wch: 28 }, { wch: 30 }]
       XLSX.utils.book_append_sheet(wb, sh, `${tabLabel} — Не расценены`)
     }
 
-    // Имя файла: «Анализ КП - <имя источника без расширения> - <Материалы|Работы>.xlsx»
-    const baseName = fileName.replace(/\.(xlsx|xls)$/i, '') || 'без имени'
-    const outName = `Анализ КП - ${baseName} - ${tabLabel}.xlsx`
+    // Имя файла: «Анализ КП - <имя первого источника>[ (+N)] - <Материалы|Работы>.xlsx»
+    const baseName = (documents[0]?.fileName || '').replace(/\.(xlsx|xls)$/i, '') || 'без имени'
+    const suffix = multipleDocs ? ` (+${documents.length - 1})` : ''
+    const outName = `Анализ КП - ${baseName}${suffix} - ${tabLabel}.xlsx`
     XLSX.writeFile(wb, outName)
   }
 
@@ -501,97 +607,27 @@ function BSMPage() {
     <div className="bsm-page">
       <header className="bsm-header">
         <div className="bsm-header-text">
-          <h2>📊 Анализ КП</h2>
+          <h2>📊 Анализ ВОР/КП</h2>
           <p className="bsm-subtitle">
-            Загрузите Excel с расценками, задайте диапазон строк — получите сводную таблицу по наименованиям.
+            Загрузите один или несколько Excel-файлов с расценками, для каждого задайте лист, столбцы и диапазон строк — получите общую сводную таблицу по наименованиям.
           </p>
         </div>
 
         <div className="bsm-header-actions">
-          <div className="bsm-column-map-wrap">
-            <button
-              type="button"
-              className={`bsm-btn-secondary bsm-column-map-toggle ${showColumnPanel ? 'active' : ''}`}
-              onClick={() => setShowColumnPanel(s => !s)}
-              title="Какой столбец Excel содержит какие данные"
-            >
-              ⚙️ Столбцы {showColumnPanel ? '▴' : '▾'}
-            </button>
-            {showColumnPanel && (
-              <div className="bsm-column-map-panel" role="dialog" aria-label="Сопоставление колонок">
-                <div className="bsm-column-map-title">Из какого столбца брать данные</div>
-                <div className="bsm-column-map-grid">
-                  {COLUMN_FIELDS.map(f => (
-                    <label key={f.key} className="bsm-column-map-row">
-                      <span className="bsm-column-map-label">{f.label}</span>
-                      <select
-                        className="bsm-column-map-select"
-                        value={columnMap[f.key] ?? ''}
-                        onChange={(e) => updateColumnMap(f.key, e.target.value)}
-                      >
-                        <option value="">— не использовать</option>
-                        {Array.from({ length: COLUMN_CHOICES_COUNT }, (_, idx) => {
-                          const letter = XLSX.utils.encode_col(idx)
-                          const preview = columnPreviews[idx]
-                          return (
-                            <option key={idx} value={idx}>
-                              {letter}{preview ? ` — ${preview}` : ''}
-                            </option>
-                          )
-                        })}
-                      </select>
-                    </label>
-                  ))}
-                </div>
-                <div className="bsm-column-map-actions">
-                  <button
-                    type="button"
-                    className="bsm-btn-ghost"
-                    onClick={handleResetColumnMap}
-                  >
-                    Сбросить к стандартной (A/B/C/D/E/F/G/H/L)
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
           <input
             ref={fileInputRef}
             type="file"
             accept=".xlsx,.xls"
-            onChange={handleFile}
+            onChange={handleFileInput}
             style={{ display: 'none' }}
           />
-          {!workbook ? (
-            canEditKp && (
-              <button className="bsm-btn-primary" onClick={() => fileInputRef.current?.click()}>
-                📂 Загрузить Excel
-              </button>
-            )
-          ) : (
+          {canEditKp && (
+            <button className="bsm-btn-primary" onClick={() => openFilePicker('add')}>
+              {hasDocuments ? '➕ Добавить документ' : '📂 Загрузить Excel'}
+            </button>
+          )}
+          {hasDocuments && (
             <>
-              <span className="bsm-file-chip" title={fileName}>
-                <span aria-hidden>📎</span> {fileName}
-              </span>
-              {sheetNames.length > 0 && (
-                <label className="bsm-sheet-select-wrap" title="Лист с данными">
-                  <span aria-hidden>📑</span>
-                  <select
-                    className="bsm-sheet-select"
-                    value={selectedSheet}
-                    onChange={(e) => setSelectedSheet(e.target.value)}
-                  >
-                    {sheetNames.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {canEditKp && (
-                <button className="bsm-btn-secondary" onClick={() => fileInputRef.current?.click()}>
-                  Заменить
-                </button>
-              )}
               <button
                 className="bsm-btn-secondary"
                 onClick={handleExportExcel}
@@ -612,7 +648,7 @@ function BSMPage() {
 
       {error && <div className="bsm-error">{error}</div>}
 
-      {!hasData && (
+      {!hasDocuments && (
         <div
           className={`bsm-empty${isDragActive ? ' bsm-drag-active' : ''}`}
           onDragOver={handleDragOver}
@@ -624,7 +660,7 @@ function BSMPage() {
           <div className="bsm-empty-text">
             {isDragActive
               ? 'Файл будет загружен и обработан автоматически.'
-              : 'Загрузите Excel-документ или перетащите его сюда. Сопоставление колонок можно изменить кнопкой «⚙️ Столбцы» в шапке.'}
+              : 'Загрузите Excel-документ или перетащите его сюда. Можно добавить несколько документов — данные объединятся в один анализ. Сопоставление колонок настраивается для каждого документа отдельно.'}
           </div>
           <table className="bsm-format-table">
             <thead>
@@ -634,7 +670,7 @@ function BSMPage() {
             </thead>
             <tbody>
               {COLUMN_FIELDS.map(f => {
-                const idx = columnMap[f.key]
+                const idx = startTemplate[f.key]
                 const letter = (idx === null || idx === undefined) ? '—' : XLSX.utils.encode_col(idx)
                 return (
                   <tr key={f.key}>
@@ -653,150 +689,286 @@ function BSMPage() {
         </div>
       )}
 
-      {hasData && (
+      {hasDocuments && (
         <>
-          <section className="bsm-controls">
-            <div className="bsm-range">
-              <span className="bsm-label">Диапазон строк</span>
-              <div className="bsm-range-inputs">
-                <label>
-                  С
-                  <input
-                    type="number"
-                    min={1}
-                    max={allRows.length}
-                    value={rangeFrom}
-                    onChange={(e) => setRangeFrom(e.target.value === '' ? '' : Number(e.target.value))}
-                    onBlur={(e) => {
-                      const v = Number(e.target.value) || 1
-                      setRangeFrom(Math.max(1, Math.min(allRows.length, v)))
-                    }}
-                  />
-                </label>
-                <span className="bsm-range-sep">—</span>
-                <label>
-                  По
-                  <input
-                    type="number"
-                    min={1}
-                    max={allRows.length}
-                    value={rangeTo}
-                    onChange={(e) => setRangeTo(e.target.value === '' ? '' : Number(e.target.value))}
-                    onBlur={(e) => {
-                      const v = Number(e.target.value) || allRows.length
-                      setRangeTo(Math.max(1, Math.min(allRows.length, v)))
-                    }}
-                  />
-                </label>
-                <span className="bsm-range-total">из {allRows.length}</span>
-              </div>
-            </div>
-
-            <div className="bsm-tabs-main" role="tablist" aria-label="Тип позиций">
-              <button
-                role="tab"
-                aria-selected={mainTab === 'material'}
-                className={`bsm-tab-main ${mainTab === 'material' ? 'active' : ''}`}
-                onClick={() => setMainTab('material')}
-              >
-                <span aria-hidden>📦</span> Материалы
+          <section className="bsm-docs">
+            {documents.map((doc, i) => (
+              <DocumentCard
+                key={doc.id}
+                doc={doc}
+                index={i}
+                canEdit={canEditKp}
+                onSheetChange={(sheet) => setDocumentSheet(doc.id, sheet)}
+                onColumnChange={(key, value) => updateDocumentColumn(doc.id, key, value)}
+                onResetColumns={() => resetDocumentColumnMap(doc.id)}
+                onTogglePanel={() => toggleDocumentColumnPanel(doc.id)}
+                onRangeChange={(patch) => setDocumentRange(doc.id, patch)}
+                onReplace={() => openFilePicker('replace', doc.id)}
+                onRemove={() => removeDocument(doc.id)}
+              />
+            ))}
+            {canEditKp && (
+              <button type="button" className="bsm-doc-add" onClick={() => openFilePicker('add')}>
+                ➕ Добавить ещё документ
               </button>
-              <button
-                role="tab"
-                aria-selected={mainTab === 'work'}
-                className={`bsm-tab-main ${mainTab === 'work' ? 'active' : ''}`}
-                onClick={() => setMainTab('work')}
-              >
-                <span aria-hidden>🔧</span> Работы
-              </button>
-            </div>
+            )}
           </section>
 
-          <section className="bsm-stats">
-            <div className="bsm-stat">
-              <div className="bsm-stat-label">Строк в диапазоне</div>
-              <div className="bsm-stat-value">{stats.totalRows}</div>
-            </div>
-            <div className="bsm-stat">
-              <div className="bsm-stat-label">Уникальных позиций</div>
-              <div className="bsm-stat-value">{stats.matched}</div>
-            </div>
-            <div className="bsm-stat">
-              <div className="bsm-stat-label">Исходных строк {mainTab === 'material' ? '«мат.»' : '«Р»'}</div>
-              <div className="bsm-stat-value">{stats.sourcePositions}</div>
-            </div>
-            <div className="bsm-stat">
-              <div className="bsm-stat-label">Объём (итог)</div>
-              <div className="bsm-stat-value">{fmtNum(stats.totalVolume)}</div>
-            </div>
-            <div className="bsm-stat bsm-stat-accent">
-              <div className="bsm-stat-label">Сумма (итог)</div>
-              <div className="bsm-stat-value">{fmtRub(stats.totalSum)}</div>
-            </div>
-          </section>
+          {hasData ? (
+            <>
+              <section className="bsm-controls">
+                <div className="bsm-tabs-main" role="tablist" aria-label="Тип позиций">
+                  <button
+                    role="tab"
+                    aria-selected={mainTab === 'material'}
+                    className={`bsm-tab-main ${mainTab === 'material' ? 'active' : ''}`}
+                    onClick={() => setMainTab('material')}
+                  >
+                    <span aria-hidden>📦</span> Материалы
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={mainTab === 'work'}
+                    className={`bsm-tab-main ${mainTab === 'work' ? 'active' : ''}`}
+                    onClick={() => setMainTab('work')}
+                  >
+                    <span aria-hidden>🔧</span> Работы
+                  </button>
+                </div>
+              </section>
 
-          {subTabsAvailable && (
-            <nav className="bsm-tabs-sub" role="tablist" aria-label="Разделы анализа">
-              <button
-                role="tab"
-                aria-selected={subTab === 'summary'}
-                className={`bsm-tab-sub ${subTab === 'summary' ? 'active' : ''}`}
-                onClick={() => setSubTab('summary')}
-              >
-                Сводная
-                <span className="bsm-tab-count">{grouped.length}</span>
-              </button>
-              <button
-                role="tab"
-                aria-selected={subTab === 'different_prices'}
-                className={`bsm-tab-sub ${subTab === 'different_prices' ? 'active' : ''} ${differentPrices.length > 0 ? 'has-warning' : ''}`}
-                onClick={() => setSubTab('different_prices')}
-              >
-                Разные цены
-                <span className="bsm-tab-count">{differentPrices.length}</span>
-              </button>
-              <button
-                role="tab"
-                aria-selected={subTab === 'different_units'}
-                className={`bsm-tab-sub ${subTab === 'different_units' ? 'active' : ''} ${differentUnits.length > 0 ? 'has-warning' : ''}`}
-                onClick={() => setSubTab('different_units')}
-              >
-                Разные ед.&nbsp;изм.
-                <span className="bsm-tab-count">{differentUnits.length}</span>
-              </button>
-              <button
-                role="tab"
-                aria-selected={subTab === 'not_priced'}
-                className={`bsm-tab-sub ${subTab === 'not_priced' ? 'active' : ''} ${notPriced.length > 0 ? 'has-warning' : ''}`}
-                onClick={() => setSubTab('not_priced')}
-              >
-                Не расценены
-                <span className="bsm-tab-count">{notPriced.length}</span>
-              </button>
-            </nav>
+              <section className="bsm-stats">
+                <div className="bsm-stat">
+                  <div className="bsm-stat-label">Строк в диапазоне</div>
+                  <div className="bsm-stat-value">{stats.totalRows}</div>
+                </div>
+                <div className="bsm-stat">
+                  <div className="bsm-stat-label">Уникальных позиций</div>
+                  <div className="bsm-stat-value">{stats.matched}</div>
+                </div>
+                <div className="bsm-stat">
+                  <div className="bsm-stat-label">Исходных строк {mainTab === 'material' ? '«мат.»' : '«Р»'}</div>
+                  <div className="bsm-stat-value">{stats.sourcePositions}</div>
+                </div>
+                <div className="bsm-stat">
+                  <div className="bsm-stat-label">Объём (итог)</div>
+                  <div className="bsm-stat-value">{fmtNum(stats.totalVolume)}</div>
+                </div>
+                <div className="bsm-stat bsm-stat-accent">
+                  <div className="bsm-stat-label">Сумма (итог)</div>
+                  <div className="bsm-stat-value">{fmtRub(stats.totalSum)}</div>
+                </div>
+              </section>
+
+              {subTabsAvailable && (
+                <nav className="bsm-tabs-sub" role="tablist" aria-label="Разделы анализа">
+                  <button
+                    role="tab"
+                    aria-selected={subTab === 'summary'}
+                    className={`bsm-tab-sub ${subTab === 'summary' ? 'active' : ''}`}
+                    onClick={() => setSubTab('summary')}
+                  >
+                    Сводная
+                    <span className="bsm-tab-count">{grouped.length}</span>
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={subTab === 'different_prices'}
+                    className={`bsm-tab-sub ${subTab === 'different_prices' ? 'active' : ''} ${differentPrices.length > 0 ? 'has-warning' : ''}`}
+                    onClick={() => setSubTab('different_prices')}
+                  >
+                    Разные цены
+                    <span className="bsm-tab-count">{differentPrices.length}</span>
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={subTab === 'different_units'}
+                    className={`bsm-tab-sub ${subTab === 'different_units' ? 'active' : ''} ${differentUnits.length > 0 ? 'has-warning' : ''}`}
+                    onClick={() => setSubTab('different_units')}
+                  >
+                    Разные ед.&nbsp;изм.
+                    <span className="bsm-tab-count">{differentUnits.length}</span>
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={subTab === 'not_priced'}
+                    className={`bsm-tab-sub ${subTab === 'not_priced' ? 'active' : ''} ${notPriced.length > 0 ? 'has-warning' : ''}`}
+                    onClick={() => setSubTab('not_priced')}
+                  >
+                    Не расценены
+                    <span className="bsm-tab-count">{notPriced.length}</span>
+                  </button>
+                </nav>
+              )}
+
+              <section className="bsm-content">
+                {subTab === 'summary' && (
+                  <SummaryTable rows={grouped} mainTab={mainTab} showSources={multipleDocs} />
+                )}
+                {subTab === 'different_prices' && (
+                  <DifferentPricesTable rows={differentPrices} mainTab={mainTab} />
+                )}
+                {subTab === 'different_units' && (
+                  <DifferentUnitsTable rows={differentUnits} mainTab={mainTab} />
+                )}
+                {subTab === 'not_priced' && (
+                  <NotPricedTable rows={notPriced} mainTab={mainTab} />
+                )}
+              </section>
+            </>
+          ) : (
+            <div className="bsm-empty-block">
+              Документы загружены, но в выбранных диапазонах нет позиций. Проверьте сопоставление столбцов («⚙️ Столбцы») и диапазон строк в карточках выше.
+            </div>
           )}
-
-          <section className="bsm-content">
-            {subTab === 'summary' && (
-              <SummaryTable rows={grouped} mainTab={mainTab} />
-            )}
-            {subTab === 'different_prices' && (
-              <DifferentPricesTable rows={differentPrices} mainTab={mainTab} />
-            )}
-            {subTab === 'different_units' && (
-              <DifferentUnitsTable rows={differentUnits} mainTab={mainTab} />
-            )}
-            {subTab === 'not_priced' && (
-              <NotPricedTable rows={notPriced} mainTab={mainTab} />
-            )}
-          </section>
         </>
       )}
     </div>
   )
 }
 
-function SummaryTable({ rows, mainTab }) {
+// Карточка одного документа: имя файла, выбор листа, диапазон строк, панель сопоставления столбцов.
+function DocumentCard({
+  doc, index, canEdit,
+  onSheetChange, onColumnChange, onResetColumns, onTogglePanel, onRangeChange, onReplace, onRemove,
+}) {
+  const columnPreviews = useMemo(
+    () => computeColumnPreviews(doc.workbook, doc.selectedSheet),
+    [doc.workbook, doc.selectedSheet]
+  )
+  const maxRows = doc.allRows.length
+
+  return (
+    <div className="bsm-doc-card">
+      <div className="bsm-doc-card-head">
+        <span className="bsm-doc-index" aria-hidden>{index + 1}</span>
+        <span className="bsm-file-chip" title={doc.fileName}>
+          <span aria-hidden>📎</span> {doc.fileName}
+        </span>
+
+        {doc.sheetNames.length > 0 && (
+          <label className="bsm-sheet-select-wrap" title="Лист с данными">
+            <span aria-hidden>📑</span>
+            <select
+              className="bsm-sheet-select"
+              value={doc.selectedSheet}
+              onChange={(e) => onSheetChange(e.target.value)}
+              disabled={!canEdit}
+            >
+              {doc.sheetNames.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <div className="bsm-doc-range">
+          <span className="bsm-label">Строки</span>
+          <div className="bsm-range-inputs">
+            <label>
+              С
+              <input
+                type="number"
+                min={1}
+                max={maxRows || 1}
+                value={doc.rangeFrom}
+                disabled={!canEdit}
+                onChange={(e) => onRangeChange({ rangeFrom: e.target.value === '' ? '' : Number(e.target.value) })}
+                onBlur={(e) => {
+                  const v = Number(e.target.value) || 1
+                  onRangeChange({ rangeFrom: Math.max(1, Math.min(maxRows || 1, v)) })
+                }}
+              />
+            </label>
+            <span className="bsm-range-sep">—</span>
+            <label>
+              По
+              <input
+                type="number"
+                min={1}
+                max={maxRows || 1}
+                value={doc.rangeTo}
+                disabled={!canEdit}
+                onChange={(e) => onRangeChange({ rangeTo: e.target.value === '' ? '' : Number(e.target.value) })}
+                onBlur={(e) => {
+                  const v = Number(e.target.value) || (maxRows || 1)
+                  onRangeChange({ rangeTo: Math.max(1, Math.min(maxRows || 1, v)) })
+                }}
+              />
+            </label>
+            <span className="bsm-range-total">из {maxRows}</span>
+          </div>
+        </div>
+
+        <div className="bsm-doc-card-actions">
+          <button
+            type="button"
+            className={`bsm-btn-secondary bsm-column-map-toggle ${doc.showColumnPanel ? 'active' : ''}`}
+            onClick={onTogglePanel}
+            title="Какой столбец Excel содержит какие данные"
+          >
+            ⚙️ Столбцы {doc.showColumnPanel ? '▴' : '▾'}
+          </button>
+          {canEdit && (
+            <button type="button" className="bsm-btn-secondary" onClick={onReplace}>
+              Заменить
+            </button>
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              className="bsm-doc-remove"
+              onClick={onRemove}
+              title="Удалить документ из анализа"
+              aria-label="Удалить документ"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {doc.showColumnPanel && (
+        <div className="bsm-column-map-panel bsm-column-map-panel--inline" role="region" aria-label="Сопоставление колонок">
+          <div className="bsm-column-map-title">Из какого столбца брать данные</div>
+          <div className="bsm-column-map-grid">
+            {COLUMN_FIELDS.map(f => (
+              <label key={f.key} className="bsm-column-map-row">
+                <span className="bsm-column-map-label">{f.label}</span>
+                <select
+                  className="bsm-column-map-select"
+                  value={doc.columnMap[f.key] ?? ''}
+                  onChange={(e) => onColumnChange(f.key, e.target.value)}
+                  disabled={!canEdit}
+                >
+                  <option value="">— не использовать</option>
+                  {Array.from({ length: COLUMN_CHOICES_COUNT }, (_, idx) => {
+                    const letter = XLSX.utils.encode_col(idx)
+                    const preview = columnPreviews[idx]
+                    return (
+                      <option key={idx} value={idx}>
+                        {letter}{preview ? ` — ${preview}` : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+            ))}
+          </div>
+          {canEdit && (
+            <div className="bsm-column-map-actions">
+              <button type="button" className="bsm-btn-ghost" onClick={onResetColumns}>
+                Сбросить к стандартной (A/B/C/D/E/F/G/H/L)
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SummaryTable({ rows, mainTab, showSources }) {
   if (rows.length === 0) {
     return (
       <div className="bsm-empty-block">
@@ -834,6 +1006,11 @@ function SummaryTable({ rows, mainTab }) {
                   <div className="bsm-name-warning">
                     {g.hasDifferentPrices && <span>⚠ разные цены</span>}
                     {g.hasDifferentUnits && <span>⚠ разные ед.</span>}
+                  </div>
+                )}
+                {showSources && g.sources.length > 1 && (
+                  <div className="bsm-name-sources" title={g.sources.join(', ')}>
+                    📎 {g.sources.length} докум.
                   </div>
                 )}
               </td>
@@ -874,6 +1051,7 @@ function DifferentPricesTable({ rows, mainTab }) {
           <tr>
             <th>Наименование</th>
             <th style={{ width: '90px' }}>Стр. Excel</th>
+            <th style={{ width: '160px' }}>Документ</th>
             <th style={{ width: '90px' }}>Ед. изм.</th>
             <th className="num" style={{ width: '120px' }}>Объём</th>
             <th className="num" style={{ width: '140px' }}>
@@ -907,6 +1085,7 @@ function NotPricedTable({ rows, mainTab }) {
         <thead>
           <tr>
             <th>Наименование / Стр. Excel</th>
+            <th style={{ width: '160px' }}>Документ</th>
             <th style={{ width: '90px' }}>Ед. изм.</th>
             <th className="num" style={{ width: '130px' }}>Объём</th>
             <th className="num" style={{ width: '160px' }} title="Сырое значение из ячейки Excel">
@@ -922,7 +1101,7 @@ function NotPricedTable({ rows, mainTab }) {
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={2} className="bsm-foot-label">Итого позиций без цены</td>
+            <td colSpan={3} className="bsm-foot-label">Итого позиций без цены</td>
             <td className="num strong">{fmtNum(rows.reduce((s, r) => s + r.totalVolume, 0))}</td>
             <td className="num">{rows.reduce((s, r) => s + r.count, 0)} строк</td>
             <td></td>
@@ -941,7 +1120,7 @@ function RowNotPriced({ group }) {
   return (
     <>
       <tr className="bsm-row-group-head">
-        <td colSpan={5}>
+        <td colSpan={6}>
           <span className="bsm-name">{group.name}</span>
           <span className="bsm-group-hint">
             строк в Excel: {group.items.length} · итого объём: {fmtNum(group.totalVolume)}
@@ -951,6 +1130,7 @@ function RowNotPriced({ group }) {
       {group.items.map((it, idx) => (
         <tr key={`${group.name}-${idx}`}>
           <td className="muted bsm-indent">стр. {it.excelRow}</td>
+          <td className="muted bsm-source" title={it.sourceFile}>{it.sourceFile || '—'}</td>
           <td>{it.unit || '—'}</td>
           <td className="num">{fmtNum(it.volume)}</td>
           <td className="num">{formatRaw(it.rawPrice)}</td>
@@ -976,6 +1156,7 @@ function DifferentUnitsTable({ rows, mainTab }) {
           <tr>
             <th>Наименование</th>
             <th style={{ width: '90px' }}>Стр. Excel</th>
+            <th style={{ width: '160px' }}>Документ</th>
             <th style={{ width: '110px' }}>Ед. изм.</th>
             <th className="num" style={{ width: '120px' }}>Объём</th>
             <th className="num" style={{ width: '140px' }}>
@@ -998,7 +1179,7 @@ function RowGroup({ group, priceField, unitsField }) {
   return (
     <>
       <tr className="bsm-row-group-head">
-        <td colSpan={6}>
+        <td colSpan={7}>
           <span className="bsm-name">{group.name}</span>
           {priceField && (
             <span className="bsm-group-hint">
@@ -1016,6 +1197,7 @@ function RowGroup({ group, priceField, unitsField }) {
         <tr key={`${group.name}-${idx}`}>
           <td className="muted bsm-indent">— исходная строка</td>
           <td>{it.excelRow}</td>
+          <td className="muted bsm-source" title={it.sourceFile}>{it.sourceFile || '—'}</td>
           <td>{it.unit || '—'}</td>
           <td className="num">{fmtNum(it.volume)}</td>
           <td className="num">{it.price > 0 ? fmtRub(it.price) : '—'}</td>

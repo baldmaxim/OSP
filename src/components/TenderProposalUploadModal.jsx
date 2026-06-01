@@ -5,7 +5,9 @@ import {
   parseByPosition,
   parseByAggregate,
   getColumnPreviews,
+  mergeAggregateRecords,
 } from '../utils/parseProposalExcel'
+import { addProposalFile } from '../services/tenderProposalFiles'
 
 // task 346: модалка загрузки одного КП.
 // Поток: выбрать (контрагент, ВОР, формат) → файл → лист/диапазон + column-mapping
@@ -80,9 +82,11 @@ function TenderProposalUploadModal({
   })
 
   const fileRef = useRef(null)
+  const savedFileRef = useRef(null) // task 367: store File object for S3 upload
   const [workbook, setWorkbook] = useState(null)
   const [sheetNames, setSheetNames] = useState([])
   const [sheetName, setSheetName] = useState('')
+  const [sheetNameWork, setSheetNameWork] = useState('') // task 367: second sheet for works (format B)
   const [startRow, setStartRow] = useState('2')
   const [endRow, setEndRow] = useState('')
 
@@ -108,12 +112,14 @@ function TenderProposalUploadModal({
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
+    savedFileRef.current = file // task 367: save for S3 upload
     try {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
       setWorkbook(wb)
       setSheetNames(wb.SheetNames || [])
       setSheetName(wb.SheetNames?.[0] || '')
+      setSheetNameWork('') // task 367: reset second sheet
       setStartRow('2')
       setEndRow('')
       setPreview(null)
@@ -136,11 +142,30 @@ function TenderProposalUploadModal({
       })
       setPreview(result)
     } else {
-      const result = parseByAggregate({
-        workbook, sheetName, columnMap: mapB, rowRange,
-        estimateItems, docName, kindHint,
-      })
-      setPreview(result)
+      // task 367: two-sheet support for format B
+      if (sheetNameWork) {
+        // Two-sheet mode: parse each sheet with forced type
+        const rMat = parseByAggregate({
+          workbook, sheetName, columnMap: mapB, rowRange,
+          estimateItems, docName, kindHint: 'materials',
+        })
+        const rWork = parseByAggregate({
+          workbook, sheetName: sheetNameWork, columnMap: mapB, rowRange,
+          estimateItems, docName, kindHint: 'works',
+        })
+        setPreview({
+          records: mergeAggregateRecords(rMat.records, rWork.records),
+          warnings: [...rMat.warnings, ...rWork.warnings],
+          unmatched: [...rMat.unmatched, ...rWork.unmatched],
+        })
+      } else {
+        // Single-sheet mode
+        const result = parseByAggregate({
+          workbook, sheetName, columnMap: mapB, rowRange,
+          estimateItems, docName, kindHint,
+        })
+        setPreview(result)
+      }
     }
   }
 
@@ -164,13 +189,16 @@ function TenderProposalUploadModal({
         .filter(it => (it.estimate_name || 'Основная смета') === docName && !it.is_section)
         .map(it => it.id)
 
-      if (itemIdsOfVor.length > 0) {
-        const { error: delErr } = await supabase
+      // task 367: batch DELETE to avoid URL size limit with large ВОР
+      const CHUNK_DEL = 100
+      for (let i = 0; i < itemIdsOfVor.length; i += CHUNK_DEL) {
+        const chunk = itemIdsOfVor.slice(i, i + CHUNK_DEL)
+        const { error } = await supabase
           .from('tender_counterparty_proposals')
           .delete()
           .eq('counterparty_id', counterpartyId)
-          .in('estimate_item_id', itemIdsOfVor)
-        if (delErr) throw delErr
+          .in('estimate_item_id', chunk)
+        if (error) throw error
       }
 
       const payload = preview.records.map(r => ({
@@ -179,14 +207,25 @@ function TenderProposalUploadModal({
         counterparty_id: counterpartyId,
         proposal_date: proposalDate, // task 347
       }))
-      let { error: insErr } = await supabase
-        .from('tender_counterparty_proposals')
-        .insert(payload)
-      // Подстраховка: миграция proposal_date ещё не применена — повторяем без поля.
-      if (insErr && /proposal_date/i.test(insErr.message || '')) {
-        const stripped = payload.map(({ proposal_date, ...rest }) => rest) // eslint-disable-line no-unused-vars
-        const retry = await supabase.from('tender_counterparty_proposals').insert(stripped)
-        insErr = retry.error
+
+      // task 367: batch INSERT to handle large proposals safely
+      const CHUNK_INS = 500
+      let insErr = null
+      for (let i = 0; i < payload.length; i += CHUNK_INS) {
+        const chunk = payload.slice(i, i + CHUNK_INS)
+        let { error: chunkErr } = await supabase
+          .from('tender_counterparty_proposals')
+          .insert(chunk)
+        // Подстраховка: миграция proposal_date ещё не применена — повторяем без поля.
+        if (chunkErr && /proposal_date/i.test(chunkErr.message || '')) {
+          const stripped = chunk.map(({ proposal_date, ...rest }) => rest) // eslint-disable-line no-unused-vars
+          const retry = await supabase.from('tender_counterparty_proposals').insert(stripped)
+          chunkErr = retry.error
+        }
+        if (chunkErr) {
+          insErr = chunkErr
+          break
+        }
       }
       if (insErr) throw insErr
 
@@ -197,6 +236,20 @@ function TenderProposalUploadModal({
         .eq('tender_id', tenderId)
         .eq('counterparty_id', counterpartyId)
       if (statusErr) console.warn('Не удалось обновить статус участника:', statusErr.message)
+
+      // task 367: save source Excel file to S3 (non-fatal on error)
+      if (savedFileRef.current) {
+        try {
+          await addProposalFile({
+            tenderId,
+            counterpartyId,
+            file: savedFileRef.current,
+            fileKind: 'commercial_proposal',
+          })
+        } catch (fileErr) {
+          console.warn('Не удалось сохранить исходный файл КП:', fileErr.message)
+        }
+      }
 
       const cpName = activeParticipants.find(p => p.counterparty_id === counterpartyId)
         ?.counterparties?.name || 'контрагент'
@@ -334,7 +387,8 @@ function TenderProposalUploadModal({
                 </span>
               </label>
             </div>
-            {format === 'B' && (
+            {/* task 367: hide kindHint in two-sheet mode, show in single-sheet mode */}
+            {format === 'B' && !sheetNameWork && (
               <div style={{ marginTop: '0.75rem' }}>
                 <label className="vor-import-field" style={{ display: 'block' }}>
                   <span style={{
@@ -373,10 +427,11 @@ function TenderProposalUploadModal({
           {/* Лист + диапазон */}
           {workbook && (
             <>
-              <div className="vor-import-row">
-                {sheetNames.length > 1 && (
+              {/* task 367: two-sheet support for format B */}
+              {format === 'B' && sheetNames.length > 1 && (
+                <div className="vor-import-row">
                   <div className="vor-import-field" style={{ flex: 2 }}>
-                    <label>Лист Excel</label>
+                    <label>Лист — Материалы *</label>
                     <select
                       value={sheetName}
                       onChange={(e) => { setSheetName(e.target.value); setPreview(null) }}
@@ -384,7 +439,35 @@ function TenderProposalUploadModal({
                       {sheetNames.map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
                   </div>
-                )}
+                  <div className="vor-import-field" style={{ flex: 2 }}>
+                    <label>Лист — Работы (опционально)</label>
+                    <select
+                      value={sheetNameWork}
+                      onChange={(e) => { setSheetNameWork(e.target.value); setPreview(null) }}
+                    >
+                      <option value="">— тот же лист / авто</option>
+                      {sheetNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+              {/* Single-sheet mode or format A: show single sheet selector */}
+              {!(format === 'B' && sheetNames.length > 1) && (
+                <div className="vor-import-row">
+                  {sheetNames.length > 1 && (
+                    <div className="vor-import-field" style={{ flex: 2 }}>
+                      <label>Лист Excel</label>
+                      <select
+                        value={sheetName}
+                        onChange={(e) => { setSheetName(e.target.value); setPreview(null) }}
+                      >
+                        {sheetNames.map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="vor-import-row">
                 <div className="vor-import-field">
                   <label>Со строки</label>
                   <input

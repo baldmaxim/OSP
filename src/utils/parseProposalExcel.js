@@ -348,3 +348,29 @@ export function getColumnPreviews(workbook, sheetName, count = 26) {
   }
   return out
 }
+
+// task 367: merge two aggregate parse results (материалы + работы from separate sheets).
+// Combines records by estimate_item_id, merging price fields:
+// - If item appears in both sheets, sets both unit_price_materials and unit_price_works
+// - If only in one sheet, keeps that sheet's price
+// - Recalculates totals based on merged data
+export function mergeAggregateRecords(matRecords, workRecords) {
+  const byId = new Map()
+  // First pass: collect materials
+  for (const r of matRecords) {
+    byId.set(r.estimate_item_id, { ...r })
+  }
+  // Second pass: merge works
+  for (const r of workRecords) {
+    const existing = byId.get(r.estimate_item_id)
+    if (existing) {
+      existing.unit_price_works = r.unit_price_works
+      existing.total_works = r.total_works
+      existing.total_unit_price = round2((existing.unit_price_materials || 0) + (r.unit_price_works || 0))
+      existing.total_cost = round2((existing.total_materials || 0) + (r.total_works || 0))
+    } else {
+      byId.set(r.estimate_item_id, { ...r })
+    }
+  }
+  return [...byId.values()]
+}
