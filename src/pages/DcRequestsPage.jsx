@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
@@ -44,27 +45,61 @@ function formatShortDate(iso) {
   return `${dd}.${mm}.${d.getFullYear()}`
 }
 
-// task 365: маленький popover для быстрого редактирования ориентировочного
-//   срока согласования прямо из ячейки таблицы. Click-outside / Escape закрывают.
-function DeadlinePopover({ initial, onClose, onSave }) {
+// task 365 + 366: маленький popover для быстрого редактирования ориентировочного
+//   срока согласования. Рендерится через React Portal в <body>, position:fixed —
+//   не вызывает прокрутку родительской таблицы и не обрезается её overflow:auto.
+//   Координаты считаются от anchorRect (BCR кнопки-триггера) с авто-флипом
+//   вверх, если внизу не помещается.
+const POPOVER_WIDTH = 248
+const POPOVER_HEIGHT = 132
+
+function DeadlinePopover({ initial, anchorRect, onClose, onSave }) {
   const [value, setValue] = useState(initial || '')
+  const [pos, setPos] = useState({ top: 0, left: 0 })
   const rootRef = useRef(null)
+
+  useLayoutEffect(() => {
+    if (!anchorRect) return
+    const margin = 8
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    let top = anchorRect.bottom + 6
+    if (top + POPOVER_HEIGHT > vh - margin) {
+      // не помещается снизу — переворачиваем над триггером
+      top = Math.max(margin, anchorRect.top - POPOVER_HEIGHT - 6)
+    }
+    let left = anchorRect.left
+    if (left + POPOVER_WIDTH > vw - margin) left = vw - POPOVER_WIDTH - margin
+    if (left < margin) left = margin
+    setPos({ top, left })
+  }, [anchorRect])
 
   useEffect(() => {
     const handleClick = (e) => {
       if (rootRef.current && !rootRef.current.contains(e.target)) onClose()
     }
     const handleKey = (e) => { if (e.key === 'Escape') onClose() }
+    const handleScrollOrResize = () => onClose()
     document.addEventListener('mousedown', handleClick)
     document.addEventListener('keydown', handleKey)
+    // При прокрутке таблицы / окна позиция popover устареет — проще закрыть.
+    window.addEventListener('resize', handleScrollOrResize)
+    window.addEventListener('scroll', handleScrollOrResize, true)
     return () => {
       document.removeEventListener('mousedown', handleClick)
       document.removeEventListener('keydown', handleKey)
+      window.removeEventListener('resize', handleScrollOrResize)
+      window.removeEventListener('scroll', handleScrollOrResize, true)
     }
   }, [onClose])
 
-  return (
-    <div className="dcr-deadline-popover" ref={rootRef} onClick={(e) => e.stopPropagation()}>
+  return createPortal(
+    <div
+      className="dcr-deadline-popover"
+      ref={rootRef}
+      style={{ top: pos.top, left: pos.left, width: POPOVER_WIDTH }}
+      onClick={(e) => e.stopPropagation()}
+    >
       <input
         type="date"
         value={value}
@@ -89,7 +124,8 @@ function DeadlinePopover({ initial, onClose, onSave }) {
           Сохранить
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -123,8 +159,10 @@ function DcRequestsPage() {
   // task 314: поиск контрагента в модалке.
   const [cpSearch, setCpSearch] = useState('')
   const [cpDropdownOpen, setCpDropdownOpen] = useState(false)
-  // task 365: какая заявка сейчас в inline-popover для редактирования срока согласования.
-  const [deadlinePopoverId, setDeadlinePopoverId] = useState(null)
+  // task 365 + 366: какая заявка сейчас в inline-popover для редактирования срока,
+  //   и куда привязан popover (rect триггерной кнопки). Popover рендерится через
+  //   portal, поэтому anchor нужен для расчёта fixed-координат.
+  const [deadlinePopover, setDeadlinePopover] = useState(null) // { id, rect } | null
 
   const [searchQuery, setSearchQuery] = useState('')
   // Фильтры в тулбаре (task 311).
@@ -362,11 +400,16 @@ function DcRequestsPage() {
         .update({ expected_approval_date: newDate || null, updated_at: new Date().toISOString() })
         .eq('id', id)
       if (error) throw error
-      setDeadlinePopoverId(null)
+      setDeadlinePopover(null)
       fetchRequests()
     } catch (err) {
       alert('Ошибка сохранения срока: ' + (err.message || err))
     }
+  }
+
+  // task 366: открыть popover, привязав его к BCR-кнопки-триггера.
+  const openDeadlinePopover = (id, e) => {
+    setDeadlinePopover({ id, rect: e.currentTarget.getBoundingClientRect() })
   }
 
   const handleStatusChange = async (id, newStatus) => {
@@ -761,7 +804,7 @@ function DcRequestsPage() {
                             <button
                               type="button"
                               className="dcr-meta-deadline-value"
-                              onClick={canEditDc ? () => setDeadlinePopoverId(req.id) : undefined}
+                              onClick={canEditDc ? (e) => openDeadlinePopover(req.id, e) : undefined}
                               disabled={!canEditDc}
                               title={canEditDc ? 'Изменить срок' : undefined}
                             >
@@ -771,17 +814,18 @@ function DcRequestsPage() {
                             <button
                               type="button"
                               className="dcr-meta-deadline-link"
-                              onClick={() => setDeadlinePopoverId(req.id)}
+                              onClick={(e) => openDeadlinePopover(req.id, e)}
                             >
                               Указать срок
                             </button>
                           ) : (
                             <span className="dcr-meta-deadline-empty">—</span>
                           )}
-                          {deadlinePopoverId === req.id && (
+                          {deadlinePopover?.id === req.id && (
                             <DeadlinePopover
                               initial={req.expected_approval_date || ''}
-                              onClose={() => setDeadlinePopoverId(null)}
+                              anchorRect={deadlinePopover.rect}
+                              onClose={() => setDeadlinePopover(null)}
                               onSave={(newDate) => handleQuickSaveDeadline(req.id, newDate)}
                             />
                           )}
