@@ -396,15 +396,24 @@ function TenderDetailPage() {
   }, [tenderId])
 
   // task 259: загрузка сохранённой сметы тендера
+  // task 366: paginated fetch to avoid PostgREST 1000-row default limit
   const fetchEstimateItems = async () => {
     try {
-      const { data, error } = await supabase
-        .from('tender_estimate_items')
-        .select('*')
-        .eq('tender_id', tenderId)
-        .order('row_number', { ascending: true })
-      if (error) throw error
-      setEstimateItems(data || [])
+      const PAGE = 1000
+      let all = [], from = 0, done = false
+      while (!done) {
+        const { data, error } = await supabase
+          .from('tender_estimate_items')
+          .select('*')
+          .eq('tender_id', tenderId)
+          .order('row_number', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        all = all.concat(data || [])
+        if (!data || data.length < PAGE) done = true
+        else from += PAGE
+      }
+      setEstimateItems(all)
     } catch (err) {
       console.error('Ошибка загрузки сметы:', err.message)
     }
@@ -549,6 +558,7 @@ function TenderDetailPage() {
   // Сохранение проверенной сметы в тендер.
   // task 348: каждый ВОР сохраняется со своим estimate_name → несколько
   // документов сосуществуют. Перезаписываем только items с этим же именем.
+  // task 366: batched insert to handle 2000+ row estimates safely.
   const handleSaveEstimate = async () => {
     if (!parsedEstimate || parsedEstimate.length === 0) return
     const docName = (estDocName || '').trim() || 'Основная смета'
@@ -565,26 +575,36 @@ function TenderDetailPage() {
         tender_id: tenderId,
         estimate_name: docName,
       }))
-      let { error: insErr } = await supabase
-        .from('tender_estimate_items')
-        .insert(payload)
-      // Подстраховка: миграция outline_level ещё не применена — сохраняем без него
-      if (insErr && /outline_level/i.test(insErr.message || '')) {
-        const stripped = payload.map(({ outline_level, ...rest }) => rest) // eslint-disable-line no-unused-vars
-        const retry = await supabase.from('tender_estimate_items').insert(stripped)
-        insErr = retry.error
-      }
-      // task 348: подстраховка для миграции original_row_number VARCHAR(20) → TEXT.
-      // Если ещё не применена, обрезаем длинные значения до 20 символов и пробуем снова.
-      if (insErr && /character varying\(20\)|value too long/i.test(insErr.message || '')) {
-        const truncated = payload.map(it => ({
-          ...it,
-          original_row_number: it.original_row_number
-            ? String(it.original_row_number).slice(0, 20)
-            : it.original_row_number,
-        }))
-        const retry = await supabase.from('tender_estimate_items').insert(truncated)
-        insErr = retry.error
+      // task 366: chunk insert into 500-row batches
+      const CHUNK = 500
+      let insErr = null
+      for (let i = 0; i < payload.length; i += CHUNK) {
+        const chunk = payload.slice(i, i + CHUNK)
+        let { error: chunkErr } = await supabase
+          .from('tender_estimate_items')
+          .insert(chunk)
+        // Подстраховка: миграция outline_level ещё не применена — сохраняем без него
+        if (chunkErr && /outline_level/i.test(chunkErr.message || '')) {
+          const stripped = chunk.map(({ outline_level, ...rest }) => rest) // eslint-disable-line no-unused-vars
+          const retry = await supabase.from('tender_estimate_items').insert(stripped)
+          chunkErr = retry.error
+        }
+        // task 348: подстраховка для миграции original_row_number VARCHAR(20) → TEXT.
+        // Если ещё не применена, обрезаем длинные значения до 20 символов и пробуем снова.
+        if (chunkErr && /character varying\(20\)|value too long/i.test(chunkErr.message || '')) {
+          const truncated = chunk.map(it => ({
+            ...it,
+            original_row_number: it.original_row_number
+              ? String(it.original_row_number).slice(0, 20)
+              : it.original_row_number,
+          }))
+          const retry = await supabase.from('tender_estimate_items').insert(truncated)
+          chunkErr = retry.error
+        }
+        if (chunkErr) {
+          insErr = chunkErr
+          break
+        }
       }
       if (insErr) throw insErr
       setParsedEstimate(null)
