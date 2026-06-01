@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
@@ -20,6 +20,7 @@ const EMPTY_FORM = {
   works_description: '',
   responsible_contact_id: '',
   status: 'in_work',
+  expected_approval_date: '', // task 365
 }
 
 const STATUS_OPTIONS = [
@@ -41,6 +42,55 @@ function formatShortDate(iso) {
   const dd = String(d.getDate()).padStart(2, '0')
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   return `${dd}.${mm}.${d.getFullYear()}`
+}
+
+// task 365: маленький popover для быстрого редактирования ориентировочного
+//   срока согласования прямо из ячейки таблицы. Click-outside / Escape закрывают.
+function DeadlinePopover({ initial, onClose, onSave }) {
+  const [value, setValue] = useState(initial || '')
+  const rootRef = useRef(null)
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) onClose()
+    }
+    const handleKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [onClose])
+
+  return (
+    <div className="dcr-deadline-popover" ref={rootRef} onClick={(e) => e.stopPropagation()}>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        autoFocus
+      />
+      <div className="dcr-deadline-popover-actions">
+        {initial && (
+          <button type="button" className="dcr-deadline-btn dcr-deadline-btn-clear" onClick={() => onSave('')}>
+            Очистить
+          </button>
+        )}
+        <button type="button" className="dcr-deadline-btn dcr-deadline-btn-cancel" onClick={onClose}>
+          Отмена
+        </button>
+        <button
+          type="button"
+          className="dcr-deadline-btn dcr-deadline-btn-save"
+          onClick={() => onSave(value)}
+          disabled={!value && !initial}
+        >
+          Сохранить
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function formatBytes(bytes) {
@@ -73,6 +123,8 @@ function DcRequestsPage() {
   // task 314: поиск контрагента в модалке.
   const [cpSearch, setCpSearch] = useState('')
   const [cpDropdownOpen, setCpDropdownOpen] = useState(false)
+  // task 365: какая заявка сейчас в inline-popover для редактирования срока согласования.
+  const [deadlinePopoverId, setDeadlinePopoverId] = useState(null)
 
   const [searchQuery, setSearchQuery] = useState('')
   // Фильтры в тулбаре (task 311).
@@ -257,6 +309,7 @@ function DcRequestsPage() {
       works_description: req.works_description || '',
       responsible_contact_id: req.responsible_contact_id || '',
       status: req.status || 'in_work',
+      expected_approval_date: req.expected_approval_date || '', // task 365
     })
     setCpSearch(req.counterparties?.name || '')
     setCpDropdownOpen(false)
@@ -279,6 +332,7 @@ function DcRequestsPage() {
         works_description: formData.works_description.trim() || null,
         responsible_contact_id: formData.responsible_contact_id || null,
         status: formData.status || 'in_work',
+        expected_approval_date: formData.expected_approval_date || null, // task 365
         updated_at: new Date().toISOString(),
       }
       if (editing) {
@@ -297,6 +351,21 @@ function DcRequestsPage() {
       fetchRequests()
     } catch (err) {
       alert('Ошибка сохранения: ' + (err.message || err))
+    }
+  }
+
+  // task 365: быстрое сохранение ориентировочного срока согласования из inline-popover.
+  const handleQuickSaveDeadline = async (id, newDate) => {
+    try {
+      const { error } = await supabase
+        .from('dc_requests')
+        .update({ expected_approval_date: newDate || null, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+      setDeadlinePopoverId(null)
+      fetchRequests()
+    } catch (err) {
+      alert('Ошибка сохранения срока: ' + (err.message || err))
     }
   }
 
@@ -684,6 +753,39 @@ function DcRequestsPage() {
                             )}
                           </div>
                         )}
+                        {/* task 365: ориентировочный срок согласования + inline-edit */}
+                        <div className="dcr-meta-deadline">
+                          <span className="dcr-meta-icon" aria-hidden>📅</span>
+                          <span className="dcr-meta-deadline-label">Ориентировочный срок:</span>
+                          {req.expected_approval_date ? (
+                            <button
+                              type="button"
+                              className="dcr-meta-deadline-value"
+                              onClick={canEditDc ? () => setDeadlinePopoverId(req.id) : undefined}
+                              disabled={!canEditDc}
+                              title={canEditDc ? 'Изменить срок' : undefined}
+                            >
+                              {formatShortDate(req.expected_approval_date)}г.
+                            </button>
+                          ) : canEditDc ? (
+                            <button
+                              type="button"
+                              className="dcr-meta-deadline-link"
+                              onClick={() => setDeadlinePopoverId(req.id)}
+                            >
+                              Указать срок
+                            </button>
+                          ) : (
+                            <span className="dcr-meta-deadline-empty">—</span>
+                          )}
+                          {deadlinePopoverId === req.id && (
+                            <DeadlinePopover
+                              initial={req.expected_approval_date || ''}
+                              onClose={() => setDeadlinePopoverId(null)}
+                              onSave={(newDate) => handleQuickSaveDeadline(req.id, newDate)}
+                            />
+                          )}
+                        </div>
                       </td>
                       <td>{req.counterparties?.name || <span className="muted-dash">—</span>}</td>
                       <td style={{ textAlign: 'center' }}>{req.ds_number || <span className="muted-dash">—</span>}</td>
@@ -976,6 +1078,17 @@ function DcRequestsPage() {
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
+                </div>
+
+                {/* task 365: ориентировочный срок согласования */}
+                <div className="form-group full-width">
+                  <label>Ориентировочный срок согласования</label>
+                  <input
+                    type="date"
+                    name="expected_approval_date"
+                    value={formData.expected_approval_date}
+                    onChange={handleInputChange}
+                  />
                 </div>
 
                 <div className="form-group full-width">
