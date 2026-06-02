@@ -32,7 +32,9 @@ export async function deleteS3Object(s3Key) {
 
 // Полный сценарий загрузки: presigned PUT в S3 + INSERT в s3_documents.
 // Возвращает созданную запись. Если PUT упал, запись в БД не создаётся.
-export async function uploadFile({ file, ownerType, ownerId, notes = null }) {
+// `category` (task 370) — опциональная категория документа (например 'final').
+// Если не передана, в БД пишется default 'general'.
+export async function uploadFile({ file, ownerType, ownerId, notes = null, category = null }) {
   const mimeType = file.type || 'application/octet-stream'
 
   const { s3_key, presigned_url } = await requestUploadUrl({
@@ -77,6 +79,7 @@ export async function uploadFile({ file, ownerType, ownerId, notes = null }) {
       mime_type: mimeType,
       size_bytes: file.size,
       notes,
+      ...(category ? { doc_category: category } : {}),
       uploaded_by,
       uploaded_by_name
     })

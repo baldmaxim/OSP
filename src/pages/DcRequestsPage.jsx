@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
+import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
@@ -22,6 +23,9 @@ const EMPTY_FORM = {
   responsible_contact_id: '',
   status: 'in_work',
   expected_approval_date: '', // task 365
+  amount_before: '', // task 370
+  amount_after: '', // task 370
+  material_type: '', // task 370
 }
 
 const STATUS_OPTIONS = [
@@ -29,6 +33,14 @@ const STATUS_OPTIONS = [
   { value: 'completed', label: 'Завершено', className: 'status-completed' },
 ]
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(o => [o.value, o.label]))
+
+// task 370: тип материала по ДС.
+const MATERIAL_OPTIONS = [
+  { value: 'tolling', label: 'Давальческие (М-15)', className: 'material-tolling' },
+  { value: 'realization', label: 'Реализация', className: 'material-realization' },
+]
+const MATERIAL_LABEL = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.label]))
+const MATERIAL_CLASS = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.className]))
 
 const TABS = [
   { key: 'all', label: 'Все заявки' },
@@ -43,6 +55,25 @@ function formatShortDate(iso) {
   const dd = String(d.getDate()).padStart(2, '0')
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   return `${dd}.${mm}.${d.getFullYear()}`
+}
+
+// task 370: парсинг введённой суммы → число | null. Терпим пробелы, ₽ и запятую.
+function parseAmount(raw) {
+  if (raw == null || raw === '') return null
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null
+  // \s в JS-регулярках уже покрывает все юникод-пробелы (вкл. U+00A0/U+2007/U+202F).
+  const str = String(raw)
+    .replace(/[₽\s]/g, '')
+    .replace(',', '.')
+    .replace(/[^\d.-]/g, '')
+  const num = parseFloat(str)
+  return Number.isFinite(num) ? num : null
+}
+
+const AMOUNT_FORMATTER = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
+function formatAmount(num) {
+  if (num == null || !Number.isFinite(num)) return ''
+  return AMOUNT_FORMATTER.format(num)
 }
 
 // task 365 + 366: маленький popover для быстрого редактирования ориентировочного
@@ -348,6 +379,9 @@ function DcRequestsPage() {
       responsible_contact_id: req.responsible_contact_id || '',
       status: req.status || 'in_work',
       expected_approval_date: req.expected_approval_date || '', // task 365
+      amount_before: req.amount_before != null ? String(req.amount_before) : '', // task 370
+      amount_after: req.amount_after != null ? String(req.amount_after) : '', // task 370
+      material_type: req.material_type || '', // task 370
     })
     setCpSearch(req.counterparties?.name || '')
     setCpDropdownOpen(false)
@@ -371,6 +405,9 @@ function DcRequestsPage() {
         responsible_contact_id: formData.responsible_contact_id || null,
         status: formData.status || 'in_work',
         expected_approval_date: formData.expected_approval_date || null, // task 365
+        amount_before: parseAmount(formData.amount_before), // task 370
+        amount_after: parseAmount(formData.amount_after), // task 370
+        material_type: formData.material_type || null, // task 370
         updated_at: new Date().toISOString(),
       }
       if (editing) {
@@ -422,6 +459,24 @@ function DcRequestsPage() {
       setRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r))
     } catch (err) {
       alert('Ошибка смены статуса: ' + (err.message || err))
+    }
+  }
+
+  // task 370: инлайн-сохранение суммы (Было/Стало) прямо из ячейки таблицы.
+  // field ∈ 'amount_before' | 'amount_after'. Пустая строка → null.
+  const handleSaveAmount = async (id, field, rawValue) => {
+    const num = parseAmount(rawValue)
+    const current = requests.find(r => r.id === id)
+    if (current && (current[field] ?? null) === num) return // без изменений
+    try {
+      const { error } = await supabase
+        .from('dc_requests')
+        .update({ [field]: num, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, [field]: num } : r))
+    } catch (err) {
+      alert('Ошибка сохранения суммы: ' + (err.message || err))
     }
   }
 
@@ -516,15 +571,15 @@ function DcRequestsPage() {
     }
   }
 
-  // Docs upload
-  const handleDocPick = (requestId) => {
+  // Docs upload. task 370: category ∈ 'general' | 'final' — рабочий или итоговый документ.
+  const handleDocPick = (requestId, category = 'general') => {
     const input = document.createElement('input')
     input.type = 'file'
     input.style.display = 'none'
     input.onchange = (e) => {
       const file = e.target.files?.[0]
       if (file) {
-        setDocUpload({ requestId, file, description: '' })
+        setDocUpload({ requestId, file, description: '', category })
       }
     }
     document.body.appendChild(input)
@@ -541,6 +596,7 @@ function DcRequestsPage() {
         ownerType: 'dc_request',
         ownerId: docUpload.requestId,
         notes: docUpload.description.trim() || null,
+        category: docUpload.category || 'general', // task 370
       })
       // Локально добавляем в docsByReq (в конец — сохраняем хронологический порядок).
       setDocsByReq(prev => {
@@ -630,6 +686,129 @@ function DcRequestsPage() {
   )
   const responsibleFilterOptions = dedupedContacts.filter(c => usedResponsibleIds.has(c.id))
 
+  // task 370: выгрузка текущей выборки (с учётом вкладки/фильтров/поиска) в Excel.
+  const handleExportExcel = () => {
+    if (filtered.length === 0) {
+      alert('Нечего выгружать — список пуст.')
+      return
+    }
+    const rows = filtered.map((req, idx) => {
+      const allDocs = docsByReq.get(req.id) || []
+      const generalCount = allDocs.filter(d => d.doc_category !== 'final').length
+      const finalCount = allDocs.filter(d => d.doc_category === 'final').length
+      const tasks = req.dc_request_tasks || []
+      const done = tasks.filter(t => t.is_completed).length
+      const before = req.amount_before
+      const after = req.amount_after
+      const diff = (before != null && after != null) ? before - after : null
+      return {
+        '№': idx + 1,
+        'Объект': req.objects?.name || '',
+        'Контрагент': req.counterparties?.name || '',
+        'Материал': MATERIAL_LABEL[req.material_type] || '',
+        '№ ДС': req.ds_number || '',
+        'Описание ДС': req.works_description || '',
+        'Было, ₽ (с НДС 22%)': before != null ? before : '',
+        'Стало, ₽ (с НДС 22%)': after != null ? after : '',
+        'Разница, ₽': diff != null ? diff : '',
+        'Статус': STATUS_LABEL[req.status || 'in_work'] || '',
+        'Ответственный': req.responsible?.full_name || '',
+        'Срок согласования': formatShortDate(req.expected_approval_date),
+        'Задачи': tasks.length ? `${done}/${tasks.length}` : '',
+        'Документы': generalCount || '',
+        'Итоговые документы': finalCount || '',
+        'Создал': req.created_by_name || '',
+        'Создано': formatShortDate(req.created_at),
+      }
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [
+      { wch: 5 }, { wch: 24 }, { wch: 24 }, { wch: 20 }, { wch: 16 },
+      { wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 14 },
+      { wch: 22 }, { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 16 },
+      { wch: 22 }, { wch: 12 },
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Заявки на ДС')
+    const today = formatShortDate(new Date().toISOString()).replace(/\./g, '-')
+    XLSX.writeFile(wb, `Заявки_на_ДС_${today}.xlsx`)
+  }
+
+  // task 370: единый рендер чипа документа — используется и в «рабочих»,
+  // и в «итоговых» документах.
+  const renderDocChip = (doc) => {
+    const tooltip = [
+      doc.file_name,
+      doc.notes,
+      [formatBytes(doc.size_bytes), doc.uploaded_by_name].filter(Boolean).join(' · '),
+    ].filter(Boolean).join('\n')
+    const mime = (doc.mime_type || '').toLowerCase()
+    const previewable = mime === 'application/pdf' || mime.startsWith('image/')
+    return (
+      <div key={doc.id} className="dcr-doc-chip">
+        <button
+          type="button"
+          className="dcr-doc-chip-main"
+          onClick={() => previewable ? setPreviewDoc(doc) : handleDocDownload(doc)}
+          title={tooltip}
+        >
+          <svg
+            className="dcr-doc-chip-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          {doc.notes
+            ? <span className="dcr-doc-chip-desc">{doc.notes}</span>
+            : <span className="dcr-doc-chip-desc dcr-doc-chip-desc-empty" title={doc.file_name}>{doc.file_name}</span>}
+        </button>
+        {previewable && (
+          <button
+            type="button"
+            className="dcr-doc-chip-action"
+            onClick={() => setPreviewDoc(doc)}
+            title="Просмотр"
+            aria-label="Просмотр"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+        )}
+        <button
+          type="button"
+          className="dcr-doc-chip-action"
+          onClick={() => handleDocDownload(doc)}
+          title="Скачать"
+          aria-label="Скачать"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        </button>
+        {canEditDc && (
+          <button
+            type="button"
+            className="dcr-doc-chip-del"
+            onClick={() => handleDocDelete(doc)}
+            title="Удалить"
+            aria-label="Удалить"
+          >×</button>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="dc-requests-page contract-registry">
       <div className="registry-header">
@@ -672,6 +851,16 @@ function DcRequestsPage() {
               </svg>
             </button>
           )}
+          {/* task 370: выгрузка текущей выборки в Excel */}
+          <button
+            type="button"
+            className="btn-secondary dcr-export-btn"
+            onClick={handleExportExcel}
+            title="Выгрузить текущую выборку в Excel"
+          >
+            <span aria-hidden>📊</span>
+            <span>Excel</span>
+          </button>
           {canEditDc && (
             <button className="btn-primary" onClick={handleAddNew}>+ Добавить заявку</button>
           )}
@@ -743,21 +932,23 @@ function DcRequestsPage() {
                 <th style={{ width: '11%' }}>Объект</th>
                 <th style={{ width: '11%' }}>Контрагент</th>
                 <th style={{ width: '6%', textAlign: 'center' }}>№ ДС</th>
-                <th style={{ width: '19%' }}>Описание ДС</th>
+                <th style={{ width: '14%' }}>Описание ДС</th>
+                {/* task 370: сумма ДС (Было/Стало) с НДС 22% перед статусом */}
+                <th style={{ width: '10%', whiteSpace: 'normal', textAlign: 'center' }}>Сумма, руб. с НДС 22%</th>
                 <th style={{ width: '8%' }}>Статус</th>
-                <th style={{ width: '10%' }}>Ответственный</th>
+                <th style={{ width: '9%' }}>Ответственный</th>
                 {/* task 334: было «Задачи и ответы» (inline) — теперь только счётчик-кнопка,
                     подробности в модалке. Колонка сильно компактнее, освобождённое место —
                     в «Описание ДС» и «Документы». */}
-                <th style={{ width: '9%', textAlign: 'center' }}>Задачи</th>
-                <th style={{ width: '18%' }}>Документы</th>
+                <th style={{ width: '8%', textAlign: 'center' }}>Задачи</th>
+                <th style={{ width: '15%' }}>Документы</th>
                 <th style={{ width: '5%', textAlign: 'right' }}>Действия</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="no-data" style={{ textAlign: 'center' }}>
+                  <td colSpan="11" className="no-data" style={{ textAlign: 'center' }}>
                     {searchQuery
                       ? 'Ничего не найдено.'
                       : (activeTab === 'all'
@@ -775,7 +966,17 @@ function DcRequestsPage() {
                   const isStatusOpen = statusPopoverFor === req.id
 
                   const docs = docsByReq.get(req.id) || []
+                  // task 370: рабочие vs итоговые документы.
+                  const generalDocs = docs.filter(d => d.doc_category !== 'final')
+                  const finalDocs = docs.filter(d => d.doc_category === 'final')
                   const docsOpen = expandedDocs.has(req.id)
+
+                  // task 370: разница сумм (Было − Стало). >0 → удешевление.
+                  const amountBefore = req.amount_before
+                  const amountAfter = req.amount_after
+                  const amountDiff = (amountBefore != null && amountAfter != null)
+                    ? amountBefore - amountAfter
+                    : null
 
                   return (
                     <tr key={req.id}>
@@ -831,9 +1032,67 @@ function DcRequestsPage() {
                           )}
                         </div>
                       </td>
-                      <td>{req.counterparties?.name || <span className="muted-dash">—</span>}</td>
+                      <td>
+                        {req.counterparties?.name || <span className="muted-dash">—</span>}
+                        {/* task 370: бейдж типа материала */}
+                        {req.material_type && (
+                          <div className={`dcr-material-badge ${MATERIAL_CLASS[req.material_type] || ''}`}>
+                            {MATERIAL_LABEL[req.material_type]}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ textAlign: 'center' }}>{req.ds_number || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
+                      {/* task 370: сумма ДС (Было/Стало) с инлайн-редактированием + разница */}
+                      <td className="dcr-cell-amount">
+                        <div className="dcr-amount">
+                          <div className="dcr-amount-row">
+                            <span className="dcr-amount-label">Было</span>
+                            {canEditDc ? (
+                              <input
+                                type="number"
+                                step="0.01"
+                                inputMode="decimal"
+                                className="dcr-amount-input"
+                                defaultValue={amountBefore != null ? amountBefore : ''}
+                                placeholder="—"
+                                key={`before-${req.id}-${amountBefore ?? ''}`}
+                                onBlur={(e) => handleSaveAmount(req.id, 'amount_before', e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                              />
+                            ) : (
+                              <span className="dcr-amount-value">{amountBefore != null ? formatAmount(amountBefore) : '—'}</span>
+                            )}
+                          </div>
+                          <div className="dcr-amount-row">
+                            <span className="dcr-amount-label">Стало</span>
+                            {canEditDc ? (
+                              <input
+                                type="number"
+                                step="0.01"
+                                inputMode="decimal"
+                                className="dcr-amount-input"
+                                defaultValue={amountAfter != null ? amountAfter : ''}
+                                placeholder="—"
+                                key={`after-${req.id}-${amountAfter ?? ''}`}
+                                onBlur={(e) => handleSaveAmount(req.id, 'amount_after', e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                              />
+                            ) : (
+                              <span className="dcr-amount-value">{amountAfter != null ? formatAmount(amountAfter) : '—'}</span>
+                            )}
+                          </div>
+                          {amountDiff != null && amountDiff !== 0 ? (
+                            <div className={`dcr-amount-diff ${amountDiff > 0 ? 'is-cheaper' : 'is-pricier'}`}>
+                              {amountDiff > 0 ? '↓' : '↑'} {formatAmount(Math.abs(amountDiff))} ₽
+                            </div>
+                          ) : (
+                            <div className="dcr-amount-diff is-zero">
+                              {amountDiff === 0 ? 'без изменений' : ''}
+                            </div>
+                          )}
+                        </div>
+                      </td>
                       <td>
                         <div className="dcr-status-wrap">
                           <button
@@ -900,8 +1159,9 @@ function DcRequestsPage() {
                         </button>
                       </td>
                       <td className="dcr-cell-docs">
+                        {/* Рабочие документы */}
                         <div className="dcr-docs">
-                          {docs.length > 0 && (
+                          {generalDocs.length > 0 && (
                             <button
                               type="button"
                               className="dcr-docs-toggle"
@@ -922,95 +1182,51 @@ function DcRequestsPage() {
                                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                               </svg>
                               <span className="dcr-docs-summary">
-                                Файлы: <strong>{docs.length}</strong>
+                                Файлы: <strong>{generalDocs.length}</strong>
                               </span>
                             </button>
                           )}
-                          {docsOpen && docs.length > 0 && (
+                          {docsOpen && generalDocs.length > 0 && (
                             <div className="dcr-doc-chips">
-                              {docs.map(doc => {
-                                const tooltip = [
-                                  doc.file_name,
-                                  doc.notes,
-                                  [formatBytes(doc.size_bytes), doc.uploaded_by_name].filter(Boolean).join(' · '),
-                                ].filter(Boolean).join('\n')
-                                const mime = (doc.mime_type || '').toLowerCase()
-                                const previewable = mime === 'application/pdf' || mime.startsWith('image/')
-                                return (
-                                  <div key={doc.id} className="dcr-doc-chip">
-                                    <button
-                                      type="button"
-                                      className="dcr-doc-chip-main"
-                                      onClick={() => previewable ? setPreviewDoc(doc) : handleDocDownload(doc)}
-                                      title={tooltip}
-                                    >
-                                      <svg
-                                        className="dcr-doc-chip-icon"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        aria-hidden="true"
-                                      >
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                        <polyline points="14 2 14 8 20 8" />
-                                      </svg>
-                                      {doc.notes
-                                        ? <span className="dcr-doc-chip-desc">{doc.notes}</span>
-                                        : <span className="dcr-doc-chip-desc dcr-doc-chip-desc-empty" title={doc.file_name}>{doc.file_name}</span>}
-                                    </button>
-                                    {previewable && (
-                                      <button
-                                        type="button"
-                                        className="dcr-doc-chip-action"
-                                        onClick={() => setPreviewDoc(doc)}
-                                        title="Просмотр"
-                                        aria-label="Просмотр"
-                                      >
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                                          <circle cx="12" cy="12" r="3" />
-                                        </svg>
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      className="dcr-doc-chip-action"
-                                      onClick={() => handleDocDownload(doc)}
-                                      title="Скачать"
-                                      aria-label="Скачать"
-                                    >
-                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                        <polyline points="7 10 12 15 17 10" />
-                                        <line x1="12" y1="15" x2="12" y2="3" />
-                                      </svg>
-                                    </button>
-                                    {canEditDc && (
-                                      <button
-                                        type="button"
-                                        className="dcr-doc-chip-del"
-                                        onClick={() => handleDocDelete(doc)}
-                                        title="Удалить"
-                                        aria-label="Удалить"
-                                      >×</button>
-                                    )}
-                                  </div>
-                                )
-                              })}
+                              {generalDocs.map(renderDocChip)}
                             </div>
                           )}
                           {canEditDc && (
                             <button
                               type="button"
                               className="dcr-doc-add"
-                              onClick={() => handleDocPick(req.id)}
+                              onClick={() => handleDocPick(req.id, 'general')}
                               title="Добавить документ"
                             >+ Документ</button>
                           )}
                         </div>
+
+                        {/* task 370: итоговые документы — отдельная секция,
+                            подсвечивается при наличии файлов. */}
+                        {(finalDocs.length > 0 || canEditDc) && (
+                          <div className={`dcr-final-docs${finalDocs.length > 0 ? ' has-final' : ''}`}>
+                            <div className="dcr-final-docs-title">
+                              <span className="dcr-final-docs-icon" aria-hidden>✔</span>
+                              Итоговые документы
+                              {finalDocs.length > 0 && (
+                                <span className="dcr-final-docs-count">{finalDocs.length}</span>
+                              )}
+                            </div>
+                            {finalDocs.length > 0 && (
+                              <div className="dcr-doc-chips">
+                                {finalDocs.map(renderDocChip)}
+                              </div>
+                            )}
+                            {canEditDc && (
+                              <button
+                                type="button"
+                                className="dcr-doc-add dcr-doc-add-final"
+                                onClick={() => handleDocPick(req.id, 'final')}
+                                title="Добавить итоговый документ"
+                              >+ Итоговый документ</button>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="actions-cell">
                         {canEditDc && (
@@ -1104,6 +1320,17 @@ function DcRequestsPage() {
                   </div>
                 </div>
 
+                {/* task 370: тип материала по ДС */}
+                <div className="form-group full-width">
+                  <label>Материал</label>
+                  <select name="material_type" value={formData.material_type} onChange={handleInputChange}>
+                    <option value="">— Не указан —</option>
+                    {MATERIAL_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="form-group">
                   <label>№ ДС</label>
                   <input
@@ -1122,6 +1349,33 @@ function DcRequestsPage() {
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
+                </div>
+
+                {/* task 370: суммы ДС (с НДС 22%) — Было / Стало */}
+                <div className="form-group">
+                  <label>Было, ₽ (с НДС 22%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    inputMode="decimal"
+                    name="amount_before"
+                    value={formData.amount_before}
+                    onChange={handleInputChange}
+                    placeholder="0"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Стало, ₽ (с НДС 22%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    inputMode="decimal"
+                    name="amount_after"
+                    value={formData.amount_after}
+                    onChange={handleInputChange}
+                    placeholder="0"
+                  />
                 </div>
 
                 {/* task 365: ориентировочный срок согласования */}
@@ -1472,7 +1726,7 @@ function DcRequestsPage() {
         >
           <div className="modal dcr-doc-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Загрузка документа</h3>
+              <h3>{docUpload.category === 'final' ? 'Загрузка итогового документа' : 'Загрузка документа'}</h3>
               <button
                 className="modal-close"
                 onClick={() => !docUploadBusy && setDocUpload(null)}

@@ -623,19 +623,20 @@ function ContactsPage() {
           <div className="table-container">
             <table className="data-table contacts-table people-table">
               <thead>
-                {/* task 344: сумма фикс. ширин ~930px → таблица помещается
-                    даже на 1280×… после сайдбара и паддингов, без скролла.
-                    Длинные значения (должности, email) word-wrap'аются. */}
+                {/* task 344 + 369: сумма фикс. ширин ~884px → таблица помещается
+                    без горизонтального скролла (последний столбец «Действия» не
+                    обрезается). Длинные значения (должности, email, отдел) переносятся
+                    по словам, а не обрезаются. */}
                 <tr>
                   <th style={{ width: '36px', textAlign: 'center' }}>№</th>
-                  <th style={{ width: '150px' }}>ФИО</th>
-                  <th style={{ width: '140px' }}>Объект/Офис</th>
-                  <th style={{ width: '160px' }}>Должность</th>
+                  <th style={{ width: '145px' }}>ФИО</th>
+                  <th style={{ width: '135px' }}>Объект/Офис</th>
+                  <th style={{ width: '150px' }}>Должность</th>
                   <th style={{ width: '110px' }}>Отдел</th>
                   <th style={{ width: '120px' }}>Телефон</th>
-                  <th style={{ width: '160px' }}>Email</th>
-                  <th style={{ minWidth: '110px' }}>Примечания</th>
-                  <th style={{ width: '52px' }}></th>
+                  <th style={{ width: '150px' }}>Email</th>
+                  <th style={{ minWidth: '100px' }}>Примечания</th>
+                  <th style={{ width: '48px' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -741,18 +742,34 @@ function ContactsPage() {
                         })()}
                       </td>
                       <td>
-                        <select
-                          className="inline-object-select"
-                          value={contact.department_id || ''}
-                          onChange={(e) => handleInlineDepartmentChange(contact.id, e.target.value)}
-                          title="Отдел сотрудника"
-                          disabled={!canEditContacts}
-                        >
-                          <option value="">— не указан —</option>
-                          {departments.map(dept => (
-                            <option key={dept.id} value={dept.id}>{dept.name}</option>
-                          ))}
-                        </select>
+                        {/* task 369: «обёрнутый» select — переносим длинное имя
+                            отдела / плейсхолдер вместо обрезки нативным select. */}
+                        {(() => {
+                          const deptName = departments.find(d => d.id === contact.department_id)?.name || ''
+                          const isEmpty = !deptName
+                          return (
+                            <div className="wrapped-select">
+                              <div
+                                className={`wrapped-select-display ${isEmpty ? 'is-placeholder' : ''}`}
+                                title={deptName || 'Отдел сотрудника'}
+                              >
+                                {deptName || '— не указан —'}
+                              </div>
+                              <select
+                                className="wrapped-select-native"
+                                value={contact.department_id || ''}
+                                onChange={(e) => handleInlineDepartmentChange(contact.id, e.target.value)}
+                                aria-label="Отдел сотрудника"
+                                disabled={!canEditContacts}
+                              >
+                                <option value="">— не указан —</option>
+                                {departments.map(dept => (
+                                  <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td>{contact.phone || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>—</span>}</td>
                       <td>{contact.email}</td>

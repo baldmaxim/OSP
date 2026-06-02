@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS s3_documents (
   mime_type TEXT,
   size_bytes BIGINT,
   notes TEXT,
+  -- task 370: категория документа (general | final). Используется заявками на ДС
+  -- для разделения «рабочих» и «итоговых» файлов.
+  doc_category TEXT NOT NULL DEFAULT 'general',
   uploaded_by UUID,
   uploaded_by_name TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

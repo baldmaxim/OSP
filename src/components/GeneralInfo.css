@@ -477,7 +477,9 @@
 }
 
 .contacts-table .actions-cell .btn-icon {
-  padding: 0.125rem 0.3125rem;
+  /* task 369: уже горизонтальный padding, чтобы оба значка (✏️ 🗑️) умещались
+     в узкий столбец «Действия» (48px) без обрезки. */
+  padding: 0.125rem 0.1875rem;
   font-size: 0.8125rem;
   background: none;
   border: none;

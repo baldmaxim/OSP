@@ -753,6 +753,209 @@
   background: rgba(148, 163, 184, 0.08);
 }
 
+/* ===== task 370: итоговые документы — отдельная подсвечиваемая секция ===== */
+.dcr-final-docs {
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.dcr-final-docs.has-final {
+  border-style: solid;
+  border-color: rgba(22, 163, 74, 0.45);
+  background: rgba(22, 163, 74, 0.08);
+}
+
+[data-theme='dark'] .dcr-final-docs.has-final {
+  border-color: rgba(74, 222, 128, 0.40);
+  background: rgba(74, 222, 128, 0.10);
+}
+
+.dcr-final-docs-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+
+.dcr-final-docs.has-final .dcr-final-docs-title {
+  color: #15803d;
+}
+
+[data-theme='dark'] .dcr-final-docs.has-final .dcr-final-docs-title {
+  color: #4ade80;
+}
+
+.dcr-final-docs-icon {
+  font-size: 0.75rem;
+}
+
+.dcr-final-docs-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 0.25rem;
+  border-radius: 8px;
+  background: rgba(22, 163, 74, 0.85);
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dcr-final-docs.has-final .dcr-doc-add-final {
+  border-color: rgba(22, 163, 74, 0.5);
+  color: #15803d;
+}
+
+[data-theme='dark'] .dcr-final-docs.has-final .dcr-doc-add-final {
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #4ade80;
+}
+
+/* ===== task 370: бейдж типа материала под контрагентом ===== */
+.dcr-material-badge {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.dcr-material-badge.material-tolling {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
+.dcr-material-badge.material-realization {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+[data-theme='dark'] .dcr-material-badge.material-tolling {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .dcr-material-badge.material-realization {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
+}
+
+/* ===== task 370: столбец «Сумма» (Было/Стало) с инлайн-вводом ===== */
+.dcr-cell-amount {
+  font-variant-numeric: tabular-nums;
+}
+
+.dcr-amount {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dcr-amount-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.dcr-amount-label {
+  flex-shrink: 0;
+  width: 36px;
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.dcr-amount-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.1875rem 0.375rem;
+  font-size: 0.75rem;
+  text-align: right;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.12s, background 0.12s;
+  -moz-appearance: textfield;
+}
+
+.dcr-amount-input::-webkit-outer-spin-button,
+.dcr-amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.dcr-amount-input:hover {
+  border-color: var(--border-color);
+}
+
+.dcr-amount-input:focus {
+  outline: none;
+  border-color: var(--primary-color, #2563eb);
+  background: var(--bg-secondary);
+}
+
+.dcr-amount-value {
+  width: 100%;
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+
+.dcr-amount-diff {
+  margin-top: 0.0625rem;
+  text-align: right;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-height: 0.875rem;
+}
+
+.dcr-amount-diff.is-cheaper {
+  color: #15803d;
+}
+
+.dcr-amount-diff.is-pricier {
+  color: #dc2626;
+}
+
+.dcr-amount-diff.is-zero {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+[data-theme='dark'] .dcr-amount-diff.is-cheaper {
+  color: #4ade80;
+}
+
+[data-theme='dark'] .dcr-amount-diff.is-pricier {
+  color: #f87171;
+}
+
+/* ===== task 370: кнопка экспорта в Excel ===== */
+.dcr-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
 /* Модалка загрузки документа */
 .dcr-doc-modal {
   max-width: 480px;
