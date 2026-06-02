@@ -10,6 +10,25 @@ import WarrantyActSignModal from '../components/WarrantyActSignModal'
 import WarrantyDocSelect from '../components/WarrantyDocSelect'
 import './ObjectDetailPage.css'
 
+// task 372: подсказки для полей площадей (datalist — список + своё значение).
+const AREA_TYPE_SUGGESTIONS = [
+  'Общая площадь здания', 'Надземная площадь', 'Подземная площадь',
+  'Площадь жилых этажей', 'Площадь 1-го этажа', 'Площадь паркинга',
+  'Площадь благоустройства',
+]
+const AREA_UNIT_SUGGESTIONS = ['м²', 'м.п.', 'шт.', 'компл.']
+const AREA_SOURCE_SUGGESTIONS = [
+  'Проект', 'БТИ', 'Заказчик', 'МГЭ', 'ПТО', 'Тендерная таблица', 'Внутренний расчет',
+]
+const AREA_METHOD_SUGGESTIONS = [
+  'По внутреннему контуру', 'По БТИ', 'По проектной документации',
+  'По тендерной таблице', 'По расчету ПТО',
+]
+const EMPTY_AREA_FORM = {
+  area_type: '', value: '', unit: 'м²', data_source: '', calc_method: '',
+  parent_area_id: '', notes: '',
+}
+
 // Табличная строка документа (договор/ДС/приложение).
 // Объявлена вне ObjectDetailPage — иначе при каждом рендере родителя пересоздаётся компонент,
 // что приводит к unmount-mount всех строк документа и «вылетающим» модалкам редактирования.
@@ -427,6 +446,13 @@ function ObjectDetailPage() {
     email: '' // task 335
   })
 
+  // task 372: площади объекта (с вложенными подпунктами).
+  const [areas, setAreas] = useState([])
+  const [showAreaModal, setShowAreaModal] = useState(false)
+  const [editingArea, setEditingArea] = useState(null)
+  const [areaFormData, setAreaFormData] = useState(EMPTY_AREA_FORM)
+  const [expandedAreas, setExpandedAreas] = useState(() => new Set())
+
   // Warranty state
   const [warranties, setWarranties] = useState([])
   const [showWarrantyModal, setShowWarrantyModal] = useState(false)
@@ -528,6 +554,15 @@ function ObjectDetailPage() {
         .eq('object_id', objectId)
         .order('order_number')
       if (!warrantyError) setWarranties(warrantyData || [])
+
+      // task 372: площади объекта (плоский список, дерево строим в рендере).
+      const { data: areaData, error: areaError } = await supabase
+        .from('object_areas')
+        .select('*')
+        .eq('object_id', objectId)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true })
+      if (!areaError) setAreas(areaData || [])
 
       // task 364: подгружаем части выплат вместе с удержанием. payments отдельно
       //   сортируем по order_number — порядок дочерней relation Supabase
@@ -1188,6 +1223,85 @@ function ObjectDetailPage() {
     }
   }
 
+  // ===== task 372: площади объекта =====
+  const toggleAreaExpand = (id) => {
+    setExpandedAreas(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const handleAddArea = (parentId = '') => {
+    setEditingArea(null)
+    setAreaFormData({ ...EMPTY_AREA_FORM, parent_area_id: parentId || '' })
+    if (parentId) setExpandedAreas(prev => new Set(prev).add(parentId))
+    setShowAreaModal(true)
+  }
+
+  const handleEditArea = (item) => {
+    setEditingArea(item)
+    setAreaFormData({
+      area_type: item.area_type || '',
+      value: item.value != null ? String(item.value) : '',
+      unit: item.unit || 'м²',
+      data_source: item.data_source || '',
+      calc_method: item.calc_method || '',
+      parent_area_id: item.parent_area_id || '',
+      notes: item.notes || '',
+    })
+    setShowAreaModal(true)
+  }
+
+  const handleDeleteArea = async (id) => {
+    const hasChildren = areas.some(a => a.parent_area_id === id)
+    const msg = hasChildren
+      ? 'Удалить площадь вместе со всеми вложенными подпунктами?'
+      : 'Удалить площадь?'
+    if (!window.confirm(msg)) return
+    try {
+      const { error } = await supabase.from('object_areas').delete().eq('id', id)
+      if (error) throw error
+      fetchObjectData()
+    } catch (error) {
+      alert('Ошибка: ' + error.message)
+    }
+  }
+
+  const handleSubmitArea = async (e) => {
+    e.preventDefault()
+    const fd = areaFormData
+    if (!fd.area_type.trim()) return alert('Укажите тип / название площади')
+    try {
+      // sort_order — следующий среди соседей того же уровня.
+      const siblings = areas.filter(a => (a.parent_area_id || null) === (fd.parent_area_id || null))
+      const maxSort = siblings.reduce((m, a) => Math.max(m, a.sort_order || 0), 0)
+      const dataToSave = {
+        object_id: objectId,
+        parent_area_id: fd.parent_area_id || null,
+        area_type: fd.area_type.trim(),
+        value: cleanNumericValue(fd.value) || null,
+        unit: fd.unit.trim() || null,
+        data_source: fd.data_source.trim() || null,
+        calc_method: fd.calc_method.trim() || null,
+        notes: fd.notes.trim() || null,
+        sort_order: editingArea?.sort_order ?? (maxSort + 1),
+        updated_at: new Date().toISOString(),
+      }
+      if (editingArea) {
+        const { error } = await supabase.from('object_areas').update(dataToSave).eq('id', editingArea.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('object_areas').insert([dataToSave])
+        if (error) throw error
+      }
+      setShowAreaModal(false)
+      fetchObjectData()
+    } catch (error) {
+      alert('Ошибка: ' + error.message)
+    }
+  }
+
   // Warranty retention handlers
   const handleAddRetention = () => {
     setEditingRetention(null)
@@ -1359,11 +1473,6 @@ function ObjectDetailPage() {
     return new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
   }
 
-  const formatArea = (area) => {
-    if (!area) return '-'
-    return `${Number(area).toLocaleString('ru-RU')} м²`
-  }
-
   const formatBudget = (budget) => {
     if (!budget) return '-'
     return `${Number(budget).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽`
@@ -1446,6 +1555,9 @@ function ObjectDetailPage() {
         <button className={`tab ${activeTab === 'estimate' ? 'active' : ''}`} onClick={() => setActiveTab('estimate')}>
           Смета
         </button>
+        <button className={`tab ${activeTab === 'areas' ? 'active' : ''}`} onClick={() => setActiveTab('areas')}>
+          Площади
+        </button>
       </div>
 
       {/* Информация об объекте */}
@@ -1466,10 +1578,7 @@ function ObjectDetailPage() {
               <span className="info-label">Планируемое окончание работ</span>
               <span className="info-value">{formatDate(object.planned_end_date)}</span>
             </div>
-            <div className="info-item">
-              <span className="info-label">Общая площадь</span>
-              <span className="info-value">{formatArea(object.total_area)}</span>
-            </div>
+            {/* task 372: «Общая площадь» вынесена в отдельную вкладку «Площади». */}
             <div className="info-item">
               <span className="info-label">Бюджет</span>
               <span className="info-value">{formatBudget(object.budget)}</span>
@@ -1761,6 +1870,85 @@ function ObjectDetailPage() {
                 )
               }) : (
                 <tr><td colSpan="7" className="empty">Нет данных о гарантии</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* task 372: Площади объекта (с вложенными подпунктами) */}
+      {activeTab === 'areas' && (
+        <div className="tab-content">
+          <div className="cost-header">
+            <span>Площади объекта</span>
+            {canEditObj && <button className="btn-add" onClick={() => handleAddArea('')} title="Добавить площадь">+</button>}
+          </div>
+          <table className="cost-table object-areas-table">
+            <thead>
+              <tr>
+                <th>Тип площади</th>
+                <th className="center">Значение</th>
+                <th className="center">Ед. изм.</th>
+                <th>Источник данных</th>
+                <th>Методика / основание</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {areas.length > 0 ? (() => {
+                const renderRows = (parentId, depth) => areas
+                  .filter(a => (a.parent_area_id || null) === parentId)
+                  .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                  .flatMap(area => {
+                    const hasKids = areas.some(a => a.parent_area_id === area.id)
+                    const isOpen = expandedAreas.has(area.id)
+                    const row = (
+                      <tr key={area.id} className={depth > 0 ? 'area-child-row' : ''}>
+                        <td>
+                          <div className="area-type-cell" style={{ paddingLeft: `${depth * 20}px` }}>
+                            {hasKids ? (
+                              <button
+                                type="button"
+                                className="area-expand"
+                                onClick={() => toggleAreaExpand(area.id)}
+                                aria-label={isOpen ? 'Свернуть' : 'Развернуть'}
+                              >{isOpen ? '▼' : '▶'}</button>
+                            ) : (
+                              <span className="area-expand-spacer" aria-hidden />
+                            )}
+                            <span className="area-type-name">{area.area_type}</span>
+                          </div>
+                          {area.notes && (
+                            <div className="area-notes-sub" style={{ paddingLeft: `${depth * 20 + 18}px` }}>
+                              {area.notes}
+                            </div>
+                          )}
+                        </td>
+                        <td className="center area-value">
+                          {area.value != null
+                            ? Number(area.value).toLocaleString('ru-RU', { maximumFractionDigits: 2 })
+                            : <span className="muted">—</span>}
+                        </td>
+                        <td className="center">{area.unit || <span className="muted">—</span>}</td>
+                        <td>{area.data_source || <span className="muted">—</span>}</td>
+                        <td className="notes-cell">{area.calc_method || <span className="muted">—</span>}</td>
+                        <td className="actions">
+                          {canEditObj && (
+                            <>
+                              <button onClick={() => handleAddArea(area.id)} title="Добавить подпункт">➕</button>
+                              <button onClick={() => handleEditArea(area)} title="Редактировать">✏️</button>
+                              <button onClick={() => handleDeleteArea(area.id)} title="Удалить">🗑️</button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                    const childRows = (hasKids && isOpen) ? renderRows(area.id, depth + 1) : []
+                    return [row, ...childRows]
+                  })
+                return renderRows(null, 0)
+              })() : (
+                <tr><td colSpan="6" className="empty">Площади не добавлены</td></tr>
               )}
             </tbody>
           </table>
@@ -2192,15 +2380,10 @@ function ObjectDetailPage() {
                   <input type="date" value={infoFormData.planned_end_date} onChange={(e) => setInfoFormData({ ...infoFormData, planned_end_date: e.target.value })} />
                 </div>
               </div>
-              <div className="form-row-2">
-                <div>
-                  <label>Общая площадь (м²)</label>
-                  <input type="number" step="0.01" value={infoFormData.total_area} onChange={(e) => setInfoFormData({ ...infoFormData, total_area: e.target.value })} placeholder="1500.00" />
-                </div>
-                <div>
-                  <label>Бюджет (₽)</label>
-                  <input type="number" step="0.01" value={infoFormData.budget} onChange={(e) => setInfoFormData({ ...infoFormData, budget: e.target.value })} placeholder="10000000" />
-                </div>
+              {/* task 372: поле «Общая площадь» убрано — площади ведутся во вкладке «Площади». */}
+              <div className="form-row-1">
+                <label>Бюджет (₽)</label>
+                <input type="number" step="0.01" value={infoFormData.budget} onChange={(e) => setInfoFormData({ ...infoFormData, budget: e.target.value })} placeholder="10000000" />
               </div>
               {/* task 335: контактный email объекта */}
               <div className="form-row-1">
@@ -2368,6 +2551,132 @@ function ObjectDetailPage() {
                 <button type="submit" className="btn-save">Сохранить</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* task 372: модалка добавления/редактирования площади */}
+      {showAreaModal && (
+        <div className="modal-overlay">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{editingArea ? 'Редактировать площадь' : 'Добавить площадь'}</h3>
+              <button onClick={() => setShowAreaModal(false)}>×</button>
+            </div>
+            <form onSubmit={handleSubmitArea}>
+              <div className="form-row">
+                <label>Тип / название площади *</label>
+                <input
+                  type="text"
+                  list="area-type-options"
+                  value={areaFormData.area_type}
+                  onChange={(e) => setAreaFormData({ ...areaFormData, area_type: e.target.value })}
+                  placeholder="Например: Общая площадь здания / Корпус 1"
+                  required
+                />
+              </div>
+              <div className="form-row-2">
+                <div>
+                  <label>Значение</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={areaFormData.value}
+                    onChange={(e) => setAreaFormData({ ...areaFormData, value: e.target.value })}
+                    placeholder="1500.00"
+                  />
+                </div>
+                <div>
+                  <label>Единица измерения</label>
+                  <input
+                    type="text"
+                    list="area-unit-options"
+                    value={areaFormData.unit}
+                    onChange={(e) => setAreaFormData({ ...areaFormData, unit: e.target.value })}
+                    placeholder="м²"
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <label>Источник данных</label>
+                <input
+                  type="text"
+                  list="area-source-options"
+                  value={areaFormData.data_source}
+                  onChange={(e) => setAreaFormData({ ...areaFormData, data_source: e.target.value })}
+                  placeholder="Проект, БТИ, МГЭ, ПТО…"
+                />
+              </div>
+              <div className="form-row">
+                <label>Методика / основание расчёта</label>
+                <input
+                  type="text"
+                  list="area-method-options"
+                  value={areaFormData.calc_method}
+                  onChange={(e) => setAreaFormData({ ...areaFormData, calc_method: e.target.value })}
+                  placeholder="По проектной документации…"
+                />
+              </div>
+              <div className="form-row">
+                <label>Вложить в площадь (подпункт)</label>
+                <select
+                  value={areaFormData.parent_area_id}
+                  onChange={(e) => setAreaFormData({ ...areaFormData, parent_area_id: e.target.value })}
+                >
+                  <option value="">— Корневой уровень —</option>
+                  {(() => {
+                    // Исключаем саму запись и её потомков — иначе цикл в дереве.
+                    const excluded = new Set()
+                    if (editingArea) {
+                      excluded.add(editingArea.id)
+                      const collect = (pid) => areas
+                        .filter(a => a.parent_area_id === pid)
+                        .forEach(c => { excluded.add(c.id); collect(c.id) })
+                      collect(editingArea.id)
+                    }
+                    const opts = []
+                    const walk = (parentId, depth) => areas
+                      .filter(a => (a.parent_area_id || null) === parentId)
+                      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                      .forEach(a => {
+                        if (excluded.has(a.id)) return
+                        opts.push(
+                          <option key={a.id} value={a.id}>
+                            {`${'— '.repeat(depth)}${a.area_type}`}
+                          </option>
+                        )
+                        walk(a.id, depth + 1)
+                      })
+                    walk(null, 0)
+                    return opts
+                  })()}
+                </select>
+              </div>
+              <div className="form-row">
+                <label>Примечание</label>
+                <textarea
+                  rows="2"
+                  value={areaFormData.notes}
+                  onChange={(e) => setAreaFormData({ ...areaFormData, notes: e.target.value })}
+                />
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn-cancel" onClick={() => setShowAreaModal(false)}>Отмена</button>
+                <button type="submit" className="btn-save">Сохранить</button>
+              </div>
+            </form>
+            <datalist id="area-type-options">
+              {AREA_TYPE_SUGGESTIONS.map(s => <option key={s} value={s} />)}
+            </datalist>
+            <datalist id="area-unit-options">
+              {AREA_UNIT_SUGGESTIONS.map(s => <option key={s} value={s} />)}
+            </datalist>
+            <datalist id="area-source-options">
+              {AREA_SOURCE_SUGGESTIONS.map(s => <option key={s} value={s} />)}
+            </datalist>
+            <datalist id="area-method-options">
+              {AREA_METHOD_SUGGESTIONS.map(s => <option key={s} value={s} />)}
+            </datalist>
           </div>
         </div>
       )}

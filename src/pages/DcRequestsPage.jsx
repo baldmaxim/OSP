@@ -70,7 +70,12 @@ function parseAmount(raw) {
   return Number.isFinite(num) ? num : null
 }
 
-const AMOUNT_FORMATTER = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
+// task 371: всегда 2 знака после запятой + разрядность пробелами (ru-RU):
+//   1000000 → «1 000 000,00».
+const AMOUNT_FORMATTER = new Intl.NumberFormat('ru-RU', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
 function formatAmount(num) {
   if (num == null || !Number.isFinite(num)) return ''
   return AMOUNT_FORMATTER.format(num)
@@ -170,6 +175,28 @@ function formatBytes(bytes) {
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
+// task 371: инлайн-ввод суммы с красивым форматированием.
+//   В фокусе — «сырое» число для редактирования, вне фокуса — «1 000 000,00».
+function AmountCellInput({ value, disabled, onSave }) {
+  const [focused, setFocused] = useState(false)
+  const [draft, setDraft] = useState('')
+  const display = focused ? draft : (value != null ? formatAmount(value) : '')
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className="dcr-amount-input"
+      value={display}
+      disabled={disabled}
+      placeholder="—"
+      onFocus={() => { setFocused(true); setDraft(value != null ? String(value) : '') }}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { setFocused(false); onSave(draft) }}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+    />
+  )
+}
+
 function DcRequestsPage() {
   const { userProfile, canEdit } = useRole()
   // task 333: гейт add/edit/delete и inline-editing на этой странице.
@@ -196,8 +223,9 @@ function DcRequestsPage() {
   const [deadlinePopover, setDeadlinePopover] = useState(null) // { id, rect } | null
 
   const [searchQuery, setSearchQuery] = useState('')
-  // Фильтры в тулбаре (task 311).
+  // Фильтры в тулбаре (task 311 + 371).
   const [filterObjectId, setFilterObjectId] = useState('')
+  const [filterCounterpartyId, setFilterCounterpartyId] = useState('') // task 371
   const [filterResponsibleId, setFilterResponsibleId] = useState('')
   // Inline-добавление задачи: { [requestId]: 'строка задачи' }
   const [newTaskTexts, setNewTaskTexts] = useState({})
@@ -480,6 +508,21 @@ function DcRequestsPage() {
     }
   }
 
+  // task 371: инлайн-смена типа материала прямо из таблицы.
+  const handleSaveMaterial = async (id, value) => {
+    const next = value || null
+    try {
+      const { error } = await supabase
+        .from('dc_requests')
+        .update({ material_type: next, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, material_type: next } : r))
+    } catch (err) {
+      alert('Ошибка сохранения материала: ' + (err.message || err))
+    }
+  }
+
   const handleDelete = async (id) => {
     if (!window.confirm('Удалить заявку? Все её задачи и документы также будут удалены.')) return
     try {
@@ -646,10 +689,11 @@ function DcRequestsPage() {
     }
   }
 
-  // Фильтрация: таб → объект → ответственный → поиск.
+  // Фильтрация: таб → объект → контрагент → ответственный → поиск.
   const filtered = requests
     .filter(r => activeTab === 'all' || (r.status || 'in_work') === activeTab)
     .filter(r => !filterObjectId || r.object_id === filterObjectId)
+    .filter(r => !filterCounterpartyId || r.counterparty_id === filterCounterpartyId) // task 371
     .filter(r => !filterResponsibleId || r.responsible_contact_id === filterResponsibleId)
     .filter(r => {
       const q = searchQuery.trim().toLowerCase()
@@ -685,6 +729,17 @@ function DcRequestsPage() {
     requests.map(r => r.responsible_contact_id).filter(Boolean)
   )
   const responsibleFilterOptions = dedupedContacts.filter(c => usedResponsibleIds.has(c.id))
+
+  // task 371: фильтр по контрагентам — только те, что реально фигурируют в заявках.
+  const counterpartyFilterOptions = (() => {
+    const byId = new Map()
+    for (const r of requests) {
+      if (r.counterparties?.id && !byId.has(r.counterparties.id)) {
+        byId.set(r.counterparties.id, r.counterparties)
+      }
+    }
+    return [...byId.values()].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
+  })()
 
   // task 370: выгрузка текущей выборки (с учётом вкладки/фильтров/поиска) в Excel.
   const handleExportExcel = () => {
@@ -899,6 +954,19 @@ function DcRequestsPage() {
             <option key={o.id} value={o.id}>{o.name}</option>
           ))}
         </select>
+        {/* task 371: фильтр по контрагентам */}
+        <select
+          className={`dcr-filter${filterCounterpartyId ? ' is-active' : ''}`}
+          value={filterCounterpartyId}
+          onChange={(e) => setFilterCounterpartyId(e.target.value)}
+          title="Фильтр по контрагенту"
+          disabled={counterpartyFilterOptions.length === 0}
+        >
+          <option value="">🏗️ Все контрагенты</option>
+          {counterpartyFilterOptions.map(cp => (
+            <option key={cp.id} value={cp.id}>{cp.name}</option>
+          ))}
+        </select>
         <select
           className={`dcr-filter${filterResponsibleId ? ' is-active' : ''}`}
           value={filterResponsibleId}
@@ -911,11 +979,11 @@ function DcRequestsPage() {
             <option key={c.id} value={c.id}>{c.full_name}</option>
           ))}
         </select>
-        {(filterObjectId || filterResponsibleId) && (
+        {(filterObjectId || filterCounterpartyId || filterResponsibleId) && (
           <button
             type="button"
             className="dcr-filter-clear"
-            onClick={() => { setFilterObjectId(''); setFilterResponsibleId('') }}
+            onClick={() => { setFilterObjectId(''); setFilterCounterpartyId(''); setFilterResponsibleId('') }}
             title="Сбросить фильтры"
           >×</button>
         )}
@@ -1034,10 +1102,26 @@ function DcRequestsPage() {
                       </td>
                       <td>
                         {req.counterparties?.name || <span className="muted-dash">—</span>}
-                        {/* task 370: бейдж типа материала */}
-                        {req.material_type && (
+                        {/* task 370 + 371: материал. Сотрудник меняет инлайн-селектором
+                            прямо в таблице, остальные видят бейдж «Материал: …». */}
+                        {canEditDc ? (
+                          <div className="dcr-material-edit">
+                            <span className="dcr-material-edit-label">Материал:</span>
+                            <select
+                              className={`dcr-material-select ${MATERIAL_CLASS[req.material_type] || 'is-empty'}`}
+                              value={req.material_type || ''}
+                              onChange={(e) => handleSaveMaterial(req.id, e.target.value)}
+                              title="Тип материала"
+                            >
+                              <option value="">— не указан —</option>
+                              {MATERIAL_OPTIONS.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : req.material_type && (
                           <div className={`dcr-material-badge ${MATERIAL_CLASS[req.material_type] || ''}`}>
-                            {MATERIAL_LABEL[req.material_type]}
+                            Материал: {MATERIAL_LABEL[req.material_type]}
                           </div>
                         )}
                       </td>
@@ -1049,16 +1133,10 @@ function DcRequestsPage() {
                           <div className="dcr-amount-row">
                             <span className="dcr-amount-label">Было</span>
                             {canEditDc ? (
-                              <input
-                                type="number"
-                                step="0.01"
-                                inputMode="decimal"
-                                className="dcr-amount-input"
-                                defaultValue={amountBefore != null ? amountBefore : ''}
-                                placeholder="—"
-                                key={`before-${req.id}-${amountBefore ?? ''}`}
-                                onBlur={(e) => handleSaveAmount(req.id, 'amount_before', e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                              <AmountCellInput
+                                value={amountBefore}
+                                disabled={!canEditDc}
+                                onSave={(v) => handleSaveAmount(req.id, 'amount_before', v)}
                               />
                             ) : (
                               <span className="dcr-amount-value">{amountBefore != null ? formatAmount(amountBefore) : '—'}</span>
@@ -1067,16 +1145,10 @@ function DcRequestsPage() {
                           <div className="dcr-amount-row">
                             <span className="dcr-amount-label">Стало</span>
                             {canEditDc ? (
-                              <input
-                                type="number"
-                                step="0.01"
-                                inputMode="decimal"
-                                className="dcr-amount-input"
-                                defaultValue={amountAfter != null ? amountAfter : ''}
-                                placeholder="—"
-                                key={`after-${req.id}-${amountAfter ?? ''}`}
-                                onBlur={(e) => handleSaveAmount(req.id, 'amount_after', e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                              <AmountCellInput
+                                value={amountAfter}
+                                disabled={!canEditDc}
+                                onSave={(v) => handleSaveAmount(req.id, 'amount_after', v)}
                               />
                             ) : (
                               <span className="dcr-amount-value">{amountAfter != null ? formatAmount(amountAfter) : '—'}</span>
