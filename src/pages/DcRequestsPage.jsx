@@ -81,6 +81,20 @@ function formatAmount(num) {
   return AMOUNT_FORMATTER.format(num)
 }
 
+// task 371: «живое» форматирование во время ввода — группировка разрядов пробелами
+//   («1000000» → «1 000 000», «1000,5» → «1 000,5»). Десятичная часть до 2 знаков.
+function formatAmountLive(raw) {
+  if (raw == null) return ''
+  let s = String(raw).replace(/\s/g, '').replace('.', ',').replace(/[^\d,]/g, '')
+  const i = s.indexOf(',')
+  let intPart = i === -1 ? s : s.slice(0, i)
+  const decPart = i === -1 ? null : s.slice(i + 1).replace(/,/g, '').slice(0, 2)
+  intPart = intPart.replace(/^0+(?=\d)/, '')
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+  if (decPart === null) return grouped
+  return `${grouped || '0'},${decPart}`
+}
+
 // task 365 + 366: маленький popover для быстрого редактирования ориентировочного
 //   срока согласования. Рендерится через React Portal в <body>, position:fixed —
 //   не вызывает прокрутку родительской таблицы и не обрезается её overflow:auto.
@@ -180,6 +194,7 @@ function formatBytes(bytes) {
 function AmountCellInput({ value, disabled, onSave }) {
   const [focused, setFocused] = useState(false)
   const [draft, setDraft] = useState('')
+  // Вне фокуса — с фикс. 2 знаками; в фокусе — «живой» формат (разряды пробелами).
   const display = focused ? draft : (value != null ? formatAmount(value) : '')
   return (
     <input
@@ -189,8 +204,8 @@ function AmountCellInput({ value, disabled, onSave }) {
       value={display}
       disabled={disabled}
       placeholder="—"
-      onFocus={() => { setFocused(true); setDraft(value != null ? String(value) : '') }}
-      onChange={(e) => setDraft(e.target.value)}
+      onFocus={() => { setFocused(true); setDraft(value != null ? formatAmountLive(String(value)) : '') }}
+      onChange={(e) => setDraft(formatAmountLive(e.target.value))}
       onBlur={() => { setFocused(false); onSave(draft) }}
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
     />
@@ -998,9 +1013,9 @@ function DcRequestsPage() {
               <tr>
                 <th style={{ width: '3%' }}>№</th>
                 <th style={{ width: '11%' }}>Объект</th>
-                <th style={{ width: '11%' }}>Контрагент</th>
+                <th style={{ width: '13%' }}>Контрагент</th>
                 <th style={{ width: '6%', textAlign: 'center' }}>№ ДС</th>
-                <th style={{ width: '14%' }}>Описание ДС</th>
+                <th style={{ width: '12%' }}>Описание ДС</th>
                 {/* task 370: сумма ДС (Было/Стало) с НДС 22% перед статусом */}
                 <th style={{ width: '10%', whiteSpace: 'normal', textAlign: 'center' }}>Сумма, руб. с НДС 22%</th>
                 <th style={{ width: '8%' }}>Статус</th>
