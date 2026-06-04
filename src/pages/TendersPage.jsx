@@ -1166,28 +1166,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         })
       }
 
-      // Создаём проект договора на каждого победителя
-      if (selectedWinners.length > 0) {
-        const today = new Date().toISOString().split('T')[0]
-        const contractRows = selectedWinners.map((w, i) => ({
-          tender_id: tenderForWinnerSelection.id,
-          counterparty_id: w.counterparty_id,
-          object_id: tenderForWinnerSelection.object_id,
-          contract_number: `Проект-${Date.now()}-${i + 1}`,
-          contract_date: today,
-          contract_amount: 0,
-          status: 'pending'
-        }))
-
-        const { error: contractError } = await supabase
-          .from('contracts')
-          .insert(contractRows)
-
-        if (contractError) {
-          console.error('Ошибка создания договоров:', contractError.message)
-          // Не прерываем выполнение, тендер уже завершен
-        }
-      }
+      // Задача 390: договоры из тендера автоматически НЕ создаются.
+      // Договор заводится вручную в разделе «Договоры» с опциональной привязкой к тендеру.
 
       setShowWinnerModal(false)
       setTenderForWinnerSelection(null)

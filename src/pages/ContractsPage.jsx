@@ -2,7 +2,7 @@ import { Fragment, useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
-import { CURRENCY_OPTIONS } from '../utils/estimateImport'
+import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
 import '../components/ContractRegistry.css'
 
 // Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
@@ -39,6 +39,8 @@ const EMPTY_FORM = {
   warranty_retention_period: '',
   work_start_date: '',
   work_end_date: '',
+  accepted_date: '',
+  signed_date: '',
   warranty_period: '',
   document_link: '',
   status: 'new_request',
@@ -137,7 +139,15 @@ function ContractRegistry() {
       const { data, error } = await query
       if (error) throw error
 
-      const filtered = (data || []).filter(c => c.objects?.status === objectStatus)
+      // Задача 391: сортировка по объекту (затем по дате договора). Сортируем в JS,
+      // т.к. серверный .order() по join-колонке objects.name недоступен.
+      const filtered = (data || [])
+        .filter(c => c.objects?.status === objectStatus)
+        .sort((a, b) => {
+          const cmp = (a.objects?.name || '').localeCompare(b.objects?.name || '', 'ru')
+          if (cmp !== 0) return cmp
+          return (a.contract_date || '').localeCompare(b.contract_date || '')
+        })
       setContracts(filtered)
 
       // Подгружаем приложения договоров (с комментариями) для inline-раскрытия (task 193)
@@ -356,10 +366,8 @@ function ContractRegistry() {
     return tenders.filter(t => t.object_id === formData.object_id)
   }, [tenders, formData.object_id])
 
-  const availableContacts = useMemo(() => {
-    if (!formData.object_id) return contacts
-    return contacts.filter(c => c.object_id === formData.object_id)
-  }, [contacts, formData.object_id])
+  // Задача 391: «Ответственный юрист» — список всех сотрудников (без фильтра по объекту).
+  const availableContacts = contacts
 
   const filteredCounterparties = useMemo(() => {
     const q = counterpartySearch.trim().toLowerCase()
@@ -394,6 +402,8 @@ function ContractRegistry() {
         object_id: formData.object_id || null,
         tender_id: formData.tender_id || null,
         responsible_contact_id: formData.responsible_contact_id || null,
+        accepted_date: formData.accepted_date || null,
+        signed_date: formData.signed_date || null,
         warranty_retention_percent: formData.warranty_retention_percent === '' ? null : formData.warranty_retention_percent,
         // Сумма необязательна — считается из ПСДЦ; пустое поле = NULL.
         contract_amount: formData.contract_amount === '' ? null : formData.contract_amount,
@@ -450,6 +460,8 @@ function ContractRegistry() {
       warranty_retention_period: contract.warranty_retention_period || '',
       work_start_date: contract.work_start_date || '',
       work_end_date: contract.work_end_date || '',
+      accepted_date: contract.accepted_date || '',
+      signed_date: contract.signed_date || '',
       warranty_period: contract.warranty_period || '',
       document_link: contract.document_link || '',
       status: contract.status || 'new_request',
@@ -557,6 +569,33 @@ function ContractRegistry() {
     }
   }
 
+  // Задача 391: инлайн-правка поля договора прямо в таблице (юрист, даты, примечание).
+  const INLINE_FIELD_LABEL = {
+    responsible_contact_id: 'Ответственный юрист',
+    accepted_date: 'Дата принятия в работу ДП',
+    signed_date: 'Дата подписания',
+    notes: 'Примечание',
+  }
+  const handleInlineField = async (contractId, field, rawValue) => {
+    const value = rawValue === '' ? null : rawValue
+    const contract = contracts.find(c => c.id === contractId)
+    if (!contract || (contract[field] ?? null) === value) return
+    try {
+      const { error } = await supabase.from('contracts').update({ [field]: value }).eq('id', contractId)
+      if (error) throw error
+      setContracts(prev => prev.map(c => c.id === contractId ? { ...c, [field]: value } : c))
+      await logContractEvent(contractId, 'field_updated', {
+        fieldName: field,
+        oldValue: contract[field] ?? null,
+        newValue: value,
+        description: `Изменено: ${INLINE_FIELD_LABEL[field] || field}`,
+      })
+    } catch (error) {
+      console.error('Ошибка сохранения:', error.message)
+      alert('Ошибка: ' + error.message)
+    }
+  }
+
   const handleSelectDepartment = (dept) => {
     setDepartment(dept)
     setActiveTab('new_request')
@@ -659,20 +698,22 @@ function ContractRegistry() {
             <tr>
               <th style={{ width: '32px' }} aria-label="Раскрыть"></th>
               <th style={{ width: '40px' }}>№</th>
-              <th style={{ width: '110px' }}>№ договора</th>
-              <th style={{ minWidth: '180px' }}>Контрагент</th>
-              <th style={{ minWidth: '220px' }}>Объект</th>
-              <th>Наименование работ</th>
-              <th style={{ width: '140px' }}>Ответственный</th>
-              <th style={{ width: '140px' }}>Тендер</th>
-              <th style={{ width: '160px' }}>Статус</th>
+              <th style={{ minWidth: '170px' }}>Наименование контрагента</th>
+              <th>Выполняемые работы</th>
+              <th style={{ minWidth: '160px' }}>Объект</th>
+              <th style={{ width: '130px' }}>Сумма</th>
+              <th style={{ width: '150px' }}>Текущий статус</th>
+              <th style={{ width: '150px' }}>Ответственный юрист</th>
+              <th style={{ width: '130px' }}>Дата принятия в работу ДП</th>
+              <th style={{ width: '120px' }}>Дата подписания</th>
+              <th style={{ minWidth: '140px' }}>Примечание</th>
               <th className="actions-column" style={{ width: '90px' }}>Действия</th>
             </tr>
           </thead>
           <tbody>
             {contracts.length === 0 ? (
               <tr>
-                <td colSpan="10" className="no-data">
+                <td colSpan="12" className="no-data">
                   {isDeletedTab
                     ? 'Нет удалённых договоров.'
                     : `Нет договоров со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
@@ -694,43 +735,18 @@ function ContractRegistry() {
                     {items.length > 0 && <span className="expand-badge">{items.length}</span>}
                   </td>
                   <td className="cell-num">{index + 1}</td>
-                  <td className="cell-contract-num">
+                  <td className="cell-counterparty" onClick={(e) => e.stopPropagation()}>
                     <button
-                      onClick={(e) => { e.stopPropagation(); navigate(`/contracts/${contract.id}`) }}
+                      onClick={() => navigate(`/contracts/${contract.id}`)}
                       className="contract-number-link"
-                      title={`№ ${contract.contract_number || ''} — открыть карточку`}
+                      title={`№ ${contract.contract_number || ''} — открыть карточку договора`}
                     >
-                      №&nbsp;{contract.contract_number || (index + 1)}
+                      {contract.counterparties?.name || `Договор № ${contract.contract_number || (index + 1)}`}
                     </button>
                   </td>
-                  <td className="cell-counterparty">{contract.counterparties?.name || '—'}</td>
-                  <td className="cell-object">{contract.objects?.name || '—'}</td>
                   <td className="cell-work">{contract.work_name || contract.tenders?.work_description || '—'}</td>
-                  <td className="cell-responsible">
-                    {contract.responsible ? (
-                      <>
-                        <div className="resp-name">{contract.responsible.full_name}</div>
-                        {contract.responsible.position && (
-                          <div className="resp-position">{contract.responsible.position}</div>
-                        )}
-                      </>
-                    ) : '—'}
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    {contract.tender_id ? (
-                      <a
-                        href={`/tenders/${contract.tender_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="tender-link"
-                        title={contract.tenders?.work_description}
-                      >
-                        {contract.tenders?.work_description ? contract.tenders.work_description.slice(0, 30) + (contract.tenders.work_description.length > 30 ? '…' : '') : 'Тендер'}
-                      </a>
-                    ) : (
-                      <span className="muted-dash">—</span>
-                    )}
-                  </td>
+                  <td className="cell-object">{contract.objects?.name || '—'}</td>
+                  <td className="cell-amount">{formatMoney(contract.contract_amount, contract.currency) || '—'}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
                       <span className="status-badge status-deleted">Удалён</span>
@@ -739,12 +755,54 @@ function ContractRegistry() {
                         className={`status-select ${STATUS_OPTIONS.find(o => o.value === contract.status)?.className || ''}`}
                         value={contract.status || 'new_request'}
                         onChange={(e) => handleStatusChange(contract.id, e.target.value)}
+                        disabled={!canEditContracts}
                       >
                         {STATUS_OPTIONS.map(opt => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>
                     )}
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <select
+                      className="inline-cell-select"
+                      value={contract.responsible_contact_id || ''}
+                      onChange={(e) => handleInlineField(contract.id, 'responsible_contact_id', e.target.value)}
+                      disabled={!canEditContracts || isDeletedTab}
+                    >
+                      <option value="">—</option>
+                      {contacts.map(c => (
+                        <option key={c.id} value={c.id}>{c.full_name}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="date"
+                      className="inline-cell-date"
+                      value={contract.accepted_date || ''}
+                      onChange={(e) => handleInlineField(contract.id, 'accepted_date', e.target.value)}
+                      disabled={!canEditContracts || isDeletedTab}
+                    />
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="date"
+                      className="inline-cell-date"
+                      value={contract.signed_date || ''}
+                      onChange={(e) => handleInlineField(contract.id, 'signed_date', e.target.value)}
+                      disabled={!canEditContracts || isDeletedTab}
+                    />
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <textarea
+                      className="inline-cell-notes"
+                      defaultValue={contract.notes || ''}
+                      placeholder="Примечание…"
+                      rows={1}
+                      onBlur={(e) => handleInlineField(contract.id, 'notes', e.target.value.trim())}
+                      disabled={!canEditContracts || isDeletedTab}
+                    />
                   </td>
                   <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
@@ -782,7 +840,7 @@ function ContractRegistry() {
                 </tr>
                 {isExpanded && (
                   <tr className="contract-attachments-row" onClick={(e) => e.stopPropagation()}>
-                    <td colSpan="10">
+                    <td colSpan="12">
                       <div className="contract-attachments-panel">
                         <div className="cap-header">
                           <span className="cap-title">📎 Приложения к договору № {contract.contract_number}</span>
@@ -931,7 +989,7 @@ function ContractRegistry() {
                 </div>
 
                 <div className="form-group full-width">
-                  <label>Ответственный сотрудник</label>
+                  <label>Ответственный юрист</label>
                   <select name="responsible_contact_id" value={formData.responsible_contact_id} onChange={handleInputChange}>
                     <option value="">— Не назначен —</option>
                     {availableContacts.map(c => (
@@ -940,11 +998,6 @@ function ContractRegistry() {
                       </option>
                     ))}
                   </select>
-                  {!formData.object_id && (
-                    <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
-                      Выберите объект, чтобы увидеть его сотрудников.
-                    </small>
-                  )}
                 </div>
 
                 <div className="form-group">
@@ -998,6 +1051,15 @@ function ContractRegistry() {
                 <div className="form-group">
                   <label>Окончание работ</label>
                   <input type="date" name="work_end_date" value={formData.work_end_date} onChange={handleInputChange} />
+                </div>
+
+                <div className="form-group">
+                  <label>Дата принятия в работу ДП</label>
+                  <input type="date" name="accepted_date" value={formData.accepted_date} onChange={handleInputChange} />
+                </div>
+                <div className="form-group">
+                  <label>Дата подписания</label>
+                  <input type="date" name="signed_date" value={formData.signed_date} onChange={handleInputChange} />
                 </div>
 
                 <div className="form-group full-width">

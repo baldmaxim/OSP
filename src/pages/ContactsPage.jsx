@@ -623,19 +623,19 @@ function ContactsPage() {
           <div className="table-container">
             <table className="data-table contacts-table people-table">
               <thead>
-                {/* task 344 + 369 + 373: телефон/email/отдел расширены, чтобы значения
-                    не переносились и не обрезались; «Примечания» — единственный гибкий
-                    столбец (minWidth), поэтому сужается за счёт роста фикс. ширин.
-                    Длинные значения (должности, email, отдел) переносятся по словам. */}
+                {/* task 344 + 369 + 373: «Примечания» сделаны узким фикс. столбцом, а
+                    свободное место забирают текстовые столбцы (ФИО/Объект/Должность —
+                    без width). Так таблица помещается в одно окно без горизонтального
+                    скролла, а последний столбец «Действия» не обрезается. */}
                 <tr>
                   <th style={{ width: '36px', textAlign: 'center' }}>№</th>
-                  <th style={{ width: '145px' }}>ФИО</th>
-                  <th style={{ width: '135px' }}>Объект/Офис</th>
-                  <th style={{ width: '150px' }}>Должность</th>
-                  <th style={{ width: '130px' }}>Отдел</th>
-                  <th style={{ width: '140px' }}>Телефон</th>
-                  <th style={{ width: '190px' }}>Email</th>
-                  <th style={{ minWidth: '90px' }}>Примечания</th>
+                  <th>ФИО</th>
+                  <th>Объект/Офис</th>
+                  <th>Должность</th>
+                  <th style={{ width: '120px' }}>Отдел</th>
+                  <th style={{ width: '130px' }}>Телефон</th>
+                  <th style={{ width: '175px' }}>Email</th>
+                  <th style={{ width: '210px' }}>Примечания</th>
                   <th style={{ width: '48px' }}></th>
                 </tr>
               </thead>

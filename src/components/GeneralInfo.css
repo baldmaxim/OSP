@@ -336,6 +336,9 @@
 .people-table th,
 .people-table td {
   border-right: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  /* task 373: компактные горизонтальные отступы вместо 1rem из .data-table —
+     чтобы все столбцы помещались в одно окно без горизонтального скролла. */
+  padding: 0.6rem 0.5rem;
   /* Без overflow/ellipsis — длинные значения (должности, ФИО) переносятся
      на следующую строку благодаря word-break: break-word на td ниже. */
 }

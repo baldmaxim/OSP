@@ -1515,3 +1515,48 @@
 }
 .advance-form-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
 .contract-documents-tab { margin-top: 0.5rem; }
+
+/* ===== Инлайн-правки в таблице реестра договоров (задача 391) ===== */
+.inline-cell-select,
+.inline-cell-date,
+.inline-cell-notes {
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.75rem;
+  font-family: inherit;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-sizing: border-box;
+  transition: border-color 0.1s, background 0.1s;
+}
+.inline-cell-select:hover,
+.inline-cell-date:hover,
+.inline-cell-notes:hover {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.inline-cell-select:focus,
+.inline-cell-date:focus,
+.inline-cell-notes:focus {
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+  outline: none;
+}
+.inline-cell-select:disabled,
+.inline-cell-date:disabled,
+.inline-cell-notes:disabled {
+  color: var(--text-secondary);
+  cursor: default;
+}
+.inline-cell-notes {
+  resize: vertical;
+  min-height: 28px;
+  line-height: 1.35;
+}
+.cell-amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

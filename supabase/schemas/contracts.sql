@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS contracts (
   warranty_retention_period VARCHAR(100),
   work_start_date DATE,
   work_end_date DATE,
+  accepted_date DATE,                                 -- Дата принятия в работу ДП (задача 391)
+  signed_date DATE,                                   -- Дата подписания (задача 391)
   warranty_period VARCHAR(100),
   status VARCHAR(20) NOT NULL DEFAULT 'new_request',
   document_link TEXT,
