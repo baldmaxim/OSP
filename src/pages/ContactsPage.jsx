@@ -633,12 +633,16 @@ function ContactsPage() {
                   <th style={{ width: '36px', textAlign: 'center' }}>№</th>
                   <th style={{ width: '155px' }}>ФИО</th>
                   <th style={{ width: '110px' }}>Объект/Офис</th>
-                  <th style={{ width: '145px' }}>Должность</th>
+                  <th style={{ width: '140px' }}>Должность</th>
                   <th style={{ width: '100px' }}>Отдел</th>
-                  <th style={{ width: '115px' }}>Телефон</th>
+                  {/* Телефон — nowrap (.phone-cell), поэтому столбец должен вмещать
+                      номер целиком (~135px), иначе он вылезает и даёт нижний ползунок. */}
+                  <th style={{ width: '138px' }}>Телефон</th>
                   <th style={{ width: '140px' }}>Email</th>
                   <th>Примечания</th>
-                  <th style={{ width: '48px' }}></th>
+                  {/* Действия — два значка (✏️🗑️) с white-space:nowrap, поэтому ширины
+                      48px не хватало и они вылезали; 64px вмещает оба без переноса. */}
+                  <th style={{ width: '64px' }}></th>
                 </tr>
               </thead>
               <tbody>
