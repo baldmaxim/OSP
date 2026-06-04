@@ -354,6 +354,11 @@
   vertical-align: middle;
 }
 
+/* task 373: телефон всегда в одну строку — не переносим номер по дефису */
+.people-table .phone-cell {
+  white-space: nowrap;
+}
+
 .contact-notes-input {
   width: 100%;
   min-height: 32px;

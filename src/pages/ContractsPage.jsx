@@ -2,7 +2,11 @@ import { Fragment, useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
+import { CURRENCY_OPTIONS } from '../utils/estimateImport'
 import '../components/ContractRegistry.css'
+
+// Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
+const VAT_RATE_OPTIONS = ['', '0', '5', '7', '20', '22']
 
 // Task 174 + 190: статусы договоров
 const STATUS_OPTIONS = [
@@ -28,6 +32,9 @@ const EMPTY_FORM = {
   counterparty_id: '',
   object_id: '',
   contract_amount: '',
+  currency: 'RUB',
+  vat_rate: '',
+  amount_includes_vat: true,
   warranty_retention_percent: '',
   warranty_retention_period: '',
   work_start_date: '',
@@ -388,6 +395,11 @@ function ContractRegistry() {
         tender_id: formData.tender_id || null,
         responsible_contact_id: formData.responsible_contact_id || null,
         warranty_retention_percent: formData.warranty_retention_percent === '' ? null : formData.warranty_retention_percent,
+        // Сумма необязательна — считается из ПСДЦ; пустое поле = NULL.
+        contract_amount: formData.contract_amount === '' ? null : formData.contract_amount,
+        vat_rate: formData.vat_rate === '' ? null : formData.vat_rate,
+        currency: formData.currency || 'RUB',
+        amount_includes_vat: formData.amount_includes_vat !== false,
       }
 
       let contractId = editingContract?.id
@@ -431,6 +443,9 @@ function ContractRegistry() {
       counterparty_id: contract.counterparty_id || '',
       object_id: contract.object_id || '',
       contract_amount: contract.contract_amount || '',
+      currency: contract.currency || 'RUB',
+      vat_rate: contract.vat_rate ?? '',
+      amount_includes_vat: contract.amount_includes_vat !== false,
       warranty_retention_percent: contract.warranty_retention_percent || '',
       warranty_retention_period: contract.warranty_retention_period || '',
       work_start_date: contract.work_start_date || '',
@@ -932,9 +947,39 @@ function ContractRegistry() {
                   )}
                 </div>
 
-                <div className="form-group full-width">
-                  <label>Сумма по договору *</label>
-                  <input type="number" step="0.01" name="contract_amount" value={formData.contract_amount} onChange={handleInputChange} required />
+                <div className="form-group">
+                  <label>Сумма по договору</label>
+                  <input type="number" step="0.01" name="contract_amount" value={formData.contract_amount} onChange={handleInputChange} placeholder="Подтянется из ПСДЦ" />
+                  <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
+                    После импорта ПСДЦ пересчитывается из строк; можно поправить вручную.
+                  </small>
+                </div>
+                <div className="form-group">
+                  <label>Валюта</label>
+                  <select name="currency" value={formData.currency} onChange={handleInputChange}>
+                    {CURRENCY_OPTIONS.map(c => (
+                      <option key={c.code} value={c.code}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Ставка НДС (%)</label>
+                  <select name="vat_rate" value={formData.vat_rate} onChange={handleInputChange}>
+                    {VAT_RATE_OPTIONS.map(v => (
+                      <option key={v || 'none'} value={v}>{v === '' ? '— не указана —' : `${v}%`}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Хранение суммы</label>
+                  <select
+                    name="amount_includes_vat"
+                    value={formData.amount_includes_vat ? 'with' : 'without'}
+                    onChange={(e) => setFormData(prev => ({ ...prev, amount_includes_vat: e.target.value === 'with' }))}
+                  >
+                    <option value="with">С НДС</option>
+                    <option value="without">Без НДС</option>
+                  </select>
                 </div>
 
                 <div className="form-group">

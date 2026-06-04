@@ -5,7 +5,11 @@ CREATE TABLE IF NOT EXISTS contracts (
   contract_date DATE NOT NULL,
   counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,
-  contract_amount DECIMAL(15, 2) NOT NULL CHECK (contract_amount >= 0),
+  -- Сумма может отсутствовать до импорта ПСДЦ (затем считается из строк ПСДЦ).
+  contract_amount DECIMAL(15, 2) CHECK (contract_amount >= 0),
+  currency VARCHAR(3) NOT NULL DEFAULT 'RUB',         -- ISO 4217: RUB/CNY/USD/EUR
+  vat_rate DECIMAL(5, 2),                             -- ставка НДС договора, % (0/5/22/…)
+  amount_includes_vat BOOLEAN NOT NULL DEFAULT true,  -- суммы/цены заданы с НДС (TRUE) или без (FALSE)
   warranty_retention_percent DECIMAL(5, 2) CHECK (warranty_retention_percent >= 0 AND warranty_retention_percent <= 100),
   warranty_retention_period VARCHAR(100),
   work_start_date DATE,

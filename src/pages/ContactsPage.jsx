@@ -623,19 +623,19 @@ function ContactsPage() {
           <div className="table-container">
             <table className="data-table contacts-table people-table">
               <thead>
-                {/* task 344 + 369: сумма фикс. ширин ~884px → таблица помещается
-                    без горизонтального скролла (последний столбец «Действия» не
-                    обрезается). Длинные значения (должности, email, отдел) переносятся
-                    по словам, а не обрезаются. */}
+                {/* task 344 + 369 + 373: телефон/email/отдел расширены, чтобы значения
+                    не переносились и не обрезались; «Примечания» — единственный гибкий
+                    столбец (minWidth), поэтому сужается за счёт роста фикс. ширин.
+                    Длинные значения (должности, email, отдел) переносятся по словам. */}
                 <tr>
                   <th style={{ width: '36px', textAlign: 'center' }}>№</th>
                   <th style={{ width: '145px' }}>ФИО</th>
                   <th style={{ width: '135px' }}>Объект/Офис</th>
                   <th style={{ width: '150px' }}>Должность</th>
-                  <th style={{ width: '110px' }}>Отдел</th>
-                  <th style={{ width: '120px' }}>Телефон</th>
-                  <th style={{ width: '150px' }}>Email</th>
-                  <th style={{ minWidth: '100px' }}>Примечания</th>
+                  <th style={{ width: '130px' }}>Отдел</th>
+                  <th style={{ width: '140px' }}>Телефон</th>
+                  <th style={{ width: '190px' }}>Email</th>
+                  <th style={{ minWidth: '90px' }}>Примечания</th>
                   <th style={{ width: '48px' }}></th>
                 </tr>
               </thead>
@@ -771,7 +771,7 @@ function ContactsPage() {
                           )
                         })()}
                       </td>
-                      <td>{contact.phone || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>—</span>}</td>
+                      <td className="phone-cell">{contact.phone || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>—</span>}</td>
                       <td>{contact.email}</td>
                       <td>
                         {/* перф: AutoGrowTextarea с useLayoutEffect, чтобы не

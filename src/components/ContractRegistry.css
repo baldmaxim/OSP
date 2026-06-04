@@ -1364,3 +1364,154 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== Карточка договора: вкладки (задача 374) ===== */
+.contract-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 1rem;
+}
+.contract-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.contract-tab:hover { color: var(--text-primary); }
+.contract-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  font-weight: 600;
+}
+.contract-tab-badge {
+  font-size: 0.6875rem;
+  background: var(--bg-tertiary, var(--border-color));
+  color: var(--text-secondary);
+  border-radius: 10px;
+  padding: 0 0.4rem;
+  min-width: 1.1rem;
+  text-align: center;
+}
+
+/* ===== Кнопка danger / модалка импорта ===== */
+.btn-danger {
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.btn-danger:hover { background: #b91c1c; }
+.modal.modal-sm { max-width: 460px; }
+.modal-body { padding: 0 1.25rem; }
+
+/* ===== ПСДЦ / Авансы: заголовок и таблица ===== */
+.psdc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.psdc-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.psdc-import-label { display: inline-flex; align-items: center; cursor: pointer; }
+.advances-summary { font-weight: 400; font-size: 0.8125rem; color: var(--text-secondary); }
+.advances-summary .adv-over { color: #dc2626; }
+
+.psdc-table-wrapper { overflow-x: auto; }
+.psdc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.psdc-table th,
+.psdc-table td {
+  border: 1px solid var(--border-color);
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+.psdc-table thead th {
+  background: var(--bg-tertiary, var(--bg-primary));
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.psdc-table td.money { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.psdc-table td.center { text-align: center; }
+.psdc-table tfoot td {
+  background: var(--bg-tertiary, var(--bg-primary));
+  text-align: right;
+}
+.psdc-section-row td {
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  font-weight: 600;
+}
+.psdc-section-name { cursor: pointer; }
+.psdc-toggle-cell { text-align: center; }
+.psdc-toggle {
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  width: 1.4rem;
+  height: 1.4rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.psdc-davalchesky td { opacity: 0.7; font-style: italic; }
+.psdc-del {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  padding: 0 0.2rem;
+}
+.psdc-del:hover { color: #dc2626; }
+.psdc-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.psdc-hint { font-size: 0.75rem; line-height: 1.6; margin-top: 0.5rem; }
+
+/* ===== Форма транша авансирования ===== */
+.advance-form {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.advance-form-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.advance-form-row > div { display: flex; flex-direction: column; gap: 0.25rem; }
+.advance-form-row .advance-form-desc { flex: 1; min-width: 180px; }
+.advance-form-row label { font-size: 0.75rem; color: var(--text-secondary); }
+.advance-form-row input {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.advance-form-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
+.contract-documents-tab { margin-top: 0.5rem; }
