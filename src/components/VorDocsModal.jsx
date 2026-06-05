@@ -2,10 +2,10 @@ import { useEffect } from 'react'
 import S3DocumentList from './S3DocumentList'
 import './S3DocumentList.css'
 
-// task 393: модалка с документами «ВОРы и РД» для тендера.
-// Использует общий S3-стек (owner_type='tender', категория 'vor'), переиспользует
-// стили модалки из S3DocumentList.css.
-export default function VorDocsModal({ tenderId, title = 'Документы ВОР и РД', onClose, onChange }) {
+// task 393: модалка с документами тендера на общем S3-стеке (owner_type='tender').
+// Категория задаётся пропом `category`: 'vor' — «ВОРы и РД» (393/396),
+// 'tender_package' — «Тендерный пакет» (397). Переиспользует стили из S3DocumentList.css.
+export default function VorDocsModal({ tenderId, title = 'Документы ВОР и РД', category = 'vor', onClose, onChange }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handler)
@@ -27,7 +27,7 @@ export default function VorDocsModal({ tenderId, title = 'Документы В�
           <S3DocumentList
             ownerType="tender"
             ownerId={tenderId}
-            category="vor"
+            category={category}
             title="Файлы"
             onChange={onChange}
           />

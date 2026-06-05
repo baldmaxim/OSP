@@ -38,6 +38,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // task 393: документы «ВОРы и РД» (S3, категория 'vor')
   const [vorDocsModalTenderId, setVorDocsModalTenderId] = useState(null)
   const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
+  // task 397: документы «Тендерный пакет» (S3, категория 'tender_package')
+  const [packageDocsModalTenderId, setPackageDocsModalTenderId] = useState(null)
+  const [packageDocCounts, setPackageDocCounts] = useState({}) // tenderId → число документов
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   // task 212: 'all' | <status> | 'template' | 'deleted'
@@ -277,42 +280,48 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
-  // task 393: счётчики ВОР-документов одним запросом (для бейджа в колонке «ВОРы и РД»)
+  // task 393/397: счётчики документов тендера одним запросом — для бейджей в колонках
+  // «ВОРы и РД» (категория 'vor') и «Тендерный пакет» (категория 'tender_package')
   const fetchVorDocCounts = async (tenderIds) => {
-    if (!tenderIds || tenderIds.length === 0) { setVorDocCounts({}); return }
+    if (!tenderIds || tenderIds.length === 0) { setVorDocCounts({}); setPackageDocCounts({}); return }
     try {
       const { data, error } = await supabase
         .from('s3_documents')
-        .select('owner_id')
+        .select('owner_id, doc_category')
         .eq('owner_type', 'tender')
-        .eq('doc_category', 'vor')
+        .in('doc_category', ['vor', 'tender_package'])
         .in('owner_id', tenderIds)
       if (error) throw error
-      const counts = {}
+      const vor = {}
+      const pkg = {}
       for (const row of data || []) {
-        counts[row.owner_id] = (counts[row.owner_id] || 0) + 1
+        const bucket = row.doc_category === 'tender_package' ? pkg : vor
+        bucket[row.owner_id] = (bucket[row.owner_id] || 0) + 1
       }
-      setVorDocCounts(counts)
+      setVorDocCounts(vor)
+      setPackageDocCounts(pkg)
     } catch (err) {
-      console.error('Ошибка загрузки счётчиков документов ВОР:', err.message)
+      console.error('Ошибка загрузки счётчиков документов тендера:', err.message)
     }
   }
 
-  // Пересчитать число документов для одного тендера (после загрузки/удаления в модалке)
-  const refreshVorDocCount = async (tenderId) => {
+  // Пересчитать число документов одной категории для одного тендера (после загрузки/удаления)
+  const refreshDocCount = async (tenderId, category, setCounts) => {
     try {
       const { count, error } = await supabase
         .from('s3_documents')
         .select('id', { count: 'exact', head: true })
         .eq('owner_type', 'tender')
-        .eq('doc_category', 'vor')
+        .eq('doc_category', category)
         .eq('owner_id', tenderId)
       if (error) throw error
-      setVorDocCounts(prev => ({ ...prev, [tenderId]: count || 0 }))
+      setCounts(prev => ({ ...prev, [tenderId]: count || 0 }))
     } catch (err) {
-      console.error('Ошибка обновления счётчика документов ВОР:', err.message)
+      console.error('Ошибка обновления счётчика документов тендера:', err.message)
     }
   }
+  const refreshVorDocCount = (tenderId) => refreshDocCount(tenderId, 'vor', setVorDocCounts)
+  const refreshPackageDocCount = (tenderId) => refreshDocCount(tenderId, 'tender_package', setPackageDocCounts)
 
   const fetchObjects = async () => {
     try {
@@ -2137,6 +2146,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     )}
                     {/* Тендерный пакет */}
                     <td>
+                        <div className="phase-cell">
                         {tender.tender_package_link ? (
                           <div className="link-with-edit">
                             <a
@@ -2172,9 +2182,33 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               title="Добавить ссылку на тендерный пакет"
                             >+ ссылка</button>
                           ) : (
-                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                            !((packageDocCounts[tender.id] || 0) > 0) && (
+                              <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                            )
                           )
                         )}
+                        {(canEditTenders || (packageDocCounts[tender.id] || 0) > 0) && (
+                          <button
+                            type="button"
+                            onClick={() => setPackageDocsModalTenderId(tender.id)}
+                            style={{
+                              background: 'none',
+                              border: '1px dashed var(--border-color)',
+                              borderRadius: '4px',
+                              padding: '0.0625rem 0.375rem',
+                              color: 'var(--text-tertiary)',
+                              cursor: 'pointer',
+                              fontSize: '0.6875rem'
+                            }}
+                            title="Документы тендерного пакета"
+                          >
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.1875rem' }}>
+                              <PaperclipIcon size={12} />
+                              {packageDocCounts[tender.id] ? packageDocCounts[tender.id] : ''}
+                            </span>
+                          </button>
+                        )}
+                        </div>
                       </td>
                     {/* План затрат */}
                     {!compactView && department === 'construction' && activeTab !== 'completed' && (
@@ -3446,12 +3480,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         )
       })()}
 
-      {/* Модальное окно с шаблонным письмом */}
+      {/* Документы «ВОРы и РД» */}
       {vorDocsModalTenderId && (
         <VorDocsModal
           tenderId={vorDocsModalTenderId}
           onClose={() => setVorDocsModalTenderId(null)}
           onChange={() => refreshVorDocCount(vorDocsModalTenderId)}
+        />
+      )}
+
+      {/* task 397: документы «Тендерный пакет» */}
+      {packageDocsModalTenderId && (
+        <VorDocsModal
+          tenderId={packageDocsModalTenderId}
+          title="Документы тендерного пакета"
+          category="tender_package"
+          onClose={() => setPackageDocsModalTenderId(null)}
+          onChange={() => refreshPackageDocCount(packageDocsModalTenderId)}
         />
       )}
 

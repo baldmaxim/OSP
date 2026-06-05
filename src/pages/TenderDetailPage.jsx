@@ -388,24 +388,29 @@ function TenderDetailPage() {
   const [notesSaving, setNotesSaving] = useState(false)
   const [notesSavedAt, setNotesSavedAt] = useState(null)
 
-  // task 396: документы «ВОРы и РД» внутри тендера (S3, owner_type='tender', doc_category='vor')
+  // task 396/397: документы тендера внутри карточки (S3, owner_type='tender')
+  // категория 'vor' — «ВОРы и РД», 'tender_package' — «Тендерный пакет»
   const [vorDocsModalOpen, setVorDocsModalOpen] = useState(false)
   const [vorDocCount, setVorDocCount] = useState(0)
+  const [packageDocsModalOpen, setPackageDocsModalOpen] = useState(false)
+  const [packageDocCount, setPackageDocCount] = useState(0)
 
-  const refreshVorDocCount = async () => {
+  const refreshDocCount = async (category, setCount) => {
     try {
       const { count, error } = await supabase
         .from('s3_documents')
         .select('id', { count: 'exact', head: true })
         .eq('owner_type', 'tender')
         .eq('owner_id', tenderId)
-        .eq('doc_category', 'vor')
+        .eq('doc_category', category)
       if (error) throw error
-      setVorDocCount(count || 0)
+      setCount(count || 0)
     } catch (err) {
-      console.error('Ошибка загрузки счётчика документов ВОР:', err.message)
+      console.error('Ошибка загрузки счётчика документов тендера:', err.message)
     }
   }
+  const refreshVorDocCount = () => refreshDocCount('vor', setVorDocCount)
+  const refreshPackageDocCount = () => refreshDocCount('tender_package', setPackageDocCount)
 
   useEffect(() => {
     if (tenderId) {
@@ -413,6 +418,7 @@ function TenderDetailPage() {
       loadAuditLog()
       fetchEstimateItems()
       refreshVorDocCount()
+      refreshPackageDocCount()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
@@ -1291,14 +1297,37 @@ function TenderDetailPage() {
               </span>
             </div>
           )}
-          {tender.tender_package_link && (
-            <div className="info-item">
-              <span className="info-label">Тендерный пакет</span>
-              <a href={tender.tender_package_link} target="_blank" rel="noopener noreferrer" className="info-link">
-                Открыть документ
-              </a>
-            </div>
-          )}
+          <div className="info-item">
+            <span className="info-label">Тендерный пакет</span>
+            <span className="info-value info-stack">
+              {tender.tender_package_link && (
+                <a href={tender.tender_package_link} target="_blank" rel="noopener noreferrer" className="info-link">
+                  Открыть документ
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setPackageDocsModalOpen(true)}
+                style={{
+                  alignSelf: 'flex-start',
+                  background: 'none',
+                  border: '1px dashed var(--border-color)',
+                  borderRadius: '4px',
+                  padding: '0.125rem 0.5rem',
+                  marginTop: '0.25rem',
+                  color: 'var(--text-tertiary)',
+                  cursor: 'pointer',
+                  fontSize: '0.75rem'
+                }}
+                title="Документы тендерного пакета"
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <PaperclipIcon size={12} />
+                  Документы{packageDocCount ? ` (${packageDocCount})` : ''}
+                </span>
+              </button>
+            </span>
+          </div>
           {!isMainConstruction && (tender.cost_plan_start_date || tender.cost_plan_end_date || tender.cost_plan_responsible) && (
             <div className="info-item">
               <span className="info-label">Срок выполнения плана затрат</span>
@@ -2288,6 +2317,17 @@ function TenderDetailPage() {
           tenderId={tenderId}
           onClose={() => setVorDocsModalOpen(false)}
           onChange={refreshVorDocCount}
+        />
+      )}
+
+      {/* task 397: документы «Тендерный пакет» */}
+      {packageDocsModalOpen && (
+        <VorDocsModal
+          tenderId={tenderId}
+          title="Документы тендерного пакета"
+          category="tender_package"
+          onClose={() => setPackageDocsModalOpen(false)}
+          onChange={refreshPackageDocCount}
         />
       )}
     </div>
