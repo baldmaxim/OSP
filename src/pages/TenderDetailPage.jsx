@@ -5,6 +5,8 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
+import VorDocsModal from '../components/VorDocsModal'
+import PaperclipIcon from '../components/icons/PaperclipIcon'
 import '../components/TenderDetail.css'
 
 // task 261: числа выводим с округлением до сотых
@@ -386,11 +388,31 @@ function TenderDetailPage() {
   const [notesSaving, setNotesSaving] = useState(false)
   const [notesSavedAt, setNotesSavedAt] = useState(null)
 
+  // task 396: документы «ВОРы и РД» внутри тендера (S3, owner_type='tender', doc_category='vor')
+  const [vorDocsModalOpen, setVorDocsModalOpen] = useState(false)
+  const [vorDocCount, setVorDocCount] = useState(0)
+
+  const refreshVorDocCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('s3_documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_type', 'tender')
+        .eq('owner_id', tenderId)
+        .eq('doc_category', 'vor')
+      if (error) throw error
+      setVorDocCount(count || 0)
+    } catch (err) {
+      console.error('Ошибка загрузки счётчика документов ВОР:', err.message)
+    }
+  }
+
   useEffect(() => {
     if (tenderId) {
       fetchTenderData()
       loadAuditLog()
       fetchEstimateItems()
+      refreshVorDocCount()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
@@ -1316,6 +1338,27 @@ function TenderDetailPage() {
                   {tender.vor_link && (
                     <a href={tender.vor_link} target="_blank" rel="noopener noreferrer" className="info-link">Открыть документ</a>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setVorDocsModalOpen(true)}
+                    style={{
+                      alignSelf: 'flex-start',
+                      background: 'none',
+                      border: '1px dashed var(--border-color)',
+                      borderRadius: '4px',
+                      padding: '0.125rem 0.5rem',
+                      marginTop: '0.25rem',
+                      color: 'var(--text-tertiary)',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem'
+                    }}
+                    title="Документы ВОР и РД"
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <PaperclipIcon size={12} />
+                      Документы{vorDocCount ? ` (${vorDocCount})` : ''}
+                    </span>
+                  </button>
                 </span>
               </div>
               <div className="info-item">
@@ -2237,6 +2280,15 @@ function TenderDetailPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* task 396: документы «ВОРы и РД» */}
+      {vorDocsModalOpen && (
+        <VorDocsModal
+          tenderId={tenderId}
+          onClose={() => setVorDocsModalOpen(false)}
+          onChange={refreshVorDocCount}
+        />
       )}
     </div>
   )
