@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
+import VorDocsModal from '../components/VorDocsModal'
 import './CostPlansPage.css'
 
 const STATUS_LABELS = {
@@ -44,6 +45,9 @@ function VorsPage() {
   const [searchQuery, setSearchQuery] = useState('') // task 239: поиск
   const [allContacts, setAllContacts] = useState([])
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
+  // task 393: документы «ВОРы и РД» (S3, категория 'vor')
+  const [vorDocsModalTenderId, setVorDocsModalTenderId] = useState(null)
+  const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
 
   const fetchAllContacts = async () => {
     try {
@@ -82,6 +86,7 @@ function VorsPage() {
         filtered = filtered.filter(t => t.object_id === scopedObjectId)
       }
       setTenders(filtered)
+      fetchVorDocCounts(filtered.map(t => t.id))
     } catch (err) {
       console.error('Ошибка загрузки ВОРов:', err.message)
       alert('Ошибка загрузки: ' + err.message)
@@ -89,6 +94,43 @@ function VorsPage() {
       setLoading(false)
     }
   }, [scopedObjectId])
+
+  // task 393: счётчики ВОР-документов одним запросом (для бейджа и статус-гейта)
+  const fetchVorDocCounts = async (tenderIds) => {
+    if (!tenderIds || tenderIds.length === 0) { setVorDocCounts({}); return }
+    try {
+      const { data, error } = await supabase
+        .from('s3_documents')
+        .select('owner_id')
+        .eq('owner_type', 'tender')
+        .eq('doc_category', 'vor')
+        .in('owner_id', tenderIds)
+      if (error) throw error
+      const counts = {}
+      for (const row of data || []) {
+        counts[row.owner_id] = (counts[row.owner_id] || 0) + 1
+      }
+      setVorDocCounts(counts)
+    } catch (err) {
+      console.error('Ошибка загрузки счётчиков документов ВОР:', err.message)
+    }
+  }
+
+  // Пересчитать число документов для одного тендера (после загрузки/удаления в модалке)
+  const refreshVorDocCount = async (tenderId) => {
+    try {
+      const { count, error } = await supabase
+        .from('s3_documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_type', 'tender')
+        .eq('doc_category', 'vor')
+        .eq('owner_id', tenderId)
+      if (error) throw error
+      setVorDocCounts(prev => ({ ...prev, [tenderId]: count || 0 }))
+    } catch (err) {
+      console.error('Ошибка обновления счётчика документов ВОР:', err.message)
+    }
+  }
 
   useEffect(() => {
     fetchTenders()
@@ -98,8 +140,9 @@ function VorsPage() {
   const handleChangeStatus = async (tenderId, newStatus) => {
     if (newStatus === 'completed') {
       const tender = tenders.find(t => t.id === tenderId)
-      if (!tender?.vor_link) {
-        alert('Нельзя установить статус «Завершён» без ссылки на ВОРы и РД. Сначала прикрепите документ.')
+      const hasDocs = (vorDocCounts[tenderId] || 0) > 0
+      if (!tender?.vor_link && !hasDocs) {
+        alert('Нельзя установить статус «Завершён»: нет ни ссылки, ни прикреплённого документа на ВОРы и РД.')
         return
       }
     }
@@ -464,28 +507,45 @@ function VorsPage() {
                     </div>
                   </td>
                   <td>
-                    {t.vor_link ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                        <a
-                          href={t.vor_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link"
-                        >
-                          Открыть
-                        </a>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
+                      {t.vor_link ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                          <a
+                            href={t.vor_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link"
+                          >
+                            Открыть
+                          </a>
+                          <button
+                            className="btn-icon btn-edit"
+                            onClick={() => handleChangeVorLink(t.id, t.vor_link)}
+                            title="Изменить ссылку"
+                            style={{ fontSize: '0.75rem' }}
+                          >
+                            ✏️
+                          </button>
+                        </div>
+                      ) : (
                         <button
-                          className="btn-icon btn-edit"
-                          onClick={() => handleChangeVorLink(t.id, t.vor_link)}
-                          title="Изменить ссылку"
-                          style={{ fontSize: '0.75rem' }}
+                          onClick={() => handleChangeVorLink(t.id, '')}
+                          style={{
+                            background: 'none',
+                            border: '1px dashed var(--border-color)',
+                            borderRadius: '4px',
+                            padding: '0.1875rem 0.5rem',
+                            color: 'var(--text-tertiary)',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem'
+                          }}
+                          title="Добавить ссылку на ВОРы и РД"
                         >
-                          ✏️
+                          + ссылка
                         </button>
-                      </div>
-                    ) : (
+                      )}
                       <button
-                        onClick={() => handleChangeVorLink(t.id, '')}
+                        onClick={() => setVorDocsModalTenderId(t.id)}
                         style={{
                           background: 'none',
                           border: '1px dashed var(--border-color)',
@@ -495,11 +555,11 @@ function VorsPage() {
                           cursor: 'pointer',
                           fontSize: '0.75rem'
                         }}
-                        title="Добавить ссылку на ВОРы и РД"
+                        title="Документы ВОР и РД"
                       >
-                        + ссылка
+                        📎 Документы{vorDocCounts[t.id] ? ` (${vorDocCounts[t.id]})` : ''}
                       </button>
-                    )}
+                    </div>
                   </td>
                   <td>
                     <select
@@ -518,6 +578,14 @@ function VorsPage() {
           </tbody>
         </table>
       </div>
+
+      {vorDocsModalTenderId && (
+        <VorDocsModal
+          tenderId={vorDocsModalTenderId}
+          onClose={() => setVorDocsModalTenderId(null)}
+          onChange={() => refreshVorDocCount(vorDocsModalTenderId)}
+        />
+      )}
     </div>
   )
 }

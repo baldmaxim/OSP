@@ -102,13 +102,15 @@ export async function deleteDocument(doc) {
 }
 
 // Список документов по владельцу.
-export async function fetchDocuments(ownerType, ownerId) {
-  const { data, error } = await supabase
+// `category` (необязательно) — фильтр по `doc_category` (например 'vor').
+export async function fetchDocuments(ownerType, ownerId, category = null) {
+  let query = supabase
     .from('s3_documents')
     .select('*')
     .eq('owner_type', ownerType)
     .eq('owner_id', ownerId)
-    .order('created_at', { ascending: false })
+  if (category) query = query.eq('doc_category', category)
+  const { data, error } = await query.order('created_at', { ascending: false })
   if (error) throw error
   return data || []
 }

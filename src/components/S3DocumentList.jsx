@@ -31,7 +31,7 @@ function formatDateTime(iso) {
   return `${dd}.${mm}.${yyyy} ${hh}:${mi}`
 }
 
-export default function S3DocumentList({ ownerType, ownerId, title = 'Документы', canEdit: canEditProp }) {
+export default function S3DocumentList({ ownerType, ownerId, title = 'Документы', canEdit: canEditProp, category = null, onChange }) {
   const { isEmployee } = useRole()
   const canEdit = canEditProp !== undefined ? canEditProp : isEmployee
 
@@ -47,14 +47,14 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
     setLoading(true)
     setError(null)
     try {
-      const list = await fetchDocuments(ownerType, ownerId)
+      const list = await fetchDocuments(ownerType, ownerId, category)
       setDocuments(list)
     } catch (e) {
       setError(e.message || 'Не удалось загрузить список документов')
     } finally {
       setLoading(false)
     }
-  }, [ownerType, ownerId])
+  }, [ownerType, ownerId, category])
 
   useEffect(() => { reload() }, [reload])
 
@@ -64,9 +64,10 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
     setUploading(true)
     try {
       for (const file of files) {
-        await uploadFile({ file, ownerType, ownerId })
+        await uploadFile({ file, ownerType, ownerId, category })
       }
       await reload()
+      onChange?.()
     } catch (err) {
       alert('Ошибка загрузки: ' + (err.message || err))
     } finally {
@@ -96,6 +97,7 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
     try {
       await deleteDocument(doc)
       setDocuments(prev => prev.filter(d => d.id !== doc.id))
+      onChange?.()
     } catch (err) {
       alert('Ошибка удаления: ' + (err.message || err))
     }

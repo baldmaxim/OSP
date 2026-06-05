@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
+import VorDocsModal from '../components/VorDocsModal'
 import { copyToClipboard } from '../utils/clipboard'
 import '../components/Tenders.css'
 
@@ -33,6 +34,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
   const [responsibleContacts, setResponsibleContacts] = useState([])
+  // task 393: документы «ВОРы и РД» (S3, категория 'vor')
+  const [vorDocsModalTenderId, setVorDocsModalTenderId] = useState(null)
+  const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   // task 212: 'all' | <status> | 'template' | 'deleted'
@@ -264,10 +268,48 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       }
 
       setTenders(filteredTenders)
+      fetchVorDocCounts(filteredTenders.map(t => t.id))
     } catch (error) {
       console.error('Ошибка загрузки тендеров:', error.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // task 393: счётчики ВОР-документов одним запросом (для бейджа в колонке «ВОРы и РД»)
+  const fetchVorDocCounts = async (tenderIds) => {
+    if (!tenderIds || tenderIds.length === 0) { setVorDocCounts({}); return }
+    try {
+      const { data, error } = await supabase
+        .from('s3_documents')
+        .select('owner_id')
+        .eq('owner_type', 'tender')
+        .eq('doc_category', 'vor')
+        .in('owner_id', tenderIds)
+      if (error) throw error
+      const counts = {}
+      for (const row of data || []) {
+        counts[row.owner_id] = (counts[row.owner_id] || 0) + 1
+      }
+      setVorDocCounts(counts)
+    } catch (err) {
+      console.error('Ошибка загрузки счётчиков документов ВОР:', err.message)
+    }
+  }
+
+  // Пересчитать число документов для одного тендера (после загрузки/удаления в модалке)
+  const refreshVorDocCount = async (tenderId) => {
+    try {
+      const { count, error } = await supabase
+        .from('s3_documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_type', 'tender')
+        .eq('doc_category', 'vor')
+        .eq('owner_id', tenderId)
+      if (error) throw error
+      setVorDocCounts(prev => ({ ...prev, [tenderId]: count || 0 }))
+    } catch (err) {
+      console.error('Ошибка обновления счётчика документов ВОР:', err.message)
     }
   }
 
@@ -316,7 +358,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     try {
       // Параллельная загрузка
       const [contactsRes, profilesRes] = await Promise.all([
-        supabase.from('contacts').select('*').order('full_name', { ascending: true }),
+        supabase.from('contacts').select('*, departments(name)').order('full_name', { ascending: true }),
         supabase.from('user_roles').select('full_name, role, work_phone, work_email, email, is_approved').eq('is_approved', true)
       ])
 
@@ -359,6 +401,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const getResponsibleName = (tender) => {
     if (tender.responsible_contact?.full_name) return tender.responsible_contact.full_name
     return null
+  }
+
+  // task 392: «Ответственный по тендеру» назначается только из сотрудников СУ-10 —
+  // отдел «ОСП» И должность «Инженер ОСП». Полный responsibleContacts оставляем как есть
+  // (он нужен, например, для генерации письма), а в дропдаунах показываем подмножество.
+  const OSP_DEPT = 'ОСП'
+  const OSP_POSITION = 'Инженер ОСП'
+  const eligibleResponsibleContacts = responsibleContacts.filter(
+    (c) => c.departments?.name === OSP_DEPT && c.position === OSP_POSITION
+  )
+  // Опции для конкретного селекта: допустимые + (если назначен «не-ОСП») текущий контакт,
+  // чтобы уже выбранное значение не пропадало визуально.
+  const getResponsibleOptions = (selectedId) => {
+    if (!selectedId || eligibleResponsibleContacts.some((c) => c.id === selectedId)) {
+      return eligibleResponsibleContacts
+    }
+    const current = responsibleContacts.find((c) => c.id === selectedId)
+    return current ? [current, ...eligibleResponsibleContacts] : eligibleResponsibleContacts
   }
 
   const fetchTenderCounterparties = async (tenderId) => {
@@ -1994,7 +2054,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           onBlur={() => setEditingResponsibleTenderId(null)}
                         >
                           <option value="">— не назначен —</option>
-                          {responsibleContacts.map((contact) => (
+                          {getResponsibleOptions(tender.responsible_contact_id).map((contact) => (
                             <option key={contact.id} value={contact.id}>
                               {contact.full_name}
                             </option>
@@ -2026,10 +2086,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         <div className="phase-cell">
                           {(() => {
                             const s = tender.vor_status || 'not_started'
+                            const hasDocs = (vorDocCounts[tender.id] || 0) > 0
                             if (s === 'completed') {
-                              return tender.vor_link
+                              return (tender.vor_link || hasDocs)
                                 ? <span className="phase-done" title="ВОР готов">✓ Готово</span>
-                                : <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
+                                : <span className="phase-warn" title="Статус «Завершён», но нет ни ссылки, ни документа">⚠ Нет файла</span>
                             }
                             if (s === 'in_progress') {
                               return <span className="phase-progress" title="В работе">В работе</span>
@@ -2046,6 +2107,22 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               Открыть
                             </a>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => setVorDocsModalTenderId(tender.id)}
+                            style={{
+                              background: 'none',
+                              border: '1px dashed var(--border-color)',
+                              borderRadius: '4px',
+                              padding: '0.0625rem 0.375rem',
+                              color: 'var(--text-tertiary)',
+                              cursor: 'pointer',
+                              fontSize: '0.6875rem'
+                            }}
+                            title="Документы ВОР и РД"
+                          >
+                            📎{vorDocCounts[tender.id] ? ` ${vorDocCounts[tender.id]}` : ''}
+                          </button>
                         </div>
                         {tender.vor_responsible?.full_name && (
                           <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
@@ -2752,7 +2829,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         onChange={handleInputChange}
                       >
                         <option value="">— не назначен —</option>
-                        {responsibleContacts.map((contact) => (
+                        {getResponsibleOptions(formData.responsible_contact_id).map((contact) => (
                           <option key={contact.id} value={contact.id}>
                             {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
                           </option>
@@ -3366,6 +3443,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       })()}
 
       {/* Модальное окно с шаблонным письмом */}
+      {vorDocsModalTenderId && (
+        <VorDocsModal
+          tenderId={vorDocsModalTenderId}
+          onClose={() => setVorDocsModalTenderId(null)}
+          onChange={() => refreshVorDocCount(vorDocsModalTenderId)}
+        />
+      )}
+
       {showLetterModal && (
         <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh' }}>
