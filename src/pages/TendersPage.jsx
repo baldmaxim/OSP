@@ -5,6 +5,7 @@ import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
+import PaperclipIcon from '../components/icons/PaperclipIcon'
 import { copyToClipboard } from '../utils/clipboard'
 import '../components/Tenders.css'
 
@@ -1617,7 +1618,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <option value="">👤 Все ответственные</option>
             <option value="__unassigned__">— Не назначен —</option>
             {responsibleContacts
-              .filter(c => tenders.some(t => t.responsible_contact_id === c.id))
+              .filter(c => tenders.some(t => !t.deleted_at && t.responsible_contact_id === c.id))
               .map(c => (
                 <option key={c.id} value={c.id}>{c.full_name}</option>
               ))}
@@ -2121,7 +2122,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             }}
                             title="Документы ВОР и РД"
                           >
-                            📎{vorDocCounts[tender.id] ? ` ${vorDocCounts[tender.id]}` : ''}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.1875rem' }}>
+                              <PaperclipIcon size={12} />
+                              {vorDocCounts[tender.id] ? vorDocCounts[tender.id] : ''}
+                            </span>
                           </button>
                         </div>
                         {tender.vor_responsible?.full_name && (

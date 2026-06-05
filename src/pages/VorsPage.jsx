@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import VorDocsModal from '../components/VorDocsModal'
+import PaperclipIcon from '../components/icons/PaperclipIcon'
 import './CostPlansPage.css'
 
 const STATUS_LABELS = {
@@ -557,7 +558,10 @@ function VorsPage() {
                         }}
                         title="Документы ВОР и РД"
                       >
-                        📎 Документы{vorDocCounts[t.id] ? ` (${vorDocCounts[t.id]})` : ''}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <PaperclipIcon size={13} />
+                          Документы{vorDocCounts[t.id] ? ` (${vorDocCounts[t.id]})` : ''}
+                        </span>
                       </button>
                     </div>
                   </td>
