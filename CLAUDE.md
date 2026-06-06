@@ -136,6 +136,7 @@ const { data } = await supabase
 | `tender_counterparty_proposals` | Price proposals | `estimate_item_id`, `counterparty_id` |
 | `tender_documents` | Tender attachments (Google Drive links) | `tender_id` (CASCADE) |
 | `tender_proposal_files` | Uploaded Excel КП files from contractors | `tender_id`, `counterparty_id` (CASCADE) |
+| `tender_vor_supply_rates` | Расценки от снабжения по материалам ВОР тендера (task 398). Привязка к документу-ВОР через `estimate_name`; сопоставление с позициями по `material_name`. Стоимость = `material_consumption × supply_price`. | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_name)` |
 | `bsm_contract_rates` | Agreed material rates | `object_id` (CASCADE) |
 | `bsm_supply_rates` | Supply dept rates (has `applied_at` date) | `object_id` (CASCADE) |
 | `bsm_contractor_rates` | Contractor-specific rates | `object_id`, `counterparty_id` (CASCADE) |

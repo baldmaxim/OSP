@@ -3622,3 +3622,190 @@
   align-items: center;
   gap: 0.375rem;
 }
+
+/* task 398: колонка «Стоимость материалов от снабжения» */
+.tender-detail-page .estimate-table .estimate-supply-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.tender-detail-page .estimate-table .estimate-supply-total {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* task 398: кнопка загрузки расценок снабжения + бейдж количества */
+.estimate-supply-import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  cursor: pointer;
+}
+.estimate-supply-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--accent-color, #2563eb);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* task 398: модал импорта расценок снабжения */
+.supply-import-modal {
+  max-width: 760px;
+}
+.supply-import-body {
+  padding: 0 1.25rem;
+}
+.supply-import-file {
+  margin: 0.5rem 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+.supply-import-stats {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.supply-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.6rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+.supply-stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.supply-stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.supply-stat.new .supply-stat-value { color: #16a34a; }
+.supply-stat.conflict .supply-stat-value { color: #d97706; }
+
+.supply-import-section {
+  margin-bottom: 1rem;
+}
+.supply-import-section h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+}
+.supply-import-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.supply-new-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.supply-new-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  font-size: 0.8125rem;
+}
+.supply-new-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.supply-new-price {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.supply-more {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  padding: 0.2rem 0.5rem;
+}
+
+.supply-conflict-bulk {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.supply-conflict-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.supply-conflict-row {
+  display: grid;
+  grid-template-columns: 1fr 6rem 6rem 8rem 11rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.8125rem;
+  border-top: 1px solid var(--border-color);
+}
+.supply-conflict-row:first-child {
+  border-top: none;
+}
+.supply-conflict-head {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.supply-conflict-row .sc-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.supply-conflict-row .sc-old,
+.supply-conflict-row .sc-new,
+.supply-conflict-row .sc-diff {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.supply-conflict-row .sc-diff.up { color: #dc2626; }
+.supply-conflict-row .sc-diff.down { color: #16a34a; }
+.supply-conflict-row .sc-diff small { color: var(--text-tertiary); }
+.supply-conflict-row.update {
+  background: rgba(22, 163, 74, 0.08);
+}
+.supply-conflict-row .sc-act {
+  display: flex;
+  gap: 0.5rem;
+}
+.supply-conflict-row .sc-act label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.supply-conflict-row .sc-act label.selected {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.supply-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
