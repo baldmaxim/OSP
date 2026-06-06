@@ -254,8 +254,10 @@ function DocTabsTree({ docNames, estimateItems, selected, onSelect }) {
   )
 }
 
-function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDoc, supplyCosts, showSupply = false }) {
+function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDoc, supplyCosts, showSupply = false, hideWorkVolume = false }) {
   const sc = supplyCosts || { leaf: [], sectionTotals: new Map(), docTotals: new Map(), grand: 0 }
+  // colSpan «средних» колонок (КОД…Объём материалов) для строк-разделов/разделителей.
+  const midSpan = hideWorkVolume ? 4 : 5
   const lvlOf = makeLevelOf(items)
   const collapseStack = [] // активные свёрнутые заголовки: их уровни
   const rendered = []
@@ -294,7 +296,7 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
               {docHidden ? '▶' : '▼'}
             </button>
           </td>
-          <td colSpan={5}>
+          <td colSpan={midSpan}>
             <div className="estimate-doc-divider-content">
               <span className="estimate-doc-divider-eyebrow">ВОР</span>
               <span className="estimate-doc-divider-name">{it._docName}</span>
@@ -365,7 +367,7 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
                 </button>
               )}
             </td>
-            <td colSpan={5} style={indent}>{it.cost_name}</td>
+            <td colSpan={midSpan} style={indent}>{it.cost_name}</td>
             {showSupply && (
               <td className="estimate-num-cell estimate-supply-total">
                 {sc.sectionTotals.get(key) > 0 ? fmtMoney(sc.sectionTotals.get(key)) : ''}
@@ -380,7 +382,7 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             <td>{it.code || '—'}</td>
             <td style={indent}>{it.cost_name}</td>
             <td>{it.unit || '—'}</td>
-            <td className="estimate-num-cell">{fmtNum(it.work_volume)}</td>
+            {!hideWorkVolume && <td className="estimate-num-cell">{fmtNum(it.work_volume)}</td>}
             <td className="estimate-num-cell">{fmtNum(it.material_consumption)}</td>
             {showSupply && (
               <td className="estimate-num-cell estimate-supply-cell">{fmtMoney(sc.leaf[idx])}</td>
@@ -402,7 +404,7 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             <th style={{ width: '110px' }}>КОД</th>
             <th>Наименование затрат</th>
             <th style={{ width: '90px' }}>Ед. изм.</th>
-            <th style={{ width: '130px' }}>Объём работ</th>
+            {!hideWorkVolume && <th style={{ width: '130px' }}>Объём работ</th>}
             <th style={{ width: '130px' }}>Объём материалов</th>
             {showSupply && <th style={{ width: '180px' }}>Стоимость материалов от снабжения</th>}
           </tr>
@@ -411,7 +413,7 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
         {showSupply && sc.grand > 0 && (
           <tfoot>
             <tr className="estimate-total-row">
-              <td colSpan={6}>Итого стоимость материалов от снабжения</td>
+              <td colSpan={hideWorkVolume ? 5 : 6}>Итого стоимость материалов от снабжения</td>
               <td className="estimate-num-cell estimate-supply-total">{fmtMoney(sc.grand)}</td>
             </tr>
           </tfoot>
@@ -2186,6 +2188,7 @@ function TenderDetailPage() {
                   onSwitchToDoc={supplySelectedDoc === 'all' ? setSupplySelectedDoc : undefined}
                   supplyCosts={supplyCosts}
                   showSupply
+                  hideWorkVolume
                 />
               </>
             )}
