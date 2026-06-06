@@ -35,19 +35,30 @@ function RatesRegistryPage() {
   const loadKpRates = useCallback(async () => {
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('tender_counterparty_proposals')
-        .select(`
-          id,
-          unit_price_materials,
-          unit_price_works,
-          proposal_date,
-          counterparties(name),
-          tender_estimate_items(cost_name, unit, code, material_consumption, work_volume),
-          tenders(id, work_description, objects(name))
-        `)
-      if (error) throw error
-      setRows(data || [])
+      // task 400: пагинация — Supabase отдаёт максимум 1000 строк за запрос,
+      // из-за чего загруженные КП сверх первой 1000 не попадали в реестр
+      // (та же причина, что в task 399 / TenderProposalsCompare.loadProposals).
+      const PAGE = 1000
+      const all = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('tender_counterparty_proposals')
+          .select(`
+            id,
+            unit_price_materials,
+            unit_price_works,
+            proposal_date,
+            counterparties(name),
+            tender_estimate_items(cost_name, unit, code, material_consumption, work_volume),
+            tenders(id, work_description, objects(name))
+          `)
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        if (data?.length) all.push(...data)
+        if (!data || data.length < PAGE) break
+      }
+      setRows(all)
     } catch (err) {
       console.error('Ошибка загрузки расценок:', err.message)
       setRows([])
