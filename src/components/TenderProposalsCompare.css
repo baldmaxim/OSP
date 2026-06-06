@@ -687,6 +687,10 @@
 .proposals-table .td-covered-cell {
   white-space: normal;
 }
+/* Денежная часть над чекбоксом «учтено» в агрегированной ячейке. */
+.proposals-table .td-covered-cell .td-total-money {
+  margin-bottom: 0.25rem;
+}
 .proposals-table .td-total.is-covered-elsewhere {
   background: rgba(234, 179, 8, 0.10);
 }

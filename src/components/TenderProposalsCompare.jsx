@@ -245,15 +245,18 @@ function TenderProposalsCompare({
           totalCost: 0, weightedPriceSum: 0, weightedVolSum: 0,
           // task 355: счётчики покрытия для row в разрезе контрагента
           itemsTotal: 0, itemsCovered: 0,
+          // task 401 (вкладки Материалы/Работы): позиции, которые можно пометить
+          // «учтено» из агрегированной ячейки — [{itemId, proposalId, hasPrice, covered, note}].
+          coverItems: [],
         }
         // Учитываем только позиции с положительным объёмом — иначе они не
         // требуют расценки и не должны подсвечиваться как «дыра».
         if (vol > 0) cur.itemsTotal += 1
 
         const p = proposalLookup.get(`${it.id}__${cp.id}`)
+        const price = p ? (isWork ? (Number(p.unit_price_works) || 0) : (Number(p.unit_price_materials) || 0)) : 0
         if (p) {
           const cost = isWork ? (Number(p.total_works) || 0) : (Number(p.total_materials) || 0)
-          const price = isWork ? (Number(p.unit_price_works) || 0) : (Number(p.unit_price_materials) || 0)
           cur.totalCost += cost
           cur.weightedPriceSum += price * vol
           cur.weightedVolSum += vol
@@ -263,6 +266,16 @@ function TenderProposalsCompare({
           // Подытог по ВОРу
           const prev = group.subtotalByCp.get(cp.id) || 0
           group.subtotalByCp.set(cp.id, prev + cost)
+        }
+        // Кандидаты для пакетной пометки «учтено» — только позиции с объёмом.
+        if (vol > 0) {
+          cur.coverItems.push({
+            itemId: it.id,
+            proposalId: p?.id ?? null,
+            hasPrice: price > 0,
+            covered: !!p?.covered_elsewhere,
+            note: p?.coverage_note || '',
+          })
         }
         row.cpData.set(cp.id, cur)
       }
@@ -360,6 +373,57 @@ function TenderProposalsCompare({
             .from('tender_counterparty_proposals')
             .update({ covered_elsewhere: false, coverage_note: null })
             .eq('id', p.id)
+          if (error) throw error
+        }
+      }
+      await loadProposals()
+    } catch (err) {
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // task 401 (вкладки Материалы/Работы): пакетная пометка «учтено» для всех
+  // нерасценённых позиций агрегированной строки у одного контрагента.
+  // coverItems — [{itemId, proposalId, hasPrice, covered, note}].
+  const handleToggleCoveredBatch = async (cpId, coverItems, checked, note) => {
+    try {
+      if (checked) {
+        // Помечаем только позиции без цены, которые ещё не помечены.
+        const toFlag = coverItems.filter(c => !c.hasPrice && !c.covered)
+        if (toFlag.length > 0) {
+          const { error } = await supabase
+            .from('tender_counterparty_proposals')
+            .upsert(
+              toFlag.map(c => ({
+                tender_id: tenderId,
+                counterparty_id: cpId,
+                estimate_item_id: c.itemId,
+                covered_elsewhere: true,
+                coverage_note: note || null,
+              })),
+              { onConflict: 'estimate_item_id,counterparty_id' }
+            )
+          if (error) throw error
+        }
+      } else {
+        // Снятие: flag-only строки (без цен) удаляем, у остальных сбрасываем флаг.
+        const covered = coverItems.filter(c => c.covered)
+        const flagOnlyIds = []
+        const pricedIds = []
+        for (const c of covered) {
+          if (c.proposalId == null) continue
+          ;(c.hasPrice ? pricedIds : flagOnlyIds).push(c.proposalId)
+        }
+        if (flagOnlyIds.length > 0) {
+          const { error } = await supabase
+            .from('tender_counterparty_proposals').delete().in('id', flagOnlyIds)
+          if (error) throw error
+        }
+        if (pricedIds.length > 0) {
+          const { error } = await supabase
+            .from('tender_counterparty_proposals')
+            .update({ covered_elsewhere: false, coverage_note: null })
+            .in('id', pricedIds)
           if (error) throw error
         }
       }
@@ -505,6 +569,8 @@ function TenderProposalsCompare({
               counterpartiesInScope={counterpartiesInScope}
               totalsByCp={totalsByCp}
               showGroupHeaders={selectedDoc === 'all'}
+              canEdit={canEdit}
+              onToggleCovered={handleToggleCoveredBatch}
             />
           )}
         </>
@@ -858,11 +924,71 @@ function SourceTable({
   )
 }
 
+// ===== Ячейка «Стоимость» агрегированной строки с пометкой «учтено» (task 401) =====
+// Агрегированная строка объединяет несколько позиций ВОРа. Если у контрагента
+// часть из них без цены («дыра», оранжевая ячейка), сотрудник может пакетно
+// пометить их «учтено в другой позиции» — оранжевый уходит, стоимость
+// остаётся от расценённых позиций (или бейдж «учтено», если расценённых нет).
+function AggregateCoverControl({
+  d, cp, total, isMin, isIncomplete, hasPrice, incompleteTip, canEdit, onToggleCovered,
+}) {
+  const coverItems = d?.coverItems || []
+  const noPrice = coverItems.filter(c => !c.hasPrice)
+  const hasHoleCandidates = noPrice.length > 0
+  const allCovered = hasHoleCandidates && noPrice.every(c => c.covered)
+  const firstNote = coverItems.find(c => c.covered && c.note)?.note || ''
+
+  const [note, setNote] = useState(firstNote)
+  useEffect(() => { setNote(firstNote) }, [firstNote])
+
+  const moneyPart = hasPrice
+    ? fmtMoney(total)
+    : (allCovered ? <span className="covered-badge" title={note || ''}>учтено</span> : '—')
+
+  const cls = `td-price td-total${isMin ? ' is-min' : ''}`
+    + `${isIncomplete ? ' is-incomplete' : ''}`
+    + `${allCovered && !hasPrice ? ' is-covered-elsewhere' : ''}`
+
+  // Подрядчик или строка без позиций-кандидатов — без управления.
+  if (!canEdit || !hasHoleCandidates) {
+    return <td className={cls} title={incompleteTip || undefined}>{moneyPart}</td>
+  }
+
+  const saveNote = () => {
+    if (allCovered && firstNote !== note) onToggleCovered(cp.id, coverItems, true, note)
+  }
+
+  return (
+    <td className={`${cls} td-covered-cell`} title={incompleteTip || undefined}>
+      <div className="td-total-money">{moneyPart}</div>
+      <label className="covered-check" title="Учтено в другой позиции — закрыть без цены">
+        <input
+          type="checkbox"
+          checked={allCovered}
+          onChange={(e) => onToggleCovered(cp.id, coverItems, e.target.checked, note)}
+        />
+        <span>учтено</span>
+      </label>
+      {allCovered && (
+        <input
+          type="text"
+          className="covered-note-input"
+          placeholder="учтено в…"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onBlur={saveNote}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+        />
+      )}
+    </td>
+  )
+}
+
 // ===== Подкомпонент: «Материалы» / «Работы» (агрегированный) =====
 // task 350: в режиме «Объединённый» рендерим по группам ВОРов с подытогами,
 // потом общий ИТОГО. В режиме одного ВОРа — плоский список (одна группа,
 // заголовок группы скрывается).
-function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGroupHeaders }) {
+function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGroupHeaders, canEdit, onToggleCovered }) {
   const isMaterials = kind === 'materials'
   const totalKey = isMaterials ? 'totalMat' : 'totalWork'
 
@@ -969,12 +1095,12 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
                             >
                               {hasPrice ? fmtMoney(avgPrice) : '—'}
                             </td>
-                            <td
-                              className={`td-price td-total${isMin ? ' is-min' : ''}${isIncomplete ? ' is-incomplete' : ''}`}
-                              title={incompleteTip || undefined}
-                            >
-                              {hasPrice ? fmtMoney(total) : '—'}
-                            </td>
+                            <AggregateCoverControl
+                              d={d} cp={cp} total={total} isMin={isMin}
+                              isIncomplete={isIncomplete} hasPrice={hasPrice}
+                              incompleteTip={incompleteTip}
+                              canEdit={canEdit} onToggleCovered={onToggleCovered}
+                            />
                           </React.Fragment>
                         )
                       })}
