@@ -53,12 +53,23 @@ function TenderProposalsCompare({
     if (!tenderId) return
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('tender_counterparty_proposals')
-        .select('*, counterparties(id, name)')
-        .eq('tender_id', tenderId)
-      if (error) throw error
-      setProposals(data || [])
+      // task 399: пагинация — Supabase по умолчанию отдаёт максимум 1000 строк.
+      // Для тендеров с большим числом КП-записей (ВОР по корпусам × несколько КП)
+      // лимит молча обрезал выдачу, и часть сохранённых позиций показывалась как «—».
+      const PAGE = 1000
+      const all = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('tender_counterparty_proposals')
+          .select('*, counterparties(id, name)')
+          .eq('tender_id', tenderId)
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        if (data?.length) all.push(...data)
+        if (!data || data.length < PAGE) break
+      }
+      setProposals(all)
     } catch (err) {
       console.error('Ошибка загрузки КП:', err.message)
       setProposals([])
