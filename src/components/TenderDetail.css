@@ -3659,6 +3659,18 @@
   font-weight: 700;
 }
 
+/* task 398: вкладка «Расценки снабжения» */
+.supply-tab-current {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+.supply-tab-hint {
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
 /* task 398: модал импорта расценок снабжения */
 .supply-import-modal {
   max-width: 760px;

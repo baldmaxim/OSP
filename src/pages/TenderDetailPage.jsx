@@ -173,7 +173,62 @@ function computeSupplyCosts(items, ratesMap) {
 }
 
 // task 260/262: смета с многоуровневой группировкой/сворачиванием (как в Excel)
-function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDoc, supplyCosts }) {
+// task 348/351: дерево документов ВОР — «Объединённый» + дочерние ВОРы.
+// Переиспользуется во вкладках «ВОР» и «Расценки снабжения».
+function DocTabsTree({ docNames, estimateItems, selected, onSelect }) {
+  if (!docNames || docNames.length === 0) return null
+  return (
+    <div className="estimate-doc-tabs" role="tablist" aria-label="Документы ВОР">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={selected === 'all'}
+        className={`estimate-doc-tab estimate-doc-tab-parent ${selected === 'all' ? 'active' : ''}`}
+        onClick={() => onSelect('all')}
+        title="Объединённый ВОР — все документы вместе"
+      >
+        <span className="estimate-doc-tab-parent-icon" aria-hidden>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 7h18" />
+            <path d="M3 12h18" />
+            <path d="M3 17h18" />
+          </svg>
+        </span>
+        <span className="estimate-doc-tab-label">Объединённый ВОР</span>
+        <span className="estimate-doc-tab-count">{estimateItems.length}</span>
+        <span className="estimate-doc-tab-parent-hint">
+          состоит из {docNames.length}{' '}
+          {docNames.length === 1 ? 'документа' : 'документов'}
+        </span>
+      </button>
+      <div className="estimate-doc-tabs-children">
+        {docNames.map((name, i) => {
+          const count = estimateItems.filter(it =>
+            (it.estimate_name || 'Основная смета') === name
+          ).length
+          const isLast = i === docNames.length - 1
+          return (
+            <button
+              key={name}
+              type="button"
+              role="tab"
+              aria-selected={selected === name}
+              className={`estimate-doc-tab estimate-doc-tab-child ${selected === name ? 'active' : ''} ${isLast ? 'is-last' : ''}`}
+              onClick={() => onSelect(name)}
+              title={`Открыть ВОР «${name}»`}
+            >
+              <span className="estimate-doc-tab-branch" aria-hidden />
+              <span className="estimate-doc-tab-label">{name}</span>
+              <span className="estimate-doc-tab-count">{count}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDoc, supplyCosts, showSupply = false }) {
   const sc = supplyCosts || { leaf: [], sectionTotals: new Map(), docTotals: new Map(), grand: 0 }
   const lvlOf = makeLevelOf(items)
   const collapseStack = [] // активные свёрнутые заголовки: их уровни
@@ -228,9 +283,11 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
               )}
             </div>
           </td>
-          <td className="estimate-num-cell estimate-supply-total">
-            {sc.docTotals.get(it._docName) > 0 ? fmtMoney(sc.docTotals.get(it._docName)) : ''}
-          </td>
+          {showSupply && (
+            <td className="estimate-num-cell estimate-supply-total">
+              {sc.docTotals.get(it._docName) > 0 ? fmtMoney(sc.docTotals.get(it._docName)) : ''}
+            </td>
+          )}
         </tr>
       )
       // Любые активные section-collapse сбрасываем на границе документа.
@@ -283,9 +340,11 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
               )}
             </td>
             <td colSpan={5} style={indent}>{it.cost_name}</td>
-            <td className="estimate-num-cell estimate-supply-total">
-              {sc.sectionTotals.get(key) > 0 ? fmtMoney(sc.sectionTotals.get(key)) : ''}
-            </td>
+            {showSupply && (
+              <td className="estimate-num-cell estimate-supply-total">
+                {sc.sectionTotals.get(key) > 0 ? fmtMoney(sc.sectionTotals.get(key)) : ''}
+              </td>
+            )}
           </tr>
         )
       } else {
@@ -297,7 +356,9 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             <td>{it.unit || '—'}</td>
             <td className="estimate-num-cell">{fmtNum(it.work_volume)}</td>
             <td className="estimate-num-cell">{fmtNum(it.material_consumption)}</td>
-            <td className="estimate-num-cell estimate-supply-cell">{fmtMoney(sc.leaf[idx])}</td>
+            {showSupply && (
+              <td className="estimate-num-cell estimate-supply-cell">{fmtMoney(sc.leaf[idx])}</td>
+            )}
           </tr>
         )
       }
@@ -317,11 +378,11 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             <th style={{ width: '90px' }}>Ед. изм.</th>
             <th style={{ width: '130px' }}>Объём работ</th>
             <th style={{ width: '130px' }}>Объём материалов</th>
-            <th style={{ width: '180px' }}>Стоимость материалов от снабжения</th>
+            {showSupply && <th style={{ width: '180px' }}>Стоимость материалов от снабжения</th>}
           </tr>
         </thead>
         <tbody>{rendered}</tbody>
-        {sc.grand > 0 && (
+        {showSupply && sc.grand > 0 && (
           <tfoot>
             <tr className="estimate-total-row">
               <td colSpan={6}>Итого стоимость материалов от снабжения</td>
@@ -467,12 +528,15 @@ function TenderDetailPage() {
     catch { /* localStorage недоступен — игнорируем */ }
   }, [estColumnMap])
 
-  // task 398: расценки от снабжения по материалам ВОР (отдельно по документам)
+  // task 398: расценки от снабжения по материалам ВОР (отдельная вкладка)
   const [supplyRates, setSupplyRates] = useState([])
   const supplyFileRef = useRef(null)
   const [supplyImportReport, setSupplyImportReport] = useState(null)
   const [supplyConflictDecisions, setSupplyConflictDecisions] = useState({})
   const [supplyImporting, setSupplyImporting] = useState(false)
+  // выбранный документ + свёрнутые разделы для вкладки «Расценки снабжения»
+  const [supplySelectedDoc, setSupplySelectedDoc] = useState('all')
+  const [supplyCollapsed, setSupplyCollapsed] = useState(new Set())
 
   // Состояния для добавления участников
   const [showAddParticipantModal, setShowAddParticipantModal] = useState(false)
@@ -799,12 +863,12 @@ function TenderDetailPage() {
   const handleSupplyRatesFileSelect = async (e) => {
     const file = e.target.files[0]
     if (!file) return
-    if (selectedDocName === 'all') {
-      alert('Выберите конкретный ВОР-документ (вкладка слева), чтобы загрузить к нему расценки снабжения.')
+    if (supplySelectedDoc === 'all') {
+      alert('Выберите конкретный раздел (ВОР-документ) слева, чтобы загрузить к нему стоимость материалов.')
       if (supplyFileRef.current) supplyFileRef.current.value = ''
       return
     }
-    const docName = selectedDocName
+    const docName = supplySelectedDoc
     try {
       const data = new Uint8Array(await file.arrayBuffer())
       const workbook = XLSX.read(data, { type: 'array' })
@@ -939,16 +1003,16 @@ function TenderDetailPage() {
 
   // task 398: удалить все расценки снабжения выбранного документа.
   const handleClearSupplyRates = async () => {
-    if (selectedDocName === 'all') return
-    if (!window.confirm(`Удалить все расценки снабжения для ВОР «${selectedDocName}»?`)) return
+    if (supplySelectedDoc === 'all') return
+    if (!window.confirm(`Удалить всю стоимость материалов от снабжения для ВОР «${supplySelectedDoc}»?`)) return
     try {
       const { error } = await supabase
         .from('tender_vor_supply_rates')
         .delete()
         .eq('tender_id', tenderId)
-        .eq('estimate_name', selectedDocName)
+        .eq('estimate_name', supplySelectedDoc)
       if (error) throw error
-      setSupplyRates(prev => prev.filter(r => (r.estimate_name || 'Основная смета') !== selectedDocName))
+      setSupplyRates(prev => prev.filter(r => (r.estimate_name || 'Основная смета') !== supplySelectedDoc))
     } catch (err) {
       alert('Ошибка удаления расценок: ' + err.message)
     }
@@ -1001,8 +1065,7 @@ function TenderDetailPage() {
     return estimateItems.filter(it => (it.estimate_name || 'Основная смета') === selectedDocName)
   }, [parsedEstimate, estimateItems, selectedDocName])
 
-  // task 398: карта расценок (документ ∣ материал → цена) и расчёт стоимости
-  // снабжения для текущего вида (Объединённый / отдельный документ).
+  // task 398: карта расценок (документ ∣ материал → цена).
   const supplyRatesMap = useMemo(() => {
     const m = new Map()
     for (const r of supplyRates) {
@@ -1011,16 +1074,38 @@ function TenderDetailPage() {
     return m
   }, [supplyRates])
 
+  // Вкладка «Расценки снабжения»: позиции выбранного документа (или объединённый).
+  const supplyEstimate = useMemo(() => {
+    if (supplySelectedDoc === 'all') return concatCombinedEstimate(estimateItems)
+    return estimateItems.filter(it => (it.estimate_name || 'Основная смета') === supplySelectedDoc)
+  }, [estimateItems, supplySelectedDoc])
+
   const supplyCosts = useMemo(
-    () => computeSupplyCosts(currentEstimate, supplyRatesMap),
-    [currentEstimate, supplyRatesMap]
+    () => computeSupplyCosts(supplyEstimate, supplyRatesMap),
+    [supplyEstimate, supplyRatesMap]
   )
 
-  // Число загруженных расценок для текущего выбранного документа (для бейджа/кнопки).
-  const currentDocRatesCount = useMemo(() => {
-    if (selectedDocName === 'all') return supplyRates.length
-    return supplyRates.filter(r => (r.estimate_name || 'Основная смета') === selectedDocName).length
-  }, [supplyRates, selectedDocName])
+  const supplySectionKeys = useMemo(() => getHeaderKeys(supplyEstimate), [supplyEstimate])
+  const toggleSupplySection = (key) => {
+    setSupplyCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  // Сброс выбранного документа во вкладке снабжения, если он исчез.
+  useEffect(() => {
+    if (supplySelectedDoc === 'all') return
+    if (!docNames.includes(supplySelectedDoc)) setSupplySelectedDoc('all')
+  }, [docNames, supplySelectedDoc])
+
+  // Число загруженных расценок для выбранного во вкладке снабжения документа.
+  const supplyTabRatesCount = useMemo(() => {
+    if (supplySelectedDoc === 'all') return supplyRates.length
+    return supplyRates.filter(r => (r.estimate_name || 'Основная смета') === supplySelectedDoc).length
+  }, [supplyRates, supplySelectedDoc])
 
   // Если активный документ удалён или ещё не выбран — переключаемся на 'all'.
   useEffect(() => {
@@ -1795,6 +1880,14 @@ function TenderDetailPage() {
           ВОР
           {estimateItems.length > 0 && <span className="tab-count">{estimateItems.length}</span>}
         </button>
+        {/* task 398: Расценки снабжения — между ВОР и Сравнение КП */}
+        <button
+          className={`tender-tab ${activeTab === 'supply' ? 'active' : ''}`}
+          onClick={() => setActiveTab('supply')}
+        >
+          Расценки снабжения
+          {supplyRates.length > 0 && <span className="tab-count">{supplyRates.length}</span>}
+        </button>
         {/* task 346: Сравнение КП — между ВОР и Участники */}
         <button
           className={`tender-tab ${activeTab === 'proposals' ? 'active' : ''}`}
@@ -1885,58 +1978,13 @@ function TenderDetailPage() {
                     «Объединённый» (агрегированный из всех документов).
                     Скрыто во время предпросмотра (parsedEstimate) — там
                     показывается ещё не сохранённый документ. */}
-                {!parsedEstimate && docNames.length > 0 && (
-                  /* task 351: tree-layout — Объединённый сверху, под ним
-                      «дочерние» ВОРы с branch-индикаторами (как файловое дерево). */
-                  <div className="estimate-doc-tabs" role="tablist" aria-label="Документы ВОР">
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={selectedDocName === 'all'}
-                      className={`estimate-doc-tab estimate-doc-tab-parent ${selectedDocName === 'all' ? 'active' : ''}`}
-                      onClick={() => setSelectedDocName('all')}
-                      title="Объединённый ВОР — все документы вместе"
-                    >
-                      <span className="estimate-doc-tab-parent-icon" aria-hidden>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 7h18" />
-                          <path d="M3 12h18" />
-                          <path d="M3 17h18" />
-                        </svg>
-                      </span>
-                      <span className="estimate-doc-tab-label">Объединённый ВОР</span>
-                      <span className="estimate-doc-tab-count">{estimateItems.length}</span>
-                      <span className="estimate-doc-tab-parent-hint">
-                        состоит из {docNames.length}{' '}
-                        {docNames.length === 1 ? 'документа' : docNames.length < 5 ? 'документов' : 'документов'}
-                      </span>
-                    </button>
-                    {docNames.length > 0 && (
-                      <div className="estimate-doc-tabs-children">
-                        {docNames.map((name, i) => {
-                          const count = estimateItems.filter(it =>
-                            (it.estimate_name || 'Основная смета') === name
-                          ).length
-                          const isLast = i === docNames.length - 1
-                          return (
-                            <button
-                              key={name}
-                              type="button"
-                              role="tab"
-                              aria-selected={selectedDocName === name}
-                              className={`estimate-doc-tab estimate-doc-tab-child ${selectedDocName === name ? 'active' : ''} ${isLast ? 'is-last' : ''}`}
-                              onClick={() => setSelectedDocName(name)}
-                              title={`Открыть ВОР «${name}»`}
-                            >
-                              <span className="estimate-doc-tab-branch" aria-hidden />
-                              <span className="estimate-doc-tab-label">{name}</span>
-                              <span className="estimate-doc-tab-count">{count}</span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
+                {!parsedEstimate && (
+                  <DocTabsTree
+                    docNames={docNames}
+                    estimateItems={estimateItems}
+                    selected={selectedDocName}
+                    onSelect={setSelectedDocName}
+                  />
                 )}
 
                 <div className="estimate-subtabs">
@@ -1966,39 +2014,6 @@ function TenderDetailPage() {
                           </button>
                         </>
                       )}
-                      {/* task 398: загрузка расценок снабжения к выбранному ВОР-документу */}
-                      {canEditTenders && !parsedEstimate && selectedDocName !== 'all' && (
-                        <>
-                          <label
-                            className="btn-secondary btn-sm estimate-supply-import-btn"
-                            title={`Загрузить расценки снабжения из Excel для ВОР «${selectedDocName}»`}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                              <polyline points="17 8 12 3 7 8" />
-                              <line x1="12" y1="3" x2="12" y2="15" />
-                            </svg>
-                            Расценки снабжения
-                            {currentDocRatesCount > 0 && (
-                              <span className="estimate-supply-badge">{currentDocRatesCount}</span>
-                            )}
-                            <input
-                              ref={supplyFileRef}
-                              type="file"
-                              accept=".xlsx,.xls"
-                              onChange={handleSupplyRatesFileSelect}
-                              style={{ display: 'none' }}
-                            />
-                          </label>
-                          {currentDocRatesCount > 0 && (
-                            <button
-                              className="btn-secondary btn-sm"
-                              onClick={handleClearSupplyRates}
-                              title={`Удалить все расценки снабжения для ВОР «${selectedDocName}»`}
-                            >Очистить расценки</button>
-                          )}
-                        </>
-                      )}
                       {/* task 352: экспорт текущего вида в Excel (отдельный ВОР или объединённый) */}
                       <button
                         className="btn-secondary btn-sm estimate-export-btn"
@@ -2024,11 +2039,10 @@ function TenderDetailPage() {
                     collapsedSections={collapsedSections}
                     onToggleSection={toggleSection}
                     onSwitchToDoc={selectedDocName === 'all' ? setSelectedDocName : undefined}
-                    supplyCosts={supplyCosts}
                   />
                 )}
                 {estimateSubTab === 'materials' && (
-                  <AggregateTable items={currentEstimate} type="materials" ratesMap={supplyRatesMap} />
+                  <AggregateTable items={currentEstimate} type="materials" />
                 )}
                 {estimateSubTab === 'works' && (
                   <AggregateTable items={currentEstimate} type="works" />
@@ -2043,6 +2057,106 @@ function TenderDetailPage() {
                   D — Ед. изм., E — Объём по виду работ, F — Общий расход.
                 </p>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* task 398: Вкладка «Расценки снабжения» — стоимость материалов по разделам ВОР */}
+        {activeTab === 'supply' && (
+          <div className="estimate-section">
+            <div className="section-header">
+              <h3>Расценки снабжения по материалам ВОР</h3>
+            </div>
+
+            {estimateItems.length === 0 ? (
+              <div className="empty-state">
+                <p>ВОР ещё не загружен</p>
+                <p className="hint">
+                  Сначала загрузите ВОР на вкладке «ВОР», затем здесь можно будет
+                  по каждому разделу загрузить стоимость материалов от снабжения.
+                </p>
+              </div>
+            ) : (
+              <>
+                <DocTabsTree
+                  docNames={docNames}
+                  estimateItems={estimateItems}
+                  selected={supplySelectedDoc}
+                  onSelect={setSupplySelectedDoc}
+                />
+
+                <div className="estimate-subtabs">
+                  <div className="estimate-subtabs-left">
+                    <span className="supply-tab-current">
+                      {supplySelectedDoc === 'all'
+                        ? 'Объединённый ВОР (все разделы)'
+                        : `Раздел: ${supplySelectedDoc}`}
+                    </span>
+                  </div>
+                  <div className="estimate-collapse-controls">
+                    {supplySectionKeys.length > 0 && (
+                      <>
+                        <button
+                          className="btn-secondary btn-sm"
+                          onClick={() => setSupplyCollapsed(new Set(supplySectionKeys))}
+                        >Свернуть всё</button>
+                        <button
+                          className="btn-secondary btn-sm"
+                          onClick={() => setSupplyCollapsed(new Set())}
+                        >Развернуть всё</button>
+                      </>
+                    )}
+                    {canEditTenders && supplySelectedDoc !== 'all' && (
+                      <>
+                        <label
+                          className="btn-primary btn-sm estimate-supply-import-btn"
+                          title={`Загрузить стоимость материалов из Excel для раздела «${supplySelectedDoc}»`}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                          </svg>
+                          Загрузить стоимость материалов
+                          {supplyTabRatesCount > 0 && (
+                            <span className="estimate-supply-badge">{supplyTabRatesCount}</span>
+                          )}
+                          <input
+                            ref={supplyFileRef}
+                            type="file"
+                            accept=".xlsx,.xls"
+                            onChange={handleSupplyRatesFileSelect}
+                            style={{ display: 'none' }}
+                          />
+                        </label>
+                        {supplyTabRatesCount > 0 && (
+                          <button
+                            className="btn-secondary btn-sm"
+                            onClick={handleClearSupplyRates}
+                            title={`Удалить стоимость материалов для раздела «${supplySelectedDoc}»`}
+                          >Очистить</button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {supplySelectedDoc === 'all' && (
+                  <p className="supply-tab-hint">
+                    Выберите конкретный раздел слева, чтобы загрузить для него стоимость материалов
+                    (Excel: A — наименование, B — ед. изм., C — цена). В объединённом виде показаны итоги по всем разделам.
+                  </p>
+                )}
+
+                <EstimateTable
+                  items={supplyEstimate}
+                  collapsedSections={supplyCollapsed}
+                  onToggleSection={toggleSupplySection}
+                  onSwitchToDoc={supplySelectedDoc === 'all' ? setSupplySelectedDoc : undefined}
+                  supplyCosts={supplyCosts}
+                  showSupply
+                />
+              </>
             )}
           </div>
         )}
