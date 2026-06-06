@@ -165,8 +165,11 @@ function TenderProposalsCompare({
         cur.work += w_
         const priceMat = Number(p.unit_price_materials) || 0
         const priceWork = Number(p.unit_price_works) || 0
-        if (hasMatVol && priceMat > 0) { cur.matCovered++; matCoveredAll++ }
-        if (hasWorkVol && priceWork > 0) { cur.workCovered++; workCoveredAll++ }
+        // task 401: ручная пометка «учтено в другой позиции» закрывает позицию
+        // без отдельной цены — считаем её покрытой.
+        const covered = !!p.covered_elsewhere
+        if (hasMatVol && (priceMat > 0 || covered)) { cur.matCovered++; matCoveredAll++ }
+        if (hasWorkVol && (priceWork > 0 || covered)) { cur.workCovered++; workCoveredAll++ }
       }
       m.set(cp.id, {
         totalMat: mat, totalWork: wrk, totalCost: all, byDoc,
@@ -254,7 +257,8 @@ function TenderProposalsCompare({
           cur.totalCost += cost
           cur.weightedPriceSum += price * vol
           cur.weightedVolSum += vol
-          if (vol > 0 && price > 0) cur.itemsCovered += 1
+          // task 401: «учтено в другой позиции» закрывает позицию без цены.
+          if (vol > 0 && (price > 0 || p.covered_elsewhere)) cur.itemsCovered += 1
 
           // Подытог по ВОРу
           const prev = group.subtotalByCp.get(cp.id) || 0
@@ -280,14 +284,31 @@ function TenderProposalsCompare({
     const where = selectedDoc === 'all' ? 'для всего тендера' : `для ВОРа «${selectedDoc}»`
     if (!window.confirm(`Удалить КП контрагента «${cpName}» ${where}?`)) return
     try {
-      const ids = itemsOfScope.map(it => it.id)
-      if (ids.length === 0) return
-      const { error } = await supabase
-        .from('tender_counterparty_proposals')
-        .delete()
-        .eq('counterparty_id', cpId)
-        .in('estimate_item_id', ids)
-      if (error) throw error
+      if (selectedDoc === 'all') {
+        // Весь тендер: удаляем по tender_id, без огромного IN-списка
+        // estimate_item_id (иначе URL переполняется → «Failed to fetch»).
+        const { error } = await supabase
+          .from('tender_counterparty_proposals')
+          .delete()
+          .eq('tender_id', tenderId)
+          .eq('counterparty_id', cpId)
+        if (error) throw error
+      } else {
+        // Конкретный ВОР: ограничиваем позициями этого ВОРа, но режем IN на
+        // чанки — длинный список UUID в URL роняет запрос (task 402).
+        const ids = itemsOfScope.map(it => it.id)
+        if (ids.length === 0) return
+        const CHUNK_DEL = 100
+        for (let i = 0; i < ids.length; i += CHUNK_DEL) {
+          const chunk = ids.slice(i, i + CHUNK_DEL)
+          const { error } = await supabase
+            .from('tender_counterparty_proposals')
+            .delete()
+            .eq('counterparty_id', cpId)
+            .in('estimate_item_id', chunk)
+          if (error) throw error
+        }
+      }
 
       const { data: remaining } = await supabase
         .from('tender_counterparty_proposals')
@@ -305,6 +326,46 @@ function TenderProposalsCompare({
       await loadProposals()
     } catch (err) {
       alert('Ошибка удаления: ' + err.message)
+    }
+  }
+
+  // task 401: пометка позиции «учтено в другой позиции» (без отдельной цены).
+  // Нерасценённая позиция может вообще не иметь строки в proposals — поэтому
+  // ставим флаг через upsert по UNIQUE(estimate_item_id, counterparty_id).
+  const handleToggleCovered = async (itemId, cpId, checked, note) => {
+    try {
+      if (checked) {
+        const { error } = await supabase
+          .from('tender_counterparty_proposals')
+          .upsert({
+            tender_id: tenderId,
+            counterparty_id: cpId,
+            estimate_item_id: itemId,
+            covered_elsewhere: true,
+            coverage_note: note || null,
+          }, { onConflict: 'estimate_item_id,counterparty_id' })
+        if (error) throw error
+      } else {
+        // Снятие флага: если строка была создана только ради пометки (без цен) —
+        // удаляем её, иначе просто сбрасываем флаг, чтобы не плодить «нулевые» КП.
+        const p = proposalLookup.get(`${itemId}__${cpId}`)
+        const isFlagOnly = p && !(Number(p.total_cost) > 0) &&
+          !(Number(p.unit_price_materials) > 0) && !(Number(p.unit_price_works) > 0)
+        if (isFlagOnly) {
+          const { error } = await supabase
+            .from('tender_counterparty_proposals').delete().eq('id', p.id)
+          if (error) throw error
+        } else if (p) {
+          const { error } = await supabase
+            .from('tender_counterparty_proposals')
+            .update({ covered_elsewhere: false, coverage_note: null })
+            .eq('id', p.id)
+          if (error) throw error
+        }
+      }
+      await loadProposals()
+    } catch (err) {
+      alert('Ошибка: ' + err.message)
     }
   }
 
@@ -433,6 +494,8 @@ function TenderProposalsCompare({
               totalsByCp={totalsByCp}
               minTotalCost={minTotalCost}
               showDocColumn={selectedDoc === 'all'}
+              canEdit={canEdit}
+              onToggleCovered={handleToggleCovered}
             />
           )}
           {(subTab === 'materials' || subTab === 'works') && (
@@ -635,12 +698,78 @@ function SummaryMatrixTable({
   )
 }
 
+// ===== Ячейка «Итого» в «Исходном КП» с пометкой «учтено в др. позиции» (task 401) =====
+// Если позиция нерасценена этим контрагентом (есть объём, но нет цены),
+// сотрудник может пометить её «учтено» со свободным примечанием — оранжевый
+// в сводке/агрегате уходит, стоимость остаётся «—». Подрядчики видят пометку
+// только для чтения.
+function SourceTotalCell({ it, cp, p, isMin, canEdit, onToggleCovered }) {
+  const isWork = isWorkRow(it)
+  const vol = isWork ? Number(it.work_volume) || 0 : Number(it.material_consumption) || 0
+  const price = isWork ? Number(p?.unit_price_works) || 0 : Number(p?.unit_price_materials) || 0
+  const total = p ? Number(p.total_cost) || 0 : 0
+  const covered = !!p?.covered_elsewhere
+  const uncovered = vol > 0 && price <= 0
+
+  const [note, setNote] = useState(p?.coverage_note || '')
+  useEffect(() => { setNote(p?.coverage_note || '') }, [p?.coverage_note])
+
+  // Позиция расценена ценой — обычное отображение.
+  if (price > 0) {
+    return <td className={`td-price td-total${isMin ? ' is-min' : ''}`}>{fmtMoney(total)}</td>
+  }
+
+  // Не требует расценки (нет объёма) и не помечена — как раньше.
+  if (!uncovered && !covered) {
+    return <td className="td-price td-total">{p ? fmtMoney(total) : '—'}</td>
+  }
+
+  if (!canEdit) {
+    return (
+      <td className={`td-price td-total${covered ? ' is-covered-elsewhere' : ''}`}>
+        {covered
+          ? <span className="covered-badge" title={p?.coverage_note || ''}>учтено</span>
+          : '—'}
+      </td>
+    )
+  }
+
+  const saveNote = () => {
+    if ((p?.coverage_note || '') !== note) onToggleCovered(it.id, cp.id, true, note)
+  }
+
+  return (
+    <td className={`td-price td-total td-covered-cell${covered ? ' is-covered-elsewhere' : ''}`}>
+      <label className="covered-check" title="Учтено в другой позиции — закрыть без цены">
+        <input
+          type="checkbox"
+          checked={covered}
+          onChange={(e) => onToggleCovered(it.id, cp.id, e.target.checked, note)}
+        />
+        <span>учтено</span>
+      </label>
+      {covered && (
+        <input
+          type="text"
+          className="covered-note-input"
+          placeholder="учтено в…"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onBlur={saveNote}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+        />
+      )}
+    </td>
+  )
+}
+
 // ===== Подкомпонент: «Исходный КП» =====
 // Контрагенты — колонками. Для каждого 5 sub-cells:
 //   Ц.мат / Стоим.мат / Ц.раб / Стоим.раб / Итого.
 function SourceTable({
   itemsOfScope, counterpartiesInScope, proposalLookup,
   minByItem, totalsByCp, minTotalCost, showDocColumn,
+  canEdit, onToggleCovered,
 }) {
   return (
     <div className="proposals-table-wrap">
@@ -689,13 +818,20 @@ function SourceTable({
                   const p = proposalLookup.get(`${it.id}__${cp.id}`)
                   const total = p ? Number(p.total_cost) || 0 : 0
                   const isMin = total > 0 && minPrice != null && total === minPrice
+                  // task 401: строка, существующая только ради пометки «учтено»,
+                  // не имеет цен — показываем «—» во всех денежных ячейках.
+                  const flagOnly = !!p?.covered_elsewhere && total <= 0
+                  const cell = (v) => (p && !flagOnly ? fmtMoney(v) : '—')
                   return (
                     <React.Fragment key={cp.id}>
-                      <td className="td-price td-cp-first">{p ? fmtMoney(p.unit_price_materials) : '—'}</td>
-                      <td className="td-price td-sum">{p ? fmtMoney(p.total_materials) : '—'}</td>
-                      <td className="td-price">{p ? fmtMoney(p.unit_price_works) : '—'}</td>
-                      <td className="td-price td-sum">{p ? fmtMoney(p.total_works) : '—'}</td>
-                      <td className={`td-price td-total${isMin ? ' is-min' : ''}`}>{p ? fmtMoney(total) : '—'}</td>
+                      <td className="td-price td-cp-first">{cell(p?.unit_price_materials)}</td>
+                      <td className="td-price td-sum">{cell(p?.total_materials)}</td>
+                      <td className="td-price">{cell(p?.unit_price_works)}</td>
+                      <td className="td-price td-sum">{cell(p?.total_works)}</td>
+                      <SourceTotalCell
+                        it={it} cp={cp} p={p} isMin={isMin}
+                        canEdit={canEdit} onToggleCovered={onToggleCovered}
+                      />
                     </React.Fragment>
                   )
                 })}

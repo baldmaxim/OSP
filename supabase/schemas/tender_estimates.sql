@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS tender_counterparty_proposals (
   total_cost DECIMAL(15, 2) DEFAULT 0,           -- ИТОГО стоимость = total_materials + total_works
   participant_note TEXT,                          -- Примечание участника тендера
   proposal_date DATE,                             -- task 347: дата предоставления КП
+  covered_elsewhere BOOLEAN NOT NULL DEFAULT false, -- task 401: позиция учтена в другой позиции (закрыта без цены)
+  coverage_note TEXT,                             -- task 401: примечание «учтено в …» (свободный текст)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(estimate_item_id, counterparty_id)
