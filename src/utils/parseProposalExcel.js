@@ -31,14 +31,36 @@ export function cleanNumeric(value) {
   return isNaN(n) ? 0 : n
 }
 
-// Нормализация name/unit для match: trim, lowercase, схлопывание пробелов и точек.
+// Нормализация name/unit для match: lowercase, ё→е, надстрочные ²³→2/3,
+// удаление кавычек/скобок (не влияют на смысл), схлопывание пробелов и точек.
 export function normalizeKey(s) {
   return String(s || '')
-    .trim()
     .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/²/g, '2')
+    .replace(/³/g, '3')
+    .replace(/[«»"'`()]/g, '')
     .replace(/[\s.]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+// task 399: канонизация единиц измерения. КП и ВОР часто пишут ед.изм по-разному
+// (шт./шт, м²/м2, комплект/компл, пог.м/м.п./мп) — из-за чего точный матч по
+// (наименование+ед.изм) рушился и позиция выпадала. Сводим синонимы к одной форме.
+// ВАЖНО: эту же функцию использует агрегация экрана (TenderProposalsCompare),
+// иначе группировка в UI и матчинг парсера разойдутся.
+const UNIT_SYNONYMS = new Map([
+  ['шт', 'шт'], ['штук', 'шт'], ['штука', 'шт'], ['штуки', 'шт'], ['штука(и)', 'шт'],
+  ['компл', 'компл'], ['комплект', 'компл'], ['комплекта', 'компл'], ['комплектов', 'компл'], ['к-т', 'компл'], ['к т', 'компл'],
+  ['м2', 'м2'], ['кв м', 'м2'], ['квм', 'м2'], ['м кв', 'м2'],
+  ['м3', 'м3'], ['куб м', 'м3'], ['кубм', 'м3'], ['м куб', 'м3'],
+  ['мп', 'мп'], ['м п', 'мп'], ['пог м', 'мп'], ['погм', 'мп'], ['п м', 'мп'], ['пм', 'мп'], ['м пог', 'мп'],
+])
+
+export function normalizeUnit(u) {
+  const base = normalizeKey(u)
+  return UNIT_SYNONYMS.get(base) || base
 }
 
 // Определение типа позиции по КОД («Р» / «р-…» → работа, иначе материал).
@@ -244,7 +266,7 @@ export function parseByAggregate({
   // примениться ко множеству строк ВОР с тем же name/unit.
   const itemsByKey = new Map()
   for (const it of itemsOfVor) {
-    const key = `${normalizeKey(it.cost_name)}|${normalizeKey(it.unit)}`
+    const key = `${normalizeKey(it.cost_name)}|${normalizeUnit(it.unit)}`
     if (!itemsByKey.has(key)) itemsByKey.set(key, [])
     itemsByKey.get(key).push(it)
   }
@@ -270,7 +292,12 @@ export function parseByAggregate({
     if (!name) continue
     const unit = String(cell(row, columnMap.unit) || '').trim()
     const price = round2(cleanNumeric(cell(row, columnMap.price)))
-    if (price <= 0) continue
+    // task 399: раньше строка с пустой/нулевой ценой выбрасывалась молча — теперь
+    // попадает в отчёт «Не сматчено», чтобы пропуск был виден пользователю.
+    if (price <= 0) {
+      unmatched.push({ row: i + 1, name, unit, reason: 'пустая или нулевая цена' })
+      continue
+    }
 
     // Тип строки: либо из колонки kind, либо из листа.
     let rowKind = sheetKind
@@ -284,7 +311,7 @@ export function parseByAggregate({
       continue
     }
 
-    const key = `${normalizeKey(name)}|${normalizeKey(unit)}`
+    const key = `${normalizeKey(name)}|${normalizeUnit(unit)}`
     const matchingItems = itemsByKey.get(key)
     if (!matchingItems || matchingItems.length === 0) {
       unmatched.push({ row: i + 1, name, unit, reason: 'нет совпадений в ВОР' })

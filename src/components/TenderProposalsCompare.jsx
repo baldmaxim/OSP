@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../supabase'
 import TenderProposalUploadModal from './TenderProposalUploadModal'
+import { normalizeKey, normalizeUnit } from '../utils/parseProposalExcel'
 import './TenderProposalsCompare.css'
 
 // task 346 + 349: вкладка «Сравнение КП» в тендере.
@@ -26,8 +27,6 @@ const isWorkRow = (it) => {
   const c = String(it.code || '').trim().toLowerCase()
   return c === 'р' || c.startsWith('р-') || c.startsWith('р ') || c.startsWith('раб')
 }
-
-const normalizeKey = (s) => String(s || '').trim().toLowerCase().replace(/[\s.]+/g, ' ').replace(/\s+/g, ' ').trim()
 
 function TenderProposalsCompare({
   tenderId,
@@ -213,7 +212,7 @@ function TenderProposalsCompare({
 
       const name = (it.cost_name || '').trim()
       const unit = (it.unit || '').trim()
-      const rowKey = `${normalizeKey(name)}|${normalizeKey(unit)}`
+      const rowKey = `${normalizeKey(name)}|${normalizeUnit(unit)}`
       let row = group.rowsMap.get(rowKey)
       if (!row) {
         row = { name, unit, totalVol: 0, cpData: new Map() }
