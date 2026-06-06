@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
+import { getColumnPreviews } from '../utils/parseProposalExcel'
 import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
@@ -23,6 +24,34 @@ const fmtMoney = (v) => (v === null || v === undefined || v === '' || !Number.is
 // task 398: ключ расценки снабжения — (ВОР-документ ∣ наименование материала без регистра)
 const supplyKey = (estimateName, name) =>
   `${estimateName || 'Основная смета'}∣${String(name || '').trim().toLowerCase()}`
+
+// task 405: выбор листа/столбцов при импорте расценок снабжения
+const SUPPLY_COLUMN_COUNT = 26
+const SUPPLY_COLUMN_FIELDS = [
+  { key: 'name',  label: 'Наименование', default: 0, required: true },
+  { key: 'unit',  label: 'Ед. изм.',     default: 1, required: false },
+  { key: 'price', label: 'Цена',         default: 2, required: true },
+]
+const SUPPLY_COLUMN_DEFAULTS = Object.fromEntries(SUPPLY_COLUMN_FIELDS.map(f => [f.key, f.default]))
+const SUPPLY_COLS_LS_KEY = 'supply-rates-cols'
+
+// Загрузка сохранённого маппинга столбцов с фолбэком на дефолты (паттерн из TenderProposalUploadModal).
+const loadSupplyColumnMap = () => {
+  try {
+    const raw = localStorage.getItem(SUPPLY_COLS_LS_KEY)
+    if (!raw) return { ...SUPPLY_COLUMN_DEFAULTS }
+    const parsed = JSON.parse(raw)
+    const out = { ...SUPPLY_COLUMN_DEFAULTS }
+    for (const k of Object.keys(SUPPLY_COLUMN_DEFAULTS)) {
+      const v = parsed[k]
+      if (v === null) out[k] = null
+      else if (Number.isInteger(v) && v >= 0 && v < SUPPLY_COLUMN_COUNT) out[k] = v
+    }
+    return out
+  } catch {
+    return { ...SUPPLY_COLUMN_DEFAULTS }
+  }
+}
 
 // task 260: КОД «Р»/«Р-» → работы, «мат.»/иное → материалы (как в Анализ КП/БСМ)
 const isWorkItem = (it) => {
@@ -562,6 +591,9 @@ function TenderDetailPage() {
   const [supplyImportReport, setSupplyImportReport] = useState(null)
   const [supplyConflictDecisions, setSupplyConflictDecisions] = useState({})
   const [supplyImporting, setSupplyImporting] = useState(false)
+  // task 405: конфиг-модалка выбора листа/столбцов перед парсингом
+  // { workbook, sheetNames, sheetName, startRow, endRow, columnMap, fileName, docName }
+  const [supplyConfig, setSupplyConfig] = useState(null)
   // выбранный документ + свёрнутые разделы для вкладки «Расценки снабжения»
   const [supplySelectedDoc, setSupplySelectedDoc] = useState('all')
   const [supplyCollapsed, setSupplyCollapsed] = useState(new Set())
@@ -885,9 +917,9 @@ function TenderDetailPage() {
     }
   }
 
-  // task 398: загрузка расценок снабжения из Excel к выбранному ВОР-документу.
-  // Формат: A — наименование материала, B — ед. изм., C — цена. Сопоставление
-  // с уже загруженными расценками документа → новые / без изменений / конфликты.
+  // task 398 + 405: загрузка расценок снабжения из Excel к выбранному ВОР-документу.
+  // Шаг 1 — прочитать workbook и открыть конфиг-модалку (выбор листа/диапазона/столбцов).
+  // Парсинг и сопоставление выполняет buildSupplyImportReport по выбору пользователя.
   const handleSupplyRatesFileSelect = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -900,9 +932,11 @@ function TenderDetailPage() {
     try {
       const data = new Uint8Array(await file.arrayBuffer())
       const workbook = XLSX.read(data, { type: 'array' })
-      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const sheetNames = workbook.SheetNames
+      const sheetName = sheetNames[0]
+      // Авто-определение строки-заголовка для дефолтного значения «Со строки».
+      const sheet = workbook.Sheets[sheetName]
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
-      // Ищем строку-заголовок («наименование»/«материал»); если нет — с первой строки.
       let headerIdx = -1
       for (let i = 0; i < Math.min(10, rows.length); i++) {
         const row = rows[i]
@@ -912,6 +946,37 @@ function TenderDetailPage() {
           break
         }
       }
+      setSupplyConfig({
+        workbook,
+        sheetNames,
+        sheetName,
+        startRow: String(headerIdx >= 0 ? headerIdx + 2 : 1),
+        endRow: '',
+        columnMap: loadSupplyColumnMap(),
+        fileName: file.name,
+        docName,
+      })
+    } catch (err) {
+      alert('Ошибка чтения файла: ' + err.message)
+    } finally {
+      if (supplyFileRef.current) supplyFileRef.current.value = ''
+    }
+  }
+
+  // task 405: парсинг по выбранному листу/диапазону/столбцам → отчёт (новые/без изменений/конфликты).
+  const buildSupplyImportReport = () => {
+    if (!supplyConfig) return
+    const { workbook, sheetName, startRow, endRow, columnMap, fileName, docName } = supplyConfig
+    if (columnMap.name == null || columnMap.price == null) {
+      alert('Укажите столбцы «Наименование» и «Цена».')
+      return
+    }
+    try {
+      const sheet = workbook.Sheets[sheetName]
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+      const from = Math.max(0, (parseInt(startRow, 10) || 1) - 1)
+      const endParsed = parseInt(endRow, 10)
+      const to = endParsed ? Math.min(rows.length, endParsed) : rows.length
       const existingMap = new Map()
       for (const r of supplyRates) {
         if ((r.estimate_name || 'Основная смета') === docName) {
@@ -920,12 +985,15 @@ function TenderDetailPage() {
       }
       const seen = new Set()
       const newItems = [], sameItems = [], conflictItems = []
-      for (let i = headerIdx + 1; i < rows.length; i++) {
+      for (let i = from; i < to; i++) {
         const row = rows[i]
-        if (!row || row[0] == null || row[0] === '') continue
-        const materialName = String(row[0]).trim()
-        const unit = row[1] != null ? String(row[1]).trim() : ''
-        const price = cleanNumericValue(row[2])
+        if (!row) continue
+        const nameCell = row[columnMap.name]
+        if (nameCell == null || nameCell === '') continue
+        const materialName = String(nameCell).trim()
+        const unit = (columnMap.unit != null && row[columnMap.unit] != null)
+          ? String(row[columnMap.unit]).trim() : ''
+        const price = cleanNumericValue(row[columnMap.price])
         if (!materialName || !price || price <= 0) continue
         const lk = materialName.toLowerCase()
         if (seen.has(lk)) continue // дубликат в файле — берём первое вхождение
@@ -951,22 +1019,22 @@ function TenderDetailPage() {
         }
       }
       if (newItems.length + sameItems.length + conflictItems.length === 0) {
-        alert('Не найдено расценок для импорта.\nОжидаемые столбцы: A — наименование, B — ед. изм., C — цена.')
+        alert('Не найдено расценок для импорта. Проверьте выбранный лист, диапазон строк и столбцы.')
         return
       }
+      try { localStorage.setItem(SUPPLY_COLS_LS_KEY, JSON.stringify(columnMap)) } catch { /* localStorage недоступен — игнорируем */ }
       const decisions = {}
       conflictItems.forEach((_, idx) => { decisions[idx] = 'keep' })
       setSupplyImportReport({
-        fileName: file.name,
+        fileName,
         docName,
         totalParsed: newItems.length + sameItems.length + conflictItems.length,
         newItems, sameItems, conflictItems,
       })
       setSupplyConflictDecisions(decisions)
+      setSupplyConfig(null)
     } catch (err) {
-      alert('Ошибка чтения файла: ' + err.message)
-    } finally {
-      if (supplyFileRef.current) supplyFileRef.current.value = ''
+      alert('Ошибка распознавания: ' + err.message)
     }
   }
 
@@ -1101,6 +1169,12 @@ function TenderDetailPage() {
     }
     return m
   }, [supplyRates])
+
+  // task 405: превью столбцов для конфиг-модалки импорта расценок снабжения
+  const supplyColumnPreviews = useMemo(
+    () => getColumnPreviews(supplyConfig?.workbook, supplyConfig?.sheetName, SUPPLY_COLUMN_COUNT),
+    [supplyConfig?.workbook, supplyConfig?.sheetName]
+  )
 
   // Вкладка «Расценки снабжения»: только материалы (без работ) выбранного документа
   // или объединённый вид. Работы отбрасываем до конкатенации, пустые разделы — после.
@@ -2812,6 +2886,97 @@ function TenderDetailPage() {
                 <button type="submit" className="btn-primary">Распознать</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* task 405: конфиг-модалка — выбор листа, диапазона и столбцов перед распознаванием */}
+      {supplyConfig && (
+        <div className="modal-overlay" onClick={() => setSupplyConfig(null)}>
+          <div className="modal supply-import-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Импорт расценок снабжения — «{supplyConfig.docName}»</h3>
+              <button className="modal-close" onClick={() => setSupplyConfig(null)}>×</button>
+            </div>
+            <div className="supply-import-body">
+              <p className="supply-import-file">
+                Файл: <strong>{supplyConfig.fileName}</strong> · листов: {supplyConfig.sheetNames.length}
+              </p>
+
+              {supplyConfig.sheetNames.length > 1 && (
+                <div className="vor-import-field">
+                  <label>Лист Excel</label>
+                  <select
+                    value={supplyConfig.sheetName}
+                    onChange={(e) => setSupplyConfig(prev => ({ ...prev, sheetName: e.target.value }))}
+                  >
+                    {supplyConfig.sheetNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className="vor-import-row">
+                <div className="vor-import-field">
+                  <label>Со строки</label>
+                  <input
+                    type="number" min="1" value={supplyConfig.startRow}
+                    onChange={(e) => setSupplyConfig(prev => ({ ...prev, startRow: e.target.value }))}
+                    placeholder="1"
+                  />
+                </div>
+                <div className="vor-import-field">
+                  <label>По строку</label>
+                  <input
+                    type="number" min="1" value={supplyConfig.endRow}
+                    onChange={(e) => setSupplyConfig(prev => ({ ...prev, endRow: e.target.value }))}
+                    placeholder="Все"
+                  />
+                </div>
+              </div>
+
+              <div className="vor-import-section">
+                <div className="vor-import-section-head">
+                  <span className="vor-import-section-title">Сопоставление столбцов</span>
+                  <button
+                    type="button"
+                    className="vor-import-reset"
+                    onClick={() => setSupplyConfig(prev => ({ ...prev, columnMap: { ...SUPPLY_COLUMN_DEFAULTS } }))}
+                  >Сбросить</button>
+                </div>
+                <div className="vor-column-map-grid">
+                  {SUPPLY_COLUMN_FIELDS.map(f => (
+                    <label key={f.key} className="vor-column-map-row">
+                      <span className="vor-column-map-label">
+                        {f.label} {f.required && <span style={{ color: '#dc2626' }}>*</span>}
+                      </span>
+                      <select
+                        className="vor-column-map-select"
+                        value={supplyConfig.columnMap[f.key] ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value === '' ? null : Number(e.target.value)
+                          setSupplyConfig(prev => ({ ...prev, columnMap: { ...prev.columnMap, [f.key]: v } }))
+                        }}
+                      >
+                        {!f.required && <option value="">— не использовать</option>}
+                        {Array.from({ length: SUPPLY_COLUMN_COUNT }, (_, idx) => {
+                          const letter = XLSX.utils.encode_col(idx)
+                          const prev = supplyColumnPreviews[idx]
+                          return (
+                            <option key={idx} value={idx}>
+                              {letter}{prev ? ` — ${prev}` : ''}
+                            </option>
+                          )
+                        })}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="supply-import-actions">
+              <button className="btn-secondary" onClick={() => setSupplyConfig(null)}>Отмена</button>
+              <button className="btn-primary" onClick={buildSupplyImportReport}>Распознать</button>
+            </div>
           </div>
         </div>
       )}
