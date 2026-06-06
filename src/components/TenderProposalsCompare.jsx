@@ -144,14 +144,18 @@ function TenderProposalsCompare({
           cur = { mat: 0, work: 0, matTotal: 0, matCovered: 0, workTotal: 0, workCovered: 0 }
           byDoc.set(docName, cur)
         }
-        // task 399: покрытие считаем в разрезе КОДа позиции (как детальная
-        // агрегация работ/материалов), а не просто по наличию объёма. Иначе
-        // позиция с кодом «материал», но проставленным work_volume (или наоборот),
-        // ложно попадала в «недорасценённые работы» → сводка светилась оранжевым,
-        // хотя в детальной таблице всё расценено.
-        const isWork = isWorkRow(it)
-        const hasMatVol = !isWork && Number(it.material_consumption) > 0
-        const hasWorkVol = isWork && Number(it.work_volume) > 0
+        // task 403: покрытие считаем на уровне строки по фактически
+        // проставленному объёму (а НЕ по КОДу). Раньше (task 399) объём брался
+        // строго из поля, выбранного по isWorkRow: если КОД и заполненный
+        // столбец объёма расходились (КОД «материал», а объём в work_volume,
+        // или наоборот), позиция не попадала ни в matTotal, ни в workTotal —
+        // и молча выпадала из подсчёта непокрытых, хотя стоимость показывалась.
+        // Теперь бакет определяется наличием объёма, а «расценено» — по total_cost
+        // (любая ненулевая стоимость, в какой бы столбец цена ни попала) или
+        // ручной пометке «учтено». Это убирает и ложный пропуск (403), и старый
+        // ложный оранжевый (399, цена «не в той» колонке → total_cost > 0).
+        const hasMatVol = Number(it.material_consumption) > 0
+        const hasWorkVol = Number(it.work_volume) > 0
         if (hasMatVol) { cur.matTotal++; matTotalAll++ }
         if (hasWorkVol) { cur.workTotal++; workTotalAll++ }
 
@@ -163,13 +167,11 @@ function TenderProposalsCompare({
         mat += m_; wrk += w_; all += c_
         cur.mat += m_
         cur.work += w_
-        const priceMat = Number(p.unit_price_materials) || 0
-        const priceWork = Number(p.unit_price_works) || 0
-        // task 401: ручная пометка «учтено в другой позиции» закрывает позицию
-        // без отдельной цены — считаем её покрытой.
-        const covered = !!p.covered_elsewhere
-        if (hasMatVol && (priceMat > 0 || covered)) { cur.matCovered++; matCoveredAll++ }
-        if (hasWorkVol && (priceWork > 0 || covered)) { cur.workCovered++; workCoveredAll++ }
+        // task 401 + 403: расценена, если есть ненулевая стоимость или пометка
+        // «учтено в другой позиции».
+        const rated = c_ > 0 || !!p.covered_elsewhere
+        if (hasMatVol && rated) { cur.matCovered++; matCoveredAll++ }
+        if (hasWorkVol && rated) { cur.workCovered++; workCoveredAll++ }
       }
       m.set(cp.id, {
         totalMat: mat, totalWork: wrk, totalCost: all, byDoc,
@@ -217,9 +219,12 @@ function TenderProposalsCompare({
       const isWork = isWorkRow(it)
       if (wantWork && !isWork) continue
       if (!wantWork && isWork) continue
+      // task 403: объём с fallback на «другое» поле — если объём проставлен не в
+      // том столбце, что подразумевает КОД, позиция всё равно учитывается
+      // (иначе vol=0 → выпадает из счётчиков покрытия, хотя стоимость есть).
       const vol = isWork
-        ? Number(it.work_volume) || 0
-        : Number(it.material_consumption) || 0
+        ? (Number(it.work_volume) || 0) || (Number(it.material_consumption) || 0)
+        : (Number(it.material_consumption) || 0) || (Number(it.work_volume) || 0)
       const hasAnyProposal = counterpartiesInScope.some(cp => proposalLookup.get(`${it.id}__${cp.id}`))
       if (vol <= 0 && !hasAnyProposal) continue
 
@@ -260,19 +265,22 @@ function TenderProposalsCompare({
           cur.totalCost += cost
           cur.weightedPriceSum += price * vol
           cur.weightedVolSum += vol
-          // task 401: «учтено в другой позиции» закрывает позицию без цены.
-          if (vol > 0 && (price > 0 || p.covered_elsewhere)) cur.itemsCovered += 1
+          // task 401 + 403: расценена по факту ненулевой стоимости (в какой бы
+          // столбец цена ни попала) или ручной пометке «учтено».
+          if (vol > 0 && ((Number(p.total_cost) || 0) > 0 || p.covered_elsewhere)) cur.itemsCovered += 1
 
           // Подытог по ВОРу
           const prev = group.subtotalByCp.get(cp.id) || 0
           group.subtotalByCp.set(cp.id, prev + cost)
         }
         // Кандидаты для пакетной пометки «учтено» — только позиции с объёмом.
+        // task 403: «расценена» определяем по total_cost (не по типовой цене),
+        // иначе позиция с ценой «не в той» колонке ложно считалась бы дырой.
         if (vol > 0) {
           cur.coverItems.push({
             itemId: it.id,
             proposalId: p?.id ?? null,
-            hasPrice: price > 0,
+            hasPrice: (Number(p?.total_cost) || 0) > 0,
             covered: !!p?.covered_elsewhere,
             note: p?.coverage_note || '',
           })
@@ -770,18 +778,22 @@ function SummaryMatrixTable({
 // в сводке/агрегате уходит, стоимость остаётся «—». Подрядчики видят пометку
 // только для чтения.
 function SourceTotalCell({ it, cp, p, isMin, canEdit, onToggleCovered }) {
-  const isWork = isWorkRow(it)
-  const vol = isWork ? Number(it.work_volume) || 0 : Number(it.material_consumption) || 0
-  const price = isWork ? Number(p?.unit_price_works) || 0 : Number(p?.unit_price_materials) || 0
+  // task 403: «требует расценки» — если есть любой объём (в любом столбце);
+  // «расценена» — по факту ненулевой стоимости (в какой бы столбец цена ни
+  // попала) или ручной пометке «учтено». Раньше брались строго по КОДу
+  // (isWorkRow) поле объёма и поле цены — позиция с объёмом «не в том» столбце
+  // давала vol=0 → не подсвечивалась, хотя стоимость показывалась.
+  const requiresRate = (Number(it.work_volume) || 0) > 0 || (Number(it.material_consumption) || 0) > 0
   const total = p ? Number(p.total_cost) || 0 : 0
   const covered = !!p?.covered_elsewhere
-  const uncovered = vol > 0 && price <= 0
+  const rated = !!p && (total > 0 || covered)
+  const uncovered = requiresRate && !rated
 
   const [note, setNote] = useState(p?.coverage_note || '')
   useEffect(() => { setNote(p?.coverage_note || '') }, [p?.coverage_note])
 
-  // Позиция расценена ценой — обычное отображение.
-  if (price > 0) {
+  // Позиция расценена (ненулевая стоимость) — обычное отображение.
+  if (total > 0) {
     return <td className={`td-price td-total${isMin ? ' is-min' : ''}`}>{fmtMoney(total)}</td>
   }
 

@@ -497,6 +497,27 @@ function BSMPage() {
   const differentUnits = useMemo(() => grouped.filter(g => g.hasDifferentUnits), [grouped])
   // Позиции без цены: цена не указана ни в одной из исходных строк (pricesSet пуст).
   const notPriced = useMemo(() => grouped.filter(g => g.prices.length === 0), [grouped])
+  // task 404: позиции без единицы измерения (пустой unit). Пустой unit ломает
+  // сопоставление по name+unit (агрегация/матчинг ВОР↔КП) — выносим в отдельную
+  // вкладку, чтобы их было видно и можно было поправить в исходном файле/ВОРе.
+  const missingUnits = useMemo(() => {
+    if (combinedRangeRows.length === 0) return []
+    const isMaterial = mainTab === 'material'
+    return combinedRangeRows
+      .filter(r => r.kind === (isMaterial ? 'material' : 'work') && r.name && !r.unit)
+      .map(r => {
+        const volume = isMaterial ? r.materialVolume : r.workVolume
+        const price = isMaterial ? r.priceMaterial : r.priceWork
+        return {
+          excelRow: r.excelRow,
+          sourceFile: r.sourceFile,
+          name: r.name,
+          volume,
+          price,
+          sum: round2(volume * price),
+        }
+      })
+  }, [combinedRangeRows, mainTab])
 
   const stats = useMemo(() => {
     const totalRows = combinedRangeRows.length
@@ -798,6 +819,15 @@ function BSMPage() {
                     Не расценены
                     <span className="bsm-tab-count">{notPriced.length}</span>
                   </button>
+                  <button
+                    role="tab"
+                    aria-selected={subTab === 'missing_units'}
+                    className={`bsm-tab-sub ${subTab === 'missing_units' ? 'active' : ''} ${missingUnits.length > 0 ? 'has-warning' : ''}`}
+                    onClick={() => setSubTab('missing_units')}
+                  >
+                    Отсутствуют ед.&nbsp;изм.
+                    <span className="bsm-tab-count">{missingUnits.length}</span>
+                  </button>
                 </nav>
               )}
 
@@ -813,6 +843,9 @@ function BSMPage() {
                 )}
                 {subTab === 'not_priced' && (
                   <NotPricedTable rows={notPriced} mainTab={mainTab} />
+                )}
+                {subTab === 'missing_units' && (
+                  <MissingUnitsTable rows={missingUnits} mainTab={mainTab} showSources={multipleDocs} />
                 )}
               </section>
             </>
@@ -1138,6 +1171,58 @@ function RowNotPriced({ group }) {
         </tr>
       ))}
     </>
+  )
+}
+
+// task 404: позиции с пустой единицей измерения. Плоский список исходных строк
+// (без группировки по наименованию) — это сигнал к ручной правке ед.изм.
+function MissingUnitsTable({ rows, mainTab, showSources }) {
+  if (rows.length === 0) {
+    return (
+      <div className="bsm-empty-block bsm-empty-block--success">
+        У всех позиций ({mainTab === 'material' ? 'материалы' : 'работы'}) указана единица измерения.
+      </div>
+    )
+  }
+  return (
+    <div className="bsm-table-wrap">
+      <table className="bsm-table bsm-table-detail">
+        <thead>
+          <tr>
+            <th>Наименование</th>
+            <th style={{ width: '90px' }}>Стр. Excel</th>
+            {showSources && <th style={{ width: '160px' }}>Документ</th>}
+            <th className="num" style={{ width: '120px' }}>Объём</th>
+            <th className="num" style={{ width: '140px' }}>
+              Цена {mainTab === 'material' ? '(мат.)' : '(СМР)'}, ₽
+            </th>
+            <th className="num" style={{ width: '160px' }}>Сумма, ₽</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((it, idx) => (
+            <tr key={`${it.sourceFile || ''}-${it.excelRow}-${idx}`} className="has-warning">
+              <td><div className="bsm-name">{it.name}</div></td>
+              <td className="muted">{it.excelRow}</td>
+              {showSources && (
+                <td className="muted bsm-source" title={it.sourceFile}>{it.sourceFile || '—'}</td>
+              )}
+              <td className="num">{fmtNum(it.volume)}</td>
+              <td className="num">{it.price > 0 ? fmtRub(it.price) : '—'}</td>
+              <td className="num">{fmtRub(it.sum)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan={showSources ? 3 : 2} className="bsm-foot-label">Итого позиций без ед.изм.</td>
+            <td className="num strong">{fmtNum(rows.reduce((s, r) => s + r.volume, 0))}</td>
+            <td></td>
+            <td className="num strong">{fmtRub(rows.reduce((s, r) => s + r.sum, 0))}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
   )
 }
 
