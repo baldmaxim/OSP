@@ -476,6 +476,12 @@ function BSMPage() {
         const unitPrice = prices.length === 1
           ? prices[0]
           : (g.totalVolume > 0 ? round2(totalSum / g.totalVolume) : 0)
+        // task 403/56: часть исходных строк может быть без цены (объём есть,
+        // цена 0). При схлопывании по наименованию такая «дыра» пряталась:
+        // группа получала цену от расценённой строки и не попадала в «Не
+        // расценены». Считаем непокрытый объём отдельно, чтобы подсветить.
+        const unpricedItems = g.items.filter(it => it.volume > 0 && !(it.price > 0))
+        const unpricedVolume = round2(unpricedItems.reduce((s, it) => s + it.volume, 0))
         return {
           name: g.name,
           units: Array.from(g.unitsSet),
@@ -488,6 +494,11 @@ function BSMPage() {
           items: g.items,
           hasDifferentUnits: g.unitsSet.size > 1,
           hasDifferentPrices: g.pricesSet.size > 1,
+          // часть объёма без цены (при наличии хотя бы одной расценённой строки —
+          // это «частично расценено»; если расценённых нет — полностью без цены).
+          hasUnpricedPart: unpricedItems.length > 0,
+          unpricedVolume,
+          unpricedCount: unpricedItems.length,
         }
       })
       .sort((a, b) => b.totalSum - a.totalSum)
@@ -495,8 +506,10 @@ function BSMPage() {
 
   const differentPrices = useMemo(() => grouped.filter(g => g.hasDifferentPrices), [grouped])
   const differentUnits = useMemo(() => grouped.filter(g => g.hasDifferentUnits), [grouped])
-  // Позиции без цены: цена не указана ни в одной из исходных строк (pricesSet пуст).
-  const notPriced = useMemo(() => grouped.filter(g => g.prices.length === 0), [grouped])
+  // Позиции без цены: цена не указана хотя бы в одной исходной строке с объёмом
+  // (полностью или ЧАСТИЧНО — task 56). Частично расценённые раньше прятались:
+  // группа получала цену от одной строки и не попадала сюда.
+  const notPriced = useMemo(() => grouped.filter(g => g.hasUnpricedPart), [grouped])
   // task 404: позиции без единицы измерения (пустой unit). Пустой unit ломает
   // сопоставление по name+unit (агрегация/матчинг ВОР↔КП) — выносим в отдельную
   // вкладку, чтобы их было видно и можно было поправить в исходном файле/ВОРе.
@@ -599,21 +612,22 @@ function BSMPage() {
       XLSX.utils.book_append_sheet(wb, sh, `${tabLabel} — Разные ед.`)
     }
 
-    // Лист 4: «Не расценены»
+    // Лист 4: «Не расценены» (включая частично расценённые — task 56)
     if (notPriced.length > 0) {
-      const rows = [['Наименование', 'Ед. изм.', 'Объём', 'Позиций', 'Документы', 'Стр. Excel']]
+      const rows = [['Наименование', 'Ед. изм.', 'Объём', 'Объём без цены', 'Позиций', 'Документы', 'Стр. Excel']]
       for (const g of notPriced) {
         rows.push([
           g.name,
           g.units.join(', '),
           round2(g.totalVolume),
+          round2(g.unpricedVolume),
           g.count,
           g.sources.join(', '),
           g.items.map(it => it.excelRow).join(', '),
         ])
       }
       const sh = XLSX.utils.aoa_to_sheet(rows)
-      sh['!cols'] = [{ wch: 55 }, { wch: 12 }, { wch: 12 }, { wch: 9 }, { wch: 28 }, { wch: 30 }]
+      sh['!cols'] = [{ wch: 55 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 9 }, { wch: 28 }, { wch: 30 }]
       XLSX.utils.book_append_sheet(wb, sh, `${tabLabel} — Не расценены`)
     }
 
@@ -1031,14 +1045,19 @@ function SummaryTable({ rows, mainTab, showSources }) {
         </thead>
         <tbody>
           {rows.map((g, idx) => (
-            <tr key={g.name} className={(g.hasDifferentUnits || g.hasDifferentPrices) ? 'has-warning' : ''}>
+            <tr key={g.name} className={(g.hasDifferentUnits || g.hasDifferentPrices || g.hasUnpricedPart) ? 'has-warning' : ''}>
               <td className="num muted">{idx + 1}</td>
               <td>
                 <div className="bsm-name">{g.name}</div>
-                {(g.hasDifferentPrices || g.hasDifferentUnits) && (
+                {(g.hasDifferentPrices || g.hasDifferentUnits || g.hasUnpricedPart) && (
                   <div className="bsm-name-warning">
                     {g.hasDifferentPrices && <span>⚠ разные цены</span>}
                     {g.hasDifferentUnits && <span>⚠ разные ед.</span>}
+                    {g.hasUnpricedPart && (
+                      <span title={`Без цены: ${fmtNum(g.unpricedVolume)} из ${fmtNum(g.totalVolume)}`}>
+                        ⚠ часть без цены
+                      </span>
+                    )}
                   </div>
                 )}
                 {showSources && g.sources.length > 1 && (
@@ -1134,9 +1153,9 @@ function NotPricedTable({ rows, mainTab }) {
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={3} className="bsm-foot-label">Итого позиций без цены</td>
-            <td className="num strong">{fmtNum(rows.reduce((s, r) => s + r.totalVolume, 0))}</td>
-            <td className="num">{rows.reduce((s, r) => s + r.count, 0)} строк</td>
+            <td colSpan={3} className="bsm-foot-label">Итого объём без цены</td>
+            <td className="num strong">{fmtNum(rows.reduce((s, r) => s + (r.unpricedVolume || 0), 0))}</td>
+            <td className="num">{rows.reduce((s, r) => s + (r.unpricedCount || 0), 0)} строк</td>
             <td></td>
           </tr>
         </tfoot>
@@ -1157,19 +1176,27 @@ function RowNotPriced({ group }) {
           <span className="bsm-name">{group.name}</span>
           <span className="bsm-group-hint">
             строк в Excel: {group.items.length} · итого объём: {fmtNum(group.totalVolume)}
+            {group.unpricedCount > 0 && group.unpricedCount < group.items.length && (
+              <> · без цены: {fmtNum(group.unpricedVolume)} ({group.unpricedCount} стр.)</>
+            )}
           </span>
         </td>
       </tr>
-      {group.items.map((it, idx) => (
-        <tr key={`${group.name}-${idx}`}>
-          <td className="muted bsm-indent">стр. {it.excelRow}</td>
-          <td className="muted bsm-source" title={it.sourceFile}>{it.sourceFile || '—'}</td>
-          <td>{it.unit || '—'}</td>
-          <td className="num">{fmtNum(it.volume)}</td>
-          <td className="num">{formatRaw(it.rawPrice)}</td>
-          <td className="num">{it.price > 0 ? fmtRub(it.price) : <span className="muted">0</span>}</td>
-        </tr>
-      ))}
+      {group.items.map((it, idx) => {
+        // task 56: подсвечиваем именно строки без цены (объём есть, цена 0) —
+        // в частично расценённой группе это «дыра».
+        const isHole = it.volume > 0 && !(it.price > 0)
+        return (
+          <tr key={`${group.name}-${idx}`} className={isHole ? 'has-warning' : ''}>
+            <td className="muted bsm-indent">стр. {it.excelRow}</td>
+            <td className="muted bsm-source" title={it.sourceFile}>{it.sourceFile || '—'}</td>
+            <td>{it.unit || '—'}</td>
+            <td className="num">{fmtNum(it.volume)}</td>
+            <td className="num">{formatRaw(it.rawPrice)}</td>
+            <td className="num">{it.price > 0 ? fmtRub(it.price) : <span className="muted">0</span>}</td>
+          </tr>
+        )
+      })}
     </>
   )
 }
