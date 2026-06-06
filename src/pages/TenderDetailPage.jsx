@@ -172,6 +172,32 @@ function computeSupplyCosts(items, ratesMap) {
   return { leaf, sectionTotals, docTotals, grand }
 }
 
+// task 398: вкладка снабжения показывает только материалы. После удаления строк-работ
+// итеративно убираем разделы/подразделы, под которыми не осталось ни одного материала
+// (пустой раздел = следующий за ним элемент это разделитель документа, конец списка
+// или строка того же/более высокого уровня).
+function pruneEmptySections(items) {
+  if (!items || items.length === 0) return items
+  const lvlOf = makeLevelOf(items)
+  let arr = items
+  let changed = true
+  while (changed) {
+    changed = false
+    const out = []
+    for (let i = 0; i < arr.length; i++) {
+      const it = arr[i]
+      if (it.is_section) {
+        const next = arr[i + 1]
+        const empty = !next || next._isDocDivider || lvlOf(next) <= lvlOf(it)
+        if (empty) { changed = true; continue }
+      }
+      out.push(it)
+    }
+    arr = out
+  }
+  return arr
+}
+
 // task 260/262: смета с многоуровневой группировкой/сворачиванием (как в Excel)
 // task 348/351: дерево документов ВОР — «Объединённый» + дочерние ВОРы.
 // Переиспользуется во вкладках «ВОР» и «Расценки снабжения».
@@ -1074,10 +1100,15 @@ function TenderDetailPage() {
     return m
   }, [supplyRates])
 
-  // Вкладка «Расценки снабжения»: позиции выбранного документа (или объединённый).
+  // Вкладка «Расценки снабжения»: только материалы (без работ) выбранного документа
+  // или объединённый вид. Работы отбрасываем до конкатенации, пустые разделы — после.
   const supplyEstimate = useMemo(() => {
-    if (supplySelectedDoc === 'all') return concatCombinedEstimate(estimateItems)
-    return estimateItems.filter(it => (it.estimate_name || 'Основная смета') === supplySelectedDoc)
+    const docFiltered = supplySelectedDoc === 'all'
+      ? estimateItems
+      : estimateItems.filter(it => (it.estimate_name || 'Основная смета') === supplySelectedDoc)
+    const noWorks = docFiltered.filter(it => it.is_section || !isWorkItem(it))
+    const tree = supplySelectedDoc === 'all' ? concatCombinedEstimate(noWorks) : noWorks
+    return pruneEmptySections(tree)
   }, [estimateItems, supplySelectedDoc])
 
   const supplyCosts = useMemo(
