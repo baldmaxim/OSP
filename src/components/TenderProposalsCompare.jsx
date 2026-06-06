@@ -144,8 +144,14 @@ function TenderProposalsCompare({
           cur = { mat: 0, work: 0, matTotal: 0, matCovered: 0, workTotal: 0, workCovered: 0 }
           byDoc.set(docName, cur)
         }
-        const hasMatVol = Number(it.material_consumption) > 0
-        const hasWorkVol = Number(it.work_volume) > 0
+        // task 399: покрытие считаем в разрезе КОДа позиции (как детальная
+        // агрегация работ/материалов), а не просто по наличию объёма. Иначе
+        // позиция с кодом «материал», но проставленным work_volume (или наоборот),
+        // ложно попадала в «недорасценённые работы» → сводка светилась оранжевым,
+        // хотя в детальной таблице всё расценено.
+        const isWork = isWorkRow(it)
+        const hasMatVol = !isWork && Number(it.material_consumption) > 0
+        const hasWorkVol = isWork && Number(it.work_volume) > 0
         if (hasMatVol) { cur.matTotal++; matTotalAll++ }
         if (hasWorkVol) { cur.workTotal++; workTotalAll++ }
 
