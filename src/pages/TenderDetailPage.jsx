@@ -21,13 +21,21 @@ const fmtMoney = (v) => (v === null || v === undefined || v === '' || !Number.is
   ? '—'
   : MONEY_FMT.format(Number(v)) + ' ₽'
 
-// task 406: единая нормализация наименований для сопоставления расценок снабжения
-// с материалами ВОР. Excel содержит неразрывные/узкие/тонкие пробелы и может
-// отличаться unicode-композицией — из-за этого ключи расходились и стоимость
-// показывалась как «—». NFC + схлопывание всех пробельных серий (regex \s —
-// неразрывные/узкие пробелы, табы, переводы строк) в один пробел + trim + lowercase.
+// task 406/407: нормализация наименования для сопоставления расценок снабжения и
+// материалов ВОР. Имена «выглядят одинаково», но не совпадали из-за невидимых отличий:
+// символ диаметра (Ø/∅/⌀/Ө в разных файлах), десятичная запятая vs точка, латиница/кириллица.
+// Детерминированно (без нечёткости): 1) NFC+lower; 2) десятичный разделитель → точка
+// (цифры/разрядность сохраняем, чтобы Ø12,7 ≠ Ø1,27); 3) кириллические гомоглифы → латиница
+// (только реально неразличимые буквы); 4) выбросить всё, кроме латиницы/кириллицы/цифр/точки —
+// это единообразно удаляет ЛЮБОЙ символ диаметра, пробелы и пунктуацию на обеих сторонах.
+const NN_HOMOGLYPH = { а: 'a', в: 'b', е: 'e', ё: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x' }
 const normName = (s) =>
-  String(s ?? '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase()
+  String(s ?? '')
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/(\d)[.,](\d)/g, '$1.$2')
+    .replace(/[авеёкмнорстух]/g, (c) => NN_HOMOGLYPH[c])
+    .replace(/[^a-zа-я0-9.]+/g, '')
 
 // task 398: ключ расценки снабжения — (ВОР-документ ∣ наименование материала без регистра)
 // task 406: имя нормализуется через normName, чтобы невидимые отличия пробелов/unicode
@@ -1237,8 +1245,8 @@ function TenderDetailPage() {
         .filter(it => !it.is_section && !it._isDocDivider && !isWorkItem(it))
         .map(it => normName(it.cost_name))
     )
-    const matched = docRates.filter(r => vorNames.has(normName(r.material_name))).length
-    return { matched, total: docRates.length }
+    const unmatched = docRates.filter(r => !vorNames.has(normName(r.material_name)))
+    return { matched: docRates.length - unmatched.length, total: docRates.length, unmatched }
   }, [supplyRates, supplySelectedDoc, supplyEstimate])
 
   // Если активный документ удалён или ещё не выбран — переключаемся на 'all'.
@@ -2231,6 +2239,19 @@ function TenderDetailPage() {
                         </span>
                       )}
                     </span>
+                    {supplyMatchStats?.unmatched?.length > 0 && (
+                      <details className="supply-unmatched">
+                        <summary>не сопоставлено: {supplyMatchStats.unmatched.length}</summary>
+                        <ul>
+                          {supplyMatchStats.unmatched.slice(0, 30).map((r, i) => (
+                            <li key={i} title={r.material_name}>{r.material_name}</li>
+                          ))}
+                          {supplyMatchStats.unmatched.length > 30 && (
+                            <li>…и ещё {supplyMatchStats.unmatched.length - 30}</li>
+                          )}
+                        </ul>
+                      </details>
+                    )}
                   </div>
                   <div className="estimate-collapse-controls">
                     {supplySectionKeys.length > 0 && (
