@@ -23,7 +23,7 @@ function ReportsPage() {
       let tendersQ = supabase
         .from('tenders')
         .select(`
-          id, object_id, status, end_date, responsible_contact_id, tender_type, deleted_at,
+          id, object_id, status, end_date, created_at, responsible_contact_id, tender_type, deleted_at,
           cost_plan_status, cost_plan_responsible_id, cost_plan_end_date,
           vor_status, vor_responsible_id, vor_end_date,
           materials_proposal_deadline,
@@ -211,11 +211,41 @@ function ReportsPage() {
         ),
       }
 
+      // Динамика тендеров по месяцам создания (реальные created_at). Последние 6 месяцев.
+      // Для каждого месяца: всего создано + сколько из них сейчас в работе / завершено.
+      const now = new Date()
+      const dynMonths = []
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        dynMonths.push({
+          key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+          label: d.toLocaleDateString('ru-RU', { month: 'short' }),
+          total: 0, inWork: 0, closed: 0,
+        })
+      }
+      const dynIdx = new Map(dynMonths.map((m, i) => [m.key, i]))
+      for (const x of t) {
+        if (!x.created_at) continue
+        const i = dynIdx.get(String(x.created_at).slice(0, 7))
+        if (i == null) continue
+        dynMonths[i].total += 1
+        if (isClosed(x)) dynMonths[i].closed += 1
+        else if (isInWork(x)) dynMonths[i].inWork += 1
+      }
+
+      const tClosedCount = t.filter(isClosed).length
+      const tOpenCount = t.filter(isInWork).length
+
       setStats({
         // Тендеры — общие
         tTotal: t.length,
-        tOpen: t.filter(isInWork).length,
-        tClosed: t.filter(isClosed).length,
+        tOpen: tOpenCount,
+        tClosed: tClosedCount,
+        // «Не начат»/прочие = всего − в работе − завершено (для donut статусов).
+        tNotStarted: Math.max(0, t.length - tOpenCount - tClosedCount),
+        // Просроченные: открытая процедура с прошедшим сроком (end_date) — реальное поле.
+        tOverdue: t.filter(x => isInWork(x) && x.end_date && x.end_date < today).length,
+        tDynamics: dynMonths,
         tUnassigned: unassignedCount(t),
         // По отделам тендеры
         tOpenConst: tConst.filter(isInWork).length,
@@ -343,27 +373,86 @@ function ReportsPage() {
       <div className="reports-content">
         {activeTab === 'tenders' && !deptData && (
           <>
-            {/* KPI */}
-            <div className="kpi-grid">
-              <div className="kpi-card">
-                <div className="kpi-label">Всего тендеров</div>
-                <div className="kpi-value">{s.tTotal}</div>
+            {/* KPI по тендерам */}
+            <div className="kpi-grid kpi-grid--5">
+              <div className="kpi-card kpi-card--ico">
+                <span className="kpi-ico kpi-ico--blue" aria-hidden>🏗️</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">Всего тендеров</div>
+                  <div className="kpi-value">{s.tTotal}</div>
+                </div>
               </div>
-              <div className="kpi-card">
-                <div className="kpi-label">В работе</div>
-                <div className="kpi-value">{s.tOpen}</div>
-                <div className="kpi-foot">{pct(s.tOpen, s.tTotal)}% от всех</div>
+              <div className="kpi-card kpi-card--ico">
+                <span className="kpi-ico kpi-ico--blue" aria-hidden>⏳</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">В работе</div>
+                  <div className="kpi-value">{s.tOpen}</div>
+                  <div className="kpi-foot">{pct(s.tOpen, s.tTotal)}% от всех</div>
+                </div>
               </div>
-              <div className="kpi-card kpi-card--success">
-                <div className="kpi-label">Завершено</div>
-                <div className="kpi-value accent-success">{s.tClosed}</div>
-                <div className="kpi-foot">{pct(s.tClosed, s.tTotal)}% завершения</div>
+              <div className="kpi-card kpi-card--ico kpi-card--success">
+                <span className="kpi-ico kpi-ico--green" aria-hidden>✓</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">Завершено</div>
+                  <div className="kpi-value accent-success">{s.tClosed}</div>
+                  <div className="kpi-foot">{pct(s.tClosed, s.tTotal)}% завершения</div>
+                </div>
               </div>
-              <div className={`kpi-card ${s.tUnassigned > 0 ? 'kpi-card--warn' : ''}`}>
-                <div className="kpi-label">Без ответственного</div>
-                <div className={`kpi-value ${s.tUnassigned > 0 ? 'accent-warn' : ''}`}>{s.tUnassigned}</div>
-                <div className="kpi-foot">требуют назначения</div>
+              <div className={`kpi-card kpi-card--ico ${s.tUnassigned > 0 ? 'kpi-card--warn' : ''}`}>
+                <span className="kpi-ico kpi-ico--amber" aria-hidden>👤</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">Без ответственного</div>
+                  <div className={`kpi-value ${s.tUnassigned > 0 ? 'accent-warn' : ''}`}>{s.tUnassigned}</div>
+                  <div className="kpi-foot">требуют назначения</div>
+                </div>
               </div>
+              <div className={`kpi-card kpi-card--ico ${s.tOverdue > 0 ? 'kpi-card--danger' : ''}`}>
+                <span className="kpi-ico kpi-ico--red" aria-hidden>⚠️</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">Просроченные</div>
+                  <div className={`kpi-value ${s.tOverdue > 0 ? 'accent-danger' : ''}`}>{s.tOverdue}</div>
+                  <div className="kpi-foot">срок процедуры прошёл</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Dashboard: статусы + динамика + требует внимания */}
+            <div className="dash-grid">
+              <section className="dash-card">
+                <header className="dash-card-head"><h3>Статусы тендеров</h3></header>
+                <StatusDonut
+                  total={s.tTotal}
+                  segments={[
+                    { label: 'В работе', value: s.tOpen, color: '#2563eb' },
+                    { label: 'Завершено', value: s.tClosed, color: '#16a34a' },
+                    { label: 'Не начато', value: s.tNotStarted, color: '#94a3b8' },
+                  ]}
+                />
+              </section>
+
+              <section className="dash-card">
+                <header className="dash-card-head">
+                  <h3>Динамика тендеров</h3>
+                  <span className="dash-card-meta">по дате создания · 6 мес.</span>
+                </header>
+                <TrendChart
+                  data={s.tDynamics}
+                  series={[
+                    { key: 'total', label: 'Всего', color: '#2563eb' },
+                    { key: 'inWork', label: 'В работе', color: '#f59e0b' },
+                    { key: 'closed', label: 'Завершено', color: '#16a34a' },
+                  ]}
+                />
+              </section>
+
+              <section className="dash-card dash-card--attention">
+                <header className="dash-card-head"><h3>Требует внимания</h3></header>
+                <div className="attn-list">
+                  <AttentionItem icon="👤" tone="warn" label="Без ответственного" value={s.tUnassigned} hint="назначьте ответственного" />
+                  <AttentionItem icon="⚠️" tone="danger" label="Просроченные" value={s.tOverdue} hint="срок процедуры прошёл" />
+                  <AttentionItem icon="🕓" tone="muted" label="Не начато" value={s.tNotStarted} hint="ожидают старта процедуры" />
+                </div>
+              </section>
             </div>
 
             {/* Большие кликабельные карточки по отделам */}
@@ -728,12 +817,98 @@ function ReportsPage() {
   )
 }
 
+// task: donut статусов на чистом SVG (без зависимостей). segments суммируются в total.
+function StatusDonut({ total, segments }) {
+  const sum = segments.reduce((a, seg) => a + seg.value, 0) || 1
+  const R = 54
+  const C = 2 * Math.PI * R
+  let offset = 0
+  return (
+    <div className="donut-wrap">
+      <svg viewBox="0 0 140 140" className="donut-svg" role="img" aria-label="Статусы тендеров">
+        <circle cx="70" cy="70" r={R} fill="none" stroke="var(--border-color)" strokeWidth="18" opacity="0.3" />
+        {segments.filter(seg => seg.value > 0).map((seg, i) => {
+          const len = (seg.value / sum) * C
+          const el = (
+            <circle key={i} cx="70" cy="70" r={R} fill="none" stroke={seg.color} strokeWidth="18"
+              strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset}
+              transform="rotate(-90 70 70)" />
+          )
+          offset += len
+          return el
+        })}
+        <text x="70" y="66" textAnchor="middle" className="donut-num">{total}</text>
+        <text x="70" y="86" textAnchor="middle" className="donut-cap">Всего</text>
+      </svg>
+      <ul className="donut-legend">
+        {segments.map((seg, i) => (
+          <li key={i}>
+            <span className="legend-dot" style={{ background: seg.color }} />
+            <span className="legend-label">{seg.label}</span>
+            <span className="legend-val">{seg.value}</span>
+            <span className="legend-pct">{Math.round((seg.value / sum) * 100)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// task: line chart динамики на чистом SVG. series — массив {key,label,color}.
+function TrendChart({ data, series }) {
+  const W = 480, H = 170
+  const pad = { l: 26, r: 12, t: 12, b: 24 }
+  const max = Math.max(1, ...data.flatMap(d => series.map(se => d[se.key])))
+  const n = data.length
+  const x = (i) => pad.l + (n <= 1 ? 0 : (i * (W - pad.l - pad.r)) / (n - 1))
+  const y = (v) => pad.t + (1 - v / max) * (H - pad.t - pad.b)
+  return (
+    <div className="trend-wrap">
+      <svg viewBox={`0 0 ${W} ${H}`} className="trend-svg" preserveAspectRatio="none" role="img" aria-label="Динамика тендеров">
+        {[0, 0.5, 1].map((g) => {
+          const yy = pad.t + g * (H - pad.t - pad.b)
+          return <line key={g} x1={pad.l} x2={W - pad.r} y1={yy} y2={yy} stroke="var(--border-color)" strokeWidth="1" opacity="0.5" />
+        })}
+        {series.map(se => (
+          <polyline key={se.key} fill="none" stroke={se.color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"
+            points={data.map((d, i) => `${x(i)},${y(d[se.key])}`).join(' ')} />
+        ))}
+        {series.flatMap(se => data.map((d, i) => (
+          <circle key={`${se.key}-${i}`} cx={x(i)} cy={y(d[se.key])} r="2.5" fill={se.color} />
+        )))}
+        {data.map((d, i) => (
+          <text key={i} x={x(i)} y={H - 6} textAnchor="middle" className="trend-x">{d.label}</text>
+        ))}
+      </svg>
+      <ul className="trend-legend">
+        {series.map(se => (
+          <li key={se.key}><span className="legend-dot" style={{ background: se.color }} />{se.label}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function AttentionItem({ icon, tone, label, value, hint }) {
+  return (
+    <div className={`attn-item attn-item--${tone}`}>
+      <span className="attn-ico" aria-hidden>{icon}</span>
+      <div className="attn-body">
+        <div className="attn-label">{label}</div>
+        <div className="attn-hint">{hint}</div>
+      </div>
+      <div className="attn-val">{value}</div>
+    </div>
+  )
+}
+
 function ResponsibleTable({ rows }) {
   return (
     <table className="dense-table">
       <thead>
         <tr>
-          <th>Сотрудник</th>
+          <th className="num" style={{ width: '40px' }}>#</th>
+          <th>Ответственный</th>
           <th className="num">В работе</th>
           <th className="num">Завершено</th>
           <th className="num">Всего</th>
@@ -741,10 +916,11 @@ function ResponsibleTable({ rows }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map(r => {
+        {rows.map((r, idx) => {
           const isUnassigned = r.id === '_unassigned'
           return (
             <tr key={r.id}>
+              <td className="num muted">{idx + 1}</td>
               <td className={isUnassigned ? 'muted' : ''}>{r.name}</td>
               <td className="num">{r.inWork}</td>
               <td className="num">{r.completed}</td>
