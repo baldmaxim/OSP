@@ -4,7 +4,25 @@ import { RoleProvider, useRole } from './contexts/RoleContext'
 import { lazy, Suspense } from 'react'
 import Sidebar from './components/Sidebar'
 import AccessError from './components/AccessError'
+import AccessDenied from './components/AccessDenied'
 import './App.css'
+
+// security fix: route-level гейт по конкретному праву раздела (canView). Самодостаточен
+// (проверяет загрузку/ошибку/тип пользователя), поэтому при отсутствии права запрещённая
+// страница вообще НЕ монтируется и не делает Supabase-запросов. Секции — те же ключи, что
+// в Sidebar (canView('tenders') и т.д.) и в role_permissions.section: единый словарь прав.
+function PermissionRoute({ section, anyOf, children }) {
+  const { authLoading, roleError, isLoggedIn, isEmployee, canView } = useRole()
+  if (authLoading) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-tertiary)' }}>Загрузка...</div>
+  }
+  if (roleError) return <AccessError message={roleError} />
+  if (!isLoggedIn) return <Navigate to="/login" replace />
+  if (!isEmployee) return <Navigate to="/contractor/proposals" replace />
+  if (anyOf && anyOf.length > 0 && !anyOf.some((s) => canView(s))) return <AccessDenied />
+  if (section && !canView(section)) return <AccessDenied />
+  return children
+}
 
 // Lazy load всех страниц — загружаются только при переходе
 const ObjectsPage = lazy(() => import('./pages/ObjectsPage'))
@@ -65,34 +83,39 @@ function EmployeeLayout() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Navigate to="/general" replace />} />
+            {/* /general — навигационный хаб; внутри карточки гейтятся по canView.
+                Доступен сотруднику, у которого есть право хотя бы на один из разделов хаба. */}
             <Route path="/general" element={<GeneralInfoPage />} />
-            <Route path="/general/objects" element={<ObjectsPage />} />
-            <Route path="/general/objects/:objectId" element={<ObjectDetailPage />} />
-            <Route path="/general/contacts" element={<ContactsPage />} />
-            <Route path="/general/counterparties" element={<CounterpartiesPage />} />
-            <Route path="/tenders" element={<TendersHubPage />} />
-            <Route path="/tenders/construction" element={<TendersPage department="construction" tenderType="main" />} />
-            <Route path="/tenders/warranty" element={<TendersPage department="warranty" tenderType="main" />} />
-            <Route path="/tenders/materials" element={<TendersPage tenderType="materials" />} />
-            <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />
-            <Route path="/cost-plans" element={<CostPlansPage />} />
-            <Route path="/vors" element={<VorsPage />} />
-            <Route path="/summary" element={<SummaryPage />} />
-            <Route path="/analysis-kp" element={<BSMPage />} />
-            <Route path="/contracts" element={<ContractsPage />} />
-            <Route path="/contracts/:contractId" element={<ContractDetailPage />} />
-            <Route path="/dc-requests" element={<DcRequestsPage />} />
-            <Route path="/document-check" element={<DocumentCheckPage />} />
-            <Route path="/rates-registry" element={<RatesRegistryPage />} />
-            <Route path="/bsm" element={<BSMSelectionPage />} />
-            <Route path="/bsm/comparison" element={<BSMComparisonPage />} />
-            <Route path="/bsm/contract-rates" element={<BSMContractRatesPage />} />
-            <Route path="/bsm/supply-rates" element={<BSMRatesPage />} />
-            <Route path="/bsm/contractor-rates" element={<BSMContractorRatesPage />} />
-            <Route path="/acceptance" element={<AcceptancePage />} />
-            <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/general/objects" element={<PermissionRoute section="objects"><ObjectsPage /></PermissionRoute>} />
+            <Route path="/general/objects/:objectId" element={<PermissionRoute section="objects"><ObjectDetailPage /></PermissionRoute>} />
+            <Route path="/general/contacts" element={<PermissionRoute section="contacts"><ContactsPage /></PermissionRoute>} />
+            <Route path="/general/counterparties" element={<PermissionRoute section="counterparties"><CounterpartiesPage /></PermissionRoute>} />
+            <Route path="/tenders" element={<PermissionRoute section="tenders"><TendersHubPage /></PermissionRoute>} />
+            <Route path="/tenders/construction" element={<PermissionRoute section="tenders"><TendersPage department="construction" tenderType="main" /></PermissionRoute>} />
+            <Route path="/tenders/warranty" element={<PermissionRoute section="tenders"><TendersPage department="warranty" tenderType="main" /></PermissionRoute>} />
+            <Route path="/tenders/materials" element={<PermissionRoute section="tenders"><TendersPage tenderType="materials" /></PermissionRoute>} />
+            <Route path="/tenders/:tenderId" element={<PermissionRoute section="tenders"><TenderDetailPage /></PermissionRoute>} />
+            <Route path="/cost-plans" element={<PermissionRoute section="tenders"><CostPlansPage /></PermissionRoute>} />
+            <Route path="/vors" element={<PermissionRoute section="tenders"><VorsPage /></PermissionRoute>} />
+            <Route path="/summary" element={<PermissionRoute section="tenders"><SummaryPage /></PermissionRoute>} />
+            <Route path="/analysis-kp" element={<PermissionRoute section="analysis_kp"><BSMPage /></PermissionRoute>} />
+            <Route path="/contracts" element={<PermissionRoute section="contracts"><ContractsPage /></PermissionRoute>} />
+            <Route path="/contracts/:contractId" element={<PermissionRoute section="contracts"><ContractDetailPage /></PermissionRoute>} />
+            <Route path="/dc-requests" element={<PermissionRoute section="dc_requests"><DcRequestsPage /></PermissionRoute>} />
+            {/* /document-check и /profile — без отдельной секции в role_permissions:
+                доступны любому сотруднику (как в Sidebar). PermissionRoute без section
+                всё равно гейтит загрузку/ошибку роли/тип пользователя. */}
+            <Route path="/document-check" element={<PermissionRoute><DocumentCheckPage /></PermissionRoute>} />
+            <Route path="/rates-registry" element={<PermissionRoute section="rates_registry"><RatesRegistryPage /></PermissionRoute>} />
+            <Route path="/bsm" element={<PermissionRoute section="bsm"><BSMSelectionPage /></PermissionRoute>} />
+            <Route path="/bsm/comparison" element={<PermissionRoute section="bsm"><BSMComparisonPage /></PermissionRoute>} />
+            <Route path="/bsm/contract-rates" element={<PermissionRoute section="bsm"><BSMContractRatesPage /></PermissionRoute>} />
+            <Route path="/bsm/supply-rates" element={<PermissionRoute section="bsm"><BSMRatesPage /></PermissionRoute>} />
+            <Route path="/bsm/contractor-rates" element={<PermissionRoute section="bsm"><BSMContractorRatesPage /></PermissionRoute>} />
+            <Route path="/acceptance" element={<PermissionRoute section="acceptance"><AcceptancePage /></PermissionRoute>} />
+            <Route path="/reports" element={<PermissionRoute section="reports"><ReportsPage /></PermissionRoute>} />
+            <Route path="/admin" element={<PermissionRoute section="admin"><AdminPage /></PermissionRoute>} />
+            <Route path="/profile" element={<PermissionRoute><ProfilePage /></PermissionRoute>} />
             <Route path="*" element={<Navigate to="/general" replace />} />
           </Routes>
         </Suspense>
