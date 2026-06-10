@@ -21,9 +21,19 @@ const fmtMoney = (v) => (v === null || v === undefined || v === '' || !Number.is
   ? '—'
   : MONEY_FMT.format(Number(v)) + ' ₽'
 
+// task 406: единая нормализация наименований для сопоставления расценок снабжения
+// с материалами ВОР. Excel содержит неразрывные/узкие/тонкие пробелы и может
+// отличаться unicode-композицией — из-за этого ключи расходились и стоимость
+// показывалась как «—». NFC + схлопывание всех пробельных серий (regex \s —
+// неразрывные/узкие пробелы, табы, переводы строк) в один пробел + trim + lowercase.
+const normName = (s) =>
+  String(s ?? '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase()
+
 // task 398: ключ расценки снабжения — (ВОР-документ ∣ наименование материала без регистра)
+// task 406: имя нормализуется через normName, чтобы невидимые отличия пробелов/unicode
+// не ломали сопоставление.
 const supplyKey = (estimateName, name) =>
-  `${estimateName || 'Основная смета'}∣${String(name || '').trim().toLowerCase()}`
+  `${estimateName || 'Основная смета'}∣${normName(name)}`
 
 // task 405: выбор листа/столбцов при импорте расценок снабжения
 const SUPPLY_COLUMN_COUNT = 26
@@ -980,7 +990,7 @@ function TenderDetailPage() {
       const existingMap = new Map()
       for (const r of supplyRates) {
         if ((r.estimate_name || 'Основная смета') === docName) {
-          existingMap.set(String(r.material_name).trim().toLowerCase(), r)
+          existingMap.set(normName(r.material_name), r) // task 406: тот же ключ, что при сопоставлении
         }
       }
       const seen = new Set()
@@ -995,7 +1005,7 @@ function TenderDetailPage() {
           ? String(row[columnMap.unit]).trim() : ''
         const price = cleanNumericValue(row[columnMap.price])
         if (!materialName || !price || price <= 0) continue
-        const lk = materialName.toLowerCase()
+        const lk = normName(materialName) // task 406: согласовано с ключом сопоставления
         if (seen.has(lk)) continue // дубликат в файле — берём первое вхождение
         seen.add(lk)
         const rate = { material_name: materialName, unit, supply_price: price }
@@ -1213,6 +1223,23 @@ function TenderDetailPage() {
     if (supplySelectedDoc === 'all') return supplyRates.length
     return supplyRates.filter(r => (r.estimate_name || 'Основная смета') === supplySelectedDoc).length
   }, [supplyRates, supplySelectedDoc])
+
+  // task 406: сколько расценок снабжения выбранного документа реально сопоставились
+  // материалу ВОР. Отличает «не загрузил» от «загрузил, но имена не совпали».
+  const supplyMatchStats = useMemo(() => {
+    if (supplySelectedDoc === 'all') return null
+    const docRates = supplyRates.filter(
+      r => (r.estimate_name || 'Основная смета') === supplySelectedDoc
+    )
+    if (docRates.length === 0) return null
+    const vorNames = new Set(
+      supplyEstimate
+        .filter(it => !it.is_section && !it._isDocDivider && !isWorkItem(it))
+        .map(it => normName(it.cost_name))
+    )
+    const matched = docRates.filter(r => vorNames.has(normName(r.material_name))).length
+    return { matched, total: docRates.length }
+  }, [supplyRates, supplySelectedDoc, supplyEstimate])
 
   // Если активный документ удалён или ещё не выбран — переключаемся на 'all'.
   useEffect(() => {
@@ -2198,6 +2225,11 @@ function TenderDetailPage() {
                       {supplySelectedDoc === 'all'
                         ? 'Объединённый ВОР (все разделы)'
                         : `Раздел: ${supplySelectedDoc}`}
+                      {supplyMatchStats && (
+                        <span className={`supply-tab-match-hint${supplyMatchStats.matched < supplyMatchStats.total ? ' is-partial' : ''}`}>
+                          {' '}— сопоставлено {supplyMatchStats.matched} из {supplyMatchStats.total} расценок
+                        </span>
+                      )}
                     </span>
                   </div>
                   <div className="estimate-collapse-controls">

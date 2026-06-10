@@ -3670,6 +3670,15 @@
   font-size: 0.8125rem;
   color: var(--text-secondary);
 }
+/* task 406: счётчик сопоставленных расценок снабжения */
+.supply-tab-match-hint {
+  font-weight: 400;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.supply-tab-match-hint.is-partial {
+  color: var(--warning, #c2700f);
+}
 
 /* task 398: модал импорта расценок снабжения */
 .supply-import-modal {
