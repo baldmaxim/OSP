@@ -548,6 +548,58 @@
   color: #4ade80;
 }
 
+/* task 408: «Цена от снабжения» — первый ценовой столбец-ориентир (НЕ КП подрядчика).
+   Отделён рамками от колонок подрядчиков и не участвует в подсветке минимума. */
+.proposals-table .th-supply {
+  text-align: right;
+  border-left: 2px solid var(--border-color);
+  border-right: 2px solid var(--border-color);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  background: var(--bg-tertiary);
+}
+.proposals-table .td-supply {
+  border-left: 2px solid var(--border-color);
+  border-right: 2px solid var(--border-color);
+  background: rgba(59, 130, 246, 0.05);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+[data-theme='dark'] .proposals-table .td-supply {
+  background: rgba(59, 130, 246, 0.12);
+}
+.proposals-table tfoot .td-total-cp.td-supply {
+  color: var(--text-primary);
+}
+/* Нерасценённая снабжением позиция — жёлтая подсветка (тот же тон, что is-incomplete) */
+.proposals-table .td-supply.supply-price-missing,
+.proposals-group-subtotal .td-group-subtotal.td-supply.supply-price-missing {
+  background: rgba(234, 179, 8, 0.18) !important;
+  color: #a16207 !important;
+}
+[data-theme='dark'] .proposals-table .td-supply.supply-price-missing,
+[data-theme='dark'] .proposals-group-subtotal .td-group-subtotal.td-supply.supply-price-missing {
+  background: rgba(234, 179, 8, 0.26) !important;
+  color: #fde047 !important;
+}
+.proposals-table tbody tr.supply-row-missing td {
+  background: rgba(234, 179, 8, 0.05);
+}
+[data-theme='dark'] .proposals-table tbody tr.supply-row-missing td {
+  background: rgba(234, 179, 8, 0.09);
+}
+.proposals-group-supply-warn {
+  margin-left: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #a16207;
+}
+[data-theme='dark'] .proposals-group-supply-warn {
+  color: #fde047;
+}
+
 /* task 350: группа-разделитель по ВОРу в агрегированном виде */
 .proposals-group-header td {
   padding: 0.625rem 0.75rem !important;

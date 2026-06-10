@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
+import { normName, supplyKey } from '../utils/supplyRateHelpers'
 import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
@@ -21,27 +22,8 @@ const fmtMoney = (v) => (v === null || v === undefined || v === '' || !Number.is
   ? '—'
   : MONEY_FMT.format(Number(v)) + ' ₽'
 
-// task 406/407: нормализация наименования для сопоставления расценок снабжения и
-// материалов ВОР. Имена «выглядят одинаково», но не совпадали из-за невидимых отличий:
-// символ диаметра (Ø/∅/⌀/Ө в разных файлах), десятичная запятая vs точка, латиница/кириллица.
-// Детерминированно (без нечёткости): 1) NFC+lower; 2) десятичный разделитель → точка
-// (цифры/разрядность сохраняем, чтобы Ø12,7 ≠ Ø1,27); 3) кириллические гомоглифы → латиница
-// (только реально неразличимые буквы); 4) выбросить всё, кроме латиницы/кириллицы/цифр/точки —
-// это единообразно удаляет ЛЮБОЙ символ диаметра, пробелы и пунктуацию на обеих сторонах.
-const NN_HOMOGLYPH = { а: 'a', в: 'b', е: 'e', ё: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x' }
-const normName = (s) =>
-  String(s ?? '')
-    .normalize('NFC')
-    .toLowerCase()
-    .replace(/(\d)[.,](\d)/g, '$1.$2')
-    .replace(/[авеёкмнорстух]/g, (c) => NN_HOMOGLYPH[c])
-    .replace(/[^a-zа-я0-9.]+/g, '')
-
-// task 398: ключ расценки снабжения — (ВОР-документ ∣ наименование материала без регистра)
-// task 406: имя нормализуется через normName, чтобы невидимые отличия пробелов/unicode
-// не ломали сопоставление.
-const supplyKey = (estimateName, name) =>
-  `${estimateName || 'Основная смета'}∣${normName(name)}`
+// task 406/407/408: normName и supplyKey вынесены в ../utils/supplyRateHelpers
+// (переиспользуются в TenderProposalsCompare для колонки «Цена от снабжения»).
 
 // task 405: выбор листа/столбцов при импорте расценок снабжения
 const SUPPLY_COLUMN_COUNT = 26
@@ -423,8 +405,12 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
           </tr>
         )
       } else {
+        // task 408: материал без стоимости от снабжения = нерасценён → жёлтая подсветка.
+        // В этой вкладке работы уже отфильтрованы, поэтому строка-материал с leaf==null —
+        // это именно отсутствие расценки снабжения (а не «работа без цены»).
+        const supplyMissing = showSupply && !isWorkItem(it) && sc.leaf[idx] == null
         rendered.push(
-          <tr key={it.id || idx}>
+          <tr key={it.id || idx} className={supplyMissing ? 'supply-row-missing' : undefined}>
             <td className="estimate-num">{displayNum}</td>
             <td>{it.code || '—'}</td>
             <td style={indent}>{it.cost_name}</td>
@@ -432,7 +418,9 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             {!hideWorkVolume && <td className="estimate-num-cell">{fmtNum(it.work_volume)}</td>}
             <td className="estimate-num-cell">{fmtNum(it.material_consumption)}</td>
             {showSupply && (
-              <td className="estimate-num-cell estimate-supply-cell">{fmtMoney(sc.leaf[idx])}</td>
+              <td className={`estimate-num-cell estimate-supply-cell${supplyMissing ? ' supply-price-missing' : ''}`}>
+                {fmtMoney(sc.leaf[idx])}
+              </td>
             )}
           </tr>
         )
@@ -2331,6 +2319,7 @@ function TenderDetailPage() {
             tenderCounterparties={tenderCounterparties}
             canEdit={canEditTenders}
             onCountChange={setProposalsCount}
+            supplyRatesMap={supplyRatesMap}
           />
         )}
 

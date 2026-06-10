@@ -3703,6 +3703,22 @@
   text-overflow: ellipsis;
   max-width: 640px;
 }
+/* task 408: материал без цены от снабжения — жёлтая подсветка ячейки и строки */
+.estimate-table .estimate-supply-cell.supply-price-missing {
+  background: rgba(234, 179, 8, 0.18);
+  color: #a16207;
+  font-weight: 600;
+}
+[data-theme='dark'] .estimate-table .estimate-supply-cell.supply-price-missing {
+  background: rgba(234, 179, 8, 0.26);
+  color: #fde047;
+}
+.estimate-table tbody tr.supply-row-missing td {
+  background: rgba(234, 179, 8, 0.05);
+}
+[data-theme='dark'] .estimate-table tbody tr.supply-row-missing td {
+  background: rgba(234, 179, 8, 0.09);
+}
 
 /* task 398: модал импорта расценок снабжения */
 .supply-import-modal {
