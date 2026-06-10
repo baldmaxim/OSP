@@ -349,6 +349,23 @@
   color: #cbd5e1;
   border-color: rgba(148, 163, 184, 0.25);
 }
+/* task 412: источник СУ-10 (снабжение) — тёплый акцент, отличается от подрядчиков */
+.rr-chip-supply {
+  background: rgba(13, 148, 136, 0.12);
+  color: #0f766e;
+  border-color: rgba(13, 148, 136, 0.25);
+  font-weight: 600;
+}
+[data-theme='dark'] .rr-chip-supply {
+  background: rgba(45, 212, 191, 0.14);
+  color: #5eead4;
+  border-color: rgba(45, 212, 191, 0.30);
+}
+.rr-supply-counter-note {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
 
 /* task 354: ссылка-описание тендера */
 .rr-tender-link {

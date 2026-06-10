@@ -1,0 +1,30 @@
+-- task 412: «Расценки от снабжения СУ-10» в «Общем реестре расценок».
+-- Не таблица, а ПРЕДСТАВЛЕНИЕ над tender_vor_supply_rates (источник истины — миграция
+-- supabase/migrations/20260611_add_supply_rates_registry.sql). Серверная
+-- пагинация/поиск/сортировка — как у kp_rates_registry (task 411).
+--
+-- Колонки supply_rates_registry:
+--   id            — стабильный синтетический ключ (md5 от ключа дедупа)
+--   source_type   — 'supply_su10' (признак источника; НЕ подрядчик)
+--   source_name   — 'СУ-10' (отображается в колонке «Контрагент»)
+--   item_name     — наименование материала (material_name)
+--   unit          — единица измерения
+--   price         — ЕДИНИЧНАЯ цена материала от снабжения (supply_price), не итог
+--   tender_id     — тендер (ссылка /tenders/:id)
+--   object_id     — объект (через tenders.object_id)
+--   tender_desc   — tenders.work_description
+--   object_name   — objects.name
+--   rate_date     — coalesce(updated_at, created_at) расценки снабжения
+--
+-- Дедуп: DISTINCT ON (tender_id, kp_norm_name(material_name), kp_norm_unit(unit)) с
+--   приоритетом по updated_at DESC — один материал на тендер (схлопывает разные
+--   ВОР-документы estimate_name). Разные тендеры/объекты/ед.изм — разные записи.
+--   Повторная загрузка не плодит дубли: tender_vor_supply_rates имеет
+--   UNIQUE(tender_id, estimate_name, material_name), а view ещё и дедуплицирует.
+--
+-- supply_rates_registry_units — distinct unit для фильтра.
+--
+-- Индексы: tender_vor_supply_rates(tender_id, unit, updated_at desc),
+--   gin(material_name gin_trgm_ops) для ilike-поиска.
+--
+-- Зависит от kp_norm_name/kp_norm_unit (см. schemas/kp_rates_registry.sql).
