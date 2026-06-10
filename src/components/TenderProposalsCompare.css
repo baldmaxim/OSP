@@ -548,24 +548,25 @@
   color: #4ade80;
 }
 
-/* task 408: «Цена от снабжения» — первый ценовой столбец-ориентир (НЕ КП подрядчика).
-   Отделён рамками от колонок подрядчиков и не участвует в подсветке минимума. */
-.proposals-table .th-supply {
-  text-align: right;
+/* task 408/409: блок «Снабжение» — два первых ценовых столбца-ориентира (Цена/ед + Итого),
+   НЕ КП подрядчика. Отделён рамками от колонок подрядчиков, не участвует в подсветке минимума. */
+.proposals-table .th-supply-group {
   border-left: 2px solid var(--border-color);
-  border-right: 2px solid var(--border-color);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  background: var(--bg-tertiary);
+}
+.proposals-table thead .th-sub.th-supply {
+  background: rgba(59, 130, 246, 0.08);
 }
 .proposals-table .td-supply {
-  border-left: 2px solid var(--border-color);
-  border-right: 2px solid var(--border-color);
   background: rgba(59, 130, 246, 0.05);
   color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.proposals-table .td-supply.td-cp-first {
+  border-left: 2px solid var(--border-color);
+}
+.proposals-table .td-supply.td-supply-total {
   font-weight: 600;
+  border-right: 2px solid var(--border-color);
 }
 [data-theme='dark'] .proposals-table .td-supply {
   background: rgba(59, 130, 246, 0.12);
@@ -581,6 +582,33 @@
 }
 [data-theme='dark'] .proposals-table .td-supply.supply-price-missing,
 [data-theme='dark'] .proposals-group-subtotal .td-group-subtotal.td-supply.supply-price-missing {
+  background: rgba(234, 179, 8, 0.26) !important;
+  color: #fde047 !important;
+}
+/* task 409: столбец «Снабжение» в верхней сводной таблице по системам */
+.proposals-summary-matrix-table .psmt-th-supply {
+  border-left: 2px solid var(--border-color);
+  border-right: 2px solid var(--border-color);
+  text-align: right;
+  background: rgba(59, 130, 246, 0.08);
+  white-space: nowrap;
+}
+.proposals-summary-matrix-table .psmt-td-supply {
+  border-left: 2px solid var(--border-color);
+  border-right: 2px solid var(--border-color);
+  background: rgba(59, 130, 246, 0.05);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+[data-theme='dark'] .proposals-summary-matrix-table .psmt-td-supply {
+  background: rgba(59, 130, 246, 0.12);
+}
+.proposals-summary-matrix-table .psmt-td-supply.supply-price-missing {
+  background: rgba(234, 179, 8, 0.18) !important;
+  color: #a16207 !important;
+}
+[data-theme='dark'] .proposals-summary-matrix-table .psmt-td-supply.supply-price-missing {
   background: rgba(234, 179, 8, 0.26) !important;
   color: #fde047 !important;
 }

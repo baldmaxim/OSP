@@ -22,3 +22,18 @@ export const normName = (s) =>
 // task 398: ключ расценки снабжения — (ВОР-документ ∣ наименование материала, нормализованное).
 export const supplyKey = (estimateName, name) =>
   `${estimateName || 'Основная смета'}∣${normName(name)}`
+
+// task 409: загруженная из файла снабжения цена — это ЦЕНА ЗА ЕДИНИЦУ (supply_price).
+// Возвращает её, либо null если расценки нет / цена не положительная (0/пусто/нечисло).
+export const supplyUnitPrice = (ratesMap, estimateName, name) => {
+  const p = ratesMap?.get(supplyKey(estimateName, name))
+  return p != null && Number.isFinite(Number(p)) && Number(p) > 0 ? Number(p) : null
+}
+
+// task 409: итог от снабжения = объём материалов × цена за единицу.
+// null, если нет цены или объём отсутствует/некорректен/<=0 (не считаем ошибочно).
+export const supplyTotal = (unitPrice, volume) => {
+  const v = Number(volume)
+  if (unitPrice == null || !Number.isFinite(v) || v <= 0) return null
+  return unitPrice * v
+}

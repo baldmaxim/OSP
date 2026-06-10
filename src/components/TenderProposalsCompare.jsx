@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../supabase'
 import TenderProposalUploadModal from './TenderProposalUploadModal'
 import { normalizeKey, normalizeUnit } from '../utils/parseProposalExcel'
-import { supplyKey } from '../utils/supplyRateHelpers'
+import { supplyUnitPrice, supplyTotal } from '../utils/supplyRateHelpers'
 import './TenderProposalsCompare.css'
 
 // task 346 + 349: вкладка «Сравнение КП» в тендере.
@@ -210,6 +210,25 @@ function TenderProposalsCompare({
     }
     return m
   }, [itemsOfScope, counterpartiesInScope, proposalLookup])
+
+  // task 409: итоги по материалам от снабжения по каждому ВОРу (для верхней сводной
+  // таблицы). Σ(объём × цена за ед. снабжения) по материалам документа; missing —
+  // есть ли материалы с объёмом, но без цены снабжения (для жёлтой подсветки).
+  const supplyByDoc = useMemo(() => {
+    const byDoc = new Map() // docName → { total, missing }
+    const hasData = supplyRatesMap.size > 0
+    for (const it of estimateItems) {
+      if (it.is_section || isWorkRow(it)) continue
+      const doc = it.estimate_name || 'Основная смета'
+      let cur = byDoc.get(doc)
+      if (!cur) { cur = { total: 0, missing: false }; byDoc.set(doc, cur) }
+      const price = supplyUnitPrice(supplyRatesMap, it.estimate_name, it.cost_name)
+      const cost = supplyTotal(price, it.material_consumption)
+      if (cost != null) cur.total += cost
+      if (hasData && price == null && Number(it.material_consumption) > 0) cur.missing = true
+    }
+    return byDoc
+  }, [estimateItems, supplyRatesMap])
 
   // Агрегация для «Материалы» / «Работы» — по name+unit внутри каждого ВОРа.
   // В режиме «Объединённый КП» группируем по estimate_name + считаем подытоги.
@@ -544,6 +563,7 @@ function TenderProposalsCompare({
             totalsByCp={totalsByCp}
             canEdit={canEdit}
             onClearCp={handleClearCpProposals}
+            supplyByDoc={supplyByDoc}
           />
 
           {/* Sub-tabs */}
@@ -612,12 +632,15 @@ function TenderProposalsCompare({
 // контрагенту с подсветкой минимального общего предложения.
 function SummaryMatrixTable({
   docNames, selectedDoc, counterpartiesInScope, totalsByCp, canEdit, onClearCp,
+  supplyByDoc = new Map(),
 }) {
   // ВОРы для строк: в режиме «Объединённый» — все, иначе только выбранный.
   const docsToShow = useMemo(
     () => (selectedDoc === 'all' ? docNames : [selectedDoc]),
     [selectedDoc, docNames]
   )
+  // task 409: итог снабжения по материалам в текущем scope (сумма показанных ВОРов).
+  const supplyGrand = docsToShow.reduce((s, d) => s + (supplyByDoc.get(d)?.total || 0), 0)
 
   // Минимальный totalCost по тендеру — для подсветки итоговой строки.
   const minTotalCost = useMemo(() => {
@@ -652,6 +675,7 @@ function SummaryMatrixTable({
         <thead>
           <tr>
             <th rowSpan={2} className="psmt-th-doc">ВОР</th>
+            <th rowSpan={2} className="psmt-th-cp psmt-th-supply" title="Итог по материалам от снабжения (объём × цена за ед.). Не КП подрядчика.">Снабжение<br />материалы, ₽</th>
             {counterpartiesInScope.map(cp => (
               <th key={cp.id} colSpan={3} className="psmt-th-cp">
                 <div className="psmt-th-cp-name" title={cp.name}>{cp.name}</div>
@@ -684,6 +708,15 @@ function SummaryMatrixTable({
             return (
               <tr key={docName}>
                 <td className="psmt-td-doc" title={docName}>{docName}</td>
+                {(() => {
+                  const sd = supplyByDoc.get(docName)
+                  const sTotal = sd?.total || 0
+                  return (
+                    <td className={`psmt-td-num psmt-td-supply${sd?.missing ? ' supply-price-missing' : ''}`}>
+                      {sTotal > 0 ? fmtMoney(sTotal) : '—'}
+                    </td>
+                  )
+                })()}
                 {counterpartiesInScope.map(cp => {
                   const v = totalsByCp.get(cp.id)?.byDoc.get(docName)
                   const mat = v?.mat || 0
@@ -730,6 +763,7 @@ function SummaryMatrixTable({
         <tfoot>
           <tr className="psmt-tf-row">
             <td className="psmt-tf-label">ИТОГО, ₽</td>
+            <td className="psmt-tf-num psmt-td-supply">{supplyGrand > 0 ? fmtMoney(supplyGrand) : '—'}</td>
             {counterpartiesInScope.map(cp => {
               const t = totalsByCp.get(cp.id) || {
                 totalMat: 0, totalWork: 0, totalCost: 0,
@@ -856,22 +890,17 @@ function SourceTable({
   minByItem, totalsByCp, minTotalCost, showDocColumn,
   canEdit, onToggleCovered, supplyRatesMap = new Map(),
 }) {
-  // task 408: стоимость материалов от снабжения по позиции = объём мат. × цена/ед.
-  // Это ориентировочная базовая стоимость, НЕ КП подрядчика — в min/итоги не входит.
-  const supplyCostOf = (it) => {
-    if (isWorkRow(it)) return null
-    const price = supplyRatesMap.get(supplyKey(it.estimate_name, it.cost_name))
-    if (price == null || !(price > 0)) return null
-    return (Number(it.material_consumption) || 0) * price
-  }
-  // Нерасценён снабжением = материал с объёмом, но без цены снабжения.
+  // task 408/409: снабжение по позиции — ЦЕНА ЗА ЕД. (загруженная) + ИТОГО (объём×цена).
+  // Базовый ориентир, НЕ КП подрядчика — в min/итоги/победителя не входит.
+  const supplyUnitOf = (it) => isWorkRow(it) ? null : supplyUnitPrice(supplyRatesMap, it.estimate_name, it.cost_name)
+  const supplyTotalOf = (it) => supplyTotal(supplyUnitOf(it), it.material_consumption)
+  // Нерасценён снабжением = материал с объёмом, но без цены за ед. снабжения.
   // Подсвечиваем только когда расценки снабжения вообще загружены — иначе
   // в тендере без снабжения подсветилась бы вся таблица.
   const hasSupplyData = supplyRatesMap.size > 0
   const supplyMissingOf = (it) =>
-    hasSupplyData && !isWorkRow(it) && Number(it.material_consumption) > 0 &&
-    !(supplyRatesMap.get(supplyKey(it.estimate_name, it.cost_name)) > 0)
-  const supplyTotal = itemsOfScope.reduce((s, it) => s + (supplyCostOf(it) || 0), 0)
+    hasSupplyData && !isWorkRow(it) && Number(it.material_consumption) > 0 && supplyUnitOf(it) == null
+  const supplyGrandTotal = itemsOfScope.reduce((s, it) => s + (supplyTotalOf(it) || 0), 0)
   return (
     <div className="proposals-table-wrap">
       <table className="proposals-table">
@@ -884,7 +913,7 @@ function SourceTable({
             <th rowSpan={2} className="th-unit">Ед.</th>
             <th rowSpan={2} className="th-vol">Объём раб.</th>
             <th rowSpan={2} className="th-vol">Объём мат.</th>
-            <th rowSpan={2} className="th-supply" title="Базовая стоимость материалов от снабжения (объём × цена снабжения). Не является КП подрядчика.">Цена от снабжения, ₽</th>
+            <th colSpan={2} className="th-cp th-supply-group" title="Базовый ориентир от снабжения — не КП подрядчика">Снабжение</th>
             {counterpartiesInScope.map(cp => (
               <th key={cp.id} colSpan={5} className="th-cp">
                 <div className="th-cp-name" title={cp.name}>{cp.name}</div>
@@ -893,6 +922,8 @@ function SourceTable({
             ))}
           </tr>
           <tr>
+            <th className="th-sub th-supply" title="Загруженная цена за единицу от снабжения">Цена/ед, ₽</th>
+            <th className="th-sub th-sub-total th-supply" title="Итого от снабжения = Объём мат. × Цена/ед.">Итого, ₽</th>
             {counterpartiesInScope.map(cp => (
               <React.Fragment key={cp.id}>
                 <th className="th-sub" title="Цена материала за ед.">Ц.мат, ₽/ед</th>
@@ -907,7 +938,8 @@ function SourceTable({
         <tbody>
           {itemsOfScope.map((it, idx) => {
             const minPrice = minByItem.get(it.id)
-            const supplyCost = supplyCostOf(it)
+            const supplyUnit = supplyUnitOf(it)
+            const supplyCost = supplyTotalOf(it)
             const supplyMissing = supplyMissingOf(it)
             return (
               <tr key={it.id} className={supplyMissing ? 'supply-row-missing' : undefined}>
@@ -918,7 +950,10 @@ function SourceTable({
                 <td className="td-unit">{it.unit || '—'}</td>
                 <td className="td-vol">{fmtMoney(it.work_volume)}</td>
                 <td className="td-vol">{fmtMoney(it.material_consumption)}</td>
-                <td className={`td-price td-supply${supplyMissing ? ' supply-price-missing' : ''}`}>
+                <td className={`td-price td-supply td-cp-first${supplyMissing ? ' supply-price-missing' : ''}`}>
+                  {supplyUnit != null ? fmtMoney(supplyUnit) : '—'}
+                </td>
+                <td className={`td-price td-supply td-supply-total${supplyMissing ? ' supply-price-missing' : ''}`}>
                   {supplyCost != null ? fmtMoney(supplyCost) : '—'}
                 </td>
                 {counterpartiesInScope.map(cp => {
@@ -949,8 +984,9 @@ function SourceTable({
         <tfoot>
           <tr className="proposals-total-row">
             <td colSpan={showDocColumn ? 7 : 6} style={{ textAlign: 'right' }}>ИТОГО, ₽:</td>
-            <td className="td-total-cp td-supply" title="Итоговая стоимость материалов от снабжения (не КП подрядчика)">
-              {supplyTotal > 0 ? fmtMoney(supplyTotal) : '—'}
+            <td className="td-total-cp td-supply td-cp-first" />
+            <td className="td-total-cp td-supply td-supply-total" title="Итого по материалам от снабжения (не КП подрядчика)">
+              {supplyGrandTotal > 0 ? fmtMoney(supplyGrandTotal) : '—'}
             </td>
             {counterpartiesInScope.map(cp => {
               const total = totalsByCp.get(cp.id)?.totalCost || 0
@@ -1042,11 +1078,9 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
   const showSupply = isMaterials
   // Подсвечиваем нерасценённые только когда расценки снабжения загружены.
   const hasSupplyData = supplyRatesMap.size > 0
-  const supplyCostOfRow = (groupName, r) => {
-    const price = supplyRatesMap.get(supplyKey(groupName, r.name))
-    if (price == null || !(price > 0)) return null
-    return price * (Number(r.totalVol) || 0)
-  }
+  // task 409: цена за ед. (загруженная) и итог (цена × Σ объём) по агрегированной строке.
+  const supplyUnitOfRow = (groupName, r) => supplyUnitPrice(supplyRatesMap, groupName, r.name)
+  const supplyCostOfRow = (groupName, r) => supplyTotal(supplyUnitOfRow(groupName, r), r.totalVol)
   const supplyGroupCost = new Map() // group.name → Σ стоимость снабжения
   const supplyGroupMissing = new Map() // group.name → есть ли нерасценённые позиции
   let supplyGrand = 0
@@ -1056,7 +1090,7 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
       for (const r of g.rows) {
         const c = supplyCostOfRow(g.name, r)
         if (c != null) cost += c
-        else if (Number(r.totalVol) > 0 && hasSupplyData) missing = true
+        if (supplyUnitOfRow(g.name, r) == null && Number(r.totalVol) > 0 && hasSupplyData) missing = true
       }
       supplyGroupCost.set(g.name, cost)
       supplyGroupMissing.set(g.name, missing)
@@ -1107,7 +1141,7 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
             <th rowSpan={2} className="th-unit">Ед.</th>
             <th rowSpan={2} className="th-vol">Σ Объём</th>
             {showSupply && (
-              <th rowSpan={2} className="th-supply" title="Базовая стоимость материалов от снабжения (цена × Σ объём). Не является КП подрядчика.">Цена от снабжения, ₽</th>
+              <th colSpan={2} className="th-cp th-supply-group" title="Базовый ориентир от снабжения — не КП подрядчика">Снабжение</th>
             )}
             {counterpartiesInScope.map(cp => (
               <th key={cp.id} colSpan={2} className="th-cp">
@@ -1117,6 +1151,12 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
             ))}
           </tr>
           <tr>
+            {showSupply && (
+              <>
+                <th className="th-sub th-supply" title="Загруженная цена за единицу от снабжения">Цена/ед, ₽</th>
+                <th className="th-sub th-sub-total th-supply" title="Итого от снабжения = цена/ед × Σ объём">Итого, ₽</th>
+              </>
+            )}
             {counterpartiesInScope.map(cp => (
               <React.Fragment key={cp.id}>
                 <th className="th-sub" title="Средняя цена за ед. (взвешенная по объёму)">Цена/ед, ₽</th>
@@ -1132,7 +1172,7 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
               <React.Fragment key={`g:${group.name}|${gi}`}>
                 {showGroupHeaders && (
                   <tr className={`proposals-group-header${showSupply && supplyGroupMissing.get(group.name) ? ' supply-group-missing' : ''}`}>
-                    <td colSpan={4 + (showSupply ? 1 : 0) + counterpartiesInScope.length * 2}>
+                    <td colSpan={4 + (showSupply ? 2 : 0) + counterpartiesInScope.length * 2}>
                       <span className="proposals-group-header-label">ВОР</span>
                       <span className="proposals-group-header-name">{group.name}</span>
                       <span className="proposals-group-header-count">
@@ -1146,8 +1186,9 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
                 )}
                 {group.rows.map((r, ri) => {
                   const minCost = computeMinByRow(r)
+                  const supplyUnit = showSupply ? supplyUnitOfRow(group.name, r) : null
                   const supplyCost = showSupply ? supplyCostOfRow(group.name, r) : null
-                  const supplyMissing = showSupply && hasSupplyData && supplyCost == null && Number(r.totalVol) > 0
+                  const supplyMissing = showSupply && hasSupplyData && supplyUnit == null && Number(r.totalVol) > 0
                   return (
                     <tr key={`${group.name}|${r.name}|${r.unit}|${ri}`} className={supplyMissing ? 'supply-row-missing' : undefined}>
                       <td className="td-num">{ri + 1}</td>
@@ -1155,9 +1196,14 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
                       <td className="td-unit">{r.unit || '—'}</td>
                       <td className="td-vol">{fmtMoney(r.totalVol)}</td>
                       {showSupply && (
-                        <td className={`td-price td-supply${supplyMissing ? ' supply-price-missing' : ''}`}>
-                          {supplyCost != null ? fmtMoney(supplyCost) : '—'}
-                        </td>
+                        <>
+                          <td className={`td-price td-supply td-cp-first${supplyMissing ? ' supply-price-missing' : ''}`}>
+                            {supplyUnit != null ? fmtMoney(supplyUnit) : '—'}
+                          </td>
+                          <td className={`td-price td-supply td-supply-total${supplyMissing ? ' supply-price-missing' : ''}`}>
+                            {supplyCost != null ? fmtMoney(supplyCost) : '—'}
+                          </td>
+                        </>
                       )}
                       {counterpartiesInScope.map(cp => {
                         const d = r.cpData.get(cp.id)
@@ -1198,9 +1244,12 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
                       Подытог по «{group.name}», ₽:
                     </td>
                     {showSupply && (
-                      <td className={`td-group-subtotal td-supply${supplyGroupMissing.get(group.name) ? ' supply-price-missing' : ''}`}>
-                        {supplyGroupCost.get(group.name) > 0 ? fmtMoney(supplyGroupCost.get(group.name)) : '—'}
-                      </td>
+                      <>
+                        <td className={`td-group-subtotal td-supply td-cp-first${supplyGroupMissing.get(group.name) ? ' supply-price-missing' : ''}`} />
+                        <td className={`td-group-subtotal td-supply td-supply-total${supplyGroupMissing.get(group.name) ? ' supply-price-missing' : ''}`}>
+                          {supplyGroupCost.get(group.name) > 0 ? fmtMoney(supplyGroupCost.get(group.name)) : '—'}
+                        </td>
+                      </>
                     )}
                     {counterpartiesInScope.map(cp => {
                       const v = group.subtotalByCp.get(cp.id) || 0
@@ -1239,7 +1288,10 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
               ОБЩИЙ ИТОГО по {isMaterials ? 'материалам' : 'работам'}, ₽:
             </td>
             {showSupply && (
-              <td className="td-total-cp td-supply" title="Итоговая стоимость материалов от снабжения (не КП подрядчика)">
+              <td className="td-total-cp td-supply td-cp-first" />
+            )}
+            {showSupply && (
+              <td className="td-total-cp td-supply td-supply-total" title="Итого по материалам от снабжения (не КП подрядчика)">
                 {supplyGrand > 0 ? fmtMoney(supplyGrand) : '—'}
               </td>
             )}

@@ -151,10 +151,12 @@ function getHeaderKeys(items) {
 // Один проход с тем же стеком уровней, что у EstimateTable — индексы leaf и
 // ключи sectionTotals совпадают с разметкой таблицы.
 function computeSupplyCosts(items, ratesMap) {
-  const empty = { leaf: [], sectionTotals: new Map(), docTotals: new Map(), grand: 0 }
+  // task 409: leaf — «Итого от снабжения» (объём×цена); unitPrice — «Цена за ед.» (raw supply_price).
+  const empty = { leaf: [], unitPrice: [], sectionTotals: new Map(), docTotals: new Map(), grand: 0 }
   if (!items || items.length === 0 || !ratesMap) return empty
   const lvlOf = makeLevelOf(items)
   const leaf = new Array(items.length).fill(null)
+  const unitPrice = new Array(items.length).fill(null)
   const sectionTotals = new Map()
   const docTotals = new Map()
   let grand = 0
@@ -190,15 +192,20 @@ function computeSupplyCosts(items, ratesMap) {
     if (isWorkItem(it)) continue // в колонку снабжения попадают только материалы
     const dk = it.estimate_name || curDoc || 'Основная смета'
     const price = ratesMap.get(supplyKey(dk, it.cost_name))
-    if (price == null) continue
-    const cost = (Number(it.material_consumption) || 0) * Number(price)
+    if (price == null) continue // нет цены снабжения → нерасценено (обе ячейки пустые + жёлтый)
+    unitPrice[idx] = Number(price)
+    // task 409: цена за единицу есть, но если объём некорректен/<=0 — итог НЕ считаем
+    // (показываем прочерк), цену оставляем. Подсветки «нерасценено» при этом нет.
+    const vol = Number(it.material_consumption)
+    if (!Number.isFinite(vol) || vol <= 0) continue
+    const cost = vol * Number(price)
     leaf[idx] = cost
     grand += cost
     if (stack.length) stack[stack.length - 1].total += cost
     docTotals.set(dk, (docTotals.get(dk) || 0) + cost)
   }
   flush(0)
-  return { leaf, sectionTotals, docTotals, grand }
+  return { leaf, unitPrice, sectionTotals, docTotals, grand }
 }
 
 // task 398: вкладка снабжения показывает только материалы. После удаления строк-работ
@@ -284,7 +291,7 @@ function DocTabsTree({ docNames, estimateItems, selected, onSelect }) {
 }
 
 function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDoc, supplyCosts, showSupply = false, hideWorkVolume = false }) {
-  const sc = supplyCosts || { leaf: [], sectionTotals: new Map(), docTotals: new Map(), grand: 0 }
+  const sc = supplyCosts || { leaf: [], unitPrice: [], sectionTotals: new Map(), docTotals: new Map(), grand: 0 }
   // colSpan «средних» колонок (КОД…Объём материалов) для строк-разделов/разделителей.
   const midSpan = hideWorkVolume ? 4 : 5
   const lvlOf = makeLevelOf(items)
@@ -341,9 +348,12 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             </div>
           </td>
           {showSupply && (
-            <td className="estimate-num-cell estimate-supply-total">
-              {sc.docTotals.get(it._docName) > 0 ? fmtMoney(sc.docTotals.get(it._docName)) : ''}
-            </td>
+            <>
+              <td className="estimate-num-cell estimate-supply-total" />
+              <td className="estimate-num-cell estimate-supply-total">
+                {sc.docTotals.get(it._docName) > 0 ? fmtMoney(sc.docTotals.get(it._docName)) : ''}
+              </td>
+            </>
           )}
         </tr>
       )
@@ -398,17 +408,20 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             </td>
             <td colSpan={midSpan} style={indent}>{it.cost_name}</td>
             {showSupply && (
-              <td className="estimate-num-cell estimate-supply-total">
-                {sc.sectionTotals.get(key) > 0 ? fmtMoney(sc.sectionTotals.get(key)) : ''}
-              </td>
+              <>
+                <td className="estimate-num-cell estimate-supply-total" />
+                <td className="estimate-num-cell estimate-supply-total">
+                  {sc.sectionTotals.get(key) > 0 ? fmtMoney(sc.sectionTotals.get(key)) : ''}
+                </td>
+              </>
             )}
           </tr>
         )
       } else {
-        // task 408: материал без стоимости от снабжения = нерасценён → жёлтая подсветка.
-        // В этой вкладке работы уже отфильтрованы, поэтому строка-материал с leaf==null —
-        // это именно отсутствие расценки снабжения (а не «работа без цены»).
-        const supplyMissing = showSupply && !isWorkItem(it) && sc.leaf[idx] == null
+        // task 408/409: материал без ЦЕНЫ ЗА ЕД. от снабжения = нерасценён → жёлтая подсветка.
+        // Опираемся на unitPrice (а не на итог): итог может быть null из-за отсутствия
+        // объёма ВОР, хотя цена снабжения есть — это не «нерасценено».
+        const supplyMissing = showSupply && !isWorkItem(it) && sc.unitPrice[idx] == null
         rendered.push(
           <tr key={it.id || idx} className={supplyMissing ? 'supply-row-missing' : undefined}>
             <td className="estimate-num">{displayNum}</td>
@@ -418,9 +431,14 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             {!hideWorkVolume && <td className="estimate-num-cell">{fmtNum(it.work_volume)}</td>}
             <td className="estimate-num-cell">{fmtNum(it.material_consumption)}</td>
             {showSupply && (
-              <td className={`estimate-num-cell estimate-supply-cell${supplyMissing ? ' supply-price-missing' : ''}`}>
-                {fmtMoney(sc.leaf[idx])}
-              </td>
+              <>
+                <td className={`estimate-num-cell estimate-supply-cell${supplyMissing ? ' supply-price-missing' : ''}`}>
+                  {fmtMoney(sc.unitPrice[idx])}
+                </td>
+                <td className={`estimate-num-cell estimate-supply-cell estimate-supply-total-cell${supplyMissing ? ' supply-price-missing' : ''}`}>
+                  {fmtMoney(sc.leaf[idx])}
+                </td>
+              </>
             )}
           </tr>
         )
@@ -441,14 +459,16 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             <th style={{ width: '90px' }}>Ед. изм.</th>
             {!hideWorkVolume && <th style={{ width: '130px' }}>Объём работ</th>}
             <th style={{ width: '130px' }}>Объём материалов</th>
-            {showSupply && <th style={{ width: '180px' }}>Стоимость материалов от снабжения</th>}
+            {showSupply && <th style={{ width: '150px' }}>Цена за ед. от снабжения</th>}
+            {showSupply && <th style={{ width: '150px' }}>Итого от снабжения</th>}
           </tr>
         </thead>
         <tbody>{rendered}</tbody>
         {showSupply && sc.grand > 0 && (
           <tfoot>
             <tr className="estimate-total-row">
-              <td colSpan={hideWorkVolume ? 5 : 6}>Итого стоимость материалов от снабжения</td>
+              <td colSpan={hideWorkVolume ? 5 : 6}>Итого от снабжения</td>
+              <td className="estimate-num-cell estimate-supply-total" />
               <td className="estimate-num-cell estimate-supply-total">{fmtMoney(sc.grand)}</td>
             </tr>
           </tfoot>
