@@ -1,5 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
+
+// security fix: понятное сообщение при невозможности загрузить права (fail-closed).
+const ROLE_LOAD_ERROR = 'Не удалось загрузить права доступа. Обновите страницу или обратитесь к администратору.'
 
 const RoleContext = createContext()
 
@@ -44,13 +47,20 @@ export const SECTIONS = {
 }
 
 export function RoleProvider({ children }) {
-  const [role, setRole] = useState(() => localStorage.getItem('userRole') || null)
+  // security fix (fail-closed): роль НЕ берём из localStorage как источник истины —
+  // только из Supabase после успешной проверки. Init = null, доступ закрыт, пока роль
+  // не подтверждена БД. localStorage используется лишь как подсказка для восстановления
+  // вида подрядчика (захватываем её в ref ДО того, как persist-эффект перезапишет ключ).
+  const initialSavedRole = useRef(localStorage.getItem('userRole'))
+  const [role, setRole] = useState(null)
   const [contractorInfo, setContractorInfo] = useState(() => {
     const saved = localStorage.getItem('contractorInfo')
     return saved ? JSON.parse(saved) : null
   })
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  // security fix: ошибка загрузки роли/прав → fail-closed (экран ошибки, НЕ admin).
+  const [roleError, setRoleError] = useState(null)
   const [permissions, setPermissions] = useState({}) // { section: { can_view, can_edit } }
   const [userProfile, setUserProfile] = useState({ full_name: '' })
   // Динамический справочник ролей из БД (таблица roles)
@@ -84,11 +94,12 @@ export function RoleProvider({ children }) {
     return acc
   }, { ...ROLE_LABELS })
 
-  // Загрузить права для роли
+  // Загрузить права для роли. Возвращает true при успехе, false при ошибке —
+  // вызывающий сам решает, что делать (fail-closed для не-админа).
   const fetchPermissions = useCallback(async (userRole) => {
     if (!userRole || userRole === ROLES.CONTRACTOR) {
       setPermissions({})
-      return
+      return true
     }
     try {
       const { data, error } = await supabase
@@ -103,15 +114,28 @@ export function RoleProvider({ children }) {
         perms[p.section] = { can_view: p.can_view, can_edit: p.can_edit }
       })
       setPermissions(perms)
+      return true
     } catch (err) {
       console.error('Ошибка загрузки прав:', err.message)
       setPermissions({})
+      return false
     }
   }, [])
 
-  // Загрузить роль пользователя из БД
+  // Сбросить доступ в безопасное состояние (fail-closed). Никогда не выдаёт admin.
+  const denyAccess = useCallback((message) => {
+    setRole(null)
+    setPermissions({})
+    setUserProfile({ full_name: '' })
+    if (message) setRoleError(message)
+  }, [])
+
+  // Загрузить роль пользователя из БД.
+  // security fix: НИКОГДА не выдаём admin при ошибке/пустом ответе/недоступности БД.
+  // admin назначается только если роль admin реально подтверждена данными из Supabase.
   const fetchUserRole = useCallback(async (userId, userEmail) => {
     const isSuperAdmin = SUPER_ADMINS.includes(userEmail?.toLowerCase())
+    setRoleError(null)
 
     try {
       const { data, error } = await supabase
@@ -124,34 +148,40 @@ export function RoleProvider({ children }) {
 
       if (data) {
         if (!data.is_approved && isSuperAdmin) {
-          // Суперадмин — автоподтверждение
+          // Суперадмин — автоподтверждение (требует прав записи; при RLS-блокировке
+          // упадёт в catch → fail-closed, а не admin).
           await supabase
             .from('user_roles')
             .update({ is_approved: true, role: 'admin' })
             .eq('user_id', userId)
-          setRole(ROLES.ADMIN)
-          setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_id: data.object_id || null })
           await fetchPermissions(ROLES.ADMIN)
+          setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_id: data.object_id || null })
+          setRole(ROLES.ADMIN)
           return
         }
         if (!data.is_approved) {
           await supabase.auth.signOut()
           throw new Error('PENDING_APPROVAL')
         }
-        setRole(data.role)
+        // Роль подтверждена БД. Грузим права; для НЕ-админа провал прав = fail-closed.
+        const permsOk = await fetchPermissions(data.role)
+        if (data.role !== ROLES.ADMIN && !permsOk) {
+          denyAccess(ROLE_LOAD_ERROR)
+          return
+        }
         setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_id: data.object_id || null })
-        await fetchPermissions(data.role)
+        setRole(data.role)
       } else {
         if (isSuperAdmin) {
-          // Суперадмин — создаём сразу подтверждённым
+          // Суперадмин — создаём сразу подтверждённым (требует прав записи).
           await supabase
             .from('user_roles')
             .insert([{ user_id: userId, email: userEmail, role: 'admin', is_approved: true }])
-          setRole(ROLES.ADMIN)
           await fetchPermissions(ROLES.ADMIN)
+          setRole(ROLES.ADMIN)
           return
         }
-        // Обычный пользователь — заявка
+        // Обычный пользователь — заявка (pending), доступ закрыт до подтверждения админом.
         await supabase
           .from('user_roles')
           .insert([{ user_id: userId, email: userEmail, role: 'engineer', is_approved: false }])
@@ -161,11 +191,11 @@ export function RoleProvider({ children }) {
       }
     } catch (err) {
       if (err.message === 'PENDING_APPROVAL') throw err
+      // security fix (fail-closed): ошибка/недоступность БД/RLS → НЕ admin, а отказ.
       console.error('Ошибка загрузки роли:', err.message)
-      // Если таблица не существует — даём полный доступ
-      setRole(ROLES.ADMIN)
+      denyAccess(ROLE_LOAD_ERROR)
     }
-  }, [fetchPermissions])
+  }, [fetchPermissions, denyAccess])
 
   // Инициализация Supabase Auth
   useEffect(() => {
@@ -173,9 +203,9 @@ export function RoleProvider({ children }) {
       const u = session?.user ?? null
       setUser(u)
       if (u) {
-        // Если подрядчик (сохранён в localStorage) — не трогаем
-        const savedRole = localStorage.getItem('userRole')
-        if (savedRole === ROLES.CONTRACTOR) {
+        // Восстановление вида подрядчика — по подсказке из localStorage (захвачена в ref
+        // до того, как persist-эффект мог её перезаписать). Подрядчик — минимальные права.
+        if (initialSavedRole.current === ROLES.CONTRACTOR) {
           setRole(ROLES.CONTRACTOR)
         } else {
           try {
@@ -183,31 +213,32 @@ export function RoleProvider({ children }) {
           } catch (err) {
             if (err.message === 'PENDING_APPROVAL') {
               setUser(null)
-              setRole(null)
+              denyAccess(null)
             }
           }
         }
       } else {
-        setRole(null)
+        denyAccess(null)
         setContractorInfo(null)
-        setPermissions({})
       }
       setAuthLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // Реагируем только на ВЫХОД. Вход/обновление токена обрабатывают getSession (старт)
+    // и функции входа — чтобы не сбросить authLoading в false до проверки роли (иначе
+    // во время проверки могли бы отрендериться внутренние страницы с непроверенной ролью).
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user ?? null
-      setUser(u)
       if (!u) {
-        setRole(null)
+        setUser(null)
+        denyAccess(null)
         setContractorInfo(null)
-        setPermissions({})
+        setAuthLoading(false)
       }
-      setAuthLoading(false)
     })
 
     return () => subscription.unsubscribe()
-  }, [fetchUserRole])
+  }, [fetchUserRole, denyAccess])
 
   // Persist
   useEffect(() => {
@@ -305,6 +336,7 @@ export function RoleProvider({ children }) {
     setContractorInfo(null)
     setUser(null)
     setPermissions({})
+    setRoleError(null)
     setUserProfile({ full_name: '', work_phone: '', work_email: '', created_at: '' })
   }
 
@@ -354,6 +386,7 @@ export function RoleProvider({ children }) {
       isContractor,
       isLoggedIn,
       authLoading,
+      roleError,
       loginWithPassword,
       loginAsContractor,
       signUp,

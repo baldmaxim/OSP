@@ -3,6 +3,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { RoleProvider, useRole } from './contexts/RoleContext'
 import { lazy, Suspense } from 'react'
 import Sidebar from './components/Sidebar'
+import AccessError from './components/AccessError'
 import './App.css'
 
 // Lazy load всех страниц — загружаются только при переходе
@@ -44,11 +45,15 @@ const PageLoader = () => (
 
 // Компонент для защищённых маршрутов сотрудника
 function EmployeeLayout() {
-  const { isEmployee, isLoggedIn, authLoading } = useRole()
+  const { isEmployee, isLoggedIn, authLoading, roleError } = useRole()
 
   if (authLoading) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-tertiary)' }}>Загрузка...</div>
   }
+
+  // security fix (fail-closed): ошибка загрузки роли/прав → экран ошибки, НЕ внутренние
+  // страницы и НЕ admin. Раньше тут пользователь с непроверенной ролью мог получить доступ.
+  if (roleError) return <AccessError message={roleError} />
 
   if (!isLoggedIn) return <Navigate to="/login" replace />
   if (!isEmployee) return <Navigate to="/contractor/proposals" replace />
