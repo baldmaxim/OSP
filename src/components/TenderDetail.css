@@ -361,6 +361,22 @@
   padding: 0 1rem 1rem;
 }
 
+/* task 410: контейнер виртуализированной таблицы — собственный вертикальный скролл
+   (чтобы было место для окна виртуализации) + липкая шапка внутри него. Горизонтальный
+   скролл сохраняется. Применяется только к большим ВОР (выше порога VIRTUALIZE_FROM). */
+.table-container.table-virtual {
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+.table-container.table-virtual .estimate-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.vt-spacer td {
+  background: transparent;
+}
+
 .estimate-table-container {
   overflow-x: auto;
   padding: 0;

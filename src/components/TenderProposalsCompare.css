@@ -390,6 +390,17 @@
 }
 
 /* ===== Таблица сравнения ===== */
+/* task 410: виртуализированная большая таблица сравнения — собственный вертикальный
+   скролл (контейнер виртуализации) + липкая шапка (thead уже sticky) внутри него.
+   Горизонтальный скролл сохраняется. Включается только выше порога VIRTUALIZE_FROM. */
+.proposals-table-wrap.proposals-virtual {
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+}
+.vt-spacer td {
+  background: transparent;
+}
+
 .proposals-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border-color);

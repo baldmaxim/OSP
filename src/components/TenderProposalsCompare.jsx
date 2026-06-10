@@ -1,9 +1,13 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import TenderProposalUploadModal from './TenderProposalUploadModal'
+import VirtualTableBody from './VirtualTableBody'
 import { normalizeKey, normalizeUnit } from '../utils/parseProposalExcel'
 import { supplyUnitPrice, supplyTotal } from '../utils/supplyRateHelpers'
 import './TenderProposalsCompare.css'
+
+// task 410: порог включения виртуализации <tbody> в детальной таблице сравнения.
+const VIRTUALIZE_FROM = 150
 
 // task 346 + 349: вкладка «Сравнение КП» в тендере.
 // Структура:
@@ -901,8 +905,57 @@ function SourceTable({
   const supplyMissingOf = (it) =>
     hasSupplyData && !isWorkRow(it) && Number(it.material_consumption) > 0 && supplyUnitOf(it) == null
   const supplyGrandTotal = itemsOfScope.reduce((s, it) => s + (supplyTotalOf(it) || 0), 0)
+  // task 410: тело таблицы считаем массивом строк заранее — при большом числе позиций
+  // отдаём его в VirtualTableBody (в DOM попадает окно строк, а не все 5000).
+  const scrollRef = useRef(null)
+  const bodyRows = itemsOfScope.map((it, idx) => {
+    const minPrice = minByItem.get(it.id)
+    const supplyUnit = supplyUnitOf(it)
+    const supplyCost = supplyTotalOf(it)
+    const supplyMissing = supplyMissingOf(it)
+    return (
+      <tr key={it.id} className={supplyMissing ? 'supply-row-missing' : undefined}>
+        <td className="td-num">{idx + 1}</td>
+        {showDocColumn && <td className="td-doc">{it.estimate_name || '—'}</td>}
+        <td className="td-code">{it.code || '—'}</td>
+        <td className="td-name" title={it.cost_name}>{it.cost_name}</td>
+        <td className="td-unit">{it.unit || '—'}</td>
+        <td className="td-vol">{fmtMoney(it.work_volume)}</td>
+        <td className="td-vol">{fmtMoney(it.material_consumption)}</td>
+        <td className={`td-price td-supply td-cp-first${supplyMissing ? ' supply-price-missing' : ''}`}>
+          {supplyUnit != null ? fmtMoney(supplyUnit) : '—'}
+        </td>
+        <td className={`td-price td-supply td-supply-total${supplyMissing ? ' supply-price-missing' : ''}`}>
+          {supplyCost != null ? fmtMoney(supplyCost) : '—'}
+        </td>
+        {counterpartiesInScope.map(cp => {
+          const p = proposalLookup.get(`${it.id}__${cp.id}`)
+          const total = p ? Number(p.total_cost) || 0 : 0
+          const isMin = total > 0 && minPrice != null && total === minPrice
+          // task 401: строка, существующая только ради пометки «учтено»,
+          // не имеет цен — показываем «—» во всех денежных ячейках.
+          const flagOnly = !!p?.covered_elsewhere && total <= 0
+          const cell = (v) => (p && !flagOnly ? fmtMoney(v) : '—')
+          return (
+            <React.Fragment key={cp.id}>
+              <td className="td-price td-cp-first">{cell(p?.unit_price_materials)}</td>
+              <td className="td-price td-sum">{cell(p?.total_materials)}</td>
+              <td className="td-price">{cell(p?.unit_price_works)}</td>
+              <td className="td-price td-sum">{cell(p?.total_works)}</td>
+              <SourceTotalCell
+                it={it} cp={cp} p={p} isMin={isMin}
+                canEdit={canEdit} onToggleCovered={onToggleCovered}
+              />
+            </React.Fragment>
+          )
+        })}
+      </tr>
+    )
+  })
+  const totalCols = (showDocColumn ? 7 : 6) + 2 + counterpartiesInScope.length * 5
+  const virtualize = bodyRows.length > VIRTUALIZE_FROM
   return (
-    <div className="proposals-table-wrap">
+    <div ref={scrollRef} className={`proposals-table-wrap${virtualize ? ' proposals-virtual' : ''}`}>
       <table className="proposals-table">
         <thead>
           <tr>
@@ -935,52 +988,9 @@ function SourceTable({
             ))}
           </tr>
         </thead>
-        <tbody>
-          {itemsOfScope.map((it, idx) => {
-            const minPrice = minByItem.get(it.id)
-            const supplyUnit = supplyUnitOf(it)
-            const supplyCost = supplyTotalOf(it)
-            const supplyMissing = supplyMissingOf(it)
-            return (
-              <tr key={it.id} className={supplyMissing ? 'supply-row-missing' : undefined}>
-                <td className="td-num">{idx + 1}</td>
-                {showDocColumn && <td className="td-doc">{it.estimate_name || '—'}</td>}
-                <td className="td-code">{it.code || '—'}</td>
-                <td className="td-name" title={it.cost_name}>{it.cost_name}</td>
-                <td className="td-unit">{it.unit || '—'}</td>
-                <td className="td-vol">{fmtMoney(it.work_volume)}</td>
-                <td className="td-vol">{fmtMoney(it.material_consumption)}</td>
-                <td className={`td-price td-supply td-cp-first${supplyMissing ? ' supply-price-missing' : ''}`}>
-                  {supplyUnit != null ? fmtMoney(supplyUnit) : '—'}
-                </td>
-                <td className={`td-price td-supply td-supply-total${supplyMissing ? ' supply-price-missing' : ''}`}>
-                  {supplyCost != null ? fmtMoney(supplyCost) : '—'}
-                </td>
-                {counterpartiesInScope.map(cp => {
-                  const p = proposalLookup.get(`${it.id}__${cp.id}`)
-                  const total = p ? Number(p.total_cost) || 0 : 0
-                  const isMin = total > 0 && minPrice != null && total === minPrice
-                  // task 401: строка, существующая только ради пометки «учтено»,
-                  // не имеет цен — показываем «—» во всех денежных ячейках.
-                  const flagOnly = !!p?.covered_elsewhere && total <= 0
-                  const cell = (v) => (p && !flagOnly ? fmtMoney(v) : '—')
-                  return (
-                    <React.Fragment key={cp.id}>
-                      <td className="td-price td-cp-first">{cell(p?.unit_price_materials)}</td>
-                      <td className="td-price td-sum">{cell(p?.total_materials)}</td>
-                      <td className="td-price">{cell(p?.unit_price_works)}</td>
-                      <td className="td-price td-sum">{cell(p?.total_works)}</td>
-                      <SourceTotalCell
-                        it={it} cp={cp} p={p} isMin={isMin}
-                        canEdit={canEdit} onToggleCovered={onToggleCovered}
-                      />
-                    </React.Fragment>
-                  )
-                })}
-              </tr>
-            )
-          })}
-        </tbody>
+        {virtualize
+          ? <VirtualTableBody rows={bodyRows} colSpan={totalCols} scrollRef={scrollRef} rowHeight={33} />
+          : <tbody>{bodyRows}</tbody>}
         <tfoot>
           <tr className="proposals-total-row">
             <td colSpan={showDocColumn ? 7 : 6} style={{ textAlign: 'right' }}>ИТОГО, ₽:</td>

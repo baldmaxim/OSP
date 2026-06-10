@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, memo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
@@ -8,8 +8,13 @@ import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
 import VorDocsModal from '../components/VorDocsModal'
+import VirtualTableBody from '../components/VirtualTableBody'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import '../components/TenderDetail.css'
+
+// task 410: с какого числа видимых строк включаем виртуализацию <tbody>.
+// Ниже порога — обычный рендер (поведение 1:1 как раньше, нулевой риск для мелких ВОР).
+const VIRTUALIZE_FROM = 150
 
 // task 261: числа выводим с округлением до сотых
 const fmtNum = (v) => (v === null || v === undefined || v === '')
@@ -290,7 +295,8 @@ function DocTabsTree({ docNames, estimateItems, selected, onSelect }) {
   )
 }
 
-function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDoc, supplyCosts, showSupply = false, hideWorkVolume = false }) {
+const EstimateTable = memo(function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDoc, supplyCosts, showSupply = false, hideWorkVolume = false }) {
+  const scrollRef = useRef(null)
   const sc = supplyCosts || { leaf: [], unitPrice: [], sectionTotals: new Map(), docTotals: new Map(), grand: 0 }
   // colSpan «средних» колонок (КОД…Объём материалов) для строк-разделов/разделителей.
   const midSpan = hideWorkVolume ? 4 : 5
@@ -448,8 +454,13 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
   }
   // suppress unused warning
   void docHiddenKey
+  // task 410: при большом числе видимых строк виртуализируем <tbody> (в DOM — окно,
+  // а не тысячи <tr>). Логика построения строк выше не меняется — окном управляет
+  // только VirtualTableBody. Число колонок нужно для colSpan строк-спейсеров.
+  const totalCols = 5 + (hideWorkVolume ? 0 : 1) + (showSupply ? 2 : 0)
+  const virtualize = rendered.length > VIRTUALIZE_FROM
   return (
-    <div className="table-container">
+    <div ref={scrollRef} className={`table-container${virtualize ? ' table-virtual' : ''}`}>
       <table className="data-table estimate-table">
         <thead>
           <tr>
@@ -463,7 +474,9 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
             {showSupply && <th style={{ width: '150px' }}>Итого от снабжения</th>}
           </tr>
         </thead>
-        <tbody>{rendered}</tbody>
+        {virtualize
+          ? <VirtualTableBody rows={rendered} colSpan={totalCols} scrollRef={scrollRef} rowHeight={48} />
+          : <tbody>{rendered}</tbody>}
         {showSupply && sc.grand > 0 && (
           <tfoot>
             <tr className="estimate-total-row">
@@ -476,7 +489,7 @@ function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDo
       </table>
     </div>
   )
-}
+})
 
 // task 260: подвкладки «Материалы»/«Работы» — суммирование объёмов по наименованию
 // task 398: для «Материалы» добавляем колонку стоимости от снабжения (Σ объём×цена).
@@ -613,6 +626,10 @@ function TenderDetailPage() {
 
   // task 398: расценки от снабжения по материалам ВОР (отдельная вкладка)
   const [supplyRates, setSupplyRates] = useState([])
+  // task 410: лёгкие счётчики для бейджей вкладок (грузятся на открытии тендера
+  // через count head — без выгрузки полного массива; сами массивы грузятся лениво).
+  const [supplyRatesCount, setSupplyRatesCount] = useState(0)
+  const [auditLogCount, setAuditLogCount] = useState(0)
   const supplyFileRef = useRef(null)
   const [supplyImportReport, setSupplyImportReport] = useState(null)
   const [supplyConflictDecisions, setSupplyConflictDecisions] = useState({})
@@ -667,17 +684,54 @@ function TenderDetailPage() {
   const refreshVorDocCount = () => refreshDocCount('vor', setVorDocCount)
   const refreshPackageDocCount = () => refreshDocCount('tender_package', setPackageDocCount)
 
+  // task 410: лёгкие счётчики для бейджей «Расценки снабжения» и «История».
+  const refreshTabCounts = async () => {
+    try {
+      const [supply, audit] = await Promise.all([
+        supabase.from('tender_vor_supply_rates').select('id', { count: 'exact', head: true }).eq('tender_id', tenderId),
+        supabase.from('tender_audit_log').select('id', { count: 'exact', head: true }).eq('tender_id', tenderId),
+      ])
+      setSupplyRatesCount(supply.count || 0)
+      setAuditLogCount(audit.count || 0)
+    } catch (err) {
+      console.error('Ошибка загрузки счётчиков вкладок:', err.message)
+    }
+  }
+
+  // task 410: какие «тяжёлые» вкладки уже подгрузили — чтобы не грузить повторно
+  // при переключении и не грузить всё сразу при открытии тендера.
+  const loadedTabsRef = useRef(new Set())
+
   useEffect(() => {
     if (tenderId) {
+      // На открытии — только то, что нужно для карточки и вкладки «ВОР» по умолчанию.
+      // История и расценки снабжения грузятся лениво при первом открытии их вкладок.
+      loadedTabsRef.current = new Set()
       fetchTenderData()
-      loadAuditLog()
       fetchEstimateItems()
-      fetchSupplyRates()
       refreshVorDocCount()
       refreshPackageDocCount()
+      refreshTabCounts()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
+
+  // task 410: ленивые загрузки по вкладкам (один раз на тендер).
+  //  • «История» → loadAuditLog;
+  //  • «Расценки снабжения» / «Сравнение КП» → fetchSupplyRates (нужны для колонок снабжения).
+  useEffect(() => {
+    if (!tenderId) return
+    const loaded = loadedTabsRef.current
+    if (activeTab === 'history' && !loaded.has('history')) {
+      loaded.add('history')
+      loadAuditLog()
+    }
+    if ((activeTab === 'supply' || activeTab === 'proposals') && !loaded.has('supply')) {
+      loaded.add('supply')
+      fetchSupplyRates()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, tenderId])
 
   // task 259: загрузка сохранённой сметы тендера
   // task 366: paginated fetch to avoid PostgREST 1000-row default limit
@@ -2036,7 +2090,9 @@ function TenderDetailPage() {
           onClick={() => setActiveTab('supply')}
         >
           Расценки снабжения
-          {supplyRates.length > 0 && <span className="tab-count">{supplyRates.length}</span>}
+          {(supplyRates.length || supplyRatesCount) > 0 && (
+            <span className="tab-count">{supplyRates.length || supplyRatesCount}</span>
+          )}
         </button>
         {/* task 346: Сравнение КП — между ВОР и Участники */}
         <button
@@ -2058,7 +2114,9 @@ function TenderDetailPage() {
           onClick={() => setActiveTab('history')}
         >
           История
-          {auditLog.length > 0 && <span className="tab-count">{auditLog.length}</span>}
+          {(auditLog.length || auditLogCount) > 0 && (
+            <span className="tab-count">{auditLog.length || auditLogCount}</span>
+          )}
         </button>
       </div>
 
