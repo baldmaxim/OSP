@@ -1,0 +1,11 @@
+-- task 413: справочники фильтров вкладки «Расценки от подрядчиков (КП)».
+-- Источник истины — миграция supabase/migrations/20260612_add_rates_registry_filter_options.sql.
+--
+-- kp_rates_registry_filter_objects (object_id, object_name) — только объекты, у которых
+--   есть КП-расценки в реестре (distinct object_id из kp_rates_registry + имя объекта).
+-- kp_rates_registry_filter_counterparties (counterparty_id, counterparty_name) — только
+--   подрядчики, предоставившие КП (distinct counterparty_id из kp_rates_registry + имя).
+--
+-- Списки «самораширяются»: появилась КП-расценка по новому объекту/подрядчику → он в фильтре.
+-- СУ-10 сюда не попадает (это другой источник — supply_rates_registry, task 412).
+-- Зависит от kp_rates_registry (task 411).
