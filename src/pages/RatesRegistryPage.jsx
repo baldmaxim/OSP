@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { normalizeKey, normalizeUnit } from '../utils/parseProposalExcel'
 import './RatesRegistryPage.css'
 
 // task 356: Реестр расценок — общий список расценок из разных источников.
@@ -45,6 +46,8 @@ function RatesRegistryPage() {
           .from('tender_counterparty_proposals')
           .select(`
             id,
+            tender_id,
+            counterparty_id,
             unit_price_materials,
             unit_price_works,
             proposal_date,
@@ -71,17 +74,36 @@ function RatesRegistryPage() {
     if (topTab === 'kp') loadKpRates()
   }, [topTab, loadKpRates])
 
-  // Разбиваем proposals на материалы и работы.
+  // task 409: реестр хранит БАЗОВЫЕ расценки по категориям (материалы/работы), а не
+  // строки ВОР. Одна базовая позиция (например «Грунтовка»), которую подрядчик расценил
+  // один раз, но которая встречается в нескольких строках ВОР, должна попасть в реестр
+  // ОДИН раз. Дедуп по устойчивому ключу: тендер + контрагент + тип + нормализованное
+  // наименование + ед.изм. Нормализация — теми же normalizeKey/normalizeUnit, что и
+  // агрегирование «Материалы/Работы» в Сравнении КП (одинаковое определение «базовой
+  // позиции»). Разные тендеры/контрагенты/типы не смешиваются; «Грунтовка» и «Грунтовка
+  // глубокого проникновения» остаются разными (normalizeKey не склеивает разные слова).
   const { materialEntries, workEntries } = useMemo(() => {
-    const materials = []
-    const works = []
+    const matMap = new Map()
+    const workMap = new Map()
+    // Оставляем более свежую расценку при совпадении ключа; при равной дате — первую.
+    const keepNewer = (map, key, entry) => {
+      const prev = map.get(key)
+      if (!prev || (entry.proposalDate || '') > (prev.proposalDate || '')) map.set(key, entry)
+    }
     for (const p of rows) {
       const item = p.tender_estimate_items
       if (!item) continue
       const objectName = p.tenders?.objects?.name || '—'
       const counterparty = p.counterparties?.name || '—'
-      const tenderId = p.tenders?.id || null
+      const cpId = p.counterparty_id || counterparty
+      const tenderId = p.tenders?.id || p.tender_id || null
       const tenderDesc = p.tenders?.work_description || ''
+      const name = item.cost_name || ''
+      const unit = item.unit || ''
+      const nameKey = normalizeKey(name)
+      if (!nameKey) continue // без наименования базовую расценку не идентифицировать
+      const unitKey = normalizeUnit(unit)
+      const dedupKey = `${tenderId}∣${cpId}∣${nameKey}∣${unitKey}`
       const matVol = Number(item.material_consumption) || 0
       const matPrice = Number(p.unit_price_materials) || 0
       const workVol = Number(item.work_volume) || 0
@@ -90,17 +112,17 @@ function RatesRegistryPage() {
       const base = {
         object: objectName,
         counterparty,
-        name: item.cost_name || '',
-        unit: item.unit || '',
+        name,
+        unit,
         proposalDate: p.proposal_date,
         tenderId,
         tenderDesc,
       }
       if (matVol > 0 && matPrice > 0) {
-        materials.push({ ...base, id: `${p.id}:mat`, price: matPrice })
+        keepNewer(matMap, dedupKey, { ...base, id: `mat:${dedupKey}`, price: matPrice })
       }
       if (workVol > 0 && workPrice > 0) {
-        works.push({ ...base, id: `${p.id}:work`, price: workPrice })
+        keepNewer(workMap, dedupKey, { ...base, id: `work:${dedupKey}`, price: workPrice })
       }
     }
     const sortFn = (a, b) => {
@@ -108,8 +130,8 @@ function RatesRegistryPage() {
       if (n !== 0) return n
       return (b.proposalDate || '').localeCompare(a.proposalDate || '')
     }
-    materials.sort(sortFn)
-    works.sort(sortFn)
+    const materials = [...matMap.values()].sort(sortFn)
+    const works = [...workMap.values()].sort(sortFn)
     return { materialEntries: materials, workEntries: works }
   }, [rows])
 
