@@ -16,6 +16,5 @@ ALTER TABLE counterparty_relations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all for authenticated users" ON counterparty_relations
     FOR ALL TO authenticated
     USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for anon users" ON counterparty_relations
-    FOR ALL TO anon
-    USING (true) WITH CHECK (true);
+-- security fix (20260614_fix_rls_public_access): опасная политика "Allow all for anon users"
+-- удалена — внутренняя таблица не должна быть доступна anon.

@@ -1,0 +1,41 @@
+-- Модель безопасности RLS (актуальное состояние после миграции
+-- 20260614_fix_rls_public_access.sql). Источник истины — миграция; этот файл —
+-- справочное описание.
+--
+-- ПРИНЦИПЫ
+--   * RLS включён на ВСЕХ таблицах схемы public.
+--   * anon НЕ имеет доступа к внутренним таблицам. Единственное исключение —
+--     публичная страница тендеров: read-only SELECT TO anon на tenders и objects
+--     (только статус «Идет тендерная процедура», не удалённые, основные тендеры).
+--   * Прочие таблицы данных: единая политика FOR ALL TO authenticated
+--     USING (true) WITH CHECK (true) (модель приложения: сотрудник/подрядчик =
+--     полный доступ; и сотрудники, и подрядчики входят как Supabase authenticated).
+--   * Удалены опасные политики FOR ALL TO anon / без TO (= public) на:
+--     user_roles, role_permissions, roles, counterparty_relations, object_estimate_items
+--     и любых других (generic-sweep по pg_policies).
+--
+-- ФУНКЦИИ
+--   public.is_admin() — SECURITY DEFINER STABLE: текущий пользователь — активный
+--     админ (user_roles.role='admin' AND is_approved=true для auth.uid()). DEFINER →
+--     читает user_roles в обход RLS, поэтому нет рекурсии в политиках user_roles.
+--   public.touch_last_login() — SECURITY DEFINER: обновляет last_login_at своей записи
+--     (чтобы не выдавать authenticated прямой UPDATE на user_roles). Фронт вызывает rpc.
+--
+-- РОЛЕВЫЕ ТАБЛИЦЫ (anon закрыт полностью)
+--   user_roles:
+--     SELECT  — своя запись (user_id = auth.uid()) ИЛИ is_admin();
+--     INSERT  — только своя запись и только is_approved = false (регистрация-заявка;
+--               самоназначение доступа невозможно);
+--     UPDATE  — только is_admin() (подтверждение/смена роли);
+--     DELETE  — только is_admin().
+--   role_permissions:
+--     SELECT  — любой authenticated (матрица прав нужна фронту);
+--     INSERT/UPDATE/DELETE — только is_admin().
+--   roles:
+--     SELECT  — любой authenticated; INSERT/UPDATE/DELETE — только is_admin().
+--
+-- БУТСТРАП ПЕРВОГО АДМИНА (важно)
+--   Клиентское «авто-провижининг» супер-админа (вставка is_approved=true) теперь
+--   блокируется RLS. Первого/нового админа назначайте в БД один раз:
+--     update public.user_roles set role='admin', is_approved=true where email='<email>';
+--   (существующие подтверждённые админы продолжают работать без изменений).

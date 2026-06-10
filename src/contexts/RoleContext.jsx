@@ -227,12 +227,10 @@ export function RoleProvider({ children }) {
     setUser(data.user)
     await fetchUserRole(data.user.id, email)
     setContractorInfo(null)
-    // Фиксируем фактический момент входа: ждём обновления, чтобы запись точно успела пройти.
+    // Фиксируем момент входа через SECURITY DEFINER RPC — чтобы не выдавать
+    // обычным пользователям прямой UPDATE на user_roles (RLS, security task).
     try {
-      const { error: loginErr } = await supabase
-        .from('user_roles')
-        .update({ last_login_at: new Date().toISOString() })
-        .eq('user_id', data.user.id)
+      const { error: loginErr } = await supabase.rpc('touch_last_login')
       if (loginErr) console.error('Не удалось обновить last_login_at:', loginErr.message)
     } catch (err) {
       console.error('Не удалось обновить last_login_at:', err?.message || err)
@@ -269,10 +267,7 @@ export function RoleProvider({ children }) {
     setContractorInfo({ id: counterpartyId, name: counterpartyName })
     setPermissions({})
     try {
-      const { error: loginErr } = await supabase
-        .from('user_roles')
-        .update({ last_login_at: new Date().toISOString() })
-        .eq('user_id', data.user.id)
+      const { error: loginErr } = await supabase.rpc('touch_last_login')
       if (loginErr) console.error('Не удалось обновить last_login_at:', loginErr.message)
     } catch (err) {
       console.error('Не удалось обновить last_login_at:', err?.message || err)
