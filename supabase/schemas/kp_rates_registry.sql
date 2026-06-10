@@ -1,0 +1,37 @@
+-- task 411: «Общий реестр расценок» (вкладка «Расценки от подрядчиков (КП)»).
+-- Не таблица, а ПРЕДСТАВЛЕНИЕ над tender_counterparty_proposals с серверным дедупом,
+-- чтобы фронт мог пагинировать/фильтровать/искать/сортировать на стороне БД.
+-- Источник истины — миграция supabase/migrations/20260610_optimize_rates_registry.sql.
+--
+-- Колонки kp_rates_registry:
+--   id                — стабильный синтетический ключ (md5 от ключа дедупа)
+--   item_type         — 'material' | 'work'
+--   item_name         — наименование позиции (cost_name из ВОР)
+--   unit              — единица измерения
+--   price             — цена за ед. (unit_price_materials / unit_price_works)
+--   tender_id         — тендер
+--   counterparty_id   — подрядчик
+--   object_id         — объект (через tenders.object_id), может быть NULL
+--   tender_desc       — tenders.work_description (для гиперссылки)
+--   object_name       — objects.name
+--   counterparty_name — counterparties.name
+--   proposal_date     — дата КП
+--
+-- Дедуп: DISTINCT ON (tender_id, counterparty_id, item_type, kp_norm_name(item_name),
+--   kp_norm_unit(unit)) с приоритетом по proposal_date DESC — одна базовая позиция,
+--   встречающаяся в нескольких строках ВОР, в реестре одна.
+--
+-- kp_norm_name / kp_norm_unit — нормализация наименования/единицы (приближённо как
+--   normalizeKey/normalizeUnit на фронте) — только для группировки.
+--
+-- kp_rates_registry_units — лёгкое представление distinct unit для фильтра.
+--
+-- Индексы (на нижележащих таблицах):
+--   tender_counterparty_proposals(tender_id, counterparty_id, estimate_item_id,
+--     proposal_date desc, unit_price_materials, unit_price_works)
+--   tender_estimate_items USING gin (cost_name gin_trgm_ops), tender_estimate_items(unit)
+--   tenders(object_id)
+--
+-- Примечание по масштабу: представление считает DISTINCT ON на каждый запрос. Для
+-- текущих объёмов (тысячи строк) это мгновенно; для миллионов потребуется материализация
+-- (отдельная таблица-реестр, наполняемая при импорте КП) — отдельная задача.

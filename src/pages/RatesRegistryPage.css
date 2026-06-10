@@ -443,3 +443,121 @@
   .rr-filters { grid-template-columns: 1fr; }
   .rr-filter-reset { justify-self: stretch; }
 }
+
+/* task 411: диапазонные фильтры (цена/дата) */
+.rr-filter-range {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.rr-filter-num,
+.rr-filter-date {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+.rr-filter-num:focus,
+.rr-filter-date:focus {
+  outline: none;
+  border-color: var(--accent-color, #2563eb);
+}
+.rr-filter-range-dash {
+  color: var(--text-tertiary);
+  flex: 0 0 auto;
+}
+
+/* task 411: сортируемые заголовки */
+.rr-th-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.rr-th-sortable:hover {
+  color: var(--accent-color, #2563eb);
+}
+
+/* task 411: индикатор фоновой загрузки страницы (фильтры/пагинация) */
+.rr-table-wrap.is-loading {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* task 411: ошибка загрузки */
+.rr-error {
+  color: var(--danger-color, #dc2626);
+}
+.rr-error-hint {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.rr-error-hint code {
+  background: var(--bg-tertiary);
+  padding: 0.1rem 0.35rem;
+  border-radius: 5px;
+}
+
+/* task 411: серверная пагинация */
+.rr-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.25rem;
+}
+.rr-pagination-info {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.rr-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.rr-page-size {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-right: 0.5rem;
+}
+.rr-page-size select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.rr-page-btn {
+  min-width: 2rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.9375rem;
+}
+.rr-page-btn:hover:not(:disabled) {
+  border-color: var(--accent-color, #2563eb);
+  color: var(--accent-color, #2563eb);
+}
+.rr-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.rr-page-cur {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  padding: 0 0.375rem;
+  white-space: nowrap;
+}
