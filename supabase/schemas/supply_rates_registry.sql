@@ -28,3 +28,8 @@
 --   gin(material_name gin_trgm_ops) для ilike-поиска.
 --
 -- Зависит от kp_norm_name/kp_norm_unit (см. schemas/kp_rates_registry.sql).
+--
+-- task 414: supply_rates_registry_filter_objects (object_id, object_name) — только объекты,
+--   по которым есть расценки снабжения (distinct из supply_rates_registry). Для фильтра
+--   «Объект» вкладки СУ-10; самораширяется по мере загрузки расценок.
+--   Миграция: supabase/migrations/20260613_add_supply_rates_filter_objects.sql.

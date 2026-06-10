@@ -57,9 +57,8 @@ const SUPPLY_SORT_COLUMN = {
 function SupplyRegistrySection() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounced(search, 400)
+  // task 414: без фильтров «Ед. изм.» и «Тендеры»
   const [objectId, setObjectId] = useState('')
-  const [tenderId, setTenderId] = useState('')
-  const [unit, setUnit] = useState('')
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -74,36 +73,31 @@ function SupplyRegistrySection() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Только объекты, по которым есть расценки снабжения (distinct из реестра; task 414).
   const [objects, setObjects] = useState([])
-  const [tenders, setTenders] = useState([])
-  const [units, setUnits] = useState([])
 
   const applyFilters = useCallback((q) => {
     const s = debouncedSearch.trim()
     if (s) q = q.ilike('item_name', `%${s}%`)
     if (objectId) q = q.eq('object_id', objectId)
-    if (tenderId) q = q.eq('tender_id', tenderId)
-    if (unit) q = q.eq('unit', unit)
     if (priceMin !== '' && !isNaN(Number(priceMin))) q = q.gte('price', Number(priceMin))
     if (priceMax !== '' && !isNaN(Number(priceMax))) q = q.lte('price', Number(priceMax))
     if (dateFrom) q = q.gte('rate_date', dateFrom)
     if (dateTo) q = q.lte('rate_date', `${dateTo}T23:59:59`)
     return q
-  }, [debouncedSearch, objectId, tenderId, unit, priceMin, priceMax, dateFrom, dateTo])
+  }, [debouncedSearch, objectId, priceMin, priceMax, dateFrom, dateTo])
 
   useEffect(() => {
     let cancelled = false
     const loadRefs = async () => {
       try {
-        const [objRes, tndRes, unitRes] = await Promise.all([
-          supabase.from('objects').select('id, name').order('name'),
-          supabase.from('tenders').select('id, work_description, object_id').order('work_description'),
-          supabase.from('supply_rates_registry_units').select('unit'),
-        ])
+        const objRes = await supabase
+          .from('supply_rates_registry_filter_objects')
+          .select('object_id, object_name')
         if (cancelled) return
-        setObjects(objRes.data || [])
-        setTenders(tndRes.data || [])
-        setUnits((unitRes.data || []).map(u => u.unit).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ru')))
+        setObjects((objRes.data || [])
+          .filter(o => o.object_id && o.object_name)
+          .sort((a, b) => a.object_name.localeCompare(b.object_name, 'ru')))
       } catch (err) {
         console.error('Ошибка загрузки справочников снабжения:', err.message)
       }
@@ -114,7 +108,7 @@ function SupplyRegistrySection() {
 
   useEffect(() => {
     setPage(0)
-  }, [debouncedSearch, objectId, tenderId, unit, priceMin, priceMax, dateFrom, dateTo, sortBy, sortDir, pageSize])
+  }, [debouncedSearch, objectId, priceMin, priceMax, dateFrom, dateTo, sortBy, sortDir, pageSize])
 
   useEffect(() => {
     let cancelled = false
@@ -150,12 +144,11 @@ function SupplyRegistrySection() {
   }, [page, pageSize, sortBy, sortDir, applyFilters])
 
   const resetFilters = () => {
-    setSearch(''); setObjectId(''); setTenderId(''); setUnit('')
+    setSearch(''); setObjectId('')
     setPriceMin(''); setPriceMax(''); setDateFrom(''); setDateTo('')
     setSortBy('name'); setSortDir('asc')
   }
-  const hasActiveFilters = Boolean(search || objectId || tenderId || unit || priceMin || priceMax || dateFrom || dateTo)
-  const tendersForSelect = objectId ? tenders.filter(t => String(t.object_id) === String(objectId)) : tenders
+  const hasActiveFilters = Boolean(search || objectId || priceMin || priceMax || dateFrom || dateTo)
 
   const toggleSort = (col) => {
     if (sortBy === col) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -181,25 +174,9 @@ function SupplyRegistrySection() {
         <div className={`rr-filter-group ${objectId ? 'is-active' : ''}`}>
           <label className="rr-filter-label">Объект</label>
           <select className={`rr-filter-select ${objectId ? 'is-active' : ''}`}
-            value={objectId} onChange={(e) => { setObjectId(e.target.value); setTenderId('') }}>
+            value={objectId} onChange={(e) => setObjectId(e.target.value)}>
             <option value="">Все объекты ({objects.length})</option>
-            {objects.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
-        </div>
-        <div className={`rr-filter-group ${tenderId ? 'is-active' : ''}`}>
-          <label className="rr-filter-label">Тендер</label>
-          <select className={`rr-filter-select ${tenderId ? 'is-active' : ''}`}
-            value={tenderId} onChange={(e) => setTenderId(e.target.value)}>
-            <option value="">Все тендеры ({tendersForSelect.length})</option>
-            {tendersForSelect.map(t => <option key={t.id} value={t.id}>{t.work_description || t.id}</option>)}
-          </select>
-        </div>
-        <div className={`rr-filter-group ${unit ? 'is-active' : ''}`}>
-          <label className="rr-filter-label">Ед. изм.</label>
-          <select className={`rr-filter-select ${unit ? 'is-active' : ''}`}
-            value={unit} onChange={(e) => setUnit(e.target.value)}>
-            <option value="">Все ({units.length})</option>
-            {units.map(u => <option key={u} value={u}>{u}</option>)}
+            {objects.map(o => <option key={o.object_id} value={o.object_id}>{o.object_name}</option>)}
           </select>
         </div>
         <div className={`rr-filter-group ${priceMin || priceMax ? 'is-active' : ''}`}>
@@ -249,7 +226,6 @@ function SupplyRegistrySection() {
                 <tr>
                   <th className="rr-th-num">№ п/п</th>
                   <th className="rr-th-object">Объект</th>
-                  <th className="rr-th-counterparty">Контрагент</th>
                   <th className="rr-th-name rr-th-sortable" onClick={() => toggleSort('name')}>
                     Наименование материала{sortIndicator('name')}
                   </th>
@@ -271,9 +247,6 @@ function SupplyRegistrySection() {
                     <td className="rr-td-num">{page * pageSize + idx + 1}</td>
                     <td className="rr-td-object">
                       <span className="rr-chip rr-chip-object" title={r.object_name || '—'}>{r.object_name || '—'}</span>
-                    </td>
-                    <td className="rr-td-counterparty">
-                      <span className="rr-chip rr-chip-supply" title="Источник: отдел снабжения СУ-10">{r.source_name || 'СУ-10'}</span>
                     </td>
                     <td className="rr-td-name" title={r.item_name}>{r.item_name}</td>
                     <td className="rr-td-tender" title={r.tender_desc}>
