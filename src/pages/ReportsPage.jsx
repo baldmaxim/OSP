@@ -52,11 +52,16 @@ function buildDynamics(rows, periodMonths) {
 // ВСЕ блоки дашборда (KPI/donut/динамика/внимание/отделы/ответственные).
 function computeTenderStats(allRows, { dept = 'all', respId = 'all', objectId = 'all', periodMonths = 6 }) {
   const today = new Date().toISOString().split('T')[0]
-  // Период: тендеры, созданные за последние periodMonths месяцев (включая текущий).
-  const now = new Date()
-  const cutoff = new Date(now.getFullYear(), now.getMonth() - (periodMonths - 1), 1)
-  const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-01`
-  let rows = allRows.filter(x => x.created_at && String(x.created_at).slice(0, 10) >= cutoffStr)
+  // Период: 'all' — без фильтра по дате (все тендеры); иначе — созданные за последние
+  // periodMonths месяцев (включая текущий). График ограничиваем 12 месяцами.
+  const allPeriod = periodMonths === 'all'
+  let rows = allRows
+  if (!allPeriod) {
+    const now = new Date()
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - (periodMonths - 1), 1)
+    const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-01`
+    rows = allRows.filter(x => x.created_at && String(x.created_at).slice(0, 10) >= cutoffStr)
+  }
   if (dept !== 'all') rows = rows.filter(x => x.objects?.status === dept)
   if (objectId !== 'all') rows = rows.filter(x => String(x.object_id) === String(objectId))
   if (respId !== 'all') rows = rows.filter(x => (x.responsible_contact_id || '_unassigned') === respId)
@@ -78,7 +83,7 @@ function computeTenderStats(allRows, { dept = 'all', respId = 'all', objectId = 
     overdue: rows.filter(x => isInWork(x) && x.end_date && x.end_date < today).length,
     unassigned: rows.filter(x => !x.responsible_contact_id).length,
     byResponsible: groupByResp(rows),
-    dynamics: buildDynamics(rows, periodMonths),
+    dynamics: buildDynamics(rows, allPeriod ? 12 : periodMonths),
     byDept: {
       main_construction: deptBlock('main_construction'),
       warranty_service: deptBlock('warranty_service'),
@@ -487,7 +492,9 @@ function ReportsPage() {
         <div className="reports-filters">
           <label className={`rf-chip ${fPeriod !== 6 ? 'is-active' : ''}`}>
             <span className="rf-chip-key">Период:</span>
-            <select className="rf-chip-select" value={fPeriod} onChange={(e) => setFPeriod(Number(e.target.value))}>
+            <select className="rf-chip-select" value={fPeriod}
+              onChange={(e) => { const v = e.target.value; setFPeriod(v === 'all' ? 'all' : Number(v)) }}>
+              <option value="all">Все</option>
               <option value={1}>1 мес.</option>
               <option value={3}>3 мес.</option>
               <option value={6}>6 мес.</option>
@@ -586,7 +593,7 @@ function ReportsPage() {
               <section className="dash-card">
                 <header className="dash-card-head">
                   <h3>Динамика тендеров</h3>
-                  <span className="dash-card-meta">создано / в работе / завершено · {fPeriod} мес.</span>
+                  <span className="dash-card-meta">создано / в работе / завершено · {fPeriod === 'all' ? 'последние 12 мес.' : `${fPeriod} мес.`}</span>
                 </header>
                 <BarChart
                   data={tStats.dynamics}
@@ -1041,7 +1048,8 @@ function AttentionItem({ icon, tone, label, value, hint, onClick }) {
   )
 }
 
-// task: компактная горизонтальная карточка отдела. data = {total,open,closed,unassigned,byResp}.
+// task: компактная горизонтальная summary-карточка отдела (одна линия).
+// data = {total,open,closed,unassigned,byResp}.
 function DeptCard({ icon, accent, name, data, onClick }) {
   return (
     <button type="button" className={`dept-card dept-card--compact dept-card--${accent}`} onClick={onClick}>
@@ -1050,11 +1058,11 @@ function DeptCard({ icon, accent, name, data, onClick }) {
         <div className="dept-name">{name}</div>
         <div className="dept-total">{data.total} <span className="dept-total-label">тендеров</span></div>
       </div>
-      <div className="dept-side">
-        <div className="dept-metrics">
-          <div className="dept-metric"><span className="dept-metric-label">В работе</span><span className="dept-metric-value">{data.open}</span></div>
-          <div className="dept-metric"><span className="dept-metric-label">Завершено</span><span className="dept-metric-value accent-success">{data.closed}</span></div>
-        </div>
+      <div className="dept-stats">
+        <div className="dept-metric"><span className="dept-metric-label">В работе</span><span className="dept-metric-value">{data.open}</span></div>
+        <div className="dept-metric"><span className="dept-metric-label">Завершено</span><span className="dept-metric-value accent-success">{data.closed}</span></div>
+      </div>
+      <div className="dept-progress">
         <ProgressBar value={data.closed} total={data.total} />
       </div>
       <span className="dept-arrow" aria-hidden>→</span>

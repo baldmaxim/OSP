@@ -863,3 +863,32 @@
   background: rgba(245, 158, 11, 0.09); color: #92400e; font-size: 0.875rem;
 }
 .resp-warning strong { font-weight: 700; }
+
+/* ===== task: «По отделам» — горизонтальные summary-карточки (одна линия) ===== */
+.report-section:has(.dept-grid) { margin-bottom: 1rem; }
+.dept-grid { gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+.dept-card--compact {
+  min-height: 96px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  text-align: left;
+}
+.dept-card--compact .dept-icon { font-size: 1.5rem; flex: 0 0 auto; }
+.dept-card--compact .dept-main { flex: 1; min-width: 160px; display: block; }
+.dept-card--compact .dept-name { font-weight: 600; font-size: 0.9375rem; color: var(--text-primary); }
+.dept-card--compact .dept-total { font-size: 1.35rem; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.dept-card--compact .dept-total-label { font-size: 0.75rem; font-weight: 400; color: var(--text-tertiary); }
+.dept-card--compact .dept-stats { display: flex; gap: 28px; align-items: center; flex: 0 0 auto; }
+.dept-card--compact .dept-metric { display: flex; flex-direction: column; gap: 1px; }
+.dept-card--compact .dept-metric-label { font-size: 0.6875rem; color: var(--text-tertiary); white-space: nowrap; }
+.dept-card--compact .dept-metric-value { font-size: 1.05rem; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.dept-card--compact .dept-progress { min-width: 180px; flex: 0 0 auto; }
+.dept-card--compact .dept-arrow { color: var(--text-tertiary); flex: 0 0 auto; }
+
+@media (max-width: 820px) {
+  .dept-grid { grid-template-columns: 1fr; }
+  .dept-card--compact { flex-wrap: wrap; gap: 12px 20px; }
+  .dept-card--compact .dept-progress { min-width: 140px; flex: 1; }
+}
