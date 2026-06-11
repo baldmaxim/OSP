@@ -1,9 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
-import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import { formatPhone } from '../utils/phoneFormat'
 import '../components/GeneralInfo.css'
+
+// Инициалы из ФИО (для нейтрального аватара — без фотографий).
+const initials = (name) => {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '—'
+  return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase()
+}
 
 function ContactsPage() {
   // task 333: гейт add/edit/delete и inline-editing для раздела «contacts».
@@ -15,7 +21,13 @@ function ContactsPage() {
   const [showContactModal, setShowContactModal] = useState(false)
   const [editingContact, setEditingContact] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [objectFilter, setObjectFilter] = useState('') // '' | 'office' | objectId
+  // Фильтры реестра сотрудников
+  const [fLoc, setFLoc] = useState('all')      // 'all' | 'office' | 'object' — Офис / объект
+  const [fObject, setFObject] = useState('')   // '' | objectId — конкретный объект
+  const [fDept, setFDept] = useState('')       // '' | departmentId
+  const [fPos, setFPos] = useState('')         // '' | название должности
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   const [activeTab, setActiveTab] = useState('contacts') // 'contacts' | 'departments' | 'positions'
 
   // --- Departments ---
@@ -324,80 +336,6 @@ function ContactsPage() {
     }
   }
 
-  const handleInlineObjectChange = async (contactId, newObjectId) => {
-    const value = newObjectId || null
-    try {
-      const { error } = await supabase
-        .from('contacts')
-        .update({ object_id: value })
-        .eq('id', contactId)
-      if (error) throw error
-      const newObj = value ? objects.find(o => o.id === value) : null
-      setContacts(prev => prev.map(c =>
-        c.id === contactId
-          ? { ...c, object_id: value, objects: newObj ? { name: newObj.name } : null }
-          : c
-      ))
-    } catch (err) {
-      console.error('Ошибка изменения объекта:', err.message)
-      alert('Ошибка: ' + err.message)
-    }
-  }
-
-  const handleInlineDepartmentChange = async (contactId, newDeptId) => {
-    const value = newDeptId || null
-    try {
-      const { error } = await supabase
-        .from('contacts')
-        .update({ department_id: value })
-        .eq('id', contactId)
-      if (error) throw error
-      const newDept = value ? departments.find(d => d.id === value) : null
-      setContacts(prev => prev.map(c =>
-        c.id === contactId
-          ? { ...c, department_id: value, departments: newDept ? { id: newDept.id, name: newDept.name } : null }
-          : c
-      ))
-    } catch (err) {
-      console.error('Ошибка изменения отдела:', err.message)
-      alert('Ошибка: ' + err.message)
-    }
-  }
-
-  const handleInlinePositionChange = async (contactId, newPosition) => {
-    const value = normalizePosition(newPosition?.trim()) || null
-    try {
-      const { error } = await supabase
-        .from('contacts')
-        .update({ position: value })
-        .eq('id', contactId)
-      if (error) throw error
-      setContacts(prev => prev.map(c =>
-        c.id === contactId ? { ...c, position: value } : c
-      ))
-    } catch (err) {
-      console.error('Ошибка изменения должности:', err.message)
-      alert('Ошибка: ' + err.message)
-    }
-  }
-
-  const handleInlineNotesChange = async (contactId, newNotes) => {
-    const value = newNotes?.trim() || null
-    try {
-      const { error } = await supabase
-        .from('contacts')
-        .update({ notes: value })
-        .eq('id', contactId)
-      if (error) throw error
-      setContacts(prev => prev.map(c =>
-        c.id === contactId ? { ...c, notes: value } : c
-      ))
-    } catch (err) {
-      console.error('Ошибка сохранения примечания:', err.message)
-      alert('Ошибка: ' + err.message)
-    }
-  }
-
   const handleAddNewContact = () => {
     setEditingContact(null)
     setIsCustomPosition(false)
@@ -413,10 +351,43 @@ function ContactsPage() {
     setShowContactModal(true)
   }
 
+  const resetEmpFilters = () => { setSearchQuery(''); setFLoc('all'); setFObject(''); setFDept(''); setFPos('') }
+  const empFiltersActive = Boolean(searchQuery || fLoc !== 'all' || fObject || fDept || fPos)
+
+  // Сбрасываем страницу при смене фильтров/поиска/размера/вкладки.
+  useEffect(() => { setPage(0) }, [searchQuery, fLoc, fObject, fDept, fPos, pageSize, activeTab])
+
+  // Единая отфильтрованная выборка сотрудников (поиск + Офис/объект + Объект + Отдел + Должность).
+  const visibleContacts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return contacts.filter(c => {
+      if (q && ![c.full_name, c.position, c.phone, c.email, c.objects?.name, c.departments?.name, c.notes]
+        .some(v => v && String(v).toLowerCase().includes(q))) return false
+      if (fLoc === 'office' && c.object_id) return false
+      if (fLoc === 'object' && !c.object_id) return false
+      if (fObject && c.object_id !== fObject) return false
+      if (fDept && c.department_id !== fDept) return false
+      if (fPos && normalizePosition(c.position) !== fPos) return false
+      return true
+    })
+  }, [contacts, searchQuery, fLoc, fObject, fDept, fPos])
+
+  // Пагинация (клиентская): безопасная страница + срез.
+  const empTotalPages = Math.max(1, Math.ceil(visibleContacts.length / pageSize))
+  const empPage = Math.min(page, empTotalPages - 1)
+  const empPageStart = visibleContacts.length === 0 ? 0 : empPage * pageSize
+  const empPaged = visibleContacts.slice(empPageStart, empPageStart + pageSize)
+
   return (
     <div className="general-info">
-      <div className="general-info-header">
-        <h2>Сотрудники СУ-10</h2>
+      <div className="general-info-header emp-header">
+        <div>
+          <h2>Сотрудники СУ-10</h2>
+          <div className="emp-subtitle">Внутренний реестр сотрудников отдела</div>
+        </div>
+        {canEditContacts && activeTab === 'contacts' && (
+          <button className="btn-primary" onClick={handleAddNewContact}>+ Добавить сотрудника</button>
+        )}
       </div>
 
       <div className="contacts-tabs">
@@ -425,6 +396,7 @@ function ContactsPage() {
           onClick={() => setActiveTab('contacts')}
         >
           Сотрудники
+          {contacts.length > 0 && <span className="contacts-tab-count">{contacts.length}</span>}
         </button>
         <button
           className={`contacts-tab ${activeTab === 'departments' ? 'active' : ''}`}
@@ -562,290 +534,199 @@ function ContactsPage() {
         </div>
       ) : (
         <div className="section-content">
-          <div className="section-actions contacts-toolbar">
+          {/* Summary: только Всего / Офис / Объекты */}
+          <div className="emp-summary">
+            <div className="emp-summary-card">
+              <span className="emp-summary-ico" aria-hidden>👥</span>
+              <div>
+                <div className="emp-summary-val">{contacts.length}</div>
+                <div className="emp-summary-label">Всего сотрудников</div>
+              </div>
+            </div>
+            <div className="emp-summary-card">
+              <span className="emp-summary-ico emp-ico-blue" aria-hidden>🏢</span>
+              <div>
+                <div className="emp-summary-val">{contacts.filter(c => !c.object_id).length}</div>
+                <div className="emp-summary-label">Офис</div>
+              </div>
+            </div>
+            <div className="emp-summary-card">
+              <span className="emp-summary-ico emp-ico-green" aria-hidden>🏗️</span>
+              <div>
+                <div className="emp-summary-val">{contacts.filter(c => c.object_id).length}</div>
+                <div className="emp-summary-label">Объекты</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Поиск + фильтры (Офис / объект, Объект, Отдел, Должность) */}
+          <div className="emp-filters">
             <input
               type="search"
-              className="contacts-search"
-              placeholder="🔍 Поиск по ФИО, должности, телефону, email, примечанию..."
+              className="emp-search"
+              placeholder="🔍 Поиск по ФИО, должности, телефону, email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <div className="contacts-filter-pills" role="tablist" aria-label="Фильтр по объекту/офису">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={objectFilter === ''}
-                className={`contacts-filter-pill ${objectFilter === '' ? 'active' : ''}`}
-                onClick={() => setObjectFilter('')}
-              >
-                <span className="contacts-filter-pill-icon" aria-hidden>📋</span>
-                <span>Все</span>
-                <span className="contacts-filter-pill-count">{contacts.length}</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={objectFilter === 'office'}
-                className={`contacts-filter-pill ${objectFilter === 'office' ? 'active' : ''}`}
-                onClick={() => setObjectFilter('office')}
-              >
-                <span className="contacts-filter-pill-icon" aria-hidden>🏢</span>
-                <span>Офис</span>
-                <span className="contacts-filter-pill-count">
-                  {contacts.filter(c => !c.object_id).length}
-                </span>
-              </button>
-              <div className={`contacts-filter-object-wrap ${objectFilter && objectFilter !== 'office' ? 'active' : ''}`}>
-                <span className="contacts-filter-pill-icon" aria-hidden>🏗️</span>
-                <select
-                  className="contacts-filter-object-select"
-                  value={objectFilter && objectFilter !== 'office' ? objectFilter : ''}
-                  onChange={(e) => setObjectFilter(e.target.value || '')}
-                  title="Выбрать объект"
-                >
-                  <option value="">Объект…</option>
-                  {objects.map(obj => {
-                    const cnt = contacts.filter(c => c.object_id === obj.id).length
-                    return (
-                      <option key={obj.id} value={obj.id}>{obj.name} ({cnt})</option>
-                    )
-                  })}
-                </select>
-              </div>
-            </div>
-            {canEditContacts && (
-              <button className="btn-primary" onClick={handleAddNewContact}>
-                + Добавить
-              </button>
+            <label className="emp-filter">
+              <span className="emp-filter-key">Офис / объект:</span>
+              <select value={fLoc} onChange={(e) => setFLoc(e.target.value)}>
+                <option value="all">Все</option>
+                <option value="office">Офис</option>
+                <option value="object">Объект</option>
+              </select>
+            </label>
+            <label className="emp-filter">
+              <span className="emp-filter-key">Объект:</span>
+              <select value={fObject} onChange={(e) => setFObject(e.target.value)}>
+                <option value="">Все</option>
+                {objects.map(obj => (
+                  <option key={obj.id} value={obj.id}>{obj.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="emp-filter">
+              <span className="emp-filter-key">Отдел:</span>
+              <select value={fDept} onChange={(e) => setFDept(e.target.value)}>
+                <option value="">Все</option>
+                {departments.map(dept => (
+                  <option key={dept.id} value={dept.id}>{dept.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="emp-filter">
+              <span className="emp-filter-key">Должность:</span>
+              <select value={fPos} onChange={(e) => setFPos(e.target.value)}>
+                <option value="">Все</option>
+                {allPositions.map(pos => (
+                  <option key={pos} value={pos}>{pos}</option>
+                ))}
+              </select>
+            </label>
+            {empFiltersActive && (
+              <button type="button" className="emp-filter-reset" onClick={resetEmpFilters}>Сбросить</button>
             )}
           </div>
 
           <div className="table-container">
-            <table className="data-table contacts-table people-table">
+            <table className="data-table emp-table">
               <thead>
-                {/* task 344 + 369 + 373: все столбцы — фикс. ширины, КРОМЕ «Примечаний»
-                    (без width и без minWidth — гибкий столбец, который сам сжимается/растёт
-                    под остаток места). Сумма фикс. ширин (~849px) заведомо меньше окна,
-                    поэтому таблица всегда равна ширине контейнера: горизонтального скролла
-                    нет, «Действия» видны полностью. Важно: НЕ ставить minWidth у «Примечаний»
-                    — иначе на узких экранах столбец не сожмётся и появится нижний ползунок. */}
                 <tr>
-                  <th style={{ width: '36px', textAlign: 'center' }}>№</th>
-                  <th style={{ width: '155px' }}>ФИО</th>
-                  <th style={{ width: '110px' }}>Объект/Офис</th>
-                  <th style={{ width: '140px' }}>Должность</th>
-                  <th style={{ width: '100px' }}>Отдел</th>
-                  {/* Телефон — nowrap (.phone-cell), поэтому столбец должен вмещать
-                      номер целиком (~135px), иначе он вылезает и даёт нижний ползунок. */}
-                  <th style={{ width: '138px' }}>Телефон</th>
-                  <th style={{ width: '140px' }}>Email</th>
-                  <th>Примечания</th>
-                  {/* Действия — два значка (✏️🗑️) с white-space:nowrap, поэтому ширины
-                      48px не хватало и они вылезали; 64px вмещает оба без переноса. */}
+                  <th>Сотрудник</th>
+                  <th style={{ width: '160px' }}>Офис / объект</th>
+                  <th style={{ width: '170px' }}>Должность</th>
+                  <th style={{ width: '140px' }}>Отдел</th>
+                  <th style={{ width: '200px' }}>Контакты</th>
+                  <th>Примечание</th>
                   <th style={{ width: '64px' }}></th>
                 </tr>
               </thead>
               <tbody>
-                {(() => {
-                  const q = searchQuery.trim().toLowerCase()
-                  const matchesContact = (c) => {
-                    if (!q) return true
-                    return [
-                      c.full_name,
-                      c.position,
-                      c.phone,
-                      c.email,
-                      c.objects?.name,
-                      c.departments?.name,
-                      c.notes,
-                    ].some(v => v && String(v).toLowerCase().includes(q))
-                  }
-                  const contactMatchesObject = (c) => {
-                    if (!objectFilter) return true
-                    if (objectFilter === 'office') return !c.object_id
-                    return c.object_id === objectFilter
-                  }
-                  const visibleContacts = contacts
-                    .filter(matchesContact)
-                    .filter(contactMatchesObject)
-                  if (contacts.length === 0) {
+                {contacts.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="no-data" style={{ textAlign: 'center' }}>
+                      Сотрудников нет. Добавьте первого.
+                    </td>
+                  </tr>
+                ) : visibleContacts.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="no-data" style={{ textAlign: 'center' }}>
+                      Ничего не найдено{searchQuery && ` по запросу «${searchQuery}»`}
+                    </td>
+                  </tr>
+                ) : (
+                  empPaged.map((contact) => {
+                    const loc = contact.object_id ? (contact.objects?.name || 'Объект') : 'Офис'
+                    const posName = normalizePosition(contact.position) || ''
+                    const deptName = contact.departments?.name || ''
+                    const note = contact.notes || ''
+                    const notePreview = note.length > 70 ? note.slice(0, 70) + '…' : note
                     return (
-                      <tr>
-                        <td colSpan="9" className="no-data" style={{ textAlign: 'center' }}>
-                          Сотрудников нет. Добавьте первого.
+                      <tr key={contact.id} className="emp-row" onClick={() => handleEditContact(contact)}>
+                        <td>
+                          <div className="emp-person">
+                            <span className="emp-avatar" aria-hidden>{initials(contact.full_name)}</span>
+                            <span className="emp-person-name">{contact.full_name}</span>
+                          </div>
+                        </td>
+                        <td>{loc}</td>
+                        <td className={posName ? '' : 'muted'}>{posName || '—'}</td>
+                        <td className={deptName ? '' : 'muted'}>{deptName || '—'}</td>
+                        <td className="emp-contacts">
+                          {contact.phone && <span className="emp-phone">{contact.phone}</span>}
+                          {contact.email && <span className="emp-email">{contact.email}</span>}
+                          {!contact.phone && !contact.email && <span className="muted">—</span>}
+                        </td>
+                        <td className="emp-note" title={note || undefined}>
+                          {notePreview || <span className="muted">—</span>}
+                        </td>
+                        <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
+                          {canEditContacts && (
+                            <>
+                              <button
+                                className="btn-icon btn-edit"
+                                onClick={() => handleEditContact(contact)}
+                                title="Редактировать"
+                              >✏️</button>
+                              <button
+                                className="btn-icon btn-delete"
+                                onClick={() => handleDeleteContact(contact.id, contact.full_name)}
+                                title="Удалить"
+                              >🗑️</button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     )
-                  }
-                  if (visibleContacts.length === 0) {
-                    return (
-                      <tr>
-                        <td colSpan="9" className="no-data" style={{ textAlign: 'center' }}>
-                          Ничего не найдено{q && ` по запросу «${searchQuery}»`}
-                        </td>
-                      </tr>
-                    )
-                  }
-                  return visibleContacts.map((contact, idx) => (
-                    <tr key={contact.id}>
-                      <td className="num-cell">{idx + 1}</td>
-                      <td>{contact.full_name}</td>
-                      <td>
-                        {(() => {
-                          const objName = contact.objects?.name || ''
-                          const displayValue = contact.object_id ? objName : 'Офис'
-                          return (
-                            <div className="wrapped-select">
-                              <div className="wrapped-select-display" title={displayValue}>
-                                {displayValue}
-                              </div>
-                              <select
-                                className="wrapped-select-native"
-                                value={contact.object_id || ''}
-                                onChange={(e) => handleInlineObjectChange(contact.id, e.target.value)}
-                                aria-label="Привязать к объекту или оставить «Офис»"
-                                disabled={!canEditContacts}
-                              >
-                                <option value="">Офис</option>
-                                {objects.map(obj => (
-                                  <option key={obj.id} value={obj.id}>{obj.name}</option>
-                                ))}
-                              </select>
-                            </div>
-                          )
-                        })()}
-                      </td>
-                      <td>
-                        {(() => {
-                          const displayPosition = normalizePosition(contact.position) || ''
-                          const isEmpty = !displayPosition
-                          return (
-                            <div className="wrapped-select">
-                              <div
-                                className={`wrapped-select-display ${isEmpty ? 'is-placeholder' : ''}`}
-                                title={displayPosition || 'Должность сотрудника'}
-                              >
-                                {displayPosition || '— не указана —'}
-                              </div>
-                              <select
-                                className="wrapped-select-native"
-                                value={displayPosition}
-                                onChange={(e) => handleInlinePositionChange(contact.id, e.target.value)}
-                                aria-label="Должность сотрудника"
-                                disabled={!canEditContacts}
-                              >
-                                <option value="">— не указана —</option>
-                                {allPositions.map(pos => (
-                                  <option key={pos} value={pos}>{pos}</option>
-                                ))}
-                                {/* Если у контакта должность, которой нет в справочнике — показываем как опцию */}
-                                {displayPosition && !allPositions.includes(displayPosition) && (
-                                  <option value={displayPosition}>{displayPosition}</option>
-                                )}
-                              </select>
-                            </div>
-                          )
-                        })()}
-                      </td>
-                      <td>
-                        {/* task 369: «обёрнутый» select — переносим длинное имя
-                            отдела / плейсхолдер вместо обрезки нативным select. */}
-                        {(() => {
-                          const deptName = departments.find(d => d.id === contact.department_id)?.name || ''
-                          const isEmpty = !deptName
-                          return (
-                            <div className="wrapped-select">
-                              <div
-                                className={`wrapped-select-display ${isEmpty ? 'is-placeholder' : ''}`}
-                                title={deptName || 'Отдел сотрудника'}
-                              >
-                                {deptName || '— не указан —'}
-                              </div>
-                              <select
-                                className="wrapped-select-native"
-                                value={contact.department_id || ''}
-                                onChange={(e) => handleInlineDepartmentChange(contact.id, e.target.value)}
-                                aria-label="Отдел сотрудника"
-                                disabled={!canEditContacts}
-                              >
-                                <option value="">— не указан —</option>
-                                {departments.map(dept => (
-                                  <option key={dept.id} value={dept.id}>{dept.name}</option>
-                                ))}
-                              </select>
-                            </div>
-                          )
-                        })()}
-                      </td>
-                      <td className="phone-cell">{contact.phone || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>—</span>}</td>
-                      <td>{contact.email}</td>
-                      <td>
-                        {/* перф: AutoGrowTextarea с useLayoutEffect, чтобы не
-                            пересчитывать layout каждой строки на каждый рендер таблицы. */}
-                        <AutoGrowTextarea
-                          defaultValue={contact.notes || ''}
-                          onBlur={(e) => {
-                            const next = e.target.value
-                            if ((contact.notes || '') !== next) {
-                              handleInlineNotesChange(contact.id, next)
-                            }
-                          }}
-                          placeholder="Примечание…"
-                          className="contact-notes-input"
-                          minHeight={32}
-                          disabled={!canEditContacts}
-                          readOnly={!canEditContacts}
-                        />
-                      </td>
-                      <td className="actions-cell">
-                        {canEditContacts && (
-                          <>
-                            <button
-                              className="btn-icon btn-edit"
-                              onClick={() => handleEditContact(contact)}
-                              title="Редактировать"
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              className="btn-icon btn-delete"
-                              onClick={() => handleDeleteContact(contact.id, contact.full_name)}
-                              title="Удалить"
-                            >
-                              🗑️
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                })()}
+                  })
+                )}
               </tbody>
             </table>
           </div>
+
+          {visibleContacts.length > 0 && (
+            <div className="emp-pagination">
+              <span className="emp-pagination-info">
+                {empPageStart + 1}–{Math.min(empPageStart + pageSize, visibleContacts.length)} из {visibleContacts.length}
+              </span>
+              <div className="emp-pagination-controls">
+                <button type="button" className="emp-page-btn" disabled={empPage === 0} onClick={() => setPage(empPage - 1)}>←</button>
+                <span className="emp-page-num">{empPage + 1} / {empTotalPages}</span>
+                <button type="button" className="emp-page-btn" disabled={empPage >= empTotalPages - 1} onClick={() => setPage(empPage + 1)}>→</button>
+              </div>
+              <label className="emp-pagesize">
+                Показывать по
+                <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Modal для добавления/редактирования контакта */}
+      {/* Drawer «Карточка сотрудника» — просмотр / редактирование / создание */}
       {showContactModal && (
-        <div className="modal-overlay">
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>
-                {editingContact ? 'Редактировать сотрудника' : 'Добавить нового сотрудника'}
-              </h3>
+        <div className="emp-drawer-overlay" onClick={() => { setShowContactModal(false); setEditingContact(null) }}>
+          <aside className="emp-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="emp-drawer-head">
+              <div className="emp-drawer-id">
+                <span className="emp-avatar emp-avatar-lg" aria-hidden>{initials(contactFormData.full_name)}</span>
+                <div>
+                  <div className="emp-drawer-title">{editingContact ? 'Карточка сотрудника' : 'Новый сотрудник'}</div>
+                  <div className="emp-drawer-name">{contactFormData.full_name || '—'}</div>
+                </div>
+              </div>
               <button
                 className="modal-close"
-                onClick={() => {
-                  setShowContactModal(false)
-                  setEditingContact(null)
-                }}
-              >
-                ×
-              </button>
+                onClick={() => { setShowContactModal(false); setEditingContact(null) }}
+              >×</button>
             </div>
 
-            <form onSubmit={handleContactSubmit}>
+            <form onSubmit={handleContactSubmit} className="emp-drawer-form">
+              <fieldset className="emp-fieldset" disabled={!canEditContacts}>
               <div className="form-grid">
                 <div className="form-group full-width">
                   <label>ФИО *</label>
@@ -944,7 +825,7 @@ function ContactsPage() {
                 </div>
 
                 <div className="form-group">
-                  <label>Объект</label>
+                  <label>Офис / объект</label>
                   <select
                     value={contactFormData.object_id}
                     onChange={(e) =>
@@ -988,7 +869,7 @@ function ContactsPage() {
                 </div>
 
                 <div className="form-group full-width">
-                  <label>Примечания</label>
+                  <label>Примечание</label>
                   <textarea
                     value={contactFormData.notes}
                     onChange={(e) =>
@@ -999,8 +880,9 @@ function ContactsPage() {
                   />
                 </div>
               </div>
+              </fieldset>
 
-              <div className="modal-footer">
+              <div className="modal-footer emp-drawer-footer">
                 <button
                   type="button"
                   className="btn-secondary"
@@ -1009,14 +891,16 @@ function ContactsPage() {
                     setEditingContact(null)
                   }}
                 >
-                  Отмена
+                  {canEditContacts ? 'Отмена' : 'Закрыть'}
                 </button>
-                <button type="submit" className="btn-primary">
-                  {editingContact ? 'Сохранить' : 'Добавить'}
-                </button>
+                {canEditContacts && (
+                  <button type="submit" className="btn-primary">
+                    {editingContact ? 'Сохранить' : 'Добавить'}
+                  </button>
+                )}
               </div>
             </form>
-          </div>
+          </aside>
         </div>
       )}
 

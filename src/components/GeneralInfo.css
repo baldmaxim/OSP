@@ -1449,3 +1449,228 @@ body.modal-open {
   }
 }
 
+
+/* ===================================================================== */
+/* Реестр сотрудников (ContactsPage) — современный вид: summary + чистая  */
+/* таблица + drawer-карточка. Без фотографий, инициалы-аватары.          */
+/* ===================================================================== */
+
+.emp-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.emp-subtitle {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+}
+
+/* --- Summary cards: Всего / Офис / Объекты --- */
+.emp-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.emp-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.875rem 1.1rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.emp-summary-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  font-size: 1.15rem;
+  background: var(--bg-tertiary);
+  flex: 0 0 auto;
+}
+.emp-summary-ico.emp-ico-blue { background: rgba(37, 99, 235, 0.12); }
+.emp-summary-ico.emp-ico-green { background: rgba(22, 163, 74, 0.12); }
+.emp-summary-val {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.emp-summary-label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+/* --- Поиск + фильтры --- */
+.emp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.875rem;
+}
+.emp-search {
+  flex: 1 1 280px;
+  min-width: 220px;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+.emp-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.emp-filter-key { white-space: nowrap; color: var(--text-tertiary); }
+.emp-filter select {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  max-width: 180px;
+}
+.emp-filter-reset {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  padding: 0.3rem 0.4rem;
+}
+.emp-filter-reset:hover { color: var(--primary-color); }
+
+/* --- Чистая таблица сотрудников --- */
+.emp-table { table-layout: fixed; width: 100%; }
+.emp-table th { white-space: nowrap; }
+.emp-table .emp-row { cursor: pointer; }
+.emp-table .emp-row:hover td { background: var(--hover-bg, #f9fafb); }
+.emp-table td { vertical-align: middle; }
+
+.emp-person { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.emp-person-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.emp-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--primary-color);
+  background: rgba(37, 99, 235, 0.12);
+}
+.emp-avatar-lg { width: 48px; height: 48px; font-size: 1rem; }
+
+.emp-contacts { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85rem; }
+.emp-phone { white-space: nowrap; color: var(--text-primary); }
+.emp-email { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.emp-note {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;
+}
+
+/* --- Пагинация --- */
+.emp-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.875rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.emp-pagination-controls { display: flex; align-items: center; gap: 0.5rem; }
+.emp-page-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.emp-page-btn:disabled { opacity: 0.4; cursor: default; }
+.emp-page-num { font-variant-numeric: tabular-nums; }
+.emp-pagesize { display: inline-flex; align-items: center; gap: 0.4rem; }
+.emp-pagesize select {
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* --- Drawer «Карточка сотрудника» --- */
+.emp-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 1000;
+}
+.emp-drawer {
+  width: 460px;
+  max-width: 92vw;
+  height: 100%;
+  background: var(--card-bg);
+  border-left: 1px solid var(--border-color);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  animation: emp-drawer-in 0.18s ease-out;
+}
+@keyframes emp-drawer-in {
+  from { transform: translateX(24px); opacity: 0.4; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.emp-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.emp-drawer-id { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.emp-drawer-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); }
+.emp-drawer-name { font-size: 1.05rem; font-weight: 600; color: var(--text-primary); }
+.emp-drawer-form { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.emp-drawer-form .form-grid { padding: 1.25rem; }
+.emp-fieldset { border: none; padding: 0; margin: 0; min-width: 0; }
+.emp-drawer-footer {
+  margin-top: auto;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 720px) {
+  .emp-summary { grid-template-columns: 1fr; }
+}
