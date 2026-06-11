@@ -1588,22 +1588,20 @@ body.modal-open {
 .emp-col-loc { width: 15%; }
 .emp-col-pos { width: 14%; }
 .emp-col-dept { width: 11%; }
-.emp-col-contacts { width: 16%; }
-.emp-col-note { width: 16%; }
-.emp-col-act { width: 78px; }
+.emp-col-contacts { width: 17%; }
+.emp-col-note { width: 17%; }
+.emp-col-act { width: 52px; }
 
 /* Текстовые ячейки в одну строку с ellipsis. */
 .emp-ell { white-space: nowrap; text-overflow: ellipsis; }
 
-/* Компактная колонка действий — обе иконки помещаются без скролла. */
+/* Узкая колонка действий с компактным меню «⋮» по центру. */
 .emp-table .actions-cell {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.15rem;
-  white-space: nowrap;
+  text-align: center;
+  overflow: visible;          /* чтобы меню «⋮» не обрезалось ячейкой */
+  padding-left: 0;
+  padding-right: 0;
 }
-.emp-table .actions-cell .btn-icon { padding: 0.2rem 0.3rem; font-size: 0.95rem; line-height: 1; }
 
 .emp-person { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
 .emp-person-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
@@ -1623,9 +1621,19 @@ body.modal-open {
 }
 .emp-avatar-lg { width: 48px; height: 48px; font-size: 1rem; }
 
-.emp-contacts { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.85rem; }
-.emp-phone { white-space: nowrap; color: var(--text-primary); }
-.emp-email { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Контакты: телефон/email рендерятся условно (нет email → нет второй строки,
+   никакой пустой полоски). Центрируем по вертикали, чтобы одиночная строка не
+   «висела» сверху. */
+.emp-contacts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+.emp-phone { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+.emp-email { color: var(--text-tertiary); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .emp-note {
   color: var(--text-secondary);
   font-size: 0.85rem;

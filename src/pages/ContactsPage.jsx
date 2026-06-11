@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { formatPhone } from '../utils/phoneFormat'
 import FilterDropdown from '../components/FilterDropdown'
+import RowActionsMenu from '../components/RowActionsMenu'
 import '../components/GeneralInfo.css'
 
 // Инициалы из ФИО (для нейтрального аватара — без фотографий).
@@ -664,18 +665,10 @@ function ContactsPage() {
                         </td>
                         <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
                           {canEditContacts && (
-                            <>
-                              <button
-                                className="btn-icon btn-edit"
-                                onClick={() => handleEditContact(contact)}
-                                title="Редактировать"
-                              >✏️</button>
-                              <button
-                                className="btn-icon btn-delete"
-                                onClick={() => handleDeleteContact(contact.id, contact.full_name)}
-                                title="Удалить"
-                              >🗑️</button>
-                            </>
+                            <RowActionsMenu
+                              onEdit={() => handleEditContact(contact)}
+                              onDelete={() => handleDeleteContact(contact.id, contact.full_name)}
+                            />
                           )}
                         </td>
                       </tr>
