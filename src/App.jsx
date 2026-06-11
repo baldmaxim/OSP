@@ -36,23 +36,16 @@ const CostPlansPage = lazy(() => import('./pages/CostPlansPage'))
 const VorsPage = lazy(() => import('./pages/VorsPage'))
 const SummaryPage = lazy(() => import('./pages/SummaryPage'))
 const ContractsPage = lazy(() => import('./pages/ContractsPage'))
-const AcceptancePage = lazy(() => import('./pages/AcceptancePage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const ContractorProposalsPage = lazy(() => import('./pages/ContractorProposalsPage'))
 const BSMPage = lazy(() => import('./pages/BSMPage'))
-const BSMRatesPage = lazy(() => import('./pages/BSMRatesPage'))
-const BSMContractRatesPage = lazy(() => import('./pages/BSMContractRatesPage'))
-const BSMComparisonPage = lazy(() => import('./pages/BSMComparisonPage'))
-const BSMContractorRatesPage = lazy(() => import('./pages/BSMContractorRatesPage'))
 const GeneralInfoPage = lazy(() => import('./pages/GeneralInfoPage'))
-const BSMSelectionPage = lazy(() => import('./pages/BSMSelectionPage'))
 const RatesRegistryPage = lazy(() => import('./pages/RatesRegistryPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const ContractDetailPage = lazy(() => import('./pages/ContractDetailPage'))
 const DcRequestsPage = lazy(() => import('./pages/DcRequestsPage'))
-const DocumentCheckPage = lazy(() => import('./pages/DocumentCheckPage'))
 const PublicTendersPage = lazy(() => import('./pages/PublicTendersPage'))
 
 const PageLoader = () => (
@@ -102,17 +95,10 @@ function EmployeeLayout() {
             <Route path="/contracts" element={<PermissionRoute section="contracts"><ContractsPage /></PermissionRoute>} />
             <Route path="/contracts/:contractId" element={<PermissionRoute section="contracts"><ContractDetailPage /></PermissionRoute>} />
             <Route path="/dc-requests" element={<PermissionRoute section="dc_requests"><DcRequestsPage /></PermissionRoute>} />
-            {/* /document-check и /profile — без отдельной секции в role_permissions:
-                доступны любому сотруднику (как в Sidebar). PermissionRoute без section
-                всё равно гейтит загрузку/ошибку роли/тип пользователя. */}
-            <Route path="/document-check" element={<PermissionRoute><DocumentCheckPage /></PermissionRoute>} />
+            {/* /profile — без отдельной секции в role_permissions: доступен любому
+                сотруднику. PermissionRoute без section всё равно гейтит загрузку/ошибку
+                роли/тип пользователя. */}
             <Route path="/rates-registry" element={<PermissionRoute section="rates_registry"><RatesRegistryPage /></PermissionRoute>} />
-            <Route path="/bsm" element={<PermissionRoute section="bsm"><BSMSelectionPage /></PermissionRoute>} />
-            <Route path="/bsm/comparison" element={<PermissionRoute section="bsm"><BSMComparisonPage /></PermissionRoute>} />
-            <Route path="/bsm/contract-rates" element={<PermissionRoute section="bsm"><BSMContractRatesPage /></PermissionRoute>} />
-            <Route path="/bsm/supply-rates" element={<PermissionRoute section="bsm"><BSMRatesPage /></PermissionRoute>} />
-            <Route path="/bsm/contractor-rates" element={<PermissionRoute section="bsm"><BSMContractorRatesPage /></PermissionRoute>} />
-            <Route path="/acceptance" element={<PermissionRoute section="acceptance"><AcceptancePage /></PermissionRoute>} />
             <Route path="/reports" element={<PermissionRoute section="reports"><ReportsPage /></PermissionRoute>} />
             <Route path="/admin" element={<PermissionRoute section="admin"><AdminPage /></PermissionRoute>} />
             <Route path="/profile" element={<PermissionRoute><ProfilePage /></PermissionRoute>} />

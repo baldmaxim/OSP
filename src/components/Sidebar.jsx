@@ -91,17 +91,6 @@ function Sidebar() {
           </NavLink>
         )}
 
-        {/* Проверка ДП/ДС */}
-        <NavLink
-          to="/document-check"
-          className={({ isActive }) =>
-            `sidebar-item ${isActive ? 'active' : ''}`
-          }
-        >
-          <span className="sidebar-icon">📑</span>
-          <span className="sidebar-label">Проверка ДП/ДС</span>
-        </NavLink>
-
         {/* task 356: Реестр расценок — общий список расценок из всех источников */}
         {canView('rates_registry') && (
           <NavLink
@@ -112,32 +101,6 @@ function Sidebar() {
           >
             <span className="sidebar-icon">💲</span>
             <span className="sidebar-label">Реестр расценок</span>
-          </NavLink>
-        )}
-
-        {/* Материалы (БСМ) */}
-        {canView('bsm') && (
-          <NavLink
-            to="/bsm"
-            className={({ isActive }) =>
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="sidebar-icon">📦</span>
-            <span className="sidebar-label">Материалы</span>
-          </NavLink>
-        )}
-
-        {/* Приёмка */}
-        {canView('acceptance') && (
-          <NavLink
-            to="/acceptance"
-            className={({ isActive }) =>
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="sidebar-icon">✓</span>
-            <span className="sidebar-label">Приёмка работ</span>
           </NavLink>
         )}
 
