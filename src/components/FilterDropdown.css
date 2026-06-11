@@ -1,0 +1,123 @@
+/* Кастомный фильтр-дропдаун (combobox) — единый стиль с таблицей/карточками. */
+.fdrop {
+  position: relative;
+  display: inline-flex;
+}
+
+.fdrop-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 40px;
+  padding: 0 0.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  max-width: 260px;
+}
+.fdrop-trigger:hover { border-color: var(--border-color-dark, #cbd5e1); }
+.fdrop.is-open .fdrop-trigger {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
+}
+.fdrop.is-active .fdrop-trigger {
+  border-color: var(--primary-color);
+  background: var(--primary-light, #f0fdfa);
+}
+.fdrop.is-disabled .fdrop-trigger {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--bg-tertiary);
+}
+
+.fdrop-label { color: var(--text-tertiary); white-space: nowrap; }
+.fdrop-value {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fdrop.is-active .fdrop-value { color: var(--primary-color); }
+.fdrop-arrow {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  transition: transform 0.15s ease;
+}
+.fdrop.is-open .fdrop-arrow { transform: rotate(180deg); }
+
+/* --- Popover --- */
+.fdrop-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  min-width: 240px;
+  max-width: 340px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+  padding: 0.4rem;
+  animation: fdrop-in 0.12s ease-out;
+}
+@keyframes fdrop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fdrop-search-wrap { padding: 0.25rem 0.25rem 0.4rem; }
+.fdrop-search {
+  width: 100%;
+  height: 34px;
+  padding: 0 0.6rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.fdrop-search:focus { outline: none; border-color: var(--primary-color); }
+
+.fdrop-options {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.fdrop-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.fdrop-option-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fdrop-option:hover { background: var(--hover-bg, #f1f5f9); }
+.fdrop-option.is-current {
+  background: var(--primary-light, #f0fdfa);
+  color: var(--primary-color);
+  font-weight: 600;
+}
+.fdrop-check { color: var(--primary-color); font-size: 0.8rem; flex: 0 0 auto; }
+
+.fdrop-empty {
+  padding: 0.75rem 0.6rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}

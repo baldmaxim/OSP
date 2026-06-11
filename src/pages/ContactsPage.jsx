@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { formatPhone } from '../utils/phoneFormat'
+import FilterDropdown from '../components/FilterDropdown'
 import '../components/GeneralInfo.css'
 
 // Инициалы из ФИО (для нейтрального аватара — без фотографий).
@@ -560,7 +561,7 @@ function ContactsPage() {
             </div>
           </div>
 
-          {/* Поиск + фильтры (Офис / объект, Объект, Отдел, Должность) */}
+          {/* Поиск + кастомные фильтры (Офис / объект, Объект, Отдел, Должность) */}
           <div className="emp-filters">
             <input
               type="search"
@@ -569,43 +570,43 @@ function ContactsPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <label className="emp-filter">
-              <span className="emp-filter-key">Офис / объект:</span>
-              <select value={fLoc} onChange={(e) => setFLoc(e.target.value)}>
-                <option value="all">Все</option>
-                <option value="office">Офис</option>
-                <option value="object">Объект</option>
-              </select>
-            </label>
-            <label className="emp-filter">
-              <span className="emp-filter-key">Объект:</span>
-              <select value={fObject} onChange={(e) => setFObject(e.target.value)}>
-                <option value="">Все</option>
-                {objects.map(obj => (
-                  <option key={obj.id} value={obj.id}>{obj.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="emp-filter">
-              <span className="emp-filter-key">Отдел:</span>
-              <select value={fDept} onChange={(e) => setFDept(e.target.value)}>
-                <option value="">Все</option>
-                {departments.map(dept => (
-                  <option key={dept.id} value={dept.id}>{dept.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="emp-filter">
-              <span className="emp-filter-key">Должность:</span>
-              <select value={fPos} onChange={(e) => setFPos(e.target.value)}>
-                <option value="">Все</option>
-                {allPositions.map(pos => (
-                  <option key={pos} value={pos}>{pos}</option>
-                ))}
-              </select>
-            </label>
+            <FilterDropdown
+              label="Офис / объект"
+              value={fLoc}
+              onChange={(v) => { setFLoc(v); if (v === 'office') setFObject('') }}
+              options={[
+                { value: 'all', label: 'Все' },
+                { value: 'office', label: 'Офис' },
+                { value: 'object', label: 'Объект' },
+              ]}
+            />
+            <FilterDropdown
+              label="Объект"
+              value={fObject}
+              onChange={setFObject}
+              disabled={fLoc === 'office'}
+              searchable
+              searchPlaceholder="🔍 Поиск объектов…"
+              options={[{ value: '', label: 'Все' }, ...objects.map(o => ({ value: o.id, label: o.name }))]}
+            />
+            <FilterDropdown
+              label="Отдел"
+              value={fDept}
+              onChange={setFDept}
+              searchable
+              searchPlaceholder="🔍 Поиск отделов…"
+              options={[{ value: '', label: 'Все' }, ...departments.map(d => ({ value: d.id, label: d.name }))]}
+            />
+            <FilterDropdown
+              label="Должность"
+              value={fPos}
+              onChange={setFPos}
+              searchable
+              searchPlaceholder="🔍 Поиск должностей…"
+              options={[{ value: '', label: 'Все' }, ...allPositions.map(p => ({ value: p, label: p }))]}
+            />
             {empFiltersActive && (
-              <button type="button" className="emp-filter-reset" onClick={resetEmpFilters}>Сбросить</button>
+              <button type="button" className="emp-filter-reset" onClick={resetEmpFilters}>↺ Сбросить</button>
             )}
           </div>
 

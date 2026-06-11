@@ -1520,12 +1520,18 @@ body.modal-open {
 .emp-search {
   flex: 1 1 280px;
   min-width: 220px;
-  padding: 0.55rem 0.85rem;
+  height: 40px;
+  padding: 0 0.85rem;
   font-size: 0.9rem;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg-secondary);
   color: var(--text-primary);
+}
+.emp-search:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
 }
 .emp-filter {
   display: inline-flex;
@@ -1548,14 +1554,23 @@ body.modal-open {
   max-width: 180px;
 }
 .emp-filter-reset {
-  background: none;
-  border: none;
-  color: var(--text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 0.85rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 0.8125rem;
-  padding: 0.3rem 0.4rem;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
-.emp-filter-reset:hover { color: var(--primary-color); }
+.emp-filter-reset:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+  background: var(--primary-light, #f0fdfa);
+}
 
 /* --- Чистая таблица сотрудников --- */
 .emp-table { table-layout: fixed; width: 100%; }
