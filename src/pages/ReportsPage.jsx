@@ -47,11 +47,16 @@ function buildDynamics(rows, periodMonths) {
   return months
 }
 
-// task: фильтруемая тендерная аналитика (используется в useMemo). Отдел/Ответственный/Объект
-// фильтруют весь набор; Период (periodMonths) влияет ТОЛЬКО на окно графика динамики.
+// task: фильтруемая тендерная аналитика (используется в useMemo). ЕДИНАЯ выборка
+// `rows` (период по created_at + отдел + ответственный + объект) — от неё считаются
+// ВСЕ блоки дашборда (KPI/donut/динамика/внимание/отделы/ответственные).
 function computeTenderStats(allRows, { dept = 'all', respId = 'all', objectId = 'all', periodMonths = 6 }) {
   const today = new Date().toISOString().split('T')[0]
-  let rows = allRows
+  // Период: тендеры, созданные за последние periodMonths месяцев (включая текущий).
+  const now = new Date()
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - (periodMonths - 1), 1)
+  const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-01`
+  let rows = allRows.filter(x => x.created_at && String(x.created_at).slice(0, 10) >= cutoffStr)
   if (dept !== 'all') rows = rows.filter(x => x.objects?.status === dept)
   if (objectId !== 'all') rows = rows.filter(x => String(x.object_id) === String(objectId))
   if (respId !== 'all') rows = rows.filter(x => (x.responsible_contact_id || '_unassigned') === respId)
@@ -477,40 +482,41 @@ function ReportsPage() {
         ))}
       </nav>
 
-      {/* Фильтр-бар (только для вкладки «Тендеры») */}
+      {/* Фильтр-бар — компактные inline-чипы (только для вкладки «Тендеры») */}
       {activeTab === 'tenders' && (
         <div className="reports-filters">
-          <div className={`rf-group ${fPeriod !== 6 ? 'is-active' : ''}`}>
-            <label className="rf-label">Период</label>
-            <select className="rf-select" value={fPeriod} onChange={(e) => setFPeriod(Number(e.target.value))}>
+          <label className={`rf-chip ${fPeriod !== 6 ? 'is-active' : ''}`}>
+            <span className="rf-chip-key">Период:</span>
+            <select className="rf-chip-select" value={fPeriod} onChange={(e) => setFPeriod(Number(e.target.value))}>
+              <option value={1}>1 мес.</option>
               <option value={3}>3 мес.</option>
               <option value={6}>6 мес.</option>
               <option value={12}>12 мес.</option>
             </select>
-          </div>
-          <div className={`rf-group ${fDept !== 'all' ? 'is-active' : ''}`}>
-            <label className="rf-label">Отдел</label>
-            <select className="rf-select" value={fDept} onChange={(e) => { setFDept(e.target.value); setTDeptView(null) }}>
+          </label>
+          <label className={`rf-chip ${fDept !== 'all' ? 'is-active' : ''}`}>
+            <span className="rf-chip-key">Отдел:</span>
+            <select className="rf-chip-select" value={fDept} onChange={(e) => { setFDept(e.target.value); setTDeptView(null) }}>
               <option value="all">Все</option>
               <option value="main_construction">Основное строительство</option>
               <option value="warranty_service">Гарантийный отдел</option>
             </select>
-          </div>
-          <div className={`rf-group ${fResp !== 'all' ? 'is-active' : ''}`}>
-            <label className="rf-label">Ответственный</label>
-            <select className="rf-select" value={fResp} onChange={(e) => setFResp(e.target.value)}>
+          </label>
+          <label className={`rf-chip ${fResp !== 'all' ? 'is-active' : ''}`}>
+            <span className="rf-chip-key">Ответственный:</span>
+            <select className="rf-chip-select" value={fResp} onChange={(e) => setFResp(e.target.value)}>
               <option value="all">Все</option>
               <option value="_unassigned">Не назначен</option>
               {respOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
-          </div>
-          <div className={`rf-group ${fObject !== 'all' ? 'is-active' : ''}`}>
-            <label className="rf-label">Объект</label>
-            <select className="rf-select" value={fObject} onChange={(e) => setFObject(e.target.value)}>
+          </label>
+          <label className={`rf-chip ${fObject !== 'all' ? 'is-active' : ''}`}>
+            <span className="rf-chip-key">Объект:</span>
+            <select className="rf-chip-select" value={fObject} onChange={(e) => setFObject(e.target.value)}>
               <option value="all">Все</option>
               {objectOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
-          </div>
+          </label>
           {fActive && (
             <button type="button" className="rf-reset" onClick={resetFilters}>✕ Сбросить</button>
           )}
@@ -624,15 +630,28 @@ function ReportsPage() {
             </section>
 
             <section className="report-section">
-              <header className="section-head">
-                <h3>По ответственным</h3>
-                <span className="section-meta">{tStats.byResponsible.length}</span>
-              </header>
-              {tStats.byResponsible.length === 0 ? (
-                <div className="section-empty">Тендеров пока нет</div>
-              ) : (
-                <ResponsibleTable rows={tStats.byResponsible} />
-              )}
+              {(() => {
+                const realResp = tStats.byResponsible.filter(r => r.id !== '_unassigned')
+                return (
+                  <>
+                    <header className="section-head">
+                      <h3>По ответственным</h3>
+                      <span className="section-meta">{realResp.length}</span>
+                    </header>
+                    {tStats.unassigned > 0 && (
+                      <div className="resp-warning">
+                        <span aria-hidden>⚠️</span>
+                        <span><strong>{tStats.unassigned}</strong> тендеров без ответственного — требуют назначения</span>
+                      </div>
+                    )}
+                    {realResp.length === 0 ? (
+                      <div className="section-empty">Нет назначенных ответственных за период</div>
+                    ) : (
+                      <ResponsibleTable rows={realResp} />
+                    )}
+                  </>
+                )
+              })()}
             </section>
           </>
         )}
@@ -1057,28 +1076,19 @@ function ResponsibleTable({ rows }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((r, idx) => {
-          const isUnassigned = r.id === '_unassigned'
-          return (
-            <tr key={r.id} className={isUnassigned ? 'is-unassigned' : ''}>
-              <td className="num muted">{isUnassigned ? '—' : idx + 1}</td>
-              <td>
-                {isUnassigned ? (
-                  <span className="resp-unassigned">
-                    <span aria-hidden>⚠️</span> Не назначен
-                    <span className="resp-warn-badge">Требуют назначения</span>
-                  </span>
-                ) : r.name}
-              </td>
-              <td className="num">{r.inWork}</td>
-              <td className="num">{r.completed}</td>
-              <td className="num strong">{r.total}</td>
-              <td className="bar-col">
-                <ProgressBar value={r.completed} total={r.total} />
-              </td>
-            </tr>
-          )
-        })}
+        {/* «Не назначен» исключаем из таблицы сотрудников — он показан плашкой выше. */}
+        {rows.filter(r => r.id !== '_unassigned').map((r, idx) => (
+          <tr key={r.id}>
+            <td className="num muted">{idx + 1}</td>
+            <td>{r.name}</td>
+            <td className="num">{r.inWork}</td>
+            <td className="num">{r.completed}</td>
+            <td className="num strong">{r.total}</td>
+            <td className="bar-col">
+              <ProgressBar value={r.completed} total={r.total} />
+            </td>
+          </tr>
+        ))}
       </tbody>
     </table>
   )
