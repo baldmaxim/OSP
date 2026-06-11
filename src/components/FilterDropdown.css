@@ -52,22 +52,22 @@
 .fdrop.is-open .fdrop-arrow { transform: rotate(180deg); }
 
 /* --- Popover --- */
+/* Панель рендерится через portal в body и позиционируется fixed (инлайн-стилем
+   из JS). Здесь — только оформление и поведение. */
 .fdrop-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 1000;
+  position: fixed;
+  z-index: 1300;
   min-width: 240px;
   max-width: min(340px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
   padding: 0.4rem;
   animation: fdrop-in 0.12s ease-out;
 }
-/* Если справа не хватает места — раскрываем влево от правого края триггера. */
-.fdrop-panel.is-right { left: auto; right: 0; }
 @keyframes fdrop-in {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -87,8 +87,10 @@
 .fdrop-search:focus { outline: none; border-color: var(--primary-color); }
 
 .fdrop-options {
-  max-height: 280px;
+  max-height: 280px;            /* перекрывается inline-стилем из JS (по месту) */
   overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 1px;

@@ -1572,6 +1572,16 @@ body.modal-open {
   background: var(--primary-light, #f0fdfa);
 }
 
+/* Минимальная высота области таблицы, чтобы при «Ничего не найдено» белый блок
+   не схлопывался и интерфейс выглядел ровно. */
+.emp-table-wrap { min-height: 320px; }
+
+/* Аккуратный empty state. */
+.emp-empty { text-align: center; padding: 2.75rem 1rem; }
+.emp-empty-title { font-weight: 600; color: var(--text-secondary); font-style: normal; }
+.emp-empty-sub { margin-top: 0.35rem; font-size: 0.85rem; color: var(--text-tertiary); font-style: normal; }
+.emp-empty .emp-filter-reset { margin-top: 1rem; }
+
 /* --- Чистая таблица сотрудников (fixed layout, без горизонтального скролла) --- */
 .emp-table { table-layout: fixed; width: 100%; }
 .emp-table th,

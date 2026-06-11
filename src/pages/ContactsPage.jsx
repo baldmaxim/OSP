@@ -611,7 +611,7 @@ function ContactsPage() {
             )}
           </div>
 
-          <div className="table-container">
+          <div className="table-container emp-table-wrap">
             <table className="data-table emp-table">
               <thead>
                 <tr>
@@ -633,8 +633,14 @@ function ContactsPage() {
                   </tr>
                 ) : visibleContacts.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="no-data" style={{ textAlign: 'center' }}>
-                      Ничего не найдено{searchQuery && ` по запросу «${searchQuery}»`}
+                    <td colSpan="7" className="no-data emp-empty">
+                      <div className="emp-empty-title">
+                        Ничего не найдено{searchQuery && ` по запросу «${searchQuery}»`}
+                      </div>
+                      <div className="emp-empty-sub">Попробуйте изменить фильтры или сбросить параметры.</div>
+                      {empFiltersActive && (
+                        <button type="button" className="emp-filter-reset" onClick={resetEmpFilters}>↺ Сбросить фильтры</button>
+                      )}
                     </td>
                   </tr>
                 ) : (
