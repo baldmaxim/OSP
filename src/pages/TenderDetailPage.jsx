@@ -648,7 +648,6 @@ function TenderDetailPage() {
   const [loadingCounterparties, setLoadingCounterparties] = useState(false)
   const [participantSearchQuery, setParticipantSearchQuery] = useState('')
   const [participantWorkTypeFilter, setParticipantWorkTypeFilter] = useState('')
-  const [participantDepartmentFilter, setParticipantDepartmentFilter] = useState('')
 
   // История изменений тендера
   const [auditLog, setAuditLog] = useState([])
@@ -1638,14 +1637,11 @@ function TenderDetailPage() {
       .filter(wt => wt !== '')
   )].sort((a, b) => a.localeCompare(b, 'ru')), [availableCounterparties])
 
+  // task 415: фильтрация по категории ОС/ОГ убрана — только поиск + вид работ.
   const filteredAvailableCounterparties = useMemo(() => availableCounterparties.filter(cp => {
     if (participantWorkTypeFilter) {
       const types = (cp.work_type || '').split(',').map(wt => wt.trim())
       if (!types.includes(participantWorkTypeFilter)) return false
-    }
-    if (participantDepartmentFilter) {
-      const depts = (cp.department || '').split(',').map(d => d.trim())
-      if (!depts.includes(participantDepartmentFilter)) return false
     }
     if (!participantSearchQuery.trim()) return true
     const query = participantSearchQuery.toLowerCase().trim()
@@ -1654,13 +1650,12 @@ function TenderDetailPage() {
       (cp.inn && cp.inn.toLowerCase().includes(query)) ||
       (cp.work_type && cp.work_type.toLowerCase().includes(query))
     )
-  }), [availableCounterparties, participantWorkTypeFilter, participantDepartmentFilter, participantSearchQuery])
+  }), [availableCounterparties, participantWorkTypeFilter, participantSearchQuery])
 
   const closeAddParticipantModal = () => {
     setShowAddParticipantModal(false)
     setParticipantSearchQuery('')
     setParticipantWorkTypeFilter('')
-    setParticipantDepartmentFilter('')
   }
 
   const handleOpenAddParticipantModal = async () => {
@@ -1668,7 +1663,6 @@ function TenderDetailPage() {
     setSelectedParticipants(new Set())
     setParticipantSearchQuery('')
     setParticipantWorkTypeFilter('')
-    setParticipantDepartmentFilter('')
     setLoadingCounterparties(true)
 
     try {
@@ -2645,24 +2639,6 @@ function TenderDetailPage() {
                     />
 
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <select
-                        value={participantDepartmentFilter}
-                        onChange={(e) => setParticipantDepartmentFilter(e.target.value)}
-                        style={{
-                          padding: '0.375rem 0.75rem',
-                          fontSize: '0.8125rem',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '4px',
-                          background: 'var(--bg-secondary)',
-                          color: 'var(--text-primary)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <option value="">Все категории</option>
-                        <option value="Основное строительство">Основное строительство</option>
-                        <option value="Гарантийный отдел">Гарантийный отдел</option>
-                      </select>
-
                       {uniqueAvailableWorkTypes.length > 0 && (
                         <select
                           value={participantWorkTypeFilter}
@@ -2684,9 +2660,9 @@ function TenderDetailPage() {
                         </select>
                       )}
 
-                      {(participantDepartmentFilter || participantWorkTypeFilter) && (
+                      {participantWorkTypeFilter && (
                         <button
-                          onClick={() => { setParticipantDepartmentFilter(''); setParticipantWorkTypeFilter('') }}
+                          onClick={() => setParticipantWorkTypeFilter('')}
                           style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
                         >Сбросить</button>
                       )}
@@ -2757,16 +2733,6 @@ function TenderDetailPage() {
                                 backgroundColor: 'var(--card-bg)',
                                 zIndex: 11,
                                 borderBottom: '2px solid var(--border-color)',
-                                padding: '0.75rem',
-                                width: '80px',
-                                textAlign: 'center'
-                              }}>Категория</th>
-                              <th style={{
-                                position: 'sticky',
-                                top: 0,
-                                backgroundColor: 'var(--card-bg)',
-                                zIndex: 11,
-                                borderBottom: '2px solid var(--border-color)',
                                 padding: '0.75rem'
                               }}>Вид работ</th>
                             </tr>
@@ -2800,27 +2766,6 @@ function TenderDetailPage() {
                                   />
                                 </td>
                                 <td style={{ fontWeight: 500 }}>{cp.name}</td>
-                                <td style={{ textAlign: 'center' }}>
-                                  {cp.department ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', alignItems: 'center' }}>
-                                      {cp.department.split(',').map((d, i) => {
-                                        const dept = d.trim()
-                                        const isCon = dept === 'Основное строительство'
-                                        return (
-                                          <span key={i} style={{
-                                            padding: '0.1rem 0.35rem',
-                                            fontSize: '0.6875rem',
-                                            fontWeight: 700,
-                                            borderRadius: '3px',
-                                            background: isCon ? 'rgba(37,99,235,0.12)' : 'rgba(234,88,12,0.12)',
-                                            color: isCon ? '#2563eb' : '#ea580c',
-                                            border: `1px solid ${isCon ? 'rgba(37,99,235,0.25)' : 'rgba(234,88,12,0.25)'}`,
-                                          }}>{isCon ? 'ОС' : 'ГО'}</span>
-                                        )
-                                      })}
-                                    </div>
-                                  ) : '-'}
-                                </td>
                                 <td>
                                   {cp.work_type ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
