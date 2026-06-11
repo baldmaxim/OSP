@@ -699,3 +699,116 @@
   .kpi-grid--5 { grid-template-columns: repeat(2, 1fr); }
   .dash-grid { grid-template-columns: 1fr; }
 }
+
+/* ===== task: уплотнённый дашборд «Тендеры» ===== */
+.reports-header { justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.report-toolbar { display: flex; align-items: center; gap: 0.875rem; flex-shrink: 0; }
+.reports-updated { font-size: 0.75rem; color: var(--text-tertiary); white-space: nowrap; }
+.reports-export {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.4rem 0.8rem; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--bg-secondary);
+  color: var(--text-secondary); font-size: 0.8125rem; font-weight: 500; cursor: pointer;
+}
+.reports-export:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Компактные вкладки аналитики */
+.reports-tabs {
+  display: flex; gap: 0.375rem; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 1rem; padding-bottom: 0;
+}
+.reports-tab {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.55rem 0.9rem; border: 1px solid transparent; border-bottom: none;
+  border-radius: 9px 9px 0 0; background: transparent;
+  color: var(--text-secondary); font-size: 0.875rem; font-weight: 500; cursor: pointer;
+  position: relative; white-space: nowrap;
+}
+.reports-tab:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.reports-tab.active {
+  color: #2563eb; background: rgba(37, 99, 235, 0.07);
+  border-color: var(--border-color);
+}
+.reports-tab.active::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: #2563eb;
+}
+.reports-tab-icon { font-size: 0.95rem; }
+.reports-tab-count {
+  font-size: 0.6875rem; font-weight: 700; padding: 0.05rem 0.4rem; border-radius: 999px;
+  background: var(--bg-tertiary); color: var(--text-tertiary); font-variant-numeric: tabular-nums;
+}
+.reports-tab.active .reports-tab-count { background: rgba(37, 99, 235, 0.15); color: #2563eb; }
+
+/* Фильтр-бар */
+.reports-filters {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.625rem;
+  margin-bottom: 1.1rem;
+}
+.rf-group { display: flex; flex-direction: column; gap: 0.25rem; min-width: 140px; }
+.rf-label { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-tertiary); }
+.rf-select {
+  padding: 0.45rem 0.6rem; border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8125rem;
+}
+.rf-group.is-active .rf-label { color: #2563eb; }
+.rf-group.is-active .rf-select { border-color: #2563eb; background: rgba(37, 99, 235, 0.05); }
+.rf-reset {
+  padding: 0.45rem 0.7rem; border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-secondary); color: var(--text-secondary); font-size: 0.8125rem; cursor: pointer;
+}
+.rf-reset:hover { border-color: #2563eb; color: #2563eb; }
+
+/* Bar chart динамики */
+.bars-svg { width: 100%; height: 190px; display: block; }
+.bar-val { font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bar-x { font-size: 11px; fill: var(--text-tertiary); }
+.bars-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 1rem; margin: 0.4rem 0 0; padding: 0; }
+.bars-legend li { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-secondary); }
+
+/* KPI: равная высота + новые акценты */
+.kpi-grid--5 { align-items: stretch; }
+.kpi-grid--5 .kpi-card { min-height: 84px; }
+.accent-info { color: #0891b2; }
+.kpi-ico--cyan { background: rgba(8, 145, 178, 0.12); }
+
+/* Требует внимания — кнопки-экшены */
+.attn-item {
+  width: 100%; font: inherit; text-align: left; cursor: default;
+}
+.attn-item.is-clickable { cursor: pointer; }
+.attn-item.is-clickable:hover { border-color: #2563eb; background: rgba(37, 99, 235, 0.06); }
+.attn-item:disabled { opacity: 1; }
+.attn-chev { font-size: 1.25rem; color: var(--text-tertiary); line-height: 1; margin-left: 0.25rem; }
+
+/* Компактные карточки отделов */
+.dept-card--compact {
+  display: flex; align-items: center; gap: 0.875rem; text-align: left;
+  padding: 0.875rem 1rem;
+}
+.dept-card--compact .dept-icon { font-size: 1.5rem; flex: 0 0 auto; }
+.dept-card--compact .dept-main { flex: 0 0 auto; min-width: 150px; }
+.dept-card--compact .dept-name { font-weight: 600; font-size: 0.9375rem; color: var(--text-primary); }
+.dept-card--compact .dept-total { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.dept-card--compact .dept-total-label { font-size: 0.75rem; font-weight: 400; color: var(--text-tertiary); }
+.dept-card--compact .dept-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.dept-card--compact .dept-metrics { display: flex; gap: 1.25rem; }
+.dept-card--compact .dept-metric { display: flex; flex-direction: column; }
+.dept-card--compact .dept-metric-label { font-size: 0.6875rem; color: var(--text-tertiary); }
+.dept-card--compact .dept-metric-value { font-size: 1rem; font-weight: 600; color: var(--text-primary); }
+.dept-card--compact .dept-arrow { color: var(--text-tertiary); flex: 0 0 auto; }
+
+/* Проблемная строка «Не назначен» */
+.dense-table tr.is-unassigned { background: rgba(245, 158, 11, 0.08); }
+.dense-table tr.is-unassigned:hover { background: rgba(245, 158, 11, 0.13); }
+.resp-unassigned { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; color: #b45309; }
+.resp-warn-badge {
+  font-size: 0.6875rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 999px;
+  background: rgba(245, 158, 11, 0.18); color: #b45309;
+}
+
+@media (max-width: 720px) {
+  .reports-filters .rf-group { min-width: 120px; flex: 1; }
+  .dept-card--compact { flex-wrap: wrap; }
+  .dept-card--compact .dept-side { flex-basis: 100%; }
+}

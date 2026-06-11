@@ -1,7 +1,85 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import './ReportsPage.css'
+
+// «В работе» — только активная процедура; «Не начат» сюда не входит.
+const isInWork = (x) => x.status === 'Идет тендерная процедура'
+const isClosed = (x) => x.status === 'Завершен'
+
+function groupByResp(rows) {
+  const map = new Map()
+  for (const x of rows) {
+    if (!isInWork(x) && !isClosed(x)) continue
+    const id = x.responsible_contact_id || '_unassigned'
+    const name = x.responsible_contact?.full_name || 'Не назначен'
+    if (!map.has(id)) map.set(id, { id, name, inWork: 0, completed: 0 })
+    const r = map.get(id)
+    if (isClosed(x)) r.completed += 1
+    else r.inWork += 1
+  }
+  return Array.from(map.values())
+    .map(r => ({ ...r, total: r.inWork + r.completed }))
+    .sort((a, b) => b.total - a.total)
+}
+
+// Динамика по месяцам создания (реальные created_at). Окно = periodMonths.
+function buildDynamics(rows, periodMonths) {
+  const now = new Date()
+  const months = []
+  for (let i = periodMonths - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push({
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: d.toLocaleDateString('ru-RU', { month: 'short' }),
+      total: 0, inWork: 0, closed: 0,
+    })
+  }
+  const idx = new Map(months.map((m, i) => [m.key, i]))
+  for (const x of rows) {
+    if (!x.created_at) continue
+    const i = idx.get(String(x.created_at).slice(0, 7))
+    if (i == null) continue
+    months[i].total += 1
+    if (isClosed(x)) months[i].closed += 1
+    else if (isInWork(x)) months[i].inWork += 1
+  }
+  return months
+}
+
+// task: фильтруемая тендерная аналитика (используется в useMemo). Отдел/Ответственный/Объект
+// фильтруют весь набор; Период (periodMonths) влияет ТОЛЬКО на окно графика динамики.
+function computeTenderStats(allRows, { dept = 'all', respId = 'all', objectId = 'all', periodMonths = 6 }) {
+  const today = new Date().toISOString().split('T')[0]
+  let rows = allRows
+  if (dept !== 'all') rows = rows.filter(x => x.objects?.status === dept)
+  if (objectId !== 'all') rows = rows.filter(x => String(x.object_id) === String(objectId))
+  if (respId !== 'all') rows = rows.filter(x => (x.responsible_contact_id || '_unassigned') === respId)
+
+  const open = rows.filter(isInWork).length
+  const closed = rows.filter(isClosed).length
+  const deptBlock = (st) => {
+    const r = rows.filter(x => x.objects?.status === st)
+    return {
+      total: r.length, open: r.filter(isInWork).length, closed: r.filter(isClosed).length,
+      unassigned: r.filter(x => !x.responsible_contact_id).length, byResp: groupByResp(r),
+    }
+  }
+  return {
+    total: rows.length,
+    open,
+    closed,
+    notStarted: Math.max(0, rows.length - open - closed),
+    overdue: rows.filter(x => isInWork(x) && x.end_date && x.end_date < today).length,
+    unassigned: rows.filter(x => !x.responsible_contact_id).length,
+    byResponsible: groupByResp(rows),
+    dynamics: buildDynamics(rows, periodMonths),
+    byDept: {
+      main_construction: deptBlock('main_construction'),
+      warranty_service: deptBlock('warranty_service'),
+    },
+  }
+}
 
 function ReportsPage() {
   const { scopedObjectId } = useRole()
@@ -10,11 +88,44 @@ function ReportsPage() {
   const [activeTab, setActiveTab] = useState('tenders')
   // null = обзор, 'construction' | 'warranty' = детализация по выбранному отделу
   const [tDeptView, setTDeptView] = useState(null)
+  // task: сырые основные тендеры + момент загрузки (для фильтрации без повторных запросов)
+  const [rawTenders, setRawTenders] = useState([])
+  const [loadedAt, setLoadedAt] = useState(null)
+  // Фильтры тендерного дашборда
+  const [fDept, setFDept] = useState('all')
+  const [fResp, setFResp] = useState('all')
+  const [fObject, setFObject] = useState('all')
+  const [fPeriod, setFPeriod] = useState(6)
 
   useEffect(() => {
     fetchStats()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopedObjectId])
+
+  // task: тендерная аналитика пересчитывается на клиенте при смене фильтров.
+  const tStats = useMemo(
+    () => computeTenderStats(rawTenders, { dept: fDept, respId: fResp, objectId: fObject, periodMonths: fPeriod }),
+    [rawTenders, fDept, fResp, fObject, fPeriod]
+  )
+  // Списки для дропдаунов фильтров — из сырых тендеров.
+  const objectOptions = useMemo(() => {
+    const m = new Map()
+    for (const x of rawTenders) {
+      if (x.object_id && x.objects?.name) m.set(x.object_id, x.objects.name)
+    }
+    return Array.from(m, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  }, [rawTenders])
+  const respOptions = useMemo(() => {
+    const m = new Map()
+    for (const x of rawTenders) {
+      if (x.responsible_contact_id && x.responsible_contact?.full_name) {
+        m.set(x.responsible_contact_id, x.responsible_contact.full_name)
+      }
+    }
+    return Array.from(m, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  }, [rawTenders])
+  const fActive = fDept !== 'all' || fResp !== 'all' || fObject !== 'all' || fPeriod !== 6
+  const resetFilters = () => { setFDept('all'); setFResp('all'); setFObject('all'); setFPeriod(6) }
 
   const fetchStats = async () => {
     try {
@@ -28,7 +139,7 @@ function ReportsPage() {
           vor_status, vor_responsible_id, vor_end_date,
           materials_proposal_deadline,
           winner_counterparty_id,
-          objects(status),
+          objects(id, name, status),
           responsible_contact:contacts!responsible_contact_id(id, full_name),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name),
           vor_responsible:contacts!vor_responsible_id(id, full_name),
@@ -236,6 +347,10 @@ function ReportsPage() {
       const tClosedCount = t.filter(isClosed).length
       const tOpenCount = t.filter(isInWork).length
 
+      // task: сохраняем сырые тендеры для клиентской фильтрации дашборда + момент загрузки.
+      setRawTenders(t)
+      setLoadedAt(new Date())
+
       setStats({
         // Тендеры — общие
         tTotal: t.length,
@@ -308,67 +423,99 @@ function ReportsPage() {
     return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n) + ' ₽'
   }
 
-  // Данные текущего отдела (для детального вида)
+  // Данные текущего отдела (для детального вида) — из отфильтрованного tStats.
   const deptData = tDeptView === 'construction'
-    ? {
-      title: 'Основное строительство',
-      icon: '🏗️',
-      accent: 'dept-card--construction',
-      total: s.tTotalConst,
-      open: s.tOpenConst,
-      closed: s.tClosedConst,
-      unassigned: s.tUnassignedConst,
-      byResp: s.byResponsibleConst,
-    }
+    ? { title: 'Основное строительство', icon: '🏗️', accent: 'dept-card--construction', ...tStats.byDept.main_construction }
     : tDeptView === 'warranty'
-      ? {
-        title: 'Гарантийный отдел',
-        icon: '🛡️',
-        accent: 'dept-card--warranty',
-        total: s.tTotalWar,
-        open: s.tOpenWar,
-        closed: s.tClosedWar,
-        unassigned: s.tUnassignedWar,
-        byResp: s.byResponsibleWar,
-      }
+      ? { title: 'Гарантийный отдел', icon: '🛡️', accent: 'dept-card--warranty', ...tStats.byDept.warranty_service }
       : null
 
   const reportTabs = [
-    { key: 'tenders', label: 'Тендеры', icon: '🏗️', accent: 'tab-blue', count: s.tTotal },
-    { key: 'winners', label: 'Победители', icon: '🏆', accent: 'tab-amber', count: s.winners.unique },
-    { key: 'materials', label: 'Материалы', icon: '📦', accent: 'tab-violet', count: s.mat.total },
-    { key: 'cost_plans', label: 'Планы затрат', icon: '💰', accent: 'tab-emerald', count: s.cp.total },
-    { key: 'vors', label: 'ВОРы и РД', icon: '📐', accent: 'tab-cyan', count: s.vor.total },
-    { key: 'contracts', label: 'Договоры', icon: '📝', accent: 'tab-rose', count: s.cTotal },
+    { key: 'tenders', label: 'Тендеры', icon: '🏗️', count: s.tTotal },
+    { key: 'winners', label: 'Победители', icon: '🏆', count: s.winners.unique },
+    { key: 'materials', label: 'Материалы', icon: '📦', count: s.mat.total },
+    { key: 'cost_plans', label: 'Планы затрат', icon: '💰', count: s.cp.total },
+    { key: 'vors', label: 'ВОРы и РД', icon: '📐', count: s.vor.total },
+    { key: 'contracts', label: 'Договоры', icon: '📝', count: s.cTotal },
   ]
+  const updatedLabel = loadedAt
+    ? `Обновлено: сегодня, ${loadedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+    : null
 
   return (
     <div className="reports-page">
       <div className="reports-header">
         <div>
           <h2>Отчёты</h2>
-          <div className="reports-subtitle">Состояние тендерной работы и договорной активности</div>
+          <div className="reports-subtitle">Аналитика по тендерам</div>
+        </div>
+        <div className="report-toolbar">
+          {updatedLabel && <span className="reports-updated">{updatedLabel}</span>}
+          <button type="button" className="reports-export" title="Экспорт — скоро" disabled>
+            <span aria-hidden>⬆</span> Экспорт
+          </button>
         </div>
       </div>
 
-      <nav className="reports-nav" aria-label="Разделы отчётов">
+      {/* Верхние разделы аналитики — компактные вкладки */}
+      <nav className="reports-tabs" aria-label="Разделы отчётов">
         {reportTabs.map(tab => (
           <button
             key={tab.key}
             type="button"
-            className={`reports-nav-card ${tab.accent} ${activeTab === tab.key ? 'active' : ''}`}
+            className={`reports-tab ${activeTab === tab.key ? 'active' : ''}`}
             onClick={() => {
               setActiveTab(tab.key)
               if (tab.key !== 'tenders') setTDeptView(null)
             }}
             aria-pressed={activeTab === tab.key}
           >
-            <span className="reports-nav-icon" aria-hidden>{tab.icon}</span>
-            <span className="reports-nav-label">{tab.label}</span>
-            <span className="reports-nav-count">{tab.count}</span>
+            <span className="reports-tab-icon" aria-hidden>{tab.icon}</span>
+            <span className="reports-tab-label">{tab.label}</span>
+            <span className="reports-tab-count">{tab.count}</span>
           </button>
         ))}
       </nav>
+
+      {/* Фильтр-бар (только для вкладки «Тендеры») */}
+      {activeTab === 'tenders' && (
+        <div className="reports-filters">
+          <div className={`rf-group ${fPeriod !== 6 ? 'is-active' : ''}`}>
+            <label className="rf-label">Период</label>
+            <select className="rf-select" value={fPeriod} onChange={(e) => setFPeriod(Number(e.target.value))}>
+              <option value={3}>3 мес.</option>
+              <option value={6}>6 мес.</option>
+              <option value={12}>12 мес.</option>
+            </select>
+          </div>
+          <div className={`rf-group ${fDept !== 'all' ? 'is-active' : ''}`}>
+            <label className="rf-label">Отдел</label>
+            <select className="rf-select" value={fDept} onChange={(e) => { setFDept(e.target.value); setTDeptView(null) }}>
+              <option value="all">Все</option>
+              <option value="main_construction">Основное строительство</option>
+              <option value="warranty_service">Гарантийный отдел</option>
+            </select>
+          </div>
+          <div className={`rf-group ${fResp !== 'all' ? 'is-active' : ''}`}>
+            <label className="rf-label">Ответственный</label>
+            <select className="rf-select" value={fResp} onChange={(e) => setFResp(e.target.value)}>
+              <option value="all">Все</option>
+              <option value="_unassigned">Не назначен</option>
+              {respOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </div>
+          <div className={`rf-group ${fObject !== 'all' ? 'is-active' : ''}`}>
+            <label className="rf-label">Объект</label>
+            <select className="rf-select" value={fObject} onChange={(e) => setFObject(e.target.value)}>
+              <option value="all">Все</option>
+              {objectOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </div>
+          {fActive && (
+            <button type="button" className="rf-reset" onClick={resetFilters}>✕ Сбросить</button>
+          )}
+        </div>
+      )}
 
       <div className="reports-content">
         {activeTab === 'tenders' && !deptData && (
@@ -379,38 +526,38 @@ function ReportsPage() {
                 <span className="kpi-ico kpi-ico--blue" aria-hidden>🏗️</span>
                 <div className="kpi-body">
                   <div className="kpi-label">Всего тендеров</div>
-                  <div className="kpi-value">{s.tTotal}</div>
+                  <div className="kpi-value">{tStats.total}</div>
                 </div>
               </div>
               <div className="kpi-card kpi-card--ico">
-                <span className="kpi-ico kpi-ico--blue" aria-hidden>⏳</span>
+                <span className="kpi-ico kpi-ico--cyan" aria-hidden>⏳</span>
                 <div className="kpi-body">
                   <div className="kpi-label">В работе</div>
-                  <div className="kpi-value">{s.tOpen}</div>
-                  <div className="kpi-foot">{pct(s.tOpen, s.tTotal)}% от всех</div>
+                  <div className="kpi-value accent-info">{tStats.open}</div>
+                  <div className="kpi-foot">{pct(tStats.open, tStats.total)}% от всех</div>
                 </div>
               </div>
               <div className="kpi-card kpi-card--ico kpi-card--success">
                 <span className="kpi-ico kpi-ico--green" aria-hidden>✓</span>
                 <div className="kpi-body">
                   <div className="kpi-label">Завершено</div>
-                  <div className="kpi-value accent-success">{s.tClosed}</div>
-                  <div className="kpi-foot">{pct(s.tClosed, s.tTotal)}% завершения</div>
+                  <div className="kpi-value accent-success">{tStats.closed}</div>
+                  <div className="kpi-foot">{pct(tStats.closed, tStats.total)}% завершения</div>
                 </div>
               </div>
-              <div className={`kpi-card kpi-card--ico ${s.tUnassigned > 0 ? 'kpi-card--warn' : ''}`}>
+              <div className={`kpi-card kpi-card--ico ${tStats.unassigned > 0 ? 'kpi-card--warn' : ''}`}>
                 <span className="kpi-ico kpi-ico--amber" aria-hidden>👤</span>
                 <div className="kpi-body">
                   <div className="kpi-label">Без ответственного</div>
-                  <div className={`kpi-value ${s.tUnassigned > 0 ? 'accent-warn' : ''}`}>{s.tUnassigned}</div>
+                  <div className={`kpi-value ${tStats.unassigned > 0 ? 'accent-warn' : ''}`}>{tStats.unassigned}</div>
                   <div className="kpi-foot">требуют назначения</div>
                 </div>
               </div>
-              <div className={`kpi-card kpi-card--ico ${s.tOverdue > 0 ? 'kpi-card--danger' : ''}`}>
+              <div className={`kpi-card kpi-card--ico ${tStats.overdue > 0 ? 'kpi-card--danger' : ''}`}>
                 <span className="kpi-ico kpi-ico--red" aria-hidden>⚠️</span>
                 <div className="kpi-body">
                   <div className="kpi-label">Просроченные</div>
-                  <div className={`kpi-value ${s.tOverdue > 0 ? 'accent-danger' : ''}`}>{s.tOverdue}</div>
+                  <div className={`kpi-value ${tStats.overdue > 0 ? 'accent-danger' : ''}`}>{tStats.overdue}</div>
                   <div className="kpi-foot">срок процедуры прошёл</div>
                 </div>
               </div>
@@ -421,11 +568,11 @@ function ReportsPage() {
               <section className="dash-card">
                 <header className="dash-card-head"><h3>Статусы тендеров</h3></header>
                 <StatusDonut
-                  total={s.tTotal}
+                  total={tStats.total}
                   segments={[
-                    { label: 'В работе', value: s.tOpen, color: '#2563eb' },
-                    { label: 'Завершено', value: s.tClosed, color: '#16a34a' },
-                    { label: 'Не начато', value: s.tNotStarted, color: '#94a3b8' },
+                    { label: 'В работе', value: tStats.open, color: '#2563eb' },
+                    { label: 'Завершено', value: tStats.closed, color: '#16a34a' },
+                    { label: 'Не начато', value: tStats.notStarted, color: '#94a3b8' },
                   ]}
                 />
               </section>
@@ -433,12 +580,12 @@ function ReportsPage() {
               <section className="dash-card">
                 <header className="dash-card-head">
                   <h3>Динамика тендеров</h3>
-                  <span className="dash-card-meta">по дате создания · 6 мес.</span>
+                  <span className="dash-card-meta">создано / в работе / завершено · {fPeriod} мес.</span>
                 </header>
-                <TrendChart
-                  data={s.tDynamics}
+                <BarChart
+                  data={tStats.dynamics}
                   series={[
-                    { key: 'total', label: 'Всего', color: '#2563eb' },
+                    { key: 'total', label: 'Создано', color: '#2563eb' },
                     { key: 'inWork', label: 'В работе', color: '#f59e0b' },
                     { key: 'closed', label: 'Завершено', color: '#16a34a' },
                   ]}
@@ -448,87 +595,43 @@ function ReportsPage() {
               <section className="dash-card dash-card--attention">
                 <header className="dash-card-head"><h3>Требует внимания</h3></header>
                 <div className="attn-list">
-                  <AttentionItem icon="👤" tone="warn" label="Без ответственного" value={s.tUnassigned} hint="назначьте ответственного" />
-                  <AttentionItem icon="⚠️" tone="danger" label="Просроченные" value={s.tOverdue} hint="срок процедуры прошёл" />
-                  <AttentionItem icon="🕓" tone="muted" label="Не начато" value={s.tNotStarted} hint="ожидают старта процедуры" />
+                  <AttentionItem icon="👤" tone="warn" label="Без ответственного" value={tStats.unassigned}
+                    hint="назначьте ответственного" onClick={() => setFResp('_unassigned')} />
+                  <AttentionItem icon="⚠️" tone="danger" label="Просроченные" value={tStats.overdue}
+                    hint="срок процедуры прошёл" />
+                  <AttentionItem icon="🕓" tone="muted" label="Не начато" value={tStats.notStarted}
+                    hint="ожидают старта процедуры" />
                 </div>
               </section>
             </div>
 
-            {/* Большие кликабельные карточки по отделам */}
+            {/* Компактные карточки по отделам (только реальные отделы) */}
             <section className="report-section">
               <header className="section-head">
                 <h3>По отделам</h3>
                 <span className="section-meta">нажмите для деталей</span>
               </header>
               <div className="dept-grid">
-                <button
-                  type="button"
-                  className="dept-card dept-card--construction"
-                  onClick={() => setTDeptView('construction')}
-                >
-                  <div className="dept-card-head">
-                    <span className="dept-icon" aria-hidden>🏗️</span>
-                    <div>
-                      <div className="dept-name">Основное строительство</div>
-                      <div className="dept-total">{s.tTotalConst} <span className="dept-total-label">тендеров</span></div>
-                    </div>
-                    <span className="dept-arrow" aria-hidden>→</span>
-                  </div>
-                  <div className="dept-metrics">
-                    <div className="dept-metric">
-                      <span className="dept-metric-label">В работе</span>
-                      <span className="dept-metric-value">{s.tOpenConst}</span>
-                    </div>
-                    <div className="dept-metric">
-                      <span className="dept-metric-label">Завершено</span>
-                      <span className="dept-metric-value accent-success">{s.tClosedConst}</span>
-                    </div>
-                  </div>
-                  <div className="dept-progress">
-                    <ProgressBar value={s.tClosedConst} total={s.tTotalConst} />
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  className="dept-card dept-card--warranty"
-                  onClick={() => setTDeptView('warranty')}
-                >
-                  <div className="dept-card-head">
-                    <span className="dept-icon" aria-hidden>🛡️</span>
-                    <div>
-                      <div className="dept-name">Гарантийный отдел</div>
-                      <div className="dept-total">{s.tTotalWar} <span className="dept-total-label">тендеров</span></div>
-                    </div>
-                    <span className="dept-arrow" aria-hidden>→</span>
-                  </div>
-                  <div className="dept-metrics">
-                    <div className="dept-metric">
-                      <span className="dept-metric-label">В работе</span>
-                      <span className="dept-metric-value">{s.tOpenWar}</span>
-                    </div>
-                    <div className="dept-metric">
-                      <span className="dept-metric-label">Завершено</span>
-                      <span className="dept-metric-value accent-success">{s.tClosedWar}</span>
-                    </div>
-                  </div>
-                  <div className="dept-progress">
-                    <ProgressBar value={s.tClosedWar} total={s.tTotalWar} />
-                  </div>
-                </button>
+                {(fDept === 'all' || fDept === 'main_construction') && (
+                  <DeptCard icon="🏗️" accent="construction" name="Основное строительство"
+                    data={tStats.byDept.main_construction} onClick={() => setTDeptView('construction')} />
+                )}
+                {(fDept === 'all' || fDept === 'warranty_service') && (
+                  <DeptCard icon="🛡️" accent="warranty" name="Гарантийный отдел"
+                    data={tStats.byDept.warranty_service} onClick={() => setTDeptView('warranty')} />
+                )}
               </div>
             </section>
 
             <section className="report-section">
               <header className="section-head">
                 <h3>По ответственным</h3>
-                <span className="section-meta">{s.byResponsible.length}</span>
+                <span className="section-meta">{tStats.byResponsible.length}</span>
               </header>
-              {s.byResponsible.length === 0 ? (
+              {tStats.byResponsible.length === 0 ? (
                 <div className="section-empty">Тендеров пока нет</div>
               ) : (
-                <ResponsibleTable rows={s.byResponsible} />
+                <ResponsibleTable rows={tStats.byResponsible} />
               )}
             </section>
           </>
@@ -854,33 +957,47 @@ function StatusDonut({ total, segments }) {
   )
 }
 
-// task: line chart динамики на чистом SVG. series — массив {key,label,color}.
-function TrendChart({ data, series }) {
-  const W = 480, H = 170
-  const pad = { l: 26, r: 12, t: 12, b: 24 }
+// task: grouped bar chart динамики на чистом SVG (без зависимостей).
+// data — [{label,total,inWork,closed}]; series — [{key,label,color}].
+function BarChart({ data, series }) {
+  const W = 520, H = 190
+  const pad = { l: 24, r: 10, t: 22, b: 22 }
+  const iw = W - pad.l - pad.r
+  const ih = H - pad.t - pad.b
   const max = Math.max(1, ...data.flatMap(d => series.map(se => d[se.key])))
-  const n = data.length
-  const x = (i) => pad.l + (n <= 1 ? 0 : (i * (W - pad.l - pad.r)) / (n - 1))
-  const y = (v) => pad.t + (1 - v / max) * (H - pad.t - pad.b)
+  const n = data.length || 1
+  const groupW = iw / n
+  const barGap = 3
+  const barW = Math.max(4, (groupW * 0.66 - barGap * (series.length - 1)) / series.length)
+  const y = (v) => pad.t + (1 - v / max) * ih
   return (
-    <div className="trend-wrap">
-      <svg viewBox={`0 0 ${W} ${H}`} className="trend-svg" preserveAspectRatio="none" role="img" aria-label="Динамика тендеров">
+    <div className="bars-wrap">
+      <svg viewBox={`0 0 ${W} ${H}`} className="bars-svg" role="img" aria-label="Динамика тендеров">
         {[0, 0.5, 1].map((g) => {
-          const yy = pad.t + g * (H - pad.t - pad.b)
-          return <line key={g} x1={pad.l} x2={W - pad.r} y1={yy} y2={yy} stroke="var(--border-color)" strokeWidth="1" opacity="0.5" />
+          const yy = pad.t + g * ih
+          return <line key={g} x1={pad.l} x2={W - pad.r} y1={yy} y2={yy} stroke="var(--border-color)" strokeWidth="1" opacity="0.45" />
         })}
-        {series.map(se => (
-          <polyline key={se.key} fill="none" stroke={se.color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"
-            points={data.map((d, i) => `${x(i)},${y(d[se.key])}`).join(' ')} />
-        ))}
-        {series.flatMap(se => data.map((d, i) => (
-          <circle key={`${se.key}-${i}`} cx={x(i)} cy={y(d[se.key])} r="2.5" fill={se.color} />
-        )))}
-        {data.map((d, i) => (
-          <text key={i} x={x(i)} y={H - 6} textAnchor="middle" className="trend-x">{d.label}</text>
-        ))}
+        {data.map((d, i) => {
+          const gx = pad.l + i * groupW + (groupW - (barW * series.length + barGap * (series.length - 1))) / 2
+          return (
+            <g key={i}>
+              {series.map((se, j) => {
+                const v = d[se.key]
+                const bx = gx + j * (barW + barGap)
+                const by = y(v)
+                return (
+                  <g key={se.key}>
+                    <rect x={bx} y={by} width={barW} height={Math.max(0, pad.t + ih - by)} rx="2" fill={se.color} />
+                    {v > 0 && <text x={bx + barW / 2} y={by - 3} textAnchor="middle" className="bar-val" fill={se.color}>{v}</text>}
+                  </g>
+                )
+              })}
+              <text x={pad.l + i * groupW + groupW / 2} y={H - 6} textAnchor="middle" className="bar-x">{d.label}</text>
+            </g>
+          )
+        })}
       </svg>
-      <ul className="trend-legend">
+      <ul className="bars-legend">
         {series.map(se => (
           <li key={se.key}><span className="legend-dot" style={{ background: se.color }} />{se.label}</li>
         ))}
@@ -889,16 +1006,40 @@ function TrendChart({ data, series }) {
   )
 }
 
-function AttentionItem({ icon, tone, label, value, hint }) {
+// task: action-item «требует внимания» — кликабельный (применяет фильтр) с шевроном.
+function AttentionItem({ icon, tone, label, value, hint, onClick }) {
   return (
-    <div className={`attn-item attn-item--${tone}`}>
+    <button type="button" className={`attn-item attn-item--${tone}${onClick ? ' is-clickable' : ''}`}
+      onClick={onClick} disabled={!onClick}>
       <span className="attn-ico" aria-hidden>{icon}</span>
       <div className="attn-body">
         <div className="attn-label">{label}</div>
         <div className="attn-hint">{hint}</div>
       </div>
       <div className="attn-val">{value}</div>
-    </div>
+      {onClick && <span className="attn-chev" aria-hidden>›</span>}
+    </button>
+  )
+}
+
+// task: компактная горизонтальная карточка отдела. data = {total,open,closed,unassigned,byResp}.
+function DeptCard({ icon, accent, name, data, onClick }) {
+  return (
+    <button type="button" className={`dept-card dept-card--compact dept-card--${accent}`} onClick={onClick}>
+      <span className="dept-icon" aria-hidden>{icon}</span>
+      <div className="dept-main">
+        <div className="dept-name">{name}</div>
+        <div className="dept-total">{data.total} <span className="dept-total-label">тендеров</span></div>
+      </div>
+      <div className="dept-side">
+        <div className="dept-metrics">
+          <div className="dept-metric"><span className="dept-metric-label">В работе</span><span className="dept-metric-value">{data.open}</span></div>
+          <div className="dept-metric"><span className="dept-metric-label">Завершено</span><span className="dept-metric-value accent-success">{data.closed}</span></div>
+        </div>
+        <ProgressBar value={data.closed} total={data.total} />
+      </div>
+      <span className="dept-arrow" aria-hidden>→</span>
+    </button>
   )
 }
 
@@ -919,9 +1060,16 @@ function ResponsibleTable({ rows }) {
         {rows.map((r, idx) => {
           const isUnassigned = r.id === '_unassigned'
           return (
-            <tr key={r.id}>
-              <td className="num muted">{idx + 1}</td>
-              <td className={isUnassigned ? 'muted' : ''}>{r.name}</td>
+            <tr key={r.id} className={isUnassigned ? 'is-unassigned' : ''}>
+              <td className="num muted">{isUnassigned ? '—' : idx + 1}</td>
+              <td>
+                {isUnassigned ? (
+                  <span className="resp-unassigned">
+                    <span aria-hidden>⚠️</span> Не назначен
+                    <span className="resp-warn-badge">Требуют назначения</span>
+                  </span>
+                ) : r.name}
+              </td>
               <td className="num">{r.inWork}</td>
               <td className="num">{r.completed}</td>
               <td className="num strong">{r.total}</td>
