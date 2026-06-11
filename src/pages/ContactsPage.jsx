@@ -614,13 +614,13 @@ function ContactsPage() {
             <table className="data-table emp-table">
               <thead>
                 <tr>
-                  <th>Сотрудник</th>
-                  <th style={{ width: '160px' }}>Офис / объект</th>
-                  <th style={{ width: '170px' }}>Должность</th>
-                  <th style={{ width: '140px' }}>Отдел</th>
-                  <th style={{ width: '200px' }}>Контакты</th>
-                  <th>Примечание</th>
-                  <th style={{ width: '64px' }}></th>
+                  <th className="emp-col-name">Сотрудник</th>
+                  <th className="emp-col-loc">Офис / объект</th>
+                  <th className="emp-col-pos">Должность</th>
+                  <th className="emp-col-dept">Отдел</th>
+                  <th className="emp-col-contacts">Контакты</th>
+                  <th className="emp-col-note">Примечание</th>
+                  <th className="emp-col-act"></th>
                 </tr>
               </thead>
               <tbody>
@@ -651,9 +651,9 @@ function ContactsPage() {
                             <span className="emp-person-name">{contact.full_name}</span>
                           </div>
                         </td>
-                        <td>{loc}</td>
-                        <td className={posName ? '' : 'muted'}>{posName || '—'}</td>
-                        <td className={deptName ? '' : 'muted'}>{deptName || '—'}</td>
+                        <td className="emp-ell" title={loc}>{loc}</td>
+                        <td className={`emp-ell ${posName ? '' : 'muted'}`} title={posName || undefined}>{posName || '—'}</td>
+                        <td className={`emp-ell ${deptName ? '' : 'muted'}`} title={deptName || undefined}>{deptName || '—'}</td>
                         <td className="emp-contacts">
                           {contact.phone && <span className="emp-phone">{contact.phone}</span>}
                           {contact.email && <span className="emp-email">{contact.email}</span>}

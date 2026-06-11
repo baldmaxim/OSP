@@ -1572,12 +1572,38 @@ body.modal-open {
   background: var(--primary-light, #f0fdfa);
 }
 
-/* --- Чистая таблица сотрудников --- */
+/* --- Чистая таблица сотрудников (fixed layout, без горизонтального скролла) --- */
 .emp-table { table-layout: fixed; width: 100%; }
+.emp-table th,
+.emp-table td {
+  overflow: hidden;
+  padding: 0.6rem 0.75rem;       /* компактнее дефолтного 1rem — всё влезает по ширине */
+}
 .emp-table th { white-space: nowrap; }
 .emp-table .emp-row { cursor: pointer; }
 .emp-table .emp-row:hover td { background: var(--hover-bg, #f9fafb); }
 .emp-table td { vertical-align: middle; }
+
+/* Ширины колонок: «Сотрудник» забирает остаток, действия фиксированы. */
+.emp-col-loc { width: 15%; }
+.emp-col-pos { width: 14%; }
+.emp-col-dept { width: 11%; }
+.emp-col-contacts { width: 16%; }
+.emp-col-note { width: 16%; }
+.emp-col-act { width: 78px; }
+
+/* Текстовые ячейки в одну строку с ellipsis. */
+.emp-ell { white-space: nowrap; text-overflow: ellipsis; }
+
+/* Компактная колонка действий — обе иконки помещаются без скролла. */
+.emp-table .actions-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.15rem;
+  white-space: nowrap;
+}
+.emp-table .actions-cell .btn-icon { padding: 0.2rem 0.3rem; font-size: 0.95rem; line-height: 1; }
 
 .emp-person { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
 .emp-person-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }

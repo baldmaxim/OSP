@@ -18,6 +18,7 @@ export default function FilterDropdown({
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [alignRight, setAlignRight] = useState(false)
   const rootRef = useRef(null)
   const searchRef = useRef(null)
 
@@ -48,6 +49,18 @@ export default function FilterDropdown({
     }
   }, [open])
 
+  // Решаем, куда раскрывать popover: если справа не хватает места — выравниваем по
+  // правому краю, чтобы панель не вышла за вьюпорт и не дала горизонтальный скролл
+  // (из-за которого «уезжала» вся страница). Считаем СИНХРОННО при клике — без мигания.
+  const toggle = () => {
+    if (disabled) return
+    if (!open && rootRef.current) {
+      const rect = rootRef.current.getBoundingClientRect()
+      setAlignRight(rect.left + 300 > window.innerWidth - 12)
+    }
+    setOpen(v => !v)
+  }
+
   // Автофокус на поиск + сброс запроса при открытии/закрытии.
   useEffect(() => { if (open && searchable && searchRef.current) searchRef.current.focus() }, [open, searchable])
   useEffect(() => { if (!open) setQuery('') }, [open])
@@ -62,7 +75,7 @@ export default function FilterDropdown({
       <button
         type="button"
         className="fdrop-trigger"
-        onClick={() => { if (!disabled) setOpen(v => !v) }}
+        onClick={toggle}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -74,7 +87,7 @@ export default function FilterDropdown({
       </button>
 
       {open && !disabled && (
-        <div className="fdrop-panel" role="listbox">
+        <div className={`fdrop-panel ${alignRight ? 'is-right' : ''}`} role="listbox">
           {searchable && (
             <div className="fdrop-search-wrap">
               <input
