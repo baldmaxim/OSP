@@ -892,3 +892,13 @@
   .dept-card--compact { flex-wrap: wrap; gap: 12px 20px; }
   .dept-card--compact .dept-progress { min-width: 140px; flex: 1; }
 }
+
+/* ===== task: «По отделам» — компактная summary-таблица (вместо больших карточек) ===== */
+.dept-table { width: 100%; }
+.dept-table th { white-space: nowrap; }
+.dept-table .dept-row { cursor: pointer; }
+.dept-table .dept-row:hover td { background: rgba(37, 99, 235, 0.05); }
+.dept-table .dept-row:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+.dept-row-name { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; color: var(--text-primary); }
+.dept-row-ico { font-size: 1.05rem; }
+.dept-table .bar-col { min-width: 180px; width: 26%; }

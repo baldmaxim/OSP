@@ -618,22 +618,41 @@ function ReportsPage() {
               </section>
             </div>
 
-            {/* Компактные карточки по отделам (только реальные отделы) */}
+            {/* Компактная summary-таблица по отделам (только реальные отделы) */}
             <section className="report-section">
               <header className="section-head">
                 <h3>По отделам</h3>
-                <span className="section-meta">нажмите для деталей</span>
+                <span className="section-meta">нажмите строку для деталей</span>
               </header>
-              <div className="dept-grid">
-                {(fDept === 'all' || fDept === 'main_construction') && (
-                  <DeptCard icon="🏗️" accent="construction" name="Основное строительство"
-                    data={tStats.byDept.main_construction} onClick={() => setTDeptView('construction')} />
-                )}
-                {(fDept === 'all' || fDept === 'warranty_service') && (
-                  <DeptCard icon="🛡️" accent="warranty" name="Гарантийный отдел"
-                    data={tStats.byDept.warranty_service} onClick={() => setTDeptView('warranty')} />
-                )}
-              </div>
+              <table className="dense-table dept-table">
+                <thead>
+                  <tr>
+                    <th>Отдел</th>
+                    <th className="num">Всего</th>
+                    <th className="num">В работе</th>
+                    <th className="num">Завершено</th>
+                    <th className="bar-col">Завершение</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { view: 'construction', icon: '🏗️', name: 'Основное строительство', data: tStats.byDept.main_construction, show: fDept === 'all' || fDept === 'main_construction' },
+                    { view: 'warranty', icon: '🛡️', name: 'Гарантийный отдел', data: tStats.byDept.warranty_service, show: fDept === 'all' || fDept === 'warranty_service' },
+                  ].filter(d => d.show).map(d => (
+                    <tr key={d.view} className="dept-row" onClick={() => setTDeptView(d.view)}
+                      role="button" tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTDeptView(d.view) } }}>
+                      <td>
+                        <span className="dept-row-name"><span className="dept-row-ico" aria-hidden>{d.icon}</span>{d.name}</span>
+                      </td>
+                      <td className="num strong">{d.data.total}</td>
+                      <td className="num">{d.data.open}</td>
+                      <td className="num accent-success">{d.data.closed}</td>
+                      <td className="bar-col"><ProgressBar value={d.data.closed} total={d.data.total} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </section>
 
             <section className="report-section">
@@ -1044,28 +1063,6 @@ function AttentionItem({ icon, tone, label, value, hint, onClick }) {
       </div>
       <div className="attn-val">{value}</div>
       {onClick && <span className="attn-chev" aria-hidden>›</span>}
-    </button>
-  )
-}
-
-// task: компактная горизонтальная summary-карточка отдела (одна линия).
-// data = {total,open,closed,unassigned,byResp}.
-function DeptCard({ icon, accent, name, data, onClick }) {
-  return (
-    <button type="button" className={`dept-card dept-card--compact dept-card--${accent}`} onClick={onClick}>
-      <span className="dept-icon" aria-hidden>{icon}</span>
-      <div className="dept-main">
-        <div className="dept-name">{name}</div>
-        <div className="dept-total">{data.total} <span className="dept-total-label">тендеров</span></div>
-      </div>
-      <div className="dept-stats">
-        <div className="dept-metric"><span className="dept-metric-label">В работе</span><span className="dept-metric-value">{data.open}</span></div>
-        <div className="dept-metric"><span className="dept-metric-label">Завершено</span><span className="dept-metric-value accent-success">{data.closed}</span></div>
-      </div>
-      <div className="dept-progress">
-        <ProgressBar value={data.closed} total={data.total} />
-      </div>
-      <span className="dept-arrow" aria-hidden>→</span>
     </button>
   )
 }
