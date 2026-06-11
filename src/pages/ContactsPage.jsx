@@ -725,7 +725,7 @@ function ContactsPage() {
               <div className="emp-drawer-id">
                 <span className="emp-avatar emp-avatar-lg" aria-hidden>{initials(contactFormData.full_name)}</span>
                 <div className="emp-drawer-id-text">
-                  <div className="emp-drawer-name">{contactFormData.full_name || 'Новый сотрудник'}</div>
+                  <div className="emp-drawer-name">{contactFormData.full_name || (editingContact ? '—' : 'Добавить сотрудника')}</div>
                   {headSub && <div className="emp-drawer-sub">{headSub}</div>}
                 </div>
               </div>

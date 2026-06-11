@@ -1632,18 +1632,19 @@ body.modal-open {
   position: fixed;
   inset: 0;
   /* мягкое затемнение — страница остаётся читаемой, drawer фокусирует внимание */
-  background: rgba(15, 23, 42, 0.18);
+  background: rgba(15, 23, 42, 0.12);
   display: flex;
   justify-content: flex-end;
-  z-index: 1200;
+  /* выше липких шапок таблиц (1000) и кнопки «+ Добавить» — конфликта слоёв нет */
+  z-index: 1500;
 }
 .emp-drawer {
-  width: 460px;
-  max-width: 94vw;
+  width: 468px;
+  max-width: 100vw;
   height: 100%;
   background: var(--card-bg);
   border-left: 1px solid var(--border-color);
-  box-shadow: -12px 0 32px rgba(15, 23, 42, 0.16);
+  box-shadow: -12px 0 32px rgba(15, 23, 42, 0.14);
   display: flex;
   flex-direction: column;
   animation: emp-drawer-in 0.2s ease-out;
@@ -1655,14 +1656,14 @@ body.modal-open {
 
 /* --- Header карточки --- */
 .emp-drawer-head {
-  padding: 1rem 1.25rem 1.1rem;
+  padding: 1.5rem;
   border-bottom: 1px solid var(--border-color);
 }
 .emp-drawer-head-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.85rem;
+  margin-bottom: 1.15rem;
 }
 .emp-drawer-title {
   font-size: 0.72rem;
@@ -1671,19 +1672,20 @@ body.modal-open {
   color: var(--text-tertiary);
   font-weight: 600;
 }
-.emp-drawer-id { display: flex; align-items: center; gap: 0.85rem; min-width: 0; }
+.emp-drawer-head .modal-close { font-size: 1.5rem; line-height: 1; }
+.emp-drawer-id { display: flex; align-items: center; gap: 1rem; min-width: 0; }
 .emp-drawer-id-text { min-width: 0; }
 .emp-drawer-name {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: var(--text-primary);
-  line-height: 1.25;
+  line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .emp-drawer-sub {
-  margin-top: 0.15rem;
-  font-size: 0.85rem;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
   color: var(--text-secondary);
 }
 
@@ -1697,61 +1699,63 @@ body.modal-open {
 .emp-drawer-body {
   flex: 1;
   overflow-y: auto;
-  padding: 1.1rem 1.25rem;
+  padding: 1.5rem;
 }
 .emp-fieldset { border: none; padding: 0; margin: 0; min-width: 0; }
 
 /* --- Группы полей --- */
-.emp-group { margin-bottom: 1.25rem; }
+.emp-group { margin-bottom: 1.5rem; }
 .emp-group:last-child { margin-bottom: 0; }
 .emp-group-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin: 0 0 0.65rem;
-  padding-left: 0.55rem;
+  margin: 0 0 0.9rem;
+  padding-left: 0.6rem;
   font-size: 0.8rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-secondary);
   border-left: 3px solid var(--primary-color);
-  line-height: 1.1;
+  line-height: 1.15;
 }
-.emp-drawer-body .form-group { margin-bottom: 0.85rem; }
+.emp-drawer-body .form-group { margin-bottom: 1rem; }
 .emp-drawer-body .form-group:last-child { margin-bottom: 0; }
 .emp-drawer-body .form-group label {
   display: block;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.35rem;
   font-size: 0.8125rem;
+  font-weight: 500;
   color: var(--text-secondary);
 }
 .emp-drawer-body .form-group input,
 .emp-drawer-body .form-group select,
 .emp-drawer-body .form-group textarea { width: 100%; }
 
-/* --- Контакты с быстрыми действиями --- */
-.emp-contact-field { display: flex; align-items: stretch; gap: 0.4rem; }
+/* --- Контакты с быстрыми действиями (одна высота с input) --- */
+.emp-contact-field { display: flex; align-items: stretch; gap: 0.5rem; }
 .emp-contact-field input { flex: 1; min-width: 0; }
 .emp-contact-act {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
+  width: 40px;
+  min-height: 40px;
   flex: 0 0 auto;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--bg-secondary);
   color: var(--primary-color);
   font-size: 0.95rem;
   text-decoration: none;
   cursor: pointer;
+  transition: background 0.12s ease;
 }
 .emp-contact-act:hover { background: var(--hover-bg, #f1f5f9); }
-.emp-contact-act.is-off { opacity: 0.4; pointer-events: none; }
+.emp-contact-act.is-off { opacity: 0.35; pointer-events: none; }
 
 .emp-char-count {
-  margin-top: 0.25rem;
+  margin-top: 0.3rem;
   text-align: right;
   font-size: 0.75rem;
   color: var(--text-tertiary);
@@ -1762,8 +1766,8 @@ body.modal-open {
   flex: 0 0 auto;
   display: flex;
   justify-content: flex-end;
-  gap: 0.6rem;
-  padding: 0.85rem 1.25rem;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
   border-top: 1px solid var(--border-color);
   background: var(--card-bg);
 }
