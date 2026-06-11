@@ -352,6 +352,7 @@ function ContactsPage() {
   }
 
   const resetEmpFilters = () => { setSearchQuery(''); setFLoc('all'); setFObject(''); setFDept(''); setFPos('') }
+  const copyText = (t) => { if (t && navigator.clipboard) navigator.clipboard.writeText(t) }
   const empFiltersActive = Boolean(searchQuery || fLoc !== 'all' || fObject || fDept || fPos)
 
   // Сбрасываем страницу при смене фильтров/поиска/размера/вкладки.
@@ -708,189 +709,162 @@ function ContactsPage() {
       )}
 
       {/* Drawer «Карточка сотрудника» — просмотр / редактирование / создание */}
-      {showContactModal && (
-        <div className="emp-drawer-overlay" onClick={() => { setShowContactModal(false); setEditingContact(null) }}>
+      {showContactModal && (() => {
+        const close = () => { setShowContactModal(false); setEditingContact(null) }
+        const deptName = departments.find(d => d.id === contactFormData.department_id)?.name || ''
+        const headSub = [normalizePosition(contactFormData.position), deptName].filter(Boolean).join(' · ')
+        const notesLen = (contactFormData.notes || '').length
+        return (
+        <div className="emp-drawer-overlay" onClick={close}>
           <aside className="emp-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="emp-drawer-head">
+              <div className="emp-drawer-head-top">
+                <span className="emp-drawer-title">{editingContact ? 'Карточка сотрудника' : 'Новый сотрудник'}</span>
+                <button className="modal-close" onClick={close} aria-label="Закрыть">×</button>
+              </div>
               <div className="emp-drawer-id">
                 <span className="emp-avatar emp-avatar-lg" aria-hidden>{initials(contactFormData.full_name)}</span>
-                <div>
-                  <div className="emp-drawer-title">{editingContact ? 'Карточка сотрудника' : 'Новый сотрудник'}</div>
-                  <div className="emp-drawer-name">{contactFormData.full_name || '—'}</div>
+                <div className="emp-drawer-id-text">
+                  <div className="emp-drawer-name">{contactFormData.full_name || 'Новый сотрудник'}</div>
+                  {headSub && <div className="emp-drawer-sub">{headSub}</div>}
                 </div>
               </div>
-              <button
-                className="modal-close"
-                onClick={() => { setShowContactModal(false); setEditingContact(null) }}
-              >×</button>
             </div>
 
             <form onSubmit={handleContactSubmit} className="emp-drawer-form">
-              <fieldset className="emp-fieldset" disabled={!canEditContacts}>
-              <div className="form-grid">
-                <div className="form-group full-width">
-                  <label>ФИО *</label>
-                  <input
-                    type="text"
-                    value={contactFormData.full_name}
-                    onChange={(e) =>
-                      setContactFormData({
-                        ...contactFormData,
-                        full_name: e.target.value,
-                      })
-                    }
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Должность *</label>
-                  {isCustomPosition ? (
-                    <div className="input-with-action">
+              <div className="emp-drawer-body">
+                <fieldset className="emp-fieldset" disabled={!canEditContacts}>
+                  <section className="emp-group">
+                    <h4 className="emp-group-title">Основная информация</h4>
+                    <div className="form-group">
+                      <label>ФИО *</label>
                       <input
                         type="text"
-                        value={contactFormData.position}
-                        onChange={(e) =>
-                          setContactFormData({
-                            ...contactFormData,
-                            position: e.target.value,
-                          })
-                        }
+                        value={contactFormData.full_name}
+                        onChange={(e) => setContactFormData({ ...contactFormData, full_name: e.target.value })}
                         required
-                        placeholder="Введите должность"
-                        autoFocus
                       />
-                      <button
-                        type="button"
-                        className="btn-icon"
-                        onClick={() => {
-                          setIsCustomPosition(false)
-                          setContactFormData({ ...contactFormData, position: '' })
-                        }}
-                        title="Выбрать из списка"
-                      >
-                        ✕
-                      </button>
                     </div>
-                  ) : (
-                    <div className="input-with-action">
+                    <div className="form-group">
+                      <label>Должность *</label>
+                      {isCustomPosition ? (
+                        <div className="input-with-action">
+                          <input
+                            type="text"
+                            value={contactFormData.position}
+                            onChange={(e) => setContactFormData({ ...contactFormData, position: e.target.value })}
+                            required
+                            placeholder="Введите должность"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            onClick={() => { setIsCustomPosition(false); setContactFormData({ ...contactFormData, position: '' }) }}
+                            title="Выбрать из списка"
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <div className="input-with-action">
+                          <select
+                            value={contactFormData.position}
+                            onChange={(e) => setContactFormData({ ...contactFormData, position: e.target.value })}
+                            required
+                          >
+                            <option value="">Выберите должность</option>
+                            {allPositions.map(pos => (
+                              <option key={pos} value={pos}>{pos}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            onClick={() => { setIsCustomPosition(true); setContactFormData({ ...contactFormData, position: '' }) }}
+                            title="Добавить новую должность"
+                          >+</button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label>Отдел</label>
                       <select
-                        value={contactFormData.position}
-                        onChange={(e) =>
-                          setContactFormData({
-                            ...contactFormData,
-                            position: e.target.value,
-                          })
-                        }
-                        required
+                        value={contactFormData.department_id}
+                        onChange={(e) => setContactFormData({ ...contactFormData, department_id: e.target.value })}
                       >
-                        <option value="">Выберите должность</option>
-                        {allPositions.map(pos => (
-                          <option key={pos} value={pos}>{pos}</option>
+                        <option value="">— не указан —</option>
+                        {departments.map((dept) => (
+                          <option key={dept.id} value={dept.id}>{dept.name}</option>
                         ))}
                       </select>
-                      <button
-                        type="button"
-                        className="btn-icon"
-                        onClick={() => {
-                          setIsCustomPosition(true)
-                          setContactFormData({ ...contactFormData, position: '' })
-                        }}
-                        title="Добавить новую должность"
-                      >
-                        +
-                      </button>
                     </div>
-                  )}
-                </div>
+                    <div className="form-group">
+                      <label>Офис / объект</label>
+                      <select
+                        value={contactFormData.object_id}
+                        onChange={(e) => setContactFormData({ ...contactFormData, object_id: e.target.value })}
+                      >
+                        <option value="">Офис</option>
+                        {objects.map((obj) => (
+                          <option key={obj.id} value={obj.id}>{obj.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </section>
 
-                <div className="form-group">
-                  <label>Отдел</label>
-                  <select
-                    value={contactFormData.department_id}
-                    onChange={(e) =>
-                      setContactFormData({
-                        ...contactFormData,
-                        department_id: e.target.value,
-                      })
-                    }
-                  >
-                    <option value="">— не указан —</option>
-                    {departments.map((dept) => (
-                      <option key={dept.id} value={dept.id}>
-                        {dept.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  <section className="emp-group">
+                    <h4 className="emp-group-title">Контакты</h4>
+                    <div className="form-group">
+                      <label>Телефон</label>
+                      <div className="emp-contact-field">
+                        <input
+                          type="tel"
+                          value={contactFormData.phone}
+                          onChange={(e) => setContactFormData({ ...contactFormData, phone: formatPhone(e.target.value) })}
+                          placeholder="+7(916)712-69-10"
+                        />
+                        <a className={`emp-contact-act ${contactFormData.phone ? '' : 'is-off'}`}
+                          href={contactFormData.phone ? `tel:${contactFormData.phone}` : undefined}
+                          title="Позвонить" aria-label="Позвонить">☎</a>
+                        <button type="button" className="emp-contact-act" onClick={() => copyText(contactFormData.phone)}
+                          title="Скопировать телефон" aria-label="Скопировать">⧉</button>
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label>Email</label>
+                      <div className="emp-contact-field">
+                        <input
+                          type="email"
+                          value={contactFormData.email}
+                          onChange={(e) => setContactFormData({ ...contactFormData, email: e.target.value })}
+                          placeholder="email@example.com"
+                        />
+                        <a className={`emp-contact-act ${contactFormData.email ? '' : 'is-off'}`}
+                          href={contactFormData.email ? `mailto:${contactFormData.email}` : undefined}
+                          title="Написать письмо" aria-label="Написать">✉</a>
+                        <button type="button" className="emp-contact-act" onClick={() => copyText(contactFormData.email)}
+                          title="Скопировать email" aria-label="Скопировать">⧉</button>
+                      </div>
+                    </div>
+                  </section>
 
-                <div className="form-group">
-                  <label>Офис / объект</label>
-                  <select
-                    value={contactFormData.object_id}
-                    onChange={(e) =>
-                      setContactFormData({
-                        ...contactFormData,
-                        object_id: e.target.value,
-                      })
-                    }
-                  >
-                    <option value="">Офис</option>
-                    {objects.map((obj) => (
-                      <option key={obj.id} value={obj.id}>
-                        {obj.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Телефон</label>
-                  <input
-                    type="tel"
-                    value={contactFormData.phone}
-                    onChange={(e) =>
-                      setContactFormData({ ...contactFormData, phone: formatPhone(e.target.value) })
-                    }
-                    placeholder="+7(916)712-69-10"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Email</label>
-                  <input
-                    type="email"
-                    value={contactFormData.email}
-                    onChange={(e) =>
-                      setContactFormData({ ...contactFormData, email: e.target.value })
-                    }
-                    placeholder="email@example.com"
-                  />
-                </div>
-
-                <div className="form-group full-width">
-                  <label>Примечание</label>
-                  <textarea
-                    value={contactFormData.notes}
-                    onChange={(e) =>
-                      setContactFormData({ ...contactFormData, notes: e.target.value })
-                    }
-                    rows={3}
-                    placeholder="Произвольное примечание (необязательно)"
-                  />
-                </div>
+                  <section className="emp-group">
+                    <h4 className="emp-group-title">Примечание</h4>
+                    <div className="form-group">
+                      <textarea
+                        value={contactFormData.notes}
+                        onChange={(e) => setContactFormData({ ...contactFormData, notes: e.target.value })}
+                        rows={4}
+                        maxLength={500}
+                        placeholder="Произвольное примечание (необязательно)"
+                      />
+                      <div className="emp-char-count">{notesLen} / 500</div>
+                    </div>
+                  </section>
+                </fieldset>
               </div>
-              </fieldset>
 
-              <div className="modal-footer emp-drawer-footer">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    setShowContactModal(false)
-                    setEditingContact(null)
-                  }}
-                >
+              <div className="emp-drawer-footer">
+                <button type="button" className="btn-secondary" onClick={close}>
                   {canEditContacts ? 'Отмена' : 'Закрыть'}
                 </button>
                 {canEditContacts && (
@@ -902,7 +876,8 @@ function ContactsPage() {
             </form>
           </aside>
         </div>
-      )}
+        )
+      })()}
 
       {/* Modal: добавление/редактирование отдела */}
       {showDeptModal && (
