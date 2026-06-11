@@ -3019,14 +3019,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             if (!types.includes(counterpartyWorkTypeFilter)) return false
           }
 
-          // Поиск
+          // Поиск (task 415: без категории ОС/ОГ — по названию/виду работ/ИНН)
           if (counterpartySearchQuery.trim()) {
             const query = counterpartySearchQuery.toLowerCase()
             return (
               (cp.name && cp.name.toLowerCase().includes(query)) ||
               (cp.work_type && cp.work_type.toLowerCase().includes(query)) ||
-              (cp.inn && cp.inn.toLowerCase().includes(query)) ||
-              (cp.department && cp.department.toLowerCase().includes(query))
+              (cp.inn && cp.inn.toLowerCase().includes(query))
             )
           }
 
@@ -3166,16 +3165,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               backgroundColor: 'var(--card-bg)',
                               zIndex: 11,
                               borderBottom: '2px solid var(--border-color)',
-                              padding: '0.75rem',
-                              width: '80px',
-                              textAlign: 'center'
-                            }}>Категория</th>
-                            <th style={{
-                              position: 'sticky',
-                              top: 0,
-                              backgroundColor: 'var(--card-bg)',
-                              zIndex: 11,
-                              borderBottom: '2px solid var(--border-color)',
                               padding: '0.75rem'
                             }}>Вид работ</th>
                           </tr>
@@ -3209,27 +3198,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                 />
                               </td>
                               <td style={{ fontWeight: 500 }}>{counterparty.name}</td>
-                              <td style={{ textAlign: 'center' }}>
-                                {counterparty.department ? (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', alignItems: 'center' }}>
-                                    {counterparty.department.split(',').map((d, i) => {
-                                      const dept = d.trim()
-                                      const isCon = dept === 'Основное строительство'
-                                      return (
-                                        <span key={i} style={{
-                                          padding: '0.1rem 0.35rem',
-                                          fontSize: '0.6875rem',
-                                          fontWeight: 700,
-                                          borderRadius: '3px',
-                                          background: isCon ? 'rgba(37,99,235,0.12)' : 'rgba(234,88,12,0.12)',
-                                          color: isCon ? '#2563eb' : '#ea580c',
-                                          border: `1px solid ${isCon ? 'rgba(37,99,235,0.25)' : 'rgba(234,88,12,0.25)'}`,
-                                        }}>{isCon ? 'ОС' : 'ГО'}</span>
-                                      )
-                                    })}
-                                  </div>
-                                ) : '-'}
-                              </td>
                               <td>
                                 {counterparty.work_type ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
