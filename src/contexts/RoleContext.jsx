@@ -145,13 +145,16 @@ export function RoleProvider({ children }) {
       if (error && error.code !== 'PGRST116') throw error // PGRST116 = not found
 
       if (data) {
-        if (!data.is_approved && isSuperAdmin) {
-          // Суперадмин — автоподтверждение (требует прав записи; при RLS-блокировке
-          // упадёт в catch → fail-closed, а не admin).
-          await supabase
-            .from('user_roles')
-            .update({ is_approved: true, role: 'admin' })
-            .eq('user_id', userId)
+        if (isSuperAdmin) {
+          // Суперадмин всегда admin. Чиним дрейф роли/is_approved в БД, если он есть
+          // (суперадмина пропускает RLS через is_admin() по email), и автоподтверждаем.
+          // При RLS-блокировке update упадёт в catch → fail-closed, а не admin.
+          if (data.role !== ROLES.ADMIN || !data.is_approved) {
+            await supabase
+              .from('user_roles')
+              .update({ is_approved: true, role: 'admin' })
+              .eq('user_id', userId)
+          }
           await fetchPermissions(ROLES.ADMIN)
           setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_id: data.object_id || null })
           setRole(ROLES.ADMIN)

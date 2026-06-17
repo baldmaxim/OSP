@@ -16,8 +16,10 @@
 --
 -- ФУНКЦИИ
 --   public.is_admin() — SECURITY DEFINER STABLE: текущий пользователь — активный
---     админ (user_roles.role='admin' AND is_approved=true для auth.uid()). DEFINER →
---     читает user_roles в обход RLS, поэтому нет рекурсии в политиках user_roles.
+--     админ (user_roles.role='admin' AND is_approved=true для auth.uid()) ЛИБО суперадмин
+--     по email из auth.users (миграция 20260617 — страхует от RLS-самоблокировки; список
+--     email должен совпадать с SUPER_ADMINS в src/contexts/RoleContext.jsx). DEFINER →
+--     читает user_roles/auth.users в обход RLS, поэтому нет рекурсии в политиках user_roles.
 --   public.touch_last_login() — SECURITY DEFINER: обновляет last_login_at своей записи
 --     (чтобы не выдавать authenticated прямой UPDATE на user_roles). Фронт вызывает rpc.
 --
