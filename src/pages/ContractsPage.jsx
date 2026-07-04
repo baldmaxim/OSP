@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
-import ContractPreviewCard from '../components/ContractPreviewCard'
 import FilterDropdown from '../components/FilterDropdown'
 import '../components/ContractRegistry.css'
 
@@ -151,8 +150,9 @@ function ContractRegistry() {
 
   // Task 188: dropdown состояние для приложений в форме
   const [attachmentsDropdownOpenForm, setAttachmentsDropdownOpenForm] = useState(false)
-  // Task 193: раскрытая строка договора (показывает приложения с комментариями)
+  // Task 193/417: раскрытая строка договора (примечание юриста + сопутствующие приложения)
   const [expandedContractId, setExpandedContractId] = useState(null)
+  const [noteSavingId, setNoteSavingId] = useState(null)
 
   const [formData, setFormData] = useState(EMPTY_FORM)
 
@@ -169,10 +169,6 @@ function ContractRegistry() {
   // Пагинация реестра
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
-
-  // Мини-карточка договора (popover)
-  const [previewContractId, setPreviewContractId] = useState(null)
-  const [previewAnchorEl, setPreviewAnchorEl] = useState(null)
 
   const objectStatus = department === 'construction' ? 'main_construction' : 'warranty_service'
 
@@ -610,18 +606,18 @@ function ContractRegistry() {
     setOnlyOverdue(false)
   }
 
-  const openPreview = (e, contractId) => {
-    e.stopPropagation()
-    if (previewContractId === contractId) {
-      setPreviewContractId(null); setPreviewAnchorEl(null)
-    } else {
-      setPreviewAnchorEl(e.currentTarget); setPreviewContractId(contractId)
+  // Сохранение примечания юриста из раскрытого блока (по blur), с индикатором «Сохранение…».
+  const handleSaveNote = async (contractId, rawValue) => {
+    const contract = contracts.find(c => c.id === contractId)
+    const next = (rawValue || '').trim()
+    if (!contract || (contract.notes || '') === next) return
+    setNoteSavingId(contractId)
+    try {
+      await handleInlineField(contractId, 'notes', next)
+    } finally {
+      setNoteSavingId(null)
     }
   }
-
-  const closePreview = useCallback(() => {
-    setPreviewContractId(null); setPreviewAnchorEl(null)
-  }, [])
 
   // Пагинация: считаем страницу от отфильтрованного/отсортированного списка.
   const totalCount = filteredSortedContracts.length
@@ -632,20 +628,16 @@ function ContractRegistry() {
   const rangeFrom = totalCount === 0 ? 0 : pageStart + 1
   const rangeTo = Math.min(pageStart + pageSize, totalCount)
 
-  // При смене вкладки/фильтров/сортировки — на первую страницу и закрыть мини-карточку.
+  // При смене вкладки/фильтров/сортировки — на первую страницу и закрыть раскрытие.
   useEffect(() => {
     setPage(1)
-    setPreviewContractId(null); setPreviewAnchorEl(null)
+    setExpandedContractId(null)
   }, [activeTab, filterObjectId, filterLawyerId, searchText, onlyOverdue, sortKey, sortDir, pageSize])
 
-  // Закрываем мини-карточку при перелистывании страниц.
+  // Закрываем раскрытие при перелистывании страниц.
   useEffect(() => {
-    setPreviewContractId(null); setPreviewAnchorEl(null)
+    setExpandedContractId(null)
   }, [page])
-
-  const previewContract = previewContractId
-    ? filteredSortedContracts.find(c => c.id === previewContractId)
-    : null
 
   // Заголовок с сортировкой по клику (не вложенный компонент — обычная функция-рендер)
   const sortableTh = (col, label, style) => (
@@ -1080,20 +1072,21 @@ function ContractRegistry() {
                 return (
                 <Fragment key={contract.id}>
                 <tr
-                  className={`contract-row ${isDeletedTab ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''} ${previewContractId === contract.id ? 'row-preview-active' : ''}`}
+                  className={`contract-row ${isDeletedTab ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}`}
                   onClick={toggleExpand}
-                  title={items.length > 0 ? 'Нажмите, чтобы показать приложения договора' : undefined}
+                  title="Нажмите, чтобы раскрыть договор"
                 >
                   <td className="cell-num">
+                    <span className={`expand-chev ${isExpanded ? 'open' : ''}`} aria-hidden>▸</span>
                     <span className="cell-num-value">{pageStart + index + 1}</span>
-                    {items.length > 0 && <span className={`expand-badge ${isExpanded ? 'open' : ''}`} title={`Приложений: ${items.length}`}>{items.length}</span>}
+                    {items.length > 0 && <span className="expand-badge" title={`Приложений: ${items.length}`}>{items.length}</span>}
                   </td>
                   <td className="cell-object"><span className="clamp-2">{contract.objects?.name || '—'}</span></td>
                   <td className="cell-contract-num" onClick={(e) => e.stopPropagation()}>
                     <button
-                      className={`contract-ds-link ${previewContractId === contract.id ? 'is-active' : ''}`}
-                      onClick={(e) => openPreview(e, contract.id)}
-                      title="Показать мини-карточку договора"
+                      className={`contract-ds-link ${isExpanded ? 'is-active' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); toggleExpand() }}
+                      title={isExpanded ? 'Свернуть договор' : 'Раскрыть договор'}
                     >
                       {(dsNum || dsDate) ? (
                         <>
@@ -1197,45 +1190,86 @@ function ContractRegistry() {
                   </td>
                 </tr>
                 {isExpanded && (
-                  <tr className="contract-attachments-row" onClick={(e) => e.stopPropagation()}>
+                  <tr className="contract-expanded-row" onClick={(e) => e.stopPropagation()}>
                     <td colSpan="11">
-                      <div className="contract-attachments-panel">
-                        <div className="cap-header">
-                          <span className="cap-title">📎 Приложения к договору № {contract.contract_number}</span>
-                          <span className="cap-count">{items.length === 0 ? 'нет приложений' : `${items.length} шт.`}</span>
-                        </div>
-                        {items.length === 0 ? (
-                          <div className="cap-empty">
-                            Для договора не выбрано ни одного приложения. Откройте редактирование и отметьте нужные.
+                      <div className="contract-expanded-content">
+                        {/* Блок 1: Примечание юриста */}
+                        <section className="ce-block">
+                          <div className="ce-block-title">
+                            Примечание юриста
+                            {noteSavingId === contract.id && <span className="ce-saving">Сохранение…</span>}
                           </div>
-                        ) : (
-                          <ul className="cap-list">
-                            {items.map(a => (
-                              <li key={a.ca_id} className="cap-item">
-                                <div className="cap-item-head">
-                                  <span className="cap-item-name">
-                                    {a.link
-                                      ? <a href={a.link} target="_blank" rel="noopener noreferrer">{a.name}</a>
-                                      : a.name}
-                                  </span>
-                                  {a.description && <span className="cap-item-desc">{a.description}</span>}
-                                </div>
-                                <textarea
-                                  className="cap-item-comment"
-                                  defaultValue={a.comment || ''}
-                                  placeholder="Комментарий к этому приложению (необязательно)…"
-                                  rows={1}
-                                  onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
-                                  onBlur={(e) => {
-                                    const v = e.target.value
-                                    if ((a.comment || '') !== v) handleSaveAttachmentComment(a.ca_id, v)
-                                  }}
-                                  ref={(el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }}
-                                />
-                              </li>
-                            ))}
-                          </ul>
-                        )}
+                          {canEditContracts && !isDeletedTab ? (
+                            <textarea
+                              className="ce-note"
+                              defaultValue={contract.notes || ''}
+                              placeholder="Добавьте примечание по договору"
+                              onBlur={(e) => handleSaveNote(contract.id, e.target.value)}
+                            />
+                          ) : contract.notes ? (
+                            <div className="ce-note-ro">{contract.notes}</div>
+                          ) : (
+                            <div className="ce-empty">Примечание пока не заполнено</div>
+                          )}
+                        </section>
+
+                        {/* Блок 2: Сопутствующие приложения */}
+                        <section className="ce-block">
+                          <div className="ce-block-title">
+                            Сопутствующие приложения
+                            <span className="ce-count">{items.length === 0 ? 'нет приложений' : `${items.length} шт.`}</span>
+                          </div>
+                          {items.length === 0 ? (
+                            <div className="ce-empty">
+                              Для договора не выбрано ни одного приложения. Откройте редактирование и отметьте нужные.
+                            </div>
+                          ) : (
+                            <ul className="cap-list">
+                              {items.map(a => (
+                                <li key={a.ca_id} className="cap-item">
+                                  <div className="cap-item-head">
+                                    <span className="cap-item-name">
+                                      <span className="cap-item-icon" aria-hidden>📎</span>
+                                      {a.link
+                                        ? <a href={a.link} target="_blank" rel="noopener noreferrer">{a.name}</a>
+                                        : a.name}
+                                    </span>
+                                    {a.description && <span className="cap-item-desc">{a.description}</span>}
+                                  </div>
+                                  {canEditContracts && !isDeletedTab && (
+                                    <textarea
+                                      className="cap-item-comment"
+                                      defaultValue={a.comment || ''}
+                                      placeholder="Комментарий к этому приложению (необязательно)…"
+                                      rows={1}
+                                      onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
+                                      onBlur={(e) => {
+                                        const v = e.target.value
+                                        if ((a.comment || '') !== v) handleSaveAttachmentComment(a.ca_id, v)
+                                      }}
+                                      ref={(el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }}
+                                    />
+                                  )}
+                                  {(!canEditContracts || isDeletedTab) && a.comment && (
+                                    <div className="cap-item-comment-ro">{a.comment}</div>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </section>
+
+                        {/* Действия раскрытого блока */}
+                        <div className="ce-actions">
+                          <button type="button" className="ce-open-card" onClick={() => navigate(`/contracts/${contract.id}`)}>
+                            Открыть карточку договора
+                          </button>
+                          {canEditContracts && !isDeletedTab && items.length === 0 && (
+                            <button type="button" className="ce-edit-link" onClick={() => handleEditContract(contract)}>
+                              Редактировать договор
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -1270,25 +1304,6 @@ function ContractRegistry() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Мини-карточка договора (popover над таблицей) */}
-      {previewContract && previewAnchorEl && (
-        <ContractPreviewCard
-          contract={previewContract}
-          anchorEl={previewAnchorEl}
-          counterpartyName={previewContract.counterparties?.name}
-          objectName={previewContract.objects?.name}
-          workName={previewContract.work_name || previewContract.tenders?.work_description}
-          amountText={formatMoney(previewContract.contract_amount, previewContract.currency)}
-          lawyerName={contactNameById[previewContract.responsible_contact_id] || previewContract.responsible?.full_name}
-          statusLabel={STATUS_LABEL[previewContract.status] || previewContract.status}
-          statusClassName={`status-${previewContract.status}`}
-          isOverdue={!isDeletedTab && isOverdue(previewContract)}
-          onClose={closePreview}
-          onOpenCard={() => navigate(`/contracts/${previewContract.id}`)}
-          onEdit={() => { handleEditContract(previewContract); closePreview() }}
-        />
       )}
 
       {/* Модалка добавления/редактирования договора */}

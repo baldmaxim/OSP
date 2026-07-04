@@ -812,11 +812,11 @@
 }
 
 /* Пропорциональные ширины колонок (сумма = 100%) — без горизонтального ползунка */
-.contracts-table-compact col.cg-num { width: 3%; }
+.contracts-table-compact col.cg-num { width: 4%; }
 .contracts-table-compact col.cg-object { width: 8.5%; }
 .contracts-table-compact col.cg-ds { width: 13%; }
 .contracts-table-compact col.cg-counterparty { width: 11%; }
-.contracts-table-compact col.cg-work { width: 16%; }
+.contracts-table-compact col.cg-work { width: 15%; }
 .contracts-table-compact col.cg-amount { width: 7.5%; }
 .contracts-table-compact col.cg-status { width: 10%; }
 .contracts-table-compact col.cg-lawyer { width: 10%; }
@@ -1003,17 +1003,94 @@
   vertical-align: middle;
 }
 
-.contract-attachments-row > td {
+.contract-expanded-row > td {
   background: var(--bg-tertiary);
   padding: 0.875rem 1.25rem;
   border-top: 1px solid var(--border-color);
 }
 
-.contract-attachments-panel {
+/* Раскрытый блок договора: «Примечание юриста» + «Сопутствующие приложения» */
+.contract-expanded-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+.ce-block {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 0.875rem 1rem;
+  border-radius: 12px;
+  padding: 0.75rem 0.875rem;
+}
+.ce-block-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.ce-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+.ce-saving {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--primary-color);
+}
+.ce-note {
+  width: 100%;
+  min-height: 68px;
+  padding: 0.5rem 0.625rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.ce-note:focus { outline: none; border-color: var(--primary-color); }
+.ce-note-ro {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ce-empty {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.ce-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.ce-open-card,
+.ce-edit-link {
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--primary-color);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ce-open-card:hover,
+.ce-edit-link:hover { filter: brightness(1.1); }
+.cap-item-icon { margin-right: 0.35rem; }
+.cap-item-comment-ro {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
 }
 
 .cap-header {
@@ -1756,8 +1833,8 @@
   font-size: 0.8125rem;
 }
 
-/* ===== Подсветка строки с открытой мини-карточкой ===== */
-.contracts-table-compact tbody tr.contract-row.row-preview-active > td {
+/* ===== Мягкая подсветка раскрытой строки договора ===== */
+.contracts-table-compact tbody tr.contract-row.is-expanded > td {
   background: var(--primary-light);
 }
 
