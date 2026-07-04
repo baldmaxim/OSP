@@ -1,8 +1,9 @@
-import { Fragment, useState, useEffect, useMemo } from 'react'
+import { Fragment, useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
+import ContractPreviewCard from '../components/ContractPreviewCard'
 import '../components/ContractRegistry.css'
 
 // Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
@@ -49,6 +50,14 @@ const EMPTY_FORM = {
   responsible_contact_id: '',
 }
 
+// ДД.ММ.ГГГГ из ISO-даты (или null, если пусто/некорректно)
+function formatDateRu(iso) {
+  if (!iso) return null
+  const [y, m, d] = String(iso).slice(0, 10).split('-')
+  if (!y || !m || !d) return null
+  return `${d}.${m}.${y}`
+}
+
 function ContractRegistry() {
   const navigate = useNavigate()
   const { isAdmin, userProfile, canEdit } = useRole()
@@ -88,6 +97,22 @@ function ContractRegistry() {
   const [expandedContractId, setExpandedContractId] = useState(null)
 
   const [formData, setFormData] = useState(EMPTY_FORM)
+
+  // Панель фильтров реестра (over-table, in-memory)
+  const [filterObjectId, setFilterObjectId] = useState('')
+  const [filterLawyerId, setFilterLawyerId] = useState('')
+  const [searchText, setSearchText] = useState('')
+  const [onlyMine, setOnlyMine] = useState(false)
+  const [onlyOverdue, setOnlyOverdue] = useState(false)
+  const [onlyNoDate, setOnlyNoDate] = useState(false)
+
+  // Сортировка по клику на заголовок (default — по имени объекта, как раньше)
+  const [sortKey, setSortKey] = useState('object')
+  const [sortDir, setSortDir] = useState('asc')
+
+  // Мини-карточка договора (popover)
+  const [previewContractId, setPreviewContractId] = useState(null)
+  const [previewAnchorEl, setPreviewAnchorEl] = useState(null)
 
   const objectStatus = department === 'construction' ? 'main_construction' : 'warranty_service'
 
@@ -381,6 +406,137 @@ function ContractRegistry() {
   const selectedCounterparty = useMemo(() => {
     return counterparties.find(cp => cp.id === formData.counterparty_id) || null
   }, [counterparties, formData.counterparty_id])
+
+  // ── Реестр: фильтры, сортировка, просрочка ─────────────────────────────
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
+
+  // Просрочено = есть план-дата подписания (signed_date), она в прошлом и договор не завершён
+  const isOverdue = useCallback((c) => {
+    if (!c?.signed_date || c.status === 'completed') return false
+    return String(c.signed_date).slice(0, 10) < todayStr
+  }, [todayStr])
+
+  const contactNameById = useMemo(() => {
+    const m = {}
+    contacts.forEach(c => { m[c.id] = c.full_name })
+    return m
+  }, [contacts])
+
+  // Опции фильтра «Объект» — из объектов текущего отдела
+  const objectFilterOptions = useMemo(() =>
+    [...objects].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru')),
+  [objects])
+
+  // Опции фильтра «Ответственный юрист» — реально назначенные в загруженных договорах
+  const lawyerFilterOptions = useMemo(() => {
+    const seen = new Map()
+    contracts.forEach(c => {
+      const id = c.responsible_contact_id
+      if (id && !seen.has(id)) seen.set(id, contactNameById[id] || c.responsible?.full_name || '—')
+    })
+    return [...seen.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
+  }, [contracts, contactNameById])
+
+  const currentUserName = (userProfile?.full_name || '').trim().toLowerCase()
+
+  const filteredSortedContracts = useMemo(() => {
+    const q = searchText.trim().toLowerCase()
+    const list = contracts.filter(c => {
+      if (filterObjectId && c.object_id !== filterObjectId) return false
+      if (filterLawyerId && c.responsible_contact_id !== filterLawyerId) return false
+      if (onlyMine) {
+        const respName = (contactNameById[c.responsible_contact_id] || c.responsible?.full_name || '').trim().toLowerCase()
+        if (!currentUserName || respName !== currentUserName) return false
+      }
+      if (onlyOverdue && !isOverdue(c)) return false
+      if (onlyNoDate && c.signed_date) return false
+      if (q) {
+        const hay = [
+          c.counterparties?.name,
+          c.work_name,
+          c.tenders?.work_description,
+          c.contract_number,
+          c.notes,
+          c.objects?.name,
+        ].filter(Boolean).join(' ').toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+
+    const dir = sortDir === 'asc' ? 1 : -1
+    const getVal = (c) => {
+      switch (sortKey) {
+        case 'counterparty': return (c.counterparties?.name || '').toLowerCase()
+        case 'amount': return Number(c.contract_amount) || 0
+        case 'status': return c.status || ''
+        case 'accepted': return c.accepted_date || ''
+        case 'planned': return c.signed_date || ''
+        case 'object':
+        default: return (c.objects?.name || '').toLowerCase()
+      }
+    }
+    return [...list].sort((a, b) => {
+      const va = getVal(a), vb = getVal(b)
+      let cmp
+      if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb
+      else cmp = String(va).localeCompare(String(vb), 'ru')
+      if (cmp !== 0) return cmp * dir
+      // вторичная сортировка — по объекту, затем дате договора (как в fetchContracts)
+      const so = (a.objects?.name || '').localeCompare(b.objects?.name || '', 'ru')
+      if (so !== 0) return so
+      return (a.contract_date || '').localeCompare(b.contract_date || '')
+    })
+  }, [contracts, filterObjectId, filterLawyerId, onlyMine, onlyOverdue, onlyNoDate, searchText, sortKey, sortDir, contactNameById, currentUserName, isOverdue])
+
+  const hasActiveFilters = !!(filterObjectId || filterLawyerId || searchText || onlyMine || onlyOverdue || onlyNoDate)
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  const resetFilters = () => {
+    setFilterObjectId(''); setFilterLawyerId(''); setSearchText('')
+    setOnlyMine(false); setOnlyOverdue(false); setOnlyNoDate(false)
+  }
+
+  const openPreview = (e, contractId) => {
+    e.stopPropagation()
+    if (previewContractId === contractId) {
+      setPreviewContractId(null); setPreviewAnchorEl(null)
+    } else {
+      setPreviewAnchorEl(e.currentTarget); setPreviewContractId(contractId)
+    }
+  }
+
+  const closePreview = useCallback(() => {
+    setPreviewContractId(null); setPreviewAnchorEl(null)
+  }, [])
+
+  // Закрываем мини-карточку при смене вкладки/фильтров/сортировки
+  useEffect(() => {
+    setPreviewContractId(null); setPreviewAnchorEl(null)
+  }, [activeTab, filterObjectId, filterLawyerId, searchText, onlyMine, onlyOverdue, onlyNoDate, sortKey, sortDir])
+
+  const previewContract = previewContractId
+    ? filteredSortedContracts.find(c => c.id === previewContractId)
+    : null
+
+  // Заголовок с сортировкой по клику (не вложенный компонент — обычная функция-рендер)
+  const sortableTh = (col, label, style) => (
+    <th
+      style={style}
+      className={`th-sortable ${sortKey === col ? 'th-sorted' : ''}`}
+      onClick={() => toggleSort(col)}
+      title="Сортировать"
+    >
+      <span className="th-label">{label}</span>
+      <span className="sort-ind" aria-hidden>{sortKey === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
+    </th>
+  )
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
@@ -689,6 +845,69 @@ function ContractRegistry() {
         ))}
       </div>
 
+      {/* Панель фильтров реестра */}
+      <div className="registry-filters">
+        <div className="rf-field">
+          <label className="rf-label">Объект</label>
+          <select
+            className="rf-select"
+            value={filterObjectId}
+            onChange={(e) => setFilterObjectId(e.target.value)}
+          >
+            <option value="">Все объекты</option>
+            {objectFilterOptions.map(o => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="rf-field">
+          <label className="rf-label">Ответственный юрист</label>
+          <select
+            className="rf-select"
+            value={filterLawyerId}
+            onChange={(e) => setFilterLawyerId(e.target.value)}
+          >
+            <option value="">Все юристы</option>
+            {lawyerFilterOptions.map(l => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="rf-field rf-field-search">
+          <label className="rf-label">Поиск</label>
+          <input
+            type="text"
+            className="rf-search"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Поиск по контрагенту, работам, № договора, примечанию"
+          />
+        </div>
+        <div className="rf-quick">
+          <button
+            className={`qfilter ${onlyMine ? 'active' : ''}`}
+            onClick={() => setOnlyMine(v => !v)}
+            title="Договоры, где ответственный — вы"
+          >Мои</button>
+          <button
+            className={`qfilter ${onlyOverdue ? 'active' : ''}`}
+            onClick={() => setOnlyOverdue(v => !v)}
+            title="Просроченная плановая дата подписания"
+          >Просрочено</button>
+          <button
+            className={`qfilter ${onlyNoDate ? 'active' : ''}`}
+            onClick={() => setOnlyNoDate(v => !v)}
+            title="Без плановой даты подписания"
+          >Без даты</button>
+          <button
+            className="qfilter qfilter-reset"
+            onClick={resetFilters}
+            disabled={!hasActiveFilters}
+            title="Сбросить фильтры"
+          >Сбросить</button>
+        </div>
+      </div>
+
       {loading ? (
         <div className="loading">Загрузка...</div>
       ) : (
@@ -698,36 +917,42 @@ function ContractRegistry() {
             <tr>
               <th style={{ width: '32px' }} aria-label="Раскрыть"></th>
               <th style={{ width: '40px' }}>№</th>
-              <th style={{ minWidth: '170px' }}>Наименование контрагента</th>
+              {sortableTh('object', 'Объект', { minWidth: '150px' })}
+              <th style={{ minWidth: '140px' }}>Договор / № ДС</th>
+              {sortableTh('counterparty', 'Контрагент', { minWidth: '160px' })}
               <th>Выполняемые работы</th>
-              <th style={{ minWidth: '160px' }}>Объект</th>
-              <th style={{ width: '130px' }}>Сумма</th>
-              <th style={{ width: '150px' }}>Текущий статус</th>
+              {sortableTh('amount', 'Сумма', { width: '120px' })}
+              {sortableTh('status', 'Текущий статус', { width: '150px' })}
               <th style={{ width: '150px' }}>Ответственный юрист</th>
-              <th style={{ width: '130px' }}>Дата принятия в работу ДП</th>
-              <th style={{ width: '120px' }}>Дата подписания</th>
+              {sortableTh('accepted', 'Дата принятия в работу', { width: '120px' })}
+              {sortableTh('planned', 'План. дата подписания', { width: '120px' })}
               <th style={{ minWidth: '140px' }}>Примечание</th>
               <th className="actions-column" style={{ width: '90px' }}>Действия</th>
             </tr>
           </thead>
           <tbody>
-            {contracts.length === 0 ? (
+            {filteredSortedContracts.length === 0 ? (
               <tr>
-                <td colSpan="12" className="no-data">
-                  {isDeletedTab
-                    ? 'Нет удалённых договоров.'
-                    : `Нет договоров со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
+                <td colSpan="13" className="no-data">
+                  {hasActiveFilters
+                    ? 'Нет договоров под выбранные фильтры.'
+                    : isDeletedTab
+                      ? 'Нет удалённых договоров.'
+                      : `Нет договоров со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
                 </td>
               </tr>
             ) : (
-              contracts.map((contract, index) => {
+              filteredSortedContracts.map((contract, index) => {
                 const items = contractAttachmentsMap[contract.id] || []
                 const isExpanded = expandedContractId === contract.id
                 const toggleExpand = () => setExpandedContractId(isExpanded ? null : contract.id)
+                const overdue = !isDeletedTab && isOverdue(contract)
+                const dsNum = contract.contract_number
+                const dsDate = formatDateRu(contract.contract_date)
                 return (
                 <Fragment key={contract.id}>
                 <tr
-                  className={`contract-row ${isDeletedTab ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}`}
+                  className={`contract-row ${isDeletedTab ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''} ${previewContractId === contract.id ? 'row-preview-active' : ''}`}
                   onClick={toggleExpand}
                 >
                   <td className="cell-expand" onClick={(e) => { e.stopPropagation(); toggleExpand() }}>
@@ -735,17 +960,25 @@ function ContractRegistry() {
                     {items.length > 0 && <span className="expand-badge">{items.length}</span>}
                   </td>
                   <td className="cell-num">{index + 1}</td>
-                  <td className="cell-counterparty" onClick={(e) => e.stopPropagation()}>
+                  <td className="cell-object">{contract.objects?.name || '—'}</td>
+                  <td className="cell-contract-num" onClick={(e) => e.stopPropagation()}>
                     <button
-                      onClick={() => navigate(`/contracts/${contract.id}`)}
-                      className="contract-number-link"
-                      title={`№ ${contract.contract_number || ''} — открыть карточку договора`}
+                      className={`contract-ds-link ${previewContractId === contract.id ? 'is-active' : ''}`}
+                      onClick={(e) => openPreview(e, contract.id)}
+                      title="Показать мини-карточку договора"
                     >
-                      {contract.counterparties?.name || `Договор № ${contract.contract_number || (index + 1)}`}
+                      {(dsNum || dsDate) ? (
+                        <>
+                          <span className="cds-main">{dsNum ? `№ ${dsNum}` : 'Договор'}</span>
+                          {dsDate && <span className="cds-sub">от {dsDate}</span>}
+                        </>
+                      ) : (
+                        <span className="cds-main">Открыть договор</span>
+                      )}
                     </button>
                   </td>
+                  <td className="cell-counterparty">{contract.counterparties?.name || '—'}</td>
                   <td className="cell-work">{contract.work_name || contract.tenders?.work_description || '—'}</td>
-                  <td className="cell-object">{contract.objects?.name || '—'}</td>
                   <td className="cell-amount">{formatMoney(contract.contract_amount, contract.currency) || '—'}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
@@ -785,7 +1018,7 @@ function ContractRegistry() {
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td className={`date-cell ${overdue ? 'date-overdue' : ''}`} onClick={(e) => e.stopPropagation()}>
                     <input
                       type="date"
                       className="inline-cell-date"
@@ -793,8 +1026,9 @@ function ContractRegistry() {
                       onChange={(e) => handleInlineField(contract.id, 'signed_date', e.target.value)}
                       disabled={!canEditContracts || isDeletedTab}
                     />
+                    {overdue && <span className="overdue-warn" title="Просрочено">⚠</span>}
                   </td>
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td className="cell-note" onClick={(e) => e.stopPropagation()}>
                     <textarea
                       className="inline-cell-notes"
                       defaultValue={contract.notes || ''}
@@ -840,7 +1074,7 @@ function ContractRegistry() {
                 </tr>
                 {isExpanded && (
                   <tr className="contract-attachments-row" onClick={(e) => e.stopPropagation()}>
-                    <td colSpan="12">
+                    <td colSpan="13">
                       <div className="contract-attachments-panel">
                         <div className="cap-header">
                           <span className="cap-title">📎 Приложения к договору № {contract.contract_number}</span>
@@ -889,6 +1123,23 @@ function ContractRegistry() {
           </tbody>
         </table>
       </div>
+      )}
+
+      {/* Мини-карточка договора (popover над таблицей) */}
+      {previewContract && previewAnchorEl && (
+        <ContractPreviewCard
+          contract={previewContract}
+          anchorEl={previewAnchorEl}
+          counterpartyName={previewContract.counterparties?.name}
+          objectName={previewContract.objects?.name}
+          lawyerName={contactNameById[previewContract.responsible_contact_id] || previewContract.responsible?.full_name}
+          statusLabel={STATUS_LABEL[previewContract.status] || previewContract.status}
+          statusClassName={`status-${previewContract.status}`}
+          isOverdue={!isDeletedTab && isOverdue(previewContract)}
+          onClose={closePreview}
+          onOpenCard={() => navigate(`/contracts/${previewContract.id}`)}
+          onEdit={() => { handleEditContract(previewContract); closePreview() }}
+        />
       )}
 
       {/* Модалка добавления/редактирования договора */}

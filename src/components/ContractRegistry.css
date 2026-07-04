@@ -1560,3 +1560,159 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* ===== Реестр договоров: панель фильтров над таблицей ===== */
+.registry-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+}
+.rf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 160px;
+}
+.rf-field-search {
+  flex: 1 1 260px;
+}
+.rf-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+.rf-select,
+.rf-search {
+  height: 34px;
+  padding: 0 0.5rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+.rf-search {
+  width: 100%;
+}
+.rf-select:focus,
+.rf-search:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+.rf-quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+}
+.qfilter {
+  height: 34px;
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s, border-color 0.1s;
+}
+.qfilter:hover:not(:disabled) {
+  border-color: var(--primary-color);
+  color: var(--text-primary);
+}
+.qfilter.active {
+  color: #fff;
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.qfilter-reset {
+  color: var(--text-tertiary);
+}
+.qfilter:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ===== Сортируемые заголовки ===== */
+.contracts-table-compact th.th-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.contracts-table-compact th.th-sortable:hover {
+  color: var(--text-primary);
+}
+.contracts-table-compact th.th-sortable .sort-ind {
+  margin-left: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+.contracts-table-compact th.th-sorted,
+.contracts-table-compact th.th-sorted .sort-ind {
+  color: var(--primary-color);
+}
+
+/* ===== Колонка «Договор / № ДС» ===== */
+.contract-ds-link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.125rem 0.25rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.contract-ds-link:hover {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.contract-ds-link.is-active {
+  border-color: var(--primary-color);
+}
+.contract-ds-link .cds-main {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+.contract-ds-link .cds-sub {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+/* ===== Просроченная плановая дата подписания ===== */
+.contracts-table-compact td.date-cell {
+  position: relative;
+  white-space: nowrap;
+}
+.contracts-table-compact td.date-overdue .inline-cell-date {
+  color: var(--danger-color);
+  font-weight: 600;
+}
+.overdue-warn {
+  margin-left: 0.2rem;
+  color: var(--danger-color);
+  font-size: 0.8125rem;
+}
+
+/* ===== Примечание в таблице — не раздувать высоту строки ===== */
+.contracts-table-compact td.cell-note .inline-cell-notes {
+  max-height: 46px;
+  overflow: auto;
+}
+
+/* ===== Подсветка строки с открытой мини-карточкой ===== */
+.contracts-table-compact tbody tr.contract-row.row-preview-active > td {
+  background: var(--primary-light);
+}
