@@ -75,6 +75,34 @@ function fileBadge(name) {
 
 const EMPTY_FORM = { title: '', description: '', links: [], newFiles: [] }
 
+// Ограничения загрузки файлов для корпоративного реестра документов.
+const MAX_FILE_SIZE_MB = 50
+const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
+// Исполняемые / потенциально опасные типы — запрещены (не документы).
+const BLOCKED_EXTENSIONS = ['exe', 'msi', 'bat', 'cmd', 'scr', 'ps1', 'sh', 'dll', 'com', 'jar', 'vbs', 'vbe', 'wsf', 'pif', 'hta', 'cpl', 'msc', 'reg']
+// Подсказка для input accept (не защита — основная проверка в validateFile).
+const ACCEPT_HINT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.gif,.webp,.heic,.zip,.rar,.7z,.odt,.ods,.odp'
+
+function getFileExtension(name) {
+  const parts = String(name || '').split('.')
+  return parts.length > 1 ? parts.pop().toLowerCase() : ''
+}
+// Причина отклонения файла (строка) или null, если файл допустим.
+function validateFile(file) {
+  const ext = getFileExtension(file.name)
+  if (BLOCKED_EXTENSIONS.includes(ext)) return 'исполняемые файлы запрещены'
+  if (file.size === 0) return 'файл пустой'
+  if (file.size > MAX_FILE_SIZE) return `превышает лимит ${MAX_FILE_SIZE_MB} МБ`
+  return null
+}
+// Понятная причина сбоя загрузки в S3 (техническое остаётся в console).
+function uploadFailureReason(err, fileName) {
+  const msg = String(err?.message || '')
+  if (/Unsupported owner_type/i.test(msg)) return `${fileName} — загрузка файлов для раздела не настроена, обратитесь к администратору`
+  if (/PUT не удался|Failed to fetch|NetworkError|network|413|CORS/i.test(msg)) return `${fileName} — не удалось загрузить в хранилище, попробуйте позже`
+  return `${fileName} — не удалось загрузить`
+}
+
 export default function GeneralDocumentsPage() {
   const navigate = useNavigate()
   const { user, userProfile, canEdit } = useRole()
@@ -94,6 +122,7 @@ export default function GeneralDocumentsPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [linkError, setLinkError] = useState('')
+  const [fileErrors, setFileErrors] = useState([])
   const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef(null)
 
@@ -165,7 +194,7 @@ export default function GeneralDocumentsPage() {
   }
 
   // ── Модалка ────────────────────────────────────────────────────────────
-  const clearErrors = () => { setFormError(''); setLinkError('') }
+  const clearErrors = () => { setFormError(''); setLinkError(''); setFileErrors([]) }
   const openAdd = () => {
     setEditing(null)
     setForm({ ...EMPTY_FORM, links: [] })
@@ -221,7 +250,16 @@ export default function GeneralDocumentsPage() {
 
   const addNewFiles = (fileList) => {
     const arr = Array.from(fileList || [])
-    if (arr.length) setForm(f => ({ ...f, newFiles: [...f.newFiles, ...arr] }))
+    if (!arr.length) return
+    const accepted = []
+    const rejected = []
+    arr.forEach(f => {
+      const reason = validateFile(f)
+      if (reason) rejected.push(`${f.name} — ${reason}`)
+      else accepted.push(f)
+    })
+    if (accepted.length) setForm(f => ({ ...f, newFiles: [...f.newFiles, ...accepted] }))
+    setFileErrors(rejected)
   }
   const removeNewFile = (i) => setForm(f => ({ ...f, newFiles: f.newFiles.filter((_, idx) => idx !== i) }))
   const toggleRemoveExistingFile = (id) => setRemoveFileIds(prev => {
@@ -300,11 +338,12 @@ export default function GeneralDocumentsPage() {
 
         // Удаляем помеченные существующие файлы.
         const toRemove = (editing.files || []).filter(f => removeFileIds.has(f.id))
-        const failedDel = []
         for (const f of toRemove) {
-          try { await deleteDocument(f) } catch { failedDel.push(f.file_name) }
+          try { await deleteDocument(f) } catch (delErr) {
+            console.error('Файл не удалён:', f.file_name, delErr?.message)
+            problems.push(`${f.file_name} — не удалось удалить файл из хранилища`)
+          }
         }
-        if (failedDel.length) problems.push('не удалось удалить: ' + failedDel.join(', '))
       } else {
         const { data: created, error } = await supabase.from('general_documents')
           .insert({
@@ -328,17 +367,17 @@ export default function GeneralDocumentsPage() {
         }
       }
 
-      // Загрузка новых файлов (частичный сбой — сообщаем, но не откатываем всё).
-      const failedNames = []
+      // Загрузка новых файлов (частичный сбой — сообщаем по каждому, не откатываем всё).
+      const failedFiles = []
       for (const file of form.newFiles) {
         try {
           await uploadFile({ file, ownerType: 'general_document', ownerId: docId })
         } catch (upErr) {
-          console.error('Файл не загружен:', file.name, upErr.message)
-          failedNames.push(file.name)
+          console.error('Файл не загружен:', file.name, upErr?.message)
+          failedFiles.push(file)
+          problems.push(uploadFailureReason(upErr, file.name))
         }
       }
-      if (failedNames.length) problems.push('не удалось загрузить: ' + failedNames.join(', '))
 
       const docs = await fetchDocs()
 
@@ -351,10 +390,11 @@ export default function GeneralDocumentsPage() {
           title,
           description: form.description,
           links: (saved?.links || validLinks).map(l => ({ title: l.title || '', url: l.url || '' })),
-          newFiles: form.newFiles.filter(f => failedNames.includes(f.name)),
+          newFiles: failedFiles,
         })
         setRemoveFileIds(new Set())
-        setFormError('Часть операций не выполнена (' + problems.join('; ') + '). Проверьте и сохраните снова.')
+        setFileErrors(problems)
+        setFormError('Документ сохранён, но часть операций не выполнена. Проверьте список ниже и сохраните снова.')
         return
       }
       closeModal()
@@ -616,15 +656,25 @@ export default function GeneralDocumentsPage() {
                     <div className="gd-dropzone-main">Перетащите файлы сюда</div>
                     <div className="gd-dropzone-sub">или выберите их на компьютере</div>
                     <button type="button" className="gd-dropzone-btn" onClick={(e) => { e.stopPropagation(); openFileDialog() }}>Выбрать файлы</button>
-                    <div className="gd-dropzone-hint">PDF, DOCX, XLSX и другие документы</div>
+                    <div className="gd-dropzone-hint">PDF, DOCX, XLSX, изображения и архивы — до {MAX_FILE_SIZE_MB} МБ</div>
                     <input
                       ref={fileInputRef}
                       type="file"
                       multiple
+                      accept={ACCEPT_HINT}
                       className="gd-file-input-hidden"
                       onChange={(e) => { addNewFiles(e.target.files); e.target.value = '' }}
                     />
                   </div>
+
+                  {fileErrors.length > 0 && (
+                    <div className="gd-file-errors" role="alert">
+                      <div className="gd-file-errors-title">Проблемы с файлами:</div>
+                      <ul>
+                        {fileErrors.map((msg, i) => <li key={i}>{msg}</li>)}
+                      </ul>
+                    </div>
+                  )}
 
                   {form.newFiles.length > 0 && (
                     <div className="gd-file-block">
