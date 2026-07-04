@@ -30,15 +30,37 @@ function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`
   return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
 }
-function formatDateShort(iso) {
+// ДД.ММ.ГГГГ ЧЧ:ММ — для колонки «Обновлено»
+function formatDateTime(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   const dd = String(d.getDate()).padStart(2, '0')
   const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const yy = String(d.getFullYear()).slice(-2)
-  return `${dd}.${mm}.${yy}`
+  const yyyy = d.getFullYear()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return `${dd}.${mm}.${yyyy} ${hh}:${mi}`
 }
+// Нейтральные SVG-иконки действий (currentColor, единый размер 16×16).
+const gdIconProps = {
+  viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+  strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round',
+  width: 16, height: 16, 'aria-hidden': true,
+}
+const EditIcon = () => (
+  <svg {...gdIconProps}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
+)
+const TrashIcon = () => (
+  <svg {...gdIconProps}>
+    <path d="M3 6h18" />
+    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+  </svg>
+)
 // Мягкий бейдж типа файла по расширению (без внешних библиотек).
 function fileBadge(name) {
   const ext = (String(name || '').split('.').pop() || '').toLowerCase()
@@ -57,6 +79,8 @@ export default function GeneralDocumentsPage() {
   const navigate = useNavigate()
   const { user, userProfile, canEdit } = useRole()
   const canEditDocs = canEdit('general_documents')
+  // Отображаемое имя текущего пользователя (ФИО → email → null) для created_by/updated_by.
+  const currentUserName = userProfile?.full_name || user?.email || null
 
   const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(false)
@@ -251,7 +275,13 @@ export default function GeneralDocumentsPage() {
       let docId
       if (editing) {
         const { error } = await supabase.from('general_documents')
-          .update({ title, description: form.description.trim() || null, updated_at: new Date().toISOString() })
+          .update({
+            title,
+            description: form.description.trim() || null,
+            updated_at: new Date().toISOString(),
+            updated_by: user?.id || null,
+            updated_by_name: currentUserName,
+          })
           .eq('id', editing.id)
         if (error) throw error
         docId = editing.id
@@ -282,7 +312,9 @@ export default function GeneralDocumentsPage() {
             description: form.description.trim() || null,
             source_type: 'mixed',
             created_by: user?.id || null,
-            created_by_name: userProfile?.full_name || null,
+            created_by_name: currentUserName,
+            updated_by: user?.id || null,
+            updated_by_name: currentUserName,
           })
           .select('id')
           .single()
@@ -373,7 +405,7 @@ export default function GeneralDocumentsPage() {
     )
   }
 
-  const colCount = canEditDocs ? 5 : 4
+  const colCount = canEditDocs ? 6 : 5
 
   return (
     <div className="general-documents-page">
@@ -419,12 +451,21 @@ export default function GeneralDocumentsPage() {
         ) : (
           <div className="gd-table-container">
             <table className="gd-table">
+              <colgroup>
+                <col className="cg-num" />
+                <col className="cg-title" />
+                <col className="cg-materials" />
+                <col className="cg-updated" />
+                <col className="cg-updatedby" />
+                {canEditDocs && <col className="cg-actions" />}
+              </colgroup>
               <thead>
                 <tr>
                   <th className="gd-col-num">№</th>
                   <th className="gd-col-title">Наименование документа</th>
                   <th className="gd-col-materials">Документы и ссылки</th>
                   <th className="gd-col-updated">Обновлено</th>
+                  <th className="gd-col-updatedby">Обновил</th>
                   {canEditDocs && <th className="gd-col-actions">Действия</th>}
                 </tr>
               </thead>
@@ -456,11 +497,14 @@ export default function GeneralDocumentsPage() {
                           </div>
                         )}
                       </td>
-                      <td className="gd-col-updated">{formatDateShort(doc.updated_at || doc.created_at)}</td>
+                      <td className="gd-col-updated gd-updated-cell">{formatDateTime(doc.updated_at || doc.created_at)}</td>
+                      <td className="gd-col-updatedby gd-updatedby-cell">
+                        {doc.updated_by_name || doc.created_by_name || '—'}
+                      </td>
                       {canEditDocs && (
                         <td className="gd-col-actions">
-                          <button className="gd-icon-btn" onClick={() => openEdit(doc)} title="Редактировать">✎</button>
-                          <button className="gd-icon-btn gd-icon-danger" onClick={() => handleDelete(doc)} title="Удалить">🗑</button>
+                          <button className="gd-icon-btn" onClick={() => openEdit(doc)} title="Редактировать" aria-label="Редактировать"><EditIcon /></button>
+                          <button className="gd-icon-btn gd-icon-danger" onClick={() => handleDelete(doc)} title="Удалить" aria-label="Удалить"><TrashIcon /></button>
                         </td>
                       )}
                     </tr>

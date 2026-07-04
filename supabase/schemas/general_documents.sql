@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS general_documents (
   sort_order INTEGER,
   created_by UUID,
   created_by_name TEXT,
+  updated_by UUID,                        -- кто последним изменил (для колонки «Обновил»)
+  updated_by_name TEXT,                   -- снимок ФИО/email последнего изменившего
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
