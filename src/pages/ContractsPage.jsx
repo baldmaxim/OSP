@@ -19,9 +19,10 @@ const STATUS_OPTIONS = [
 ]
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(s => [s.value, s.label]))
 
-// Вкладки (4 рабочих + удалённые). Удалённые — это soft-delete, deleted_at IS NOT NULL.
+// Вкладки: «Общий реестр» = все не удалённые (любой статус, включая «Новая заявка»);
+// далее фильтры по статусу; «Удалённые» — soft-delete (deleted_at IS NOT NULL).
 const TABS = [
-  { key: 'new_request', label: 'Новая заявка' },
+  { key: 'all', label: 'Общий реестр' },
   { key: 'in_work', label: 'В работе' },
   { key: 'paused', label: 'Приостановка' },
   { key: 'completed', label: 'Завершено' },
@@ -60,6 +61,15 @@ function formatDateRu(iso) {
   return `${d}.${m}.${y}`
 }
 
+// Склонение «договор/договора/договоров» для счётчика пагинации.
+function pluralContracts(n) {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'договор'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'договора'
+  return 'договоров'
+}
+
 // Нейтральные SVG-иконки действий (currentColor, единый размер 16×16).
 const actionIconProps = {
   viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
@@ -93,7 +103,7 @@ function ContractRegistry() {
   const canEditContracts = canEdit('contracts')
 
   const [department, setDepartment] = useState(null) // null | 'construction' | 'warranty'
-  const [activeTab, setActiveTab] = useState('new_request')
+  const [activeTab, setActiveTab] = useState('all')
 
   const [contracts, setContracts] = useState([])
   const [objects, setObjects] = useState([])
@@ -135,6 +145,10 @@ function ContractRegistry() {
   // Сортировка по клику на заголовок (default — по имени объекта, как раньше)
   const [sortKey, setSortKey] = useState('object')
   const [sortDir, setSortDir] = useState('asc')
+
+  // Пагинация реестра
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
 
   // Мини-карточка договора (popover)
   const [previewContractId, setPreviewContractId] = useState(null)
@@ -182,6 +196,9 @@ function ContractRegistry() {
 
       if (activeTab === 'deleted') {
         query = query.not('deleted_at', 'is', null)
+      } else if (activeTab === 'all') {
+        // Общий реестр — все не удалённые, любой статус.
+        query = query.is('deleted_at', null)
       } else {
         query = query.is('deleted_at', null).eq('status', activeTab)
       }
@@ -473,6 +490,11 @@ function ContractRegistry() {
     () => [{ value: '', label: 'Все юристы' }, ...lawyerFilterOptions.map(l => ({ value: l.id, label: l.name }))],
     [lawyerFilterOptions])
 
+  // Опции для inline-выбора ответственного в строке таблицы (все сотрудники, полные ФИО).
+  const contactDropdownOptions = useMemo(
+    () => [{ value: '', label: '—' }, ...contacts.map(c => ({ value: c.id, label: c.full_name }))],
+    [contacts])
+
   const filteredSortedContracts = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     const list = contracts.filter(c => {
@@ -543,10 +565,25 @@ function ContractRegistry() {
     setPreviewContractId(null); setPreviewAnchorEl(null)
   }, [])
 
-  // Закрываем мини-карточку при смене вкладки/фильтров/сортировки
+  // Пагинация: считаем страницу от отфильтрованного/отсортированного списка.
+  const totalCount = filteredSortedContracts.length
+  const pageCount = Math.max(1, Math.ceil(totalCount / pageSize))
+  const currentPage = Math.min(page, pageCount)
+  const pageStart = (currentPage - 1) * pageSize
+  const pagedContracts = filteredSortedContracts.slice(pageStart, pageStart + pageSize)
+  const rangeFrom = totalCount === 0 ? 0 : pageStart + 1
+  const rangeTo = Math.min(pageStart + pageSize, totalCount)
+
+  // При смене вкладки/фильтров/сортировки — на первую страницу и закрыть мини-карточку.
+  useEffect(() => {
+    setPage(1)
+    setPreviewContractId(null); setPreviewAnchorEl(null)
+  }, [activeTab, filterObjectId, filterLawyerId, searchText, onlyOverdue, sortKey, sortDir, pageSize])
+
+  // Закрываем мини-карточку при перелистывании страниц.
   useEffect(() => {
     setPreviewContractId(null); setPreviewAnchorEl(null)
-  }, [activeTab, filterObjectId, filterLawyerId, searchText, onlyOverdue, sortKey, sortDir])
+  }, [page])
 
   const previewContract = previewContractId
     ? filteredSortedContracts.find(c => c.id === previewContractId)
@@ -618,7 +655,7 @@ function ContractRegistry() {
 
       setShowModal(false)
       setEditingContract(null)
-      setFormData({ ...EMPTY_FORM, status: activeTab === 'deleted' ? 'new_request' : activeTab })
+      setFormData({ ...EMPTY_FORM, status: (activeTab === 'deleted' || activeTab === 'all') ? 'new_request' : activeTab })
       setCounterpartySearch('')
       setFormAttachments(new Set())
       fetchContracts()
@@ -725,7 +762,7 @@ function ContractRegistry() {
   const handleAddNew = async () => {
     setEditingContract(null)
     const nextNumber = await computeNextContractNumber()
-    const status = activeTab === 'deleted' ? 'new_request' : activeTab
+    const status = (activeTab === 'deleted' || activeTab === 'all') ? 'new_request' : activeTab
     setFormData({ ...EMPTY_FORM, contract_number: nextNumber, status })
     setCounterpartySearch('')
     setShowModal(true)
@@ -929,35 +966,49 @@ function ContractRegistry() {
       ) : (
       <div className="table-container">
         <table className="contracts-table contracts-table-compact">
+          <colgroup>
+            <col className="cg-num" />
+            <col className="cg-object" />
+            <col className="cg-ds" />
+            <col className="cg-counterparty" />
+            <col className="cg-work" />
+            <col className="cg-amount" />
+            <col className="cg-status" />
+            <col className="cg-lawyer" />
+            <col className="cg-accepted" />
+            <col className="cg-planned" />
+            <col className="cg-actions" />
+          </colgroup>
           <thead>
             <tr>
-              <th style={{ width: '32px' }} aria-label="Раскрыть"></th>
-              <th style={{ width: '56px' }}>№</th>
-              {sortableTh('object', 'Объект', { width: '150px' })}
-              <th style={{ width: '200px' }}>Договор / № ДС</th>
-              {sortableTh('counterparty', 'Контрагент', { width: '180px' })}
-              <th style={{ width: '300px' }}>Выполняемые работы</th>
-              {sortableTh('amount', 'Сумма', { width: '130px' })}
-              {sortableTh('status', 'Текущий статус', { width: '150px' })}
-              <th style={{ width: '185px' }}>Ответственный юрист</th>
-              {sortableTh('accepted', 'Дата принятия в работу', { width: '140px' })}
-              {sortableTh('planned', 'План. дата подписания', { width: '140px' })}
-              <th className="actions-column" style={{ width: '100px' }}>Действия</th>
+              <th>№</th>
+              {sortableTh('object', 'Объект')}
+              <th>Договор / № ДС</th>
+              {sortableTh('counterparty', 'Контрагент')}
+              <th>Выполняемые работы</th>
+              {sortableTh('amount', 'Сумма')}
+              {sortableTh('status', 'Текущий статус')}
+              <th>Ответственный юрист</th>
+              {sortableTh('accepted', <>Дата принятия<br />в работу</>)}
+              {sortableTh('planned', <>План. дата<br />подписания</>)}
+              <th className="actions-column">Действия</th>
             </tr>
           </thead>
           <tbody>
             {filteredSortedContracts.length === 0 ? (
               <tr>
-                <td colSpan="12" className="no-data">
+                <td colSpan="11" className="no-data">
                   {hasActiveFilters
                     ? 'Нет договоров под выбранные фильтры.'
                     : isDeletedTab
                       ? 'Нет удалённых договоров.'
-                      : `Нет договоров со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
+                      : activeTab === 'all'
+                        ? 'Договоров пока нет.'
+                        : `Нет договоров со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
                 </td>
               </tr>
             ) : (
-              filteredSortedContracts.map((contract, index) => {
+              pagedContracts.map((contract, index) => {
                 const items = contractAttachmentsMap[contract.id] || []
                 const isExpanded = expandedContractId === contract.id
                 const toggleExpand = () => setExpandedContractId(isExpanded ? null : contract.id)
@@ -969,13 +1020,13 @@ function ContractRegistry() {
                 <tr
                   className={`contract-row ${isDeletedTab ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''} ${previewContractId === contract.id ? 'row-preview-active' : ''}`}
                   onClick={toggleExpand}
+                  title={items.length > 0 ? 'Нажмите, чтобы показать приложения договора' : undefined}
                 >
-                  <td className="cell-expand" onClick={(e) => { e.stopPropagation(); toggleExpand() }}>
-                    <span className={`expand-chev ${isExpanded ? 'open' : ''}`} aria-hidden>▸</span>
-                    {items.length > 0 && <span className="expand-badge">{items.length}</span>}
+                  <td className="cell-num">
+                    <span className="cell-num-value">{pageStart + index + 1}</span>
+                    {items.length > 0 && <span className={`expand-badge ${isExpanded ? 'open' : ''}`} title={`Приложений: ${items.length}`}>{items.length}</span>}
                   </td>
-                  <td className="cell-num">{index + 1}</td>
-                  <td className="cell-object">{contract.objects?.name || '—'}</td>
+                  <td className="cell-object"><span className="clamp-2">{contract.objects?.name || '—'}</span></td>
                   <td className="cell-contract-num" onClick={(e) => e.stopPropagation()}>
                     <button
                       className={`contract-ds-link ${previewContractId === contract.id ? 'is-active' : ''}`}
@@ -992,8 +1043,8 @@ function ContractRegistry() {
                       )}
                     </button>
                   </td>
-                  <td className="cell-counterparty">{contract.counterparties?.name || '—'}</td>
-                  <td className="cell-work">{contract.work_name || contract.tenders?.work_description || '—'}</td>
+                  <td className="cell-counterparty"><span className="clamp-2">{contract.counterparties?.name || '—'}</span></td>
+                  <td className="cell-work" title={contract.work_name || contract.tenders?.work_description || ''}><span className="clamp-3">{contract.work_name || contract.tenders?.work_description || '—'}</span></td>
                   <td className="cell-amount">{formatMoney(contract.contract_amount, contract.currency) || '—'}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
@@ -1011,18 +1062,17 @@ function ContractRegistry() {
                       </select>
                     )}
                   </td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <select
-                      className="inline-cell-select"
+                  <td className="cell-lawyer" onClick={(e) => e.stopPropagation()}>
+                    <FilterDropdown
+                      label=""
                       value={contract.responsible_contact_id || ''}
-                      onChange={(e) => handleInlineField(contract.id, 'responsible_contact_id', e.target.value)}
+                      onChange={(v) => handleInlineField(contract.id, 'responsible_contact_id', v)}
+                      options={contactDropdownOptions}
+                      searchable
+                      searchPlaceholder="Поиск сотрудника…"
+                      allLabel="—"
                       disabled={!canEditContracts || isDeletedTab}
-                    >
-                      <option value="">—</option>
-                      {contacts.map(c => (
-                        <option key={c.id} value={c.id}>{c.full_name}</option>
-                      ))}
-                    </select>
+                    />
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <input
@@ -1041,7 +1091,7 @@ function ContractRegistry() {
                       onChange={(e) => handleInlineField(contract.id, 'signed_date', e.target.value)}
                       disabled={!canEditContracts || isDeletedTab}
                     />
-                    {overdue && <span className="overdue-warn" title="Просрочено">⚠</span>}
+                    {overdue && <span className="overdue-note">Просрочено</span>}
                   </td>
                   <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
@@ -1083,7 +1133,7 @@ function ContractRegistry() {
                 </tr>
                 {isExpanded && (
                   <tr className="contract-attachments-row" onClick={(e) => e.stopPropagation()}>
-                    <td colSpan="12">
+                    <td colSpan="11">
                       <div className="contract-attachments-panel">
                         <div className="cap-header">
                           <span className="cap-title">📎 Приложения к договору № {contract.contract_number}</span>
@@ -1132,6 +1182,29 @@ function ContractRegistry() {
           </tbody>
         </table>
       </div>
+      )}
+
+      {!loading && totalCount > 0 && (
+        <div className="registry-pagination">
+          <span className="rp-info">
+            Показано {rangeFrom}–{rangeTo} из {totalCount} {pluralContracts(totalCount)}
+          </span>
+          <div className="rp-controls">
+            <label className="rp-size">
+              Строк на странице:
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+            <div className="rp-pager">
+              <button className="rp-btn" onClick={() => setPage(1)} disabled={currentPage <= 1} title="Первая">«</button>
+              <button className="rp-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} title="Назад">‹</button>
+              <span className="rp-page">Стр. {currentPage} из {pageCount}</span>
+              <button className="rp-btn" onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage >= pageCount} title="Вперёд">›</button>
+              <button className="rp-btn" onClick={() => setPage(pageCount)} disabled={currentPage >= pageCount} title="Последняя">»</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Мини-карточка договора (popover над таблицей) */}
