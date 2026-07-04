@@ -680,6 +680,10 @@ function ContractRegistry() {
         object_id: formData.object_id || null,
         tender_id: formData.tender_id || null,
         responsible_contact_id: formData.responsible_contact_id || null,
+        // Пустые даты → NULL (иначе Postgres: invalid input syntax for type date: "").
+        contract_date: formData.contract_date || null,
+        work_start_date: formData.work_start_date || null,
+        work_end_date: formData.work_end_date || null,
         accepted_date: formData.accepted_date || null,
         signed_date: formData.signed_date || null,
         warranty_retention_percent: formData.warranty_retention_percent === '' ? null : formData.warranty_retention_percent,
@@ -1307,8 +1311,8 @@ function ContractRegistry() {
                 </div>
 
                 <div className="form-group">
-                  <label>Дата договора *</label>
-                  <input type="date" name="contract_date" value={formData.contract_date} onChange={handleInputChange} required />
+                  <label>Дата договора</label>
+                  <input type="date" name="contract_date" value={formData.contract_date} onChange={handleInputChange} />
                 </div>
 
                 <div className="form-group full-width">

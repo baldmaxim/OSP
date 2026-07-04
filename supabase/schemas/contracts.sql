@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS contracts (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   contract_number VARCHAR(100) NOT NULL UNIQUE,
-  contract_date DATE NOT NULL,
+  contract_date DATE,                       -- необязательна (можно завести договор без даты)
   counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,
   -- Сумма может отсутствовать до импорта ПСДЦ (затем считается из строк ПСДЦ).
