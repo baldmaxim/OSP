@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { useRole } from '../contexts/RoleContext'
 import './GeneralInfoPage.css'
 
 // Lucide-style SVG-иконки для карточек «Общей информации» (task 303 + 308).
@@ -48,14 +49,27 @@ const BriefcaseIcon = () => (
   </svg>
 )
 
+const FileTextIcon = () => (
+  <svg {...sectionIconProps}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6" />
+    <path d="M8 13h8" />
+    <path d="M8 17h8" />
+    <path d="M8 9h2" />
+  </svg>
+)
+
 function GeneralInfoPage() {
   const navigate = useNavigate()
+  const { canView } = useRole()
 
   const sections = [
-    { path: '/general/objects', label: 'Объекты', icon: <BuildingIcon />, description: 'Строительные объекты' },
-    { path: '/general/contacts', label: 'Сотрудники СУ-10', icon: <UsersIcon />, description: 'Контактные данные сотрудников' },
-    { path: '/general/counterparties', label: 'Контрагенты', icon: <BriefcaseIcon />, description: 'Организации-подрядчики' },
-  ]
+    { path: '/general/objects', section: 'objects', label: 'Объекты', icon: <BuildingIcon />, description: 'Строительные объекты' },
+    { path: '/general/contacts', section: 'contacts', label: 'Сотрудники СУ-10', icon: <UsersIcon />, description: 'Контактные данные сотрудников' },
+    { path: '/general/counterparties', section: 'counterparties', label: 'Контрагенты', icon: <BriefcaseIcon />, description: 'Организации-подрядчики' },
+    // task 416: общие документы компании и полезные ссылки
+    { path: '/general/documents', section: 'general_documents', label: 'Документы', icon: <FileTextIcon />, description: 'Общие документы, инструкции и полезные ссылки' },
+  ].filter((s) => canView(s.section))
 
   return (
     <div className="general-info-page">

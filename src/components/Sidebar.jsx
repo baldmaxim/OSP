@@ -26,8 +26,8 @@ function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        {/* Общая информация (objects, contacts, counterparties) */}
-        {(canView('objects') || canView('contacts') || canView('counterparties')) && (
+        {/* Общая информация (objects, contacts, counterparties, general_documents) */}
+        {(canView('objects') || canView('contacts') || canView('counterparties') || canView('general_documents')) && (
           <NavLink
             to="/general"
             className={({ isActive }) =>

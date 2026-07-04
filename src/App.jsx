@@ -41,6 +41,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'))
 const ContractorProposalsPage = lazy(() => import('./pages/ContractorProposalsPage'))
 const BSMPage = lazy(() => import('./pages/BSMPage'))
 const GeneralInfoPage = lazy(() => import('./pages/GeneralInfoPage'))
+const GeneralDocumentsPage = lazy(() => import('./pages/GeneralDocumentsPage'))
 const RatesRegistryPage = lazy(() => import('./pages/RatesRegistryPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
@@ -83,6 +84,7 @@ function EmployeeLayout() {
             <Route path="/general/objects/:objectId" element={<PermissionRoute section="objects"><ObjectDetailPage /></PermissionRoute>} />
             <Route path="/general/contacts" element={<PermissionRoute section="contacts"><ContactsPage /></PermissionRoute>} />
             <Route path="/general/counterparties" element={<PermissionRoute section="counterparties"><CounterpartiesPage /></PermissionRoute>} />
+            <Route path="/general/documents" element={<PermissionRoute section="general_documents"><GeneralDocumentsPage /></PermissionRoute>} />
             <Route path="/tenders" element={<PermissionRoute section="tenders"><TendersHubPage /></PermissionRoute>} />
             <Route path="/tenders/construction" element={<PermissionRoute section="tenders"><TendersPage department="construction" tenderType="main" /></PermissionRoute>} />
             <Route path="/tenders/warranty" element={<PermissionRoute section="tenders"><TendersPage department="warranty" tenderType="main" /></PermissionRoute>} />
