@@ -8,7 +8,20 @@ async function invokePresign(action, payload) {
   const { data, error } = await supabase.functions.invoke(FUNCTION_NAME, {
     body: { action, ...payload }
   })
-  if (error) throw error
+  if (error) {
+    // supabase-js оборачивает non-2xx ответ в FunctionsHttpError, у которого message —
+    // общий («non-2xx status code»). Достаём реальную причину из тела ответа функции
+    // (например «Unsupported owner_type: general_document»), чтобы UI показал точную ошибку.
+    let detail = ''
+    try {
+      const ctx = error.context
+      if (ctx && typeof ctx.clone === 'function') {
+        const body = await ctx.clone().json().catch(() => null)
+        detail = body?.error || ''
+      }
+    } catch { /* тело недоступно или не JSON */ }
+    throw new Error(detail || error.message || 'Ошибка запроса presigned URL')
+  }
   if (data?.error) throw new Error(data.error)
   return data
 }

@@ -67,11 +67,31 @@ function getS3(): { client: S3Client; bucket: string } {
   return { client, bucket }
 }
 
-// Sanitize имя файла для использования в S3-ключе. Оставляем латиницу, кириллицу,
-// цифры, точки и дефисы/подчёркивания; остальное → '_'. Длину ограничиваем 200.
+// Транслитерация кириллицы → латиница. S3-ключ должен быть ASCII-safe: кириллица в
+// ключе попадает в presigned URL и может ломать подпись/загрузку у некоторых прокси.
+// Оригинальное имя файла для отображения хранится отдельно в s3_documents.file_name.
+const TRANSLIT: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
+  к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
+  х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+}
+function transliterate(s: string): string {
+  let out = ''
+  for (const ch of s) {
+    const lower = ch.toLowerCase()
+    const mapped = TRANSLIT[lower]
+    if (mapped === undefined) { out += ch; continue }
+    out += ch === lower ? mapped : (mapped ? mapped.charAt(0).toUpperCase() + mapped.slice(1) : '')
+  }
+  return out
+}
+
+// Sanitize имя файла для S3-ключа: транслитерация кириллицы, затем только ASCII
+// [a-zA-Z0-9._-]; остальное → '_'. Без ведущей точки и пустого имени. Длина ≤ 200.
 function sanitizeFileName(name: string): string {
-  const cleaned = name.replace(/[^a-zA-Zа-яА-ЯёЁ0-9._-]+/g, '_').slice(0, 200)
-  return cleaned || 'file'
+  const cleaned = transliterate(name).replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 200)
+  const noLeadingDot = cleaned.replace(/^\.+/, '')
+  return noLeadingDot || 'file'
 }
 
 Deno.serve(async (req) => {

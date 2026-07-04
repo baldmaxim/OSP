@@ -98,8 +98,11 @@ function validateFile(file) {
 // Понятная причина сбоя загрузки в S3 (техническое остаётся в console).
 function uploadFailureReason(err, fileName) {
   const msg = String(err?.message || '')
-  if (/Unsupported owner_type/i.test(msg)) return `${fileName} — загрузка файлов для раздела не настроена, обратитесь к администратору`
-  if (/PUT не удался|Failed to fetch|NetworkError|network|413|CORS/i.test(msg)) return `${fileName} — не удалось загрузить в хранилище, попробуйте позже`
+  if (/Unsupported owner_type/i.test(msg)) return `${fileName} — не настроена загрузка файлов для раздела «Документы», обратитесь к администратору`
+  if (/Missing owner_id|Missing file_name/i.test(msg)) return `${fileName} — некорректные данные загрузки, обновите страницу`
+  if (/presigned URL|non-2xx|Edge Function|Unauthorized|not configured/i.test(msg)) return `${fileName} — не удалось получить ссылку загрузки`
+  if (/PUT не удался|Failed to fetch|NetworkError|network|403|413|CORS/i.test(msg)) return `${fileName} — ошибка загрузки в хранилище, попробуйте позже`
+  if (/row-level security|violates|constraint|duplicate|s3_documents|column/i.test(msg)) return `${fileName} — не удалось сохранить запись о файле`
   return `${fileName} — не удалось загрузить`
 }
 
