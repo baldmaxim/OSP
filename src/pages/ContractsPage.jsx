@@ -48,6 +48,7 @@ const EMPTY_FORM = {
   tender_id: '',
   work_name: '',
   responsible_contact_id: '',
+  notes: '',
 }
 
 // ДД.ММ.ГГГГ из ISO-даты (или null, если пусто/некорректно)
@@ -57,6 +58,32 @@ function formatDateRu(iso) {
   if (!y || !m || !d) return null
   return `${d}.${m}.${y}`
 }
+
+// Нейтральные SVG-иконки действий (currentColor, единый размер 16×16).
+const actionIconProps = {
+  viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+  strokeWidth: 1.75, strokeLinecap: 'round', strokeLinejoin: 'round',
+  width: 16, height: 16, 'aria-hidden': true,
+}
+const EditIcon = () => (
+  <svg {...actionIconProps}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
+)
+const TrashIcon = () => (
+  <svg {...actionIconProps}>
+    <path d="M3 6h18" />
+    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+  </svg>
+)
+const RestoreIcon = () => (
+  <svg {...actionIconProps}>
+    <path d="M3 7v6h6" />
+    <path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7" />
+  </svg>
+)
 
 function ContractRegistry() {
   const navigate = useNavigate()
@@ -102,9 +129,7 @@ function ContractRegistry() {
   const [filterObjectId, setFilterObjectId] = useState('')
   const [filterLawyerId, setFilterLawyerId] = useState('')
   const [searchText, setSearchText] = useState('')
-  const [onlyMine, setOnlyMine] = useState(false)
   const [onlyOverdue, setOnlyOverdue] = useState(false)
-  const [onlyNoDate, setOnlyNoDate] = useState(false)
 
   // Сортировка по клику на заголовок (default — по имени объекта, как раньше)
   const [sortKey, setSortKey] = useState('object')
@@ -439,19 +464,12 @@ function ContractRegistry() {
       .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
   }, [contracts, contactNameById])
 
-  const currentUserName = (userProfile?.full_name || '').trim().toLowerCase()
-
   const filteredSortedContracts = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     const list = contracts.filter(c => {
       if (filterObjectId && c.object_id !== filterObjectId) return false
       if (filterLawyerId && c.responsible_contact_id !== filterLawyerId) return false
-      if (onlyMine) {
-        const respName = (contactNameById[c.responsible_contact_id] || c.responsible?.full_name || '').trim().toLowerCase()
-        if (!currentUserName || respName !== currentUserName) return false
-      }
       if (onlyOverdue && !isOverdue(c)) return false
-      if (onlyNoDate && c.signed_date) return false
       if (q) {
         const hay = [
           c.counterparties?.name,
@@ -489,9 +507,9 @@ function ContractRegistry() {
       if (so !== 0) return so
       return (a.contract_date || '').localeCompare(b.contract_date || '')
     })
-  }, [contracts, filterObjectId, filterLawyerId, onlyMine, onlyOverdue, onlyNoDate, searchText, sortKey, sortDir, contactNameById, currentUserName, isOverdue])
+  }, [contracts, filterObjectId, filterLawyerId, onlyOverdue, searchText, sortKey, sortDir, isOverdue])
 
-  const hasActiveFilters = !!(filterObjectId || filterLawyerId || searchText || onlyMine || onlyOverdue || onlyNoDate)
+  const hasActiveFilters = !!(filterObjectId || filterLawyerId || searchText || onlyOverdue)
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -500,7 +518,7 @@ function ContractRegistry() {
 
   const resetFilters = () => {
     setFilterObjectId(''); setFilterLawyerId(''); setSearchText('')
-    setOnlyMine(false); setOnlyOverdue(false); setOnlyNoDate(false)
+    setOnlyOverdue(false)
   }
 
   const openPreview = (e, contractId) => {
@@ -519,7 +537,7 @@ function ContractRegistry() {
   // Закрываем мини-карточку при смене вкладки/фильтров/сортировки
   useEffect(() => {
     setPreviewContractId(null); setPreviewAnchorEl(null)
-  }, [activeTab, filterObjectId, filterLawyerId, searchText, onlyMine, onlyOverdue, onlyNoDate, sortKey, sortDir])
+  }, [activeTab, filterObjectId, filterLawyerId, searchText, onlyOverdue, sortKey, sortDir])
 
   const previewContract = previewContractId
     ? filteredSortedContracts.find(c => c.id === previewContractId)
@@ -624,6 +642,7 @@ function ContractRegistry() {
       tender_id: contract.tender_id || '',
       work_name: contract.work_name || '',
       responsible_contact_id: contract.responsible_contact_id || '',
+      notes: contract.notes || '',
     })
     setCounterpartySearch(contract.counterparties?.name || '')
     setShowModal(true)
@@ -880,25 +899,15 @@ function ContractRegistry() {
             className="rf-search"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Поиск по контрагенту, работам, № договора, примечанию"
+            placeholder="Поиск по контрагенту, работам, № договора"
           />
         </div>
         <div className="rf-quick">
-          <button
-            className={`qfilter ${onlyMine ? 'active' : ''}`}
-            onClick={() => setOnlyMine(v => !v)}
-            title="Договоры, где ответственный — вы"
-          >Мои</button>
           <button
             className={`qfilter ${onlyOverdue ? 'active' : ''}`}
             onClick={() => setOnlyOverdue(v => !v)}
             title="Просроченная плановая дата подписания"
           >Просрочено</button>
-          <button
-            className={`qfilter ${onlyNoDate ? 'active' : ''}`}
-            onClick={() => setOnlyNoDate(v => !v)}
-            title="Без плановой даты подписания"
-          >Без даты</button>
           <button
             className="qfilter qfilter-reset"
             onClick={resetFilters}
@@ -916,24 +925,23 @@ function ContractRegistry() {
           <thead>
             <tr>
               <th style={{ width: '32px' }} aria-label="Раскрыть"></th>
-              <th style={{ width: '40px' }}>№</th>
-              {sortableTh('object', 'Объект', { minWidth: '150px' })}
-              <th style={{ minWidth: '140px' }}>Договор / № ДС</th>
-              {sortableTh('counterparty', 'Контрагент', { minWidth: '160px' })}
-              <th>Выполняемые работы</th>
+              <th style={{ width: '44px' }}>№</th>
+              {sortableTh('object', 'Объект', { width: '140px' })}
+              <th style={{ width: '190px' }}>Договор / № ДС</th>
+              {sortableTh('counterparty', 'Контрагент', { width: '170px' })}
+              <th style={{ minWidth: '240px' }}>Выполняемые работы</th>
               {sortableTh('amount', 'Сумма', { width: '120px' })}
-              {sortableTh('status', 'Текущий статус', { width: '150px' })}
+              {sortableTh('status', 'Текущий статус', { width: '140px' })}
               <th style={{ width: '150px' }}>Ответственный юрист</th>
               {sortableTh('accepted', 'Дата принятия в работу', { width: '120px' })}
               {sortableTh('planned', 'План. дата подписания', { width: '120px' })}
-              <th style={{ minWidth: '140px' }}>Примечание</th>
-              <th className="actions-column" style={{ width: '90px' }}>Действия</th>
+              <th className="actions-column" style={{ width: '96px' }}>Действия</th>
             </tr>
           </thead>
           <tbody>
             {filteredSortedContracts.length === 0 ? (
               <tr>
-                <td colSpan="13" className="no-data">
+                <td colSpan="12" className="no-data">
                   {hasActiveFilters
                     ? 'Нет договоров под выбранные фильтры.'
                     : isDeletedTab
@@ -1028,16 +1036,6 @@ function ContractRegistry() {
                     />
                     {overdue && <span className="overdue-warn" title="Просрочено">⚠</span>}
                   </td>
-                  <td className="cell-note" onClick={(e) => e.stopPropagation()}>
-                    <textarea
-                      className="inline-cell-notes"
-                      defaultValue={contract.notes || ''}
-                      placeholder="Примечание…"
-                      rows={1}
-                      onBlur={(e) => handleInlineField(contract.id, 'notes', e.target.value.trim())}
-                      disabled={!canEditContracts || isDeletedTab}
-                    />
-                  </td>
                   <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
                       <>
@@ -1046,14 +1044,16 @@ function ContractRegistry() {
                             className="btn-icon btn-restore"
                             onClick={() => handleRestoreContract(contract.id, contract.contract_number)}
                             title="Восстановить"
-                          >↩</button>
+                            aria-label="Восстановить"
+                          ><RestoreIcon /></button>
                         )}
                         {isAdmin && (
                           <button
                             className="btn-icon btn-delete"
                             onClick={() => handleHardDeleteContract(contract.id, contract.contract_number)}
                             title="Удалить безвозвратно (админ)"
-                          >🗑️</button>
+                            aria-label="Удалить безвозвратно"
+                          ><TrashIcon /></button>
                         )}
                       </>
                     ) : canEditContracts ? (
@@ -1062,19 +1062,21 @@ function ContractRegistry() {
                           className="btn-icon btn-edit"
                           onClick={() => handleEditContract(contract)}
                           title="Редактировать"
-                        >✏️</button>
+                          aria-label="Редактировать"
+                        ><EditIcon /></button>
                         <button
                           className="btn-icon btn-delete"
                           onClick={() => handleSoftDeleteContract(contract.id, contract.contract_number)}
-                          title="В корзину"
-                        >🗑️</button>
+                          title="Удалить"
+                          aria-label="Удалить"
+                        ><TrashIcon /></button>
                       </>
                     ) : null}
                   </td>
                 </tr>
                 {isExpanded && (
                   <tr className="contract-attachments-row" onClick={(e) => e.stopPropagation()}>
-                    <td colSpan="13">
+                    <td colSpan="12">
                       <div className="contract-attachments-panel">
                         <div className="cap-header">
                           <span className="cap-title">📎 Приложения к договору № {contract.contract_number}</span>
@@ -1132,6 +1134,8 @@ function ContractRegistry() {
           anchorEl={previewAnchorEl}
           counterpartyName={previewContract.counterparties?.name}
           objectName={previewContract.objects?.name}
+          workName={previewContract.work_name || previewContract.tenders?.work_description}
+          amountText={formatMoney(previewContract.contract_amount, previewContract.currency)}
           lawyerName={contactNameById[previewContract.responsible_contact_id] || previewContract.responsible?.full_name}
           statusLabel={STATUS_LABEL[previewContract.status] || previewContract.status}
           statusClassName={`status-${previewContract.status}`}
@@ -1321,6 +1325,11 @@ function ContractRegistry() {
                 <div className="form-group full-width">
                   <label>Ссылка на документ (Google Drive)</label>
                   <input type="url" name="document_link" value={formData.document_link} onChange={handleInputChange} placeholder="https://docs.google.com/document/d/..." />
+                </div>
+
+                <div className="form-group full-width">
+                  <label>Примечание</label>
+                  <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows={2} placeholder="Примечание (необязательно)" />
                 </div>
 
                 {/* Task 188: приложения в виде выпадающего списка с чекбоксами */}

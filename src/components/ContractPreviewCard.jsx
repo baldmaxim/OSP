@@ -21,6 +21,8 @@ export default function ContractPreviewCard({
   anchorEl,
   counterpartyName,
   objectName,
+  workName,
+  amountText,
   lawyerName,
   statusLabel,
   statusClassName,
@@ -125,6 +127,14 @@ export default function ContractPreviewCard({
         <div className="cpc-field">
           <span className="cpc-label">Объект</span>
           <span className="cpc-value">{objectName || '—'}</span>
+        </div>
+        <div className="cpc-field">
+          <span className="cpc-label">Выполняемые работы</span>
+          <span className="cpc-value">{workName || '—'}</span>
+        </div>
+        <div className="cpc-field">
+          <span className="cpc-label">Сумма</span>
+          <span className="cpc-value">{amountText || '—'}</span>
         </div>
         <div className="cpc-field">
           <span className="cpc-label">Статус</span>
