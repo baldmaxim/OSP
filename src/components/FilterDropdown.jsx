@@ -58,7 +58,7 @@ export default function FilterDropdown({
     const alignRight = r.left + PANEL_W > vw - 12
     const avail = (openUp ? spaceAbove : spaceBelow) - 16
     const maxHeight = Math.max(160, Math.min(320, avail))
-    const c = { width: Math.max(r.width, 240), maxHeight }
+    const c = { width: Math.min(340, Math.max(r.width, 300)), maxHeight }
     if (alignRight) c.right = vw - r.right
     else c.left = r.left
     if (openUp) c.bottom = vh - r.top + 6

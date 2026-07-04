@@ -66,16 +66,14 @@ function normalizeName(s) {
   return String(s || '').trim().replace(/\s+/g, ' ')
 }
 
-// Краткое ФИО для отображения в таблице: «Фамилия И.О.» (полное — в title/dropdown).
-function formatPersonShortName(fullName) {
+// ФИО для таблицы в 2 строки: «Фамилия Имя» / «Отчество…». Полное имя — в title/dropdown.
+// Возвращает { line1, line2 } или null (не назначен). Только для отображения (не для payload).
+function formatLawyerDisplayName(fullName) {
   const s = normalizeName(fullName)
-  if (!s || s === '—') return s || '—'
+  if (!s || s === '—') return null
   const parts = s.split(' ')
-  const isInitials = (p) => /^[A-Za-zА-Яа-яЁё]\.?([A-Za-zА-Яа-яЁё]\.?)?$/.test(p)
-  const initial = (p) => p ? p[0].toUpperCase() + '.' : ''
-  if (parts.length >= 3) return `${parts[0]} ${initial(parts[1])}${initial(parts[2])}`
-  if (parts.length === 2) return isInitials(parts[1]) ? s : `${parts[0]} ${initial(parts[1])}`
-  return s
+  if (parts.length >= 3) return { line1: `${parts[0]} ${parts[1]}`, line2: parts.slice(2).join(' ') }
+  return { line1: s, line2: null }
 }
 
 // Склонение «договор/договора/договоров» для счётчика пагинации.
@@ -1126,7 +1124,16 @@ function ContractRegistry() {
                       searchable
                       searchPlaceholder="Поиск сотрудника…"
                       allLabel="—"
-                      formatTrigger={formatPersonShortName}
+                      formatTrigger={(label) => {
+                        const d = formatLawyerDisplayName(label)
+                        if (!d) return <span className="contract-lawyer-empty">—</span>
+                        return (
+                          <span className="contract-lawyer-name">
+                            <span>{d.line1}</span>
+                            {d.line2 && <span>{d.line2}</span>}
+                          </span>
+                        )
+                      }}
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>
