@@ -1768,12 +1768,12 @@
 .contracts-table-compact .clamp-3 { -webkit-line-clamp: 3; }
 
 /* ===== Колонка «№» + бейдж числа приложений (вместо отдельной колонки) ===== */
+/* ВАЖНО: ячейка «№» — обычный table-cell (НЕ flex), иначе выпадает из общей
+   сетки border-collapse и рисуется отдельной «карточкой» с собственной рамкой. */
 .contracts-table-compact .cell-num {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  justify-content: center;
-  flex-wrap: wrap;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 .contracts-table-compact .cell-num-value {
   font-weight: 600;
@@ -1784,14 +1784,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 0.25rem;
-  font-size: 0.625rem;
+  min-width: 15px;
+  height: 15px;
+  margin-left: 0.2rem;
+  padding: 0 0.2rem;
+  font-size: 0.5625rem;
   font-weight: 600;
   color: #fff;
   background: var(--primary-color);
   border-radius: 999px;
+  vertical-align: middle;
 }
 .contracts-table-compact tr.is-expanded .expand-badge { filter: brightness(1.1); }
 
@@ -1801,9 +1803,10 @@
   width: 100%;
   max-width: none;
   height: auto;
-  min-height: 30px;
-  padding: 0.25rem 0.4rem;
+  min-height: 32px;
+  padding: 4px 26px 4px 8px;
   align-items: flex-start;
+  font-size: 12px;
   border-radius: 6px;
   background: transparent;
   border-color: transparent;
@@ -1817,12 +1820,14 @@
   background: var(--bg-secondary);
 }
 .contracts-table-compact .cell-lawyer .fdrop-value {
+  display: block;
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
   overflow-wrap: anywhere;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.25;
+  line-height: 1.3;
 }
 .contracts-table-compact .cell-lawyer .fdrop.is-active .fdrop-value { color: var(--text-primary); }
 .contracts-table-compact .cell-lawyer .fdrop-arrow { margin-top: 0.15rem; }

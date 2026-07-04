@@ -61,6 +61,11 @@ function formatDateRu(iso) {
   return `${d}.${m}.${y}`
 }
 
+// Нормализация ФИО для дедупликации: trim + сжать пробелы (сравнение — без регистра).
+function normalizeName(s) {
+  return String(s || '').trim().replace(/\s+/g, ' ')
+}
+
 // Склонение «договор/договора/договоров» для счётчика пагинации.
 function pluralContracts(n) {
   const mod10 = n % 10
@@ -465,21 +470,54 @@ function ContractRegistry() {
     return m
   }, [contacts])
 
+  // Нормализованное (lowercase) ФИО по id сотрудника — для дедупа и фильтрации по имени.
+  const normNameById = useMemo(() => {
+    const m = {}
+    contacts.forEach(c => { m[c.id] = normalizeName(c.full_name).toLowerCase() })
+    return m
+  }, [contacts])
+
+  // Дедуплицированный список сотрудников (одно ФИО = одна запись, представитель — первый id).
+  const dedupContacts = useMemo(() => {
+    const byName = new Map()
+    contacts.forEach(c => {
+      const name = normalizeName(c.full_name)
+      if (!name) return
+      const key = name.toLowerCase()
+      if (!byName.has(key)) byName.set(key, { id: c.id, name })
+    })
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  }, [contacts])
+
+  // Любой id сотрудника → id представителя того же ФИО (чтобы выбранное значение
+  // совпадало с опцией даже при дублях с разными id).
+  const lawyerRepByContactId = useMemo(() => {
+    const nameToRep = new Map(dedupContacts.map(c => [c.name.toLowerCase(), c.id]))
+    const m = {}
+    contacts.forEach(c => {
+      const key = normalizeName(c.full_name).toLowerCase()
+      m[c.id] = nameToRep.get(key) || c.id
+    })
+    return m
+  }, [contacts, dedupContacts])
+
   // Опции фильтра «Объект» — из объектов текущего отдела
   const objectFilterOptions = useMemo(() =>
     [...objects].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru')),
   [objects])
 
-  // Опции фильтра «Ответственный юрист» — реально назначенные в загруженных договорах
+  // Опции фильтра «Ответственный юрист» — реально назначенные в договорах, без дублей ФИО.
   const lawyerFilterOptions = useMemo(() => {
     const seen = new Map()
     contracts.forEach(c => {
       const id = c.responsible_contact_id
-      if (id && !seen.has(id)) seen.set(id, contactNameById[id] || c.responsible?.full_name || '—')
+      if (!id) return
+      const name = normalizeName(contactNameById[id] || c.responsible?.full_name || '')
+      if (!name) return
+      const key = name.toLowerCase()
+      if (!seen.has(key)) seen.set(key, { id, name })
     })
-    return [...seen.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
   }, [contracts, contactNameById])
 
   // Опции для кастомных FilterDropdown (первая — «Все …»).
@@ -490,16 +528,21 @@ function ContractRegistry() {
     () => [{ value: '', label: 'Все юристы' }, ...lawyerFilterOptions.map(l => ({ value: l.id, label: l.name }))],
     [lawyerFilterOptions])
 
-  // Опции для inline-выбора ответственного в строке таблицы (все сотрудники, полные ФИО).
+  // Опции для inline-выбора ответственного в строке таблицы (все сотрудники, без дублей ФИО).
   const contactDropdownOptions = useMemo(
-    () => [{ value: '', label: '—' }, ...contacts.map(c => ({ value: c.id, label: c.full_name }))],
-    [contacts])
+    () => [{ value: '', label: '—' }, ...dedupContacts.map(c => ({ value: c.id, label: c.name }))],
+    [dedupContacts])
 
   const filteredSortedContracts = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     const list = contracts.filter(c => {
       if (filterObjectId && c.object_id !== filterObjectId) return false
-      if (filterLawyerId && c.responsible_contact_id !== filterLawyerId) return false
+      if (filterLawyerId) {
+        // Сопоставляем по нормализованному ФИО — чтобы фильтр по одному «представителю»
+        // ловил все договоры с этим же юристом, даже если у него дублирующиеся id.
+        const selName = normNameById[filterLawyerId]
+        if (!selName || normNameById[c.responsible_contact_id] !== selName) return false
+      }
       if (onlyOverdue && !isOverdue(c)) return false
       if (q) {
         const hay = [
@@ -538,7 +581,7 @@ function ContractRegistry() {
       if (so !== 0) return so
       return (a.contract_date || '').localeCompare(b.contract_date || '')
     })
-  }, [contracts, filterObjectId, filterLawyerId, onlyOverdue, searchText, sortKey, sortDir, isOverdue])
+  }, [contracts, filterObjectId, filterLawyerId, onlyOverdue, searchText, sortKey, sortDir, isOverdue, normNameById])
 
   const hasActiveFilters = !!(filterObjectId || filterLawyerId || searchText || onlyOverdue)
 
@@ -1065,7 +1108,7 @@ function ContractRegistry() {
                   <td className="cell-lawyer" onClick={(e) => e.stopPropagation()}>
                     <FilterDropdown
                       label=""
-                      value={contract.responsible_contact_id || ''}
+                      value={lawyerRepByContactId[contract.responsible_contact_id] || contract.responsible_contact_id || ''}
                       onChange={(v) => handleInlineField(contract.id, 'responsible_contact_id', v)}
                       options={contactDropdownOptions}
                       searchable
