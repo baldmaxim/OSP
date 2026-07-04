@@ -66,14 +66,19 @@ function normalizeName(s) {
   return String(s || '').trim().replace(/\s+/g, ' ')
 }
 
-// ФИО для таблицы в 2 строки: «Фамилия Имя» / «Отчество…». Полное имя — в title/dropdown.
-// Возвращает { line1, line2 } или null (не назначен). Только для отображения (не для payload).
-function formatLawyerDisplayName(fullName) {
-  const s = normalizeName(fullName)
-  if (!s || s === '—') return null
-  const parts = s.split(' ')
-  if (parts.length >= 3) return { line1: `${parts[0]} ${parts[1]}`, line2: parts.slice(2).join(' ') }
-  return { line1: s, line2: null }
+// Краткое ФИО для таблицы: «Фамилия И.О.» (одна строка). Полное ФИО — в title/dropdown.
+// Только визуальное отображение; в payload/БД уходит исходный id, а не эта строка.
+function formatPersonShortName(fullName) {
+  const normalized = String(fullName || '').trim().replace(/\s+/g, ' ')
+  if (!normalized || normalized === '—') return '—'
+  const parts = normalized.split(' ')
+  // Уже сокращённый формат («Иванов И.И.», «Егорова О.Ю.», «Россолов И.») — как есть.
+  if (parts.length <= 2 && /[А-ЯЁA-Za-z]\./.test(normalized)) return normalized
+  const [lastName, firstName, middleName] = parts
+  const initial = (p) => (p ? p.charAt(0).toUpperCase() + '.' : '')
+  if (parts.length >= 3) return `${lastName} ${initial(firstName)}${initial(middleName)}`
+  if (parts.length === 2) return `${lastName} ${initial(firstName)}`
+  return normalized
 }
 
 // Склонение «договор/договора/договоров» для счётчика пагинации.
@@ -1124,16 +1129,7 @@ function ContractRegistry() {
                       searchable
                       searchPlaceholder="Поиск сотрудника…"
                       allLabel="—"
-                      formatTrigger={(label) => {
-                        const d = formatLawyerDisplayName(label)
-                        if (!d) return <span className="contract-lawyer-empty">—</span>
-                        return (
-                          <span className="contract-lawyer-name">
-                            <span>{d.line1}</span>
-                            {d.line2 && <span>{d.line2}</span>}
-                          </span>
-                        )
-                      }}
+                      formatTrigger={formatPersonShortName}
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>

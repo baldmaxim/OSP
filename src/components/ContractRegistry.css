@@ -816,10 +816,10 @@
 .contracts-table-compact col.cg-object { width: 8.5%; }
 .contracts-table-compact col.cg-ds { width: 13%; }
 .contracts-table-compact col.cg-counterparty { width: 11%; }
-.contracts-table-compact col.cg-work { width: 15.5%; }
+.contracts-table-compact col.cg-work { width: 16%; }
 .contracts-table-compact col.cg-amount { width: 7.5%; }
 .contracts-table-compact col.cg-status { width: 10%; }
-.contracts-table-compact col.cg-lawyer { width: 10.5%; }
+.contracts-table-compact col.cg-lawyer { width: 10%; }
 .contracts-table-compact col.cg-accepted { width: 8%; }
 .contracts-table-compact col.cg-planned { width: 8%; }
 .contracts-table-compact col.cg-actions { width: 5%; }
@@ -1803,19 +1803,19 @@
 }
 .contracts-table-compact tr.is-expanded .expand-badge { filter: brightness(1.1); }
 
-/* ===== Ответственный юрист: полное ФИО в 2 строки (Фамилия Имя / Отчество) ===== */
+/* ===== Ответственный юрист: краткое ФИО «Фамилия И.О.» в одну строку ===== */
 .contracts-table-compact .cell-lawyer { vertical-align: middle; }
 .contracts-table-compact .cell-lawyer .fdrop { display: flex; width: 100%; }
 .contracts-table-compact .cell-lawyer .fdrop-trigger {
   width: 100%;
   max-width: none;
-  min-height: 38px;
-  padding: 5px 24px 5px 8px;
+  min-height: 32px;
+  padding: 4px 24px 4px 8px;
   align-items: center;
   gap: 6px;
   font-family: var(--font-ui, 'Inter', 'Segoe UI', Roboto, Arial, sans-serif);
   font-size: 12px;
-  line-height: 1.22;
+  line-height: 1.25;
   font-weight: 500;
   border-radius: 8px;
   background: transparent;
@@ -1830,31 +1830,19 @@
   background: var(--bg-secondary);
   box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.12);
 }
-/* Контейнер значения — под 2-строчное ФИО, без обрезки слов и переносов посреди слова */
+/* Краткое ФИО помещается в одну строку — без переноса и БЕЗ многоточия */
 .contracts-table-compact .cell-lawyer .fdrop-value {
-  display: flex;
   min-width: 0;
-  overflow: hidden;
-  white-space: normal;
-  text-overflow: clip;
-}
-.contracts-table-compact .cell-lawyer .contract-lawyer-name {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.contracts-table-compact .cell-lawyer .contract-lawyer-name > span {
   display: block;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: normal;
-  overflow-wrap: normal;
-  hyphens: none;
+  text-overflow: clip;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
   color: var(--text-primary);
 }
-.contracts-table-compact .cell-lawyer .contract-lawyer-empty { color: var(--text-tertiary); }
+.contracts-table-compact .cell-lawyer .fdrop.is-active .fdrop-value { color: var(--text-primary); }
 .contracts-table-compact .cell-lawyer .fdrop-arrow { flex-shrink: 0; margin-top: 0; }
 
 /* ===== Просроченная плановая дата — мягкий красный + подпись ===== */
