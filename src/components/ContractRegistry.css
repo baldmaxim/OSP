@@ -921,29 +921,34 @@
   font-size: 0.75rem;
 }
 
+/* Колонка «Действия»: ВАЖНО — обычная table-cell (НЕ flex), иначе ячейка выпадает
+   из сетки border-collapse и рисуется отдельной «карточкой». Кнопки — во внутреннем
+   inline-flex, компактные иконки без рамок. */
 .contracts-table-compact .actions-cell {
+  text-align: center;
+  vertical-align: middle;
   white-space: nowrap;
 }
-
+.contracts-table-compact .actions-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
 .contracts-table-compact .btn-icon {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   margin: 0;
+  border-radius: 8px;
   color: var(--text-secondary);
 }
-.contracts-table-compact .actions-cell {
-  display: flex;
-  gap: 0.125rem;
-  justify-content: flex-end;
-  align-items: center;
-}
 .contracts-table-compact .btn-icon svg { display: block; }
-.contracts-table-compact .btn-icon:hover { transform: none; color: var(--text-primary); }
-.contracts-table-compact .btn-edit:hover { color: var(--primary-color); }
-.contracts-table-compact .btn-delete:hover { color: var(--danger-color); }
+.contracts-table-compact .btn-icon:hover { transform: none; background: var(--hover-bg); color: var(--text-primary); }
+.contracts-table-compact .btn-edit:hover { color: var(--primary-color); background: var(--hover-bg); }
+.contracts-table-compact .btn-delete:hover { color: var(--danger-color); background: color-mix(in srgb, var(--danger-color) 12%, transparent); }
 .contracts-table-compact .btn-icon.btn-restore { color: var(--text-secondary); }
-.contracts-table-compact .btn-icon.btn-restore:hover { color: #16a34a; background-color: rgba(22, 163, 74, 0.1); }
+.contracts-table-compact .btn-icon.btn-restore:hover { color: #16a34a; background: rgba(22, 163, 74, 0.12); }
 
 /* Удалённая строка — приглушаем визуально */
 .contracts-table-compact .row-deleted {
@@ -1797,17 +1802,18 @@
 }
 .contracts-table-compact tr.is-expanded .expand-badge { filter: brightness(1.1); }
 
-/* ===== Ответственный юрист: полный ФИО (перенос, без обрезки) ===== */
+/* ===== Ответственный юрист: краткое ФИО «Фамилия И.О.» в одну строку ===== */
+.contracts-table-compact .cell-lawyer { vertical-align: middle; }
 .contracts-table-compact .cell-lawyer .fdrop { display: flex; width: 100%; }
 .contracts-table-compact .cell-lawyer .fdrop-trigger {
   width: 100%;
   max-width: none;
-  height: auto;
-  min-height: 32px;
-  padding: 4px 26px 4px 8px;
-  align-items: flex-start;
+  min-height: 34px;
+  padding: 5px 26px 5px 8px;
+  align-items: center;
   font-size: 12px;
-  border-radius: 6px;
+  line-height: 1.25;
+  border-radius: 8px;
   background: transparent;
   border-color: transparent;
 }
@@ -1821,16 +1827,18 @@
 }
 .contracts-table-compact .cell-lawyer .fdrop-value {
   display: block;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+  word-break: normal;
   font-size: 12px;
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.25;
 }
 .contracts-table-compact .cell-lawyer .fdrop.is-active .fdrop-value { color: var(--text-primary); }
-.contracts-table-compact .cell-lawyer .fdrop-arrow { margin-top: 0.15rem; }
+.contracts-table-compact .cell-lawyer .fdrop-arrow { margin-top: 0; }
 
 /* ===== Просроченная плановая дата — мягкий красный + подпись ===== */
 .overdue-note {

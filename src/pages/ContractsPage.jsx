@@ -66,6 +66,18 @@ function normalizeName(s) {
   return String(s || '').trim().replace(/\s+/g, ' ')
 }
 
+// Краткое ФИО для отображения в таблице: «Фамилия И.О.» (полное — в title/dropdown).
+function formatPersonShortName(fullName) {
+  const s = normalizeName(fullName)
+  if (!s || s === '—') return s || '—'
+  const parts = s.split(' ')
+  const isInitials = (p) => /^[A-Za-zА-Яа-яЁё]\.?([A-Za-zА-Яа-яЁё]\.?)?$/.test(p)
+  const initial = (p) => p ? p[0].toUpperCase() + '.' : ''
+  if (parts.length >= 3) return `${parts[0]} ${initial(parts[1])}${initial(parts[2])}`
+  if (parts.length === 2) return isInitials(parts[1]) ? s : `${parts[0]} ${initial(parts[1])}`
+  return s
+}
+
 // Склонение «договор/договора/договоров» для счётчика пагинации.
 function pluralContracts(n) {
   const mod10 = n % 10
@@ -1114,6 +1126,7 @@ function ContractRegistry() {
                       searchable
                       searchPlaceholder="Поиск сотрудника…"
                       allLabel="—"
+                      formatTrigger={formatPersonShortName}
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>
@@ -1137,41 +1150,43 @@ function ContractRegistry() {
                     {overdue && <span className="overdue-note">Просрочено</span>}
                   </td>
                   <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
-                    {isDeletedTab ? (
-                      <>
-                        {canEditContracts && (
+                    <div className="actions-inner">
+                      {isDeletedTab ? (
+                        <>
+                          {canEditContracts && (
+                            <button
+                              className="btn-icon btn-restore"
+                              onClick={() => handleRestoreContract(contract.id, contract.contract_number)}
+                              title="Восстановить"
+                              aria-label="Восстановить"
+                            ><RestoreIcon /></button>
+                          )}
+                          {isAdmin && (
+                            <button
+                              className="btn-icon btn-delete"
+                              onClick={() => handleHardDeleteContract(contract.id, contract.contract_number)}
+                              title="Удалить безвозвратно (админ)"
+                              aria-label="Удалить безвозвратно"
+                            ><TrashIcon /></button>
+                          )}
+                        </>
+                      ) : canEditContracts ? (
+                        <>
                           <button
-                            className="btn-icon btn-restore"
-                            onClick={() => handleRestoreContract(contract.id, contract.contract_number)}
-                            title="Восстановить"
-                            aria-label="Восстановить"
-                          ><RestoreIcon /></button>
-                        )}
-                        {isAdmin && (
+                            className="btn-icon btn-edit"
+                            onClick={() => handleEditContract(contract)}
+                            title="Редактировать"
+                            aria-label="Редактировать"
+                          ><EditIcon /></button>
                           <button
                             className="btn-icon btn-delete"
-                            onClick={() => handleHardDeleteContract(contract.id, contract.contract_number)}
-                            title="Удалить безвозвратно (админ)"
-                            aria-label="Удалить безвозвратно"
+                            onClick={() => handleSoftDeleteContract(contract.id, contract.contract_number)}
+                            title="Удалить"
+                            aria-label="Удалить"
                           ><TrashIcon /></button>
-                        )}
-                      </>
-                    ) : canEditContracts ? (
-                      <>
-                        <button
-                          className="btn-icon btn-edit"
-                          onClick={() => handleEditContract(contract)}
-                          title="Редактировать"
-                          aria-label="Редактировать"
-                        ><EditIcon /></button>
-                        <button
-                          className="btn-icon btn-delete"
-                          onClick={() => handleSoftDeleteContract(contract.id, contract.contract_number)}
-                          title="Удалить"
-                          aria-label="Удалить"
-                        ><TrashIcon /></button>
-                      </>
-                    ) : null}
+                        </>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
                 {isExpanded && (

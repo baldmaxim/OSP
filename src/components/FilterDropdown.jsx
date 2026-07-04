@@ -20,6 +20,9 @@ export default function FilterDropdown({
   searchPlaceholder = 'Поиск…',
   disabled = false,
   allLabel = 'Все',
+  // Необязательно: как показать ВЫБРАННОЕ значение в триггере (напр. краткое ФИО).
+  // Список опций и title всегда показывают полный label.
+  formatTrigger = null,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -119,7 +122,7 @@ export default function FilterDropdown({
         title={label ? `${label}: ${selectedLabel}` : selectedLabel}
       >
         {label && <span className="fdrop-label">{label}</span>}
-        <span className="fdrop-value">{selectedLabel}</span>
+        <span className="fdrop-value">{formatTrigger ? formatTrigger(selectedLabel) : selectedLabel}</span>
         <span className="fdrop-arrow" aria-hidden>▾</span>
       </button>
 
