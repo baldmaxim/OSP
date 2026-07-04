@@ -804,6 +804,8 @@
 .contracts-table-compact {
   font-size: 0.8125rem;
   table-layout: fixed;
+  /* Не сжимаем колонки — если не помещается, у .table-container горизонтальный скролл */
+  min-width: 1500px;
 }
 
 .contracts-table-compact thead th {
@@ -1558,6 +1560,13 @@
   color: var(--text-secondary);
   cursor: default;
 }
+/* Ответственный юрист: длинное ФИО не наезжает на стрелку и не ломает строку */
+.inline-cell-select {
+  padding-right: 1.4rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .inline-cell-notes {
   resize: vertical;
   min-height: 28px;
@@ -1570,23 +1579,28 @@
 }
 
 /* ===== Реестр договоров: панель фильтров над таблицей ===== */
+/* Панель фильтров — отдельная светлая карточка над таблицей */
 .registry-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 0.75rem;
+  gap: 0.75rem 1rem;
   margin: 0.75rem 0 1rem;
-  padding: 0 0 1rem;
-  border-bottom: 1px solid var(--border-color);
+  padding: 0.875rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
 }
 .rf-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  min-width: 160px;
+  gap: 0.3125rem;
 }
+.rf-field-object { width: 240px; }
+.rf-field-lawyer { width: 260px; }
 .rf-field-search {
-  flex: 1 1 260px;
+  flex: 1 1 360px;
+  min-width: 360px;
 }
 .rf-label {
   font-size: 0.6875rem;
@@ -1594,26 +1608,25 @@
   letter-spacing: 0.02em;
   color: var(--text-tertiary);
 }
-.rf-select,
 .rf-search {
-  height: 34px;
-  padding: 0 0.5rem;
+  width: 100%;
+  height: 40px;
+  padding: 0 0.625rem;
   font-size: 0.8125rem;
   font-family: inherit;
   color: var(--text-primary);
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 10px;
   box-sizing: border-box;
 }
-.rf-search {
-  width: 100%;
-}
-.rf-select:focus,
 .rf-search:focus {
   outline: none;
   border-color: var(--primary-color);
 }
+/* Кастомные дропдауны фильтров занимают всю ширину своего поля */
+.registry-filters .fdrop { display: flex; width: 100%; }
+.registry-filters .fdrop-trigger { width: 100%; max-width: none; height: 40px; }
 .rf-quick {
   display: flex;
   flex-wrap: wrap;
@@ -1622,14 +1635,14 @@
   margin-left: auto;
 }
 .qfilter {
-  height: 34px;
-  padding: 0 0.75rem;
+  height: 40px;
+  padding: 0 0.875rem;
   font-size: 0.8125rem;
   font-family: inherit;
   color: var(--text-secondary);
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: color 0.1s, background 0.1s, border-color 0.1s;
 }

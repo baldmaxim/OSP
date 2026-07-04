@@ -116,9 +116,9 @@ export default function FilterDropdown({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={`${label}: ${selectedLabel}`}
+        title={label ? `${label}: ${selectedLabel}` : selectedLabel}
       >
-        <span className="fdrop-label">{label}</span>
+        {label && <span className="fdrop-label">{label}</span>}
         <span className="fdrop-value">{selectedLabel}</span>
         <span className="fdrop-arrow" aria-hidden>▾</span>
       </button>

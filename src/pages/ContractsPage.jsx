@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
 import ContractPreviewCard from '../components/ContractPreviewCard'
+import FilterDropdown from '../components/FilterDropdown'
 import '../components/ContractRegistry.css'
 
 // Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
@@ -464,6 +465,14 @@ function ContractRegistry() {
       .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
   }, [contracts, contactNameById])
 
+  // Опции для кастомных FilterDropdown (первая — «Все …»).
+  const objectDropdownOptions = useMemo(
+    () => [{ value: '', label: 'Все объекты' }, ...objectFilterOptions.map(o => ({ value: o.id, label: o.name }))],
+    [objectFilterOptions])
+  const lawyerDropdownOptions = useMemo(
+    () => [{ value: '', label: 'Все юристы' }, ...lawyerFilterOptions.map(l => ({ value: l.id, label: l.name }))],
+    [lawyerFilterOptions])
+
   const filteredSortedContracts = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     const list = contracts.filter(c => {
@@ -866,31 +875,29 @@ function ContractRegistry() {
 
       {/* Панель фильтров реестра */}
       <div className="registry-filters">
-        <div className="rf-field">
+        <div className="rf-field rf-field-object">
           <label className="rf-label">Объект</label>
-          <select
-            className="rf-select"
+          <FilterDropdown
+            label=""
             value={filterObjectId}
-            onChange={(e) => setFilterObjectId(e.target.value)}
-          >
-            <option value="">Все объекты</option>
-            {objectFilterOptions.map(o => (
-              <option key={o.id} value={o.id}>{o.name}</option>
-            ))}
-          </select>
+            onChange={setFilterObjectId}
+            options={objectDropdownOptions}
+            searchable
+            searchPlaceholder="Поиск объекта…"
+            allLabel="Все объекты"
+          />
         </div>
-        <div className="rf-field">
+        <div className="rf-field rf-field-lawyer">
           <label className="rf-label">Ответственный юрист</label>
-          <select
-            className="rf-select"
+          <FilterDropdown
+            label=""
             value={filterLawyerId}
-            onChange={(e) => setFilterLawyerId(e.target.value)}
-          >
-            <option value="">Все юристы</option>
-            {lawyerFilterOptions.map(l => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
+            onChange={setFilterLawyerId}
+            options={lawyerDropdownOptions}
+            searchable
+            searchPlaceholder="Поиск юриста…"
+            allLabel="Все юристы"
+          />
         </div>
         <div className="rf-field rf-field-search">
           <label className="rf-label">Поиск</label>
@@ -925,17 +932,17 @@ function ContractRegistry() {
           <thead>
             <tr>
               <th style={{ width: '32px' }} aria-label="Раскрыть"></th>
-              <th style={{ width: '44px' }}>№</th>
-              {sortableTh('object', 'Объект', { width: '140px' })}
-              <th style={{ width: '190px' }}>Договор / № ДС</th>
-              {sortableTh('counterparty', 'Контрагент', { width: '170px' })}
-              <th style={{ minWidth: '240px' }}>Выполняемые работы</th>
-              {sortableTh('amount', 'Сумма', { width: '120px' })}
-              {sortableTh('status', 'Текущий статус', { width: '140px' })}
-              <th style={{ width: '150px' }}>Ответственный юрист</th>
-              {sortableTh('accepted', 'Дата принятия в работу', { width: '120px' })}
-              {sortableTh('planned', 'План. дата подписания', { width: '120px' })}
-              <th className="actions-column" style={{ width: '96px' }}>Действия</th>
+              <th style={{ width: '56px' }}>№</th>
+              {sortableTh('object', 'Объект', { width: '150px' })}
+              <th style={{ width: '200px' }}>Договор / № ДС</th>
+              {sortableTh('counterparty', 'Контрагент', { width: '180px' })}
+              <th style={{ width: '300px' }}>Выполняемые работы</th>
+              {sortableTh('amount', 'Сумма', { width: '130px' })}
+              {sortableTh('status', 'Текущий статус', { width: '150px' })}
+              <th style={{ width: '185px' }}>Ответственный юрист</th>
+              {sortableTh('accepted', 'Дата принятия в работу', { width: '140px' })}
+              {sortableTh('planned', 'План. дата подписания', { width: '140px' })}
+              <th className="actions-column" style={{ width: '100px' }}>Действия</th>
             </tr>
           </thead>
           <tbody>
