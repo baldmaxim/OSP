@@ -479,7 +479,17 @@ export default function GeneralDocumentsPage() {
                     <tr key={doc.id}>
                       <td className="gd-col-num">{index + 1}</td>
                       <td className="gd-col-title gd-title-cell">
-                        <span className="gd-title-text">{doc.title}</span>
+                        <div className="document-title-cell">
+                          <span className="document-title gd-title-text">{doc.title}</span>
+                          {canEditDocs && (
+                            <button
+                              className="document-title-edit-button"
+                              onClick={() => openEdit(doc)}
+                              title="Редактировать документ"
+                              aria-label="Редактировать документ"
+                            ><EditIcon /></button>
+                          )}
+                        </div>
                         {doc.description && <span className="gd-desc-text">{doc.description}</span>}
                       </td>
                       <td className="gd-col-materials">
@@ -503,7 +513,6 @@ export default function GeneralDocumentsPage() {
                       </td>
                       {canEditDocs && (
                         <td className="gd-col-actions">
-                          <button className="gd-icon-btn" onClick={() => openEdit(doc)} title="Редактировать" aria-label="Редактировать"><EditIcon /></button>
                           <button className="gd-icon-btn gd-icon-danger" onClick={() => handleDelete(doc)} title="Удалить" aria-label="Удалить"><TrashIcon /></button>
                         </td>
                       )}

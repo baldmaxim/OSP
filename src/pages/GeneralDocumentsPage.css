@@ -134,12 +134,12 @@
   font-size: 0.875rem;
 }
 /* Ширины колонок (colgroup) */
-.gd-table .cg-num { width: 70px; }
-.gd-table .cg-title { width: 26%; }
-.gd-table .cg-materials { width: 38%; }
-.gd-table .cg-updated { width: 165px; }
-.gd-table .cg-updatedby { width: 190px; }
-.gd-table .cg-actions { width: 120px; }
+.gd-table .cg-num { width: 68px; }
+.gd-table .cg-title { width: 30%; }
+.gd-table .cg-materials { width: 36%; }
+.gd-table .cg-updated { width: 170px; }
+.gd-table .cg-updatedby { width: 240px; }
+.gd-table .cg-actions { width: 90px; }
 
 .gd-table thead th {
   padding: 0.75rem 1rem;
@@ -171,8 +171,11 @@
 .gd-table tbody tr:hover {
   background: var(--bg-tertiary);
 }
-.gd-col-num {
+/* Колонка «№» — заголовок и значения строго по центру */
+.gd-table thead th.gd-col-num,
+.gd-table tbody td.gd-col-num {
   text-align: center;
+  vertical-align: middle;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -183,6 +186,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Ячейка наименования: название + иконка редактирования рядом */
+.document-title-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+}
+.document-title-cell .document-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.document-title-edit-button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+.document-title-edit-button svg { display: block; }
+.document-title-edit-button:hover {
+  opacity: 1;
+  background: var(--hover-bg);
+  color: var(--primary-color);
+}
+.gd-table tbody tr:hover .document-title-edit-button { opacity: 1; }
 .gd-desc-text {
   display: block;
   margin-top: 0.2rem;
@@ -201,9 +238,9 @@
 .gd-updatedby-cell {
   font-size: 0.8125rem;
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 .gd-col-actions {
   text-align: right;
