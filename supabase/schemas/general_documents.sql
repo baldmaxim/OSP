@@ -3,9 +3,12 @@
 CREATE TABLE IF NOT EXISTS general_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
-  source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),  -- 'file' | 'link'
-  link_url TEXT,                          -- для source_type='link'
-  s3_document_id UUID REFERENCES s3_documents(id) ON DELETE SET NULL,  -- для source_type='file'
+  description TEXT,                        -- необязательное примечание к карточке документа
+  -- 'mixed' — карточка с несколькими ссылками и/или файлами (текущая модель).
+  -- 'file'/'link' — старые одиночные записи (обратная совместимость).
+  source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link', 'mixed')),
+  link_url TEXT,                          -- DEPRECATED (старые одиночные ссылки → general_document_links)
+  s3_document_id UUID REFERENCES s3_documents(id) ON DELETE SET NULL,  -- DEPRECATED (файлы — по owner_type/owner_id)
   sort_order INTEGER,
   created_by UUID,
   created_by_name TEXT,

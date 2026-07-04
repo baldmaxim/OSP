@@ -1,10 +1,11 @@
 /* task 416: раздел «Документы» (Общая информация). Токены темы из index.css. */
 .general-documents-page {
   padding: 1.5rem;
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
+/* ── Заголовок ── */
 .gd-header {
   display: flex;
   align-items: flex-start;
@@ -44,7 +45,7 @@
   color: var(--text-primary);
 }
 
-/* Кнопки — page-scoped, чтобы вид не зависел от того, какие CSS уже загружены */
+/* Кнопки — page-scoped, вид не зависит от загруженных других CSS */
 .general-documents-page .btn-primary {
   padding: 0.5rem 0.875rem;
   font-size: 0.875rem;
@@ -54,6 +55,7 @@
   border: none;
   border-radius: 8px;
   cursor: pointer;
+  white-space: nowrap;
   transition: transform 0.1s, filter 0.1s;
 }
 .general-documents-page .btn-primary:hover:not(:disabled) {
@@ -79,15 +81,19 @@
   cursor: default;
 }
 
-/* Панель поиска */
+/* ── Панель поиска ── */
 .gd-toolbar {
-  margin: 1rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1.25rem 0 0.75rem;
 }
 .gd-search {
-  width: 100%;
-  max-width: 420px;
-  height: 36px;
-  padding: 0 0.625rem;
+  flex: 1 1 auto;
+  max-width: 480px;
+  height: 38px;
+  padding: 0 0.75rem;
   font-size: 0.875rem;
   font-family: inherit;
   color: var(--text-primary);
@@ -100,13 +106,23 @@
   outline: none;
   border-color: var(--primary-color);
 }
+.gd-total {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
 
-/* Таблица */
-.gd-table-container {
-  overflow-x: auto;
+/* ── Карточка-контейнер таблицы ── */
+.gd-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+.gd-table-container {
+  overflow-x: auto;
 }
 .gd-table {
   width: 100%;
@@ -114,7 +130,7 @@
   font-size: 0.875rem;
 }
 .gd-table thead th {
-  padding: 0.625rem 0.875rem;
+  padding: 0.75rem 1rem;
   text-align: left;
   font-size: 0.75rem;
   font-weight: 600;
@@ -122,58 +138,121 @@
   letter-spacing: 0.02em;
   color: var(--text-secondary);
   background: var(--bg-tertiary);
-  border-bottom: 2px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
   white-space: nowrap;
 }
 .gd-table tbody td {
-  padding: 0.5rem 0.875rem;
+  padding: 0.625rem 1rem;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
-  vertical-align: middle;
-}
-.gd-table tbody tr:last-child td {
-  border-bottom: none;
+  vertical-align: top;
 }
 .gd-table tbody tr:hover {
   background: var(--bg-tertiary);
 }
 .gd-col-num {
-  width: 64px;
+  width: 48px;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
-.gd-title-cell {
-  font-weight: 500;
+.gd-col-title {
+  width: 28%;
+  min-width: 200px;
+}
+.gd-title-text {
+  display: block;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.gd-desc-text {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.gd-col-materials {
+  min-width: 240px;
+}
+.gd-col-updated {
+  width: 100px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .gd-col-actions {
-  width: 100px;
-  white-space: nowrap;
+  width: 96px;
   text-align: right;
+  white-space: nowrap;
+}
+.gd-tfoot {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
 }
 
-/* Ссылка / файл */
-.gd-link {
-  padding: 0;
+/* ── Материалы (ссылки + файлы) в строке ── */
+.gd-materials {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+}
+.gd-material {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  padding: 0.125rem 0;
   background: none;
   border: none;
   font: inherit;
+  font-size: 0.8125rem;
   color: var(--primary-color);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+}
+.gd-material:hover .gd-mat-text {
   text-decoration: underline;
+}
+.gd-mat-icon {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+}
+.gd-mat-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+.gd-mat-size {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+.gd-more-btn {
+  align-self: flex-start;
+  margin-top: 0.125rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
   cursor: pointer;
 }
-.gd-link:hover {
-  filter: brightness(1.1);
-}
-.gd-file-btn {
-  text-align: left;
+.gd-more-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--text-primary);
 }
 .gd-missing {
   color: var(--text-tertiary);
   font-style: italic;
 }
 
-/* Иконки действий */
+/* ── Иконки действий ── */
 .gd-icon-btn {
   padding: 0.25rem 0.375rem;
   margin-left: 0.25rem;
@@ -192,7 +271,7 @@
   color: var(--danger-color);
 }
 
-/* Состояния */
+/* ── Состояния ── */
 .gd-loading,
 .gd-empty {
   padding: 3rem 1rem;
@@ -210,7 +289,7 @@
   color: var(--text-tertiary);
 }
 
-/* Модалка */
+/* ── Модалка ── */
 .gd-modal-overlay {
   position: fixed;
   inset: 0;
@@ -223,7 +302,7 @@
 }
 .gd-modal {
   width: 100%;
-  max-width: 480px;
+  max-width: 560px;
   background: var(--bg-secondary);
   border-radius: 16px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
@@ -231,11 +310,14 @@
   overflow: auto;
 }
 .gd-modal-header {
+  position: sticky;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
 }
 .gd-modal-header h3 {
   margin: 0;
@@ -257,19 +339,19 @@
   padding: 1.25rem;
 }
 .gd-form-group {
-  margin-bottom: 1rem;
+  margin-bottom: 1.125rem;
 }
-.gd-form-group label {
+.gd-form-group > label {
   display: block;
   margin-bottom: 0.375rem;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-secondary);
 }
-.gd-form-group input[type='text'] {
+.gd-form-group input[type='text'],
+.gd-form-group textarea {
   width: 100%;
-  height: 38px;
-  padding: 0 0.625rem;
+  padding: 0.5rem 0.625rem;
   font-size: 0.875rem;
   font-family: inherit;
   color: var(--text-primary);
@@ -278,33 +360,100 @@
   border-radius: 8px;
   box-sizing: border-box;
 }
-.gd-form-group input[type='text']:focus {
+.gd-form-group input[type='text']:focus,
+.gd-form-group textarea:focus {
   outline: none;
   border-color: var(--primary-color);
 }
-.gd-form-group input[type='file'] {
-  width: 100%;
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
+.gd-form-group textarea {
+  resize: vertical;
+  min-height: 48px;
 }
-.gd-radio-row {
-  display: flex;
-  gap: 1.25rem;
-}
-.gd-radio {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-weight: 500;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-.gd-current-file {
+.gd-hint {
   margin: 0 0 0.5rem;
   font-size: 0.8125rem;
   color: var(--text-tertiary);
 }
+
+/* Динамические строки ссылок */
+.gd-link-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.gd-row-remove {
+  flex-shrink: 0;
+  width: 32px;
+  height: 34px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.gd-row-remove:hover {
+  border-color: var(--danger-color);
+  color: var(--danger-color);
+}
+.gd-add-row {
+  margin-top: 0.25rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--primary-color);
+  background: none;
+  border: 1px dashed var(--border-color-dark);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.gd-add-row:hover {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+}
+
+/* Список файлов в модалке */
+.gd-file-list {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.gd-file-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+}
+.gd-file-item.is-new {
+  border-style: dashed;
+}
+.gd-file-item.is-removed {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.gd-file-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.gd-file-item.is-removed .gd-file-name {
+  text-decoration: line-through;
+}
+.gd-file-picker input[type='file'] {
+  width: 100%;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
 .gd-modal-footer {
   display: flex;
   justify-content: flex-end;
