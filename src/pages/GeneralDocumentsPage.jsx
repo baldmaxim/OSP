@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
@@ -39,6 +39,17 @@ function formatDateShort(iso) {
   const yy = String(d.getFullYear()).slice(-2)
   return `${dd}.${mm}.${yy}`
 }
+// Мягкий бейдж типа файла по расширению (без внешних библиотек).
+function fileBadge(name) {
+  const ext = (String(name || '').split('.').pop() || '').toLowerCase()
+  if (ext === 'pdf') return { label: 'PDF', cls: 'badge-pdf' }
+  if (['doc', 'docx', 'rtf', 'odt'].includes(ext)) return { label: 'DOC', cls: 'badge-doc' }
+  if (['xls', 'xlsx', 'csv', 'ods'].includes(ext)) return { label: 'XLS', cls: 'badge-xls' }
+  if (['ppt', 'pptx', 'odp'].includes(ext)) return { label: 'PPT', cls: 'badge-ppt' }
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'heic'].includes(ext)) return { label: 'IMG', cls: 'badge-img' }
+  if (['zip', 'rar', '7z'].includes(ext)) return { label: 'ZIP', cls: 'badge-other' }
+  return { label: (ext || 'FILE').slice(0, 4).toUpperCase(), cls: 'badge-other' }
+}
 
 const EMPTY_FORM = { title: '', description: '', links: [], newFiles: [] }
 
@@ -57,6 +68,10 @@ export default function GeneralDocumentsPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [removeFileIds, setRemoveFileIds] = useState(() => new Set())
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [linkError, setLinkError] = useState('')
+  const [dragActive, setDragActive] = useState(false)
+  const fileInputRef = useRef(null)
 
   // Загрузка: карточки + ссылки (join) + файлы из s3_documents (по owner).
   const fetchDocs = useCallback(async () => {
@@ -85,14 +100,17 @@ export default function GeneralDocumentsPage() {
         }, {})
       }
 
-      setDocuments((docs || []).map(d => ({
+      const mapped = (docs || []).map(d => ({
         ...d,
         links: [...(d.general_document_links || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
         files: filesByDoc[d.id] || [],
-      })))
+      }))
+      setDocuments(mapped)
+      return mapped
     } catch (err) {
       console.error('Ошибка загрузки документов:', err.message)
       alert('Ошибка загрузки документов: ' + err.message)
+      return []
     } finally {
       setLoading(false)
     }
@@ -123,10 +141,12 @@ export default function GeneralDocumentsPage() {
   }
 
   // ── Модалка ────────────────────────────────────────────────────────────
+  const clearErrors = () => { setFormError(''); setLinkError('') }
   const openAdd = () => {
     setEditing(null)
     setForm({ ...EMPTY_FORM, links: [] })
     setRemoveFileIds(new Set())
+    clearErrors()
     setShowModal(true)
   }
   const openEdit = (doc) => {
@@ -138,11 +158,35 @@ export default function GeneralDocumentsPage() {
       newFiles: [],
     })
     setRemoveFileIds(new Set())
+    clearErrors()
     setShowModal(true)
   }
   const closeModal = () => {
     if (saving) return
     setShowModal(false); setEditing(null); setForm(EMPTY_FORM); setRemoveFileIds(new Set())
+    clearErrors(); setDragActive(false)
+  }
+
+  // Закрытие по Escape (не мешаем во время сохранения).
+  useEffect(() => {
+    if (!showModal) return
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !saving) {
+        setShowModal(false); setEditing(null); setForm(EMPTY_FORM); setRemoveFileIds(new Set())
+        setFormError(''); setLinkError(''); setDragActive(false)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [showModal, saving])
+
+  const openFileDialog = () => fileInputRef.current?.click()
+  const onDropZoneDragOver = (e) => { e.preventDefault(); if (!dragActive) setDragActive(true) }
+  const onDropZoneDragLeave = (e) => { e.preventDefault(); setDragActive(false) }
+  const onDropZoneDrop = (e) => {
+    e.preventDefault()
+    setDragActive(false)
+    if (e.dataTransfer?.files?.length) addNewFiles(e.dataTransfer.files)
   }
 
   const addLinkRow = () => setForm(f => ({ ...f, links: [...f.links, { title: '', url: '' }] }))
@@ -180,25 +224,29 @@ export default function GeneralDocumentsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    clearErrors()
     const title = form.title.trim()
-    if (!title) { alert('Укажите наименование документа'); return }
+    if (!title) { setFormError('Укажите наименование документа'); return }
 
-    // Собираем и валидируем ссылки.
-    const validLinks = form.links
-      .map(l => ({ title: (l.title || '').trim(), url: normalizeUrl(l.url) }))
-      .filter(l => l.url)
-    for (const l of validLinks) {
-      if (!isValidUrl(l.url)) { alert(`Некорректная ссылка: ${l.url}`); return }
+    // Валидация ссылок: игнорируем полностью пустые строки; ловим «есть название, но нет URL»
+    // и некорректные URL. Ошибку показываем рядом с блоком ссылок.
+    const nonEmpty = form.links
+      .map(l => ({ title: (l.title || '').trim(), rawUrl: (l.url || '').trim() }))
+      .filter(r => r.title || r.rawUrl)
+    for (const r of nonEmpty) {
+      if (!r.rawUrl) { setLinkError('Для заполненного названия укажите ссылку (URL)'); return }
+      if (!isValidUrl(normalizeUrl(r.rawUrl))) { setLinkError(`Укажите корректную ссылку: ${r.rawUrl}`); return }
     }
+    const validLinks = nonEmpty.map(r => ({ title: r.title, url: normalizeUrl(r.rawUrl) }))
 
     const keptExisting = (editing?.files || []).filter(f => !removeFileIds.has(f.id))
-    const totalMaterials = validLinks.length + form.newFiles.length + keptExisting.length
-    if (totalMaterials === 0) {
-      alert('Добавьте хотя бы одну ссылку или файл')
+    if (validLinks.length + form.newFiles.length + keptExisting.length === 0) {
+      setFormError('Добавьте хотя бы одну ссылку или файл')
       return
     }
 
     setSaving(true)
+    const problems = []
     try {
       let docId
       if (editing) {
@@ -226,7 +274,7 @@ export default function GeneralDocumentsPage() {
         for (const f of toRemove) {
           try { await deleteDocument(f) } catch { failedDel.push(f.file_name) }
         }
-        if (failedDel.length) alert('Не удалось удалить файлы: ' + failedDel.join(', '))
+        if (failedDel.length) problems.push('не удалось удалить: ' + failedDel.join(', '))
       } else {
         const { data: created, error } = await supabase.from('general_documents')
           .insert({
@@ -249,23 +297,37 @@ export default function GeneralDocumentsPage() {
       }
 
       // Загрузка новых файлов (частичный сбой — сообщаем, но не откатываем всё).
-      const failedUp = []
+      const failedNames = []
       for (const file of form.newFiles) {
         try {
           await uploadFile({ file, ownerType: 'general_document', ownerId: docId })
         } catch (upErr) {
           console.error('Файл не загружен:', file.name, upErr.message)
-          failedUp.push(file.name)
+          failedNames.push(file.name)
         }
       }
+      if (failedNames.length) problems.push('не удалось загрузить: ' + failedNames.join(', '))
 
-      await fetchDocs()
-      if (failedUp.length) {
-        alert('Документ сохранён, но часть файлов не загрузилась: ' + failedUp.join(', ') + '. Откройте документ и попробуйте добавить их снова.')
+      const docs = await fetchDocs()
+
+      if (problems.length) {
+        // Оставляем модалку открытой в режиме редактирования сохранённого документа,
+        // чтобы можно было повторить проблемные операции без дублей.
+        const saved = docs.find(d => d.id === docId) || editing
+        setEditing(saved)
+        setForm({
+          title,
+          description: form.description,
+          links: (saved?.links || validLinks).map(l => ({ title: l.title || '', url: l.url || '' })),
+          newFiles: form.newFiles.filter(f => failedNames.includes(f.name)),
+        })
+        setRemoveFileIds(new Set())
+        setFormError('Часть операций не выполнена (' + problems.join('; ') + '). Проверьте и сохраните снова.')
+        return
       }
       closeModal()
     } catch (err) {
-      alert('Ошибка сохранения: ' + err.message)
+      setFormError('Не удалось сохранить документ: ' + err.message)
     } finally {
       setSaving(false)
     }
@@ -419,103 +481,153 @@ export default function GeneralDocumentsPage() {
 
       {showModal && (
         <div className="gd-modal-overlay" onClick={closeModal}>
-          <div className="gd-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="gd-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="gd-modal-header">
-              <h3>{editing ? 'Редактировать документ' : 'Добавить документ'}</h3>
+              <div className="gd-modal-heading">
+                <h3>{editing ? 'Редактировать документ' : 'Добавить документ'}</h3>
+                <p className="gd-modal-subtitle">
+                  {editing
+                    ? 'Измените название, ссылки и прикреплённые файлы'
+                    : 'Добавьте название, ссылки и прикреплённые файлы'}
+                </p>
+              </div>
               <button className="gd-modal-close" onClick={closeModal} aria-label="Закрыть">×</button>
             </div>
+
             <form onSubmit={handleSubmit}>
-              <div className="gd-form-group">
-                <label>Наименование документа *</label>
-                <input
-                  type="text"
-                  value={form.title}
-                  onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))}
-                  placeholder="Например: Обучение Excel и Revit"
-                  autoFocus
-                />
-              </div>
-
-              {/* Ссылки */}
-              <div className="gd-form-group">
-                <label>Ссылки</label>
-                {form.links.length === 0 && <p className="gd-hint">Ссылки не добавлены</p>}
-                {form.links.map((l, i) => (
-                  <div className="gd-link-row" key={i}>
+              <div className="gd-modal-body">
+                {/* Основная информация */}
+                <section className="gd-section">
+                  <h4 className="gd-section-title">Основная информация</h4>
+                  <div className="gd-form-group">
+                    <label htmlFor="gd-title">Наименование документа *</label>
                     <input
+                      id="gd-title"
                       type="text"
-                      className="gd-link-title"
-                      value={l.title}
-                      onChange={(e) => updateLinkRow(i, 'title', e.target.value)}
-                      placeholder="Название ссылки"
+                      value={form.title}
+                      onChange={(e) => { setForm(f => ({ ...f, title: e.target.value })); if (formError) setFormError('') }}
+                      placeholder="Например: Обучение Excel и Revit"
+                      autoFocus
                     />
-                    <input
-                      type="text"
-                      className="gd-link-url"
-                      value={l.url}
-                      onChange={(e) => updateLinkRow(i, 'url', e.target.value)}
-                      placeholder="https://..."
-                    />
-                    <button type="button" className="gd-row-remove" onClick={() => removeLinkRow(i)} title="Удалить ссылку">×</button>
                   </div>
-                ))}
-                <button type="button" className="gd-add-row" onClick={addLinkRow}>+ Добавить ссылку</button>
-              </div>
+                  <div className="gd-form-group">
+                    <label htmlFor="gd-desc">Описание / примечание</label>
+                    <textarea
+                      id="gd-desc"
+                      className="gd-textarea"
+                      value={form.description}
+                      onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Краткое описание — для кого и зачем этот документ (необязательно)"
+                    />
+                  </div>
+                </section>
 
-              {/* Файлы */}
-              <div className="gd-form-group">
-                <label>Файлы</label>
+                {/* Ссылки */}
+                <section className="gd-section">
+                  <h4 className="gd-section-title">Ссылки</h4>
+                  {form.links.length === 0 && <p className="gd-hint">Ссылки пока не добавлены</p>}
+                  {form.links.map((l, i) => (
+                    <div className="gd-link-row" key={i}>
+                      <input
+                        type="text"
+                        className="gd-link-title"
+                        value={l.title}
+                        onChange={(e) => { updateLinkRow(i, 'title', e.target.value); if (linkError) setLinkError('') }}
+                        placeholder="Название ссылки"
+                      />
+                      <input
+                        type="text"
+                        className="gd-link-url"
+                        value={l.url}
+                        onChange={(e) => { updateLinkRow(i, 'url', e.target.value); if (linkError) setLinkError('') }}
+                        placeholder="https://..."
+                      />
+                      <button type="button" className="gd-row-remove" onClick={() => removeLinkRow(i)} title="Удалить ссылку" aria-label="Удалить ссылку">×</button>
+                    </div>
+                  ))}
+                  {linkError && <p className="gd-inline-error">{linkError}</p>}
+                  <button type="button" className="gd-add-row" onClick={addLinkRow}>+ Добавить ссылку</button>
+                </section>
 
+                {/* Файлы — зона загрузки */}
+                <section className="gd-section">
+                  <h4 className="gd-section-title">Файлы</h4>
+                  <div
+                    className={`gd-dropzone ${dragActive ? 'is-drag' : ''}`}
+                    onClick={openFileDialog}
+                    onDragOver={onDropZoneDragOver}
+                    onDragLeave={onDropZoneDragLeave}
+                    onDrop={onDropZoneDrop}
+                  >
+                    <span className="gd-dropzone-icon" aria-hidden>📎</span>
+                    <div className="gd-dropzone-main">Перетащите файлы сюда</div>
+                    <div className="gd-dropzone-sub">или выберите их на компьютере</div>
+                    <button type="button" className="gd-dropzone-btn" onClick={(e) => { e.stopPropagation(); openFileDialog() }}>Выбрать файлы</button>
+                    <div className="gd-dropzone-hint">PDF, DOCX, XLSX и другие документы</div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="gd-file-input-hidden"
+                      onChange={(e) => { addNewFiles(e.target.files); e.target.value = '' }}
+                    />
+                  </div>
+
+                  {form.newFiles.length > 0 && (
+                    <div className="gd-file-block">
+                      <div className="gd-file-block-title">Новые файлы</div>
+                      <ul className="gd-file-list">
+                        {form.newFiles.map((f, i) => {
+                          const b = fileBadge(f.name)
+                          return (
+                            <li key={i} className="gd-file-item is-new">
+                              <span className={`gd-file-badge ${b.cls}`}>{b.label}</span>
+                              <span className="gd-file-name" title={f.name}>{f.name}</span>
+                              <span className="gd-file-size">{formatSize(f.size)}</span>
+                              <button type="button" className="gd-file-action gd-file-remove" onClick={() => removeNewFile(i)} title="Убрать" aria-label="Убрать файл">Убрать</button>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                </section>
+
+                {/* Прикреплённые файлы (режим редактирования) */}
                 {editing && (editing.files || []).length > 0 && (
-                  <ul className="gd-file-list">
-                    {editing.files.map(f => {
-                      const marked = removeFileIds.has(f.id)
-                      return (
-                        <li key={f.id} className={`gd-file-item ${marked ? 'is-removed' : ''}`}>
-                          <span className="gd-mat-icon" aria-hidden>📎</span>
-                          <span className="gd-file-name">{f.file_name}</span>
-                          {f.size_bytes != null && <span className="gd-mat-size">{formatSize(f.size_bytes)}</span>}
-                          <button type="button" className="gd-row-remove" onClick={() => toggleRemoveExistingFile(f.id)} title={marked ? 'Отменить удаление' : 'Удалить файл'}>
-                            {marked ? '↩' : '×'}
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                  <section className="gd-section">
+                    <h4 className="gd-section-title">Прикреплённые файлы</h4>
+                    <ul className="gd-file-list">
+                      {editing.files.map(f => {
+                        const b = fileBadge(f.file_name)
+                        const marked = removeFileIds.has(f.id)
+                        return (
+                          <li key={f.id} className={`gd-file-item ${marked ? 'is-removed' : ''}`}>
+                            <span className={`gd-file-badge ${b.cls}`}>{b.label}</span>
+                            <span className="gd-file-name" title={f.file_name}>{f.file_name}</span>
+                            {f.size_bytes != null && <span className="gd-file-size">{formatSize(f.size_bytes)}</span>}
+                            <button type="button" className="gd-file-action" onClick={() => handleDownload(f)} title="Скачать" aria-label="Скачать файл">Скачать</button>
+                            <button
+                              type="button"
+                              className={`gd-file-action ${marked ? '' : 'gd-file-remove'}`}
+                              onClick={() => toggleRemoveExistingFile(f.id)}
+                              title={marked ? 'Вернуть' : 'Удалить'}
+                              aria-label={marked ? 'Вернуть файл' : 'Удалить файл'}
+                            >{marked ? 'Вернуть' : 'Удалить'}</button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </section>
                 )}
-
-                {form.newFiles.length > 0 && (
-                  <ul className="gd-file-list">
-                    {form.newFiles.map((f, i) => (
-                      <li key={i} className="gd-file-item is-new">
-                        <span className="gd-mat-icon" aria-hidden>📎</span>
-                        <span className="gd-file-name">{f.name}</span>
-                        <span className="gd-mat-size">{formatSize(f.size)}</span>
-                        <button type="button" className="gd-row-remove" onClick={() => removeNewFile(i)} title="Убрать из списка">×</button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                <label className="gd-file-picker">
-                  <input type="file" multiple onChange={(e) => { addNewFiles(e.target.files); e.target.value = '' }} />
-                </label>
-              </div>
-
-              {/* Описание */}
-              <div className="gd-form-group">
-                <label>Описание / примечание</label>
-                <textarea
-                  rows={2}
-                  value={form.description}
-                  onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))}
-                  placeholder="Необязательно"
-                />
               </div>
 
               <div className="gd-modal-footer">
-                <button type="button" className="btn-secondary" onClick={closeModal} disabled={saving}>Отмена</button>
-                <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Сохранение...' : 'Сохранить'}</button>
+                {formError && <span className="gd-form-error">{formError}</span>}
+                <div className="gd-footer-actions">
+                  <button type="button" className="btn-secondary" onClick={closeModal} disabled={saving}>Отмена</button>
+                  <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</button>
+                </div>
               </div>
             </form>
           </div>
