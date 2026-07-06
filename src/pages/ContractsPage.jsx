@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
 import FilterDropdown from '../components/FilterDropdown'
+import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import '../components/ContractRegistry.css'
 
 // Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
@@ -873,7 +874,7 @@ function ContractRegistry() {
 
   const handleSelectDepartment = (dept) => {
     setDepartment(dept)
-    setActiveTab('new_request')
+    setActiveTab('all')
     setContracts([])
   }
 
@@ -1200,8 +1201,9 @@ function ContractRegistry() {
                             {noteSavingId === contract.id && <span className="ce-saving">Сохранение…</span>}
                           </div>
                           {canEditContracts && !isDeletedTab ? (
-                            <textarea
+                            <AutoGrowTextarea
                               className="ce-note"
+                              minHeight={68}
                               defaultValue={contract.notes || ''}
                               placeholder="Добавьте примечание по договору"
                               onBlur={(e) => handleSaveNote(contract.id, e.target.value)}

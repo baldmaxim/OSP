@@ -1053,7 +1053,9 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   box-sizing: border-box;
-  resize: vertical;
+  /* Авторасширение (AutoGrowTextarea): высота задаётся из JS, без скролла/ручного ресайза */
+  resize: none;
+  overflow: hidden;
 }
 .ce-note:focus { outline: none; border-color: var(--primary-color); }
 .ce-note-ro {
