@@ -148,6 +148,8 @@ function ContractRegistry() {
   const [formAttachments, setFormAttachments] = useState(new Set())
   const [availableAttachments, setAvailableAttachments] = useState([])
   const [contractAttachmentsMap, setContractAttachmentsMap] = useState({})
+  // Задача 419: сопутствующие приложения договора (ручные): id → массив строк
+  const [contractAppendicesMap, setContractAppendicesMap] = useState({})
 
   // Task 188: dropdown состояние для приложений в форме
   const [attachmentsDropdownOpenForm, setAttachmentsDropdownOpenForm] = useState(false)
@@ -260,8 +262,24 @@ function ContractRegistry() {
         }
         Object.values(map).forEach(arr => arr.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)))
         setContractAttachmentsMap(map)
+
+        // Задача 419: сопутствующие приложения договора (ручные строки)
+        const { data: apRows, error: apErr } = await supabase
+          .from('contract_appendices')
+          .select('*')
+          .in('contract_id', ids)
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true })
+        if (apErr) throw apErr
+        const apMap = {}
+        for (const r of apRows || []) {
+          if (!apMap[r.contract_id]) apMap[r.contract_id] = []
+          apMap[r.contract_id].push(r)
+        }
+        setContractAppendicesMap(apMap)
       } else {
         setContractAttachmentsMap({})
+        setContractAppendicesMap({})
       }
     } catch (error) {
       console.error('Ошибка загрузки договоров:', error.message)
@@ -381,6 +399,67 @@ function ContractRegistry() {
     } catch (err) {
       console.error('Ошибка сохранения комментария:', err.message)
       alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // ── Задача 419: сопутствующие приложения договора (ручные строки) ──────────
+  const nextAppendixNumber = (list) => {
+    const nums = (list || [])
+      .map(a => parseInt(a.appendix_number, 10))
+      .filter(n => Number.isFinite(n))
+    return String(nums.length ? Math.max(...nums) + 1 : 1)
+  }
+
+  const handleAddAppendix = async (contractId) => {
+    const list = contractAppendicesMap[contractId] || []
+    const number = nextAppendixNumber(list)
+    try {
+      const { data, error } = await supabase
+        .from('contract_appendices')
+        .insert([{ contract_id: contractId, appendix_number: number, name: '', responsible: '', status: '', sort_order: list.length }])
+        .select('*')
+        .single()
+      if (error) throw error
+      setContractAppendicesMap(prev => ({ ...prev, [contractId]: [...(prev[contractId] || []), data] }))
+    } catch (err) {
+      console.error('Ошибка добавления приложения:', err.message)
+      alert('Не удалось добавить приложение: ' + err.message)
+    }
+  }
+
+  const handleUpdateAppendix = async (contractId, appendixId, field, rawValue) => {
+    const value = (rawValue ?? '').toString()
+    const ap = (contractAppendicesMap[contractId] || []).find(a => a.id === appendixId)
+    if (!ap || (ap[field] || '') === value) return
+    // Оптимистично обновляем локально
+    setContractAppendicesMap(prev => ({
+      ...prev,
+      [contractId]: (prev[contractId] || []).map(a => a.id === appendixId ? { ...a, [field]: value } : a),
+    }))
+    try {
+      const { error } = await supabase
+        .from('contract_appendices')
+        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .eq('id', appendixId)
+      if (error) throw error
+    } catch (err) {
+      console.error('Ошибка сохранения приложения:', err.message)
+      alert('Ошибка сохранения приложения: ' + err.message)
+    }
+  }
+
+  const handleDeleteAppendix = async (contractId, appendixId) => {
+    if (!window.confirm('Удалить это приложение?')) return
+    try {
+      const { error } = await supabase.from('contract_appendices').delete().eq('id', appendixId)
+      if (error) throw error
+      setContractAppendicesMap(prev => ({
+        ...prev,
+        [contractId]: (prev[contractId] || []).filter(a => a.id !== appendixId),
+      }))
+    } catch (err) {
+      console.error('Ошибка удаления приложения:', err.message)
+      alert('Не удалось удалить приложение: ' + err.message)
     }
   }
 
@@ -1065,6 +1144,7 @@ function ContractRegistry() {
             ) : (
               pagedContracts.map((contract, index) => {
                 const items = contractAttachmentsMap[contract.id] || []
+                const appendices = contractAppendicesMap[contract.id] || []
                 const isExpanded = expandedContractId === contract.id
                 const toggleExpand = () => setExpandedContractId(isExpanded ? null : contract.id)
                 const overdue = !isDeletedTab && isOverdue(contract)
@@ -1215,17 +1295,101 @@ function ContractRegistry() {
                           )}
                         </section>
 
-                        {/* Блок 2: Сопутствующие приложения */}
+                        {/* Блок 2: Сопутствующие приложения (ручной ввод, task 419) */}
                         <section className="ce-block">
                           <div className="ce-block-title">
                             Сопутствующие приложения
-                            <span className="ce-count">{items.length === 0 ? 'нет приложений' : `${items.length} шт.`}</span>
+                            {appendices.length > 0 && <span className="ce-count">{appendices.length} шт.</span>}
+                            {canEditContracts && !isDeletedTab && (
+                              <button type="button" className="ce-add-appendix" onClick={() => handleAddAppendix(contract.id)}>
+                                + Добавить приложение
+                              </button>
+                            )}
                           </div>
-                          {items.length === 0 ? (
+                          {appendices.length === 0 ? (
                             <div className="ce-empty">
-                              Для договора не выбрано ни одного приложения. Откройте редактирование и отметьте нужные.
+                              Приложения не добавлены.{canEditContracts && !isDeletedTab ? ' Нажмите «+ Добавить приложение».' : ''}
                             </div>
                           ) : (
+                            <div className="ce-appendix-wrap">
+                              <table className="ce-appendix-table">
+                                <thead>
+                                  <tr>
+                                    <th className="ce-ap-num">№</th>
+                                    <th>Наименование приложения</th>
+                                    <th>Ответственный</th>
+                                    <th className="ce-ap-status">Статус</th>
+                                    {canEditContracts && !isDeletedTab && <th className="ce-ap-actions" aria-label="Действия"></th>}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {appendices.map(ap => {
+                                    const ro = !canEditContracts || isDeletedTab
+                                    return (
+                                      <tr key={ap.id}>
+                                        <td className="ce-ap-num">
+                                          <input
+                                            className="ce-ap-input ce-ap-input-num"
+                                            defaultValue={ap.appendix_number || ''}
+                                            readOnly={ro}
+                                            title="№ приложения (можно изменить)"
+                                            onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'appendix_number', e.target.value)}
+                                          />
+                                        </td>
+                                        <td>
+                                          <input
+                                            className="ce-ap-input"
+                                            defaultValue={ap.name || ''}
+                                            placeholder="Наименование приложения"
+                                            readOnly={ro}
+                                            onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'name', e.target.value)}
+                                          />
+                                        </td>
+                                        <td>
+                                          <input
+                                            className="ce-ap-input"
+                                            defaultValue={ap.responsible || ''}
+                                            placeholder="Ответственный"
+                                            readOnly={ro}
+                                            onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'responsible', e.target.value)}
+                                          />
+                                        </td>
+                                        <td className="ce-ap-status">
+                                          <input
+                                            className="ce-ap-input"
+                                            defaultValue={ap.status || ''}
+                                            placeholder="Статус"
+                                            readOnly={ro}
+                                            onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'status', e.target.value)}
+                                          />
+                                        </td>
+                                        {canEditContracts && !isDeletedTab && (
+                                          <td className="ce-ap-actions">
+                                            <button
+                                              type="button"
+                                              className="ce-ap-del"
+                                              title="Удалить приложение"
+                                              aria-label="Удалить приложение"
+                                              onClick={() => handleDeleteAppendix(contract.id, ap.id)}
+                                            >×</button>
+                                          </td>
+                                        )}
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </section>
+
+                        {/* Блок 3: Приложения из объекта (привязанные в модалке) — если есть */}
+                        {items.length > 0 && (
+                          <section className="ce-block">
+                            <div className="ce-block-title">
+                              Приложения из объекта
+                              <span className="ce-count">{items.length} шт.</span>
+                            </div>
                             <ul className="cap-list">
                               {items.map(a => (
                                 <li key={a.ca_id} className="cap-item">
@@ -1258,15 +1422,15 @@ function ContractRegistry() {
                                 </li>
                               ))}
                             </ul>
-                          )}
-                        </section>
+                          </section>
+                        )}
 
                         {/* Действия раскрытого блока */}
                         <div className="ce-actions">
                           <button type="button" className="ce-open-card" onClick={() => navigate(`/contracts/${contract.id}`)}>
                             Открыть карточку договора
                           </button>
-                          {canEditContracts && !isDeletedTab && items.length === 0 && (
+                          {canEditContracts && !isDeletedTab && (
                             <button type="button" className="ce-edit-link" onClick={() => handleEditContract(contract)}>
                               Редактировать договор
                             </button>
