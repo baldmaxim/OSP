@@ -46,6 +46,7 @@ const TABS = [
   { key: 'all', label: 'Все заявки' },
   { key: 'in_work', label: 'В работе' },
   { key: 'completed', label: 'Завершено' },
+  { key: 'deleted', label: 'Удаленные' },
 ]
 
 function formatShortDate(iso) {
@@ -213,7 +214,7 @@ function AmountCellInput({ value, disabled, onSave }) {
 }
 
 function DcRequestsPage() {
-  const { userProfile, canEdit } = useRole()
+  const { userProfile, canEdit, isAdmin } = useRole()
   // task 333: гейт add/edit/delete и inline-editing на этой странице.
   // Сам факт показа страницы контролируется EmployeeLayout (по App.jsx).
   const canEditDc = canEdit('dc_requests')
@@ -538,10 +539,37 @@ function DcRequestsPage() {
     }
   }
 
+  // Soft-delete: заявка уходит во вкладку «Удаленные» (документы/задачи сохраняются).
   const handleDelete = async (id) => {
-    if (!window.confirm('Удалить заявку? Все её задачи и документы также будут удалены.')) return
+    if (!window.confirm('Переместить заявку в «Удаленные»?')) return
     try {
-      // Сначала S3-документы заявки удаляем явно (нет FK-каскада с s3_documents).
+      const { error } = await supabase.from('dc_requests')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+      fetchRequests()
+    } catch (err) {
+      alert('Ошибка удаления: ' + (err.message || err))
+    }
+  }
+
+  // Восстановление из «Удаленных» (доступно редактору).
+  const handleRestore = async (id) => {
+    try {
+      const { error } = await supabase.from('dc_requests')
+        .update({ deleted_at: null })
+        .eq('id', id)
+      if (error) throw error
+      fetchRequests()
+    } catch (err) {
+      alert('Ошибка восстановления: ' + (err.message || err))
+    }
+  }
+
+  // Безвозвратное удаление — только администратор. Чистим S3-документы (нет FK-каскада).
+  const handleHardDelete = async (id) => {
+    if (!window.confirm('Удалить заявку безвозвратно? Все её задачи и документы также будут удалены.')) return
+    try {
       const docs = docsByReq.get(id) || []
       for (const d of docs) {
         try { await deleteDocument(d) } catch { /* best effort */ }
@@ -704,9 +732,13 @@ function DcRequestsPage() {
     }
   }
 
-  // Фильтрация: таб → объект → контрагент → ответственный → поиск.
+  const isDeletedTab = activeTab === 'deleted'
+
+  // Фильтрация: таб (soft-delete) → объект → контрагент → ответственный → поиск.
   const filtered = requests
-    .filter(r => activeTab === 'all' || (r.status || 'in_work') === activeTab)
+    .filter(r => isDeletedTab
+      ? r.deleted_at != null
+      : (r.deleted_at == null && (activeTab === 'all' || (r.status || 'in_work') === activeTab)))
     .filter(r => !filterObjectId || r.object_id === filterObjectId)
     .filter(r => !filterCounterpartyId || r.counterparty_id === filterCounterpartyId) // task 371
     .filter(r => !filterResponsibleId || r.responsible_contact_id === filterResponsibleId)
@@ -722,9 +754,10 @@ function DcRequestsPage() {
     })
 
   const counts = {
-    all: requests.length,
-    in_work: requests.filter(r => (r.status || 'in_work') === 'in_work').length,
-    completed: requests.filter(r => r.status === 'completed').length,
+    all: requests.filter(r => r.deleted_at == null).length,
+    in_work: requests.filter(r => r.deleted_at == null && (r.status || 'in_work') === 'in_work').length,
+    completed: requests.filter(r => r.deleted_at == null && r.status === 'completed').length,
+    deleted: requests.filter(r => r.deleted_at != null).length,
   }
 
   // В таблице contacts один сотрудник может встречаться несколько раз
@@ -941,7 +974,7 @@ function DcRequestsPage() {
         {TABS.map(tab => (
           <button
             key={tab.key}
-            className={`status-tab ${activeTab === tab.key ? 'active' : ''}`}
+            className={`status-tab ${activeTab === tab.key ? 'active' : ''} ${tab.key === 'deleted' ? 'tab-deleted' : ''}`}
             onClick={() => setActiveTab(tab.key)}
           >
             {tab.label}
@@ -1062,7 +1095,7 @@ function DcRequestsPage() {
                     : null
 
                   return (
-                    <tr key={req.id}>
+                    <tr key={req.id} className={req.deleted_at ? 'row-deleted' : ''}>
                       <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
                       <td>
                         <div className="dcr-object-name">
@@ -1185,8 +1218,8 @@ function DcRequestsPage() {
                           <button
                             type="button"
                             className={`dcr-status-chip ${statusOpt?.className || ''}${isStatusOpen ? ' is-open' : ''}`}
-                            onClick={() => canEditDc && setStatusPopoverFor(isStatusOpen ? null : req.id)}
-                            disabled={!canEditDc}
+                            onClick={() => canEditDc && !isDeletedTab && setStatusPopoverFor(isStatusOpen ? null : req.id)}
+                            disabled={!canEditDc || isDeletedTab}
                             aria-haspopup="listbox"
                             aria-expanded={isStatusOpen}
                           >
@@ -1316,12 +1349,21 @@ function DcRequestsPage() {
                         )}
                       </td>
                       <td className="actions-cell">
-                        {canEditDc && (
+                        {isDeletedTab ? (
+                          <>
+                            {canEditDc && (
+                              <button className="btn-icon btn-restore" onClick={() => handleRestore(req.id)} title="Восстановить">↩</button>
+                            )}
+                            {isAdmin && (
+                              <button className="btn-icon btn-delete" onClick={() => handleHardDelete(req.id)} title="Удалить безвозвратно (админ)">🗑️</button>
+                            )}
+                          </>
+                        ) : canEditDc ? (
                           <>
                             <button className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать">✏️</button>
                             <button className="btn-icon btn-delete" onClick={() => handleDelete(req.id)} title="Удалить">🗑️</button>
                           </>
-                        )}
+                        ) : null}
                       </td>
                     </tr>
                   )

@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   amount_after  NUMERIC(14, 2),
   material_type TEXT CHECK (material_type IN ('tolling', 'realization')),
   created_by_name TEXT,
+  deleted_at TIMESTAMPTZ,                    -- soft-delete: заявка во вкладке «Удаленные»
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

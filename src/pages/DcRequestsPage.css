@@ -1913,6 +1913,11 @@
   color: #fff;
 }
 
+/* Удалённая заявка (вкладка «Удаленные») — приглушаем визуально */
+.dc-requests-page tr.row-deleted {
+  opacity: 0.72;
+}
+
 /* ===== Тоггл «Задачи: N/M» (task 307) ===== */
 .dcr-tasks-toggle {
   display: inline-flex;
