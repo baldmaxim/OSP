@@ -71,6 +71,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [responsibleContacts, setResponsibleContacts] = useState([])
   // Ручная замена «Ответственного по тендерам» (app_settings): { week, name } | null
   const [responsibleOverride, setResponsibleOverride] = useState(null)
+  const [respMenuOpen, setRespMenuOpen] = useState(false)
   // task 393: документы «ВОРы и РД» (S3, категория 'vor')
   const [vorDocsModalTenderId, setVorDocsModalTenderId] = useState(null)
   const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
@@ -1404,6 +1405,19 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     return () => { alive = false }
   }, [])
 
+  // Закрытие мини-меню выбора ответственного (клик вне / Escape)
+  useEffect(() => {
+    if (!respMenuOpen) return
+    const onDown = (e) => { if (!e.target.closest('.tender-resp-chip-wrap')) setRespMenuOpen(false) }
+    const onKey = (e) => { if (e.key === 'Escape') setRespMenuOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [respMenuOpen])
+
   const currentWeek = weekKey(new Date())
   const overrideActive = !!(responsibleOverride && responsibleOverride.week === currentWeek && responsibleOverride.name)
   const currentResponsible = overrideActive ? responsibleOverride.name : baseResponsible(new Date())
@@ -1564,6 +1578,51 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       <div className="page-header page-header-tenders">
         <h2><span className="page-icon" aria-hidden>📋</span> {pageTitle}</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {!isMaterialsView && department === 'construction' && (
+            <div className="tender-resp-chip-wrap">
+              <button
+                type="button"
+                className={`tender-resp-chip${respMenuOpen ? ' is-open' : ''}${isAdmin ? ' is-clickable' : ''}`}
+                onClick={() => isAdmin && setRespMenuOpen(o => !o)}
+                title={`Ответственный по тендерам на этой неделе: ${currentResponsible}${isAdmin ? ' — нажмите, чтобы изменить' : ''}`}
+                aria-haspopup={isAdmin ? 'listbox' : undefined}
+                aria-expanded={isAdmin ? respMenuOpen : undefined}
+              >
+                <svg className="tender-resp-chip-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                <span className="tender-resp-chip-name">{currentResponsible}</span>
+                {overrideActive && <span className="tender-resp-chip-dot" title="ручная замена на неделю" aria-hidden />}
+                {isAdmin && <span className="tender-resp-chip-caret" aria-hidden>▾</span>}
+              </button>
+              {isAdmin && respMenuOpen && (
+                <div className="tender-resp-menu" role="listbox">
+                  <div className="tender-resp-menu-head">Ответственный на неделю</div>
+                  <button
+                    type="button"
+                    className={`tender-resp-menu-item${!overrideActive ? ' is-current' : ''}`}
+                    onClick={() => { handleClearResponsible(); setRespMenuOpen(false) }}
+                  >
+                    Авто (по расписанию)
+                    {!overrideActive && <span className="tender-resp-menu-check" aria-hidden>✓</span>}
+                  </button>
+                  {TENDER_RESPONSIBLES.map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      className={`tender-resp-menu-item${overrideActive && currentResponsible === n ? ' is-current' : ''}`}
+                      onClick={() => { handleSetResponsible(n); setRespMenuOpen(false) }}
+                    >
+                      {n}
+                      {overrideActive && currentResponsible === n && <span className="tender-resp-menu-check" aria-hidden>✓</span>}
+                    </button>
+                  ))}
+                  <div className="tender-resp-menu-hint">Меняется автоматически каждую неделю с понедельника. Ручная замена — до конца недели.</div>
+                </div>
+              )}
+            </div>
+          )}
           {!isMaterialsView && (
             <button
               type="button"
@@ -2718,36 +2777,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
             Редактируйте шаблон письма для запроса КП. Используйте переменные в фигурных скобках — они будут заменены реальными данными при создании тендера:
           </p>
-
-          {/* Ответственный по тендерам — авто-ротация по неделям, ручная замена только у админа */}
-          <div className="tender-responsible">
-            <div className="tender-responsible-line">
-              Ответственный по тендерам: <b>{currentResponsible}</b>
-              {overrideActive && <span className="tender-responsible-badge">ручная замена на неделю</span>}
-            </div>
-            {isAdmin ? (
-              <div className="tender-responsible-admin">
-                <label htmlFor="tender-responsible-select">Изменить (админ):</label>
-                <select
-                  id="tender-responsible-select"
-                  value={overrideActive ? currentResponsible : ''}
-                  onChange={(e) => (e.target.value ? handleSetResponsible(e.target.value) : handleClearResponsible())}
-                >
-                  <option value="">Авто (по расписанию)</option>
-                  {TENDER_RESPONSIBLES.map((n) => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-                <span className="tender-responsible-hint">
-                  Меняется автоматически каждую неделю с понедельника; ручная замена действует до конца текущей недели.
-                </span>
-              </div>
-            ) : (
-              <div className="tender-responsible-hint">
-                Назначается на неделю, меняется автоматически с понедельника.
-              </div>
-            )}
-          </div>
 
           <div style={{
             display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '1rem'
