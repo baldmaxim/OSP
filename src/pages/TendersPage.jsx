@@ -26,6 +26,40 @@ const filterSelectStyle = (isActive) => ({
   backgroundPosition: 'right 0.375rem center',
 })
 
+// task 419+: еженедельно ротируемый «Ответственный по тендерам».
+// Ротация считается детерминированно на фронте (без cron): якорь + число недель % N.
+// Ручная замена админом хранится в app_settings под ключом ниже (см. TendersPage).
+const TENDER_RESPONSIBLES = [
+  'Крюкова Юлия Денисовна',
+  'Архипов Антон Михайлович',
+  'Савостенко Владислав Андреевич',
+]
+// Понедельник недели, когда ответственна Крюкова (index 0). 2026-07-06 — текущая неделя.
+const ROTATION_ANCHOR_MONDAY = '2026-07-06'
+const RESPONSIBLE_OVERRIDE_KEY = 'tender_responsible_override'
+
+// Понедельник недели для даты (локальное время, 00:00).
+function mondayOf(dateInput) {
+  const d = new Date(dateInput)
+  d.setHours(0, 0, 0, 0)
+  const dow = (d.getDay() + 6) % 7 // 0=Пн … 6=Вс
+  d.setDate(d.getDate() - dow)
+  return d
+}
+// Ключ недели 'YYYY-MM-DD' (понедельник).
+function weekKey(dateInput) {
+  const m = mondayOf(dateInput)
+  const p = (x) => String(x).padStart(2, '0')
+  return `${m.getFullYear()}-${p(m.getMonth() + 1)}-${p(m.getDate())}`
+}
+// Ответственный по расписанию (без учёта ручной замены).
+function baseResponsible(dateInput) {
+  const anchor = mondayOf(ROTATION_ANCHOR_MONDAY)
+  const weeks = Math.round((mondayOf(dateInput) - anchor) / (7 * 24 * 60 * 60 * 1000))
+  const n = TENDER_RESPONSIBLES.length
+  return TENDER_RESPONSIBLES[((weeks % n) + n) % n]
+}
+
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
   const { scopedObjectId, userProfile, isAdmin, canEdit } = useRole()
@@ -35,6 +69,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
   const [responsibleContacts, setResponsibleContacts] = useState([])
+  // Ручная замена «Ответственного по тендерам» (app_settings): { week, name } | null
+  const [responsibleOverride, setResponsibleOverride] = useState(null)
   // task 393: документы «ВОРы и РД» (S3, категория 'vor')
   const [vorDocsModalTenderId, setVorDocsModalTenderId] = useState(null)
   const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
@@ -1349,6 +1385,57 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
+  // ── Ответственный по тендерам: авто-ротация + ручная замена (только админ) ──
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', RESPONSIBLE_OVERRIDE_KEY)
+        .maybeSingle()
+      if (!alive) return
+      try {
+        setResponsibleOverride(data?.value ? JSON.parse(data.value) : null)
+      } catch {
+        setResponsibleOverride(null)
+      }
+    })()
+    return () => { alive = false }
+  }, [])
+
+  const currentWeek = weekKey(new Date())
+  const overrideActive = !!(responsibleOverride && responsibleOverride.week === currentWeek && responsibleOverride.name)
+  const currentResponsible = overrideActive ? responsibleOverride.name : baseResponsible(new Date())
+
+  const persistResponsibleOverride = async (value) => {
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: RESPONSIBLE_OVERRIDE_KEY, value, updated_at: new Date().toISOString() })
+    if (error) throw error
+  }
+
+  const handleSetResponsible = async (name) => {
+    if (!isAdmin) return
+    const payload = { week: currentWeek, name }
+    try {
+      await persistResponsibleOverride(JSON.stringify(payload))
+      setResponsibleOverride(payload)
+    } catch (err) {
+      alert('Не удалось сохранить ответственного: ' + (err.message || err))
+    }
+  }
+
+  const handleClearResponsible = async () => {
+    if (!isAdmin) return
+    try {
+      await persistResponsibleOverride('')
+      setResponsibleOverride(null)
+    } catch (err) {
+      alert('Не удалось сбросить ответственного: ' + (err.message || err))
+    }
+  }
+
   const handleCopyLetter = async () => {
     const ok = await copyToClipboard(generatedLetter)
     if (ok) {
@@ -2631,6 +2718,37 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
             Редактируйте шаблон письма для запроса КП. Используйте переменные в фигурных скобках — они будут заменены реальными данными при создании тендера:
           </p>
+
+          {/* Ответственный по тендерам — авто-ротация по неделям, ручная замена только у админа */}
+          <div className="tender-responsible">
+            <div className="tender-responsible-line">
+              Ответственный по тендерам: <b>{currentResponsible}</b>
+              {overrideActive && <span className="tender-responsible-badge">ручная замена на неделю</span>}
+            </div>
+            {isAdmin ? (
+              <div className="tender-responsible-admin">
+                <label htmlFor="tender-responsible-select">Изменить (админ):</label>
+                <select
+                  id="tender-responsible-select"
+                  value={overrideActive ? currentResponsible : ''}
+                  onChange={(e) => (e.target.value ? handleSetResponsible(e.target.value) : handleClearResponsible())}
+                >
+                  <option value="">Авто (по расписанию)</option>
+                  {TENDER_RESPONSIBLES.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+                <span className="tender-responsible-hint">
+                  Меняется автоматически каждую неделю с понедельника; ручная замена действует до конца текущей недели.
+                </span>
+              </div>
+            ) : (
+              <div className="tender-responsible-hint">
+                Назначается на неделю, меняется автоматически с понедельника.
+              </div>
+            )}
+          </div>
+
           <div style={{
             display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginBottom: '1rem'
           }}>

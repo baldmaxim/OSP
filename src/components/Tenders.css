@@ -1157,3 +1157,60 @@
 .tenders-page .row-link.muted:hover {
   color: var(--primary-color);
 }
+
+/* Ответственный по тендерам (вкладка «Шаблон письма») — авто-ротация по неделям */
+.tender-responsible {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.875rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.tender-responsible-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+}
+.tender-responsible-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  background: var(--primary-light);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 0.125rem 0.5rem;
+}
+.tender-responsible-admin {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.tender-responsible-admin label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.tender-responsible-admin select {
+  height: 32px;
+  padding: 0 0.5rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.tender-responsible-admin select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+.tender-responsible-hint {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
