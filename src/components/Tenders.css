@@ -1176,12 +1176,13 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: default;
-  max-width: 260px;
+  max-width: 380px;
 }
 .tender-resp-chip.is-clickable { cursor: pointer; }
 .tender-resp-chip.is-clickable:hover { border-color: var(--primary-color); color: var(--text-primary); }
 .tender-resp-chip.is-open { border-color: var(--primary-color); color: var(--text-primary); }
 .tender-resp-chip-icon { flex-shrink: 0; color: var(--text-tertiary); }
+.tender-resp-chip-label { flex-shrink: 0; color: var(--text-secondary); }
 .tender-resp-chip-name {
   font-weight: 600;
   color: var(--text-primary);

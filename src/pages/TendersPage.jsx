@@ -1584,7 +1584,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 type="button"
                 className={`tender-resp-chip${respMenuOpen ? ' is-open' : ''}${isAdmin ? ' is-clickable' : ''}`}
                 onClick={() => isAdmin && setRespMenuOpen(o => !o)}
-                title={`Ответственный по тендерам на этой неделе: ${currentResponsible}${isAdmin ? ' — нажмите, чтобы изменить' : ''}`}
+                title={`Дежурный по тендерам на этой неделе: ${currentResponsible}${isAdmin ? ' — нажмите, чтобы изменить' : ''}`}
                 aria-haspopup={isAdmin ? 'listbox' : undefined}
                 aria-expanded={isAdmin ? respMenuOpen : undefined}
               >
@@ -1592,13 +1592,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                   <circle cx="12" cy="7" r="4" />
                 </svg>
+                <span className="tender-resp-chip-label">Дежурный по тендерам:</span>
                 <span className="tender-resp-chip-name">{currentResponsible}</span>
                 {overrideActive && <span className="tender-resp-chip-dot" title="ручная замена на неделю" aria-hidden />}
                 {isAdmin && <span className="tender-resp-chip-caret" aria-hidden>▾</span>}
               </button>
               {isAdmin && respMenuOpen && (
                 <div className="tender-resp-menu" role="listbox">
-                  <div className="tender-resp-menu-head">Ответственный на неделю</div>
+                  <div className="tender-resp-menu-head">Дежурный на неделю</div>
                   <button
                     type="button"
                     className={`tender-resp-menu-item${!overrideActive ? ' is-current' : ''}`}
