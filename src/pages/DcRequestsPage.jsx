@@ -82,6 +82,20 @@ function formatAmount(num) {
   return AMOUNT_FORMATTER.format(num)
 }
 
+// Процент изменения суммы: «5,6» (1 знак после запятой; для мелких изменений — 2).
+const PERCENT_FORMATTER = new Intl.NumberFormat('ru-RU', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+})
+const PERCENT_FORMATTER_SMALL = new Intl.NumberFormat('ru-RU', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+function formatPercent(num) {
+  if (num == null || !Number.isFinite(num)) return ''
+  return num < 0.1 ? PERCENT_FORMATTER_SMALL.format(num) : PERCENT_FORMATTER.format(num)
+}
+
 // task 371: «живое» форматирование во время ввода — группировка разрядов пробелами
 //   («1000000» → «1 000 000», «1000,5» → «1 000,5»). Десятичная часть до 2 знаков.
 function formatAmountLive(raw) {
@@ -811,9 +825,12 @@ function DcRequestsPage() {
         'Материал': MATERIAL_LABEL[req.material_type] || '',
         '№ ДС': req.ds_number || '',
         'Описание ДС': req.works_description || '',
-        'Было, ₽ (с НДС 22%)': before != null ? before : '',
-        'Стало, ₽ (с НДС 22%)': after != null ? after : '',
+        'Было подано, ₽ (с НДС 22%)': before != null ? before : '',
+        'Утверждено, ₽ (с НДС 22%)': after != null ? after : '',
         'Разница, ₽': diff != null ? diff : '',
+        'Изменение, %': (diff != null && Number.isFinite(Number(before)) && Number(before) !== 0)
+          ? Number((-(diff / Number(before)) * 100).toFixed(2))
+          : '',
         'Статус': STATUS_LABEL[req.status || 'in_work'] || '',
         'Ответственный': req.responsible?.full_name || '',
         'Срок согласования': formatShortDate(req.expected_approval_date),
@@ -1048,16 +1065,16 @@ function DcRequestsPage() {
                 <th style={{ width: '11%' }}>Объект</th>
                 <th style={{ width: '13%' }}>Контрагент</th>
                 <th style={{ width: '6%', textAlign: 'center' }}>№ ДС</th>
-                <th style={{ width: '12%' }}>Описание ДС</th>
-                {/* task 370: сумма ДС (Было/Стало) с НДС 22% перед статусом */}
-                <th style={{ width: '10%', whiteSpace: 'normal', textAlign: 'center' }}>Сумма, руб. с НДС 22%</th>
+                <th style={{ width: '10%' }}>Описание ДС</th>
+                {/* task 370: сумма ДС («Было подано» / «Утверждено») с НДС 22% перед статусом */}
+                <th style={{ width: '14%', whiteSpace: 'normal', textAlign: 'center' }}>Сумма, руб. с НДС 22%</th>
                 <th style={{ width: '8%' }}>Статус</th>
                 <th style={{ width: '9%' }}>Ответственный</th>
                 {/* task 334: было «Задачи и ответы» (inline) — теперь только счётчик-кнопка,
                     подробности в модалке. Колонка сильно компактнее, освобождённое место —
                     в «Описание ДС» и «Документы». */}
                 <th style={{ width: '8%', textAlign: 'center' }}>Задачи</th>
-                <th style={{ width: '15%' }}>Документы</th>
+                <th style={{ width: '13%' }}>Документы</th>
                 <th style={{ width: '5%', textAlign: 'right' }}>Действия</th>
               </tr>
             </thead>
@@ -1087,11 +1104,15 @@ function DcRequestsPage() {
                   const finalDocs = docs.filter(d => d.doc_category === 'final')
                   const docsOpen = expandedDocs.has(req.id)
 
-                  // task 370: разница сумм (Было − Стало). >0 → удешевление.
+                  // task 370: разница сумм («Было подано» − «Утверждено»). >0 → удешевление.
                   const amountBefore = req.amount_before
                   const amountAfter = req.amount_after
                   const amountDiff = (amountBefore != null && amountAfter != null)
                     ? amountBefore - amountAfter
+                    : null
+                  // Процент изменения — от поданной суммы. Если «Было подано» пусто или 0 — не считаем.
+                  const amountPct = (amountDiff != null && Number.isFinite(Number(amountBefore)) && Number(amountBefore) !== 0)
+                    ? (amountDiff / Number(amountBefore)) * 100
                     : null
 
                   return (
@@ -1175,11 +1196,11 @@ function DcRequestsPage() {
                       </td>
                       <td style={{ textAlign: 'center' }}>{req.ds_number || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
-                      {/* task 370: сумма ДС (Было/Стало) с инлайн-редактированием + разница */}
+                      {/* task 370: сумма ДС («Было подано» / «Утверждено») с инлайн-редактированием + разница */}
                       <td className="dcr-cell-amount">
                         <div className="dcr-amount">
                           <div className="dcr-amount-row">
-                            <span className="dcr-amount-label">Было</span>
+                            <span className="dcr-amount-label">Было подано</span>
                             {canEditDc ? (
                               <AmountCellInput
                                 value={amountBefore}
@@ -1191,7 +1212,7 @@ function DcRequestsPage() {
                             )}
                           </div>
                           <div className="dcr-amount-row">
-                            <span className="dcr-amount-label">Стало</span>
+                            <span className="dcr-amount-label">Утверждено</span>
                             {canEditDc ? (
                               <AmountCellInput
                                 value={amountAfter}
@@ -1203,8 +1224,16 @@ function DcRequestsPage() {
                             )}
                           </div>
                           {amountDiff != null && amountDiff !== 0 ? (
-                            <div className={`dcr-amount-diff ${amountDiff > 0 ? 'is-cheaper' : 'is-pricier'}`}>
-                              {amountDiff > 0 ? '↓' : '↑'} {formatAmount(Math.abs(amountDiff))} ₽
+                            <div
+                              className={`dcr-amount-diff ${amountDiff > 0 ? 'is-cheaper' : 'is-pricier'}`}
+                              title={amountDiff > 0 ? 'Удешевление относительно поданной суммы' : 'Удорожание относительно поданной суммы'}
+                            >
+                              <span className="dcr-diff-abs">{amountDiff > 0 ? '↓' : '↑'} {formatAmount(Math.abs(amountDiff))} ₽</span>
+                              {amountPct != null && (
+                                <span className="dcr-diff-pct">
+                                  {amountPct > 0 ? '−' : '+'}{formatPercent(Math.abs(amountPct))}%
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <div className="dcr-amount-diff is-zero">
@@ -1480,9 +1509,9 @@ function DcRequestsPage() {
                   </select>
                 </div>
 
-                {/* task 370: суммы ДС (с НДС 22%) — Было / Стало */}
+                {/* task 370: суммы ДС (с НДС 22%) — «Было подано» / «Утверждено» */}
                 <div className="form-group">
-                  <label>Было, ₽ (с НДС 22%)</label>
+                  <label>Было подано, ₽ (с НДС 22%)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -1495,7 +1524,7 @@ function DcRequestsPage() {
                 </div>
 
                 <div className="form-group">
-                  <label>Стало, ₽ (с НДС 22%)</label>
+                  <label>Утверждено, ₽ (с НДС 22%)</label>
                   <input
                     type="number"
                     step="0.01"

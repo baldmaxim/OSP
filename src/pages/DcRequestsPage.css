@@ -920,7 +920,7 @@
   color: #93c5fd;
 }
 
-/* ===== task 370: столбец «Сумма» (Было/Стало) с инлайн-вводом ===== */
+/* ===== task 370: столбец «Сумма» («Было подано» / «Утверждено») с инлайн-вводом ===== */
 .dcr-cell-amount {
   font-variant-numeric: tabular-nums;
 }
@@ -937,12 +937,13 @@
   gap: 0.25rem;
 }
 
+/* Подписи «Было подано» / «Утверждено» — фиксированная колонка слева, без переноса */
 .dcr-amount-label {
   flex-shrink: 0;
-  width: 36px;
+  width: 72px;
   font-size: 0.625rem;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
   color: var(--text-tertiary);
 }
 
@@ -984,13 +985,43 @@
   color: var(--text-primary);
 }
 
+/* Разница: абсолютная сумма + процент изменения (от «Было подано») */
 .dcr-amount-diff {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.3125rem;
+  flex-wrap: wrap;
   margin-top: 0.0625rem;
   text-align: right;
   font-size: 0.6875rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   min-height: 0.875rem;
+  white-space: nowrap;
+}
+
+/* Процент — на мягкой плашке в цвет направления изменения */
+.dcr-amount-diff .dcr-diff-pct {
+  padding: 0.0625rem 0.25rem;
+  border-radius: 4px;
+  font-size: 0.625rem;
+}
+
+.dcr-amount-diff.is-cheaper .dcr-diff-pct {
+  background: rgba(21, 128, 61, 0.12);
+}
+
+.dcr-amount-diff.is-pricier .dcr-diff-pct {
+  background: rgba(220, 38, 38, 0.12);
+}
+
+[data-theme='dark'] .dcr-amount-diff.is-cheaper .dcr-diff-pct {
+  background: rgba(74, 222, 128, 0.16);
+}
+
+[data-theme='dark'] .dcr-amount-diff.is-pricier .dcr-diff-pct {
+  background: rgba(248, 113, 113, 0.16);
 }
 
 .dcr-amount-diff.is-cheaper {

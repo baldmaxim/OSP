@@ -696,6 +696,130 @@
   text-align: center;
 }
 
+.cp-search-picked {
+  margin-left: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+/* ===== Стороны договора: чипы выбранных контрагентов (трёхсторонний договор) ===== */
+.cp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+}
+
+.cp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  padding: 0.25rem 0.375rem 0.25rem 0.5rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.cp-chip-badge {
+  padding: 0.0625rem 0.375rem;
+  background: var(--primary-color);
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.cp-chip-name {
+  overflow-wrap: anywhere;
+}
+
+.cp-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  font-size: 0.875rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.cp-chip-remove:hover {
+  background: var(--danger-color);
+  color: #fff;
+}
+
+.form-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* Список сторон в ячейке «Контрагент» реестра */
+.contracts-table-compact .cp-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contracts-table-compact .cp-list li {
+  overflow-wrap: anywhere;
+}
+
+.contracts-table-compact .cp-list li + li {
+  margin-top: 0.1875rem;
+  padding-top: 0.1875rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+/* Стороны договора в раскрытой строке */
+.ce-parties {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ce-parties li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.ce-party-name {
+  font-weight: 500;
+}
+
+.ce-party-inn {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.ce-party-main {
+  padding: 0.0625rem 0.375rem;
+  background: var(--primary-light);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
 /* Task 175: списки приложений */
 .attachments-checklist {
   display: flex;
@@ -812,17 +936,17 @@
 }
 
 /* Пропорциональные ширины колонок (сумма = 100%) — без горизонтального ползунка */
-.contracts-table-compact col.cg-num { width: 4%; }
-.contracts-table-compact col.cg-object { width: 8.5%; }
-.contracts-table-compact col.cg-ds { width: 13%; }
+.contracts-table-compact col.cg-num { width: 3.5%; }
+.contracts-table-compact col.cg-object { width: 8%; }
+.contracts-table-compact col.cg-ds { width: 15%; }
 .contracts-table-compact col.cg-counterparty { width: 11%; }
-.contracts-table-compact col.cg-work { width: 15%; }
-.contracts-table-compact col.cg-amount { width: 7.5%; }
-.contracts-table-compact col.cg-status { width: 10%; }
-.contracts-table-compact col.cg-lawyer { width: 10%; }
-.contracts-table-compact col.cg-accepted { width: 8%; }
-.contracts-table-compact col.cg-planned { width: 8%; }
-.contracts-table-compact col.cg-actions { width: 5%; }
+.contracts-table-compact col.cg-work { width: 18%; }
+.contracts-table-compact col.cg-amount { width: 7%; }
+.contracts-table-compact col.cg-status { width: 9%; }
+.contracts-table-compact col.cg-lawyer { width: 9%; }
+.contracts-table-compact col.cg-accepted { width: 7.5%; }
+.contracts-table-compact col.cg-planned { width: 7.5%; }
+.contracts-table-compact col.cg-actions { width: 4.5%; }
 
 .contracts-table-compact thead th {
   padding: 0.625rem 0.75rem;
@@ -860,7 +984,7 @@
 
 .contracts-table-compact .cell-work {
   color: var(--text-secondary);
-  font-size: 0.78125rem;
+  font-size: 0.75rem;
   word-break: break-word;
 }
 
@@ -880,11 +1004,10 @@
   color: var(--text-tertiary);
 }
 
-/* task 198: ячейка «№ договора» не должна выпадать в колонку Контрагент */
+/* Номер договора/ДС показываем целиком: длинные номера переносятся, а не режутся многоточием */
 .contracts-table-compact .cell-contract-num {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .contracts-table-compact .contract-number-link {
@@ -1863,6 +1986,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  width: 100%;
   padding: 0.125rem 0.25rem;
   background: none;
   border: 1px solid transparent;
@@ -1870,7 +1994,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 .contract-ds-link:hover {
   border-color: var(--border-color);
@@ -1880,14 +2004,18 @@
   border-color: var(--primary-color);
 }
 .contract-ds-link .cds-main {
-  font-size: 0.8125rem;
+  max-width: 100%;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--primary-color);
   text-decoration: underline;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .contract-ds-link .cds-sub {
   font-size: 0.6875rem;
   color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 /* ===== Просроченная плановая дата подписания ===== */

@@ -32,7 +32,6 @@ const TABS = [
 const EMPTY_FORM = {
   contract_number: '',
   contract_date: '',
-  counterparty_id: '',
   object_id: '',
   contract_amount: '',
   currency: 'RUB',
@@ -59,6 +58,19 @@ function formatDateRu(iso) {
   const [y, m, d] = String(iso).slice(0, 10).split('-')
   if (!y || !m || !d) return null
   return `${d}.${m}.${y}`
+}
+
+// Все стороны договора (может быть несколько — трёхсторонний договор), по порядку.
+// Старые договоры без строк в contract_counterparties → fallback на основного контрагента.
+function contractParties(contract) {
+  const rows = contract?.contract_counterparties || []
+  if (rows.length > 0) {
+    return [...rows]
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map(r => r.counterparties)
+      .filter(Boolean)
+  }
+  return contract?.counterparties ? [contract.counterparties] : []
 }
 
 // Нормализация ФИО для дедупликации: trim + сжать пробелы (сравнение — без регистра).
@@ -134,9 +146,11 @@ function ContractRegistry() {
   const [showModal, setShowModal] = useState(false)
   const [editingContract, setEditingContract] = useState(null)
 
-  // Task 168: поиск контрагента
+  // Task 168: поиск контрагента. Договор может быть многосторонним (трёхсторонний):
+  // formCounterpartyIds — упорядоченный список сторон, первый = основной (contracts.counterparty_id).
   const [counterpartySearch, setCounterpartySearch] = useState('')
   const [counterpartyDropdownOpen, setCounterpartyDropdownOpen] = useState(false)
+  const [formCounterpartyIds, setFormCounterpartyIds] = useState([])
 
   // Приложения объектов
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false)
@@ -211,7 +225,7 @@ function ContractRegistry() {
       setLoading(true)
       let query = supabase
         .from('contracts')
-        .select('*, objects(name, status), counterparties(name, inn), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position)')
+        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position)')
 
       if (activeTab === 'deleted') {
         query = query.not('deleted_at', 'is', null)
@@ -511,18 +525,19 @@ function ContractRegistry() {
   // Автоподтягивание данных из тендера
   const handleTenderChange = (e) => {
     const tenderId = e.target.value
+    const t = tenderId ? tenders.find(x => x.id === tenderId) : null
     setFormData(prev => {
       const next = { ...prev, tender_id: tenderId }
-      if (tenderId) {
-        const t = tenders.find(x => x.id === tenderId)
-        if (t) {
-          if (t.work_description && !prev.work_name) next.work_name = t.work_description
-          if (t.winner_counterparty_id && !prev.counterparty_id) next.counterparty_id = t.winner_counterparty_id
-          if (t.object_id && !prev.object_id) next.object_id = t.object_id
-        }
+      if (t) {
+        if (t.work_description && !prev.work_name) next.work_name = t.work_description
+        if (t.object_id && !prev.object_id) next.object_id = t.object_id
       }
       return next
     })
+    // Победитель тендера подставляется основной стороной — только если стороны ещё не выбраны.
+    if (t?.winner_counterparty_id) {
+      setFormCounterpartyIds(prev => prev.length === 0 ? [t.winner_counterparty_id] : prev)
+    }
   }
 
   const availableTenders = useMemo(() => {
@@ -542,9 +557,12 @@ function ContractRegistry() {
     )
   }, [counterparties, counterpartySearch])
 
-  const selectedCounterparty = useMemo(() => {
-    return counterparties.find(cp => cp.id === formData.counterparty_id) || null
-  }, [counterparties, formData.counterparty_id])
+  // Выбранные стороны договора в порядке добавления (первая — основная).
+  const selectedParties = useMemo(() => {
+    return formCounterpartyIds
+      .map(id => counterparties.find(cp => cp.id === id))
+      .filter(Boolean)
+  }, [counterparties, formCounterpartyIds])
 
   // ── Реестр: фильтры, сортировка, просрочка ─────────────────────────────
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
@@ -637,7 +655,7 @@ function ContractRegistry() {
       if (onlyOverdue && !isOverdue(c)) return false
       if (q) {
         const hay = [
-          c.counterparties?.name,
+          ...contractParties(c).map(p => p.name),
           c.work_name,
           c.tenders?.work_description,
           c.contract_number,
@@ -652,7 +670,7 @@ function ContractRegistry() {
     const dir = sortDir === 'asc' ? 1 : -1
     const getVal = (c) => {
       switch (sortKey) {
-        case 'counterparty': return (c.counterparties?.name || '').toLowerCase()
+        case 'counterparty': return (contractParties(c)[0]?.name || '').toLowerCase()
         case 'amount': return Number(c.contract_amount) || 0
         case 'status': return c.status || ''
         case 'accepted': return c.accepted_date || ''
@@ -737,10 +755,15 @@ function ContractRegistry() {
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
-  const handleSelectCounterparty = (id, name) => {
-    setFormData(prev => ({ ...prev, counterparty_id: id }))
-    setCounterpartySearch(name || '')
-    setCounterpartyDropdownOpen(false)
+  // Добавляет контрагента в список сторон (повторный клик — убирает). Поле поиска очищается,
+  // список остаётся открытым, чтобы можно было сразу добавить следующую сторону.
+  const handleSelectCounterparty = (id) => {
+    setFormCounterpartyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+    setCounterpartySearch('')
+  }
+
+  const handleRemoveCounterparty = (id) => {
+    setFormCounterpartyIds(prev => prev.filter(x => x !== id))
   }
 
   const handleSubmit = async (e) => {
@@ -748,7 +771,8 @@ function ContractRegistry() {
     try {
       const payload = {
         ...formData,
-        counterparty_id: formData.counterparty_id || null,
+        // Основной контрагент = первая сторона; остальные — в contract_counterparties.
+        counterparty_id: formCounterpartyIds[0] || null,
         object_id: formData.object_id || null,
         tender_id: formData.tender_id || null,
         responsible_contact_id: formData.responsible_contact_id || null,
@@ -785,11 +809,24 @@ function ContractRegistry() {
           const { error: caErr } = await supabase.from('contract_attachments').insert(rows)
           if (caErr) throw caErr
         }
+
+        // Стороны договора: полностью перезаписываем (порядок = sort_order).
+        await supabase.from('contract_counterparties').delete().eq('contract_id', contractId)
+        const cpRows = formCounterpartyIds.map((counterparty_id, i) => ({
+          contract_id: contractId,
+          counterparty_id,
+          sort_order: i,
+        }))
+        if (cpRows.length > 0) {
+          const { error: ccErr } = await supabase.from('contract_counterparties').insert(cpRows)
+          if (ccErr) throw ccErr
+        }
       }
 
       setShowModal(false)
       setEditingContract(null)
       setFormData({ ...EMPTY_FORM, status: (activeTab === 'deleted' || activeTab === 'all') ? 'new_request' : activeTab })
+      setFormCounterpartyIds([])
       setCounterpartySearch('')
       setFormAttachments(new Set())
       fetchContracts()
@@ -804,7 +841,6 @@ function ContractRegistry() {
     setFormData({
       contract_number: contract.contract_number || '',
       contract_date: contract.contract_date || '',
-      counterparty_id: contract.counterparty_id || '',
       object_id: contract.object_id || '',
       contract_amount: contract.contract_amount || '',
       currency: contract.currency || 'RUB',
@@ -824,7 +860,8 @@ function ContractRegistry() {
       responsible_contact_id: contract.responsible_contact_id || '',
       notes: contract.notes || '',
     })
-    setCounterpartySearch(contract.counterparties?.name || '')
+    setFormCounterpartyIds(contractParties(contract).map(p => p.id))
+    setCounterpartySearch('')
     setShowModal(true)
   }
 
@@ -898,6 +935,7 @@ function ContractRegistry() {
     const nextNumber = await computeNextContractNumber()
     const status = (activeTab === 'deleted' || activeTab === 'all') ? 'new_request' : activeTab
     setFormData({ ...EMPTY_FORM, contract_number: nextNumber, status })
+    setFormCounterpartyIds([])
     setCounterpartySearch('')
     setShowModal(true)
   }
@@ -1150,6 +1188,7 @@ function ContractRegistry() {
                 const overdue = !isDeletedTab && isOverdue(contract)
                 const dsNum = contract.contract_number
                 const dsDate = formatDateRu(contract.contract_date)
+                const parties = contractParties(contract)
                 return (
                 <Fragment key={contract.id}>
                 <tr
@@ -1179,8 +1218,14 @@ function ContractRegistry() {
                       )}
                     </button>
                   </td>
-                  <td className="cell-counterparty"><span className="clamp-2">{contract.counterparties?.name || '—'}</span></td>
-                  <td className="cell-work" title={contract.work_name || contract.tenders?.work_description || ''}><span className="clamp-3">{contract.work_name || contract.tenders?.work_description || '—'}</span></td>
+                  <td className="cell-counterparty">
+                    {parties.length === 0 ? '—' : (
+                      <ul className="cp-list">
+                        {parties.map(p => <li key={p.id}>{p.name}</li>)}
+                      </ul>
+                    )}
+                  </td>
+                  <td className="cell-work" title={contract.work_name || contract.tenders?.work_description || ''}>{contract.work_name || contract.tenders?.work_description || '—'}</td>
                   <td className="cell-amount">{formatMoney(contract.contract_amount, contract.currency) || '—'}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
@@ -1274,6 +1319,22 @@ function ContractRegistry() {
                   <tr className="contract-expanded-row" onClick={(e) => e.stopPropagation()}>
                     <td colSpan="11">
                       <div className="contract-expanded-content">
+                        {/* Стороны договора (может быть несколько — трёхсторонний договор) */}
+                        {parties.length > 1 && (
+                          <section className="ce-block">
+                            <div className="ce-block-title">Стороны договора</div>
+                            <ul className="ce-parties">
+                              {parties.map((p, i) => (
+                                <li key={p.id}>
+                                  <span className="ce-party-name">{p.name}</span>
+                                  {p.inn && <span className="ce-party-inn">ИНН: {p.inn}</span>}
+                                  {i === 0 && <span className="ce-party-main">основной</span>}
+                                </li>
+                              ))}
+                            </ul>
+                          </section>
+                        )}
+
                         {/* Блок 1: Примечание юриста */}
                         <section className="ce-block">
                           <div className="ce-block-title">
@@ -1497,38 +1558,60 @@ function ContractRegistry() {
                 </div>
 
                 <div className="form-group full-width">
-                  <label>Наименование контрагента *</label>
+                  <label>Контрагенты (стороны договора) *</label>
+                  {selectedParties.length > 0 && (
+                    <div className="cp-chips">
+                      {selectedParties.map((cp, i) => (
+                        <span key={cp.id} className="cp-chip">
+                          {i === 0 && <span className="cp-chip-badge">Основной</span>}
+                          <span className="cp-chip-name">{cp.name}</span>
+                          <button
+                            type="button"
+                            className="cp-chip-remove"
+                            title="Убрать контрагента"
+                            onClick={() => handleRemoveCounterparty(cp.id)}
+                          >×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="cp-search-wrap">
                     <input
                       type="text"
                       className="cp-search-input"
-                      placeholder="Начните вводить название или ИНН..."
-                      value={counterpartyDropdownOpen ? counterpartySearch : (selectedCounterparty?.name || counterpartySearch)}
+                      placeholder={formCounterpartyIds.length === 0
+                        ? 'Начните вводить название или ИНН...'
+                        : 'Добавить ещё контрагента (для трёхстороннего договора)...'}
+                      value={counterpartySearch}
                       onChange={(e) => { setCounterpartySearch(e.target.value); setCounterpartyDropdownOpen(true) }}
                       onFocus={() => setCounterpartyDropdownOpen(true)}
                       onBlur={() => setTimeout(() => setCounterpartyDropdownOpen(false), 150)}
-                      required={!formData.counterparty_id}
+                      required={formCounterpartyIds.length === 0}
                     />
                     {counterpartyDropdownOpen && (
                       <div className="cp-search-dropdown">
                         {filteredCounterparties.length === 0 ? (
                           <div className="cp-search-empty">Ничего не найдено</div>
                         ) : (
-                          filteredCounterparties.slice(0, 50).map(cp => (
-                            <button
-                              type="button"
-                              key={cp.id}
-                              className={`cp-search-item ${cp.id === formData.counterparty_id ? 'active' : ''}`}
-                              onMouseDown={() => handleSelectCounterparty(cp.id, cp.name)}
-                            >
-                              <div className="cp-search-name">{cp.name}</div>
-                              {cp.inn && <div className="cp-search-inn">ИНН: {cp.inn}</div>}
-                            </button>
-                          ))
+                          filteredCounterparties.slice(0, 50).map(cp => {
+                            const picked = formCounterpartyIds.includes(cp.id)
+                            return (
+                              <button
+                                type="button"
+                                key={cp.id}
+                                className={`cp-search-item ${picked ? 'active' : ''}`}
+                                onMouseDown={() => handleSelectCounterparty(cp.id)}
+                              >
+                                <div className="cp-search-name">{cp.name}{picked && <span className="cp-search-picked"> ✓ выбран</span>}</div>
+                                {cp.inn && <div className="cp-search-inn">ИНН: {cp.inn}</div>}
+                              </button>
+                            )
+                          })
                         )}
                       </div>
                     )}
                   </div>
+                  <small className="form-hint">Первый в списке — основной контрагент. Для трёхстороннего договора добавьте остальные стороны.</small>
                 </div>
 
                 <div className="form-group full-width">

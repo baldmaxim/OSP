@@ -88,7 +88,7 @@ function ContractDetailPage() {
     try {
       const { data, error } = await supabase
         .from('contracts')
-        .select('*, objects(name), counterparties(name, inn, kpp, legal_address, actual_address, website, work_type), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position)')
+        .select('*, objects(name), counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type), contract_counterparties(sort_order, counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position)')
         .eq('id', contractId)
         .single()
       if (error) throw error
@@ -372,7 +372,11 @@ function ContractDetailPage() {
     return <div className="contract-registry"><div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>Договор не найден</div></div>
   }
 
-  const cp = contract.counterparties || {}
+  // Стороны договора (может быть несколько). Старые договоры — только основной контрагент.
+  const partyRows = contract.contract_counterparties || []
+  const parties = partyRows.length > 0
+    ? [...partyRows].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map(r => r.counterparties).filter(Boolean)
+    : (contract.counterparties ? [contract.counterparties] : [])
   const statusLabel = STATUS_LABEL[contract.status] || contract.status
   const isDeleted = !!contract.deleted_at
   const vatLabel = contract.vat_rate != null
@@ -436,17 +440,26 @@ function ContractDetailPage() {
           </div>
 
           <div className="contract-section">
-            <h3>Реквизиты контрагента</h3>
-            <div className="info-rows">
-              <InfoRow label="Наименование" value={cp.name} />
-              <InfoRow label="ИНН" value={cp.inn} mono />
-              <InfoRow label="КПП" value={cp.kpp} mono />
-              <InfoRow label="Юр. адрес" value={cp.legal_address} />
-              <InfoRow label="Факт. адрес" value={cp.actual_address} />
-              {cp.website && (
-                <InfoRow label="Сайт" value={<a href={cp.website} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)' }}>{cp.website}</a>} />
-              )}
-            </div>
+            <h3>{parties.length > 1 ? 'Реквизиты сторон договора' : 'Реквизиты контрагента'}</h3>
+            {parties.length === 0 ? (
+              <div className="info-rows"><InfoRow label="Наименование" value={null} /></div>
+            ) : parties.map((cp, i) => (
+              <div key={cp.id || i} className="info-rows" style={i > 0 ? { marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' } : undefined}>
+                {parties.length > 1 && (
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: '0.25rem' }}>
+                    {i === 0 ? 'Основной контрагент' : `Сторона ${i + 1}`}
+                  </div>
+                )}
+                <InfoRow label="Наименование" value={cp.name} />
+                <InfoRow label="ИНН" value={cp.inn} mono />
+                <InfoRow label="КПП" value={cp.kpp} mono />
+                <InfoRow label="Юр. адрес" value={cp.legal_address} />
+                <InfoRow label="Факт. адрес" value={cp.actual_address} />
+                {cp.website && (
+                  <InfoRow label="Сайт" value={<a href={cp.website} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)' }}>{cp.website}</a>} />
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="contract-section">
