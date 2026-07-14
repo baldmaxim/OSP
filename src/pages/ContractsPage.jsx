@@ -1873,30 +1873,46 @@ function ContractRegistry() {
                   {objectAttachments.length === 0 ? (
                     <div className="oa-empty">Приложений пока нет — добавьте первое в форме ниже.</div>
                   ) : (
-                    <ul className="oa-list">
-                      {objectAttachments.map(a => (
-                        <li key={a.id} className="oa-item">
-                          <div className="oa-item-main">
-                            <div className="oa-item-name">{a.name}</div>
-                            {a.description && <div className="oa-item-desc">{a.description}</div>}
-                            {a.link && (
-                              <a className="oa-item-link" href={a.link} target="_blank" rel="noopener noreferrer">
-                                {a.link}
-                              </a>
-                            )}
-                          </div>
-                          {canEditContracts && (
-                            <button
-                              type="button"
-                              className="btn-icon btn-delete oa-item-del"
-                              onClick={() => handleDeleteAttachment(a.id)}
-                              title="Удалить приложение"
-                              aria-label="Удалить приложение"
-                            ><TrashIcon /></button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="oa-table-wrap">
+                      <table className="oa-table">
+                        <thead>
+                          <tr>
+                            <th className="oa-col-num">№ п/п</th>
+                            <th>Название</th>
+                            <th>Описание</th>
+                            <th className="oa-col-link">Ссылка</th>
+                            {canEditContracts && <th className="oa-col-act" aria-label="Действия"></th>}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {objectAttachments.map((a, i) => (
+                            <tr key={a.id}>
+                              <td className="oa-col-num">{i + 1}</td>
+                              <td className="oa-cell-name">{a.name}</td>
+                              <td className="oa-cell-desc">{a.description || <span className="oa-dash">—</span>}</td>
+                              <td className="oa-col-link">
+                                {a.link ? (
+                                  <a className="oa-item-link" href={a.link} target="_blank" rel="noopener noreferrer">
+                                    Открыть
+                                  </a>
+                                ) : <span className="oa-dash">—</span>}
+                              </td>
+                              {canEditContracts && (
+                                <td className="oa-col-act">
+                                  <button
+                                    type="button"
+                                    className="btn-icon btn-delete oa-item-del"
+                                    onClick={() => handleDeleteAttachment(a.id)}
+                                    title="Удалить приложение"
+                                    aria-label="Удалить приложение"
+                                  ><TrashIcon /></button>
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
 
                   {canEditContracts && (

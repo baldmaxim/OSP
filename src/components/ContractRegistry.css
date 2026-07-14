@@ -2210,53 +2210,67 @@
   border-radius: 10px;
 }
 
-.oa-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.oa-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.625rem 0.75rem;
-  background: var(--bg-primary);
+/* Таблица приложений объекта */
+.oa-table-wrap {
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  transition: border-color 0.12s;
+  overflow: hidden;
 }
 
-.oa-item:hover { border-color: var(--primary-color); }
+.oa-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.8125rem;
+}
 
-.oa-item-main { flex: 1; min-width: 0; }
+.oa-table thead th {
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
 
-.oa-item-name {
-  font-size: 0.875rem;
+.oa-table tbody td {
+  padding: 0.5rem 0.625rem;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color);
+  overflow-wrap: anywhere;
+}
+
+.oa-table tbody tr:last-child td { border-bottom: none; }
+.oa-table tbody tr:hover { background: var(--bg-tertiary); }
+
+.oa-table .oa-col-num {
+  width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.oa-table .oa-col-link { width: 84px; }
+.oa-table .oa-col-act { width: 44px; text-align: center; }
+
+.oa-cell-name {
   font-weight: 600;
   color: var(--text-primary);
-  overflow-wrap: anywhere;
 }
 
-.oa-item-desc {
-  margin-top: 0.1875rem;
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-  overflow-wrap: anywhere;
-}
+.oa-cell-desc { color: var(--text-secondary); }
+
+.oa-dash { color: var(--text-tertiary); }
 
 .oa-item-link {
-  display: block;
-  margin-top: 0.1875rem;
-  font-size: 0.75rem;
   color: var(--primary-color);
+  text-decoration: underline;
   overflow-wrap: anywhere;
 }
-
-.oa-item-del { flex-shrink: 0; }
 
 /* Карточка добавления нового приложения */
 .oa-add-card {
