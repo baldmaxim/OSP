@@ -1176,7 +1176,9 @@
   border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: default;
-  max-width: 380px;
+  /* Влезает «Дежурный по тендерам: Савостенко Владислав Андреевич» целиком */
+  max-width: min(560px, 100%);
+  white-space: nowrap;
 }
 .tender-resp-chip.is-clickable { cursor: pointer; }
 .tender-resp-chip.is-clickable:hover { border-color: var(--primary-color); color: var(--text-primary); }
