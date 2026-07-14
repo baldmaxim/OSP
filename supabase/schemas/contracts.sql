@@ -1,7 +1,7 @@
 -- Таблица contracts (Реестр договоров)
 CREATE TABLE IF NOT EXISTS contracts (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  contract_number VARCHAR(100) NOT NULL UNIQUE,
+  contract_number VARCHAR(100) UNIQUE,      -- необязателен (можно завести договор без номера)
   contract_date DATE,                       -- необязательна (можно завести договор без даты)
   counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,

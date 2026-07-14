@@ -2028,6 +2028,33 @@
   white-space: nowrap;
 }
 
+/* ===== Договор без номера и/или даты — спокойная красная подсветка ===== */
+.contracts-table-compact td.cell-contract-num.is-incomplete {
+  background: rgba(185, 28, 28, 0.06);
+  box-shadow: inset 3px 0 0 rgba(185, 28, 28, 0.55);
+}
+
+/* Используется и в реестре, и в шапке карточки договора */
+.cds-missing {
+  color: #b91c1c;
+  font-style: italic;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.contract-ds-link .cds-main.cds-missing {
+  font-weight: 600;
+}
+
+[data-theme='dark'] .contracts-table-compact td.cell-contract-num.is-incomplete {
+  background: rgba(248, 113, 113, 0.08);
+  box-shadow: inset 3px 0 0 rgba(248, 113, 113, 0.5);
+}
+
+[data-theme='dark'] .cds-missing {
+  color: #f87171;
+}
+
 /* ===== Просроченная плановая дата подписания ===== */
 .contracts-table-compact td.date-cell {
   position: relative;

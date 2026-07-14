@@ -60,6 +60,11 @@ function formatDateRu(iso) {
   return `${d}.${m}.${y}`
 }
 
+// Читаемое обозначение договора для сообщений и истории (номера может не быть).
+function contractLabel(contractNumber) {
+  return contractNumber ? `№ ${contractNumber}` : 'без номера'
+}
+
 // Все стороны договора (может быть несколько — трёхсторонний договор), по порядку.
 // Старые договоры без строк в contract_counterparties → fallback на основного контрагента.
 function contractParties(contract) {
@@ -788,6 +793,9 @@ function ContractRegistry() {
         vat_rate: formData.vat_rate === '' ? null : formData.vat_rate,
         currency: formData.currency || 'RUB',
         amount_includes_vat: formData.amount_includes_vat !== false,
+        // Номер необязателен. Пустая строка → NULL: в UNIQUE-индексе NULL не конфликтует
+        // с NULL, а вот двух договоров с номером '' быть не может.
+        contract_number: formData.contract_number.trim() || null,
       }
 
       let contractId = editingContract?.id
@@ -799,7 +807,11 @@ function ContractRegistry() {
         const { data, error } = await supabase.from('contracts').insert([payload]).select('id').single()
         if (error) throw error
         contractId = data?.id
-        await logContractEvent(contractId, 'created', { description: `Создан договор № ${payload.contract_number}` })
+        await logContractEvent(contractId, 'created', {
+          description: payload.contract_number
+            ? `Создан договор № ${payload.contract_number}`
+            : 'Создан договор (без номера)',
+        })
       }
 
       if (contractId) {
@@ -867,14 +879,14 @@ function ContractRegistry() {
 
   // Task 183: soft delete (любой пользователь) — переносит в «Удалённые»
   const handleSoftDeleteContract = async (id, contractNumber) => {
-    if (!window.confirm(`Перенести договор «${contractNumber}» в «Удалённые»?`)) return
+    if (!window.confirm(`Перенести договор ${contractLabel(contractNumber)} в «Удалённые»?`)) return
     try {
       const { error } = await supabase
         .from('contracts')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', id)
       if (error) throw error
-      await logContractEvent(id, 'soft_deleted', { description: `Договор № ${contractNumber} перенесён в «Удалённые»` })
+      await logContractEvent(id, 'soft_deleted', { description: `Договор ${contractLabel(contractNumber)} перенесён в «Удалённые»` })
       fetchContracts()
     } catch (error) {
       console.error('Ошибка удаления договора:', error.message)
@@ -890,7 +902,7 @@ function ContractRegistry() {
         .update({ deleted_at: null })
         .eq('id', id)
       if (error) throw error
-      await logContractEvent(id, 'restored', { description: `Договор № ${contractNumber} восстановлен из «Удалённых»` })
+      await logContractEvent(id, 'restored', { description: `Договор ${contractLabel(contractNumber)} восстановлен из «Удалённых»` })
       fetchContracts()
     } catch (error) {
       console.error('Ошибка восстановления договора:', error.message)
@@ -904,7 +916,7 @@ function ContractRegistry() {
       alert('Безвозвратное удаление доступно только администратору.')
       return
     }
-    if (!window.confirm(`Безвозвратно удалить договор «${contractNumber}»? Это действие нельзя отменить.`)) return
+    if (!window.confirm(`Безвозвратно удалить договор ${contractLabel(contractNumber)}? Это действие нельзя отменить.`)) return
     try {
       const { error } = await supabase.from('contracts').delete().eq('id', id)
       if (error) throw error
@@ -1188,6 +1200,8 @@ function ContractRegistry() {
                 const overdue = !isDeletedTab && isOverdue(contract)
                 const dsNum = contract.contract_number
                 const dsDate = formatDateRu(contract.contract_date)
+                // Договор можно завести без номера/даты — подсвечиваем такие в реестре.
+                const missingLabel = [!dsNum && 'номер', !dsDate && 'дата договора'].filter(Boolean).join(', ')
                 const parties = contractParties(contract)
                 return (
                 <Fragment key={contract.id}>
@@ -1202,20 +1216,22 @@ function ContractRegistry() {
                     {items.length > 0 && <span className="expand-badge" title={`Приложений: ${items.length}`}>{items.length}</span>}
                   </td>
                   <td className="cell-object">{contract.objects?.name || '—'}</td>
-                  <td className="cell-contract-num" onClick={(e) => e.stopPropagation()}>
+                  <td
+                    className={`cell-contract-num ${(!dsNum || !dsDate) && !isDeletedTab ? 'is-incomplete' : ''}`}
+                    onClick={(e) => e.stopPropagation()}
+                    title={missingLabel ? `Не заполнено: ${missingLabel}` : undefined}
+                  >
                     <button
                       className={`contract-ds-link ${isExpanded ? 'is-active' : ''}`}
                       onClick={(e) => { e.stopPropagation(); toggleExpand() }}
                       title={isExpanded ? 'Свернуть договор' : 'Раскрыть договор'}
                     >
-                      {(dsNum || dsDate) ? (
-                        <>
-                          <span className="cds-main">{dsNum ? `№ ${dsNum}` : 'Договор'}</span>
-                          {dsDate && <span className="cds-sub">от {dsDate}</span>}
-                        </>
-                      ) : (
-                        <span className="cds-main">Открыть договор</span>
-                      )}
+                      {dsNum
+                        ? <span className="cds-main">№ {dsNum}</span>
+                        : <span className="cds-main cds-missing">№ не присвоен</span>}
+                      {dsDate
+                        ? <span className="cds-sub">от {dsDate}</span>
+                        : <span className="cds-sub cds-missing">дата не указана</span>}
                     </button>
                   </td>
                   <td className="cell-counterparty">
@@ -1548,8 +1564,9 @@ function ContractRegistry() {
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
                 <div className="form-group">
-                  <label>№ договора *</label>
-                  <input type="text" name="contract_number" value={formData.contract_number} onChange={handleInputChange} required />
+                  <label>№ договора</label>
+                  <input type="text" name="contract_number" value={formData.contract_number} onChange={handleInputChange} placeholder="Можно оставить пустым" />
+                  <small className="form-hint">Если номера ещё нет — оставьте поле пустым, договор подсветится в реестре.</small>
                 </div>
 
                 <div className="form-group">

@@ -390,11 +390,16 @@ function ContractDetailPage() {
           <button onClick={() => navigate('/contracts')} style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>←</button>
           <div>
             <h2 style={{ margin: 0 }}>
-              Договор № {contract.contract_number}
+              {contract.contract_number
+                ? `Договор № ${contract.contract_number}`
+                : <>Договор <span className="cds-missing">(№ не присвоен)</span></>}
               {isDeleted && <span className="deleted-marker"> (удалён)</span>}
             </h2>
             <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
-              от {formatDate(contract.contract_date)} · <span className={`status-badge-inline status-${contract.status}`}>{statusLabel}</span>
+              {contract.contract_date
+                ? `от ${formatDate(contract.contract_date)}`
+                : <span className="cds-missing">дата не указана</span>}
+              {' · '}<span className={`status-badge-inline status-${contract.status}`}>{statusLabel}</span>
             </span>
           </div>
         </div>
