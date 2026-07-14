@@ -937,12 +937,12 @@
 
 /* Пропорциональные ширины колонок (сумма = 100%) — без горизонтального ползунка */
 .contracts-table-compact col.cg-num { width: 3.5%; }
-.contracts-table-compact col.cg-object { width: 7.5%; }
+.contracts-table-compact col.cg-object { width: 9%; }
 .contracts-table-compact col.cg-ds { width: 14%; }
 .contracts-table-compact col.cg-counterparty { width: 10.5%; }
-.contracts-table-compact col.cg-work { width: 15.5%; }
+.contracts-table-compact col.cg-work { width: 16.5%; }
 /* Суммы бывают миллиардные («1 960 000 000,00 ₽») — колонке нужен запас, иначе ₽ вылезает */
-.contracts-table-compact col.cg-amount { width: 11.5%; }
+.contracts-table-compact col.cg-amount { width: 9%; }
 .contracts-table-compact col.cg-status { width: 9%; }
 .contracts-table-compact col.cg-lawyer { width: 9%; }
 .contracts-table-compact col.cg-accepted { width: 7.5%; }
@@ -2048,17 +2048,14 @@
   background: var(--primary-light);
 }
 
-/* ===== Переносы длинного текста (line-clamp на внутреннем span) ===== */
-.contracts-table-compact .clamp-2,
-.contracts-table-compact .clamp-3 {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+/* ===== Переносы длинного текста ===== */
+/* Объект, контрагент и работы показываются целиком: текст переносится, не обрезается */
+.contracts-table-compact .cell-object,
+.contracts-table-compact .cell-counterparty,
+.contracts-table-compact .cell-work {
   overflow-wrap: anywhere;
   line-height: 1.3;
 }
-.contracts-table-compact .clamp-2 { -webkit-line-clamp: 2; }
-.contracts-table-compact .clamp-3 { -webkit-line-clamp: 3; }
 
 /* ===== Колонка «№» + бейдж числа приложений (вместо отдельной колонки) ===== */
 /* ВАЖНО: ячейка «№» — обычный table-cell (НЕ flex), иначе выпадает из общей

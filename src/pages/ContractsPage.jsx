@@ -1201,7 +1201,7 @@ function ContractRegistry() {
                     <span className="cell-num-value">{pageStart + index + 1}</span>
                     {items.length > 0 && <span className="expand-badge" title={`Приложений: ${items.length}`}>{items.length}</span>}
                   </td>
-                  <td className="cell-object"><span className="clamp-2">{contract.objects?.name || '—'}</span></td>
+                  <td className="cell-object">{contract.objects?.name || '—'}</td>
                   <td className="cell-contract-num" onClick={(e) => e.stopPropagation()}>
                     <button
                       className={`contract-ds-link ${isExpanded ? 'is-active' : ''}`}
