@@ -166,8 +166,7 @@ function ContractRegistry() {
   const [newAttachmentLink, setNewAttachmentLink] = useState('')
   const [formAttachments, setFormAttachments] = useState(new Set())
   const [availableAttachments, setAvailableAttachments] = useState([])
-  const [contractAttachmentsMap, setContractAttachmentsMap] = useState({})
-  // Задача 419: сопутствующие приложения договора (ручные): id → массив строк
+  // Задача 419: «Приложения к Договору»: contract_id → массив строк
   const [contractAppendicesMap, setContractAppendicesMap] = useState({})
 
   // Task 188: dropdown состояние для приложений в форме
@@ -256,33 +255,11 @@ function ContractRegistry() {
         })
       setContracts(filtered)
 
-      // Подгружаем приложения договоров (с комментариями) для inline-раскрытия (task 193)
+      // «Приложения к Договору» — единая таблица (task 419). При создании договора сюда
+      // автоматически подтягиваются наименования стандартных приложений объекта,
+      // остальные поля (ответственный, статус, примечание) юристы заполняют сами.
       const ids = filtered.map(c => c.id)
       if (ids.length > 0) {
-        const { data: caRows, error: caErr } = await supabase
-          .from('contract_attachments')
-          .select('id, contract_id, comment, object_contract_attachments(id, name, description, link, sort_order)')
-          .in('contract_id', ids)
-        if (caErr) throw caErr
-        const map = {}
-        for (const row of caRows || []) {
-          const att = row.object_contract_attachments
-          if (!att) continue
-          if (!map[row.contract_id]) map[row.contract_id] = []
-          map[row.contract_id].push({
-            ca_id: row.id,
-            comment: row.comment || '',
-            id: att.id,
-            name: att.name,
-            description: att.description || '',
-            link: att.link,
-            sort_order: att.sort_order,
-          })
-        }
-        Object.values(map).forEach(arr => arr.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)))
-        setContractAttachmentsMap(map)
-
-        // Задача 419: сопутствующие приложения договора (ручные строки)
         const { data: apRows, error: apErr } = await supabase
           .from('contract_appendices')
           .select('*')
@@ -297,7 +274,6 @@ function ContractRegistry() {
         }
         setContractAppendicesMap(apMap)
       } else {
-        setContractAttachmentsMap({})
         setContractAppendicesMap({})
       }
     } catch (error) {
@@ -400,26 +376,6 @@ function ContractRegistry() {
     }
   }
 
-  // Task 193: сохранение комментария к приложению договора (по blur)
-  const handleSaveAttachmentComment = async (caId, newComment) => {
-    try {
-      const { error } = await supabase
-        .from('contract_attachments')
-        .update({ comment: newComment.trim() || null })
-        .eq('id', caId)
-      if (error) throw error
-      setContractAttachmentsMap(prev => {
-        const next = {}
-        for (const [contractId, list] of Object.entries(prev)) {
-          next[contractId] = list.map(a => a.ca_id === caId ? { ...a, comment: newComment } : a)
-        }
-        return next
-      })
-    } catch (err) {
-      console.error('Ошибка сохранения комментария:', err.message)
-      alert('Ошибка: ' + err.message)
-    }
-  }
 
   // ── Задача 419: сопутствующие приложения договора (ручные строки) ──────────
   const nextAppendixNumber = (list) => {
@@ -511,15 +467,9 @@ function ContractRegistry() {
         if (error) throw error
         const list = data || []
         setAvailableAttachments(list)
-        if (editingContract) {
-          const { data: cas } = await supabase
-            .from('contract_attachments')
-            .select('attachment_id')
-            .eq('contract_id', editingContract.id)
-          setFormAttachments(new Set((cas || []).map(r => r.attachment_id)))
-        } else {
-          setFormAttachments(new Set(list.map(a => a.id)))
-        }
+        // Чек-лист имеет смысл только при создании: отмеченные приложения станут
+        // строками «Приложений к Договору». По умолчанию отмечены все.
+        setFormAttachments(editingContract ? new Set() : new Set(list.map(a => a.id)))
       } catch (err) {
         console.error('Ошибка загрузки приложений объекта:', err.message)
       }
@@ -815,11 +765,23 @@ function ContractRegistry() {
       }
 
       if (contractId) {
-        await supabase.from('contract_attachments').delete().eq('contract_id', contractId)
-        const rows = Array.from(formAttachments).map(attachment_id => ({ contract_id: contractId, attachment_id }))
-        if (rows.length > 0) {
-          const { error: caErr } = await supabase.from('contract_attachments').insert(rows)
-          if (caErr) throw caErr
+        // ТОЛЬКО при создании: стандартные приложения объекта становятся строками
+        // «Приложений к Договору» — подтягивается лишь наименование, остальное
+        // (ответственный, статус, примечание) юристы заполняют вручную.
+        // При редактировании договора строки не трогаем — их уже ведут юристы.
+        if (!editingContract) {
+          const seedRows = availableAttachments
+            .filter(a => formAttachments.has(a.id))
+            .map((a, i) => ({
+              contract_id: contractId,
+              appendix_number: String(i + 1),
+              name: a.name,
+              sort_order: i,
+            }))
+          if (seedRows.length > 0) {
+            const { error: apErr } = await supabase.from('contract_appendices').insert(seedRows)
+            if (apErr) throw apErr
+          }
         }
 
         // Стороны договора: полностью перезаписываем (порядок = sort_order).
@@ -1193,7 +1155,6 @@ function ContractRegistry() {
               </tr>
             ) : (
               pagedContracts.map((contract, index) => {
-                const items = contractAttachmentsMap[contract.id] || []
                 const appendices = contractAppendicesMap[contract.id] || []
                 const isExpanded = expandedContractId === contract.id
                 const toggleExpand = () => setExpandedContractId(isExpanded ? null : contract.id)
@@ -1213,7 +1174,7 @@ function ContractRegistry() {
                   <td className="cell-num">
                     <span className={`expand-chev ${isExpanded ? 'open' : ''}`} aria-hidden>▸</span>
                     <span className="cell-num-value">{pageStart + index + 1}</span>
-                    {items.length > 0 && <span className="expand-badge" title={`Приложений: ${items.length}`}>{items.length}</span>}
+                    {appendices.length > 0 && <span className="expand-badge" title={`Приложений: ${appendices.length}`}>{appendices.length}</span>}
                   </td>
                   <td className="cell-object">{contract.objects?.name || '—'}</td>
                   <td
@@ -1474,48 +1435,6 @@ function ContractRegistry() {
                           )}
                         </section>
 
-                        {/* Блок 3: Приложения из объекта (привязанные в модалке) — если есть */}
-                        {items.length > 0 && (
-                          <section className="ce-block">
-                            <div className="ce-block-title">
-                              Приложения из объекта
-                              <span className="ce-count">{items.length} шт.</span>
-                            </div>
-                            <ul className="cap-list">
-                              {items.map(a => (
-                                <li key={a.ca_id} className="cap-item">
-                                  <div className="cap-item-head">
-                                    <span className="cap-item-name">
-                                      <span className="cap-item-icon" aria-hidden>📎</span>
-                                      {a.link
-                                        ? <a href={a.link} target="_blank" rel="noopener noreferrer">{a.name}</a>
-                                        : a.name}
-                                    </span>
-                                    {a.description && <span className="cap-item-desc">{a.description}</span>}
-                                  </div>
-                                  {canEditContracts && !isDeletedTab && (
-                                    <textarea
-                                      className="cap-item-comment"
-                                      defaultValue={a.comment || ''}
-                                      placeholder="Комментарий к этому приложению (необязательно)…"
-                                      rows={1}
-                                      onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
-                                      onBlur={(e) => {
-                                        const v = e.target.value
-                                        if ((a.comment || '') !== v) handleSaveAttachmentComment(a.ca_id, v)
-                                      }}
-                                      ref={(el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }}
-                                    />
-                                  )}
-                                  {(!canEditContracts || isDeletedTab) && a.comment && (
-                                    <div className="cap-item-comment-ro">{a.comment}</div>
-                                  )}
-                                </li>
-                              ))}
-                            </ul>
-                          </section>
-                        )}
-
                         {/* Действия раскрытого блока */}
                         <div className="ce-actions">
                           <button type="button" className="ce-open-card" onClick={() => navigate(`/contracts/${contract.id}`)}>
@@ -1772,10 +1691,15 @@ function ContractRegistry() {
                   <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows={2} placeholder="Примечание (необязательно)" />
                 </div>
 
-                {/* Task 188: приложения в виде выпадающего списка с чекбоксами */}
-                {availableAttachments.length > 0 && (
+                {/* Стандартные приложения объекта — только при СОЗДАНИИ договора: отмеченные
+                    станут строками таблицы «Приложения к Договору» (подтянется наименование). */}
+                {!editingContract && availableAttachments.length > 0 && (
                   <div className="form-group full-width">
-                    <label>Приложения к договору</label>
+                    <label>Приложения к Договору</label>
+                    <small className="form-hint" style={{ marginBottom: '0.375rem' }}>
+                      Отмеченные приложения объекта будут добавлены в таблицу договора — ответственного,
+                      статус и примечание юристы заполнят сами.
+                    </small>
                     <div className="attachments-multiselect">
                       <button
                         type="button"
