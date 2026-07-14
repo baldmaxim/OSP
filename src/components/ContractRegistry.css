@@ -2119,15 +2119,22 @@
 .contracts-table-compact tr.is-expanded .expand-badge { filter: brightness(1.1); }
 
 /* ===== Ответственный юрист: краткое ФИО «Фамилия И.О.» в одну строку ===== */
-.contracts-table-compact .cell-lawyer { vertical-align: middle; }
+.contracts-table-compact .cell-lawyer {
+  vertical-align: middle;
+  /* Узкие боковые отступы: всю ширину колонки отдаём под ФИО */
+  padding-left: 0.375rem;
+  padding-right: 0.375rem;
+}
 .contracts-table-compact .cell-lawyer .fdrop { display: flex; width: 100%; }
 .contracts-table-compact .cell-lawyer .fdrop-trigger {
   width: 100%;
   max-width: none;
   min-height: 32px;
-  padding: 4px 24px 4px 8px;
+  /* Стрелка ▾ — отдельный flex-элемент внутри кнопки, поэтому НЕ резервируем под неё
+     ещё и padding-right: иначе место считается дважды и ФИО обрезается. */
+  padding: 4px 6px 4px 8px;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   font-family: var(--font-ui, 'Inter', 'Segoe UI', Roboto, Arial, sans-serif);
   font-size: 12px;
   line-height: 1.25;
@@ -2147,8 +2154,10 @@
 }
 /* Краткое ФИО помещается в одну строку — без переноса и БЕЗ многоточия */
 .contracts-table-compact .cell-lawyer .fdrop-value {
+  flex: 1 1 auto;
   min-width: 0;
   display: block;
+  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: clip;

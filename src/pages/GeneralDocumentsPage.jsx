@@ -223,18 +223,8 @@ export default function GeneralDocumentsPage() {
     clearErrors(); setDragActive(false)
   }
 
-  // Закрытие по Escape (не мешаем во время сохранения).
-  useEffect(() => {
-    if (!showModal) return
-    const onKey = (e) => {
-      if (e.key === 'Escape' && !saving) {
-        setShowModal(false); setEditing(null); setForm(EMPTY_FORM); setRemoveFileIds(new Set())
-        setFormError(''); setLinkError(''); setDragActive(false)
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [showModal, saving])
+  // Escape окно не закрывает — заполненную форму слишком легко потерять случайным
+  // нажатием. Закрытие только осознанное: крестик или «Отмена».
 
   const openFileDialog = () => fileInputRef.current?.click()
   const onDropZoneDragOver = (e) => { e.preventDefault(); if (!dragActive) setDragActive(true) }
@@ -575,9 +565,11 @@ export default function GeneralDocumentsPage() {
         )}
       </div>
 
+      {/* Клик по подложке НЕ закрывает окно: заполненную форму легко потерять случайным
+          кликом. Закрытие — только крестиком или кнопкой «Отмена». */}
       {showModal && (
-        <div className="gd-modal-overlay" onClick={closeModal}>
-          <div className="gd-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="gd-modal-overlay">
+          <div className="gd-modal" role="dialog" aria-modal="true">
             <div className="gd-modal-header">
               <div className="gd-modal-heading">
                 <h3>{editing ? 'Редактировать документ' : 'Добавить документ'}</h3>
