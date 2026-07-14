@@ -937,17 +937,19 @@
 
 /* Пропорциональные ширины колонок (сумма = 100%) — без горизонтального ползунка */
 .contracts-table-compact col.cg-num { width: 3.5%; }
-.contracts-table-compact col.cg-object { width: 9%; }
-.contracts-table-compact col.cg-ds { width: 14%; }
+.contracts-table-compact col.cg-object { width: 8.5%; }
+.contracts-table-compact col.cg-ds { width: 13%; }
 .contracts-table-compact col.cg-counterparty { width: 10.5%; }
-.contracts-table-compact col.cg-work { width: 16.5%; }
+.contracts-table-compact col.cg-work { width: 15.5%; }
 /* Суммы бывают миллиардные («1 960 000 000,00 ₽») — колонке нужен запас, иначе ₽ вылезает */
 .contracts-table-compact col.cg-amount { width: 9%; }
 .contracts-table-compact col.cg-status { width: 9%; }
 .contracts-table-compact col.cg-lawyer { width: 9%; }
 .contracts-table-compact col.cg-accepted { width: 7.5%; }
 .contracts-table-compact col.cg-planned { width: 7.5%; }
-.contracts-table-compact col.cg-actions { width: 4.5%; }
+/* Две иконки по 30px + зазор = 65px: колонке нужно ≥70px, иначе кнопки вылезают
+   за ячейку и контейнер (overflow-x: auto) показывает горизонтальный ползунок. */
+.contracts-table-compact col.cg-actions { width: 7%; }
 
 .contracts-table-compact thead th {
   padding: 0.625rem 0.75rem;
@@ -1053,6 +1055,8 @@
   text-align: center;
   vertical-align: middle;
   white-space: nowrap;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
 }
 .contracts-table-compact .actions-inner {
   display: inline-flex;
