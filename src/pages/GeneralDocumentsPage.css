@@ -141,7 +141,9 @@
 .gd-table .cg-materials { width: 26%; }
 .gd-table .cg-updated { width: 150px; }
 .gd-table .cg-updatedby { width: 210px; }
-.gd-table .cg-actions { width: 80px; }
+/* Заголовок «ДЕЙСТВИЯ» (nowrap) сам по себе ~68px + отступы — узкой колонке он
+   не влезал и выдавливал таблицу, включая горизонтальный ползунок. */
+.gd-table .cg-actions { width: 108px; }
 
 .gd-table thead th {
   padding: 0.75rem 1rem;
@@ -222,18 +224,34 @@
   color: var(--primary-color);
 }
 .gd-table tbody tr:hover .document-title-edit-button { opacity: 1; }
-/* Описание показывается ЦЕЛИКОМ (переносы сохраняются) и заметнее, чем раньше:
-   это рабочая инструкция, а не подпись мелким шрифтом. */
+/* Описание в таблице свёрнуто до 2 строк — длинные инструкции не раздувают строку.
+   Полный текст открывается карточкой документа по клику (.gd-desc-btn). */
 .gd-desc-text {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  width: 100%;
   margin-top: 0.375rem;
-  padding-left: 0.5rem;
+  padding: 0 0 0 0.5rem;
+  border: none;
   border-left: 2px solid var(--border-color);
+  font-family: inherit;
   font-size: 0.8125rem;
   line-height: 1.45;
+  text-align: left;
   color: var(--text-secondary);
-  white-space: pre-wrap;
+  background: none;
   overflow-wrap: anywhere;
+}
+/* Кликабельное описание — быстрый вход в карточку прямо из таблицы */
+.gd-desc-btn {
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.gd-desc-btn:hover {
+  color: var(--text-primary);
+  border-left-color: var(--primary-color);
 }
 .gd-updated-cell {
   color: var(--text-secondary);
@@ -249,8 +267,13 @@
   line-height: 1.35;
 }
 .gd-col-actions {
-  text-align: right;
+  text-align: center;
   white-space: nowrap;
+}
+.gd-table thead th.gd-col-actions,
+.gd-table tbody td.gd-col-actions {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
 }
 .gd-tfoot {
   padding: 0.5rem 1rem;

@@ -524,7 +524,20 @@ export default function GeneralDocumentsPage() {
                             ><EditIcon /></button>
                           )}
                         </div>
-                        {doc.description && <span className="gd-desc-text">{doc.description}</span>}
+                        {/* Описание свёрнуто до 2 строк. Клик открывает карточку документа —
+                            быстрый доступ к полному тексту и редактированию прямо из таблицы. */}
+                        {doc.description && (
+                          canEditDocs ? (
+                            <button
+                              type="button"
+                              className="gd-desc-text gd-desc-btn"
+                              onClick={() => openEdit(doc)}
+                              title="Открыть карточку документа"
+                            >{doc.description}</button>
+                          ) : (
+                            <span className="gd-desc-text" title={doc.description}>{doc.description}</span>
+                          )
+                        )}
                       </td>
                       <td className="gd-col-materials">
                         {materials.length === 0 ? (
