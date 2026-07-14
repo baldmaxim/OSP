@@ -1,9 +1,9 @@
 /* task 416: раздел «Документы» (Общая информация). Токены темы из index.css. */
+/* Таблица занимает всю доступную ширину — без узкой «колодки» по центру */
 .general-documents-page {
   width: 100%;
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 1.5rem 2rem;
+  margin: 0;
+  padding: 1.5rem 1rem;
   box-sizing: border-box;
 }
 
@@ -134,12 +134,14 @@
   font-size: 0.875rem;
 }
 /* Ширины колонок (colgroup) */
-.gd-table .cg-num { width: 68px; }
-.gd-table .cg-title { width: 30%; }
-.gd-table .cg-materials { width: 36%; }
-.gd-table .cg-updated { width: 170px; }
-.gd-table .cg-updatedby { width: 240px; }
-.gd-table .cg-actions { width: 90px; }
+.gd-table .cg-num { width: 60px; }
+/* Наименование + описание — главная колонка, ей максимум места.
+   «Документы и ссылки» ужаты: имена файлов и так переносятся. */
+.gd-table .cg-title { width: 44%; }
+.gd-table .cg-materials { width: 26%; }
+.gd-table .cg-updated { width: 150px; }
+.gd-table .cg-updatedby { width: 210px; }
+.gd-table .cg-actions { width: 80px; }
 
 .gd-table thead th {
   padding: 0.75rem 1rem;
@@ -220,14 +222,18 @@
   color: var(--primary-color);
 }
 .gd-table tbody tr:hover .document-title-edit-button { opacity: 1; }
+/* Описание показывается ЦЕЛИКОМ (переносы сохраняются) и заметнее, чем раньше:
+   это рабочая инструкция, а не подпись мелким шрифтом. */
 .gd-desc-text {
   display: block;
-  margin-top: 0.2rem;
+  margin-top: 0.375rem;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--border-color);
   font-size: 0.8125rem;
-  color: var(--text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .gd-updated-cell {
   color: var(--text-secondary);
@@ -470,11 +476,12 @@
   outline: none;
   border-color: var(--primary-color);
 }
+/* Авторасширение: высота задаётся из JS (AutoGrowTextarea), ползунка нет */
 .gd-textarea {
-  resize: vertical;
-  min-height: 72px;
-  max-height: 200px;
-  line-height: 1.45;
+  resize: none;
+  overflow: hidden;
+  min-height: 90px;
+  line-height: 1.5;
 }
 .gd-hint {
   margin: 0 0 0.5rem;

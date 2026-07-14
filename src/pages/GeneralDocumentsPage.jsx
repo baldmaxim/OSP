@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
+import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import './GeneralDocumentsPage.css'
 
 // task 416: реестр общих документов компании. Одна запись — «карточка документа»,
@@ -600,11 +601,15 @@ export default function GeneralDocumentsPage() {
                   </div>
                   <div className="gd-form-group">
                     <label htmlFor="gd-desc">Описание / примечание</label>
-                    <textarea
+                    {/* Авторасширение: поле растёт под текст, без внутреннего ползунка.
+                        Компонент неконтролируемый — модалка монтируется заново при каждом
+                        открытии, поэтому defaultValue всегда актуален. */}
+                    <AutoGrowTextarea
                       id="gd-desc"
                       className="gd-textarea"
-                      value={form.description}
-                      onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))}
+                      minHeight={90}
+                      defaultValue={form.description}
+                      onInput={(e) => setForm(f => ({ ...f, description: e.target.value }))}
                       placeholder="Краткое описание — для кого и зачем этот документ (необязательно)"
                     />
                   </div>
