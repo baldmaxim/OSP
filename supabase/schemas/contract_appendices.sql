@@ -1,4 +1,4 @@
--- Задача 419: сопутствующие приложения договора (ручной ввод в раскрытом блоке реестра).
+-- Задача 419: «Приложения к Договору» (ручной ввод в раскрытом блоке реестра).
 CREATE TABLE IF NOT EXISTS contract_appendices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   contract_id UUID NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS contract_appendices (
   name TEXT,                       -- наименование приложения
   responsible TEXT,                -- ответственный
   status TEXT,                     -- статус
+  notes TEXT,                      -- примечание юриста по статусу приложения
   sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

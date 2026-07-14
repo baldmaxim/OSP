@@ -1372,10 +1372,10 @@ function ContractRegistry() {
                           )}
                         </section>
 
-                        {/* Блок 2: Сопутствующие приложения (ручной ввод, task 419) */}
+                        {/* Блок 2: Приложения к Договору (ручной ввод, task 419) */}
                         <section className="ce-block">
                           <div className="ce-block-title">
-                            Сопутствующие приложения
+                            Приложения к Договору
                             {appendices.length > 0 && <span className="ce-count">{appendices.length} шт.</span>}
                             {canEditContracts && !isDeletedTab && (
                               <button type="button" className="ce-add-appendix" onClick={() => handleAddAppendix(contract.id)}>
@@ -1396,6 +1396,7 @@ function ContractRegistry() {
                                     <th>Наименование приложения</th>
                                     <th>Ответственный</th>
                                     <th className="ce-ap-status">Статус</th>
+                                    <th className="ce-ap-notes">Примечание</th>
                                     {canEditContracts && !isDeletedTab && <th className="ce-ap-actions" aria-label="Действия"></th>}
                                   </tr>
                                 </thead>
@@ -1439,6 +1440,19 @@ function ContractRegistry() {
                                             readOnly={ro}
                                             onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'status', e.target.value)}
                                           />
+                                        </td>
+                                        <td className="ce-ap-notes">
+                                          {ro ? (
+                                            <div className="ce-ap-notes-ro">{ap.notes || '—'}</div>
+                                          ) : (
+                                            <AutoGrowTextarea
+                                              className="ce-ap-input ce-ap-textarea"
+                                              minHeight={32}
+                                              defaultValue={ap.notes || ''}
+                                              placeholder="Примечание по статусу приложения"
+                                              onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'notes', e.target.value)}
+                                            />
+                                          )}
                                         </td>
                                         {canEditContracts && !isDeletedTab && (
                                           <td className="ce-ap-actions">
@@ -1825,15 +1839,21 @@ function ContractRegistry() {
       {/* Модалка управления приложениями объектов (task 184 — без шаблонов) */}
       {showAttachmentsModal && (
         <div className="modal-overlay">
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '720px' }}>
-            <div className="modal-header">
-              <h3>Стандартные приложения объекта</h3>
-              <button className="modal-close" onClick={() => setShowAttachmentsModal(false)}>×</button>
+          <div className="modal oa-modal" role="dialog" aria-modal="true">
+            <div className="oa-modal-header">
+              <div className="oa-modal-heading">
+                <h3>Стандартные приложения объекта</h3>
+                <p className="oa-modal-subtitle">
+                  Список приложений, которые предлагаются при заведении договора по этому объекту
+                </p>
+              </div>
+              <button className="modal-close" onClick={() => setShowAttachmentsModal(false)} aria-label="Закрыть">×</button>
             </div>
-            <div style={{ padding: '1.5rem 2rem' }}>
-              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                <label>Объект</label>
-                <select value={attachmentsObjectId} onChange={handleAttachmentsObjectChange}>
+
+            <div className="oa-modal-body">
+              <div className="oa-field">
+                <label htmlFor="oa-object">Объект</label>
+                <select id="oa-object" value={attachmentsObjectId} onChange={handleAttachmentsObjectChange}>
                   <option value="">Выберите объект</option>
                   {objects.map(o => (
                     <option key={o.id} value={o.id}>{o.name}</option>
@@ -1841,68 +1861,93 @@ function ContractRegistry() {
                 </select>
               </div>
 
-              {attachmentsObjectId && (
-                <section>
-                  <div className="attachments-list">
-                    {objectAttachments.length === 0 ? (
-                      <div style={{ color: 'var(--text-tertiary)', fontStyle: 'italic', padding: '0.5rem 0' }}>
-                        Приложений пока нет. Добавьте первое ниже.
-                      </div>
-                    ) : (
-                      objectAttachments.map(a => (
-                        <div key={a.id} className="attachment-list-row">
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontWeight: 500 }}>{a.name}</div>
-                            {a.description && (
-                              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: '0.1875rem' }}>
-                                {a.description}
-                              </div>
-                            )}
+              {!attachmentsObjectId ? (
+                <div className="oa-placeholder">Выберите объект, чтобы увидеть его приложения</div>
+              ) : (
+                <>
+                  <div className="oa-section-title">
+                    Приложения
+                    {objectAttachments.length > 0 && <span className="oa-count">{objectAttachments.length}</span>}
+                  </div>
+
+                  {objectAttachments.length === 0 ? (
+                    <div className="oa-empty">Приложений пока нет — добавьте первое в форме ниже.</div>
+                  ) : (
+                    <ul className="oa-list">
+                      {objectAttachments.map(a => (
+                        <li key={a.id} className="oa-item">
+                          <div className="oa-item-main">
+                            <div className="oa-item-name">{a.name}</div>
+                            {a.description && <div className="oa-item-desc">{a.description}</div>}
                             {a.link && (
-                              <a href={a.link} target="_blank" rel="noopener noreferrer"
-                                style={{ color: 'var(--primary-color)', fontSize: '0.8125rem', wordBreak: 'break-all', display: 'block', marginTop: '0.1875rem' }}>
+                              <a className="oa-item-link" href={a.link} target="_blank" rel="noopener noreferrer">
                                 {a.link}
                               </a>
                             )}
                           </div>
                           {canEditContracts && (
-                            <button type="button" className="btn-icon btn-delete"
+                            <button
+                              type="button"
+                              className="btn-icon btn-delete oa-item-del"
                               onClick={() => handleDeleteAttachment(a.id)}
-                              title="Удалить">🗑️</button>
+                              title="Удалить приложение"
+                              aria-label="Удалить приложение"
+                            ><TrashIcon /></button>
                           )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  {canEditContracts && (
-                  <div className="attachment-add-row">
-                    <input
-                      type="text"
-                      placeholder="Название приложения"
-                      value={newAttachmentName}
-                      onChange={(e) => setNewAttachmentName(e.target.value)}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Описание (краткая сводка)"
-                      value={newAttachmentDescription}
-                      onChange={(e) => setNewAttachmentDescription(e.target.value)}
-                    />
-                    <input
-                      type="url"
-                      placeholder="Ссылка (необязательно)"
-                      value={newAttachmentLink}
-                      onChange={(e) => setNewAttachmentLink(e.target.value)}
-                    />
-                    <button type="button" className="btn-primary" onClick={handleAddAttachment}
-                      disabled={!newAttachmentName.trim()}>
-                      Добавить
-                    </button>
-                  </div>
+                        </li>
+                      ))}
+                    </ul>
                   )}
-                </section>
+
+                  {canEditContracts && (
+                    <div className="oa-add-card">
+                      <div className="oa-add-title">Новое приложение</div>
+                      <div className="oa-add-grid">
+                        <div className="oa-field">
+                          <label htmlFor="oa-name">Название *</label>
+                          <input
+                            id="oa-name"
+                            type="text"
+                            placeholder="Например: ПСДЦ"
+                            value={newAttachmentName}
+                            onChange={(e) => setNewAttachmentName(e.target.value)}
+                          />
+                        </div>
+                        <div className="oa-field">
+                          <label htmlFor="oa-desc">Описание</label>
+                          <input
+                            id="oa-desc"
+                            type="text"
+                            placeholder="Краткая сводка (необязательно)"
+                            value={newAttachmentDescription}
+                            onChange={(e) => setNewAttachmentDescription(e.target.value)}
+                          />
+                        </div>
+                        <div className="oa-field oa-field-wide">
+                          <label htmlFor="oa-link">Ссылка</label>
+                          <input
+                            id="oa-link"
+                            type="url"
+                            placeholder="https://… (необязательно)"
+                            value={newAttachmentLink}
+                            onChange={(e) => setNewAttachmentLink(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="oa-add-actions">
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={handleAddAttachment}
+                          disabled={!newAttachmentName.trim()}
+                        >+ Добавить приложение</button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
+
             <div className="modal-footer">
               <button type="button" className="btn-secondary" onClick={() => setShowAttachmentsModal(false)}>
                 Закрыть

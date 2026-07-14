@@ -1261,7 +1261,23 @@
 .ce-appendix-table tbody tr:last-child td { border-bottom: none; }
 .ce-appendix-table .ce-ap-num { width: 64px; }
 .ce-appendix-table .ce-ap-status { width: 150px; }
+.ce-appendix-table .ce-ap-notes { width: 30%; }
 .ce-appendix-table .ce-ap-actions { width: 34px; text-align: center; }
+/* Примечание юриста — авторастущая textarea (высота по содержимому) */
+.ce-ap-textarea {
+  display: block;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.35;
+}
+.ce-ap-notes-ro {
+  padding: 0.3125rem 0.4375rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ce-appendix-table tbody td.ce-ap-notes { vertical-align: top; }
 .ce-ap-input {
   width: 100%;
   padding: 0.3125rem 0.4375rem;
@@ -2077,6 +2093,211 @@
 /* ===== Мягкая подсветка раскрытой строки договора ===== */
 .contracts-table-compact tbody tr.contract-row.is-expanded > td {
   background: var(--primary-light);
+}
+
+/* ===== Модалка «Стандартные приложения объекта» ===== */
+.oa-modal {
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+}
+
+.oa-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.oa-modal-heading h3 {
+  margin: 0;
+  font-size: 1.1875rem;
+  color: var(--text-primary);
+}
+
+.oa-modal-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+
+.oa-modal-body {
+  padding: 1.25rem 1.75rem 1.5rem;
+  overflow-y: auto;
+}
+
+/* Поле «label + control» */
+.oa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+  min-width: 0;
+}
+
+.oa-field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.oa-field input,
+.oa-field select {
+  width: 100%;
+  padding: 0.5625rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.oa-field input:focus,
+.oa-field select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.12);
+}
+
+.oa-placeholder {
+  margin-top: 1.25rem;
+  padding: 1.75rem 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+}
+
+.oa-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1.5rem 0 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.oa-count {
+  min-width: 1.25rem;
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+  color: #fff;
+  background: var(--primary-color);
+  border-radius: 999px;
+}
+
+.oa-empty {
+  padding: 1rem;
+  font-size: 0.875rem;
+  font-style: italic;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+}
+
+.oa-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.oa-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  transition: border-color 0.12s;
+}
+
+.oa-item:hover { border-color: var(--primary-color); }
+
+.oa-item-main { flex: 1; min-width: 0; }
+
+.oa-item-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.oa-item-desc {
+  margin-top: 0.1875rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.oa-item-link {
+  display: block;
+  margin-top: 0.1875rem;
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  overflow-wrap: anywhere;
+}
+
+.oa-item-del { flex-shrink: 0; }
+
+/* Карточка добавления нового приложения */
+.oa-add-card {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.oa-add-title {
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.oa-add-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.oa-field-wide { grid-column: 1 / -1; }
+
+.oa-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.875rem;
+}
+
+.oa-add-actions .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (max-width: 640px) {
+  .oa-add-grid { grid-template-columns: 1fr; }
 }
 
 /* ===== Переносы длинного текста ===== */
