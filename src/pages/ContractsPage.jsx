@@ -5,6 +5,13 @@ import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
 import FilterDropdown from '../components/FilterDropdown'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
+import {
+  buildAppendixTree,
+  reorderSiblings,
+  nextSortOrder,
+  indentUpdates,
+  outdentUpdates,
+} from '../utils/appendixTree'
 import '../components/ContractRegistry.css'
 
 // Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
@@ -164,10 +171,16 @@ function ContractRegistry() {
   const [newAttachmentName, setNewAttachmentName] = useState('')
   const [newAttachmentDescription, setNewAttachmentDescription] = useState('')
   const [newAttachmentLink, setNewAttachmentLink] = useState('')
+  // DnD-переупорядочивание приложений объекта (внутри одного уровня)
+  const [draggedObjAtt, setDraggedObjAtt] = useState(null)     // id
+  const [objAttDragOver, setObjAttDragOver] = useState(null)   // { id, position }
   const [formAttachments, setFormAttachments] = useState(new Set())
   const [availableAttachments, setAvailableAttachments] = useState([])
   // Задача 419: «Приложения к Договору»: contract_id → массив строк
   const [contractAppendicesMap, setContractAppendicesMap] = useState({})
+  // DnD-переупорядочивание приложений договора (внутри одного уровня)
+  const [draggedAppendix, setDraggedAppendix] = useState(null) // { contractId, id }
+  const [appendixDragOver, setAppendixDragOver] = useState(null) // { id, position }
 
   // Task 188: dropdown состояние для приложений в форме
   const [attachmentsDropdownOpenForm, setAttachmentsDropdownOpenForm] = useState(false)
@@ -355,15 +368,17 @@ function ContractRegistry() {
   const handleAddAttachment = async () => {
     if (!attachmentsObjectId || !newAttachmentName.trim()) return
     try {
-      const maxOrder = objectAttachments.reduce((m, a) => Math.max(m, a.sort_order || 0), 0)
       const { error } = await supabase
         .from('object_contract_attachments')
         .insert([{
           object_id: attachmentsObjectId,
+          parent_id: null,
+          number_label: null,       // авто-нумерация
+          number_manual: false,
           name: newAttachmentName.trim(),
           description: newAttachmentDescription.trim() || null,
           link: newAttachmentLink.trim() || null,
-          sort_order: maxOrder + 1,
+          sort_order: nextSortOrder(objectAttachments, null),
         }])
       if (error) throw error
       setNewAttachmentName('')
@@ -376,22 +391,116 @@ function ContractRegistry() {
     }
   }
 
-
-  // ── Задача 419: сопутствующие приложения договора (ручные строки) ──────────
-  const nextAppendixNumber = (list) => {
-    const nums = (list || [])
-      .map(a => parseInt(a.appendix_number, 10))
-      .filter(n => Number.isFinite(n))
-    return String(nums.length ? Math.max(...nums) + 1 : 1)
+  const handleAddChildAttachment = async (parentId) => {
+    if (!attachmentsObjectId) return
+    try {
+      const { error } = await supabase
+        .from('object_contract_attachments')
+        .insert([{
+          object_id: attachmentsObjectId,
+          parent_id: parentId,
+          number_label: null,
+          number_manual: false,
+          name: '',
+          sort_order: nextSortOrder(objectAttachments, parentId),
+        }])
+      if (error) throw error
+      fetchObjectAttachments(attachmentsObjectId)
+    } catch (err) {
+      console.error('Ошибка добавления подпункта:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
   }
 
-  const handleAddAppendix = async (contractId) => {
+  // Инлайн-правка поля приложения объекта (оптимистично + запись).
+  const patchObjectAttachment = async (id, patch) => {
+    setObjectAttachments(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
+    try {
+      const { error } = await supabase.from('object_contract_attachments').update(patch).eq('id', id)
+      if (error) throw error
+    } catch (err) {
+      console.error('Ошибка сохранения приложения:', err.message)
+      alert('Ошибка: ' + err.message)
+      fetchObjectAttachments(attachmentsObjectId)
+    }
+  }
+  const handleUpdateObjectAttachment = (id, field, rawValue) => {
+    const value = (rawValue ?? '').toString()
+    const a = objectAttachments.find(x => x.id === id)
+    if (!a) return
+    if (field === 'number_label') {
+      const trimmed = value.trim()
+      if ((a.number_label || '') === trimmed && !!a.number_manual === !!trimmed) return
+      patchObjectAttachment(id, { number_label: trimmed || null, number_manual: !!trimmed })
+      return
+    }
+    // Пустые description/link храним как NULL.
+    const norm = (field === 'description' || field === 'link') ? (value.trim() || null) : value
+    if ((a[field] || '') === (norm || '')) return
+    patchObjectAttachment(id, { [field]: norm })
+  }
+
+  // Иерархия / порядок приложений объекта.
+  const persistObjAttUpdates = async (updates) => {
+    if (!updates || updates.length === 0) return
+    setObjectAttachments(prev => prev.map(a => {
+      const u = updates.find(x => x.id === a.id)
+      return u ? { ...a, ...u } : a
+    }))
+    try {
+      await Promise.all(updates.map(u => {
+        const { id, ...fields } = u
+        return supabase.from('object_contract_attachments').update(fields).eq('id', id)
+      }))
+    } catch (err) {
+      alert('Не удалось изменить структуру приложений: ' + (err.message || err))
+      fetchObjectAttachments(attachmentsObjectId)
+    }
+  }
+  const handleIndentObjAtt = (id) => {
+    const upd = indentUpdates(objectAttachments, id)
+    if (upd) persistObjAttUpdates(upd)
+  }
+  const handleOutdentObjAtt = (id) => {
+    const upd = outdentUpdates(objectAttachments, id)
+    if (upd) persistObjAttUpdates(upd)
+  }
+  const handleObjAttDrop = async (draggedId, targetId) => {
+    const position = objAttDragOver?.position || 'before'
+    setDraggedObjAtt(null)
+    setObjAttDragOver(null)
+    const pairs = reorderSiblings(objectAttachments, draggedId, targetId, position)
+    if (!pairs) return
+    setObjectAttachments(prev => prev.map(a => {
+      const p = pairs.find(x => x.id === a.id)
+      return p ? { ...a, sort_order: p.sort_order } : a
+    }))
+    try {
+      await Promise.all(pairs.map(p =>
+        supabase.from('object_contract_attachments').update({ sort_order: p.sort_order }).eq('id', p.id)
+      ))
+    } catch (err) {
+      alert('Не удалось сохранить порядок: ' + (err.message || err))
+      fetchObjectAttachments(attachmentsObjectId)
+    }
+  }
+
+
+  // ── Задача 419: «Приложения к Договору» (ручные строки, иерархия 2 уровня) ──
+  // Добавление строки на нужном уровне. parentId=null → верхний уровень.
+  const addAppendixRow = async (contractId, parentId) => {
     const list = contractAppendicesMap[contractId] || []
-    const number = nextAppendixNumber(list)
     try {
       const { data, error } = await supabase
         .from('contract_appendices')
-        .insert([{ contract_id: contractId, appendix_number: number, name: '', responsible: '', status: '', sort_order: list.length }])
+        .insert([{
+          contract_id: contractId,
+          parent_id: parentId || null,
+          appendix_number: null,        // номер считается автоматически
+          number_manual: false,
+          name: '', responsible: '', status: '',
+          sort_order: nextSortOrder(list, parentId),
+        }])
         .select('*')
         .single()
       if (error) throw error
@@ -401,20 +510,19 @@ function ContractRegistry() {
       alert('Не удалось добавить приложение: ' + err.message)
     }
   }
+  const handleAddAppendix = (contractId) => addAppendixRow(contractId, null)
+  const handleAddChildAppendix = (contractId, parentId) => addAppendixRow(contractId, parentId)
 
-  const handleUpdateAppendix = async (contractId, appendixId, field, rawValue) => {
-    const value = (rawValue ?? '').toString()
-    const ap = (contractAppendicesMap[contractId] || []).find(a => a.id === appendixId)
-    if (!ap || (ap[field] || '') === value) return
-    // Оптимистично обновляем локально
+  // Обновление одного/нескольких полей строки (оптимистично + запись).
+  const patchAppendix = async (contractId, appendixId, patch) => {
     setContractAppendicesMap(prev => ({
       ...prev,
-      [contractId]: (prev[contractId] || []).map(a => a.id === appendixId ? { ...a, [field]: value } : a),
+      [contractId]: (prev[contractId] || []).map(a => a.id === appendixId ? { ...a, ...patch } : a),
     }))
     try {
       const { error } = await supabase
         .from('contract_appendices')
-        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', appendixId)
       if (error) throw error
     } catch (err) {
@@ -423,14 +531,88 @@ function ContractRegistry() {
     }
   }
 
-  const handleDeleteAppendix = async (contractId, appendixId) => {
-    if (!window.confirm('Удалить это приложение?')) return
+  const handleUpdateAppendix = (contractId, appendixId, field, rawValue) => {
+    const value = (rawValue ?? '').toString()
+    const ap = (contractAppendicesMap[contractId] || []).find(a => a.id === appendixId)
+    if (!ap) return
+    // Ручной номер: непустое значение → override (number_manual=true), пусто → снова авто.
+    if (field === 'appendix_number') {
+      const trimmed = value.trim()
+      if ((ap.appendix_number || '') === trimmed && !!ap.number_manual === !!trimmed) return
+      patchAppendix(contractId, appendixId, { appendix_number: trimmed || null, number_manual: !!trimmed })
+      return
+    }
+    if ((ap[field] || '') === value) return
+    patchAppendix(contractId, appendixId, { [field]: value })
+  }
+
+  // Вложить строку подпунктом / поднять на верхний уровень.
+  const persistAppendixUpdates = async (contractId, updates) => {
+    if (!updates || updates.length === 0) return
+    setContractAppendicesMap(prev => ({
+      ...prev,
+      [contractId]: (prev[contractId] || []).map(a => {
+        const u = updates.find(x => x.id === a.id)
+        return u ? { ...a, ...u } : a
+      }),
+    }))
     try {
+      await Promise.all(updates.map(u => {
+        const { id, ...fields } = u
+        return supabase.from('contract_appendices').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)
+      }))
+    } catch (err) {
+      alert('Не удалось изменить структуру приложений: ' + (err.message || err))
+      fetchContracts()
+    }
+  }
+  const handleIndentAppendix = (contractId, appendixId) => {
+    const upd = indentUpdates(contractAppendicesMap[contractId] || [], appendixId)
+    if (upd) persistAppendixUpdates(contractId, upd)
+  }
+  const handleOutdentAppendix = (contractId, appendixId) => {
+    const upd = outdentUpdates(contractAppendicesMap[contractId] || [], appendixId)
+    if (upd) persistAppendixUpdates(contractId, upd)
+  }
+
+  // DnD-переупорядочивание внутри одного уровня.
+  const handleAppendixDrop = async (contractId, draggedId, targetId) => {
+    const position = appendixDragOver?.position || 'before'
+    setDraggedAppendix(null)
+    setAppendixDragOver(null)
+    const pairs = reorderSiblings(contractAppendicesMap[contractId] || [], draggedId, targetId, position)
+    if (!pairs) return
+    setContractAppendicesMap(prev => ({
+      ...prev,
+      [contractId]: (prev[contractId] || []).map(a => {
+        const p = pairs.find(x => x.id === a.id)
+        return p ? { ...a, sort_order: p.sort_order } : a
+      }),
+    }))
+    try {
+      await Promise.all(pairs.map(p =>
+        supabase.from('contract_appendices').update({ sort_order: p.sort_order }).eq('id', p.id)
+      ))
+    } catch (err) {
+      alert('Не удалось сохранить порядок приложений: ' + (err.message || err))
+      fetchContracts()
+    }
+  }
+
+  const handleDeleteAppendix = async (contractId, appendixId) => {
+    const list = contractAppendicesMap[contractId] || []
+    const childCount = list.filter(a => a.parent_id === appendixId).length
+    const msg = childCount > 0
+      ? `Удалить приложение и его ${childCount} подпункт(а)?`
+      : 'Удалить это приложение?'
+    if (!window.confirm(msg)) return
+    try {
+      // ON DELETE CASCADE удалит подпункты в БД; локально убираем строку и её детей.
       const { error } = await supabase.from('contract_appendices').delete().eq('id', appendixId)
       if (error) throw error
       setContractAppendicesMap(prev => ({
         ...prev,
-        [contractId]: (prev[contractId] || []).filter(a => a.id !== appendixId),
+        [contractId]: (prev[contractId] || []).filter(a => a.id !== appendixId && a.parent_id !== appendixId),
       }))
     } catch (err) {
       console.error('Ошибка удаления приложения:', err.message)
@@ -774,9 +956,11 @@ function ContractRegistry() {
             .filter(a => formAttachments.has(a.id))
             .map((a, i) => ({
               contract_id: contractId,
-              appendix_number: String(i + 1),
+              parent_id: null,
+              appendix_number: null,   // авто-нумерация
+              number_manual: false,
               name: a.name,
-              sort_order: i,
+              sort_order: (i + 1) * 10,
             }))
           if (seedRows.length > 0) {
             const { error: apErr } = await supabase.from('contract_appendices').insert(seedRows)
@@ -1348,41 +1532,86 @@ function ContractRegistry() {
                             <div className="ce-empty">
                               Приложения не добавлены.{canEditContracts && !isDeletedTab ? ' Нажмите «+ Добавить приложение».' : ''}
                             </div>
-                          ) : (
+                          ) : (() => {
+                            const ro = !canEditContracts || isDeletedTab
+                            const apTree = buildAppendixTree(appendices, { numberField: 'appendix_number' })
+                            return (
                             <div className="ce-appendix-wrap">
                               <table className="ce-appendix-table">
                                 <thead>
                                   <tr>
+                                    {!ro && <th className="ce-ap-drag" aria-label="Порядок"></th>}
                                     <th className="ce-ap-num">№</th>
                                     <th>Наименование приложения</th>
                                     <th>Ответственный</th>
                                     <th className="ce-ap-status">Статус</th>
                                     <th className="ce-ap-notes">Примечание</th>
-                                    {canEditContracts && !isDeletedTab && <th className="ce-ap-actions" aria-label="Действия"></th>}
+                                    {!ro && <th className="ce-ap-actions" aria-label="Действия"></th>}
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {appendices.map(ap => {
-                                    const ro = !canEditContracts || isDeletedTab
+                                  {apTree.map(node => {
+                                    const ap = node.row
+                                    const isChild = node.level === 1
+                                    const dragOverCls = appendixDragOver?.id === ap.id ? `ce-ap-drop-${appendixDragOver.position}` : ''
                                     return (
-                                      <tr key={ap.id}>
+                                      <tr
+                                        key={ap.id}
+                                        className={`${isChild ? 'ce-ap-child' : ''} ${draggedAppendix?.id === ap.id ? 'ce-ap-dragging' : ''} ${dragOverCls}`}
+                                        onDragOver={ro ? undefined : (e) => {
+                                          e.preventDefault()
+                                          e.dataTransfer.dropEffect = 'move'
+                                          const rect = e.currentTarget.getBoundingClientRect()
+                                          const isAbove = (e.clientY - rect.top) < rect.height / 2
+                                          const position = isAbove ? 'before' : 'after'
+                                          if (ap.id === draggedAppendix?.id) { setAppendixDragOver(null); return }
+                                          setAppendixDragOver(prev => (prev?.id === ap.id && prev?.position === position) ? prev : { id: ap.id, position })
+                                        }}
+                                        onDragLeave={ro ? undefined : () => setAppendixDragOver(prev => prev?.id === ap.id ? null : prev)}
+                                        onDrop={ro ? undefined : (e) => {
+                                          e.preventDefault()
+                                          const draggedId = e.dataTransfer.getData('text/plain')
+                                          handleAppendixDrop(contract.id, draggedId, ap.id)
+                                        }}
+                                      >
+                                        {!ro && (
+                                          <td className="ce-ap-drag">
+                                            <span
+                                              className="ce-ap-handle"
+                                              role="button"
+                                              tabIndex={-1}
+                                              draggable
+                                              title="Перетащите для изменения порядка"
+                                              onDragStart={(e) => {
+                                                e.dataTransfer.effectAllowed = 'move'
+                                                e.dataTransfer.setData('text/plain', ap.id)
+                                                setDraggedAppendix({ contractId: contract.id, id: ap.id })
+                                              }}
+                                              onDragEnd={() => { setDraggedAppendix(null); setAppendixDragOver(null) }}
+                                            >⋮⋮</span>
+                                          </td>
+                                        )}
                                         <td className="ce-ap-num">
                                           <input
                                             className="ce-ap-input ce-ap-input-num"
-                                            defaultValue={ap.appendix_number || ''}
+                                            defaultValue={node.displayNumber}
+                                            key={`num-${ap.id}-${node.displayNumber}`}
                                             readOnly={ro}
-                                            title="№ приложения (можно изменить)"
+                                            title="№ приложения (авто; можно вписать вручную)"
                                             onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'appendix_number', e.target.value)}
                                           />
                                         </td>
-                                        <td>
-                                          <input
-                                            className="ce-ap-input"
-                                            defaultValue={ap.name || ''}
-                                            placeholder="Наименование приложения"
-                                            readOnly={ro}
-                                            onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'name', e.target.value)}
-                                          />
+                                        <td className="ce-ap-name-cell">
+                                          <div className="ce-ap-name-inner">
+                                            {isChild && <span className="ce-ap-child-marker" aria-hidden>└</span>}
+                                            <input
+                                              className="ce-ap-input"
+                                              defaultValue={ap.name || ''}
+                                              placeholder="Наименование приложения"
+                                              readOnly={ro}
+                                              onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'name', e.target.value)}
+                                            />
+                                          </div>
                                         </td>
                                         <td>
                                           <input
@@ -1415,15 +1644,29 @@ function ContractRegistry() {
                                             />
                                           )}
                                         </td>
-                                        {canEditContracts && !isDeletedTab && (
+                                        {!ro && (
                                           <td className="ce-ap-actions">
-                                            <button
-                                              type="button"
-                                              className="ce-ap-del"
-                                              title="Удалить приложение"
-                                              aria-label="Удалить приложение"
-                                              onClick={() => handleDeleteAppendix(contract.id, ap.id)}
-                                            >×</button>
+                                            <div className="ce-ap-actions-inner">
+                                              {isChild ? (
+                                                <button type="button" className="ce-ap-hier" title="Поднять на верхний уровень"
+                                                  onClick={() => handleOutdentAppendix(contract.id, ap.id)}>←</button>
+                                              ) : (
+                                                <button type="button" className="ce-ap-hier" title="Сделать подпунктом предыдущего приложения"
+                                                  disabled={node.isFirstTopLevel || node.hasChildren}
+                                                  onClick={() => handleIndentAppendix(contract.id, ap.id)}>→</button>
+                                              )}
+                                              {!isChild && (
+                                                <button type="button" className="ce-ap-hier" title="Добавить подпункт"
+                                                  onClick={() => handleAddChildAppendix(contract.id, ap.id)}>+</button>
+                                              )}
+                                              <button
+                                                type="button"
+                                                className="ce-ap-del"
+                                                title="Удалить приложение"
+                                                aria-label="Удалить приложение"
+                                                onClick={() => handleDeleteAppendix(contract.id, ap.id)}
+                                              >×</button>
+                                            </div>
                                           </td>
                                         )}
                                       </tr>
@@ -1432,7 +1675,8 @@ function ContractRegistry() {
                                 </tbody>
                               </table>
                             </div>
-                          )}
+                            )
+                          })()}
                         </section>
 
                         {/* Действия раскрытого блока */}
@@ -1796,11 +2040,14 @@ function ContractRegistry() {
 
                   {objectAttachments.length === 0 ? (
                     <div className="oa-empty">Приложений пока нет — добавьте первое в форме ниже.</div>
-                  ) : (
+                  ) : (() => {
+                    const oaTree = buildAppendixTree(objectAttachments, { numberField: 'number_label' })
+                    return (
                     <div className="oa-table-wrap">
                       <table className="oa-table">
                         <thead>
                           <tr>
+                            {canEditContracts && <th className="oa-col-drag" aria-label="Порядок"></th>}
                             <th className="oa-col-num">№ п/п</th>
                             <th>Название</th>
                             <th>Описание</th>
@@ -1809,35 +2056,125 @@ function ContractRegistry() {
                           </tr>
                         </thead>
                         <tbody>
-                          {objectAttachments.map((a, i) => (
-                            <tr key={a.id}>
-                              <td className="oa-col-num">{i + 1}</td>
-                              <td className="oa-cell-name">{a.name}</td>
-                              <td className="oa-cell-desc">{a.description || <span className="oa-dash">—</span>}</td>
+                          {oaTree.map(node => {
+                            const a = node.row
+                            const isChild = node.level === 1
+                            const dragOverCls = objAttDragOver?.id === a.id ? `oa-drop-${objAttDragOver.position}` : ''
+                            return (
+                            <tr
+                              key={a.id}
+                              className={`${isChild ? 'oa-row-child' : ''} ${draggedObjAtt === a.id ? 'oa-row-dragging' : ''} ${dragOverCls}`}
+                              onDragOver={!canEditContracts ? undefined : (e) => {
+                                e.preventDefault()
+                                e.dataTransfer.dropEffect = 'move'
+                                const rect = e.currentTarget.getBoundingClientRect()
+                                const position = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after'
+                                if (a.id === draggedObjAtt) { setObjAttDragOver(null); return }
+                                setObjAttDragOver(prev => (prev?.id === a.id && prev?.position === position) ? prev : { id: a.id, position })
+                              }}
+                              onDragLeave={!canEditContracts ? undefined : () => setObjAttDragOver(prev => prev?.id === a.id ? null : prev)}
+                              onDrop={!canEditContracts ? undefined : (e) => {
+                                e.preventDefault()
+                                const draggedId = e.dataTransfer.getData('text/plain')
+                                handleObjAttDrop(draggedId, a.id)
+                              }}
+                            >
+                              {canEditContracts && (
+                                <td className="oa-col-drag">
+                                  <span
+                                    className="oa-handle"
+                                    role="button"
+                                    tabIndex={-1}
+                                    draggable
+                                    title="Перетащите для изменения порядка"
+                                    onDragStart={(e) => {
+                                      e.dataTransfer.effectAllowed = 'move'
+                                      e.dataTransfer.setData('text/plain', a.id)
+                                      setDraggedObjAtt(a.id)
+                                    }}
+                                    onDragEnd={() => { setDraggedObjAtt(null); setObjAttDragOver(null) }}
+                                  >⋮⋮</span>
+                                </td>
+                              )}
+                              <td className="oa-col-num">
+                                {canEditContracts ? (
+                                  <input
+                                    className="oa-input oa-input-num"
+                                    defaultValue={node.displayNumber}
+                                    key={`oanum-${a.id}-${node.displayNumber}`}
+                                    title="№ приложения (авто; можно вписать вручную)"
+                                    onBlur={(e) => handleUpdateObjectAttachment(a.id, 'number_label', e.target.value)}
+                                  />
+                                ) : node.displayNumber}
+                              </td>
+                              <td className="oa-cell-name">
+                                <div className="oa-name-inner">
+                                  {isChild && <span className="oa-child-marker" aria-hidden>└</span>}
+                                  {canEditContracts ? (
+                                    <input
+                                      className="oa-input"
+                                      defaultValue={a.name || ''}
+                                      placeholder="Название"
+                                      onBlur={(e) => handleUpdateObjectAttachment(a.id, 'name', e.target.value)}
+                                    />
+                                  ) : <span className="oa-name-text">{a.name}</span>}
+                                </div>
+                              </td>
+                              <td className="oa-cell-desc">
+                                {canEditContracts ? (
+                                  <input
+                                    className="oa-input"
+                                    defaultValue={a.description || ''}
+                                    placeholder="Описание"
+                                    onBlur={(e) => handleUpdateObjectAttachment(a.id, 'description', e.target.value)}
+                                  />
+                                ) : (a.description || <span className="oa-dash">—</span>)}
+                              </td>
                               <td className="oa-col-link">
-                                {a.link ? (
-                                  <a className="oa-item-link" href={a.link} target="_blank" rel="noopener noreferrer">
-                                    Открыть
-                                  </a>
+                                {canEditContracts ? (
+                                  <input
+                                    className="oa-input"
+                                    defaultValue={a.link || ''}
+                                    placeholder="https://…"
+                                    onBlur={(e) => handleUpdateObjectAttachment(a.id, 'link', e.target.value)}
+                                  />
+                                ) : a.link ? (
+                                  <a className="oa-item-link" href={a.link} target="_blank" rel="noopener noreferrer">Открыть</a>
                                 ) : <span className="oa-dash">—</span>}
                               </td>
                               {canEditContracts && (
                                 <td className="oa-col-act">
-                                  <button
-                                    type="button"
-                                    className="btn-icon btn-delete oa-item-del"
-                                    onClick={() => handleDeleteAttachment(a.id)}
-                                    title="Удалить приложение"
-                                    aria-label="Удалить приложение"
-                                  ><TrashIcon /></button>
+                                  <div className="oa-act-inner">
+                                    {isChild ? (
+                                      <button type="button" className="oa-hier" title="Поднять на верхний уровень"
+                                        onClick={() => handleOutdentObjAtt(a.id)}>←</button>
+                                    ) : (
+                                      <button type="button" className="oa-hier" title="Сделать подпунктом предыдущего приложения"
+                                        disabled={node.isFirstTopLevel || node.hasChildren}
+                                        onClick={() => handleIndentObjAtt(a.id)}>→</button>
+                                    )}
+                                    {!isChild && (
+                                      <button type="button" className="oa-hier" title="Добавить подпункт"
+                                        onClick={() => handleAddChildAttachment(a.id)}>+</button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="btn-icon btn-delete oa-item-del"
+                                      onClick={() => handleDeleteAttachment(a.id)}
+                                      title="Удалить приложение"
+                                      aria-label="Удалить приложение"
+                                    ><TrashIcon /></button>
+                                  </div>
                                 </td>
                               )}
                             </tr>
-                          ))}
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
-                  )}
+                    )
+                  })()}
 
                   {canEditContracts && (
                     <div className="oa-add-card">

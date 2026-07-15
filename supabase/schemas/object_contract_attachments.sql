@@ -7,11 +7,16 @@ CREATE TABLE IF NOT EXISTS object_contract_attachments (
   name TEXT NOT NULL,
   description TEXT,
   link TEXT,
+  -- Иерархия 2 уровня (№1 → подпункт №1.1) и порядок среди соседей одного уровня.
+  parent_id UUID REFERENCES object_contract_attachments(id) ON DELETE CASCADE,
+  number_label TEXT,                    -- ручной override номера; NULL — авто
+  number_manual BOOLEAN DEFAULT false,  -- true — номер задан вручную
   sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_object_contract_attachments_object_id ON object_contract_attachments(object_id);
+CREATE INDEX IF NOT EXISTS idx_object_contract_attachments_parent ON object_contract_attachments(parent_id);
 
 ALTER TABLE object_contract_attachments ENABLE ROW LEVEL SECURITY;
 
