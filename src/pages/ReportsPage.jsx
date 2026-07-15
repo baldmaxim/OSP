@@ -160,7 +160,8 @@ function ReportsPage() {
 
       let contractsQ = supabase
         .from('contracts')
-        .select('id, object_id, status, contract_amount, counterparty_id, objects(status)')
+        .select('id, object_id, status, contract_amount, counterparty_id, deleted_at, objects(id, name, status)')
+        .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят
       if (scopedObjectId) contractsQ = contractsQ.eq('object_id', scopedObjectId)
       const { data: contracts } = await contractsQ
 
@@ -179,8 +180,6 @@ function ReportsPage() {
 
       const tConst = t.filter(x => x.objects?.status === 'main_construction')
       const tWar = t.filter(x => x.objects?.status === 'warranty_service')
-      const cConst = c.filter(x => x.objects?.status === 'main_construction')
-      const cWar = c.filter(x => x.objects?.status === 'warranty_service')
 
       // Группировка по ответственным — в работу попадают только активные
       // процедуры, завершённые отдельно. Тендеры со статусом «Не начат» не
@@ -206,6 +205,29 @@ function ReportsPage() {
       const unassignedCount = (rows) => rows.filter(x => !x.responsible_contact_id).length
 
       const sumAmount = (rows) => rows.reduce((acc, r) => acc + (Number(r.contract_amount) || 0), 0)
+
+      // Разбивка договоров по объектам: количество по статусам + сумма, сортировка по «всего».
+      const contractsByObject = (rows) => {
+        const map = new Map()
+        for (const x of rows) {
+          const id = x.object_id || '_none'
+          if (!map.has(id)) {
+            map.set(id, {
+              objectId: id,
+              name: x.objects?.name || 'Без объекта',
+              total: 0, cNew: 0, inWork: 0, paused: 0, completed: 0, amount: 0,
+            })
+          }
+          const row = map.get(id)
+          row.total += 1
+          row.amount += Number(x.contract_amount) || 0
+          if (x.status === 'new_request') row.cNew += 1
+          else if (x.status === 'in_work') row.inWork += 1
+          else if (x.status === 'paused') row.paused += 1
+          else if (x.status === 'completed') row.completed += 1
+        }
+        return Array.from(map.values()).sort((a, b) => b.total - a.total)
+      }
 
       // Общая группировка по ответственному с произвольным предикатом «завершено»
       // и произвольным getter ответственного — реюзается для materials/cost-plans/vor.
@@ -275,7 +297,8 @@ function ReportsPage() {
         const amount = Number(contract.contract_amount) || 0
         acc[cpId].total += 1
         acc[cpId].totalAmount += amount
-        if (contract.status === 'signed') {
+        // «Заключённый» договор = статус 'completed' (Завершено); старое 'signed' не существует.
+        if (contract.status === 'completed') {
           acc[cpId].signed += 1
           acc[cpId].signedAmount += amount
         }
@@ -385,21 +408,15 @@ function ReportsPage() {
         byResponsible: groupByResponsible(t),
         byResponsibleConst: groupByResponsible(tConst),
         byResponsibleWar: groupByResponsible(tWar),
-        // Договоры — общие
+        // Договоры — сводка по всем (реальные статусы new_request/in_work/paused/completed)
         cTotal: c.length,
-        cPending: c.filter(x => x.status === 'pending').length,
-        cSigned: c.filter(x => x.status === 'signed').length,
+        cNew: c.filter(x => x.status === 'new_request').length,
+        cInWork: c.filter(x => x.status === 'in_work').length,
+        cPaused: c.filter(x => x.status === 'paused').length,
+        cCompleted: c.filter(x => x.status === 'completed').length,
         cAmountTotal: sumAmount(c),
-        cAmountSigned: sumAmount(c.filter(x => x.status === 'signed')),
-        // По отделам договоры
-        cPendingConst: cConst.filter(x => x.status === 'pending').length,
-        cSignedConst: cConst.filter(x => x.status === 'signed').length,
-        cTotalConst: cConst.length,
-        cAmountConst: sumAmount(cConst),
-        cPendingWar: cWar.filter(x => x.status === 'pending').length,
-        cSignedWar: cWar.filter(x => x.status === 'signed').length,
-        cTotalWar: cWar.length,
-        cAmountWar: sumAmount(cWar),
+        cAmountCompleted: sumAmount(c.filter(x => x.status === 'completed')),
+        cByObject: contractsByObject(c),
         // Тендеры на материалы
         mat,
         // Планы затрат
@@ -898,63 +915,74 @@ function ReportsPage() {
         {activeTab === 'contracts' && (
           <>
             <div className="kpi-grid">
-              <div className="kpi-card">
+              <div className="kpi-card kpi-card--ico">
                 <div className="kpi-label">Всего договоров</div>
                 <div className="kpi-value">{s.cTotal}</div>
               </div>
               <div className="kpi-card">
-                <div className="kpi-label">На стадии заключения</div>
-                <div className="kpi-value">{s.cPending}</div>
-                <div className="kpi-foot">{pct(s.cPending, s.cTotal)}% от всех</div>
+                <div className="kpi-label">Новая заявка</div>
+                <div className="kpi-value">{s.cNew}</div>
+                <div className="kpi-foot">{pct(s.cNew, s.cTotal)}% от всех</div>
+              </div>
+              <div className="kpi-card kpi-card--warn">
+                <div className="kpi-label">В работе</div>
+                <div className="kpi-value accent-warn">{s.cInWork}</div>
+                <div className="kpi-foot">{pct(s.cInWork, s.cTotal)}% от всех</div>
+              </div>
+              <div className="kpi-card kpi-card--danger">
+                <div className="kpi-label">Приостановка</div>
+                <div className="kpi-value accent-danger">{s.cPaused}</div>
+                <div className="kpi-foot">{pct(s.cPaused, s.cTotal)}% от всех</div>
               </div>
               <div className="kpi-card kpi-card--success">
-                <div className="kpi-label">Заключено</div>
-                <div className="kpi-value accent-success">{s.cSigned}</div>
-                <div className="kpi-foot">{pct(s.cSigned, s.cTotal)}% заключено</div>
+                <div className="kpi-label">Завершено</div>
+                <div className="kpi-value accent-success">{s.cCompleted}</div>
+                <div className="kpi-foot">{pct(s.cCompleted, s.cTotal)}% завершено</div>
               </div>
               <div className="kpi-card kpi-card-wide">
-                <div className="kpi-label">Сумма заключённых</div>
-                <div className="kpi-value">{fmtMoney(s.cAmountSigned)}</div>
-                <div className="kpi-foot">всего по договорам: {fmtMoney(s.cAmountTotal)}</div>
+                <div className="kpi-label">Общая сумма</div>
+                <div className="kpi-value">{fmtMoney(s.cAmountTotal)}</div>
+                <div className="kpi-foot">в т.ч. завершённые: {fmtMoney(s.cAmountCompleted)}</div>
               </div>
             </div>
 
             <section className="report-section">
               <header className="section-head">
-                <h3>По отделам</h3>
+                <h3>По объектам</h3>
+                <span className="section-meta">{s.cByObject.length} объект(ов)</span>
               </header>
               <table className="dense-table">
                 <thead>
                   <tr>
-                    <th>Отдел</th>
-                    <th className="num">На стадии</th>
-                    <th className="num">Заключено</th>
+                    <th>Объект</th>
+                    <th className="num">Новая заявка</th>
+                    <th className="num">В работе</th>
+                    <th className="num">Приостановка</th>
+                    <th className="num">Завершено</th>
                     <th className="num">Всего</th>
                     <th className="num">Сумма</th>
                     <th className="bar-col">Готовность</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td>Основное строительство</td>
-                    <td className="num">{s.cPendingConst}</td>
-                    <td className="num">{s.cSignedConst}</td>
-                    <td className="num strong">{s.cTotalConst}</td>
-                    <td className="num">{fmtMoney(s.cAmountConst)}</td>
-                    <td className="bar-col">
-                      <ProgressBar value={s.cSignedConst} total={s.cTotalConst} />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Гарантийный отдел</td>
-                    <td className="num">{s.cPendingWar}</td>
-                    <td className="num">{s.cSignedWar}</td>
-                    <td className="num strong">{s.cTotalWar}</td>
-                    <td className="num">{fmtMoney(s.cAmountWar)}</td>
-                    <td className="bar-col">
-                      <ProgressBar value={s.cSignedWar} total={s.cTotalWar} />
-                    </td>
-                  </tr>
+                  {s.cByObject.length === 0 ? (
+                    <tr><td colSpan="8" className="muted">Договоров нет</td></tr>
+                  ) : (
+                    s.cByObject.map(o => (
+                      <tr key={o.objectId}>
+                        <td>{o.name}</td>
+                        <td className="num">{o.cNew}</td>
+                        <td className="num">{o.inWork}</td>
+                        <td className="num">{o.paused}</td>
+                        <td className="num">{o.completed}</td>
+                        <td className="num strong">{o.total}</td>
+                        <td className="num">{fmtMoney(o.amount)}</td>
+                        <td className="bar-col">
+                          <ProgressBar value={o.completed} total={o.total} />
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </section>
