@@ -531,6 +531,11 @@ function ContractRegistry() {
     }
   }
 
+  // Галочки согласования (approved_object / approved_counterparty).
+  const handleToggleAppendixApproval = (contractId, appendixId, field, checked) => {
+    patchAppendix(contractId, appendixId, { [field]: checked })
+  }
+
   const handleUpdateAppendix = (contractId, appendixId, field, rawValue) => {
     const value = (rawValue ?? '').toString()
     const ap = (contractAppendicesMap[contractId] || []).find(a => a.id === appendixId)
@@ -1544,7 +1549,8 @@ function ContractRegistry() {
                                     <th className="ce-ap-num">№</th>
                                     <th>Наименование приложения</th>
                                     <th>Ответственный</th>
-                                    <th className="ce-ap-status">Статус</th>
+                                    <th className="ce-ap-appr">Согл. с объектом</th>
+                                    <th className="ce-ap-appr">Согл. с контрагентом</th>
                                     <th className="ce-ap-notes">Примечание</th>
                                     {!ro && <th className="ce-ap-actions" aria-label="Действия"></th>}
                                   </tr>
@@ -1554,10 +1560,11 @@ function ContractRegistry() {
                                     const ap = node.row
                                     const isChild = node.level === 1
                                     const dragOverCls = appendixDragOver?.id === ap.id ? `ce-ap-drop-${appendixDragOver.position}` : ''
+                                    const fullyApproved = !!ap.approved_object && !!ap.approved_counterparty
                                     return (
                                       <tr
                                         key={ap.id}
-                                        className={`${isChild ? 'ce-ap-child' : ''} ${draggedAppendix?.id === ap.id ? 'ce-ap-dragging' : ''} ${dragOverCls}`}
+                                        className={`${isChild ? 'ce-ap-child' : ''} ${draggedAppendix?.id === ap.id ? 'ce-ap-dragging' : ''} ${dragOverCls} ${fullyApproved ? 'ce-ap-approved' : ''}`}
                                         onDragOver={ro ? undefined : (e) => {
                                           e.preventDefault()
                                           e.dataTransfer.dropEffect = 'move'
@@ -1622,13 +1629,24 @@ function ContractRegistry() {
                                             onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'responsible', e.target.value)}
                                           />
                                         </td>
-                                        <td className="ce-ap-status">
+                                        <td className="ce-ap-appr">
                                           <input
-                                            className="ce-ap-input"
-                                            defaultValue={ap.status || ''}
-                                            placeholder="Статус"
-                                            readOnly={ro}
-                                            onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'status', e.target.value)}
+                                            type="checkbox"
+                                            className="ce-ap-check"
+                                            checked={!!ap.approved_object}
+                                            disabled={ro}
+                                            title="Согласовано с объектом"
+                                            onChange={(e) => handleToggleAppendixApproval(contract.id, ap.id, 'approved_object', e.target.checked)}
+                                          />
+                                        </td>
+                                        <td className="ce-ap-appr">
+                                          <input
+                                            type="checkbox"
+                                            className="ce-ap-check"
+                                            checked={!!ap.approved_counterparty}
+                                            disabled={ro}
+                                            title="Согласовано с контрагентом"
+                                            onChange={(e) => handleToggleAppendixApproval(contract.id, ap.id, 'approved_counterparty', e.target.checked)}
                                           />
                                         </td>
                                         <td className="ce-ap-notes">

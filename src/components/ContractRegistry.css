@@ -1261,9 +1261,25 @@
 .ce-appendix-table tbody tr:last-child td { border-bottom: none; }
 .ce-appendix-table .ce-ap-drag { width: 26px; text-align: center; }
 .ce-appendix-table .ce-ap-num { width: 64px; }
-.ce-appendix-table .ce-ap-status { width: 150px; }
-.ce-appendix-table .ce-ap-notes { width: 28%; }
+.ce-appendix-table .ce-ap-appr { width: 92px; text-align: center; }
+.ce-appendix-table thead th.ce-ap-appr { white-space: normal; line-height: 1.2; }
+.ce-appendix-table .ce-ap-notes { width: 24%; }
 .ce-appendix-table .ce-ap-actions { width: 92px; text-align: center; }
+/* Галочка согласования */
+.ce-ap-check {
+  width: 17px;
+  height: 17px;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+.ce-ap-check:disabled { cursor: default; }
+/* Обе галочки проставлены — приложение согласовано, строка подсвечена зелёным */
+.ce-appendix-table tbody tr.ce-ap-approved > td {
+  background: color-mix(in srgb, #16a34a 12%, transparent);
+}
+[data-theme='dark'] .ce-appendix-table tbody tr.ce-ap-approved > td {
+  background: color-mix(in srgb, #22c55e 16%, transparent);
+}
 /* Примечание юриста — авторастущая textarea (высота по содержимому) */
 .ce-ap-textarea {
   display: block;

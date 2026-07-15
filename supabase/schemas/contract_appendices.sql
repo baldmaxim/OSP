@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS contract_appendices (
   parent_id UUID REFERENCES contract_appendices(id) ON DELETE CASCADE, -- подпункт №N.1
   name TEXT,                       -- наименование приложения
   responsible TEXT,                -- ответственный
-  status TEXT,                     -- статус
+  status TEXT,                     -- устаревший текстовый статус (в UI не используется)
+  approved_object BOOLEAN DEFAULT false,        -- согласовано с объектом
+  approved_counterparty BOOLEAN DEFAULT false,  -- согласовано с контрагентом
   notes TEXT,                      -- примечание юриста по статусу приложения
   sort_order INTEGER DEFAULT 0,    -- порядок среди соседей одного уровня
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
