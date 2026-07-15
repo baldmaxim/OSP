@@ -2143,7 +2143,8 @@
 
 /* ===== Модалка «Стандартные приложения объекта» ===== */
 .oa-modal {
-  max-width: 680px;
+  width: 1040px;
+  max-width: calc(100vw - 48px);
   display: flex;
   flex-direction: column;
 }
@@ -2295,13 +2296,15 @@
 
 .oa-table .oa-col-drag { width: 26px; text-align: center; }
 .oa-table .oa-col-num {
-  width: 62px;
+  width: 58px;
   text-align: center;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }
 
-.oa-table .oa-col-link { width: 22%; }
+/* Ссылка и действия — узкие фикс-колонки; название и описание автоматически делят
+   оставшееся место поровну (столбцы без width под table-layout:fixed). */
+.oa-table .oa-col-link { width: 150px; }
 .oa-table .oa-col-act { width: 96px; text-align: center; }
 
 .oa-cell-name {
