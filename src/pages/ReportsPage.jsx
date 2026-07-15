@@ -160,7 +160,7 @@ function ReportsPage() {
 
       let contractsQ = supabase
         .from('contracts')
-        .select('id, object_id, status, contract_amount, counterparty_id, deleted_at, objects(id, name, status)')
+        .select('id, object_id, status, contract_amount, counterparty_id, responsible_contact_id, deleted_at, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
         .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят
       if (scopedObjectId) contractsQ = contractsQ.eq('object_id', scopedObjectId)
       const { data: contracts } = await contractsQ
@@ -227,6 +227,34 @@ function ReportsPage() {
           else if (x.status === 'completed') row.completed += 1
         }
         return Array.from(map.values()).sort((a, b) => b.total - a.total)
+      }
+
+      // Сводка по ответственным юристам: сколько договоров в работе / всего.
+      // «Не назначен» собирается отдельным ведром и показывается последним.
+      const contractsByLawyer = (rows) => {
+        const map = new Map()
+        for (const x of rows) {
+          const id = x.responsible_contact_id || '_unassigned'
+          if (!map.has(id)) {
+            map.set(id, {
+              id,
+              name: x.responsible?.full_name || 'Не назначен',
+              total: 0, cNew: 0, inWork: 0, paused: 0, completed: 0,
+            })
+          }
+          const row = map.get(id)
+          row.total += 1
+          if (x.status === 'new_request') row.cNew += 1
+          else if (x.status === 'in_work') row.inWork += 1
+          else if (x.status === 'paused') row.paused += 1
+          else if (x.status === 'completed') row.completed += 1
+        }
+        return Array.from(map.values()).sort((a, b) => {
+          if (a.id === '_unassigned') return 1      // «Не назначен» — всегда в конце
+          if (b.id === '_unassigned') return -1
+          if (b.inWork !== a.inWork) return b.inWork - a.inWork
+          return b.total - a.total
+        })
       }
 
       // Общая группировка по ответственному с произвольным предикатом «завершено»
@@ -417,6 +445,7 @@ function ReportsPage() {
         cAmountTotal: sumAmount(c),
         cAmountCompleted: sumAmount(c.filter(x => x.status === 'completed')),
         cByObject: contractsByObject(c),
+        cByLawyer: contractsByLawyer(c),
         // Тендеры на материалы
         mat,
         // Планы затрат
@@ -914,36 +943,38 @@ function ReportsPage() {
 
         {activeTab === 'contracts' && (
           <>
-            <div className="kpi-grid">
-              <div className="kpi-card kpi-card--ico">
-                <div className="kpi-label">Всего договоров</div>
-                <div className="kpi-value">{s.cTotal}</div>
+            {/* Заголовок сводки: числовые KPI + наглядная структура по статусам */}
+            <div className="contracts-overview">
+              <div className="kpi-grid contracts-kpi">
+                <div className="kpi-card kpi-card--ico">
+                  <div className="kpi-label">Всего договоров</div>
+                  <div className="kpi-value">{s.cTotal}</div>
+                  <div className="kpi-foot">на {s.cByObject.length} объект(ах)</div>
+                </div>
+                <div className="kpi-card kpi-card--success">
+                  <div className="kpi-label">Завершено</div>
+                  <div className="kpi-value accent-success">{s.cCompleted}</div>
+                  <div className="kpi-foot">{pct(s.cCompleted, s.cTotal)}% от всех</div>
+                </div>
+                <div className="kpi-card kpi-card-wide">
+                  <div className="kpi-label">Общая сумма договоров</div>
+                  <div className="kpi-value">{fmtMoney(s.cAmountTotal)}</div>
+                  <div className="kpi-foot">в т.ч. завершённые: {fmtMoney(s.cAmountCompleted)}</div>
+                </div>
               </div>
-              <div className="kpi-card">
-                <div className="kpi-label">Новая заявка</div>
-                <div className="kpi-value">{s.cNew}</div>
-                <div className="kpi-foot">{pct(s.cNew, s.cTotal)}% от всех</div>
-              </div>
-              <div className="kpi-card kpi-card--warn">
-                <div className="kpi-label">В работе</div>
-                <div className="kpi-value accent-warn">{s.cInWork}</div>
-                <div className="kpi-foot">{pct(s.cInWork, s.cTotal)}% от всех</div>
-              </div>
-              <div className="kpi-card kpi-card--danger">
-                <div className="kpi-label">Приостановка</div>
-                <div className="kpi-value accent-danger">{s.cPaused}</div>
-                <div className="kpi-foot">{pct(s.cPaused, s.cTotal)}% от всех</div>
-              </div>
-              <div className="kpi-card kpi-card--success">
-                <div className="kpi-label">Завершено</div>
-                <div className="kpi-value accent-success">{s.cCompleted}</div>
-                <div className="kpi-foot">{pct(s.cCompleted, s.cTotal)}% завершено</div>
-              </div>
-              <div className="kpi-card kpi-card-wide">
-                <div className="kpi-label">Общая сумма</div>
-                <div className="kpi-value">{fmtMoney(s.cAmountTotal)}</div>
-                <div className="kpi-foot">в т.ч. завершённые: {fmtMoney(s.cAmountCompleted)}</div>
-              </div>
+
+              <section className="report-section contracts-donut-section">
+                <header className="section-head"><h3>Структура по статусам</h3></header>
+                <StatusDonut
+                  total={s.cTotal}
+                  segments={[
+                    { label: 'Новая заявка', value: s.cNew, color: '#64748b' },
+                    { label: 'В работе', value: s.cInWork, color: '#f59e0b' },
+                    { label: 'Приостановка', value: s.cPaused, color: '#ef4444' },
+                    { label: 'Завершено', value: s.cCompleted, color: '#22c55e' },
+                  ]}
+                />
+              </section>
             </div>
 
             <section className="report-section">
@@ -971,15 +1002,52 @@ function ReportsPage() {
                     s.cByObject.map(o => (
                       <tr key={o.objectId}>
                         <td>{o.name}</td>
-                        <td className="num">{o.cNew}</td>
-                        <td className="num">{o.inWork}</td>
-                        <td className="num">{o.paused}</td>
-                        <td className="num">{o.completed}</td>
+                        <td className="num">{o.cNew || '—'}</td>
+                        <td className="num">{o.inWork || '—'}</td>
+                        <td className="num">{o.paused || '—'}</td>
+                        <td className="num">{o.completed || '—'}</td>
                         <td className="num strong">{o.total}</td>
-                        <td className="num">{fmtMoney(o.amount)}</td>
+                        <td className="num">{o.amount ? fmtMoney(o.amount) : '—'}</td>
                         <td className="bar-col">
                           <ProgressBar value={o.completed} total={o.total} />
                         </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По ответственным юристам</h3>
+                <span className="section-meta">в работе: {s.cInWork}</span>
+              </header>
+              <table className="dense-table">
+                <thead>
+                  <tr>
+                    <th className="num" style={{ width: '40px' }}>#</th>
+                    <th>Юрист</th>
+                    <th className="num">Новая заявка</th>
+                    <th className="num">В работе</th>
+                    <th className="num">Приостановка</th>
+                    <th className="num">Завершено</th>
+                    <th className="num">Всего</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.cByLawyer.length === 0 ? (
+                    <tr><td colSpan="7" className="muted">Договоров нет</td></tr>
+                  ) : (
+                    s.cByLawyer.map((l, idx) => (
+                      <tr key={l.id} className={l.id === '_unassigned' ? 'row-muted' : ''}>
+                        <td className="num muted">{l.id === '_unassigned' ? '—' : idx + 1}</td>
+                        <td>{l.name}</td>
+                        <td className="num">{l.cNew || '—'}</td>
+                        <td className="num strong accent-warn">{l.inWork || '—'}</td>
+                        <td className="num">{l.paused || '—'}</td>
+                        <td className="num">{l.completed || '—'}</td>
+                        <td className="num strong">{l.total}</td>
                       </tr>
                     ))
                   )}

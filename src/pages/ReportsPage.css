@@ -902,3 +902,24 @@
 .dept-row-name { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; color: var(--text-primary); }
 .dept-row-ico { font-size: 1.05rem; }
 .dept-table .bar-col { min-width: 180px; width: 26%; }
+
+/* ===== Вкладка «Договоры»: сводка ===== */
+/* Верхний блок: числовые KPI слева + донат структуры справа */
+.contracts-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+  margin-bottom: 1.25rem;
+}
+.contracts-overview .contracts-kpi { margin-bottom: 0; }
+.contracts-overview .contracts-donut-section { margin-bottom: 0; }
+.contracts-donut-section .donut-wrap { padding-top: 0.25rem; }
+@media (max-width: 900px) {
+  .contracts-overview { grid-template-columns: 1fr; }
+}
+
+/* Приглушённая строка «Не назначен» в таблице юристов */
+.dense-table tr.row-muted td { color: var(--text-tertiary); }
+.dense-table td.num.accent-warn { color: #d97706; }
+[data-theme='dark'] .dense-table td.num.accent-warn { color: #fbbf24; }
