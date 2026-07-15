@@ -784,6 +784,12 @@ function ContractRegistry() {
     () => [{ value: '', label: '—' }, ...dedupContacts.map(c => ({ value: c.id, label: c.name }))],
     [dedupContacts])
 
+  // Ответственный в «Приложениях к Договору»: поле хранит ФИО (TEXT), поэтому опции
+  // ключуются по имени сотрудника из реестра «Сотрудники» (contacts).
+  const appendixResponsibleOptions = useMemo(
+    () => [{ value: '', label: 'Не назначен' }, ...dedupContacts.map(c => ({ value: c.name, label: c.name }))],
+    [dedupContacts])
+
   const filteredSortedContracts = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     const list = contracts.filter(c => {
@@ -1620,14 +1626,25 @@ function ContractRegistry() {
                                             />
                                           </div>
                                         </td>
-                                        <td>
-                                          <input
-                                            className="ce-ap-input"
-                                            defaultValue={ap.responsible || ''}
-                                            placeholder="Ответственный"
-                                            readOnly={ro}
-                                            onBlur={(e) => handleUpdateAppendix(contract.id, ap.id, 'responsible', e.target.value)}
-                                          />
+                                        <td className="ce-ap-resp">
+                                          {(() => {
+                                            // Существующее «вне реестра» значение показываем как опцию, чтобы не потерять.
+                                            const val = ap.responsible || ''
+                                            const known = val === '' || appendixResponsibleOptions.some(o => o.value === val)
+                                            const opts = known ? appendixResponsibleOptions : [...appendixResponsibleOptions, { value: val, label: `${val} (вне реестра)` }]
+                                            return (
+                                              <FilterDropdown
+                                                label=""
+                                                value={val}
+                                                onChange={(v) => handleUpdateAppendix(contract.id, ap.id, 'responsible', v)}
+                                                options={opts}
+                                                searchable
+                                                searchPlaceholder="Поиск сотрудника…"
+                                                allLabel="Не назначен"
+                                                disabled={ro}
+                                              />
+                                            )
+                                          })()}
                                         </td>
                                         <td className="ce-ap-appr">
                                           <input

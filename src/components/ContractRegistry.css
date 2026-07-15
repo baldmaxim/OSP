@@ -1371,6 +1371,41 @@
 .ce-ap-hier:hover:not(:disabled) { color: var(--primary-color); background: var(--bg-secondary); }
 .ce-ap-hier:disabled { opacity: 0.3; cursor: default; }
 
+/* Ответственный: выпадающий поиск по сотрудникам вместо текстового инпута */
+.ce-appendix-table td.ce-ap-resp { min-width: 0; }
+.ce-appendix-table .ce-ap-resp .fdrop { display: flex; width: 100%; }
+.ce-appendix-table .ce-ap-resp .fdrop-trigger {
+  width: 100%;
+  max-width: none;
+  min-height: 30px;
+  padding: 0.25rem 0.4375rem;
+  gap: 0.25rem;
+  align-items: center;
+  font-size: 0.8125rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.ce-appendix-table .ce-ap-resp .fdrop-trigger:hover {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.ce-appendix-table .ce-ap-resp .fdrop.is-open .fdrop-trigger {
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+}
+.ce-appendix-table .ce-ap-resp .fdrop-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+.ce-appendix-table .ce-ap-resp .fdrop:not(.is-active) .fdrop-value { color: var(--text-tertiary); }
+.ce-appendix-table .ce-ap-resp .fdrop-arrow { flex-shrink: 0; }
+
 .cap-header {
   display: flex;
   align-items: baseline;
