@@ -123,6 +123,8 @@
   justify-content: center;
   z-index: 1000;
   padding: 1.5rem;
+  /* Прокрутка внутри модалки не «утекает» на страницу позади (scroll chaining) */
+  overscroll-behavior: contain;
 }
 
 .s3-doc-modal {

@@ -367,6 +367,11 @@
 .table-container.table-virtual {
   max-height: calc(100vh - 300px);
   overflow-y: auto;
+  /* Виртуализация меняет высоту контента над вьюпортом при сдвиге окна строк.
+     Со scroll anchoring браузер в ответ сам переписывает scrollTop, это порождает
+     новое событие scroll → пересчёт окна → строки «штробят» без участия пользователя.
+     Окно и так позиционируется по измеренным высотам — якорение только мешает. */
+  overflow-anchor: none;
 }
 .table-container.table-virtual .estimate-table thead th {
   position: sticky;

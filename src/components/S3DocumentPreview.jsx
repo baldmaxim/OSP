@@ -37,6 +37,22 @@ export default function S3DocumentPreview({ doc, onClose }) {
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
 
+  // Пока окно превью открыто, страница позади не прокручивается: иначе колесо мыши
+  // над модалкой скроллило список позади (scroll chaining). Ширину исчезнувшего
+  // скроллбара компенсируем padding'ом, чтобы контент под модалкой не «дёргался».
+  useEffect(() => {
+    const { body } = document
+    const prevOverflow = body.style.overflow
+    const prevPaddingRight = body.style.paddingRight
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+    body.style.overflow = 'hidden'
+    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`
+    return () => {
+      body.style.overflow = prevOverflow
+      body.style.paddingRight = prevPaddingRight
+    }
+  }, [])
+
   const pdf = isPdf(doc.mime_type, doc.file_name)
   const img = isImage(doc.mime_type, doc.file_name)
 

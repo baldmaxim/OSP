@@ -396,6 +396,9 @@
 .proposals-table-wrap.proposals-virtual {
   max-height: calc(100vh - 260px);
   overflow-y: auto;
+  /* См. VirtualTableBody: при сдвиге окна строк меняется высота контента над вьюпортом,
+     и scroll anchoring переписывал бы scrollTop → зацикленный пересчёт и «дрожание». */
+  overflow-anchor: none;
 }
 .vt-spacer td {
   background: transparent;
