@@ -221,14 +221,27 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }, [department, tenderType])
 
   // Сводный запрос: считаем для каждого тендера сколько контрагентов и сколько предоставили КП.
+  // Пагинация обязательна: Supabase по умолчанию отдаёт максимум 1000 строк, а выборка идёт по
+  // ВСЕЙ таблице участников. Без неё знаменатель занижался («0/8» вместо «0/10»), а у тендеров,
+  // чьи строки уходили за лимит, бейдж пропадал совсем.
+  // .order('id') обязателен: без стабильного ключа порядок = порядок кучи Postgres, а UPDATE
+  // статуса физически переносит строку в конец — счётчик «прыгал» после смены статуса.
   const fetchTenderProposalCounts = async () => {
     try {
-      const { data, error } = await supabase
-        .from('tender_counterparties')
-        .select('tender_id, status')
-      if (error) throw error
+      const PAGE = 1000
+      const rows = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('tender_counterparties')
+          .select('tender_id, status')
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        if (data?.length) rows.push(...data)
+        if (!data || data.length < PAGE) break
+      }
       const map = {}
-      ;(data || []).forEach(row => {
+      rows.forEach(row => {
         const t = row.tender_id
         if (!map[t]) map[t] = { total: 0, proposalProvided: 0 }
         map[t].total += 1

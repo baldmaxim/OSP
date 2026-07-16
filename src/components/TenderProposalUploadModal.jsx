@@ -265,8 +265,9 @@ function TenderProposalUploadModal({
 
   if (activeParticipants.length === 0) {
     return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal vor-import-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+      // Клик по подложке НЕ закрывает окно — закрытие только крестиком/сохранением.
+      <div className="modal-overlay">
+        <div className="modal vor-import-modal" style={{ maxWidth: '480px' }}>
           <div className="modal-header">
             <h3>Загрузка КП</h3>
             <button className="modal-close" onClick={onClose}>×</button>
@@ -281,8 +282,8 @@ function TenderProposalUploadModal({
   }
   if (docNames.length === 0) {
     return (
-      <div className="modal-overlay" onClick={onClose}>
-        <div className="modal vor-import-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+      <div className="modal-overlay">
+        <div className="modal vor-import-modal" style={{ maxWidth: '480px' }}>
           <div className="modal-header">
             <h3>Загрузка КП</h3>
             <button className="modal-close" onClick={onClose}>×</button>
@@ -307,8 +308,8 @@ function TenderProposalUploadModal({
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal vor-import-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="modal vor-import-modal">
         <div className="modal-header">
           <h3>Загрузить КП от участника</h3>
           <button className="modal-close" onClick={onClose}>×</button>

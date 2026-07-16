@@ -2957,8 +2957,9 @@ function TenderDetailPage() {
 
       {/* task 405: конфиг-модалка — выбор листа, диапазона и столбцов перед распознаванием */}
       {supplyConfig && (
-        <div className="modal-overlay" onClick={() => setSupplyConfig(null)}>
-          <div className="modal supply-import-modal" onClick={(e) => e.stopPropagation()}>
+        // Клик по подложке НЕ закрывает окно — только крестик/«Отмена»/импорт.
+        <div className="modal-overlay">
+          <div className="modal supply-import-modal">
             <div className="modal-header">
               <h3>Импорт расценок снабжения — «{supplyConfig.docName}»</h3>
               <button className="modal-close" onClick={() => setSupplyConfig(null)}>×</button>

@@ -337,18 +337,9 @@ export default function TenderCounterpartyFiles({
 
       {/* Модалка загрузки КП */}
       {uploadModal && (
-        <div
-          className="tcpf-modal-overlay"
-          onClick={handleUploadCancel}
-          onKeyDown={(e) => { if (e.key === 'Escape') handleUploadCancel() }}
-          role="presentation"
-        >
-          <div
-            className="tcpf-modal"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
+        // Клик по подложке и Escape НЕ закрывают окно — только крестик/«Отмена»/загрузка.
+        <div className="tcpf-modal-overlay">
+          <div className="tcpf-modal" role="dialog" aria-modal="true">
             <div className="tcpf-modal-header">
               <h3 className="tcpf-modal-title">
                 {uploadModal.proposalGroupId ? 'Загрузка вариации КП' : 'Загрузка КП'}
@@ -385,7 +376,6 @@ export default function TenderCounterpartyFiles({
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') { e.preventDefault(); handleUploadConfirm() }
-                    if (e.key === 'Escape') { e.preventDefault(); handleUploadCancel() }
                   }}
                 />
               </label>
