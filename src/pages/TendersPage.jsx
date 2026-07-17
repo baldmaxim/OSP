@@ -2196,9 +2196,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         })()}
                       </td>
                     )}
-                    <td style={isOverdue(tender) ? { color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap' } : { whiteSpace: 'nowrap' }}>
+                    {/* Цвет просрочки — классом, а не инлайн-стилем: инлайн не знает про тему,
+                        и ярко-красный #dc2626 на тёмном фоне резал глаз. */}
+                    <td className={`tender-period-cell ${isOverdue(tender) ? 'is-overdue' : ''}`}>
                       {formatDateRange(tender.tender_start_date, tender.tender_end_date)}
-                      {isOverdue(tender) && <span style={{ marginLeft: '0.375rem', fontSize: '0.75rem' }} title="Срок истёк">!</span>}
+                      {isOverdue(tender) && <span className="tender-period-warn" title="Срок истёк">!</span>}
                     </td>
                     <td>
                       {editingResponsibleTenderId === tender.id ? (
@@ -2666,6 +2668,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                     </td>
                                     <td>
                                       <select
+                                        className="tc-status-select"
                                         value={tc.status || 'request_sent'}
                                         onChange={(e) => handleUpdateCounterpartyStatus(tender.id, tc.id, e.target.value)}
                                         disabled={!canEditTenders}
@@ -2683,11 +2686,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                         }}
                                       >
                                         {counterpartyStatusOptions.map((option) => (
-                                          <option
-                                            key={option.value}
-                                            value={option.value}
-                                            style={{ backgroundColor: '#ffffff', color: '#000000' }}
-                                          >
+                                          <option key={option.value} value={option.value}>
                                             {option.label}
                                           </option>
                                         ))}

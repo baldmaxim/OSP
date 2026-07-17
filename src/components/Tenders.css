@@ -891,6 +891,31 @@
   border-color: #86efac;
 }
 
+[data-theme='dark'] .tenders-page .kp-counter.kp-counter-full {
+  background: #2a4038;
+  color: #a8d4be;
+  border-color: #4a7a62;
+}
+
+/* Статус контрагента в раскрытом тендере: список опций был жёстко белым (инлайн),
+   из-за чего в тёмной теме выпадающий список слепил. Отдаём цвета теме. */
+.tc-status-select option {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* Срок проведения процедур; просроченный — красным, но в тёмной теме мягче */
+.tender-period-cell { white-space: nowrap; }
+.tender-period-cell.is-overdue {
+  color: #dc2626;
+  font-weight: 600;
+}
+[data-theme='dark'] .tender-period-cell.is-overdue { color: #e88b8b; }
+.tender-period-warn {
+  margin-left: 0.375rem;
+  font-size: 0.75rem;
+}
+
 .inline-responsible-select {
   width: 100%;
   padding: 0.25rem 0.375rem;
@@ -1022,6 +1047,30 @@
   border-radius: 10px;
   white-space: nowrap;
   line-height: 1.4;
+}
+
+/* Тёмная тема для плашек фаз. Светлые пастельные фоны (#dcfce7/#fef3c7/#fee2e2)
+   рассчитаны на белый лист — на тёмном фоне они «светятся» и режут глаз.
+   Берём ту же приглушённую палитру, что уже используется у статусов тендера
+   (.status-completed / .status-in-progress в тёмной теме): тёмный фон + мягкий
+   светлый текст + средняя рамка. */
+[data-theme='dark'] .phase-done {
+  background: #2a4038;
+  color: #a8d4be;
+  border-color: #4a7a62;
+}
+
+[data-theme='dark'] .phase-warn,
+[data-theme='dark'] .phase-progress {
+  background: #44382c;
+  color: #e2c9a8;
+  border-color: #8b7355;
+}
+
+[data-theme='dark'] .phase-pending {
+  background: #402a2a;
+  color: #dfaaaa;
+  border-color: #8a5555;
 }
 
 .winner-cell {
