@@ -190,6 +190,75 @@
   border-color: #60a5fa;
 }
 
+/* Фильтры-дропдауны (множественный выбор + поиск): подгоняем под вид .dcr-filter */
+.dcr-filter-drop {
+  flex-shrink: 0;
+  min-width: 170px;
+  max-width: 240px;
+}
+.dcr-filter-drop .fdrop { width: 100%; }
+.dcr-filter-drop .fdrop-trigger {
+  width: 100%;
+  max-width: none;
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+.dcr-filter-drop .fdrop-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dcr-filter-drop.is-active .fdrop-trigger {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.10);
+  color: #1d4ed8;
+  font-weight: 600;
+}
+[data-theme='dark'] .dcr-filter-drop.is-active .fdrop-trigger {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+  border-color: #60a5fa;
+}
+
+/* Модалка истории изменений заявки */
+.dcr-history-modal {
+  width: 640px;
+  max-width: calc(100vw - 48px);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+}
+.dcr-history-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.dcr-history-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.5rem;
+}
+.dcr-history-empty {
+  padding: 1.5rem 0.5rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.dcr-history-empty p { margin: 0; font-size: 0.875rem; }
+.dcr-history-hint {
+  margin-top: 0.5rem !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.45;
+  opacity: 0.85;
+}
+.btn-icon.btn-history { color: var(--text-tertiary); }
+.btn-icon.btn-history:hover { color: var(--primary-color, #2563eb); }
+
 .dcr-filter-clear {
   flex-shrink: 0;
   width: 32px;

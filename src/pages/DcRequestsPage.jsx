@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
@@ -6,6 +6,7 @@ import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
+import FilterDropdown from '../components/FilterDropdown'
 import '../components/ContractRegistry.css'
 import './DcRequestsPage.css'
 
@@ -48,6 +49,36 @@ const TABS = [
   { key: 'completed', label: 'Завершено' },
   { key: 'deleted', label: 'Удаленные' },
 ]
+
+// ── История изменений заявки (dc_request_audit_log) ─────────────────────────
+const EVENT_LABEL = {
+  created: 'Создание',
+  status_changed: 'Смена статуса',
+  field_updated: 'Изменение поля',
+  soft_deleted: 'В «Удаленные»',
+  restored: 'Восстановление',
+}
+
+// Поля заявки, изменения которых пишем в историю (порядок = порядок в модалке).
+const AUDIT_FIELD_LABEL = {
+  object_id: 'Объект',
+  counterparty_id: 'Контрагент',
+  ds_number: '№ ДС',
+  works_description: 'Описание ДС',
+  responsible_contact_id: 'Ответственный',
+  status: 'Статус',
+  expected_approval_date: 'Срок согласования',
+  amount_before: 'Было подано',
+  amount_after: 'Утверждено',
+  material_type: 'Материал',
+}
+
+function formatDateTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('ru-RU') + ', ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
 
 function formatShortDate(iso) {
   if (!iso) return ''
@@ -253,10 +284,14 @@ function DcRequestsPage() {
   const [deadlinePopover, setDeadlinePopover] = useState(null) // { id, rect } | null
 
   const [searchQuery, setSearchQuery] = useState('')
-  // Фильтры в тулбаре (task 311 + 371).
-  const [filterObjectId, setFilterObjectId] = useState('')
-  const [filterCounterpartyId, setFilterCounterpartyId] = useState('') // task 371
-  const [filterResponsibleId, setFilterResponsibleId] = useState('')
+  // Фильтры в тулбаре: множественный выбор (пустой массив = фильтр не применён).
+  const [filterObjectIds, setFilterObjectIds] = useState([])
+  const [filterCounterpartyIds, setFilterCounterpartyIds] = useState([])
+  const [filterResponsibleIds, setFilterResponsibleIds] = useState([])
+  // История изменений: заявка, чья история открыта (или null) + её записи.
+  const [historyFor, setHistoryFor] = useState(null)
+  const [historyRows, setHistoryRows] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
   // Inline-добавление задачи: { [requestId]: 'строка задачи' }
   const [newTaskTexts, setNewTaskTexts] = useState({})
   // task 334: задачи открываются в отдельной модалке. Храним id заявки,
@@ -452,6 +487,79 @@ function DcRequestsPage() {
     setCpDropdownOpen(false)
   }
 
+  // ── История изменений ──────────────────────────────────────────────────────
+  // Универсальная запись в аудит-лог (по образцу logContractEvent). Ошибки глотаем:
+  // сбой логирования не должен ломать саму правку заявки.
+  const logDcEvent = async (dcRequestId, eventType, payload = {}) => {
+    if (!dcRequestId || !eventType) return
+    try {
+      await supabase.from('dc_request_audit_log').insert([{
+        dc_request_id: dcRequestId,
+        event_type: eventType,
+        field_name: payload.fieldName || null,
+        old_value: payload.oldValue ?? null,
+        new_value: payload.newValue ?? null,
+        description: payload.description || null,
+        changed_by_role: localStorage.getItem('userRole') || null,
+        changed_by_name: userProfile?.full_name || null,
+      }])
+    } catch (err) {
+      console.error('Ошибка записи истории заявки:', err.message)
+    }
+  }
+
+  // Человекочитаемое значение поля: id → имя, суммы/даты/словари → как в интерфейсе.
+  const auditValueText = useCallback((field, value) => {
+    if (value === null || value === undefined || value === '') return '—'
+    switch (field) {
+      case 'object_id':
+        return objects.find(o => o.id === value)?.name || String(value)
+      case 'counterparty_id':
+        return counterparties.find(c => c.id === value)?.name || String(value)
+      case 'responsible_contact_id':
+        return contacts.find(c => c.id === value)?.full_name || String(value)
+      case 'status':
+        return STATUS_LABEL[value] || String(value)
+      case 'material_type':
+        return MATERIAL_LABEL[value] || String(value)
+      case 'expected_approval_date':
+        return formatShortDate(value) || String(value)
+      case 'amount_before':
+      case 'amount_after':
+        return `${formatAmount(Number(value))} ₽`
+      default:
+        return String(value)
+    }
+  }, [objects, counterparties, contacts])
+
+  // Открыть историю заявки (модалка, только чтение).
+  const openHistory = async (req) => {
+    setHistoryFor(req)
+    setHistoryLoading(true)
+    setHistoryRows([])
+    try {
+      const { data, error } = await supabase
+        .from('dc_request_audit_log')
+        .select('*')
+        .eq('dc_request_id', req.id)
+        .order('changed_at', { ascending: false })
+      if (error) throw error
+      setHistoryRows(data || [])
+    } catch (err) {
+      console.error('Ошибка загрузки истории заявки:', err.message)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  // Одна запись «Поле: было → стало».
+  const logFieldChange = (id, field, oldValue, newValue) => logDcEvent(id, 'field_updated', {
+    fieldName: field,
+    oldValue: oldValue ?? null,
+    newValue: newValue ?? null,
+    description: `${AUDIT_FIELD_LABEL[field] || field}: ${auditValueText(field, oldValue)} → ${auditValueText(field, newValue)}`,
+  })
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
@@ -471,12 +579,32 @@ function DcRequestsPage() {
       if (editing) {
         const { error } = await supabase.from('dc_requests').update(payload).eq('id', editing.id)
         if (error) throw error
+        // История: по одной записи на каждое реально изменившееся поле («было → стало»).
+        for (const field of Object.keys(AUDIT_FIELD_LABEL)) {
+          const before = editing[field] ?? null
+          const after = payload[field] ?? null
+          if (before === after) continue
+          if (field === 'status') {
+            await logDcEvent(editing.id, 'status_changed', {
+              fieldName: 'status',
+              oldValue: before,
+              newValue: after,
+              description: `Статус: ${auditValueText('status', before)} → ${auditValueText('status', after)}`,
+            })
+          } else {
+            await logFieldChange(editing.id, field, before, after)
+          }
+        }
       } else {
-        const { error } = await supabase.from('dc_requests').insert([{
+        // .select('id') нужен, чтобы записать в историю событие создания.
+        const { data, error } = await supabase.from('dc_requests').insert([{
           ...payload,
           created_by_name: userProfile?.full_name || null,
-        }])
+        }]).select('id').single()
         if (error) throw error
+        await logDcEvent(data?.id, 'created', {
+          description: `Заявка создана${payload.ds_number ? ` (№ ДС ${payload.ds_number})` : ''}`,
+        })
       }
       setShowModal(false)
       setEditing(null)
@@ -489,12 +617,15 @@ function DcRequestsPage() {
 
   // task 365: быстрое сохранение ориентировочного срока согласования из inline-popover.
   const handleQuickSaveDeadline = async (id, newDate) => {
+    const next = newDate || null
+    const prev = requests.find(r => r.id === id)?.expected_approval_date ?? null
     try {
       const { error } = await supabase
         .from('dc_requests')
-        .update({ expected_approval_date: newDate || null, updated_at: new Date().toISOString() })
+        .update({ expected_approval_date: next, updated_at: new Date().toISOString() })
         .eq('id', id)
       if (error) throw error
+      if (prev !== next) await logFieldChange(id, 'expected_approval_date', prev, next)
       setDeadlinePopover(null)
       fetchRequests()
     } catch (err) {
@@ -508,6 +639,7 @@ function DcRequestsPage() {
   }
 
   const handleStatusChange = async (id, newStatus) => {
+    const oldStatus = requests.find(r => r.id === id)?.status ?? null
     try {
       const { error } = await supabase
         .from('dc_requests')
@@ -515,6 +647,14 @@ function DcRequestsPage() {
         .eq('id', id)
       if (error) throw error
       setRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r))
+      if (oldStatus !== newStatus) {
+        await logDcEvent(id, 'status_changed', {
+          fieldName: 'status',
+          oldValue: oldStatus,
+          newValue: newStatus,
+          description: `Статус: ${auditValueText('status', oldStatus)} → ${auditValueText('status', newStatus)}`,
+        })
+      }
     } catch (err) {
       alert('Ошибка смены статуса: ' + (err.message || err))
     }
@@ -526,6 +666,7 @@ function DcRequestsPage() {
     const num = parseAmount(rawValue)
     const current = requests.find(r => r.id === id)
     if (current && (current[field] ?? null) === num) return // без изменений
+    const prevValue = current?.[field] ?? null
     try {
       const { error } = await supabase
         .from('dc_requests')
@@ -533,6 +674,7 @@ function DcRequestsPage() {
         .eq('id', id)
       if (error) throw error
       setRequests(prev => prev.map(r => r.id === id ? { ...r, [field]: num } : r))
+      await logFieldChange(id, field, prevValue, num)
     } catch (err) {
       alert('Ошибка сохранения суммы: ' + (err.message || err))
     }
@@ -541,6 +683,8 @@ function DcRequestsPage() {
   // task 371: инлайн-смена типа материала прямо из таблицы.
   const handleSaveMaterial = async (id, value) => {
     const next = value || null
+    const prevValue = requests.find(r => r.id === id)?.material_type ?? null
+    if (prevValue === next) return
     try {
       const { error } = await supabase
         .from('dc_requests')
@@ -548,6 +692,7 @@ function DcRequestsPage() {
         .eq('id', id)
       if (error) throw error
       setRequests(prev => prev.map(r => r.id === id ? { ...r, material_type: next } : r))
+      await logFieldChange(id, 'material_type', prevValue, next)
     } catch (err) {
       alert('Ошибка сохранения материала: ' + (err.message || err))
     }
@@ -561,6 +706,7 @@ function DcRequestsPage() {
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', id)
       if (error) throw error
+      await logDcEvent(id, 'soft_deleted', { description: 'Заявка перемещена в «Удаленные»' })
       fetchRequests()
     } catch (err) {
       alert('Ошибка удаления: ' + (err.message || err))
@@ -574,6 +720,7 @@ function DcRequestsPage() {
         .update({ deleted_at: null })
         .eq('id', id)
       if (error) throw error
+      await logDcEvent(id, 'restored', { description: 'Заявка восстановлена из «Удаленных»' })
       fetchRequests()
     } catch (err) {
       alert('Ошибка восстановления: ' + (err.message || err))
@@ -753,9 +900,9 @@ function DcRequestsPage() {
     .filter(r => isDeletedTab
       ? r.deleted_at != null
       : (r.deleted_at == null && (activeTab === 'all' || (r.status || 'in_work') === activeTab)))
-    .filter(r => !filterObjectId || r.object_id === filterObjectId)
-    .filter(r => !filterCounterpartyId || r.counterparty_id === filterCounterpartyId) // task 371
-    .filter(r => !filterResponsibleId || r.responsible_contact_id === filterResponsibleId)
+    .filter(r => filterObjectIds.length === 0 || filterObjectIds.includes(r.object_id))
+    .filter(r => filterCounterpartyIds.length === 0 || filterCounterpartyIds.includes(r.counterparty_id))
+    .filter(r => filterResponsibleIds.length === 0 || filterResponsibleIds.includes(r.responsible_contact_id))
     .filter(r => {
       const q = searchQuery.trim().toLowerCase()
       if (!q) return true
@@ -1008,47 +1155,49 @@ function DcRequestsPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
-        <select
-          className={`dcr-filter${filterObjectId ? ' is-active' : ''}`}
-          value={filterObjectId}
-          onChange={(e) => setFilterObjectId(e.target.value)}
-          title="Фильтр по объекту"
-        >
-          <option value="">🏢 Все объекты</option>
-          {objects.map(o => (
-            <option key={o.id} value={o.id}>{o.name}</option>
-          ))}
-        </select>
-        {/* task 371: фильтр по контрагентам */}
-        <select
-          className={`dcr-filter${filterCounterpartyId ? ' is-active' : ''}`}
-          value={filterCounterpartyId}
-          onChange={(e) => setFilterCounterpartyId(e.target.value)}
-          title="Фильтр по контрагенту"
-          disabled={counterpartyFilterOptions.length === 0}
-        >
-          <option value="">🏗️ Все контрагенты</option>
-          {counterpartyFilterOptions.map(cp => (
-            <option key={cp.id} value={cp.id}>{cp.name}</option>
-          ))}
-        </select>
-        <select
-          className={`dcr-filter${filterResponsibleId ? ' is-active' : ''}`}
-          value={filterResponsibleId}
-          onChange={(e) => setFilterResponsibleId(e.target.value)}
-          title="Фильтр по ответственному"
-          disabled={responsibleFilterOptions.length === 0}
-        >
-          <option value="">👤 Все ответственные</option>
-          {responsibleFilterOptions.map(c => (
-            <option key={c.id} value={c.id}>{c.full_name}</option>
-          ))}
-        </select>
-        {(filterObjectId || filterCounterpartyId || filterResponsibleId) && (
+        <div className={`dcr-filter-drop${filterObjectIds.length ? ' is-active' : ''}`}>
+          <FilterDropdown
+            label=""
+            multiple
+            searchable
+            searchPlaceholder="Поиск объекта…"
+            allLabel="🏢 Все объекты"
+            value={filterObjectIds}
+            onChange={setFilterObjectIds}
+            options={objects.map(o => ({ value: o.id, label: o.name }))}
+          />
+        </div>
+        <div className={`dcr-filter-drop${filterCounterpartyIds.length ? ' is-active' : ''}`}>
+          <FilterDropdown
+            label=""
+            multiple
+            searchable
+            searchPlaceholder="Поиск контрагента…"
+            allLabel="🏗️ Все контрагенты"
+            value={filterCounterpartyIds}
+            onChange={setFilterCounterpartyIds}
+            options={counterpartyFilterOptions.map(cp => ({ value: cp.id, label: cp.name }))}
+            disabled={counterpartyFilterOptions.length === 0}
+          />
+        </div>
+        <div className={`dcr-filter-drop${filterResponsibleIds.length ? ' is-active' : ''}`}>
+          <FilterDropdown
+            label=""
+            multiple
+            searchable
+            searchPlaceholder="Поиск сотрудника…"
+            allLabel="👤 Все ответственные"
+            value={filterResponsibleIds}
+            onChange={setFilterResponsibleIds}
+            options={responsibleFilterOptions.map(c => ({ value: c.id, label: c.full_name }))}
+            disabled={responsibleFilterOptions.length === 0}
+          />
+        </div>
+        {(filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0) && (
           <button
             type="button"
             className="dcr-filter-clear"
-            onClick={() => { setFilterObjectId(''); setFilterCounterpartyId(''); setFilterResponsibleId('') }}
+            onClick={() => { setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]) }}
             title="Сбросить фильтры"
           >×</button>
         )}
@@ -1378,6 +1527,19 @@ function DcRequestsPage() {
                         )}
                       </td>
                       <td className="actions-cell">
+                        {/* История доступна всем, кто видит заявку, — она только для чтения */}
+                        <button
+                          className="btn-icon btn-history"
+                          onClick={() => openHistory(req)}
+                          title="История изменений"
+                          aria-label="История изменений"
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 3v5h5" />
+                            <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+                            <path d="M12 7v5l3 2" />
+                          </svg>
+                        </button>
                         {isDeletedTab ? (
                           <>
                             {canEditDc && (
@@ -1590,6 +1752,56 @@ function DcRequestsPage() {
 
       {previewDoc && (
         <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+      )}
+
+      {/* История изменений заявки. Только чтение; закрывается крестиком/«Закрыть». */}
+      {historyFor && (
+        <div className="modal-overlay">
+          <div className="modal dcr-history-modal">
+            <div className="modal-header">
+              <div>
+                <h3>История изменений</h3>
+                <p className="dcr-history-sub">
+                  {historyFor.ds_number ? `№ ДС ${historyFor.ds_number}` : 'Заявка без № ДС'}
+                  {historyFor.objects?.name ? ` · ${historyFor.objects.name}` : ''}
+                </p>
+              </div>
+              <button className="modal-close" onClick={() => setHistoryFor(null)} aria-label="Закрыть">×</button>
+            </div>
+            <div className="dcr-history-body">
+              {historyLoading ? (
+                <div className="loading">Загрузка...</div>
+              ) : historyRows.length === 0 ? (
+                <div className="dcr-history-empty">
+                  <p>Записей нет.</p>
+                  <p className="dcr-history-hint">
+                    История ведётся с момента подключения этой функции — более ранние изменения
+                    не фиксировались.
+                  </p>
+                </div>
+              ) : (
+                <ul className="audit-list">
+                  {historyRows.map(ev => (
+                    <li key={ev.id} className="audit-item">
+                      <div className="audit-meta">
+                        <span className="audit-type">{EVENT_LABEL[ev.event_type] || ev.event_type}</span>
+                        <span className="audit-date">{formatDateTime(ev.changed_at)}</span>
+                      </div>
+                      <div className="audit-desc">{ev.description || '—'}</div>
+                      <div className="audit-who">
+                        {ev.changed_by_name || 'без имени'}
+                        {ev.changed_by_role ? ` (${ev.changed_by_role})` : ''}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn-secondary" onClick={() => setHistoryFor(null)}>Закрыть</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* task 334: модалка задач и ответов для выбранной заявки */}
