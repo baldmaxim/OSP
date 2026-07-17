@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
+import FilterDropdown from '../components/FilterDropdown'
 import './RatesRegistryPage.css'
 
 // task 356/354/411: «Реестр расценок» — общий список расценок из разных источников.
@@ -42,6 +43,15 @@ function useDebounced(value, delay) {
   return debounced
 }
 
+// Фильтр множественного выбора → .in(). Пустой выбор = фильтр не применён.
+// Если выбрано ВСЁ, предикат тоже не добавляем: результат тот же, но длинный список id
+// раздул бы URL запроса до отказа (эта грабля уже ловилась в задаче 402).
+function applyInFilter(q, column, values, totalOptions) {
+  if (!values || values.length === 0) return q
+  if (totalOptions > 0 && values.length >= totalOptions) return q
+  return q.in(column, values)
+}
+
 const SELECT_COLS =
   'id,item_type,item_name,unit,price,tender_id,counterparty_id,object_id,tender_desc,object_name,counterparty_name,proposal_date'
 
@@ -57,8 +67,9 @@ const SUPPLY_SORT_COLUMN = {
 function SupplyRegistrySection() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounced(search, 400)
-  // task 414: без фильтров «Ед. изм.» и «Тендеры»
-  const [objectId, setObjectId] = useState('')
+  // Объект/Тендер — множественный выбор (пустой массив = фильтр не применён).
+  const [objectIds, setObjectIds] = useState([])
+  const [tenderIds, setTenderIds] = useState([])
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -73,31 +84,38 @@ function SupplyRegistrySection() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  // Только объекты, по которым есть расценки снабжения (distinct из реестра; task 414).
+  // Только объекты/тендеры, по которым есть расценки снабжения (distinct из реестра).
   const [objects, setObjects] = useState([])
+  const [tenders, setTenders] = useState([])
 
   const applyFilters = useCallback((q) => {
     const s = debouncedSearch.trim()
     if (s) q = q.ilike('item_name', `%${s}%`)
-    if (objectId) q = q.eq('object_id', objectId)
+    q = applyInFilter(q, 'object_id', objectIds, objects.length)
+    q = applyInFilter(q, 'tender_id', tenderIds, tenders.length)
     if (priceMin !== '' && !isNaN(Number(priceMin))) q = q.gte('price', Number(priceMin))
     if (priceMax !== '' && !isNaN(Number(priceMax))) q = q.lte('price', Number(priceMax))
     if (dateFrom) q = q.gte('rate_date', dateFrom)
     if (dateTo) q = q.lte('rate_date', `${dateTo}T23:59:59`)
     return q
-  }, [debouncedSearch, objectId, priceMin, priceMax, dateFrom, dateTo])
+  }, [debouncedSearch, objectIds, tenderIds, objects.length, tenders.length,
+      priceMin, priceMax, dateFrom, dateTo])
 
   useEffect(() => {
     let cancelled = false
     const loadRefs = async () => {
       try {
-        const objRes = await supabase
-          .from('supply_rates_registry_filter_objects')
-          .select('object_id, object_name')
+        const [objRes, tRes] = await Promise.all([
+          supabase.from('supply_rates_registry_filter_objects').select('object_id, object_name'),
+          supabase.from('supply_rates_registry_filter_tenders').select('tender_id, tender_desc'),
+        ])
         if (cancelled) return
         setObjects((objRes.data || [])
           .filter(o => o.object_id && o.object_name)
           .sort((a, b) => a.object_name.localeCompare(b.object_name, 'ru')))
+        setTenders((tRes.data || [])
+          .filter(t => t.tender_id && t.tender_desc)
+          .sort((a, b) => a.tender_desc.localeCompare(b.tender_desc, 'ru')))
       } catch (err) {
         console.error('Ошибка загрузки справочников снабжения:', err.message)
       }
@@ -108,7 +126,7 @@ function SupplyRegistrySection() {
 
   useEffect(() => {
     setPage(0)
-  }, [debouncedSearch, objectId, priceMin, priceMax, dateFrom, dateTo, sortBy, sortDir, pageSize])
+  }, [debouncedSearch, objectIds, tenderIds, priceMin, priceMax, dateFrom, dateTo, sortBy, sortDir, pageSize])
 
   useEffect(() => {
     let cancelled = false
@@ -144,11 +162,13 @@ function SupplyRegistrySection() {
   }, [page, pageSize, sortBy, sortDir, applyFilters])
 
   const resetFilters = () => {
-    setSearch(''); setObjectId('')
+    setSearch(''); setObjectIds([]); setTenderIds([])
     setPriceMin(''); setPriceMax(''); setDateFrom(''); setDateTo('')
     setSortBy('name'); setSortDir('asc')
   }
-  const hasActiveFilters = Boolean(search || objectId || priceMin || priceMax || dateFrom || dateTo)
+  const hasActiveFilters = Boolean(
+    search || objectIds.length || tenderIds.length || priceMin || priceMax || dateFrom || dateTo
+  )
 
   const toggleSort = (col) => {
     if (sortBy === col) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -171,13 +191,31 @@ function SupplyRegistrySection() {
           <input type="search" className={`rr-filter-search ${search ? 'is-active' : ''}`}
             placeholder="🔍 Например: труба медная" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <div className={`rr-filter-group ${objectId ? 'is-active' : ''}`}>
+        <div className={`rr-filter-group ${tenderIds.length ? 'is-active' : ''}`}>
+          <label className="rr-filter-label">Тендер</label>
+          <FilterDropdown
+            label=""
+            multiple
+            searchable
+            searchPlaceholder="Например: ОЗДС"
+            allLabel={`Все тендеры (${tenders.length})`}
+            value={tenderIds}
+            onChange={setTenderIds}
+            options={tenders.map(t => ({ value: t.tender_id, label: t.tender_desc }))}
+          />
+        </div>
+        <div className={`rr-filter-group ${objectIds.length ? 'is-active' : ''}`}>
           <label className="rr-filter-label">Объект</label>
-          <select className={`rr-filter-select ${objectId ? 'is-active' : ''}`}
-            value={objectId} onChange={(e) => setObjectId(e.target.value)}>
-            <option value="">Все объекты ({objects.length})</option>
-            {objects.map(o => <option key={o.object_id} value={o.object_id}>{o.object_name}</option>)}
-          </select>
+          <FilterDropdown
+            label=""
+            multiple
+            searchable
+            searchPlaceholder="Поиск объекта…"
+            allLabel={`Все объекты (${objects.length})`}
+            value={objectIds}
+            onChange={setObjectIds}
+            options={objects.map(o => ({ value: o.object_id, label: o.object_name }))}
+          />
         </div>
         <div className={`rr-filter-group ${priceMin || priceMax ? 'is-active' : ''}`}>
           <label className="rr-filter-label">Цена, ₽</label>
@@ -294,11 +332,12 @@ function RatesRegistryPage() {
   const [topTab, setTopTab] = useState('kp')          // 'kp' | 'dp_ds' | 'supply'
   const [kindTab, setKindTab] = useState('materials') // 'materials' | 'works'
 
-  // Фильтры (task 413: без «Ед. изм.» и «Тендеры»)
+  // Фильтры. Объект/Подрядчик/Тендер — множественный выбор (пустой массив = не применён).
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounced(search, 400)
-  const [objectId, setObjectId] = useState('')
-  const [counterpartyId, setCounterpartyId] = useState('')
+  const [objectIds, setObjectIds] = useState([])
+  const [counterpartyIds, setCounterpartyIds] = useState([])
+  const [tenderIds, setTenderIds] = useState([])
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -321,28 +360,32 @@ function RatesRegistryPage() {
   // (distinct из kp_rates_registry на стороне БД, не весь справочник; task 413).
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
+  const [tenders, setTenders] = useState([])
 
   // Применяет фильтры к произвольному query-builder (для страницы и для счётчиков).
   const applyFilters = useCallback((q) => {
     const s = debouncedSearch.trim()
     if (s) q = q.ilike('item_name', `%${s}%`)
-    if (objectId) q = q.eq('object_id', objectId)
-    if (counterpartyId) q = q.eq('counterparty_id', counterpartyId)
+    q = applyInFilter(q, 'object_id', objectIds, objects.length)
+    q = applyInFilter(q, 'counterparty_id', counterpartyIds, counterparties.length)
+    q = applyInFilter(q, 'tender_id', tenderIds, tenders.length)
     if (priceMin !== '' && !isNaN(Number(priceMin))) q = q.gte('price', Number(priceMin))
     if (priceMax !== '' && !isNaN(Number(priceMax))) q = q.lte('price', Number(priceMax))
     if (dateFrom) q = q.gte('proposal_date', dateFrom)
     if (dateTo) q = q.lte('proposal_date', dateTo)
     return q
-  }, [debouncedSearch, objectId, counterpartyId, priceMin, priceMax, dateFrom, dateTo])
+  }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, objects.length,
+      counterparties.length, tenders.length, priceMin, priceMax, dateFrom, dateTo])
 
   // Справочники фильтров — один раз (лёгкие запросы к distinct-вью реестра).
   useEffect(() => {
     let cancelled = false
     const loadRefs = async () => {
       try {
-        const [objRes, cpRes] = await Promise.all([
+        const [objRes, cpRes, tRes] = await Promise.all([
           supabase.from('kp_rates_registry_filter_objects').select('object_id, object_name'),
           supabase.from('kp_rates_registry_filter_counterparties').select('counterparty_id, counterparty_name'),
+          supabase.from('kp_rates_registry_filter_tenders').select('tender_id, tender_desc'),
         ])
         if (cancelled) return
         setObjects((objRes.data || [])
@@ -351,6 +394,9 @@ function RatesRegistryPage() {
         setCounterparties((cpRes.data || [])
           .filter(c => c.counterparty_id && c.counterparty_name)
           .sort((a, b) => a.counterparty_name.localeCompare(b.counterparty_name, 'ru')))
+        setTenders((tRes.data || [])
+          .filter(t => t.tender_id && t.tender_desc)
+          .sort((a, b) => a.tender_desc.localeCompare(b.tender_desc, 'ru')))
       } catch (err) {
         console.error('Ошибка загрузки справочников реестра:', err.message)
       }
@@ -362,7 +408,7 @@ function RatesRegistryPage() {
   // Любое изменение фильтров/сортировки/вкладки/размера страницы → на первую страницу.
   useEffect(() => {
     setPage(0)
-  }, [debouncedSearch, objectId, counterpartyId, priceMin, priceMax, dateFrom, dateTo, sortBy, sortDir, kindTab, pageSize])
+  }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, priceMin, priceMax, dateFrom, dateTo, sortBy, sortDir, kindTab, pageSize])
 
   // Загрузка текущей страницы (серверная пагинация + фильтры + сортировка).
   useEffect(() => {
@@ -424,8 +470,9 @@ function RatesRegistryPage() {
 
   const resetFilters = () => {
     setSearch('')
-    setObjectId('')
-    setCounterpartyId('')
+    setObjectIds([])
+    setCounterpartyIds([])
+    setTenderIds([])
     setPriceMin('')
     setPriceMax('')
     setDateFrom('')
@@ -434,7 +481,8 @@ function RatesRegistryPage() {
     setSortDir('asc')
   }
   const hasActiveFilters = Boolean(
-    search || objectId || counterpartyId || priceMin || priceMax || dateFrom || dateTo
+    search || objectIds.length || counterpartyIds.length || tenderIds.length ||
+    priceMin || priceMax || dateFrom || dateTo
   )
 
   const toggleSort = (col) => {
@@ -499,21 +547,44 @@ function RatesRegistryPage() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className={`rr-filter-group ${objectId ? 'is-active' : ''}`}>
-              <label className="rr-filter-label">Объект</label>
-              <select className={`rr-filter-select ${objectId ? 'is-active' : ''}`}
-                value={objectId} onChange={(e) => setObjectId(e.target.value)}>
-                <option value="">Все объекты ({objects.length})</option>
-                {objects.map(o => <option key={o.object_id} value={o.object_id}>{o.object_name}</option>)}
-              </select>
+            <div className={`rr-filter-group ${tenderIds.length ? 'is-active' : ''}`}>
+              <label className="rr-filter-label">Тендер</label>
+              <FilterDropdown
+                label=""
+                multiple
+                searchable
+                searchPlaceholder="Например: ОЗДС"
+                allLabel={`Все тендеры (${tenders.length})`}
+                value={tenderIds}
+                onChange={setTenderIds}
+                options={tenders.map(t => ({ value: t.tender_id, label: t.tender_desc }))}
+              />
             </div>
-            <div className={`rr-filter-group ${counterpartyId ? 'is-active' : ''}`}>
+            <div className={`rr-filter-group ${objectIds.length ? 'is-active' : ''}`}>
+              <label className="rr-filter-label">Объект</label>
+              <FilterDropdown
+                label=""
+                multiple
+                searchable
+                searchPlaceholder="Поиск объекта…"
+                allLabel={`Все объекты (${objects.length})`}
+                value={objectIds}
+                onChange={setObjectIds}
+                options={objects.map(o => ({ value: o.object_id, label: o.object_name }))}
+              />
+            </div>
+            <div className={`rr-filter-group ${counterpartyIds.length ? 'is-active' : ''}`}>
               <label className="rr-filter-label">Подрядчик</label>
-              <select className={`rr-filter-select ${counterpartyId ? 'is-active' : ''}`}
-                value={counterpartyId} onChange={(e) => setCounterpartyId(e.target.value)}>
-                <option value="">Все подрядчики ({counterparties.length})</option>
-                {counterparties.map(c => <option key={c.counterparty_id} value={c.counterparty_id}>{c.counterparty_name}</option>)}
-              </select>
+              <FilterDropdown
+                label=""
+                multiple
+                searchable
+                searchPlaceholder="Поиск подрядчика…"
+                allLabel={`Все подрядчики (${counterparties.length})`}
+                value={counterpartyIds}
+                onChange={setCounterpartyIds}
+                options={counterparties.map(c => ({ value: c.counterparty_id, label: c.counterparty_name }))}
+              />
             </div>
             <div className={`rr-filter-group ${priceMin || priceMax ? 'is-active' : ''}`}>
               <label className="rr-filter-label">Цена, ₽</label>

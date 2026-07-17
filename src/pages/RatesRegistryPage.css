@@ -112,6 +112,33 @@
   box-sizing: border-box;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
+
+/* Фильтры Тендер/Объект/Подрядчик — FilterDropdown (множественный выбор + поиск).
+   Подгоняем триггер под вид соседних полей фильтра. */
+.rr-filter-group .fdrop { width: 100%; }
+.rr-filter-group .fdrop-trigger {
+  width: 100%;
+  max-width: none;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+.rr-filter-group .fdrop-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Активный фильтр — та же синяя подсветка, что у остальных полей */
+.rr-filter-group.is-active .fdrop-trigger {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.06);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+  font-weight: 500;
+}
 .rr-filter-select:focus,
 .rr-filter-search:focus {
   outline: none;
@@ -288,12 +315,15 @@
   font-size: 0.75rem;
   font-weight: 600;
 }
+/* Наименование материала/работы показываем целиком: длинный текст переносится по словам,
+   строка растёт по высоте. max-width оставлен как ограничитель ширины колонки — без него
+   длинные наименования растянули бы таблицу и выдавили остальные колонки. */
 .rr-table .rr-td-name {
   font-weight: 500;
   max-width: 360px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 .rr-table .rr-td-unit {
   text-align: center;

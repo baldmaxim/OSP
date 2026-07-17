@@ -6,6 +6,11 @@
 -- kp_rates_registry_filter_counterparties (counterparty_id, counterparty_name) — только
 --   подрядчики, предоставившие КП (distinct counterparty_id из kp_rates_registry + имя).
 --
--- Списки «самораширяются»: появилась КП-расценка по новому объекту/подрядчику → он в фильтре.
--- СУ-10 сюда не попадает (это другой источник — supply_rates_registry, task 412).
+-- kp_rates_registry_filter_tenders (tender_id, tender_desc, object_id) — только тендеры,
+--   по которым есть расценки в реестре. Источник — миграция
+--   supabase/migrations/20260715_add_rates_registry_filter_tenders.sql.
+--
+-- Списки «самораширяются»: появилась КП-расценка по новому объекту/подрядчику/тендеру → он в фильтре.
+-- СУ-10 сюда не попадает (это другой источник — supply_rates_registry, task 412);
+-- для него есть supply_rates_registry_filter_objects / _filter_tenders.
 -- Зависит от kp_rates_registry (task 411).
