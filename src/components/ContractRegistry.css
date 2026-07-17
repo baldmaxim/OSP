@@ -1259,6 +1259,7 @@
   vertical-align: middle;
 }
 .ce-appendix-table tbody tr:last-child td { border-bottom: none; }
+.ce-appendix-table .ce-ap-pick { width: 32px; text-align: center; }
 .ce-appendix-table .ce-ap-drag { width: 26px; text-align: center; }
 .ce-appendix-table .ce-ap-num { width: 64px; }
 .ce-appendix-table .ce-ap-appr { width: 92px; text-align: center; }
@@ -1370,6 +1371,38 @@
 }
 .ce-ap-hier:hover:not(:disabled) { color: var(--primary-color); background: var(--bg-secondary); }
 .ce-ap-hier:disabled { opacity: 0.3; cursor: default; }
+
+/* Кнопка массового удаления выбранных приложений (в заголовке блока) */
+.ce-del-selected {
+  margin-left: auto;
+  padding: 0.25rem 0.625rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--danger-color);
+  background: color-mix(in srgb, var(--danger-color) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger-color) 35%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ce-del-selected:hover {
+  color: #fff;
+  background: var(--danger-color);
+  border-color: var(--danger-color);
+}
+/* Кнопка «+ Добавить приложение» стоит после «Удалить выбранные» — margin-left:auto
+   должен остаться только у первой из них, иначе кнопки разъезжаются. */
+.ce-del-selected ~ .ce-add-appendix { margin-left: 0.5rem; }
+
+/* Выбранная строка приложения. Правило идёт ПОСЛЕ .ce-ap-approved, поэтому подсветка
+   выбора перекрывает «зелёную» согласованную строку — выбор важнее показать. Для тёмной
+   темы нужна парная строка: там у .ce-ap-approved выше специфичность. */
+.ce-appendix-table tbody tr.ce-ap-picked > td {
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
+[data-theme='dark'] .ce-appendix-table tbody tr.ce-ap-picked > td {
+  background: color-mix(in srgb, var(--primary-color) 22%, transparent);
+}
 
 /* Ответственный: выпадающий поиск по сотрудникам вместо текстового инпута */
 .ce-appendix-table td.ce-ap-resp { min-width: 0; }

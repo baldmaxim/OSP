@@ -181,6 +181,8 @@ function ContractRegistry() {
   // DnD-переупорядочивание приложений договора (внутри одного уровня)
   const [draggedAppendix, setDraggedAppendix] = useState(null) // { contractId, id }
   const [appendixDragOver, setAppendixDragOver] = useState(null) // { id, position }
+  // Множественный выбор приложений для массового удаления (раскрыт всегда один договор).
+  const [selectedAppendices, setSelectedAppendices] = useState(() => new Set())
 
   // Task 188: dropdown состояние для приложений в форме
   const [attachmentsDropdownOpenForm, setAttachmentsDropdownOpenForm] = useState(false)
@@ -622,6 +624,63 @@ function ContractRegistry() {
     } catch (err) {
       console.error('Ошибка удаления приложения:', err.message)
       alert('Не удалось удалить приложение: ' + err.message)
+    }
+  }
+
+  // ── Множественный выбор приложений ─────────────────────────────────────────
+  const toggleAppendixSelected = (appendixId) => {
+    setSelectedAppendices(prev => {
+      const next = new Set(prev)
+      if (next.has(appendixId)) next.delete(appendixId)
+      else next.add(appendixId)
+      return next
+    })
+  }
+  // «Выбрать все» — по всем строкам раскрытого договора (родители и подпункты).
+  const toggleAllAppendices = (contractId, checked) => {
+    const list = contractAppendicesMap[contractId] || []
+    setSelectedAppendices(checked ? new Set(list.map(a => a.id)) : new Set())
+  }
+
+  // Массовое удаление выбранных. Подпункты выбранного родителя уходят каскадом в БД,
+  // поэтому их не нужно удалять отдельно — но в подсчёт и локальную чистку включаем.
+  const handleDeleteSelectedAppendices = async (contractId) => {
+    const list = contractAppendicesMap[contractId] || []
+    const selected = list.filter(a => selectedAppendices.has(a.id))
+    if (selected.length === 0) return
+    const selectedIds = new Set(selected.map(a => a.id))
+    // Реально исчезнут выбранные + дети выбранных родителей (ON DELETE CASCADE).
+    const doomed = new Set(selectedIds)
+    list.forEach(a => { if (a.parent_id && selectedIds.has(a.parent_id)) doomed.add(a.id) })
+    // Запрос шлём только по «корневым» — дети удалятся каскадом.
+    const rootIds = [...selectedIds].filter(id => {
+      const row = list.find(a => a.id === id)
+      return !(row?.parent_id && selectedIds.has(row.parent_id))
+    })
+    const extra = doomed.size - selectedIds.size
+    const msg = extra > 0
+      ? `Удалить выбранные приложения (${selectedIds.size}) и их подпункты (${extra})?`
+      : `Удалить выбранные приложения (${selectedIds.size})?`
+    if (!window.confirm(msg)) return
+    try {
+      // Чанкуем: длинный список id в .in() раздувает URL до отказа (задача 402).
+      const CHUNK = 100
+      for (let i = 0; i < rootIds.length; i += CHUNK) {
+        const { error } = await supabase
+          .from('contract_appendices')
+          .delete()
+          .in('id', rootIds.slice(i, i + CHUNK))
+        if (error) throw error
+      }
+      setContractAppendicesMap(prev => ({
+        ...prev,
+        [contractId]: (prev[contractId] || []).filter(a => !doomed.has(a.id)),
+      }))
+      setSelectedAppendices(new Set())
+    } catch (err) {
+      console.error('Ошибка удаления приложений:', err.message)
+      alert('Не удалось удалить приложения: ' + err.message)
+      fetchContracts()
     }
   }
 
@@ -1352,7 +1411,12 @@ function ContractRegistry() {
               pagedContracts.map((contract, index) => {
                 const appendices = contractAppendicesMap[contract.id] || []
                 const isExpanded = expandedContractId === contract.id
-                const toggleExpand = () => setExpandedContractId(isExpanded ? null : contract.id)
+                // При переключении договора выбор приложений сбрасываем — он относится
+                // только к раскрытому договору.
+                const toggleExpand = () => {
+                  setSelectedAppendices(new Set())
+                  setExpandedContractId(isExpanded ? null : contract.id)
+                }
                 const overdue = !isDeletedTab && isOverdue(contract)
                 const dsNum = contract.contract_number
                 const dsDate = formatDateRu(contract.contract_date)
@@ -1533,6 +1597,15 @@ function ContractRegistry() {
                           <div className="ce-block-title">
                             Приложения к Договору
                             {appendices.length > 0 && <span className="ce-count">{appendices.length} шт.</span>}
+                            {canEditContracts && !isDeletedTab && selectedAppendices.size > 0 && (
+                              <button
+                                type="button"
+                                className="ce-del-selected"
+                                onClick={() => handleDeleteSelectedAppendices(contract.id)}
+                              >
+                                Удалить выбранные ({selectedAppendices.size})
+                              </button>
+                            )}
                             {canEditContracts && !isDeletedTab && (
                               <button type="button" className="ce-add-appendix" onClick={() => handleAddAppendix(contract.id)}>
                                 + Добавить приложение
@@ -1551,6 +1624,20 @@ function ContractRegistry() {
                               <table className="ce-appendix-table">
                                 <thead>
                                   <tr>
+                                    {!ro && (
+                                      <th className="ce-ap-pick">
+                                        <input
+                                          type="checkbox"
+                                          className="ce-ap-check"
+                                          title="Выбрать все приложения"
+                                          checked={appendices.length > 0 && selectedAppendices.size === appendices.length}
+                                          ref={(el) => {
+                                            if (el) el.indeterminate = selectedAppendices.size > 0 && selectedAppendices.size < appendices.length
+                                          }}
+                                          onChange={(e) => toggleAllAppendices(contract.id, e.target.checked)}
+                                        />
+                                      </th>
+                                    )}
                                     {!ro && <th className="ce-ap-drag" aria-label="Порядок"></th>}
                                     <th className="ce-ap-num">№</th>
                                     <th>Наименование приложения</th>
@@ -1567,10 +1654,11 @@ function ContractRegistry() {
                                     const isChild = node.level === 1
                                     const dragOverCls = appendixDragOver?.id === ap.id ? `ce-ap-drop-${appendixDragOver.position}` : ''
                                     const fullyApproved = !!ap.approved_object && !!ap.approved_counterparty
+                                    const picked = selectedAppendices.has(ap.id)
                                     return (
                                       <tr
                                         key={ap.id}
-                                        className={`${isChild ? 'ce-ap-child' : ''} ${draggedAppendix?.id === ap.id ? 'ce-ap-dragging' : ''} ${dragOverCls} ${fullyApproved ? 'ce-ap-approved' : ''}`}
+                                        className={`${isChild ? 'ce-ap-child' : ''} ${draggedAppendix?.id === ap.id ? 'ce-ap-dragging' : ''} ${dragOverCls} ${fullyApproved ? 'ce-ap-approved' : ''} ${picked ? 'ce-ap-picked' : ''}`}
                                         onDragOver={ro ? undefined : (e) => {
                                           e.preventDefault()
                                           e.dataTransfer.dropEffect = 'move'
@@ -1587,6 +1675,17 @@ function ContractRegistry() {
                                           handleAppendixDrop(contract.id, draggedId, ap.id)
                                         }}
                                       >
+                                        {!ro && (
+                                          <td className="ce-ap-pick">
+                                            <input
+                                              type="checkbox"
+                                              className="ce-ap-check"
+                                              title="Выбрать приложение"
+                                              checked={selectedAppendices.has(ap.id)}
+                                              onChange={() => toggleAppendixSelected(ap.id)}
+                                            />
+                                          </td>
+                                        )}
                                         {!ro && (
                                           <td className="ce-ap-drag">
                                             <span
