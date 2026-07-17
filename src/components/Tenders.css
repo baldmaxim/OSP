@@ -1159,6 +1159,24 @@
 }
 
 /* Независимая сводка «Ответственный по тендерам на неделе» — чип в шапке слева от «Шаблон письма» */
+/* Фильтры тендеров: подпись + FilterDropdown (множественный выбор с поиском) */
+.tender-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.tender-filter-label {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.tender-filter-item .fdrop-trigger {
+  min-height: 32px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
 .tender-resp-chip-wrap {
   position: relative;
   display: inline-flex;

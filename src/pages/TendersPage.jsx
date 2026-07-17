@@ -6,25 +6,9 @@ import StatusDropdown from '../components/StatusDropdown'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
+import FilterDropdown from '../components/FilterDropdown'
 import { copyToClipboard } from '../utils/clipboard'
 import '../components/Tenders.css'
-
-// task 312: единый стиль фильтр-селектов с подсветкой активного состояния.
-const FILTER_SELECT_CHEVRON = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")"
-const filterSelectStyle = (isActive) => ({
-  padding: '0.375rem 1.5rem 0.375rem 0.5rem',
-  fontSize: '0.8125rem',
-  border: `1px solid ${isActive ? '#2563eb' : 'var(--border-color)'}`,
-  borderRadius: '4px',
-  backgroundColor: isActive ? 'rgba(37, 99, 235, 0.10)' : 'var(--bg-secondary)',
-  color: isActive ? '#1d4ed8' : 'var(--text-primary)',
-  fontWeight: isActive ? 600 : 400,
-  cursor: 'pointer',
-  appearance: 'none',
-  backgroundImage: FILTER_SELECT_CHEVRON,
-  backgroundRepeat: 'no-repeat',
-  backgroundPosition: 'right 0.375rem center',
-})
 
 // task 419+: еженедельно ротируемый «Ответственный по тендерам».
 // Ротация считается детерминированно на фронте (без cron): якорь + число недель % N.
@@ -128,9 +112,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     return localStorage.getItem('letterTemplate') || DEFAULT_LETTER_TEMPLATE
   })
   const [templateSaved, setTemplateSaved] = useState(false)
-  const [objectFilter, setObjectFilter] = useState('')
-  const [responsibleFilter, setResponsibleFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  // Фильтры множественного выбора: пустой массив = фильтр не применён.
+  const [objectFilter, setObjectFilter] = useState([])
+  const [responsibleFilter, setResponsibleFilter] = useState([])
+  const [statusFilter, setStatusFilter] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
   // Компактный вид: скрывает столбцы «ВОРы и РД», «План затрат», «Тендер на материалы», «Сводная КП»
   // и сохраняется в localStorage отдельно для каждого представления (construction/warranty/materials).
@@ -1510,16 +1495,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (tender.deleted_at) return false
       if (tender.status !== activeTab) return false
     }
-    // Фильтр по объекту
-    if (objectFilter && tender.object_id !== objectFilter) return false
-    // Фильтр по ответственному
-    if (responsibleFilter === '__unassigned__') {
-      if (tender.responsible_contact_id) return false
-    } else if (responsibleFilter && tender.responsible_contact_id !== responsibleFilter) {
-      return false
+    // Фильтр по объекту (несколько объектов = ИЛИ)
+    if (objectFilter.length > 0 && !objectFilter.includes(tender.object_id)) return false
+    // Фильтр по ответственному. '__unassigned__' — отдельная опция «Не назначен».
+    if (responsibleFilter.length > 0) {
+      const isUnassigned = !tender.responsible_contact_id
+      const matches = isUnassigned
+        ? responsibleFilter.includes('__unassigned__')
+        : responsibleFilter.includes(tender.responsible_contact_id)
+      if (!matches) return false
     }
-    // Фильтр по статусу
-    if (statusFilter && tender.status !== statusFilter) return false
+    // Фильтр по статусу (несколько статусов = ИЛИ)
+    if (statusFilter.length > 0 && !statusFilter.includes(tender.status)) return false
     // Текстовый поиск по наименованию объекта, адресу и описанию работ
     const q = searchQuery.trim().toLowerCase()
     if (q) {
@@ -1745,58 +1732,60 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Объект:</span>
-          <select
+        <div className="tender-filter-item">
+          <span className="tender-filter-label">Объект:</span>
+          <FilterDropdown
+            label=""
+            multiple
+            searchable
+            searchPlaceholder="Начните вводить объект…"
+            allLabel="🏢 Все объекты"
             value={objectFilter}
-            onChange={(e) => setObjectFilter(e.target.value)}
-            style={filterSelectStyle(!!objectFilter)}
-          >
-            <option value="">🏢 Все объекты</option>
-            {tenderObjects.map(obj => (
-              <option key={obj.id} value={obj.id}>{obj.name}</option>
-            ))}
-          </select>
+            onChange={setObjectFilter}
+            options={tenderObjects.map(obj => ({ value: obj.id, label: obj.name }))}
+          />
         </div>
 
         {/* task 212: фильтр по статусу нужен только на вкладке «Все тендеры» —
             на вкладке конкретного статуса список уже отфильтрован */}
         {activeTab === 'all' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Статус:</span>
-          <select
+        <div className="tender-filter-item">
+          <span className="tender-filter-label">Статус:</span>
+          <FilterDropdown
+            label=""
+            multiple
+            searchable
+            searchPlaceholder="Поиск статуса…"
+            allLabel="🏷 Все статусы"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={filterSelectStyle(!!statusFilter)}
-          >
-            <option value="">🏷 Все статусы</option>
-            {currentStatusOptions.map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+            onChange={setStatusFilter}
+            options={currentStatusOptions.map(s => ({ value: s, label: s }))}
+          />
         </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>Ответственный:</span>
-          <select
+        <div className="tender-filter-item">
+          <span className="tender-filter-label">Ответственный:</span>
+          <FilterDropdown
+            label=""
+            multiple
+            searchable
+            searchPlaceholder="Поиск сотрудника…"
+            allLabel="👤 Все ответственные"
             value={responsibleFilter}
-            onChange={(e) => setResponsibleFilter(e.target.value)}
-            style={filterSelectStyle(!!responsibleFilter)}
-          >
-            <option value="">👤 Все ответственные</option>
-            <option value="__unassigned__">— Не назначен —</option>
-            {responsibleContacts
-              .filter(c => tenders.some(t => !t.deleted_at && t.responsible_contact_id === c.id))
-              .map(c => (
-                <option key={c.id} value={c.id}>{c.full_name}</option>
-              ))}
-          </select>
+            onChange={setResponsibleFilter}
+            options={[
+              { value: '__unassigned__', label: '— Не назначен —' },
+              ...responsibleContacts
+                .filter(c => tenders.some(t => !t.deleted_at && t.responsible_contact_id === c.id))
+                .map(c => ({ value: c.id, label: c.full_name })),
+            ]}
+          />
         </div>
 
-        {(objectFilter || responsibleFilter || statusFilter || searchQuery) && (
+        {(objectFilter.length > 0 || responsibleFilter.length > 0 || statusFilter.length > 0 || searchQuery) && (
           <button
-            onClick={() => { setObjectFilter(''); setResponsibleFilter(''); setStatusFilter(''); setSearchQuery('') }}
+            onClick={() => { setObjectFilter([]); setResponsibleFilter([]); setStatusFilter([]); setSearchQuery('') }}
             style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
           >
             Сбросить все

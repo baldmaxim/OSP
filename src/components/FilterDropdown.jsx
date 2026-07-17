@@ -11,6 +11,11 @@ import './FilterDropdown.css'
 //     прижимается вправо у правого края; список со своим max-height и скроллом;
 //   - опционально встроенный поиск; click-outside / Escape / scroll закрывают.
 // options: [{ value, label }]. «Все» — опция со значением '' или 'all'.
+//
+// multiple=true — режим множественного выбора: `value` это МАССИВ значений, опции
+// показываются чекбоксами, панель не закрывается после клика, появляются «Все» /
+// «Очистить». Пустой массив = фильтр не применён (показывается allLabel).
+// По умолчанию (multiple=false) поведение прежнее — одиночный выбор.
 export default function FilterDropdown({
   label,
   value,
@@ -23,6 +28,7 @@ export default function FilterDropdown({
   // Необязательно: как показать ВЫБРАННОЕ значение в триггере (напр. краткое ФИО).
   // Список опций и title всегда показывают полный label.
   formatTrigger = null,
+  multiple = false,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -31,10 +37,28 @@ export default function FilterDropdown({
   const panelRef = useRef(null)
   const searchRef = useRef(null)
 
+  // В multiple-режиме работаем с массивом; наружу всегда отдаём массив.
+  const selectedValues = useMemo(
+    () => (multiple ? (Array.isArray(value) ? value.map(String) : []) : []),
+    [multiple, value])
+
+  // Опции, доступные для выбора (без служебной «Все …» со значением '').
+  const pickable = useMemo(
+    () => options.filter(o => o.value !== '' && o.value !== 'all'),
+    [options])
+
   const selectedLabel = useMemo(() => {
+    if (multiple) {
+      if (selectedValues.length === 0) return allLabel
+      if (selectedValues.length === 1) {
+        const found = options.find(o => String(o.value) === selectedValues[0])
+        return found ? found.label : allLabel
+      }
+      return `Выбрано: ${selectedValues.length}`
+    }
     const found = options.find(o => String(o.value) === String(value))
     return found ? found.label : allLabel
-  }, [options, value, allLabel])
+  }, [options, value, allLabel, multiple, selectedValues])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -42,7 +66,9 @@ export default function FilterDropdown({
     return options.filter(o => String(o.label).toLowerCase().includes(q))
   }, [options, query])
 
-  const isActive = value !== '' && value !== 'all' && value != null
+  const isActive = multiple
+    ? selectedValues.length > 0
+    : (value !== '' && value !== 'all' && value != null)
 
   // Считаем позицию panel'а относительно вьюпорта (для position: fixed).
   const computeCoords = () => {
@@ -99,7 +125,16 @@ export default function FilterDropdown({
   useEffect(() => { if (!open) setQuery('') }, [open])
   useEffect(() => { if (disabled) setOpen(false) }, [disabled])
 
-  const pick = (v) => { onChange(v); setOpen(false) }
+  // Одиночный режим — выбрали и закрыли. Множественный — переключаем галочку,
+  // панель остаётся открытой (можно отметить сразу несколько).
+  const pick = (v) => {
+    if (!multiple) { onChange(v); setOpen(false); return }
+    const key = String(v)
+    const next = selectedValues.includes(key)
+      ? selectedValues.filter(x => x !== key)
+      : [...selectedValues, key]
+    onChange(next)
+  }
 
   const panelStyle = coords ? {
     position: 'fixed',
@@ -140,9 +175,35 @@ export default function FilterDropdown({
               />
             </div>
           )}
+          {multiple && (
+            <div className="fdrop-multi-actions">
+              <button type="button" onClick={() => onChange(pickable.map(o => String(o.value)))}>
+                Выбрать все
+              </button>
+              <button type="button" onClick={() => onChange([])} disabled={selectedValues.length === 0}>
+                Очистить
+              </button>
+            </div>
+          )}
           <div className="fdrop-options" style={{ maxHeight: `${coords.maxHeight}px` }}>
             {filtered.length === 0 ? (
               <div className="fdrop-empty">Ничего не найдено</div>
+            ) : multiple ? (
+              // Служебную опцию «Все …» в списке не показываем — её роль играет «Очистить».
+              filtered.filter(o => o.value !== '' && o.value !== 'all').map(o => {
+                const checked = selectedValues.includes(String(o.value))
+                return (
+                  <label key={String(o.value)} className={`fdrop-option fdrop-option-multi ${checked ? 'is-current' : ''}`} title={o.label}>
+                    <input
+                      type="checkbox"
+                      className="fdrop-option-box"
+                      checked={checked}
+                      onChange={() => pick(o.value)}
+                    />
+                    <span className="fdrop-option-text">{o.label}</span>
+                  </label>
+                )
+              })
             ) : (
               filtered.map(o => (
                 <button
