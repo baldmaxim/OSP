@@ -1412,8 +1412,8 @@ function ContractRegistry() {
                   >
                     <button
                       className={`contract-ds-link ${isExpanded ? 'is-active' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); toggleExpand() }}
-                      title={isExpanded ? 'Свернуть договор' : 'Раскрыть договор'}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/contracts/${contract.id}`) }}
+                      title="Открыть карточку договора"
                     >
                       {dsNum
                         ? <span className="cds-main">№ {dsNum}</span>

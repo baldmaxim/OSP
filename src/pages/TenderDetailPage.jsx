@@ -11,6 +11,8 @@ import VorDocsModal from '../components/VorDocsModal'
 import VirtualTableBody from '../components/VirtualTableBody'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import AccessDenied from '../components/AccessDenied'
+import TenderDocumentsTab from '../components/TenderDocumentsTab'
+import TenderFinalDocBlock from '../components/TenderFinalDocBlock'
 import '../components/TenderDetail.css'
 
 // task 410: с какого числа видимых строк включаем виртуализацию <tbody>.
@@ -583,7 +585,11 @@ function TenderDetailPage() {
   const [tender, setTender] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'proposals' | 'participants' | 'history'
+  const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'supply' | 'proposals' | 'participants' | 'documents' | 'history'
+  // Версия документов тендера: любое изменение (во вкладке «Документы» или в блоке
+  // «Итоговый документ» победителя) поднимает счётчик и синхронизирует оба места.
+  const [tenderDocsVersion, setTenderDocsVersion] = useState(0)
+  const bumpTenderDocs = () => setTenderDocsVersion((v) => v + 1)
   // task 346: число контрагентов с загруженными КП — обновляет дочерний компонент.
   const [proposalsCount, setProposalsCount] = useState(0)
 
@@ -2063,6 +2069,17 @@ function TenderDetailPage() {
           )}
         </div>
 
+        {/* Итоговый документ (решение о выборе подрядчика) — при завершённом тендере.
+            Взаимосвязан со вкладкой «Документы»: одна и та же запись tender_docs (is_final). */}
+        {tender.status === 'Завершен' && (
+          <TenderFinalDocBlock
+            tenderId={tenderId}
+            canEdit={canEditTenders}
+            version={tenderDocsVersion}
+            onChange={bumpTenderDocs}
+          />
+        )}
+
         <div className="tender-notes">
           <div className="tender-notes-header">
             <span className="info-label">Примечание</span>
@@ -2119,6 +2136,12 @@ function TenderDetailPage() {
           {tenderCounterparties.length > 0 && <span className="tab-count">{tenderCounterparties.length}</span>}
         </button>
         <button
+          className={`tender-tab ${activeTab === 'documents' ? 'active' : ''}`}
+          onClick={() => setActiveTab('documents')}
+        >
+          Документы
+        </button>
+        <button
           className={`tender-tab ${activeTab === 'history' ? 'active' : ''}`}
           onClick={() => setActiveTab('history')}
         >
@@ -2131,6 +2154,15 @@ function TenderDetailPage() {
 
       {/* Контент вкладок */}
       <div className="tender-tab-content">
+        {/* Вкладка «Документы» тендера (согласования, ТЗ, сводки, итоговый документ) */}
+        {activeTab === 'documents' && (
+          <TenderDocumentsTab
+            tenderId={tenderId}
+            canEdit={canEditTenders}
+            version={tenderDocsVersion}
+            onChange={bumpTenderDocs}
+          />
+        )}
         {/* task 259: Вкладка Смета */}
         {activeTab === 'estimate' && (
           <div className="estimate-section">
