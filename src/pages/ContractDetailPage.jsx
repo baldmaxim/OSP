@@ -5,6 +5,7 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { parseEstimateSheet, formatMoney } from '../utils/estimateImport'
 import S3DocumentList from '../components/S3DocumentList'
+import AccessDenied from '../components/AccessDenied'
 import '../components/ContractRegistry.css'
 
 const STATUS_LABEL = {
@@ -36,7 +37,7 @@ const TABS = [
 function ContractDetailPage() {
   const { contractId } = useParams()
   const navigate = useNavigate()
-  const { userProfile, canEdit } = useRole()
+  const { userProfile, canEdit, scopedObjectId } = useRole()
   // task 333: гейт редактирования раздела «contracts»
   const canEditContracts = canEdit('contracts')
 
@@ -367,6 +368,16 @@ function ContractDetailPage() {
 
   if (loading) {
     return <div className="contract-registry"><div className="loading" style={{ padding: '3rem', textAlign: 'center' }}>Загрузка...</div></div>
+  }
+  // Скоуп по объекту: руководитель не видит договор чужого объекта даже по прямой ссылке.
+  if (contract && scopedObjectId && contract.object_id !== scopedObjectId) {
+    return (
+      <AccessDenied
+        title="Договор недоступен"
+        message="Этот договор относится к другому объекту, вне вашего доступа. Обратитесь к администратору, если нужен доступ."
+        backTo="/contracts"
+      />
+    )
   }
   if (!contract) {
     return <div className="contract-registry"><div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>Договор не найден</div></div>

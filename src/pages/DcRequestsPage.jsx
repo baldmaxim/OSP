@@ -259,7 +259,7 @@ function AmountCellInput({ value, disabled, onSave }) {
 }
 
 function DcRequestsPage() {
-  const { userProfile, canEdit, isAdmin } = useRole()
+  const { userProfile, canEdit, isAdmin, scopedObjectId } = useRole()
   // task 333: гейт add/edit/delete и inline-editing на этой странице.
   // Сам факт показа страницы контролируется EmployeeLayout (по App.jsx).
   const canEditDc = canEdit('dc_requests')
@@ -324,6 +324,7 @@ function DcRequestsPage() {
     fetchContacts()
     fetchAllDocs()
     fetchExternalLink()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Закрытие попапа статуса по клику вне его.
@@ -340,7 +341,7 @@ function DcRequestsPage() {
   const fetchRequests = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      let query = supabase
         .from('dc_requests')
         .select(`
           *,
@@ -351,6 +352,9 @@ function DcRequestsPage() {
         `)
         // task 325: хронология добавления — старые сверху (№1), новые внизу.
         .order('created_at', { ascending: true })
+      // Скоуп по объекту: руководитель видит только заявки своего объекта.
+      if (scopedObjectId) query = query.eq('object_id', scopedObjectId)
+      const { data, error } = await query
       if (error) throw error
       const sorted = (data || []).map(r => ({
         ...r,

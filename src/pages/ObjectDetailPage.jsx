@@ -8,6 +8,7 @@ import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import WarrantyActSignModal from '../components/WarrantyActSignModal'
 import WarrantyDocSelect from '../components/WarrantyDocSelect'
+import AccessDenied from '../components/AccessDenied'
 import './ObjectDetailPage.css'
 
 // task 372: подсказки для полей площадей (datalist — список + своё значение).
@@ -389,8 +390,11 @@ function ObjectDetailPage() {
   const { objectId } = useParams()
   const navigate = useNavigate()
   // task 333: гейт add/edit/delete документов, гарантий, удержаний, сметы.
-  const { canEdit } = useRole()
+  const { canEdit, scopedObjectId } = useRole()
   const canEditObj = canEdit('objects')
+  // Скоуп по объекту: руководитель, привязанный к объекту, не может открыть чужой
+  // объект даже по прямой ссылке.
+  const objectDenied = !!scopedObjectId && objectId !== scopedObjectId
 
   const [object, setObject] = useState(null)
   const [documents, setDocuments] = useState([])
@@ -589,8 +593,9 @@ function ObjectDetailPage() {
   }, [objectId])
 
   useEffect(() => {
-    if (objectId) fetchObjectData()
-  }, [objectId, fetchObjectData])
+    // Чужой объект не грузим — данные не должны попадать даже в память.
+    if (objectId && !objectDenied) fetchObjectData()
+  }, [objectId, objectDenied, fetchObjectData])
 
   // task 355: autosize для textarea «Примечание» и «Описание события» в модалке гарантии.
   //   Срабатывает при изменении значения и при открытии модалки (тогда editingWarranty
@@ -1514,6 +1519,13 @@ function ObjectDetailPage() {
     .filter(Boolean)
   const docSearchEmpty = !!docQuery && !visibleContract && visibleAgreements.length === 0
 
+  if (objectDenied) return (
+    <AccessDenied
+      title="Объект недоступен"
+      message="Этот объект вне вашего доступа. Вы привязаны к другому объекту — обратитесь к администратору, если нужен доступ."
+      backTo="/general/objects"
+    />
+  )
   if (loading) return <div className="loading">Загрузка...</div>
   if (!object) return (
     <div className="object-detail-page">

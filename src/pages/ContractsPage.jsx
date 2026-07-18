@@ -142,7 +142,7 @@ const RestoreIcon = () => (
 
 function ContractRegistry() {
   const navigate = useNavigate()
-  const { isAdmin, userProfile, canEdit } = useRole()
+  const { isAdmin, userProfile, canEdit, scopedObjectId } = useRole()
   // task 333: гейт add/edit/delete для раздела «contracts»
   const canEditContracts = canEdit('contracts')
 
@@ -263,6 +263,8 @@ function ContractRegistry() {
       // т.к. серверный .order() по join-колонке objects.name недоступен.
       const filtered = (data || [])
         .filter(c => c.objects?.status === objectStatus)
+        // Скоуп по объекту: руководитель, привязанный к объекту, видит только его договоры.
+        .filter(c => !scopedObjectId || c.object_id === scopedObjectId)
         .sort((a, b) => {
           const cmp = (a.objects?.name || '').localeCompare(b.objects?.name || '', 'ru')
           if (cmp !== 0) return cmp

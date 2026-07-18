@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
+import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
 import FilterDropdown from '../components/FilterDropdown'
 import './RatesRegistryPage.css'
@@ -52,6 +53,36 @@ function applyInFilter(q, column, values, totalOptions) {
   return q.in(column, values)
 }
 
+// Экспорт в Excel учитывает текущие фильтры. Данные грузятся ПОСТРАНИЧНО: Supabase
+// по умолчанию отдаёт максимум 1000 строк, а выгрузка всей базы — это тысячи строк
+// (та же грабля, что в счётчиках КП). makeQuery(from, to) должен вернуть готовый
+// query-builder с .range(from, to).
+async function fetchAllRows(makeQuery) {
+  const PAGE = 1000
+  const all = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await makeQuery(from, from + PAGE - 1)
+    if (error) throw error
+    if (data?.length) all.push(...data)
+    if (!data || data.length < PAGE) break
+  }
+  return all
+}
+
+function downloadXlsx(headers, dataRows, sheetName, fileName, colWidths) {
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
+  if (colWidths) ws['!cols'] = colWidths.map(w => ({ wch: w }))
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, sheetName)
+  XLSX.writeFile(wb, fileName)
+}
+
+function todayStamp() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
 const SELECT_COLS =
   'id,item_type,item_name,unit,price,tender_id,counterparty_id,object_id,tender_desc,object_name,counterparty_name,proposal_date'
 
@@ -83,6 +114,7 @@ function SupplyRegistrySection() {
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [exporting, setExporting] = useState(false)
 
   // Только объекты/тендеры, по которым есть расценки снабжения (distinct из реестра).
   const [objects, setObjects] = useState([])
@@ -170,6 +202,38 @@ function SupplyRegistrySection() {
     search || objectIds.length || tenderIds.length || priceMin || priceMax || dateFrom || dateTo
   )
 
+  // Экспорт СУ-10 в Excel: все строки под текущие фильтры (без фильтров — весь реестр).
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const rowsAll = await fetchAllRows((from, to) => {
+        let q = supabase.from('supply_rates_registry').select(SUPPLY_SELECT_COLS)
+        q = applyFilters(q)
+        return q
+          .order(SUPPLY_SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
+          .order('id', { ascending: true })
+          .range(from, to)
+      })
+      if (rowsAll.length === 0) { alert('Нет строк для выгрузки под текущие фильтры.'); return }
+      const headers = ['№ п/п', 'Источник', 'Объект', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Тендер', 'Дата расценки']
+      const dataRows = rowsAll.map((r, i) => [
+        i + 1,
+        r.source_name || 'СУ-10',
+        r.object_name || '',
+        r.item_name || '',
+        r.unit || '',
+        r.price != null ? Number(r.price) : '',
+        r.tender_desc || '',
+        r.rate_date ? fmtDate(r.rate_date) : '',
+      ])
+      downloadXlsx(headers, dataRows, 'Расценки СУ-10', `Реестр расценок (СУ-10) ${todayStamp()}.xlsx`, [6, 10, 24, 46, 10, 14, 40, 14])
+    } catch (err) {
+      alert('Ошибка выгрузки: ' + (err.message || err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const toggleSort = (col) => {
     if (sortBy === col) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortBy(col); setSortDir('asc') }
@@ -238,6 +302,16 @@ function SupplyRegistrySection() {
         {hasActiveFilters && (
           <button type="button" className="rr-filter-reset" onClick={resetFilters} title="Сбросить все фильтры">✕ Сбросить</button>
         )}
+        <button
+          type="button"
+          className="rr-filter-export"
+          onClick={handleExport}
+          disabled={exporting || totalCount === 0}
+          title="Выгрузить в Excel (учитывает текущие фильтры; без фильтров — весь реестр)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          {exporting ? 'Выгрузка…' : 'Excel'}
+        </button>
       </div>
 
       {error ? (
@@ -355,6 +429,7 @@ function RatesRegistryPage() {
   const [counts, setCounts] = useState({ materials: 0, works: 0 })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [exporting, setExporting] = useState(false)
 
   // Справочники для фильтров — только сущности, реально имеющие КП-расценки в реестре
   // (distinct из kp_rates_registry на стороне БД, не весь справочник; task 413).
@@ -485,6 +560,41 @@ function RatesRegistryPage() {
     priceMin || priceMax || dateFrom || dateTo
   )
 
+  // Экспорт КП в Excel: весь реестр под текущие фильтры. Материалы и работы выгружаются
+  // вместе (колонка «Тип») — подвкладка Материалы/Работы на выгрузку не влияет, чтобы
+  // «без фильтров» означало «вся база». applyFilters не содержит item_type.
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const rowsAll = await fetchAllRows((from, to) => {
+        let q = supabase.from('kp_rates_registry').select(SELECT_COLS)
+        q = applyFilters(q)
+        return q
+          .order(SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
+          .order('id', { ascending: true })
+          .range(from, to)
+      })
+      if (rowsAll.length === 0) { alert('Нет строк для выгрузки под текущие фильтры.'); return }
+      const headers = ['№ п/п', 'Объект', 'Подрядчик', 'Тип', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Описание работ (тендер)', 'Дата расценки']
+      const dataRows = rowsAll.map((r, i) => [
+        i + 1,
+        r.object_name || '',
+        r.counterparty_name || '',
+        r.item_type === 'work' ? 'Работа' : 'Материал',
+        r.item_name || '',
+        r.unit || '',
+        r.price != null ? Number(r.price) : '',
+        r.tender_desc || '',
+        r.proposal_date ? fmtDate(r.proposal_date) : '',
+      ])
+      downloadXlsx(headers, dataRows, 'Расценки КП', `Реестр расценок (КП) ${todayStamp()}.xlsx`, [6, 22, 24, 10, 46, 10, 14, 40, 14])
+    } catch (err) {
+      alert('Ошибка выгрузки: ' + (err.message || err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const toggleSort = (col) => {
     if (sortBy === col) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortBy(col); setSortDir('asc') }
@@ -610,6 +720,16 @@ function RatesRegistryPage() {
               <button type="button" className="rr-filter-reset" onClick={resetFilters}
                 title="Сбросить все фильтры">✕ Сбросить</button>
             )}
+            <button
+              type="button"
+              className="rr-filter-export"
+              onClick={handleExport}
+              disabled={exporting || (counts.materials + counts.works) === 0}
+              title="Выгрузить в Excel (материалы + работы, учитывает фильтры; без фильтров — весь реестр)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              {exporting ? 'Выгрузка…' : 'Excel'}
+            </button>
           </div>
 
           {/* Sub-tabs — материалы / работы (грузится только активная) */}

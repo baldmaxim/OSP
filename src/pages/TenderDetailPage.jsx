@@ -10,6 +10,7 @@ import TenderProposalsCompare from '../components/TenderProposalsCompare'
 import VorDocsModal from '../components/VorDocsModal'
 import VirtualTableBody from '../components/VirtualTableBody'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
+import AccessDenied from '../components/AccessDenied'
 import '../components/TenderDetail.css'
 
 // task 410: с какого числа видимых строк включаем виртуализацию <tbody>.
@@ -573,7 +574,7 @@ function AggregateTable({ items, type, ratesMap }) {
 function TenderDetailPage() {
   const { tenderId } = useParams()
   const navigate = useNavigate()
-  const { userProfile, canEdit } = useRole()
+  const { userProfile, canEdit, scopedObjectId } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
   const canEditTenders = canEdit('tenders')
 
@@ -1791,6 +1792,18 @@ function TenderDetailPage() {
 
   if (loading) {
     return <div className="loading">Загрузка...</div>
+  }
+
+  // Скоуп по объекту: руководитель, привязанный к объекту, не видит чужой тендер
+  // даже по прямой ссылке.
+  if (tender && scopedObjectId && tender.object_id !== scopedObjectId) {
+    return (
+      <AccessDenied
+        title="Тендер недоступен"
+        message="Этот тендер относится к другому объекту, вне вашего доступа. Обратитесь к администратору, если нужен доступ."
+        backTo="/tenders"
+      />
+    )
   }
 
   if (!tender) {

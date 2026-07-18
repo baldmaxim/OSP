@@ -195,6 +195,30 @@
   background: var(--bg-secondary);
 }
 
+/* Кнопка экспорта в Excel — рядом со «Сбросить» */
+.rr-filter-export {
+  align-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.rr-filter-export:hover:not(:disabled) {
+  color: #15803d;
+  border-color: #15803d;
+}
+.rr-filter-export:disabled { opacity: 0.5; cursor: default; }
+
 /* ===== Sub-tabs (Материалы / Работы) ===== */
 .rr-sub-tabs {
   display: flex;
