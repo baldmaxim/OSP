@@ -149,7 +149,9 @@ function ContractRegistry() {
   // (примечание юриста и примечания в приложениях к договору).
   const hideNotes = !!scopedObjectId
 
-  const [department, setDepartment] = useState(null) // null | 'construction' | 'warranty'
+  // Раздел работает только с основным строительством (гарантийный отдел пока убран):
+  // заходим сразу в него, без экрана выбора отдела.
+  const department = 'construction'
   const [activeTab, setActiveTab] = useState('all')
 
   const [contracts, setContracts] = useState([])
@@ -1222,18 +1224,6 @@ function ContractRegistry() {
     }
   }
 
-  const handleSelectDepartment = (dept) => {
-    setDepartment(dept)
-    setActiveTab('all')
-    setContracts([])
-  }
-
-  const handleBackToDepartments = () => {
-    setDepartment(null)
-    setContracts([])
-    setObjects([])
-  }
-
   // Управление приложениями
   const handleOpenAttachmentsModal = () => {
     setShowAttachmentsModal(true)
@@ -1251,39 +1241,13 @@ function ContractRegistry() {
     fetchObjectAttachments(id)
   }
 
-  // Экран выбора отдела
-  if (!department) {
-    return (
-      <div className="contract-registry">
-        <div className="registry-header">
-          <h2>Договоры</h2>
-        </div>
-        <div className="department-selection">
-          <p className="selection-label">Выберите отдел:</p>
-          <div className="department-cards">
-            <button className="department-card" onClick={() => handleSelectDepartment('construction')}>
-              <span className="department-icon">🏗️</span>
-              <span className="department-name">Основное строительство</span>
-            </button>
-            <button className="department-card" onClick={() => handleSelectDepartment('warranty')}>
-              <span className="department-icon">🛡️</span>
-              <span className="department-name">Гарантийный отдел</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const departmentLabel = department === 'construction' ? 'Основное строительство' : 'Гарантийный отдел'
   const isDeletedTab = activeTab === 'deleted'
 
   return (
     <div className="contract-registry contracts-page-v2">
       <div className="registry-header">
         <div className="header-left">
-          <button className="btn-back" onClick={handleBackToDepartments} title="Назад к выбору отдела">←</button>
-          <h2>Договоры — {departmentLabel}</h2>
+          <h2>Договоры — Основное строительство</h2>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <button
