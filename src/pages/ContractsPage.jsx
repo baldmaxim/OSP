@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
@@ -1410,10 +1410,11 @@ function ContractRegistry() {
                     onClick={(e) => e.stopPropagation()}
                     title={missingLabel ? `Не заполнено: ${missingLabel}` : undefined}
                   >
-                    <button
+                    <Link
+                      to={`/contracts/${contract.id}`}
                       className={`contract-ds-link ${isExpanded ? 'is-active' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); navigate(`/contracts/${contract.id}`) }}
-                      title="Открыть карточку договора"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Открыть карточку договора (колёсиком мыши — в новой вкладке)"
                     >
                       {dsNum
                         ? <span className="cds-main">№ {dsNum}</span>
@@ -1421,7 +1422,7 @@ function ContractRegistry() {
                       {dsDate
                         ? <span className="cds-sub">от {dsDate}</span>
                         : <span className="cds-sub cds-missing">дата не указана</span>}
-                    </button>
+                    </Link>
                   </td>
                   <td className="cell-counterparty">
                     {parties.length === 0 ? '—' : (
