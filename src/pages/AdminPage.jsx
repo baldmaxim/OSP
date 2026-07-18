@@ -16,6 +16,9 @@ function AdminPage() {
   const [userRoles, setUserRoles] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [objectsList, setObjectsList] = useState([])
+  // Редактирование контактных данных пользователя (ФИО / телефон / раб. почта).
+  const [contactEdit, setContactEdit] = useState(null) // { user_id, email, full_name, work_phone, work_email }
+  const [contactSaving, setContactSaving] = useState(false)
 
   // --- Permissions ---
   const [permissions, setPermissions] = useState([])
@@ -192,6 +195,41 @@ function AdminPage() {
       fetchUsers()
     } catch (err) {
       alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // Открыть модалку редактирования контактных данных пользователя.
+  const openContactEdit = (ur) => {
+    setContactEdit({
+      user_id: ur.user_id,
+      email: ur.email || '',
+      full_name: ur.full_name || '',
+      work_phone: ur.work_phone || '',
+      work_email: ur.work_email || '',
+    })
+  }
+
+  const handleSaveContact = async (e) => {
+    e.preventDefault()
+    if (!contactEdit?.user_id) return
+    setContactSaving(true)
+    try {
+      const updates = {
+        full_name: contactEdit.full_name.trim() || null,
+        work_phone: contactEdit.work_phone.trim() || null,
+        work_email: contactEdit.work_email.trim() || null,
+      }
+      const { error } = await supabase
+        .from('user_roles')
+        .update(updates)
+        .eq('user_id', contactEdit.user_id)
+      if (error) throw error
+      setUserRoles(prev => prev.map(u => u.user_id === contactEdit.user_id ? { ...u, ...updates } : u))
+      setContactEdit(null)
+    } catch (err) {
+      alert('Ошибка сохранения: ' + err.message)
+    } finally {
+      setContactSaving(false)
     }
   }
 
@@ -521,6 +559,7 @@ function AdminPage() {
                           <td className="name-cell">{ur.full_name || <span className="empty-cell">—</span>}</td>
                           <td className="phone-cell">{ur.work_phone || <span className="empty-cell">—</span>}</td>
                           <td className="work-email-cell">{ur.work_email || <span className="empty-cell">—</span>}</td>
+                          {/* ФИО/телефон/почта редактируются через модалку (см. кнопку-карандаш) */}
                           <td>
                             <select
                               className="role-select"
@@ -555,6 +594,9 @@ function AdminPage() {
                           </td>
                           <td>
                             <div className="action-btns">
+                              <button className="btn-edit-contact" onClick={() => openContactEdit(ur)} title="Редактировать ФИО, телефон, рабочую почту">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
                               <button className="btn-block" onClick={() => handleBlock(ur.id)} title="Заблокировать">
                                 Заблок.
                               </button>
@@ -744,6 +786,64 @@ function AdminPage() {
               <span>Системные роли изменять и удалять нельзя</span>
               <span>Удаление пользовательской роли переводит её носителей в «Инженер ОСП»</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка редактирования контактных данных пользователя (только админ) */}
+      {contactEdit && (
+        <div className="modal-overlay">
+          <div className="modal admin-contact-modal">
+            <div className="modal-header">
+              <div>
+                <h3>Контактные данные</h3>
+                <p className="admin-contact-sub">{contactEdit.email || 'учётная запись без email'}</p>
+              </div>
+              <button className="modal-close" onClick={() => setContactEdit(null)} aria-label="Закрыть">×</button>
+            </div>
+            <form onSubmit={handleSaveContact}>
+              <div className="admin-contact-body">
+                <label className="admin-contact-field">
+                  <span>ФИО</span>
+                  <input
+                    type="text"
+                    value={contactEdit.full_name}
+                    onChange={(e) => setContactEdit(c => ({ ...c, full_name: e.target.value }))}
+                    placeholder="Фамилия Имя Отчество"
+                    autoFocus
+                  />
+                </label>
+                <label className="admin-contact-field">
+                  <span>Телефон</span>
+                  <input
+                    type="tel"
+                    value={contactEdit.work_phone}
+                    onChange={(e) => setContactEdit(c => ({ ...c, work_phone: e.target.value }))}
+                    placeholder="+7 ..."
+                  />
+                </label>
+                <label className="admin-contact-field">
+                  <span>Рабочая почта</span>
+                  <input
+                    type="email"
+                    value={contactEdit.work_email}
+                    onChange={(e) => setContactEdit(c => ({ ...c, work_email: e.target.value }))}
+                    placeholder="name@su10.ru"
+                  />
+                </label>
+                <p className="admin-contact-hint">
+                  Это рабочие контакты сотрудника. Логин-email (учётная запись) здесь не меняется.
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn-secondary" onClick={() => setContactEdit(null)} disabled={contactSaving}>
+                  Отмена
+                </button>
+                <button type="submit" className="btn-primary" disabled={contactSaving}>
+                  {contactSaving ? 'Сохранение…' : 'Сохранить'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
