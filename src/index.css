@@ -34,6 +34,8 @@
   --primary-color: #0891b2;
   --primary-hover: #0e7490;
   --primary-light: #f0fdfa;
+  /* Фирменный красный логотипа СУ_10 (одинаков в светлой и тёмной теме) */
+  --brand-red: #a83c39;
   --success-color: #16a34a;
   --success-light: #f0fdf4;
   --success-muted: #86efac;

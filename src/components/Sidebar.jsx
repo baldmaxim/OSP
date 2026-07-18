@@ -1,6 +1,7 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import ThemeToggle from './ThemeToggle'
+import BrandLogo from './BrandLogo'
 import './Sidebar.css'
 
 function Sidebar() {
@@ -18,8 +19,8 @@ function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <h1 className="sidebar-title">ОСП</h1>
-        <p className="sidebar-subtitle">отдел сопровождения подрядчиков</p>
+        <h1 className="sidebar-title"><BrandLogo /></h1>
+        <p className="sidebar-subtitle">Тендеры</p>
         {role && role !== 'contractor' && (
           <span className="sidebar-role">{roleLabels?.[role] || role}</span>
         )}

@@ -2,13 +2,18 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import { supabase } from '../supabase'
+import BrandLogo from '../components/BrandLogo'
 import './LoginPage.css'
 
-function LoginPage() {
+// variant: 'employee' — вход для сотрудников (+ регистрация); 'contractor' — вход для
+// подрядчиков (выбор организации). Экран выбора роли убран, у каждого входа свой URL.
+function LoginPage({ variant = 'employee' }) {
   const navigate = useNavigate()
   const { loginWithPassword, loginAsContractor, signUp, isLoggedIn, isEmployee } = useRole()
+  const isContractorVariant = variant === 'contractor'
 
-  const [mode, setMode] = useState('employee') // 'employee' | 'contractor' | 'register'
+  // 'employee' | 'contractor' | 'register'. Для варианта подрядчика — всегда 'contractor'.
+  const [mode, setMode] = useState(isContractorVariant ? 'contractor' : 'employee')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
@@ -138,30 +143,8 @@ function LoginPage() {
     <div className="login-page">
       <div className="login-container">
         <div className="login-header">
-          <h1>ОСП</h1>
-          <p>Отдел сопровождения подрядчиков</p>
-        </div>
-
-        {/* Табы выбора режима */}
-        <div className="login-tabs">
-          <button
-            className={`login-tab ${mode === 'employee' ? 'active' : ''}`}
-            onClick={() => switchMode('employee')}
-          >
-            Сотрудник
-          </button>
-          <button
-            className={`login-tab ${mode === 'contractor' ? 'active' : ''}`}
-            onClick={() => switchMode('contractor')}
-          >
-            Подрядчик
-          </button>
-          <button
-            className={`login-tab ${mode === 'register' ? 'active' : ''}`}
-            onClick={() => switchMode('register')}
-          >
-            Регистрация
-          </button>
+          <BrandLogo className="brand-logo-lg" />
+          <p>{isContractorVariant ? 'Кабинет подрядчика' : 'Тендерная площадка'}</p>
         </div>
 
         {successMessage && (
@@ -295,6 +278,28 @@ function LoginPage() {
             </button>
           </form>
         )}
+
+        {/* Переключение регистрации и перекрёстные ссылки между двумя входами */}
+        <div className="login-footer">
+          {isContractorVariant ? (
+            <button type="button" className="login-link" onClick={() => navigate('/login')}>
+              Вход для сотрудников →
+            </button>
+          ) : mode === 'register' ? (
+            <button type="button" className="login-link" onClick={() => switchMode('employee')}>
+              Уже есть аккаунт? Войти
+            </button>
+          ) : (
+            <>
+              <button type="button" className="login-link" onClick={() => switchMode('register')}>
+                Регистрация сотрудника
+              </button>
+              <button type="button" className="login-link login-link-muted" onClick={() => navigate('/partner')}>
+                Вход для подрядчиков →
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

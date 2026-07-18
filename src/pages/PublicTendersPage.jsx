@@ -78,7 +78,7 @@ function PublicTendersPage() {
             <h1>ООО «СУ-10»</h1>
             <p className="public-subtitle">Открытые тендеры для подрядчиков</p>
           </div>
-          <a href="/login" className="public-login-link">Войти →</a>
+          <a href="/partner" className="public-login-link">Войти →</a>
         </div>
       </header>
 

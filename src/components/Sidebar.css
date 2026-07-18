@@ -18,11 +18,10 @@
 }
 
 .sidebar-title {
-  font-size: 1.0625rem;
-  font-weight: 700;
+  /* Обёртка для BrandLogo — размер логотипа задаём здесь (цвет — из BrandLogo). */
+  font-size: 1.5rem;
   margin: 0 0 0.25rem 0;
-  color: white;
-  letter-spacing: -0.01em;
+  line-height: 1;
 }
 
 .sidebar-subtitle {

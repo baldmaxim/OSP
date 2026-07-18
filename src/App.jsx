@@ -124,12 +124,22 @@ function AuthRoutes() {
       <Routes>
         {/* Публичная страница тендеров — доступна без авторизации */}
         <Route path="/public/tenders" element={<PublicTendersPage />} />
+        {/* Вход для сотрудников */}
         <Route
           path="/login"
           element={
             isLoggedIn
               ? <Navigate to={isEmployee ? "/general" : "/contractor/proposals"} replace />
-              : <LoginPage />
+              : <LoginPage variant="employee" />
+          }
+        />
+        {/* Вход для подрядчиков (отдельная ссылка) */}
+        <Route
+          path="/partner"
+          element={
+            isLoggedIn
+              ? <Navigate to={isEmployee ? "/general" : "/contractor/proposals"} replace />
+              : <LoginPage variant="contractor" />
           }
         />
         <Route
@@ -137,7 +147,7 @@ function AuthRoutes() {
           element={
             isContractor
               ? <ContractorProposalsPage />
-              : <Navigate to="/login" replace />
+              : <Navigate to="/partner" replace />
           }
         />
         <Route path="/*" element={<EmployeeLayout />} />

@@ -19,7 +19,7 @@ function ContractorProposalsPage() {
   // Редирект если не подрядчик
   useEffect(() => {
     if (!isContractor) {
-      navigate('/login')
+      navigate('/partner')
     }
   }, [isContractor, navigate])
 

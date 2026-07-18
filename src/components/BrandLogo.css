@@ -1,0 +1,16 @@
+/* Фирменный текстовый логотип «СУ_10». Красный — из --brand-red (index.css). */
+.brand-logo {
+  display: inline-block;
+  font-family: 'Consolas', 'SF Mono', 'Menlo', 'Roboto Mono', monospace;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--brand-red, #a83c39);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Крупный вариант — для экрана входа */
+.brand-logo.brand-logo-lg {
+  font-size: 2.5rem;
+}
