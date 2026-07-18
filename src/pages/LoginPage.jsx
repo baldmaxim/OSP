@@ -111,8 +111,23 @@ function LoginPage({ variant = 'employee' }) {
     }
     setLoading(true)
     try {
-      await signUp(email, password)
-      setSuccessMessage('Регистрация успешна! Теперь вы можете войти.')
+      const data = await signUp(email, password)
+      // Supabase не отдаёт ошибку, если email уже зарегистрирован (защита от перебора адресов):
+      // возвращается user с пустым массивом identities. Отличаем этот случай, чтобы не обещать
+      // письмо, которого не будет.
+      const alreadyRegistered =
+        data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0
+      if (alreadyRegistered) {
+        setError('Этот email уже зарегистрирован. Войдите или воспользуйтесь ссылкой подтверждения из ранее отправленного письма.')
+        return
+      }
+      // Подтверждение почты включено: сразу войти нельзя — нужно перейти по ссылке из письма,
+      // а затем дождаться одобрения администратором.
+      setSuccessMessage(
+        `Регистрация принята. На адрес ${email} отправлено письмо со ссылкой для подтверждения — ` +
+        'перейдите по ней, чтобы активировать аккаунт. После подтверждения вход откроется, когда ' +
+        'администратор одобрит заявку.'
+      )
       setMode('employee')
       setPassword('')
       setPasswordConfirm('')

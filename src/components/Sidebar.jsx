@@ -39,7 +39,7 @@ function NavItem({ to, label, tone, Icon, forceActive }) {
 function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { logout, canView, isAdmin, isSuperAdmin, isEmployee, role, roleLabels } = useRole()
+  const { logout, canView, isAdmin, isSuperAdmin, isEmployee, role, roleLabels, scopedObjectId } = useRole()
 
   // task 254: «Тендеры» — единый пункт-ссылка на страницу-хаб /tenders.
   // Подсвечиваем его активным на любой странице раздела тендеров.
@@ -61,7 +61,9 @@ function Sidebar() {
     },
     {
       key: 'tenders',
-      to: '/tenders',
+      // Руководитель строительства (привязан к объекту) попадает сразу в «Основное
+      // строительство», минуя хаб-страницу /tenders.
+      to: scopedObjectId ? '/tenders/construction' : '/tenders',
       label: 'Тендеры',
       tone: 'rose',
       Icon: IconTenders,

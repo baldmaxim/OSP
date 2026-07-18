@@ -49,8 +49,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const { scopedObjectId, userProfile, isAdmin, canEdit } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
   const canEditTenders = canEdit('tenders')
-  // Руководитель строительства (привязан к объекту) не видит внутренние примечания.
+  // Руководитель строительства (привязан к объекту) не видит внутренние примечания,
+  // а также элементы работы с подрядчиками: «Дежурный по тендерам», «Шаблон письма»,
+  // «Копировать email».
   const hideNotes = !!scopedObjectId
+  const isScopedManager = !!scopedObjectId
   const [tenders, setTenders] = useState([])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
@@ -1580,7 +1583,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       <div className="page-header page-header-tenders">
         <h2><span className="page-icon" aria-hidden>📋</span> {pageTitle}</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {!isMaterialsView && department === 'construction' && (
+          {!isMaterialsView && department === 'construction' && !isScopedManager && (
             <div className="tender-resp-chip-wrap">
               <button
                 type="button"
@@ -1626,7 +1629,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               )}
             </div>
           )}
-          {!isMaterialsView && (
+          {!isMaterialsView && !isScopedManager && (
             <button
               type="button"
               className={`btn-view-toggle ${activeTab === 'template' ? 'active' : ''}`}
@@ -2554,7 +2557,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               + Добавить контрагента
                             </button>
                           )}
-                          {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 && (
+                          {!isScopedManager && tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 && (
                             <button
                               className="btn-secondary"
                               onClick={() => handleCopyEmailsForTender(tender.id)}
