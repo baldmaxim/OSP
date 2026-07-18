@@ -38,6 +38,8 @@ function ContractDetailPage() {
   const { contractId } = useParams()
   const navigate = useNavigate()
   const { userProfile, canEdit, scopedObjectId } = useRole()
+  // Руководитель строительства (привязан к объекту) не видит примечание юриста.
+  const hideNotes = !!scopedObjectId
   // task 333: гейт редактирования раздела «contracts»
   const canEditContracts = canEdit('contracts')
 
@@ -510,6 +512,7 @@ function ContractDetailPage() {
             </div>
           )}
 
+          {!hideNotes && (
           <div className="contract-section contract-section-wide">
             <h3>Примечание</h3>
             <textarea
@@ -532,6 +535,7 @@ function ContractDetailPage() {
               </div>
             )}
           </div>
+          )}
         </div>
       )}
 

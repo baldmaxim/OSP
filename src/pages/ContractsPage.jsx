@@ -145,6 +145,9 @@ function ContractRegistry() {
   const { isAdmin, userProfile, canEdit, scopedObjectId } = useRole()
   // task 333: гейт add/edit/delete для раздела «contracts»
   const canEditContracts = canEdit('contracts')
+  // Руководитель строительства (привязан к объекту) не видит внутренние примечания
+  // (примечание юриста и примечания в приложениях к договору).
+  const hideNotes = !!scopedObjectId
 
   const [department, setDepartment] = useState(null) // null | 'construction' | 'warranty'
   const [activeTab, setActiveTab] = useState('all')
@@ -1573,7 +1576,8 @@ function ContractRegistry() {
                           </section>
                         )}
 
-                        {/* Блок 1: Примечание юриста */}
+                        {/* Блок 1: Примечание юриста — скрыто для руководителя строительства */}
+                        {!hideNotes && (
                         <section className="ce-block">
                           <div className="ce-block-title">
                             Примечание юриста
@@ -1593,6 +1597,7 @@ function ContractRegistry() {
                             <div className="ce-empty">Примечание пока не заполнено</div>
                           )}
                         </section>
+                        )}
 
                         {/* Блок 2: Приложения к Договору (ручной ввод, task 419) */}
                         <section className="ce-block">
@@ -1646,7 +1651,7 @@ function ContractRegistry() {
                                     <th>Ответственный</th>
                                     <th className="ce-ap-appr">Согл. с объектом</th>
                                     <th className="ce-ap-appr">Согл. с контрагентом</th>
-                                    <th className="ce-ap-notes">Примечание</th>
+                                    {!hideNotes && <th className="ce-ap-notes">Примечание</th>}
                                     {!ro && <th className="ce-ap-actions" aria-label="Действия"></th>}
                                   </tr>
                                 </thead>
@@ -1767,6 +1772,7 @@ function ContractRegistry() {
                                             onChange={(e) => handleToggleAppendixApproval(contract.id, ap.id, 'approved_counterparty', e.target.checked)}
                                           />
                                         </td>
+                                        {!hideNotes && (
                                         <td className="ce-ap-notes">
                                           {ro ? (
                                             <div className="ce-ap-notes-ro">{ap.notes || '—'}</div>
@@ -1780,6 +1786,7 @@ function ContractRegistry() {
                                             />
                                           )}
                                         </td>
+                                        )}
                                         {!ro && (
                                           <td className="ce-ap-actions">
                                             <div className="ce-ap-actions-inner">

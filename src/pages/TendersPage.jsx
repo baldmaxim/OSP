@@ -49,6 +49,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const { scopedObjectId, userProfile, isAdmin, canEdit } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
   const canEditTenders = canEdit('tenders')
+  // Руководитель строительства (привязан к объекту) не видит внутренние примечания.
+  const hideNotes = !!scopedObjectId
   const [tenders, setTenders] = useState([])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
@@ -2573,7 +2575,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                   <th style={{ width: '140px' }}>Email</th>
                                   <th style={{ width: '190px' }}>Статус</th>
                                   <th style={{ width: '280px' }}>КП / Документы</th>
-                                  <th>Примечание</th>
+                                  {!hideNotes && <th>Примечание</th>}
                                   <th style={{ width: '56px' }}></th>
                                 </tr>
                               </thead>
@@ -2699,6 +2701,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                         canEdit={canEditTenders}
                                       />
                                     </td>
+                                    {!hideNotes && (
                                     <td>
                                       <textarea
                                         ref={(el) => {
@@ -2739,6 +2742,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                         }}
                                       />
                                     </td>
+                                    )}
                                     <td style={{ textAlign: 'center' }}>
                                       {canEditTenders && (
                                         <button

@@ -575,6 +575,8 @@ function TenderDetailPage() {
   const { tenderId } = useParams()
   const navigate = useNavigate()
   const { userProfile, canEdit, scopedObjectId } = useRole()
+  // Руководитель строительства (привязан к объекту) не видит внутренние примечания.
+  const hideNotes = !!scopedObjectId
   // task 333: гейт add/edit/delete для раздела «tenders»
   const canEditTenders = canEdit('tenders')
 
@@ -2441,7 +2443,7 @@ function TenderDetailPage() {
                       <th style={{ width: '140px' }}>Телефон</th>
                       <th style={{ width: '190px' }}>Статус</th>
                       <th style={{ width: '280px' }}>КП / Документы</th>
-                      <th style={{ minWidth: '350px', width: '35%' }}>Примечание</th>
+                      {!hideNotes && <th style={{ minWidth: '350px', width: '35%' }}>Примечание</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -2513,6 +2515,7 @@ function TenderDetailPage() {
                               canEdit={canEditTenders}
                             />
                           </td>
+                          {!hideNotes && (
                           <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
                             <textarea
                               value={tc.notes || ''}
@@ -2550,6 +2553,7 @@ function TenderDetailPage() {
                               }}
                             />
                           </td>
+                          )}
                         </tr>
                       )
                     })}
