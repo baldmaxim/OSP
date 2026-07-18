@@ -16,6 +16,8 @@ function AdminPage() {
   const [userRoles, setUserRoles] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [objectsList, setObjectsList] = useState([])
+  // Под-вкладка внутри «Пользователи»: активные / заявки на регистрацию / заблокированные.
+  const [usersView, setUsersView] = useState('active') // 'active' | 'pending' | 'blocked'
   // Редактирование контактных данных пользователя (ФИО / телефон / раб. почта).
   const [contactEdit, setContactEdit] = useState(null) // { user_id, email, full_name, work_phone, work_email }
   const [contactSaving, setContactSaving] = useState(false)
@@ -406,7 +408,9 @@ function AdminPage() {
         <div className="admin-tabs">
           <button className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
             Пользователи
-            {(pendingUsers.length + blockedUsers.length) > 0 && <span className="tab-badge">{pendingUsers.length + blockedUsers.length}</span>}
+            {/* Бейдж-«внимание» считает только заявки на регистрацию — то, что требует
+                действия. Заблокированные не срочные и бейдж не раздувают. */}
+            {pendingUsers.length > 0 && <span className="tab-badge">{pendingUsers.length}</span>}
           </button>
           <button className={`admin-tab ${activeTab === 'permissions' ? 'active' : ''}`} onClick={() => setActiveTab('permissions')}>
             Права доступа
@@ -424,8 +428,35 @@ function AdminPage() {
             <div className="admin-loading">Загрузка...</div>
           ) : (
             <>
+              {/* Переключатель под-вкладок: активные всегда по умолчанию, заявки и
+                  заблокированные вынесены на отдельные экраны, чтобы не висеть на главном. */}
+              <div className="admin-subtabs">
+                <button
+                  className={`admin-subtab ${usersView === 'active' ? 'active' : ''}`}
+                  onClick={() => setUsersView('active')}
+                >
+                  Активные <span className="subtab-count">{approvedUsers.length}</span>
+                </button>
+                <button
+                  className={`admin-subtab ${usersView === 'pending' ? 'active' : ''}`}
+                  onClick={() => setUsersView('pending')}
+                >
+                  Заявки на регистрацию
+                  {pendingUsers.length > 0 && <span className="subtab-count subtab-count-attention">{pendingUsers.length}</span>}
+                </button>
+                <button
+                  className={`admin-subtab ${usersView === 'blocked' ? 'active' : ''}`}
+                  onClick={() => setUsersView('blocked')}
+                >
+                  Заблокированные <span className="subtab-count">{blockedUsers.length}</span>
+                </button>
+              </div>
+
               {/* Заявки на регистрацию */}
-              {pendingUsers.length > 0 && (
+              {usersView === 'pending' && (
+                pendingUsers.length === 0 ? (
+                  <div className="admin-empty-view">Нет заявок на регистрацию.</div>
+                ) : (
                 <div className="admin-section">
                   <h3 className="section-title pending-title">
                     Заявки на регистрацию
@@ -475,14 +506,18 @@ function AdminPage() {
                     </tbody>
                   </table>
                 </div>
+                )
               )}
 
-              {/* Заблокированные пользователи */}
-              {blockedUsers.length > 0 && (
+              {/* Заблокированные пользователи — нейтральный (не тревожный) вид */}
+              {usersView === 'blocked' && (
+                blockedUsers.length === 0 ? (
+                  <div className="admin-empty-view">Заблокированных пользователей нет.</div>
+                ) : (
                 <div className="admin-section">
-                  <h3 className="section-title pending-title">
+                  <h3 className="section-title blocked-title">
                     Заблокированные пользователи
-                    <span className="pending-count">{blockedUsers.length}</span>
+                    <span className="blocked-count">{blockedUsers.length}</span>
                   </h3>
                   <table className="admin-table">
                     <thead>
@@ -496,7 +531,7 @@ function AdminPage() {
                     </thead>
                     <tbody>
                       {blockedUsers.map(ur => (
-                        <tr key={ur.user_id} className="pending-row">
+                        <tr key={ur.user_id} className="blocked-row">
                           <td className="email-cell">{ur.email || '—'}</td>
                           <td className="name-cell">{ur.full_name || <span className="empty-cell">—</span>}</td>
                           <td>
@@ -528,9 +563,11 @@ function AdminPage() {
                     </tbody>
                   </table>
                 </div>
+                )
               )}
 
               {/* Активные пользователи */}
+              {usersView === 'active' && (
               <div className="admin-section">
                 <h3 className="section-title">Активные пользователи ({approvedUsers.length})</h3>
                 <table className="admin-table">
@@ -611,6 +648,7 @@ function AdminPage() {
                   </tbody>
                 </table>
               </div>
+              )}
             </>
           )}
         </div>
