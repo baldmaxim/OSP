@@ -1,14 +1,23 @@
 ﻿import { useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
+import {
+  IconBarChart,
+  IconUpload,
+  IconDownload,
+  IconFileSpreadsheet,
+  IconColumns,
+} from '../components/icons/BsmIcons'
 import './BSMPage.css'
 
 // Поля, которые подтягиваются из Excel. Пользователь сам выбирает столбец для каждого
 // в панели «Столбцы» (внутри карточки документа). Дефолтная раскладка — A/B/C/D/E/F/G/H/L.
+// `required` — только для отображения (бейдж «обяз.» в таблице сопоставления).
+// На парсинг не влияет: разбор использует key/default.
 const COLUMN_FIELDS = [
   { key: 'num',            label: '№ п/п',           default: 0 },
-  { key: 'code',           label: 'КОД (мат./Р)',    default: 1 },
-  { key: 'name',           label: 'Наименование',    default: 2 },
+  { key: 'code',           label: 'КОД (мат./Р)',    default: 1, required: true },
+  { key: 'name',           label: 'Наименование',    default: 2, required: true },
   { key: 'unit',           label: 'Ед. изм.',        default: 3 },
   { key: 'workVolume',     label: 'Объём работ',     default: 4 },
   { key: 'materialVolume', label: 'Объем материалов', default: 5 },
@@ -642,7 +651,10 @@ function BSMPage() {
     <div className="bsm-page">
       <header className="bsm-header">
         <div className="bsm-header-text">
-          <h2>📊 Анализ ВОР/КП</h2>
+          <div className="bsm-header-titlerow">
+            <span className="bsm-header-icon" aria-hidden><IconBarChart size={20} /></span>
+            <h2>Анализ ВОР/КП</h2>
+          </div>
           <p className="bsm-subtitle">
             Загрузите один или несколько Excel-файлов с расценками, для каждого задайте лист, столбцы и диапазон строк — получите общую сводную таблицу по наименованиям.
           </p>
@@ -658,7 +670,8 @@ function BSMPage() {
           />
           {canEditKp && (
             <button className="bsm-btn-primary" onClick={() => openFilePicker('add')}>
-              {hasDocuments ? '➕ Добавить документ' : '📂 Загрузить Excel'}
+              <IconUpload size={16} />
+              {hasDocuments ? 'Добавить документ' : 'Загрузить Excel'}
             </button>
           )}
           {hasDocuments && (
@@ -669,7 +682,8 @@ function BSMPage() {
                 disabled={!hasData || grouped.length === 0}
                 title="Выгрузить текущий анализ (Сводная + расхождения + не расценены) в Excel"
               >
-                📥 Скачать Excel
+                <IconDownload size={16} />
+                Скачать Excel
               </button>
               {canEditKp && (
                 <button className="bsm-btn-ghost" onClick={handleClear}>
@@ -684,43 +698,74 @@ function BSMPage() {
       {error && <div className="bsm-error">{error}</div>}
 
       {!hasDocuments && (
-        <div
-          className={`bsm-empty${isDragActive ? ' bsm-drag-active' : ''}`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <div className="bsm-empty-icon" aria-hidden>{isDragActive ? '⬇️' : '📥'}</div>
-          <div className="bsm-empty-title">{isDragActive ? 'Отпустите файл для загрузки' : 'Нет данных'}</div>
-          <div className="bsm-empty-text">
-            {isDragActive
-              ? 'Файл будет загружен и обработан автоматически.'
-              : 'Загрузите Excel-документ или перетащите его сюда. Можно добавить несколько документов — данные объединятся в один анализ. Сопоставление колонок настраивается для каждого документа отдельно.'}
+        <div className="bsm-card">
+          <div
+            className={`bsm-dropzone${isDragActive ? ' is-drag' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <span className="bsm-dropzone-icon" aria-hidden>
+              {isDragActive ? <IconUpload size={30} /> : <IconFileSpreadsheet size={30} />}
+            </span>
+            <div className="bsm-dropzone-title">
+              {isDragActive ? 'Отпустите файл для загрузки' : 'Нет данных'}
+            </div>
+            <div className="bsm-dropzone-text">
+              {isDragActive
+                ? 'Файл будет загружен и обработан автоматически.'
+                : 'Загрузите один или несколько Excel-файлов или перетащите их сюда. Можно добавить несколько документов — данные объединятся в один анализ.'}
+            </div>
+            {canEditKp && !isDragActive && (
+              <button
+                type="button"
+                className="bsm-btn-primary bsm-dropzone-btn"
+                onClick={() => openFilePicker('add')}
+              >
+                <IconUpload size={16} />
+                Выбрать файлы
+              </button>
+            )}
+            <div className="bsm-dropzone-note">Поддерживаются файлы .xlsx и .xls</div>
           </div>
-          <table className="bsm-format-table">
-            <thead>
-              <tr>
-                <th>Колонка</th><th>Назначение</th>
-              </tr>
-            </thead>
-            <tbody>
-              {COLUMN_FIELDS.map(f => {
-                const idx = startTemplate[f.key]
-                const letter = (idx === null || idx === undefined) ? '—' : XLSX.utils.encode_col(idx)
-                return (
-                  <tr key={f.key}>
-                    <td>{letter}</td>
-                    <td>
-                      {f.label}
-                      {f.key === 'code' && (
-                        <> (<code>мат.</code> — материал, <code>Р</code>/<code>Р-…</code> — работа)</>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+
+          <section className="bsm-map-section">
+            <div className="bsm-map-head">
+              <span className="bsm-map-icon" aria-hidden><IconColumns size={18} /></span>
+              <div>
+                <h3>Сопоставление колонок</h3>
+                <p>Настройте соответствие колонок для каждого документа отдельно. Обязательные колонки отмечены.</p>
+              </div>
+            </div>
+            <table className="bsm-map-table">
+              <thead>
+                <tr>
+                  <th className="bsm-map-letter-col">Колонка</th>
+                  <th>Назначение</th>
+                </tr>
+              </thead>
+              <tbody>
+                {COLUMN_FIELDS.map(f => {
+                  const idx = startTemplate[f.key]
+                  const letter = (idx === null || idx === undefined) ? '—' : XLSX.utils.encode_col(idx)
+                  return (
+                    <tr key={f.key}>
+                      <td className="bsm-map-letter-col">
+                        <span className="bsm-map-letter">{letter}</span>
+                      </td>
+                      <td className="bsm-map-purpose">
+                        {f.label}
+                        {f.required && <span className="bsm-map-req">обяз.</span>}
+                        {f.key === 'code' && (
+                          <> (<code>мат.</code> — материал, <code>Р</code>/<code>Р-…</code> — работа)</>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </section>
         </div>
       )}
 
