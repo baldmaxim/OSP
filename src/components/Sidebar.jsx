@@ -2,7 +2,39 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import ThemeToggle from './ThemeToggle'
 import BrandLogo from './BrandLogo'
+import {
+  IconGeneral,
+  IconTenders,
+  IconAnalysis,
+  IconContracts,
+  IconDcRequest,
+  IconRates,
+  IconReports,
+  IconAdmin,
+  IconProfile,
+} from './icons/NavIcons'
 import './Sidebar.css'
+
+// Контейнер иконки: единый размер/скругление, цветовой тон задаётся классом tone-*.
+function IconContainer({ tone, children }) {
+  return <span className={`nav-ic tone-${tone}`}>{children}</span>
+}
+
+// Один пункт меню. Активность — из текущего маршрута (NavLink), либо принудительно
+// через forceActive (раздел «Тендеры» подсвечивается на /cost-plans и /vors).
+function NavItem({ to, label, tone, Icon, forceActive }) {
+  return (
+    <NavLink
+      to={to}
+      title={label}
+      className={({ isActive }) => `nav-item ${(isActive || forceActive) ? 'active' : ''}`}
+      aria-current={forceActive ? 'page' : undefined}
+    >
+      <IconContainer tone={tone}><Icon /></IconContainer>
+      <span className="nav-label">{label}</span>
+    </NavLink>
+  )
+}
 
 function Sidebar() {
   const location = useLocation()
@@ -16,6 +48,79 @@ function Sidebar() {
     || location.pathname.startsWith('/cost-plans')
     || location.pathname.startsWith('/vors')
 
+  // Конфиг пунктов навигации. Порядок, маршруты и права доступа — как были;
+  // visible повторяет прежние гейты один-в-один.
+  const navItems = [
+    {
+      key: 'general',
+      to: '/general',
+      label: 'Общая информация',
+      tone: 'amber',
+      Icon: IconGeneral,
+      visible: canView('objects') || canView('contacts') || canView('counterparties') || canView('general_documents'),
+    },
+    {
+      key: 'tenders',
+      to: '/tenders',
+      label: 'Тендеры',
+      tone: 'rose',
+      Icon: IconTenders,
+      visible: canView('tenders'),
+      forceActive: isInTendersSection,
+    },
+    {
+      key: 'analysis',
+      to: '/analysis-kp',
+      label: 'Анализ ВОР/КП',
+      tone: 'sky',
+      Icon: IconAnalysis,
+      visible: canView('analysis_kp'),
+    },
+    {
+      key: 'contracts',
+      to: '/contracts',
+      label: 'Договоры и ДС',
+      tone: 'sand',
+      Icon: IconContracts,
+      visible: canView('contracts'),
+    },
+    {
+      key: 'dc-requests',
+      to: '/dc-requests',
+      label: 'Заявка на ДС',
+      tone: 'coral',
+      Icon: IconDcRequest,
+      // task 333: гейтим через canView('dc_requests'), чтобы права из админки управляли пунктом.
+      visible: isEmployee && canView('dc_requests'),
+    },
+    {
+      key: 'rates',
+      to: '/rates-registry',
+      label: 'Реестр расценок',
+      tone: 'green',
+      Icon: IconRates,
+      // task 356: Реестр расценок — общий список расценок из всех источников.
+      visible: canView('rates_registry'),
+    },
+    {
+      key: 'reports',
+      to: '/reports',
+      label: 'Отчёты',
+      tone: 'violet',
+      Icon: IconReports,
+      visible: canView('reports'),
+    },
+    {
+      key: 'admin',
+      to: '/admin',
+      label: 'Администрирование',
+      tone: 'slate',
+      Icon: IconAdmin,
+      // Всегда видно суперадминам, даже если они переключились на другую роль.
+      visible: isAdmin || isSuperAdmin,
+    },
+  ]
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -26,116 +131,23 @@ function Sidebar() {
         )}
       </div>
 
-      <nav className="sidebar-nav">
-        {/* Общая информация (objects, contacts, counterparties, general_documents) */}
-        {(canView('objects') || canView('contacts') || canView('counterparties') || canView('general_documents')) && (
-          <NavLink
-            to="/general"
-            className={({ isActive }) =>
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="sidebar-icon">📁</span>
-            <span className="sidebar-label">Общая информация</span>
-          </NavLink>
-        )}
-
-        {/* Тендеры — переход на страницу-хаб */}
-        {canView('tenders') && (
-          <NavLink
-            to="/tenders"
-            className={`sidebar-item ${isInTendersSection ? 'active' : ''}`}
-          >
-            <span className="sidebar-icon">📢</span>
-            <span className="sidebar-label">Тендеры</span>
-          </NavLink>
-        )}
-
-        {/* Анализ ВОР/КП */}
-        {canView('analysis_kp') && (
-          <NavLink
-            to="/analysis-kp"
-            className={({ isActive }) =>
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="sidebar-icon">📊</span>
-            <span className="sidebar-label">Анализ ВОР/КП</span>
-          </NavLink>
-        )}
-
-        {/* Договоры и ДС */}
-        {canView('contracts') && (
-          <NavLink
-            to="/contracts"
-            className={({ isActive }) =>
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="sidebar-icon">📋</span>
-            <span className="sidebar-label">Договоры и ДС</span>
-          </NavLink>
-        )}
-
-        {/* Заявка на ДС (task 306) — отдельный реестр под Договорами.
-            task 333: гейтим через canView('dc_requests'), чтобы права из админки
-            реально управляли отображением пункта. */}
-        {isEmployee && canView('dc_requests') && (
-          <NavLink
-            to="/dc-requests"
-            className={({ isActive }) =>
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="sidebar-icon">📝</span>
-            <span className="sidebar-label">Заявка на ДС</span>
-          </NavLink>
-        )}
-
-        {/* task 356: Реестр расценок — общий список расценок из всех источников */}
-        {canView('rates_registry') && (
-          <NavLink
-            to="/rates-registry"
-            className={({ isActive }) =>
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="sidebar-icon">💲</span>
-            <span className="sidebar-label">Реестр расценок</span>
-          </NavLink>
-        )}
-
-        {/* Отчёты */}
-        {canView('reports') && (
-          <NavLink
-            to="/reports"
-            className={({ isActive }) =>
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="sidebar-icon">📊</span>
-            <span className="sidebar-label">Отчёты</span>
-          </NavLink>
-        )}
-
-        {/* Администрирование — всегда видно суперадминам, даже если они переключились на другую роль */}
-        {(isAdmin || isSuperAdmin) && (
-          <NavLink
-            to="/admin"
-            className={({ isActive }) =>
-              `sidebar-item ${isActive ? 'active' : ''}`
-            }
-          >
-            <span className="sidebar-icon">⚙</span>
-            <span className="sidebar-label">Администрирование</span>
-          </NavLink>
-        )}
+      <nav className="sidebar-nav" aria-label="Основная навигация">
+        {navItems.filter((item) => item.visible).map((item) => (
+          <NavItem
+            key={item.key}
+            to={item.to}
+            label={item.label}
+            tone={item.tone}
+            Icon={item.Icon}
+            forceActive={item.forceActive}
+          />
+        ))}
       </nav>
 
       <div className="sidebar-footer">
-        <NavLink to="/profile" className={({ isActive }) => `sidebar-profile-link ${isActive ? 'active' : ''}`}>
-          <span className="sidebar-icon">👤</span>
-          <span className="sidebar-label">Профиль</span>
+        <NavLink to="/profile" className={({ isActive }) => `nav-item nav-item--footer ${isActive ? 'active' : ''}`} title="Профиль">
+          <IconContainer tone="slate"><IconProfile /></IconContainer>
+          <span className="nav-label">Профиль</span>
         </NavLink>
         <ThemeToggle />
         <button
