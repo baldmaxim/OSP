@@ -443,24 +443,36 @@
   border: 1px solid #fca5a5;
 }
 
-/* Красивый выбор статуса на базе FilterDropdown: триггер — сам цветной бейдж + стрелка,
-   без «фильтр»-чипа и без is-active подсветки. Специфичность выше базовых
-   .fdrop.is-active/.is-open .fdrop-trigger, поэтому перечисляем состояния явно. */
+/* Красивый выбор статуса на базе FilterDropdown: у триггера НЕТ собственного «чипа» —
+   в таблице виден только цветной бейдж-статус + мелкая стрелка.
+   У статуса значение есть всегда (is-active/is-open включены), поэтому базовые стили
+   фильтра перекрываем через .fdrop.status-fdrop.is-active/.is-open — их специфичность
+   (4 класса) заведомо выше .fdrop.is-active (3 класса), без зависимости от порядка CSS. */
 .status-fdrop .fdrop-trigger,
-.status-fdrop.is-active .fdrop-trigger,
-.status-fdrop.is-open .fdrop-trigger {
+.fdrop.status-fdrop.is-active .fdrop-trigger,
+.fdrop.status-fdrop.is-open .fdrop-trigger {
   height: auto;
   padding: 0.125rem 0.25rem;
   gap: 0.25rem;
   max-width: none;
   background: transparent;
-  border-color: transparent;
+  border: 1px solid transparent;
   box-shadow: none;
   border-radius: 8px;
 }
-.status-fdrop .fdrop-trigger:hover { background: var(--bg-tertiary); }
-.status-fdrop .fdrop-value { overflow: visible; }
-.status-fdrop.is-active .fdrop-value { color: inherit; }
+.status-fdrop .fdrop-value,
+.fdrop.status-fdrop.is-active .fdrop-value {
+  overflow: visible;
+  color: inherit;
+  font-weight: 600;
+}
+.status-fdrop .fdrop-arrow {
+  margin-left: 0.125rem;
+  font-size: 0.6rem;
+  opacity: 0.5;
+}
+/* Клик по всей ячейке-триггеру ощущается как по бейджу. */
+.status-fdrop .fdrop-trigger { cursor: pointer; }
 
 [data-theme='dark'] .status-pending,
 [data-theme='dark'] .status-new-request {
