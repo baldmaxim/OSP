@@ -1667,7 +1667,8 @@ function CounterpartiesPage() {
                                   <path d="M15 7h2a5 5 0 1 1 0 10h-2" />
                                   <line x1="8" x2="16" y1="12" y2="12" />
                                 </svg>
-                                Связи{relCount > 0 ? ` (${relCount})` : ''}
+                                <span>Связи{relCount > 0 ? ':' : ''}</span>
+                                {relCount > 0 && <span className="cp-rel-count">{relCount}</span>}
                               </button>
                             )}
                           </td>
