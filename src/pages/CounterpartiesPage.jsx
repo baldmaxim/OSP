@@ -93,8 +93,7 @@ function CounterpartiesPage() {
   // Связи между контрагентами
   const [relations, setRelations] = useState([]) // [{counterparty_id, related_counterparty_id}]
   const [showRelationModal, setShowRelationModal] = useState(false)
-  // setRelationTargetId временно не используется — точка входа в модалку связей удалена вместе с inline-расширением
-  // eslint-disable-next-line no-unused-vars
+  // Для какого контрагента открыта модалка связей.
   const [relationTargetId, setRelationTargetId] = useState(null)
   const [relationSearchQuery, setRelationSearchQuery] = useState('')
 
@@ -324,6 +323,28 @@ function CounterpartiesPage() {
     return counterparties.filter(c => relatedIds.has(c.id))
   }
 
+  // Кол-во связей по каждому контрагенту (для бейджа на кнопке) — с дедупликацией пар.
+  const relationCountById = useMemo(() => {
+    const sets = new Map()
+    const add = (a, b) => {
+      if (!sets.has(a)) sets.set(a, new Set())
+      sets.get(a).add(b)
+    }
+    for (const r of relations) {
+      add(r.counterparty_id, r.related_counterparty_id)
+      add(r.related_counterparty_id, r.counterparty_id)
+    }
+    const counts = new Map()
+    for (const [id, s] of sets) counts.set(id, s.size)
+    return counts
+  }, [relations])
+
+  const openRelations = (counterpartyId) => {
+    setRelationTargetId(counterpartyId)
+    setRelationSearchQuery('')
+    setShowRelationModal(true)
+  }
+
   const handleAddRelation = async (counterpartyId, relatedId) => {
     try {
       // Сохраняем в одном направлении (запрос в обе стороны делаем при чтении)
@@ -338,12 +359,26 @@ function CounterpartiesPage() {
         }
         throw error
       }
-      fetchRelations()
-      setShowRelationModal(false)
+      await fetchRelations()
       setRelationSearchQuery('')
     } catch (error) {
       console.error('Ошибка добавления связи:', error.message)
       alert('Ошибка: ' + error.message)
+    }
+  }
+
+  const handleRemoveRelation = async (targetId, otherId) => {
+    try {
+      // Связь хранится в одном направлении, но могла быть заведена в любом — удаляем обе.
+      const { error } = await supabase
+        .from('counterparty_relations')
+        .delete()
+        .or(`and(counterparty_id.eq.${targetId},related_counterparty_id.eq.${otherId}),and(counterparty_id.eq.${otherId},related_counterparty_id.eq.${targetId})`)
+      if (error) throw error
+      await fetchRelations()
+    } catch (error) {
+      console.error('Ошибка удаления связи:', error.message)
+      alert('Не удалось удалить связь: ' + error.message)
     }
   }
 
@@ -1588,6 +1623,7 @@ function CounterpartiesPage() {
                     const isExpanded = expandedRows.has(counterparty.id)
                     const contacts = counterparty.counterparty_contacts || []
                     const contactsCount = contacts.length
+                    const relCount = relationCountById.get(counterparty.id) || 0
 
                     return (
                       <React.Fragment key={counterparty.id}>
@@ -1619,6 +1655,21 @@ function CounterpartiesPage() {
                                 return next
                               })}
                             />
+                            {(canEditCp || relCount > 0) && (
+                              <button
+                                type="button"
+                                className={`cp-relations-btn ${relCount > 0 ? 'has-rel' : ''}`}
+                                onClick={(e) => { e.stopPropagation(); openRelations(counterparty.id) }}
+                                title="Связи с другими контрагентами"
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                  <path d="M9 17H7A5 5 0 0 1 7 7h2" />
+                                  <path d="M15 7h2a5 5 0 1 1 0 10h-2" />
+                                  <line x1="8" x2="16" y1="12" y2="12" />
+                                </svg>
+                                Связи{relCount > 0 ? ` (${relCount})` : ''}
+                              </button>
+                            )}
                           </td>
                           <td className="col-worktype">
                             {counterparty.work_type ? (
@@ -2551,63 +2602,88 @@ function CounterpartiesPage() {
       )}
 
       {/* Modal с инструкцией по импорту */}
-      {/* Modal для добавления связи между контрагентами */}
-      {showRelationModal && (
-        <div className="modal-overlay">
-          <div className="modal relation-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Добавить связь</h3>
-              <button className="modal-close" onClick={() => { setShowRelationModal(false); setRelationSearchQuery('') }}>&times;</button>
-            </div>
-            <div className="relation-modal-body">
-              <input
-                type="text"
-                placeholder="Поиск контрагента..."
-                value={relationSearchQuery}
-                onChange={(e) => setRelationSearchQuery(e.target.value)}
-                autoFocus
-                className="relation-search-input"
-              />
-              <div className="relation-list">
-                {counterparties
-                  .filter(c => {
-                    if (c.id === relationTargetId) return false
-                    // Исключаем уже связанных
-                    const alreadyRelated = getRelatedCounterparties(relationTargetId)
-                    if (alreadyRelated.some(r => r.id === c.id)) return false
-                    if (!relationSearchQuery.trim()) return true
-                    const q = relationSearchQuery.toLowerCase()
-                    return (c.name && c.name.toLowerCase().includes(q)) ||
-                           (c.inn && c.inn.toLowerCase().includes(q))
-                  })
-                  .slice(0, 20)
-                  .map(c => (
-                    <div
-                      key={c.id}
-                      className="relation-option"
-                      onClick={() => handleAddRelation(relationTargetId, c.id)}
-                    >
-                      <span className="relation-option-name">{c.name}</span>
-                      {c.inn && <span className="relation-option-inn">ИНН: {c.inn}</span>}
-                      {c.work_type && <span className="relation-option-worktype">{c.work_type}</span>}
+      {/* Модалка связей контрагента: текущие связи (с удалением) + добавление новой.
+          Клик по подложке не закрывает — только крестик. */}
+      {showRelationModal && (() => {
+        const target = counterparties.find(c => c.id === relationTargetId)
+        const currentRelated = getRelatedCounterparties(relationTargetId)
+        const relatedIdSet = new Set(currentRelated.map(r => r.id))
+        const q = relationSearchQuery.trim().toLowerCase()
+        const available = counterparties.filter(c => {
+          if (c.id === relationTargetId) return false
+          if (relatedIdSet.has(c.id)) return false
+          if (!q) return true
+          return (c.name && c.name.toLowerCase().includes(q)) || (c.inn && c.inn.toLowerCase().includes(q))
+        })
+        return (
+          <div className="modal-overlay">
+            <div className="modal relation-modal">
+              <div className="modal-header">
+                <h3>Связи{target ? ` — ${target.name}` : ''}</h3>
+                <button className="modal-close" onClick={() => { setShowRelationModal(false); setRelationSearchQuery('') }}>&times;</button>
+              </div>
+              <div className="relation-modal-body">
+                {/* Текущие связи */}
+                <div className="relation-section">
+                  <div className="relation-section-title">
+                    Текущие связи{currentRelated.length > 0 ? ` (${currentRelated.length})` : ''}
+                  </div>
+                  {currentRelated.length === 0 ? (
+                    <div className="relation-empty">Связей пока нет</div>
+                  ) : (
+                    <div className="relation-chips">
+                      {currentRelated.map(r => (
+                        <span key={r.id} className="relation-chip">
+                          <span className="relation-chip-name">{r.name}</span>
+                          {canEditCp && (
+                            <button
+                              type="button"
+                              className="relation-chip-remove"
+                              onClick={() => handleRemoveRelation(relationTargetId, r.id)}
+                              title="Убрать связь"
+                              aria-label="Убрать связь"
+                            >&times;</button>
+                          )}
+                        </span>
+                      ))}
                     </div>
-                  ))
-                }
-                {counterparties.filter(c => {
-                  if (c.id === relationTargetId) return false
-                  const alreadyRelated = getRelatedCounterparties(relationTargetId)
-                  if (alreadyRelated.some(r => r.id === c.id)) return false
-                  if (!relationSearchQuery.trim()) return true
-                  const q = relationSearchQuery.toLowerCase()
-                  return (c.name && c.name.toLowerCase().includes(q)) || (c.inn && c.inn.toLowerCase().includes(q))
-                }).length === 0 && (
-                  <div className="relation-empty">Нет доступных контрагентов</div>
+                  )}
+                </div>
+
+                {/* Добавить связь */}
+                {canEditCp && (
+                  <div className="relation-section">
+                    <div className="relation-section-title">Добавить связь</div>
+                    <input
+                      type="text"
+                      placeholder="Поиск контрагента..."
+                      value={relationSearchQuery}
+                      onChange={(e) => setRelationSearchQuery(e.target.value)}
+                      className="relation-search-input"
+                    />
+                    <div className="relation-list">
+                      {available.slice(0, 20).map(c => (
+                        <div
+                          key={c.id}
+                          className="relation-option"
+                          onClick={() => handleAddRelation(relationTargetId, c.id)}
+                        >
+                          <span className="relation-option-name">{c.name}</span>
+                          {c.inn && <span className="relation-option-inn">ИНН: {c.inn}</span>}
+                          {c.work_type && <span className="relation-option-worktype">{c.work_type}</span>}
+                        </div>
+                      ))}
+                      {available.length === 0 && (
+                        <div className="relation-empty">Нет доступных контрагентов</div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {showImportInstructionsModal && (
         <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowImportInstructionsModal(false) }}>
