@@ -1313,3 +1313,16 @@
   font-size: 0.6875rem;
   color: var(--text-tertiary);
 }
+
+/* Цветной бейдж статуса участника тендера (в красивом селекторе status-fdrop).
+   Цвет/фон/рамка задаются инлайном по статусу; здесь — только форма. */
+.cp-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1875rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  white-space: nowrap;
+}
