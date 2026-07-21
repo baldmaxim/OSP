@@ -9,6 +9,25 @@ import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
+// Supabase/PostgREST отдаёт максимум 1000 строк за запрос. Тянем всё постранично.
+const SB_PAGE = 1000
+// `makeQuery(from, to)` должен создавать НОВЫЙ запрос с .range(from, to) и стабильной
+// сортировкой (иначе строки могут теряться/повторяться между страницами).
+async function fetchAllRows(makeQuery) {
+  const all = []
+  for (let from = 0; ; from += SB_PAGE) {
+    const { data, error } = await makeQuery(from, from + SB_PAGE - 1)
+    if (error) throw error
+    if (data?.length) all.push(...data)
+    if (!data || data.length < SB_PAGE) break
+  }
+  return all
+}
+
+// Инкрементальный рендер: сколько строк показываем изначально и на сколько прирастаем
+// по кнопке «Показать ещё» — чтобы DOM оставался лёгким на больших списках.
+const RENDER_STEP = 100
+
 function CounterpartiesPage() {
   const { isAdmin, canEdit } = useRole()
   // task 333: гейт add/edit/delete и inline-editing для раздела «counterparties».
@@ -59,6 +78,8 @@ function CounterpartiesPage() {
   const [tempContacts, setTempContacts] = useState([])
   const [editingTempContactIndex, setEditingTempContactIndex] = useState(null)
   const [expandedRows, setExpandedRows] = useState(new Set())
+  // Инкрементальный рендер большого списка: показываем срез, «Показать ещё» наращивает.
+  const [visibleCount, setVisibleCount] = useState(RENDER_STEP)
 
   // Виды работ (множественный выбор; task 321 — подтягиваются только из справочника)
   const [workTypes, setWorkTypes] = useState([])
@@ -131,7 +152,9 @@ function CounterpartiesPage() {
   const fetchCounterparties = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      // Постранично (снимаем потолок 1000). Тай-брейк по id — стабильная пагинация
+      // при неуникальных именах.
+      const data = await fetchAllRows((from, to) => supabase
         .from('counterparties')
         .select(`
           *,
@@ -144,25 +167,28 @@ function CounterpartiesPage() {
           )
         `)
         .order('name', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to))
 
-      if (error) throw error
-      setCounterparties(data || [])
+      setCounterparties(data)
 
-      // task 302: одним запросом загружаем все карточки компаний.
-      const { data: cards, error: cardsError } = await supabase
-        .from('s3_documents')
-        .select('*')
-        .eq('owner_type', 'counterparty')
-        .order('created_at', { ascending: false })
-      if (cardsError) {
-        console.warn('Не удалось загрузить карточки компаний:', cardsError.message)
-        setCardsByCp(new Map())
-      } else {
+      // task 302: карточки компаний — тоже постранично (иначе >1000 карточек обрежется).
+      try {
+        const cards = await fetchAllRows((from, to) => supabase
+          .from('s3_documents')
+          .select('*')
+          .eq('owner_type', 'counterparty')
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to))
         const map = new Map()
-        for (const c of cards || []) {
+        for (const c of cards) {
           if (!map.has(c.owner_id)) map.set(c.owner_id, c) // latest first из order
         }
         setCardsByCp(map)
+      } catch (cardsError) {
+        console.warn('Не удалось загрузить карточки компаний:', cardsError.message)
+        setCardsByCp(new Map())
       }
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error.message)
@@ -173,12 +199,13 @@ function CounterpartiesPage() {
 
   const fetchRelations = async () => {
     try {
-      const { data, error } = await supabase
+      // Постранично — связей может быть больше 1000.
+      const data = await fetchAllRows((from, to) => supabase
         .from('counterparty_relations')
         .select('id, counterparty_id, related_counterparty_id')
-
-      if (error) throw error
-      setRelations(data || [])
+        .order('id', { ascending: true })
+        .range(from, to))
+      setRelations(data)
     } catch (error) {
       console.error('Ошибка загрузки связей:', error.message)
     }
@@ -1177,6 +1204,11 @@ function CounterpartiesPage() {
     return (a.name || '').localeCompare(b.name || '', 'ru')
   }), [counterparties, workTypeFilter, deferredSearchQuery, activeTab])
 
+  // При смене вкладки/фильтра/поиска показываем список с начала (лёгкий первый экран).
+  useEffect(() => {
+    setVisibleCount(RENDER_STEP)
+  }, [activeTab, workTypeFilter, deferredSearchQuery])
+
   const activeCount = counterparties.filter(c => !c.deleted_at && c.status !== 'blacklist').length
   const blacklistCount = counterparties.filter(c => !c.deleted_at && c.status === 'blacklist').length
   const deletedCount = counterparties.filter(c => c.deleted_at).length
@@ -1552,7 +1584,7 @@ function CounterpartiesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCounterparties.map((counterparty, cpIndex) => {
+                  {filteredCounterparties.slice(0, visibleCount).map((counterparty, cpIndex) => {
                     const isExpanded = expandedRows.has(counterparty.id)
                     const contacts = counterparty.counterparty_contacts || []
                     const contactsCount = contacts.length
@@ -1828,6 +1860,22 @@ function CounterpartiesPage() {
                       </React.Fragment>
                     )
                   })}
+                  {visibleCount < filteredCounterparties.length && (
+                    <tr className="show-more-row">
+                      <td colSpan="12">
+                        <button
+                          type="button"
+                          className="btn-show-more"
+                          onClick={() => setVisibleCount((c) => c + RENDER_STEP)}
+                        >
+                          Показать ещё {Math.min(RENDER_STEP, filteredCounterparties.length - visibleCount)}
+                        </button>
+                        <span className="show-more-info">
+                          Показано {Math.min(visibleCount, filteredCounterparties.length)} из {filteredCounterparties.length}
+                        </span>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
