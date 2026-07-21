@@ -28,6 +28,11 @@ export default function FilterDropdown({
   // Необязательно: как показать ВЫБРАННОЕ значение в триггере (напр. краткое ФИО).
   // Список опций и title всегда показывают полный label.
   formatTrigger = null,
+  // Необязательно: кастомный рендер опции в списке (напр. цветной бейдж статуса).
+  // Получает объект опции целиком. Работает в одиночном режиме.
+  renderOption = null,
+  // Необязательный доп. класс на корень (напр. компактный вид status-fdrop).
+  className = '',
   multiple = false,
 }) {
   const [open, setOpen] = useState(false)
@@ -146,7 +151,7 @@ export default function FilterDropdown({
   } : {}
 
   return (
-    <div className={`fdrop ${open ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''} ${isActive ? 'is-active' : ''}`} ref={rootRef}>
+    <div className={`fdrop ${className} ${open ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''} ${isActive ? 'is-active' : ''}`} ref={rootRef}>
       <button
         type="button"
         className="fdrop-trigger"
@@ -213,7 +218,7 @@ export default function FilterDropdown({
                   onClick={() => pick(o.value)}
                   title={o.label}
                 >
-                  <span className="fdrop-option-text">{o.label}</span>
+                  {renderOption ? renderOption(o) : <span className="fdrop-option-text">{o.label}</span>}
                   {String(o.value) === String(value) && <span className="fdrop-check" aria-hidden>✓</span>}
                 </button>
               ))

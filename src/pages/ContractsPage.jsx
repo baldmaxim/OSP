@@ -1447,16 +1447,19 @@ function ContractRegistry() {
                     {isDeletedTab ? (
                       <span className="status-badge status-deleted">Удалён</span>
                     ) : (
-                      <select
-                        className={`status-select ${STATUS_OPTIONS.find(o => o.value === contract.status)?.className || ''}`}
+                      <FilterDropdown
+                        className="status-fdrop"
+                        label=""
                         value={contract.status || 'new_request'}
-                        onChange={(e) => handleStatusChange(contract.id, e.target.value)}
+                        onChange={(v) => handleStatusChange(contract.id, v)}
+                        options={STATUS_OPTIONS}
                         disabled={!canEditContracts}
-                      >
-                        {STATUS_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
+                        formatTrigger={(lbl) => {
+                          const opt = STATUS_OPTIONS.find(o => o.label === lbl)
+                          return <span className={`status-badge ${opt?.className || ''}`}>{lbl}</span>
+                        }}
+                        renderOption={(o) => <span className={`status-badge ${o.className || ''}`}>{o.label}</span>}
+                      />
                     )}
                   </td>
                   <td className="cell-lawyer" onClick={(e) => e.stopPropagation()}>

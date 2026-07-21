@@ -443,6 +443,25 @@
   border: 1px solid #fca5a5;
 }
 
+/* Красивый выбор статуса на базе FilterDropdown: триггер — сам цветной бейдж + стрелка,
+   без «фильтр»-чипа и без is-active подсветки. Специфичность выше базовых
+   .fdrop.is-active/.is-open .fdrop-trigger, поэтому перечисляем состояния явно. */
+.status-fdrop .fdrop-trigger,
+.status-fdrop.is-active .fdrop-trigger,
+.status-fdrop.is-open .fdrop-trigger {
+  height: auto;
+  padding: 0.125rem 0.25rem;
+  gap: 0.25rem;
+  max-width: none;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  border-radius: 8px;
+}
+.status-fdrop .fdrop-trigger:hover { background: var(--bg-tertiary); }
+.status-fdrop .fdrop-value { overflow: visible; }
+.status-fdrop.is-active .fdrop-value { color: inherit; }
+
 [data-theme='dark'] .status-pending,
 [data-theme='dark'] .status-new-request {
   background-color: #78350f;
