@@ -26,10 +26,15 @@ const STATUS_OPTIONS = [
 ]
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(s => [s.value, s.label]))
 
+// «Заявки на заключение» — договоры на стадии обработки (ещё не заключены).
+const PROCESSING_STATUSES = ['new_request', 'in_work', 'paused']
+
 // Вкладки: «Общий реестр» = все не удалённые (любой статус, включая «Новая заявка»);
+// «Заявки на заключение» = договоры в обработке (PROCESSING_STATUSES);
 // далее фильтры по статусу; «Удалённые» — soft-delete (deleted_at IS NOT NULL).
 const TABS = [
   { key: 'all', label: 'Общий реестр' },
+  { key: 'requests', label: 'Заявки на заключение' },
   { key: 'in_work', label: 'В работе' },
   { key: 'paused', label: 'Приостановка' },
   { key: 'completed', label: 'Завершено' },
@@ -256,6 +261,9 @@ function ContractRegistry() {
       } else if (activeTab === 'all') {
         // Общий реестр — все не удалённые, любой статус.
         query = query.is('deleted_at', null)
+      } else if (activeTab === 'requests') {
+        // Заявки на заключение — договоры на стадии обработки (ещё не заключены).
+        query = query.is('deleted_at', null).in('status', PROCESSING_STATUSES)
       } else {
         query = query.is('deleted_at', null).eq('status', activeTab)
       }
@@ -1060,7 +1068,7 @@ function ContractRegistry() {
 
       setShowModal(false)
       setEditingContract(null)
-      setFormData({ ...EMPTY_FORM, status: (activeTab === 'deleted' || activeTab === 'all') ? 'new_request' : activeTab })
+      setFormData({ ...EMPTY_FORM, status: STATUS_OPTIONS.some(s => s.value === activeTab) ? activeTab : 'new_request' })
       setFormCounterpartyIds([])
       setCounterpartySearch('')
       setFormAttachments(new Set())
@@ -1168,7 +1176,7 @@ function ContractRegistry() {
   const handleAddNew = async () => {
     setEditingContract(null)
     const nextNumber = await computeNextContractNumber()
-    const status = (activeTab === 'deleted' || activeTab === 'all') ? 'new_request' : activeTab
+    const status = STATUS_OPTIONS.some(s => s.value === activeTab) ? activeTab : 'new_request'
     setFormData({ ...EMPTY_FORM, contract_number: nextNumber, status })
     setFormCounterpartyIds([])
     setCounterpartySearch('')
@@ -1373,7 +1381,9 @@ function ContractRegistry() {
                       ? 'Нет удалённых договоров.'
                       : activeTab === 'all'
                         ? 'Договоров пока нет.'
-                        : `Нет договоров со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
+                        : activeTab === 'requests'
+                          ? 'Нет заявок на стадии заключения.'
+                          : `Нет договоров со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
                 </td>
               </tr>
             ) : (
