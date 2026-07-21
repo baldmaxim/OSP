@@ -1,11 +1,36 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
+import { currencySymbol } from '../utils/estimateImport'
 import './ReportsPage.css'
 
 // «В работе» — только активная процедура; «Не начат» сюда не входит.
 const isInWork = (x) => x.status === 'Идет тендерная процедура'
 const isClosed = (x) => x.status === 'Завершен'
+
+// Договоры бывают в разных валютах (RUB/CNY/USD/EUR). Складывать их в одно число нельзя,
+// поэтому суммы агрегируем и показываем по каждой валюте отдельно.
+const CURRENCY_ORDER = ['RUB', 'CNY', 'USD', 'EUR']
+const fmtInt = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n)
+// Записи { cur, amt } в стабильном порядке (RUB, CNY, USD, EUR, затем прочие).
+function currencyEntries(map) {
+  if (!map) return []
+  const known = CURRENCY_ORDER.filter((c) => map[c])
+  const extra = Object.keys(map).filter((c) => !CURRENCY_ORDER.includes(c) && map[c])
+  return [...known, ...extra].map((c) => ({ cur: c, amt: map[c] }))
+}
+const fmtCur = (amt, cur) => `${fmtInt(amt)} ${currencySymbol(cur)}`
+// Ячейка суммы: каждая валюта на своей строке; пусто → «—».
+function MoneyCell({ map }) {
+  const entries = currencyEntries(map)
+  if (!entries.length) return <span className="muted">—</span>
+  if (entries.length === 1) return <>{fmtCur(entries[0].amt, entries[0].cur)}</>
+  return (
+    <span className="money-multi">
+      {entries.map((e) => <span key={e.cur} className="money-line">{fmtCur(e.amt, e.cur)}</span>)}
+    </span>
+  )
+}
 
 function groupByResp(rows) {
   const map = new Map()
@@ -160,7 +185,7 @@ function ReportsPage() {
 
       let contractsQ = supabase
         .from('contracts')
-        .select('id, object_id, status, contract_amount, counterparty_id, responsible_contact_id, deleted_at, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
+        .select('id, object_id, status, contract_amount, currency, counterparty_id, responsible_contact_id, deleted_at, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
         .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят
       if (scopedObjectId) contractsQ = contractsQ.eq('object_id', scopedObjectId)
       const { data: contracts } = await contractsQ
@@ -204,9 +229,19 @@ function ReportsPage() {
 
       const unassignedCount = (rows) => rows.filter(x => !x.responsible_contact_id).length
 
-      const sumAmount = (rows) => rows.reduce((acc, r) => acc + (Number(r.contract_amount) || 0), 0)
+      // Суммы по валютам: { RUB: n, CNY: n, ... } — только ненулевые.
+      const sumByCurrency = (rows) => {
+        const acc = {}
+        for (const r of rows) {
+          const amt = Number(r.contract_amount) || 0
+          if (!amt) continue
+          const cur = r.currency || 'RUB'
+          acc[cur] = (acc[cur] || 0) + amt
+        }
+        return acc
+      }
 
-      // Разбивка договоров по объектам: количество по статусам + сумма, сортировка по «всего».
+      // Разбивка договоров по объектам: количество по статусам + суммы по валютам, сортировка по «всего».
       const contractsByObject = (rows) => {
         const map = new Map()
         for (const x of rows) {
@@ -215,12 +250,16 @@ function ReportsPage() {
             map.set(id, {
               objectId: id,
               name: x.objects?.name || 'Без объекта',
-              total: 0, cNew: 0, inWork: 0, paused: 0, completed: 0, amount: 0,
+              total: 0, cNew: 0, inWork: 0, paused: 0, completed: 0, amountByCur: {},
             })
           }
           const row = map.get(id)
           row.total += 1
-          row.amount += Number(x.contract_amount) || 0
+          const amt = Number(x.contract_amount) || 0
+          if (amt) {
+            const cur = x.currency || 'RUB'
+            row.amountByCur[cur] = (row.amountByCur[cur] || 0) + amt
+          }
           if (x.status === 'new_request') row.cNew += 1
           else if (x.status === 'in_work') row.inWork += 1
           else if (x.status === 'paused') row.paused += 1
@@ -442,8 +481,8 @@ function ReportsPage() {
         cInWork: c.filter(x => x.status === 'in_work').length,
         cPaused: c.filter(x => x.status === 'paused').length,
         cCompleted: c.filter(x => x.status === 'completed').length,
-        cAmountTotal: sumAmount(c),
-        cAmountCompleted: sumAmount(c.filter(x => x.status === 'completed')),
+        cAmountByCur: sumByCurrency(c),
+        cAmountCompletedByCur: sumByCurrency(c.filter(x => x.status === 'completed')),
         cByObject: contractsByObject(c),
         cByLawyer: contractsByLawyer(c),
         // Тендеры на материалы
@@ -478,6 +517,11 @@ function ReportsPage() {
     if (!n) return '0 ₽'
     return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n) + ' ₽'
   }
+
+  // Общая сумма договоров по валютам: главная строка (первая валюта) + остальные отдельно.
+  const cTotalEntries = currencyEntries(s.cAmountByCur)
+  const cCompletedText = currencyEntries(s.cAmountCompletedByCur)
+    .map((e) => fmtCur(e.amt, e.cur)).join(' · ') || '0 ₽'
 
   // Данные текущего отдела (для детального вида) — из отфильтрованного tStats.
   const deptData = tDeptView === 'construction'
@@ -958,8 +1002,15 @@ function ReportsPage() {
                 </div>
                 <div className="kpi-card kpi-card-wide">
                   <div className="kpi-label">Общая сумма договоров</div>
-                  <div className="kpi-value">{fmtMoney(s.cAmountTotal)}</div>
-                  <div className="kpi-foot">в т.ч. завершённые: {fmtMoney(s.cAmountCompleted)}</div>
+                  <div className="kpi-value contracts-total-value">
+                    {cTotalEntries.length ? fmtCur(cTotalEntries[0].amt, cTotalEntries[0].cur) : '0 ₽'}
+                  </div>
+                  {cTotalEntries.length > 1 && (
+                    <div className="contracts-total-extra">
+                      {cTotalEntries.slice(1).map((e) => <span key={e.cur}>{fmtCur(e.amt, e.cur)}</span>)}
+                    </div>
+                  )}
+                  <div className="kpi-foot">в т.ч. завершённые: {cCompletedText}</div>
                 </div>
               </div>
 
@@ -976,47 +1027,6 @@ function ReportsPage() {
                 />
               </section>
             </div>
-
-            <section className="report-section">
-              <header className="section-head">
-                <h3>По объектам</h3>
-                <span className="section-meta">{s.cByObject.length} объект(ов)</span>
-              </header>
-              <table className="dense-table">
-                <thead>
-                  <tr>
-                    <th>Объект</th>
-                    <th className="num">Новая заявка</th>
-                    <th className="num">В работе</th>
-                    <th className="num">Приостановка</th>
-                    <th className="num">Завершено</th>
-                    <th className="num">Всего</th>
-                    <th className="num">Сумма</th>
-                    <th className="bar-col">Готовность</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.cByObject.length === 0 ? (
-                    <tr><td colSpan="8" className="muted">Договоров нет</td></tr>
-                  ) : (
-                    s.cByObject.map(o => (
-                      <tr key={o.objectId}>
-                        <td>{o.name}</td>
-                        <td className="num">{o.cNew || '—'}</td>
-                        <td className="num">{o.inWork || '—'}</td>
-                        <td className="num">{o.paused || '—'}</td>
-                        <td className="num">{o.completed || '—'}</td>
-                        <td className="num strong">{o.total}</td>
-                        <td className="num">{o.amount ? fmtMoney(o.amount) : '—'}</td>
-                        <td className="bar-col">
-                          <ProgressBar value={o.completed} total={o.total} />
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </section>
 
             <section className="report-section">
               <header className="section-head">
@@ -1048,6 +1058,47 @@ function ReportsPage() {
                         <td className="num">{l.paused || '—'}</td>
                         <td className="num">{l.completed || '—'}</td>
                         <td className="num strong">{l.total}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По объектам</h3>
+                <span className="section-meta">{s.cByObject.length} объект(ов)</span>
+              </header>
+              <table className="dense-table">
+                <thead>
+                  <tr>
+                    <th>Объект</th>
+                    <th className="num">Новая заявка</th>
+                    <th className="num">В работе</th>
+                    <th className="num">Приостановка</th>
+                    <th className="num">Завершено</th>
+                    <th className="num">Всего</th>
+                    <th className="money-col">Сумма</th>
+                    <th className="bar-col">Готовность</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.cByObject.length === 0 ? (
+                    <tr><td colSpan="8" className="muted">Договоров нет</td></tr>
+                  ) : (
+                    s.cByObject.map(o => (
+                      <tr key={o.objectId}>
+                        <td>{o.name}</td>
+                        <td className="num">{o.cNew || '—'}</td>
+                        <td className="num">{o.inWork || '—'}</td>
+                        <td className="num">{o.paused || '—'}</td>
+                        <td className="num">{o.completed || '—'}</td>
+                        <td className="num strong">{o.total}</td>
+                        <td className="money-col"><MoneyCell map={o.amountByCur} /></td>
+                        <td className="bar-col">
+                          <ProgressBar value={o.completed} total={o.total} />
+                        </td>
                       </tr>
                     ))
                   )}

@@ -352,6 +352,38 @@
   font-style: italic;
 }
 
+/* Колонка «Сумма» — шире и без переноса (суммы бывают в миллиарды).
+   Мультивалюта (RUB/CNY/…) — по строке на каждую валюту. */
+.dense-table thead th.money-col {
+  text-align: right;
+  width: 180px;
+  white-space: nowrap;
+}
+.dense-table td.money-col {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.money-multi {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.money-line { white-space: nowrap; }
+
+/* KPI «Общая сумма договоров» — дополнительные валюты под главной строкой. */
+.contracts-total-value { white-space: nowrap; }
+.contracts-total-extra {
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 /* Progress bar (slim, single line) */
 .bar-with-pct {
   display: flex;
