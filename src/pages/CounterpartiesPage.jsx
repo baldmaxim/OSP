@@ -1836,13 +1836,12 @@ function CounterpartiesPage() {
         </>
       )}
 
-      {/* Modal для добавления/редактирования контрагента */}
+      {/* Modal для добавления/редактирования контрагента.
+          Клик по подложке НЕ закрывает окно — заполненную форму легко потерять
+          случайным кликом. Закрытие только осознанное: крестик (×). */}
       {showCounterpartyModal && (
-        <div
-          className="modal-overlay"
-          onClick={() => setShowCounterpartyModal(false)}
-        >
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal">
             <div className="modal-header">
               <h3>
                 {editingCounterparty
