@@ -1468,6 +1468,7 @@ function ContractRegistry() {
                       className="inline-cell-date"
                       value={contract.accepted_date || ''}
                       onChange={(e) => handleInlineField(contract.id, 'accepted_date', e.target.value)}
+                      onClick={(e) => { try { e.currentTarget.showPicker?.() } catch { /* браузер без showPicker — остаётся ручной ввод */ } }}
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>
@@ -1477,6 +1478,7 @@ function ContractRegistry() {
                       className="inline-cell-date"
                       value={contract.signed_date || ''}
                       onChange={(e) => handleInlineField(contract.id, 'signed_date', e.target.value)}
+                      onClick={(e) => { try { e.currentTarget.showPicker?.() } catch { /* браузер без showPicker — остаётся ручной ввод */ } }}
                       disabled={!canEditContracts || isDeletedTab}
                     />
                     {overdue && <span className="overdue-note">Просрочено</span>}

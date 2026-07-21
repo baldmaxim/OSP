@@ -1991,6 +1991,10 @@
   box-sizing: border-box;
   transition: border-color 0.1s, background 0.1s;
 }
+/* Клик по всему полю даты открывает календарь (showPicker) — поэтому курсор-указатель. */
+.inline-cell-date { cursor: pointer; }
+.inline-cell-date:disabled { cursor: default; }
+.inline-cell-date::-webkit-calendar-picker-indicator { cursor: pointer; }
 .inline-cell-select:hover,
 .inline-cell-date:hover,
 .inline-cell-notes:hover {
