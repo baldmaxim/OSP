@@ -601,6 +601,8 @@ function TenderDetailPage() {
   const [estSelectedSheet, setEstSelectedSheet] = useState('')
   const [estStartRow, setEstStartRow] = useState('2')
   const [estEndRow, setEstEndRow] = useState('')
+  // true, если «По строку» подставлено автоматически по строке «Итого».
+  const [estEndAuto, setEstEndAuto] = useState(false)
   // task 348: название текущего загружаемого ВОРа (например, «Электрика», «ОВ»)
   // и название выбранного для просмотра (или 'all' для объединённого ВОРа).
   const [estDocName, setEstDocName] = useState('')
@@ -795,6 +797,26 @@ function TenderDetailPage() {
     return isNaN(n) ? null : Math.round(n * 100) / 100
   }
 
+  // Авто-граница таблицы ВОР: последняя строка, где в любом столбце значение начинается
+  // со слова «Итого», считается итоговой. Таблица заканчивается ПЕРЕД ней (строку «Итого»
+  // исключаем). Возвращает значение для поля «По строку» (совпадает с 0-based индексом
+  // строки «Итого» — при парсинге это же число исключает её из диапазона) или '' если не найдено.
+  const detectEstimateEndRow = (sheet) => {
+    if (!sheet) return ''
+    try {
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+      let lastItogo = -1
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        if (!row) continue
+        if (row.some((cell) => /^итог/i.test(String(cell ?? '').trim()))) lastItogo = i
+      }
+      return lastItogo > 0 ? String(lastItogo) : ''
+    } catch {
+      return ''
+    }
+  }
+
   const handleEstimateFileSelect = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -806,7 +828,10 @@ function TenderDetailPage() {
       setEstSheetNames(names)
       setEstSelectedSheet(names[0] || '')
       setEstStartRow('2')
-      setEstEndRow('')
+      // task: авто-определение конца таблицы по строке «Итого» (можно поправить вручную).
+      const autoEnd = detectEstimateEndRow(workbook.Sheets[names[0]])
+      setEstEndRow(autoEnd)
+      setEstEndAuto(!!autoEnd)
       // task 348: дефолт названия документа — имя файла без расширения.
       // Пользователь может переименовать перед сохранением.
       const baseName = file.name.replace(/\.[^.]+$/, '').trim() || 'ВОР'
@@ -2924,7 +2949,13 @@ function TenderDetailPage() {
                     <label>Лист Excel</label>
                     <select
                       value={estSelectedSheet}
-                      onChange={(e) => setEstSelectedSheet(e.target.value)}
+                      onChange={(e) => {
+                        const name = e.target.value
+                        setEstSelectedSheet(name)
+                        const autoEnd = detectEstimateEndRow(pendingWorkbook?.Sheets?.[name])
+                        setEstEndRow(autoEnd)
+                        setEstEndAuto(!!autoEnd)
+                      }}
                     >
                       {estSheetNames.map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
@@ -2942,9 +2973,14 @@ function TenderDetailPage() {
                   <label>По строку</label>
                   <input
                     type="number" min="1" value={estEndRow}
-                    onChange={(e) => setEstEndRow(e.target.value)}
+                    onChange={(e) => { setEstEndRow(e.target.value); setEstEndAuto(false) }}
                     placeholder="Все"
                   />
+                  {estEndAuto && (
+                    <small style={{ color: 'var(--primary-color)', fontSize: '0.7rem', marginTop: '0.25rem', display: 'block' }}>
+                      авто: до строки «Итого»
+                    </small>
+                  )}
                 </div>
               </div>
 

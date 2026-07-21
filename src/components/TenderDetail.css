@@ -395,12 +395,14 @@
 }
 
 .estimate-table th {
-  background: var(--bg-tertiary);
+  /* Заглавная строка таблицы ВОР выделена акцентным цветом бренда — чтобы шапка
+     визуально отличалась от тела таблицы и строк-разделов. */
+  background: color-mix(in srgb, var(--primary-color) 14%, var(--bg-secondary));
   padding: 0.875rem 1rem;
   text-align: left;
-  font-weight: 600;
-  color: var(--text-secondary);
-  border-bottom: 2px solid var(--border-color);
+  font-weight: 700;
+  color: var(--text-primary);
+  border-bottom: 2px solid color-mix(in srgb, var(--primary-color) 38%, var(--border-color));
   white-space: nowrap;
 }
 
