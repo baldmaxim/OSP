@@ -394,16 +394,13 @@
   font-size: 0.875rem;
 }
 
-.estimate-table thead th {
-  /* Заглавная строка таблицы ВОР выделена акцентным цветом бренда — чтобы шапка
-     визуально отличалась от тела таблицы и строк-разделов.
-     Селектор `thead th` — чтобы фон гарантированно перекрывал базовый `.data-table thead`. */
-  background: color-mix(in srgb, var(--primary-color) 22%, var(--bg-secondary));
+.estimate-table th {
+  background: var(--bg-tertiary);
   padding: 0.875rem 1rem;
   text-align: left;
-  font-weight: 700;
-  color: var(--text-primary);
-  border-bottom: 2px solid color-mix(in srgb, var(--primary-color) 48%, var(--border-color));
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-color);
   white-space: nowrap;
 }
 
@@ -3099,11 +3096,17 @@
 }
 
 .tender-detail-page .estimate-table th {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  /* Заглавная строка таблицы ВОР выделена акцентным цветом бренда — чтобы шапка
+     визуально отличалась от тела таблицы и строк-разделов.
+     Это правило (scoped под .tender-detail-page) фактически задаёт фон шапки —
+     оно специфичнее базового `.estimate-table th`, поэтому меняем именно здесь. */
+  background: color-mix(in srgb, var(--primary-color) 22%, var(--bg-secondary));
+  color: var(--text-primary);
   font-size: 0.6875rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+  border-bottom: 2px solid color-mix(in srgb, var(--primary-color) 48%, var(--border-color));
 }
 
 .tender-detail-page .estimate-table th:last-child,
