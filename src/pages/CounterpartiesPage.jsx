@@ -1862,7 +1862,7 @@ function CounterpartiesPage() {
                     type="button"
                     className="btn-secondary cp-detail-edit"
                     onClick={() => { const cp = detailCp; setDetailCp(null); handleEditCounterparty(cp) }}
-                  >Редактировать</button>
+                  >Редактировать контрагента</button>
                 )}
                 <button className="modal-close" onClick={() => setDetailCp(null)} aria-label="Закрыть">×</button>
               </div>
@@ -1952,20 +1952,24 @@ function CounterpartiesPage() {
 
               {detailTab === 'documents' && (
                 <div className="cp-detail-docs">
-                  <S3DocumentList
-                    ownerType="counterparty"
-                    ownerId={detailCp.id}
-                    category="sb_approval"
-                    title="Согласование СБ"
-                    canEdit={canEditCp}
-                  />
-                  <S3DocumentList
-                    ownerType="counterparty"
-                    ownerId={detailCp.id}
-                    category="other"
-                    title="Прочие документы"
-                    canEdit={canEditCp}
-                  />
+                  <section className="cp-doc-section">
+                    <S3DocumentList
+                      ownerType="counterparty"
+                      ownerId={detailCp.id}
+                      category="sb_approval"
+                      title="Согласование СБ"
+                      canEdit={canEditCp}
+                    />
+                  </section>
+                  <section className="cp-doc-section">
+                    <S3DocumentList
+                      ownerType="counterparty"
+                      ownerId={detailCp.id}
+                      category="other"
+                      title="Прочие документы"
+                      canEdit={canEditCp}
+                    />
+                  </section>
                 </div>
               )}
             </div>

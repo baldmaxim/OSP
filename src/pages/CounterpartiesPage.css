@@ -958,7 +958,13 @@
 .cp-detail-docs {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
+}
+.cp-doc-section {
+  padding: 1rem 1.125rem 1.125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-primary);
 }
 
 /* Empty & Loading */

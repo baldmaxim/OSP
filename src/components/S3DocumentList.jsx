@@ -10,6 +10,18 @@ import './S3DocumentList.css'
 // Права: сотрудники (isEmployee) могут загружать/удалять; подрядчики — только просмотр.
 // canEdit можно явно переопределить пропом (например, для разделов с другой политикой).
 
+// Аккуратные inline SVG-иконки (вместо эмодзи, которые на части систем рендерятся криво).
+const Icon = ({ children }) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {children}
+  </svg>
+)
+const EyeIcon = () => <Icon><circle cx="12" cy="12" r="3" /><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /></Icon>
+const DownloadIcon = () => <Icon><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></Icon>
+const TrashIcon = () => <Icon><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></Icon>
+const UploadIcon = () => <Icon><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></Icon>
+
 function formatBytes(bytes) {
   if (bytes == null) return '—'
   if (bytes === 0) return '0 Б'
@@ -122,7 +134,8 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading || !ownerId}
             >
-              {uploading ? 'Загрузка…' : '📤 Загрузить'}
+              <UploadIcon />
+              {uploading ? 'Загрузка…' : 'Загрузить'}
             </button>
           </>
         )}
@@ -153,15 +166,16 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
                 <td>{doc.uploaded_by_name || '—'}</td>
                 <td>{formatDateTime(doc.created_at)}</td>
                 <td className="s3-doc-actions">
-                  <button type="button" title="Просмотр" onClick={() => setPreviewDoc(doc)}>👁️</button>
-                  <button type="button" title="Скачать" onClick={() => handleDownload(doc)}>⬇️</button>
+                  <button type="button" title="Просмотр" aria-label="Просмотр" onClick={() => setPreviewDoc(doc)}><EyeIcon /></button>
+                  <button type="button" title="Скачать" aria-label="Скачать" onClick={() => handleDownload(doc)}><DownloadIcon /></button>
                   {canEdit && (
                     <button
                       type="button"
                       title="Удалить"
+                      aria-label="Удалить"
                       className="s3-doc-btn-danger"
                       onClick={() => handleDelete(doc)}
-                    >🗑️</button>
+                    ><TrashIcon /></button>
                   )}
                 </td>
               </tr>
