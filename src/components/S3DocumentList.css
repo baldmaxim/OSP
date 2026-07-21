@@ -65,9 +65,13 @@
 .s3-doc-table td {
   padding: 0.5rem 0.625rem;
   text-align: left;
+  vertical-align: middle;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
 }
+
+/* Дата и время загрузки — в одну строку (не разрывать «21.07.2026 14:53»). */
+.s3-doc-when { white-space: nowrap; }
 
 .s3-doc-table th {
   font-size: 0.75rem;
@@ -80,7 +84,8 @@
 
 .s3-doc-name {
   font-weight: 500;
-  word-break: break-all;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .s3-doc-actions-col { width: 8rem; }

@@ -164,7 +164,7 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
                 <td className="s3-doc-name">{doc.file_name}</td>
                 <td>{formatBytes(doc.size_bytes)}</td>
                 <td>{doc.uploaded_by_name || '—'}</td>
-                <td>{formatDateTime(doc.created_at)}</td>
+                <td className="s3-doc-when">{formatDateTime(doc.created_at)}</td>
                 <td className="s3-doc-actions">
                   <button type="button" title="Просмотр" aria-label="Просмотр" onClick={() => setPreviewDoc(doc)}><EyeIcon /></button>
                   <button type="button" title="Скачать" aria-label="Скачать" onClick={() => handleDownload(doc)}><DownloadIcon /></button>

@@ -899,11 +899,16 @@
 
 /* ── Detail-модалка контрагента (клик по строке) ── */
 .modal.cp-detail-modal {
-  max-width: 860px;
+  max-width: 1080px;
   width: 100%;
-  max-height: 88vh;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
+}
+/* ФИО контрагента показываем полностью (не обрезаем и не прячем за кнопкой). */
+.cp-detail-title h3 {
+  line-height: 1.25;
+  word-break: break-word;
 }
 .cp-detail-modal .modal-header {
   border-bottom: none;
@@ -1837,6 +1842,11 @@
 
 .tender-history-table tbody tr:last-child td {
   border-bottom: 0;
+}
+
+/* Лёгкая «зебра» для читаемости длинного списка (правило ховера ниже — перекрывает её). */
+.tender-history-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent);
 }
 
 .tender-history-table tbody tr:hover td {
