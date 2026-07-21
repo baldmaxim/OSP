@@ -2609,23 +2609,22 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                           {tc.counterparties.counterparty_contacts.map((contact, idx) => (
                                             <div key={contact.id || idx}>
                                               {contact.full_name && (
-                                                <div style={{ fontWeight: 500 }}>
-                                                  {contact.full_name}
-                                                  {contact.position && (
-                                                    <span style={{
-                                                      color: 'var(--text-tertiary)',
-                                                      fontWeight: 400,
-                                                      marginLeft: '0.375rem',
-                                                      fontSize: '0.75rem'
-                                                    }}>
-                                                      {contact.position}
-                                                    </span>
-                                                  )}
+                                                <div style={{ fontWeight: 500 }}>{contact.full_name}</div>
+                                              )}
+                                              {contact.position && (
+                                                <div style={{
+                                                  color: 'var(--text-tertiary)',
+                                                  fontWeight: 400,
+                                                  fontSize: '0.75rem'
+                                                }}>
+                                                  {contact.position}
                                                 </div>
                                               )}
-                                              {contact.phone && (
+                                              {/* Несколько телефонов (через «;») — каждый с новой строки. */}
+                                              {contact.phone && contact.phone.split(';').map(p => p.trim()).filter(Boolean).map((p, pi) => (
                                                 <a
-                                                  href={`tel:${contact.phone}`}
+                                                  key={pi}
+                                                  href={`tel:${p.replace(/\s+/g, '')}`}
                                                   style={{
                                                     color: 'var(--primary-color)',
                                                     textDecoration: 'none',
@@ -2633,9 +2632,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                                     fontSize: '0.75rem'
                                                   }}
                                                 >
-                                                  {contact.phone}
+                                                  {p}
                                                 </a>
-                                              )}
+                                              ))}
                                             </div>
                                           ))}
                                         </div>
