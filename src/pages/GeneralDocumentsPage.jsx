@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
+import PaperclipIcon from '../components/icons/PaperclipIcon'
 import './GeneralDocumentsPage.css'
 
 // task 416: реестр общих документов компании. Одна запись — «карточка документа»,
@@ -432,7 +433,7 @@ export default function GeneralDocumentsPage() {
     }
     return (
       <button key={m.id} className="gd-material gd-material-file" onClick={() => handleDownload(m.s3)} title={`Скачать ${m.s3.file_name}`}>
-        <span className="gd-mat-icon" aria-hidden>📎</span>
+        <span className="gd-mat-icon" aria-hidden><PaperclipIcon size={14} /></span>
         <span className="gd-mat-text">{m.s3.file_name}</span>
         {m.s3.size_bytes != null && <span className="gd-mat-size">{formatSize(m.s3.size_bytes)}</span>}
       </button>
