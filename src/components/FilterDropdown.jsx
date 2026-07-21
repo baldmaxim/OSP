@@ -33,6 +33,8 @@ export default function FilterDropdown({
   renderOption = null,
   // Необязательный доп. класс на корень (напр. компактный вид status-fdrop).
   className = '',
+  // Необязательный inline-стиль на корень (напр. проброс CSS-переменной цвета статуса).
+  style = null,
   multiple = false,
 }) {
   const [open, setOpen] = useState(false)
@@ -151,7 +153,7 @@ export default function FilterDropdown({
   } : {}
 
   return (
-    <div className={`fdrop ${className} ${open ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''} ${isActive ? 'is-active' : ''}`} ref={rootRef}>
+    <div className={`fdrop ${className} ${open ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''} ${isActive ? 'is-active' : ''}`} style={style || undefined} ref={rootRef}>
       <button
         type="button"
         className="fdrop-trigger"

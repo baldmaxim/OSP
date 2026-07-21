@@ -1313,3 +1313,45 @@
   font-size: 0.6875rem;
   color: var(--text-tertiary);
 }
+
+/* Статус участника тендера на базе FilterDropdown: триггер выглядит как цветная
+   пилюля-select (как раньше, привычный вид в таблице), а выпадающий список —
+   аккуратный кастомный (чистые строки со статус-точкой), а не нативный.
+   Цвет статуса пробрасывается инлайном через --tc-color; is-active/is-open
+   перекрываем 4-классовым селектором, чтобы базовые стили фильтра не мешали. */
+.fdrop.tc-status-fdrop { display: flex; width: 100%; }
+.tc-status-fdrop .fdrop-trigger,
+.fdrop.tc-status-fdrop.is-active .fdrop-trigger,
+.fdrop.tc-status-fdrop.is-open .fdrop-trigger {
+  width: 100%;
+  height: auto;
+  max-width: none;
+  padding: 0.3125rem 0.5rem;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tc-color);
+  background: color-mix(in srgb, var(--tc-color) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tc-color) 40%, transparent);
+  border-radius: 7px;
+  box-shadow: none;
+}
+.tc-status-fdrop .fdrop-value,
+.fdrop.tc-status-fdrop.is-active .fdrop-value {
+  color: var(--tc-color);
+  overflow: visible;
+}
+.tc-status-fdrop .fdrop-arrow { color: var(--tc-color); opacity: 0.8; }
+
+/* Опция списка: цветная точка статуса + название (чистая строка). */
+.tc-status-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.tc-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

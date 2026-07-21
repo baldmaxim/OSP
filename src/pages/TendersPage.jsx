@@ -2671,29 +2671,21 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       )}
                                     </td>
                                     <td>
-                                      <select
-                                        className="tc-status-select"
+                                      <FilterDropdown
+                                        className="tc-status-fdrop"
+                                        style={{ '--tc-color': getCounterpartyStatusColor(tc.status || 'request_sent') }}
+                                        label=""
                                         value={tc.status || 'request_sent'}
-                                        onChange={(e) => handleUpdateCounterpartyStatus(tender.id, tc.id, e.target.value)}
+                                        onChange={(v) => handleUpdateCounterpartyStatus(tender.id, tc.id, v)}
+                                        options={counterpartyStatusOptions}
                                         disabled={!canEditTenders}
-                                        style={{
-                                          width: '100%',
-                                          padding: '0.3125rem 0.5rem',
-                                          fontSize: '0.75rem',
-                                          fontWeight: 600,
-                                          color: getCounterpartyStatusColor(tc.status || 'request_sent'),
-                                          backgroundColor: `${getCounterpartyStatusColor(tc.status || 'request_sent')}14`,
-                                          border: `1px solid ${getCounterpartyStatusColor(tc.status || 'request_sent')}55`,
-                                          borderRadius: '7px',
-                                          cursor: canEditTenders ? 'pointer' : 'default'
-                                        }}
-                                      >
-                                        {counterpartyStatusOptions.map((option) => (
-                                          <option key={option.value} value={option.value} style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)' }}>
-                                            {option.label}
-                                          </option>
-                                        ))}
-                                      </select>
+                                        renderOption={(o) => (
+                                          <span className="tc-status-opt">
+                                            <span className="tc-status-dot" style={{ background: getCounterpartyStatusColor(o.value) }} />
+                                            {o.label}
+                                          </span>
+                                        )}
+                                      />
                                     </td>
                                     <td style={{ verticalAlign: 'top' }}>
                                       <TenderCounterpartyFiles
