@@ -372,6 +372,14 @@
 }
 .money-line { white-space: nowrap; }
 
+/* Приблизительный пересчёт валюты в рубли — приглушённый и помечен «≈». */
+.approx-rub {
+  color: var(--text-tertiary);
+  font-size: 0.9em;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 /* KPI «Общая сумма договоров» — дополнительные валюты под главной строкой. */
 .contracts-total-value { white-space: nowrap; }
 .contracts-total-extra {
@@ -383,6 +391,28 @@
   font-weight: 600;
   color: var(--text-secondary);
 }
+/* Общий итог в рублях (с учётом пересчитанных валютных договоров). */
+.contracts-total-grand {
+  margin-top: 0.375rem;
+  padding-top: 0.375rem;
+  border-top: 1px dashed var(--border-color);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* Итоговая строка таблиц (tfoot). */
+.dense-table tfoot td {
+  padding: 0.5rem 0.625rem;
+  border-top: 2px solid var(--border-color);
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  white-space: nowrap;
+}
+.dense-table tfoot td.num { text-align: right; }
+.dense-table tfoot td.money-col { text-align: right; }
 
 /* Progress bar (slim, single line) */
 .bar-with-pct {

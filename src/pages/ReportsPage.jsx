@@ -20,14 +20,36 @@ function currencyEntries(map) {
   return [...known, ...extra].map((c) => ({ cur: c, amt: map[c] }))
 }
 const fmtCur = (amt, cur) => `${fmtInt(amt)} ${currencySymbol(cur)}`
-// Ячейка суммы: каждая валюта на своей строке; пусто → «—».
+
+// Ориентировочные курсы к рублю для приблизительного пересчёта валютных договоров.
+// Значения приблизительные — обновляйте вручную под актуальный курс; в интерфейсе
+// пересчитанные суммы всегда помечены «≈».
+const APPROX_RATES_TO_RUB = { RUB: 1, CNY: 12, USD: 85, EUR: 95 }
+const toRub = (amt, cur) => amt * (APPROX_RATES_TO_RUB[cur] ?? 0)
+// Итог по всем валютам, приведённый к рублю (приблизительно).
+const totalRub = (map) => currencyEntries(map).reduce((s, e) => s + toRub(e.amt, e.cur), 0)
+// Подсказка с используемыми курсами (для title).
+const RATE_NOTE = 'Курс (ориентировочно): '
+  + ['CNY', 'USD', 'EUR'].map((c) => `${currencySymbol(c)} ${APPROX_RATES_TO_RUB[c]} ₽`).join(' · ')
+
+// Ячейка суммы: каждая валюта на своей строке; для валют, отличных от рубля,
+// строкой ниже добавляем приблизительный пересчёт «≈ N ₽».
 function MoneyCell({ map }) {
   const entries = currencyEntries(map)
   if (!entries.length) return <span className="muted">—</span>
-  if (entries.length === 1) return <>{fmtCur(entries[0].amt, entries[0].cur)}</>
   return (
     <span className="money-multi">
-      {entries.map((e) => <span key={e.cur} className="money-line">{fmtCur(e.amt, e.cur)}</span>)}
+      {entries.flatMap((e) => {
+        const lines = [<span key={e.cur} className="money-line">{fmtCur(e.amt, e.cur)}</span>]
+        if (e.cur !== 'RUB') {
+          lines.push(
+            <span key={`${e.cur}-rub`} className="money-line approx-rub" title={RATE_NOTE}>
+              ≈ {fmtInt(toRub(e.amt, e.cur))} ₽
+            </span>
+          )
+        }
+        return lines
+      })}
     </span>
   )
 }
@@ -522,8 +544,12 @@ function ReportsPage() {
     return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n) + ' ₽'
   }
 
-  // Общая сумма договоров по валютам: главная строка (первая валюта) + остальные отдельно.
+  // Общая сумма договоров по валютам: рубли — главной строкой, валюты — отдельными
+  // строками с приблизительным пересчётом; плюс общий итог в рублях (приблизительно).
   const cTotalEntries = currencyEntries(s.cAmountByCur)
+  const cRubEntry = cTotalEntries.find((e) => e.cur === 'RUB')
+  const cForeignEntries = cTotalEntries.filter((e) => e.cur !== 'RUB')
+  const cGrandRub = totalRub(s.cAmountByCur)
   const cCompletedText = currencyEntries(s.cAmountCompletedByCur)
     .map((e) => fmtCur(e.amt, e.cur)).join(' · ') || '0 ₽'
 
@@ -1007,11 +1033,22 @@ function ReportsPage() {
                 <div className="kpi-card kpi-card-wide">
                   <div className="kpi-label">Общая сумма договоров</div>
                   <div className="kpi-value contracts-total-value">
-                    {cTotalEntries.length ? fmtCur(cTotalEntries[0].amt, cTotalEntries[0].cur) : '0 ₽'}
+                    {cRubEntry ? fmtCur(cRubEntry.amt, 'RUB')
+                      : (cTotalEntries.length ? fmtCur(cTotalEntries[0].amt, cTotalEntries[0].cur) : '0 ₽')}
                   </div>
-                  {cTotalEntries.length > 1 && (
+                  {cForeignEntries.length > 0 && (
                     <div className="contracts-total-extra">
-                      {cTotalEntries.slice(1).map((e) => <span key={e.cur}>{fmtCur(e.amt, e.cur)}</span>)}
+                      {cForeignEntries.map((e) => (
+                        <span key={e.cur}>
+                          {fmtCur(e.amt, e.cur)}
+                          <span className="approx-rub" title={RATE_NOTE}> ≈ {fmtInt(toRub(e.amt, e.cur))} ₽</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {cForeignEntries.length > 0 && (
+                    <div className="contracts-total-grand" title={RATE_NOTE}>
+                      ≈ {fmtInt(cGrandRub)} ₽ — итого в рублях
                     </div>
                   )}
                   <div className="kpi-foot">в т.ч. завершённые: {cCompletedText}</div>
@@ -1107,6 +1144,22 @@ function ReportsPage() {
                     ))
                   )}
                 </tbody>
+                {s.cByObject.length > 0 && (
+                  <tfoot>
+                    <tr className="dense-total-row">
+                      <td>Итого</td>
+                      <td className="num">{s.cNew || '—'}</td>
+                      <td className="num">{s.cInWork || '—'}</td>
+                      <td className="num">{s.cPaused || '—'}</td>
+                      <td className="num">{s.cCompleted || '—'}</td>
+                      <td className="num strong">{s.cTotal}</td>
+                      <td className="money-col" title={RATE_NOTE}>≈ {fmtInt(cGrandRub)} ₽</td>
+                      <td className="bar-col">
+                        <ProgressBar value={s.cCompleted} total={s.cTotal} />
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </section>
           </>
