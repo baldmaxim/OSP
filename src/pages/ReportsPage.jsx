@@ -195,7 +195,11 @@ function ReportsPage() {
       const allTenders = (tendersRaw || []).filter(x => !x.deleted_at)
       const t = allTenders.filter(x => !x.tender_type || x.tender_type === 'main')
       const materialsTenders = allTenders.filter(x => x.tender_type === 'materials')
-      const c = contracts || []
+      // Реестр «Договоры и ДС» показывает только договоры основного строительства
+      // (объект в статусе main_construction). Отчёт держим на том же наборе, иначе в него
+      // попадают договоры гарантийных/без-объектных договоров, которых нет в реестре
+      // (в т.ч. без ответственного юриста → фантомный «Не назначен»).
+      const c = (contracts || []).filter(x => x.objects?.status === 'main_construction')
       const today = new Date().toISOString().split('T')[0]
 
       // «В работе» считаем только статус 'Идет тендерная процедура' —
