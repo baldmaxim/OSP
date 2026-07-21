@@ -6,6 +6,7 @@ import { generateUUID } from '../utils/uuid'
 import { useRole } from '../contexts/RoleContext'
 import CounterpartyCardChip from '../components/CounterpartyCardChip'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
+import S3DocumentList from '../components/S3DocumentList'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
@@ -77,7 +78,9 @@ function CounterpartiesPage() {
   // Контакты, которые добавляются при создании/редактировании контрагента
   const [tempContacts, setTempContacts] = useState([])
   const [editingTempContactIndex, setEditingTempContactIndex] = useState(null)
-  const [expandedRows, setExpandedRows] = useState(new Set())
+  // Detail-модалка контрагента (по клику на строку): история тендеров + документы + редактирование.
+  const [detailCp, setDetailCp] = useState(null)
+  const [detailTab, setDetailTab] = useState('history') // 'history' | 'documents'
   // Инкрементальный рендер большого списка: показываем срез, «Показать ещё» наращивает.
   const [visibleCount, setVisibleCount] = useState(RENDER_STEP)
 
@@ -112,7 +115,7 @@ function CounterpartiesPage() {
     startTabTransition(() => {
       setActiveTab(tab)
       setSelectedCounterpartyIds([])
-      setExpandedRows(new Set())
+      setDetailCp(null)
     })
   }, [])
 
@@ -138,7 +141,7 @@ function CounterpartiesPage() {
   }, [])
 
   // Блокируем скролл body при открытой модалке
-  const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showRelationModal || showWorkTypeModal || importResult
+  const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showRelationModal || showWorkTypeModal || importResult || detailCp
   useEffect(() => {
     if (anyModalOpen) {
       document.body.classList.add('modal-open')
@@ -172,11 +175,14 @@ function CounterpartiesPage() {
       setCounterparties(data)
 
       // task 302: карточки компаний — тоже постранично (иначе >1000 карточек обрежется).
+      // Только doc_category='general' — чтобы документы СБ/Прочие (та же owner_type='counterparty',
+      // категории 'sb_approval'/'other') не попадали в «карточку компании».
       try {
         const cards = await fetchAllRows((from, to) => supabase
           .from('s3_documents')
           .select('*')
           .eq('owner_type', 'counterparty')
+          .eq('doc_category', 'general')
           .order('created_at', { ascending: false })
           .order('id', { ascending: true })
           .range(from, to))
@@ -1280,18 +1286,11 @@ function CounterpartiesPage() {
   }
 
   // Функция для раскрытия/скрытия строки
-  const toggleRowExpand = (id) => {
-    setExpandedRows(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(id)) {
-        newSet.delete(id)
-      } else {
-        newSet.add(id)
-        // подгружаем историю при раскрытии (task 196)
-        fetchTenderHistory(id)
-      }
-      return newSet
-    })
+  // Клик по строке открывает detail-модалку контрагента (история + документы).
+  const openDetail = (counterparty) => {
+    setDetailCp(counterparty)
+    setDetailTab('history')
+    fetchTenderHistory(counterparty.id) // ленивая загрузка истории (task 196)
   }
 
   return (
@@ -1620,7 +1619,6 @@ function CounterpartiesPage() {
                 </thead>
                 <tbody>
                   {filteredCounterparties.slice(0, visibleCount).map((counterparty, cpIndex) => {
-                    const isExpanded = expandedRows.has(counterparty.id)
                     const contacts = counterparty.counterparty_contacts || []
                     const contactsCount = contacts.length
                     const relCount = relationCountById.get(counterparty.id) || 0
@@ -1628,8 +1626,8 @@ function CounterpartiesPage() {
                     return (
                       <React.Fragment key={counterparty.id}>
                         <tr
-                          className={`table-row ${selectedCounterpartyIds.includes(counterparty.id) ? 'selected' : ''} ${counterparty.status === 'blacklist' ? 'blacklist' : ''} ${isExpanded ? 'expanded' : ''}`}
-                          onClick={() => toggleRowExpand(counterparty.id)}
+                          className={`table-row ${selectedCounterpartyIds.includes(counterparty.id) ? 'selected' : ''} ${counterparty.status === 'blacklist' ? 'blacklist' : ''}`}
+                          onClick={() => openDetail(counterparty)}
                         >
                           <td className="col-num">{cpIndex + 1}</td>
                           <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
@@ -1821,94 +1819,6 @@ function CounterpartiesPage() {
                             </div>
                           </td>
                         </tr>
-
-                        {/* task 196: при раскрытии — история участия в тендерах */}
-                        {isExpanded && (
-                          <tr className="expanded-row">
-                            <td colSpan="12">
-                              <div className="expanded-content">
-                                {/* task 340: enterprise-стиль секции «История тендеров» */}
-                                <div className="tender-history-section">
-                                  <div className="tender-history-section-head">
-                                    <div className="tender-history-section-title">
-                                      <span className="tender-history-section-eyebrow">Участие в тендерах</span>
-                                      <span className="tender-history-section-name">
-                                        История участия — {counterparty.name}
-                                      </span>
-                                    </div>
-                                    {tenderHistoryMap[counterparty.id] && tenderHistoryMap[counterparty.id].length > 0 && (
-                                      <span className="tender-history-section-count">
-                                        {tenderHistoryMap[counterparty.id].length}
-                                        <span className="tender-history-section-count-label">записей</span>
-                                      </span>
-                                    )}
-                                  </div>
-                                  {tenderHistoryLoadingId === counterparty.id ? (
-                                    <div className="tender-history-loading">Загрузка истории…</div>
-                                  ) : !tenderHistoryMap[counterparty.id] || tenderHistoryMap[counterparty.id].length === 0 ? (
-                                    <div className="tender-history-empty">Контрагент пока не участвовал в тендерах.</div>
-                                  ) : (
-                                    <div className="tender-history-table-wrap">
-                                      <table className="tender-history-table">
-                                        <thead>
-                                          <tr>
-                                            <th className="th-num">№</th>
-                                            <th className="th-obj">Объект</th>
-                                            <th className="th-desc">Описание работ</th>
-                                            <th className="th-status">Статус</th>
-                                            <th className="th-dates">Сроки процедуры</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {tenderHistoryMap[counterparty.id].map((h, i) => {
-                                            const status = h.status || 'request_sent'
-                                            const formatDate = (iso) => iso
-                                              ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                                              : null
-                                            const startDate = formatDate(h.tender_start_date)
-                                            const endDate = formatDate(h.tender_end_date)
-                                            return (
-                                              <tr key={h.tender_id}>
-                                                <td className="tender-history-num">{i + 1}</td>
-                                                <td className="tender-history-obj">{h.object_name}</td>
-                                                <td>
-                                                  <a
-                                                    href={`/tenders/${h.tender_id}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="tender-history-link"
-                                                    title="Открыть тендер в новой вкладке"
-                                                  >
-                                                    {h.work_description || '—'}
-                                                  </a>
-                                                </td>
-                                                <td>
-                                                  <span className={`tender-history-status status-${status}`}>
-                                                    <span className="tender-history-status-dot" aria-hidden />
-                                                    {TENDER_STATUS_LABEL[status] || status}
-                                                  </span>
-                                                </td>
-                                                <td className="tender-history-dates">
-                                                  {startDate || endDate ? (
-                                                    <span className="tender-history-dates-range">
-                                                      <span>{startDate || '—'}</span>
-                                                      <span className="tender-history-dates-sep">→</span>
-                                                      <span>{endDate || '—'}</span>
-                                                    </span>
-                                                  ) : <span className="muted-dash">—</span>}
-                                                </td>
-                                              </tr>
-                                            )
-                                          })}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
                       </React.Fragment>
                     )
                   })}
@@ -1934,6 +1844,133 @@ function CounterpartiesPage() {
           )}
         </div>
         </>
+      )}
+
+      {/* Detail-модалка контрагента: история участия + документы + кнопка редактирования.
+          Клик по подложке не закрывает — только крестик. */}
+      {detailCp && (
+        <div className="modal-overlay">
+          <div className="modal cp-detail-modal">
+            <div className="modal-header cp-detail-header">
+              <div className="cp-detail-title">
+                <h3>{detailCp.name}</h3>
+                {detailCp.inn && <span className="cp-detail-inn">ИНН: {detailCp.inn}</span>}
+              </div>
+              <div className="cp-detail-header-actions">
+                {canEditCp && (
+                  <button
+                    type="button"
+                    className="btn-secondary cp-detail-edit"
+                    onClick={() => { const cp = detailCp; setDetailCp(null); handleEditCounterparty(cp) }}
+                  >Редактировать</button>
+                )}
+                <button className="modal-close" onClick={() => setDetailCp(null)} aria-label="Закрыть">×</button>
+              </div>
+            </div>
+
+            <div className="cp-detail-tabs">
+              <button
+                type="button"
+                className={`cp-detail-tab ${detailTab === 'history' ? 'active' : ''}`}
+                onClick={() => setDetailTab('history')}
+              >
+                История участия{tenderHistoryMap[detailCp.id]?.length ? ` (${tenderHistoryMap[detailCp.id].length})` : ''}
+              </button>
+              <button
+                type="button"
+                className={`cp-detail-tab ${detailTab === 'documents' ? 'active' : ''}`}
+                onClick={() => setDetailTab('documents')}
+              >
+                Документы
+              </button>
+            </div>
+
+            <div className="cp-detail-body">
+              {detailTab === 'history' && (
+                tenderHistoryLoadingId === detailCp.id ? (
+                  <div className="tender-history-loading">Загрузка истории…</div>
+                ) : !tenderHistoryMap[detailCp.id] || tenderHistoryMap[detailCp.id].length === 0 ? (
+                  <div className="tender-history-empty">Контрагент пока не участвовал в тендерах.</div>
+                ) : (
+                  <div className="tender-history-table-wrap">
+                    <table className="tender-history-table">
+                      <thead>
+                        <tr>
+                          <th className="th-num">№</th>
+                          <th className="th-obj">Объект</th>
+                          <th className="th-desc">Описание работ</th>
+                          <th className="th-status">Статус</th>
+                          <th className="th-dates">Сроки процедуры</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tenderHistoryMap[detailCp.id].map((h, i) => {
+                          const status = h.status || 'request_sent'
+                          const formatDate = (iso) => iso
+                            ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                            : null
+                          const startDate = formatDate(h.tender_start_date)
+                          const endDate = formatDate(h.tender_end_date)
+                          return (
+                            <tr key={h.tender_id}>
+                              <td className="tender-history-num">{i + 1}</td>
+                              <td className="tender-history-obj">{h.object_name}</td>
+                              <td>
+                                <a
+                                  href={`/tenders/${h.tender_id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="tender-history-link"
+                                  title="Открыть тендер в новой вкладке"
+                                >
+                                  {h.work_description || '—'}
+                                </a>
+                              </td>
+                              <td>
+                                <span className={`tender-history-status status-${status}`}>
+                                  <span className="tender-history-status-dot" aria-hidden />
+                                  {TENDER_STATUS_LABEL[status] || status}
+                                </span>
+                              </td>
+                              <td className="tender-history-dates">
+                                {startDate || endDate ? (
+                                  <span className="tender-history-dates-range">
+                                    <span>{startDate || '—'}</span>
+                                    <span className="tender-history-dates-sep">→</span>
+                                    <span>{endDate || '—'}</span>
+                                  </span>
+                                ) : <span className="muted-dash">—</span>}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
+
+              {detailTab === 'documents' && (
+                <div className="cp-detail-docs">
+                  <S3DocumentList
+                    ownerType="counterparty"
+                    ownerId={detailCp.id}
+                    category="sb_approval"
+                    title="Согласование СБ"
+                    canEdit={canEditCp}
+                  />
+                  <S3DocumentList
+                    ownerType="counterparty"
+                    ownerId={detailCp.id}
+                    category="other"
+                    title="Прочие документы"
+                    canEdit={canEditCp}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal для добавления/редактирования контрагента.
