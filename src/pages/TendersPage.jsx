@@ -198,16 +198,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     return colors[status] || '#64748b'
   }
 
-  // Цветной бейдж статуса участника (для триггера и опций красивого селектора).
-  const renderCpStatusBadge = (status) => {
-    const color = getCounterpartyStatusColor(status)
-    return (
-      <span className="cp-status-badge" style={{ color, background: `${color}1f`, borderColor: `${color}55` }}>
-        {getCounterpartyStatusLabel(status)}
-      </span>
-    )
-  }
-
   useEffect(() => {
     // Загружаем всё параллельно
     Promise.all([
@@ -2681,19 +2671,29 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       )}
                                     </td>
                                     <td>
-                                      <FilterDropdown
-                                        className="status-fdrop"
-                                        label=""
+                                      <select
+                                        className="tc-status-select"
                                         value={tc.status || 'request_sent'}
-                                        onChange={(v) => handleUpdateCounterpartyStatus(tender.id, tc.id, v)}
-                                        options={counterpartyStatusOptions}
+                                        onChange={(e) => handleUpdateCounterpartyStatus(tender.id, tc.id, e.target.value)}
                                         disabled={!canEditTenders}
-                                        formatTrigger={(lbl) => {
-                                          const opt = counterpartyStatusOptions.find(o => o.label === lbl)
-                                          return renderCpStatusBadge(opt?.value || (tc.status || 'request_sent'))
+                                        style={{
+                                          width: '100%',
+                                          padding: '0.3125rem 0.5rem',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 600,
+                                          color: getCounterpartyStatusColor(tc.status || 'request_sent'),
+                                          backgroundColor: `${getCounterpartyStatusColor(tc.status || 'request_sent')}14`,
+                                          border: `1px solid ${getCounterpartyStatusColor(tc.status || 'request_sent')}55`,
+                                          borderRadius: '7px',
+                                          cursor: canEditTenders ? 'pointer' : 'default'
                                         }}
-                                        renderOption={(o) => renderCpStatusBadge(o.value)}
-                                      />
+                                      >
+                                        {counterpartyStatusOptions.map((option) => (
+                                          <option key={option.value} value={option.value} style={{ color: 'var(--text-primary)', backgroundColor: 'var(--bg-secondary)' }}>
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </select>
                                     </td>
                                     <td style={{ verticalAlign: 'top' }}>
                                       <TenderCounterpartyFiles
