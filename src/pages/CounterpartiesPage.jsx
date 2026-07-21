@@ -80,7 +80,7 @@ function CounterpartiesPage() {
   const [editingTempContactIndex, setEditingTempContactIndex] = useState(null)
   // Detail-модалка контрагента (по клику на строку): история тендеров + документы + редактирование.
   const [detailCp, setDetailCp] = useState(null)
-  const [detailTab, setDetailTab] = useState('history') // 'history' | 'documents'
+  const [detailTab, setDetailTab] = useState('documents') // 'documents' | 'history'
   // Инкрементальный рендер большого списка: показываем срез, «Показать ещё» наращивает.
   const [visibleCount, setVisibleCount] = useState(RENDER_STEP)
 
@@ -1289,7 +1289,7 @@ function CounterpartiesPage() {
   // Клик по строке открывает detail-модалку контрагента (история + документы).
   const openDetail = (counterparty) => {
     setDetailCp(counterparty)
-    setDetailTab('history')
+    setDetailTab('documents') // по умолчанию открываем «Документы»
     fetchTenderHistory(counterparty.id) // ленивая загрузка истории (task 196)
   }
 
@@ -1871,17 +1871,17 @@ function CounterpartiesPage() {
             <div className="cp-detail-tabs">
               <button
                 type="button"
-                className={`cp-detail-tab ${detailTab === 'history' ? 'active' : ''}`}
-                onClick={() => setDetailTab('history')}
-              >
-                История участия{tenderHistoryMap[detailCp.id]?.length ? ` (${tenderHistoryMap[detailCp.id].length})` : ''}
-              </button>
-              <button
-                type="button"
                 className={`cp-detail-tab ${detailTab === 'documents' ? 'active' : ''}`}
                 onClick={() => setDetailTab('documents')}
               >
                 Документы
+              </button>
+              <button
+                type="button"
+                className={`cp-detail-tab ${detailTab === 'history' ? 'active' : ''}`}
+                onClick={() => setDetailTab('history')}
+              >
+                История участия{tenderHistoryMap[detailCp.id]?.length ? ` (${tenderHistoryMap[detailCp.id].length})` : ''}
               </button>
             </div>
 
