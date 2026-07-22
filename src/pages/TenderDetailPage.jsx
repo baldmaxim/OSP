@@ -11,6 +11,7 @@ import VorDocsModal from '../components/VorDocsModal'
 import VirtualTableBody from '../components/VirtualTableBody'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import AccessDenied from '../components/AccessDenied'
+import FilterDropdown from '../components/FilterDropdown'
 import TenderDocumentsTab from '../components/TenderDocumentsTab'
 import TenderFinalDocBlock from '../components/TenderFinalDocBlock'
 import '../components/TenderDetail.css'
@@ -1686,6 +1687,16 @@ function TenderDetailPage() {
     )
   }), [availableCounterparties, participantWorkTypeFilter, participantSearchQuery])
 
+  // Уже приглашённые в тендер: их показываем в списке с пометкой, но выбрать нельзя.
+  const participantAddedIds = useMemo(
+    () => new Set(tenderCounterparties.map(tc => tc.counterparty_id)),
+    [tenderCounterparties]
+  )
+  const selectableAvailableCounterparties = useMemo(
+    () => filteredAvailableCounterparties.filter(cp => !participantAddedIds.has(cp.id)),
+    [filteredAvailableCounterparties, participantAddedIds]
+  )
+
   const closeAddParticipantModal = () => {
     setShowAddParticipantModal(false)
     setParticipantSearchQuery('')
@@ -1700,18 +1711,27 @@ function TenderDetailPage() {
     setLoadingCounterparties(true)
 
     try {
-      const { data, error } = await supabase
-        .from('counterparties')
-        .select('id, name, work_type, inn, department')
-        .eq('status', 'active')
-        .order('name')
+      // Постранично: без пагинации PostgREST режет на 1000 строк и хвост сортировки
+      // по названию (буква «Ф» и далее) терялся. Тай-брейк по id — имена неуникальны.
+      const PAGE = 1000
+      const rows = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('counterparties')
+          .select('id, name, work_type, inn, department')
+          .eq('status', 'active')
+          .is('deleted_at', null)   // удалённых не предлагаем к приглашению
+          .order('name', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        if (data?.length) rows.push(...data)
+        if (!data || data.length < PAGE) break
+      }
 
-      if (error) throw error
-
-      const existingIds = tenderCounterparties.map(tc => tc.counterparty_id)
-      const available = (data || []).filter(c => !existingIds.includes(c.id))
-
-      setAvailableCounterparties(available)
+      // Уже добавленных НЕ отфильтровываем — показываем их в списке с пометкой
+      // «уже в тендере» (иначе кажется, что контрагент «не находится»).
+      setAvailableCounterparties(rows)
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error)
       alert('Ошибка загрузки списка контрагентов')
@@ -2714,38 +2734,25 @@ function TenderDetailPage() {
 
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       {uniqueAvailableWorkTypes.length > 0 && (
-                        <select
+                        <FilterDropdown
+                          label="Вид работ"
                           value={participantWorkTypeFilter}
-                          onChange={(e) => setParticipantWorkTypeFilter(e.target.value)}
-                          style={{
-                            padding: '0.375rem 0.75rem',
-                            fontSize: '0.8125rem',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '4px',
-                            background: 'var(--bg-secondary)',
-                            color: 'var(--text-primary)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <option value="">Все виды работ</option>
-                          {uniqueAvailableWorkTypes.map(workType => (
-                            <option key={workType} value={workType}>{workType}</option>
-                          ))}
-                        </select>
-                      )}
-
-                      {participantWorkTypeFilter && (
-                        <button
-                          onClick={() => setParticipantWorkTypeFilter('')}
-                          style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
-                        >Сбросить</button>
+                          onChange={(v) => setParticipantWorkTypeFilter(v)}
+                          options={[
+                            { value: '', label: 'Все виды работ' },
+                            ...uniqueAvailableWorkTypes.map(wt => ({ value: wt, label: wt })),
+                          ]}
+                          searchable
+                          searchPlaceholder="Поиск вида работ…"
+                          allLabel="Все виды работ"
+                        />
                       )}
                     </div>
                   </div>
 
                   {availableCounterparties.length === 0 ? (
                     <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
-                      Все активные контрагенты уже добавлены в тендер
+                      Нет активных контрагентов
                     </p>
                   ) : filteredAvailableCounterparties.length === 0 ? (
                     <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
@@ -2776,14 +2783,15 @@ function TenderDetailPage() {
                               }}>
                                 <input
                                   type="checkbox"
-                                  checked={filteredAvailableCounterparties.length > 0 && filteredAvailableCounterparties.every(cp => selectedParticipants.has(cp.id))}
+                                  checked={selectableAvailableCounterparties.length > 0 && selectableAvailableCounterparties.every(cp => selectedParticipants.has(cp.id))}
+                                  disabled={selectableAvailableCounterparties.length === 0}
                                   onChange={(e) => {
                                     setSelectedParticipants(prev => {
                                       const newSet = new Set(prev)
                                       if (e.target.checked) {
-                                        filteredAvailableCounterparties.forEach(cp => newSet.add(cp.id))
+                                        selectableAvailableCounterparties.forEach(cp => newSet.add(cp.id))
                                       } else {
-                                        filteredAvailableCounterparties.forEach(cp => newSet.delete(cp.id))
+                                        selectableAvailableCounterparties.forEach(cp => newSet.delete(cp.id))
                                       }
                                       return newSet
                                     })
@@ -2812,21 +2820,24 @@ function TenderDetailPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredAvailableCounterparties.map((cp) => (
+                            {filteredAvailableCounterparties.map((cp) => {
+                              const isAdded = participantAddedIds.has(cp.id)
+                              return (
                               <tr
                                 key={cp.id}
                                 style={{
-                                  cursor: 'pointer',
-                                  backgroundColor: selectedParticipants.has(cp.id) ? 'var(--hover-bg, #f0f9ff)' : ''
+                                  cursor: isAdded ? 'default' : 'pointer',
+                                  opacity: isAdded ? 0.55 : 1,
+                                  backgroundColor: !isAdded && selectedParticipants.has(cp.id) ? 'var(--hover-bg, #f0f9ff)' : ''
                                 }}
-                                onClick={() => handleToggleParticipant(cp.id)}
+                                onClick={() => { if (!isAdded) handleToggleParticipant(cp.id) }}
                                 onMouseEnter={(e) => {
-                                  if (!selectedParticipants.has(cp.id)) {
+                                  if (!isAdded && !selectedParticipants.has(cp.id)) {
                                     e.currentTarget.style.backgroundColor = 'var(--hover-bg, #f9fafb)'
                                   }
                                 }}
                                 onMouseLeave={(e) => {
-                                  if (!selectedParticipants.has(cp.id)) {
+                                  if (!isAdded && !selectedParticipants.has(cp.id)) {
                                     e.currentTarget.style.backgroundColor = ''
                                   }
                                 }}
@@ -2834,12 +2845,28 @@ function TenderDetailPage() {
                                 <td onClick={(e) => e.stopPropagation()}>
                                   <input
                                     type="checkbox"
-                                    checked={selectedParticipants.has(cp.id)}
-                                    onChange={() => handleToggleParticipant(cp.id)}
-                                    style={{ cursor: 'pointer' }}
+                                    checked={!isAdded && selectedParticipants.has(cp.id)}
+                                    disabled={isAdded}
+                                    onChange={() => { if (!isAdded) handleToggleParticipant(cp.id) }}
+                                    style={{ cursor: isAdded ? 'default' : 'pointer' }}
                                   />
                                 </td>
-                                <td style={{ fontWeight: 500 }}>{cp.name}</td>
+                                <td style={{ fontWeight: 500 }}>
+                                  {cp.name}
+                                  {isAdded && (
+                                    <span style={{
+                                      marginLeft: '0.5rem',
+                                      padding: '0.0625rem 0.4375rem',
+                                      fontSize: '0.6875rem',
+                                      fontWeight: 600,
+                                      color: 'var(--text-tertiary)',
+                                      background: 'var(--bg-tertiary)',
+                                      border: '1px solid var(--border-color)',
+                                      borderRadius: '999px',
+                                      whiteSpace: 'nowrap'
+                                    }}>уже в тендере</span>
+                                  )}
+                                </td>
                                 <td>
                                   {cp.work_type ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
@@ -2858,7 +2885,8 @@ function TenderDetailPage() {
                                   ) : '-'}
                                 </td>
                               </tr>
-                            ))}
+                              )
+                            })}
                           </tbody>
                         </table>
                       </div>

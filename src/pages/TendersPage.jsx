@@ -384,14 +384,25 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   const fetchCounterparties = async () => {
     try {
-      const { data, error } = await supabase
-        .from('counterparties')
-        .select('*')
-        .eq('status', 'active')
-        .order('name', { ascending: true })
-
-      if (error) throw error
-      setCounterparties(data || [])
+      // Постранично: PostgREST молча отдаёт максимум 1000 строк, а активных контрагентов
+      // уже больше — без пагинации обрезался хвост сортировки по названию (буква «Ф» и далее).
+      // Тай-брейк по id обязателен: имена неуникальны, иначе страницы «плывут».
+      const PAGE = 1000
+      const rows = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('counterparties')
+          .select('*')
+          .eq('status', 'active')
+          .is('deleted_at', null)   // удалённых не предлагаем к добавлению в тендер
+          .order('name', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        if (data?.length) rows.push(...data)
+        if (!data || data.length < PAGE) break
+      }
+      setCounterparties(rows)
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error.message)
     }
@@ -3156,9 +3167,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             .filter(wt => wt !== '')
         )].sort((a, b) => a.localeCompare(b, 'ru'))
 
-        const availableCounterparties = counterparties.filter(cp => {
-          if (currentTenderCounterparties.some(tc => tc.counterparty_id === cp.id)) return false
+        // Уже добавленных к тендеру НЕ прячем — показываем с пометкой «уже в тендере»
+        // (иначе кажется, что контрагент «не находится» в списке).
+        const addedIds = new Set(currentTenderCounterparties.map(tc => tc.counterparty_id))
 
+        const availableCounterparties = counterparties.filter(cp => {
           // Фильтр по виду работ
           if (counterpartyWorkTypeFilter) {
             const types = (cp.work_type || '').split(',').map(wt => wt.trim())
@@ -3177,6 +3190,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
           return true
         })
+
+        // Уже добавленные показываются, но не выбираются — «выбрать все» и счётчик
+        // работают только по доступным для добавления.
+        const selectableCounterparties = availableCounterparties.filter(cp => !addedIds.has(cp.id))
 
         return (
           <div className="modal-overlay">
@@ -3218,31 +3235,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     {uniqueWorkTypes.length > 0 && (
-                      <select
+                      <FilterDropdown
+                        label="Вид работ"
                         value={counterpartyWorkTypeFilter}
-                        onChange={(e) => setCounterpartyWorkTypeFilter(e.target.value)}
-                        style={{
-                          padding: '0.375rem 0.75rem',
-                          fontSize: '0.8125rem',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '4px',
-                          background: 'var(--bg-secondary)',
-                          color: 'var(--text-primary)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <option value="">Все виды работ</option>
-                        {uniqueWorkTypes.map(workType => (
-                          <option key={workType} value={workType}>{workType}</option>
-                        ))}
-                      </select>
-                    )}
-
-                    {counterpartyWorkTypeFilter && (
-                      <button
-                        onClick={() => setCounterpartyWorkTypeFilter('')}
-                        style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
-                      >Сбросить</button>
+                        onChange={(v) => setCounterpartyWorkTypeFilter(v)}
+                        options={[
+                          { value: '', label: 'Все виды работ' },
+                          ...uniqueWorkTypes.map(wt => ({ value: wt, label: wt })),
+                        ]}
+                        searchable
+                        searchPlaceholder="Поиск вида работ…"
+                        allLabel="Все виды работ"
+                      />
                     )}
                   </div>
                 </div>
@@ -3254,10 +3258,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </p>
                 ) : availableCounterparties.length === 0 ? (
                   <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
-                    {currentTenderCounterparties.length === counterparties.length
-                      ? 'Все активные контрагенты уже добавлены к тендеру'
-                      : 'Контрагенты не найдены по заданным критериям'
-                    }
+                    Контрагенты не найдены по заданным критериям
                   </p>
                 ) : (
                   <>
@@ -3284,10 +3285,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             }}>
                               <input
                                 type="checkbox"
-                                checked={availableCounterparties.length > 0 && selectedCounterpartyIds.length === availableCounterparties.length}
+                                checked={selectableCounterparties.length > 0 && selectedCounterpartyIds.length === selectableCounterparties.length}
+                                disabled={selectableCounterparties.length === 0}
                                 onChange={(e) => {
                                   if (e.target.checked) {
-                                    setSelectedCounterpartyIds(availableCounterparties.map(cp => cp.id))
+                                    setSelectedCounterpartyIds(selectableCounterparties.map(cp => cp.id))
                                   } else {
                                     setSelectedCounterpartyIds([])
                                   }
@@ -3316,21 +3318,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           </tr>
                         </thead>
                         <tbody>
-                          {availableCounterparties.map((counterparty) => (
+                          {availableCounterparties.map((counterparty) => {
+                            const isAdded = addedIds.has(counterparty.id)
+                            return (
                             <tr
                               key={counterparty.id}
                               style={{
-                                cursor: 'pointer',
-                                backgroundColor: selectedCounterpartyIds.includes(counterparty.id) ? 'var(--hover-bg, #f0f9ff)' : ''
+                                cursor: isAdded ? 'default' : 'pointer',
+                                opacity: isAdded ? 0.55 : 1,
+                                backgroundColor: !isAdded && selectedCounterpartyIds.includes(counterparty.id) ? 'var(--hover-bg, #f0f9ff)' : ''
                               }}
-                              onClick={() => handleToggleCounterpartySelection(counterparty.id)}
+                              onClick={() => { if (!isAdded) handleToggleCounterpartySelection(counterparty.id) }}
                               onMouseEnter={(e) => {
-                                if (!selectedCounterpartyIds.includes(counterparty.id)) {
+                                if (!isAdded && !selectedCounterpartyIds.includes(counterparty.id)) {
                                   e.currentTarget.style.backgroundColor = 'var(--hover-bg, #f9fafb)'
                                 }
                               }}
                               onMouseLeave={(e) => {
-                                if (!selectedCounterpartyIds.includes(counterparty.id)) {
+                                if (!isAdded && !selectedCounterpartyIds.includes(counterparty.id)) {
                                   e.currentTarget.style.backgroundColor = ''
                                 }
                               }}
@@ -3338,12 +3343,28 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               <td onClick={(e) => e.stopPropagation()}>
                                 <input
                                   type="checkbox"
-                                  checked={selectedCounterpartyIds.includes(counterparty.id)}
-                                  onChange={() => handleToggleCounterpartySelection(counterparty.id)}
-                                  style={{ cursor: 'pointer' }}
+                                  checked={!isAdded && selectedCounterpartyIds.includes(counterparty.id)}
+                                  disabled={isAdded}
+                                  onChange={() => { if (!isAdded) handleToggleCounterpartySelection(counterparty.id) }}
+                                  style={{ cursor: isAdded ? 'default' : 'pointer' }}
                                 />
                               </td>
-                              <td style={{ fontWeight: 500 }}>{counterparty.name}</td>
+                              <td style={{ fontWeight: 500 }}>
+                                {counterparty.name}
+                                {isAdded && (
+                                  <span style={{
+                                    marginLeft: '0.5rem',
+                                    padding: '0.0625rem 0.4375rem',
+                                    fontSize: '0.6875rem',
+                                    fontWeight: 600,
+                                    color: 'var(--text-tertiary)',
+                                    background: 'var(--bg-tertiary)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '999px',
+                                    whiteSpace: 'nowrap'
+                                  }}>уже в тендере</span>
+                                )}
+                              </td>
                               <td>
                                 {counterparty.work_type ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
@@ -3362,7 +3383,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                 ) : '-'}
                               </td>
                             </tr>
-                          ))}
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
