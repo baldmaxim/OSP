@@ -772,12 +772,24 @@ function TenderDetailPage() {
   // применена — таблицы нет, тихо работаем без расценок (колонка покажет «—»).
   const fetchSupplyRates = async () => {
     try {
-      const { data, error } = await supabase
-        .from('tender_vor_supply_rates')
-        .select('*')
-        .eq('tender_id', tenderId)
-      if (error) throw error
-      setSupplyRates(data || [])
+      // Постранично: PostgREST отдаёт максимум 1000 строк за запрос, а расценок у больших
+      // ВОР (тысячи позиций) заметно больше — без пагинации загружалась только 1000,
+      // из-за чего часть материалов оставалась без цены снабжения.
+      // Тай-брейк по id — стабильный порядок между страницами.
+      const PAGE = 1000
+      const rows = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('tender_vor_supply_rates')
+          .select('*')
+          .eq('tender_id', tenderId)
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        if (data?.length) rows.push(...data)
+        if (!data || data.length < PAGE) break
+      }
+      setSupplyRates(rows)
     } catch (err) {
       console.error('Ошибка загрузки расценок снабжения:', err.message)
       setSupplyRates([])
@@ -1526,13 +1538,23 @@ function TenderDetailPage() {
     try {
       setLoadingAuditLog(true)
       setAuditLogError(null)
-      const { data, error } = await supabase
-        .from('tender_audit_log')
-        .select('*')
-        .eq('tender_id', tenderId)
-        .order('changed_at', { ascending: false })
-      if (error) throw error
-      setAuditLog(data || [])
+      // Постранично — у активного тендера история может перевалить за 1000 записей
+      // (потолок PostgREST). Тай-брейк по id: changed_at не уникален.
+      const PAGE = 1000
+      const rows = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('tender_audit_log')
+          .select('*')
+          .eq('tender_id', tenderId)
+          .order('changed_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        if (data?.length) rows.push(...data)
+        if (!data || data.length < PAGE) break
+      }
+      setAuditLog(rows)
     } catch (err) {
       console.error('Ошибка загрузки истории тендера:', err.message)
       setAuditLog([])
@@ -1605,13 +1627,18 @@ function TenderDetailPage() {
     cost_plan_responsible_id: 'Ответственный за план затрат',
     vor_responsible_id: 'Ответственный за ВОРы и РД',
     object_id: 'Объект',
-    notes: 'Примечание'
+    notes: 'Примечание',
+    participant_notes: 'Примечание участника'
   }
 
   const formatHistoryValue = (val) => {
     if (val === null || val === undefined) return '—'
     if (typeof val === 'string' || typeof val === 'number') return String(val)
     if (typeof val === 'object') {
+      // Примечание участника хранится как { tc_id, cp_name, text } — показываем
+      // сам текст. Проверка text должна идти раньше name, иначе вместо примечания
+      // отобразилось бы имя контрагента.
+      if (val.text !== undefined) return val.text || '—'
       if (val.name) return val.name
       return JSON.stringify(val)
     }

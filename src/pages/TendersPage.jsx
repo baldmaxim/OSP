@@ -44,6 +44,81 @@ function baseResponsible(dateInput) {
   return TENDER_RESPONSIBLES[((weeks % n) + n) % n]
 }
 
+// Дата и время правки для истории примечаний: «24.07.2026, 14:05».
+function formatDateTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('ru-RU') + ', ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
+// ── Пословное сравнение двух версий примечания ──────────────────────────────
+// Токены — слова и пробельные промежутки. Промежутки приводим к одному виду
+// (' ' или '\n'), иначе лишний пробел подсвечивается как правка.
+function tokenizeWords(text) {
+  const raw = String(text || '').match(/\s+|\S+/g) || []
+  return raw.map(t => (/^\s+$/.test(t) ? (t.includes('\n') ? '\n' : ' ') : t))
+}
+
+// Ограничение на размер: примечания короткие, но защищаемся от квадратичной
+// таблицы на аномально длинном тексте — там показываем блоки целиком.
+const DIFF_MAX_TOKENS = 800
+
+// Возвращает массив { type: 'same' | 'added' | 'removed', text } через LCS по токенам.
+function diffWords(oldText, newText) {
+  const a = tokenizeWords(oldText)
+  const b = tokenizeWords(newText)
+  if (a.length > DIFF_MAX_TOKENS || b.length > DIFF_MAX_TOKENS) {
+    const out = []
+    if (a.length) out.push({ type: 'removed', text: String(oldText || '') })
+    if (b.length) out.push({ type: 'added', text: String(newText || '') })
+    return out
+  }
+  const n = a.length
+  const m = b.length
+  const w = m + 1
+  // lcs[i][j] — длина наибольшей общей подпоследовательности a[i..] и b[j..]
+  const lcs = new Int32Array((n + 1) * w)
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i * w + j] = a[i] === b[j]
+        ? lcs[(i + 1) * w + j + 1] + 1
+        : Math.max(lcs[(i + 1) * w + j], lcs[i * w + j + 1])
+    }
+  }
+  const parts = []
+  const push = (type, text) => {
+    const last = parts[parts.length - 1]
+    if (last && last.type === type) last.text += text
+    else parts.push({ type, text })
+  }
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { push('same', a[i]); i++; j++ }
+    else if (lcs[(i + 1) * w + j] >= lcs[i * w + j + 1]) { push('removed', a[i]); i++ }
+    else { push('added', b[j]); j++ }
+  }
+  while (i < n) { push('removed', a[i]); i++ }
+  while (j < m) { push('added', b[j]); j++ }
+  return parts
+}
+
+const PencilIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
+)
+
+const HistoryIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M3 3v5h5" />
+    <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+    <path d="M12 7v5l3 2" />
+  </svg>
+)
+
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
   const { scopedObjectId, userProfile, isAdmin, canEdit } = useRole()
@@ -78,6 +153,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [tenderCounterparties, setTenderCounterparties] = useState({})
   // Сводка по каждому тендеру: { tenderId: { total, proposalProvided } }
   const [tenderProposalCounts, setTenderProposalCounts] = useState({})
+  // Примечание участника: явное редактирование (одна строка за раз) и хронология правок
+  const [notesEdit, setNotesEdit] = useState(null) // { tcId, draft } | null
+  const [savingNotes, setSavingNotes] = useState(false)
+  const [notesHistoryFor, setNotesHistoryFor] = useState(null) // { tenderId, tcId, cpName } | null
+  const [notesHistoryRows, setNotesHistoryRows] = useState([])
+  const [notesHistoryLoading, setNotesHistoryLoading] = useState(false)
   const [copiedEmailsTenderId, setCopiedEmailsTenderId] = useState(null)
   const [editingResponsibleTenderId, setEditingResponsibleTenderId] = useState(null)
   const [showAddCounterpartyModal, setShowAddCounterpartyModal] = useState(false)
@@ -515,6 +596,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   const handleToggleTender = async (tenderId) => {
+    // Незавершённое редактирование примечания сбрасываем: строка скрывается,
+    // и висящий черновик только путал бы при повторном раскрытии.
+    setNotesEdit(null)
     if (expandedTenderId === tenderId) {
       setExpandedTenderId(null)
     } else {
@@ -634,7 +718,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
-  const handleUpdateCounterpartyNotes = async (tenderId, tenderCounterpartyId, notes) => {
+  const handleUpdateCounterpartyNotes = async (tenderId, tenderCounterpartyId, notes, oldNotes = '', cpName = '') => {
     try {
       const { error } = await supabase
         .from('tender_counterparties')
@@ -649,8 +733,68 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           tc.id === tenderCounterpartyId ? { ...tc, notes } : tc
         )
       }))
+
+      // Хронология правок. Привязка к участнику живёт внутри JSONB (tc_id) —
+      // отдельная колонка в tender_audit_log не нужна. Ключ именно text, а не name:
+      // formatHistoryValue во вкладке «История» тендера разворачивает name и показал
+      // бы имя контрагента вместо самого примечания.
+      await logTenderEvent(tenderId, 'field_updated', {
+        fieldName: 'participant_notes',
+        oldValue: { tc_id: tenderCounterpartyId, cp_name: cpName || null, text: oldNotes || '' },
+        newValue: { tc_id: tenderCounterpartyId, cp_name: cpName || null, text: notes || '' },
+        description: cpName ? `Примечание участника: ${cpName}` : 'Примечание участника',
+      })
+      return true
     } catch (error) {
       console.error('Ошибка сохранения примечания:', error.message)
+      alert('Ошибка сохранения примечания: ' + error.message)
+      return false
+    }
+  }
+
+  // Сохранить правку примечания. Без изменений — просто выходим из режима
+  // редактирования, чтобы не плодить пустые записи в истории.
+  const handleSaveCounterpartyNotes = async (tenderId, tc) => {
+    const draft = notesEdit?.draft ?? ''
+    const previous = tc.notes || ''
+    if (draft === previous) {
+      setNotesEdit(null)
+      return
+    }
+    setSavingNotes(true)
+    const ok = await handleUpdateCounterpartyNotes(tenderId, tc.id, draft, previous, tc.counterparties?.name || '')
+    setSavingNotes(false)
+    if (ok) setNotesEdit(null)
+  }
+
+  // История правок примечания конкретного участника.
+  const openNotesHistory = async (tenderId, tc) => {
+    setNotesHistoryFor({ tenderId, tcId: tc.id, cpName: tc.counterparties?.name || '' })
+    setNotesHistoryRows([])
+    setNotesHistoryLoading(true)
+    try {
+      // Постранично: у активного тендера история может перевалить за 1000 записей
+      // (потолок PostgREST). Тай-брейк по id — changed_at не уникален.
+      const PAGE = 1000
+      const rows = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('tender_audit_log')
+          .select('*')
+          .eq('tender_id', tenderId)
+          .eq('field_name', 'participant_notes')
+          .order('changed_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        if (data?.length) rows.push(...data)
+        if (!data || data.length < PAGE) break
+      }
+      setNotesHistoryRows(rows.filter(r => r.new_value?.tc_id === tc.id || r.old_value?.tc_id === tc.id))
+    } catch (err) {
+      console.error('Ошибка загрузки истории примечания:', err.message)
+    } finally {
+      setNotesHistoryLoading(false)
     }
   }
 
@@ -2709,45 +2853,77 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       />
                                     </td>
                                     {!hideNotes && (
-                                    <td>
-                                      <textarea
-                                        ref={(el) => {
-                                          if (el) {
-                                            el.style.height = 'auto'
-                                            el.style.height = Math.max(el.scrollHeight, 30) + 'px'
-                                          }
-                                        }}
-                                        defaultValue={tc.notes || ''}
-                                        onInput={(e) => {
-                                          e.target.style.height = 'auto'
-                                          e.target.style.height = Math.max(e.target.scrollHeight, 30) + 'px'
-                                        }}
-                                        onBlur={(e) => {
-                                          const newNotes = e.target.value
-                                          if ((tc.notes || '') !== newNotes) {
-                                            handleUpdateCounterpartyNotes(tender.id, tc.id, newNotes)
-                                          }
-                                        }}
-                                        placeholder="Примечание…"
-                                        rows={1}
-                                        readOnly={!canEditTenders}
-                                        disabled={!canEditTenders}
-                                        style={{
-                                          width: '100%',
-                                          minHeight: '30px',
-                                          padding: '0.25rem 0.4rem',
-                                          fontSize: '0.75rem',
-                                          lineHeight: 1.35,
-                                          border: '1px solid var(--border-color)',
-                                          borderRadius: '4px',
-                                          background: 'var(--bg-secondary)',
-                                          color: 'var(--text-primary)',
-                                          resize: 'none',
-                                          overflow: 'hidden',
-                                          fontFamily: 'inherit',
-                                          boxSizing: 'border-box',
-                                        }}
-                                      />
+                                    <td className="tc-notes-cell">
+                                      {notesEdit?.tcId === tc.id ? (
+                                        <div className="tc-notes-edit">
+                                          <textarea
+                                            className="tc-notes-textarea"
+                                            autoFocus
+                                            ref={(el) => {
+                                              if (el) {
+                                                el.style.height = 'auto'
+                                                el.style.height = Math.max(el.scrollHeight, 56) + 'px'
+                                              }
+                                            }}
+                                            value={notesEdit.draft}
+                                            onChange={(e) => {
+                                              const value = e.target.value
+                                              e.target.style.height = 'auto'
+                                              e.target.style.height = Math.max(e.target.scrollHeight, 56) + 'px'
+                                              setNotesEdit(prev => (prev && prev.tcId === tc.id ? { ...prev, draft: value } : prev))
+                                            }}
+                                            placeholder="Примечание…"
+                                            rows={2}
+                                          />
+                                          <div className="tc-notes-actions">
+                                            <button
+                                              type="button"
+                                              className="tc-notes-btn tc-notes-btn-save"
+                                              onClick={() => handleSaveCounterpartyNotes(tender.id, tc)}
+                                              disabled={savingNotes}
+                                            >
+                                              {savingNotes ? 'Сохранение…' : 'Сохранить'}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="tc-notes-btn tc-notes-btn-cancel"
+                                              onClick={() => setNotesEdit(null)}
+                                              disabled={savingNotes}
+                                            >
+                                              Отмена
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="tc-notes-view">
+                                          <div className={`tc-notes-text${tc.notes ? '' : ' is-empty'}`}>
+                                            {tc.notes || 'Примечание не заполнено'}
+                                          </div>
+                                          <div className="tc-notes-tools">
+                                            {canEditTenders && (
+                                              <button
+                                                type="button"
+                                                className="tc-notes-icon"
+                                                onClick={() => setNotesEdit({ tcId: tc.id, draft: tc.notes || '' })}
+                                                title="Редактировать примечание"
+                                                aria-label="Редактировать примечание"
+                                              >
+                                                <PencilIcon />
+                                              </button>
+                                            )}
+                                            {/* История только для чтения — доступна всем, кто видит колонку */}
+                                            <button
+                                              type="button"
+                                              className="tc-notes-icon"
+                                              onClick={() => openNotesHistory(tender.id, tc)}
+                                              title="История изменений примечания"
+                                              aria-label="История изменений примечания"
+                                            >
+                                              <HistoryIcon />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
                                     </td>
                                     )}
                                     <td style={{ textAlign: 'center' }}>
@@ -3710,6 +3886,79 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   {letterCopied ? '✓ Скопировано!' : '📋 Копировать письмо'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Хронология правок примечания участника. Только чтение; закрывается крестиком/«Закрыть». */}
+      {notesHistoryFor && (
+        <div className="modal-overlay">
+          <div className="modal tc-notes-history-modal">
+            <div className="modal-header">
+              <div>
+                <h3>История примечания</h3>
+                <p className="tc-notes-history-sub">{notesHistoryFor.cpName || 'Участник тендера'}</p>
+              </div>
+              <button className="modal-close" onClick={() => setNotesHistoryFor(null)} aria-label="Закрыть">×</button>
+            </div>
+            <div className="tc-notes-history-body">
+              {notesHistoryLoading ? (
+                <div className="loading">Загрузка...</div>
+              ) : notesHistoryRows.length === 0 ? (
+                <div className="tc-notes-history-empty">
+                  <p>Записей нет.</p>
+                  <p className="tc-notes-history-hint">
+                    История ведётся с момента подключения этой функции — более ранние правки
+                    не фиксировались.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="tc-notes-history-legend">
+                    <span className="nd-removed">удалено</span>
+                    <span className="nd-added">добавлено</span>
+                  </div>
+                  <ul className="tc-notes-history-list">
+                    {notesHistoryRows.map(ev => {
+                      const before = ev.old_value?.text || ''
+                      const after = ev.new_value?.text || ''
+                      const parts = diffWords(before, after)
+                      const author = ev.changed_by_name
+                        || ROLE_LABELS_MAP[ev.changed_by_role]
+                        || ev.changed_by_role
+                        || 'без имени'
+                      const kind = !before ? 'Примечание добавлено' : !after ? 'Примечание очищено' : 'Примечание изменено'
+                      return (
+                        <li key={ev.id} className="tc-notes-history-item">
+                          <div className="tc-notes-history-meta">
+                            <span className="tc-notes-history-when">{formatDateTime(ev.changed_at)}</span>
+                            <span className="tc-notes-history-who">{author}</span>
+                          </div>
+                          <div className="tc-notes-history-kind">{kind}</div>
+                          <div className="tc-notes-diff">
+                            {parts.length === 0 ? (
+                              <span className="tc-notes-diff-empty">— пусто —</span>
+                            ) : (
+                              parts.map((p, idx) => (
+                                <span
+                                  key={idx}
+                                  className={p.type === 'added' ? 'nd-added' : p.type === 'removed' ? 'nd-removed' : undefined}
+                                >
+                                  {p.text}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn-secondary" onClick={() => setNotesHistoryFor(null)}>Закрыть</button>
             </div>
           </div>
         </div>
