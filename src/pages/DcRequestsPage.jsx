@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
@@ -40,6 +40,9 @@ const MATERIAL_OPTIONS = [
   { value: 'tolling', label: 'Давальческие (М-15)', className: 'material-tolling' },
   { value: 'realization', label: 'Реализация', className: 'material-realization' },
 ]
+// Сколько контрагентов показывать в выпадающем поиске за раз (список большой — 1000+).
+const CP_SEARCH_LIMIT = 50
+
 const MATERIAL_LABEL = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.label]))
 const MATERIAL_CLASS = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.className]))
 
@@ -278,6 +281,8 @@ function DcRequestsPage() {
   // task 314: поиск контрагента в модалке.
   const [cpSearch, setCpSearch] = useState('')
   const [cpDropdownOpen, setCpDropdownOpen] = useState(false)
+  // Активный пункт списка для навигации клавишами ↑/↓/Enter.
+  const [cpHighlight, setCpHighlight] = useState(0)
   // task 365 + 366: какая заявка сейчас в inline-popover для редактирования срока,
   //   и куда привязан popover (rect триггерной кнопки). Popover рендерится через
   //   portal, поэтому anchor нужен для расчёта fixed-координат.
@@ -380,11 +385,28 @@ function DcRequestsPage() {
   }
 
   const fetchCounterparties = async () => {
-    const { data, error } = await supabase
-      .from('counterparties')
-      .select('id, name, inn')
-      .order('name', { ascending: true })
-    if (!error) setCounterparties(data || [])
+    // Постранично: PostgREST отдаёт максимум 1000 строк, а контрагентов уже больше —
+    // без пагинации обрезался хвост сортировки по названию (буква «Ф» и далее,
+    // из-за чего не находился «Фортекс»). Тай-брейк по id: имена неуникальны.
+    const PAGE = 1000
+    const rows = []
+    try {
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('counterparties')
+          .select('id, name, inn')
+          .is('deleted_at', null)   // удалённых не предлагаем к выбору
+          .order('name', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        if (data?.length) rows.push(...data)
+        if (!data || data.length < PAGE) break
+      }
+      setCounterparties(rows)
+    } catch (error) {
+      console.error('Ошибка загрузки контрагентов:', error.message)
+    }
   }
 
   const fetchContacts = async () => {
@@ -490,6 +512,27 @@ function DcRequestsPage() {
     setCpSearch(cp.name || '')
     setCpDropdownOpen(false)
   }
+
+  // Поиск контрагента: сначала совпадения С НАЧАЛА названия/ИНН, потом любые вхождения —
+  // при 1000+ контрагентах это выводит нужного наверх (набрал «форт» → «Фортекс» первым).
+  const cpMatches = useMemo(() => {
+    const q = cpSearch.trim().toLowerCase()
+    if (!q) return counterparties
+    const starts = []
+    const contains = []
+    for (const cp of counterparties) {
+      const name = (cp.name || '').toLowerCase()
+      const inn = (cp.inn || '').toLowerCase()
+      if (name.startsWith(q) || inn.startsWith(q)) starts.push(cp)
+      else if (name.includes(q) || inn.includes(q)) contains.push(cp)
+    }
+    return [...starts, ...contains]
+  }, [counterparties, cpSearch])
+
+  const cpVisible = cpMatches.slice(0, CP_SEARCH_LIMIT)
+
+  // При изменении запроса подсветку возвращаем на первый пункт.
+  useEffect(() => { setCpHighlight(0) }, [cpSearch])
 
   // ── История изменений ──────────────────────────────────────────────────────
   // Универсальная запись в аудит-лог (по образцу logContractEvent). Ошибки глотаем:
@@ -1613,34 +1656,67 @@ function DcRequestsPage() {
                       }}
                       onFocus={() => setCpDropdownOpen(true)}
                       onBlur={() => setTimeout(() => setCpDropdownOpen(false), 150)}
+                      // Навигация клавишами: ↑/↓ — по списку, Enter — выбрать, Esc — закрыть.
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') { setCpDropdownOpen(false); return }
+                        if (!cpDropdownOpen) {
+                          if (e.key === 'ArrowDown') { setCpDropdownOpen(true); e.preventDefault() }
+                          return
+                        }
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault()
+                          setCpHighlight(i => Math.min(i + 1, cpVisible.length - 1))
+                        } else if (e.key === 'ArrowUp') {
+                          e.preventDefault()
+                          setCpHighlight(i => Math.max(i - 1, 0))
+                        } else if (e.key === 'Enter' && cpVisible[cpHighlight]) {
+                          e.preventDefault()
+                          handleSelectCp(cpVisible[cpHighlight])
+                        }
+                      }}
                       required={!formData.counterparty_id}
                     />
-                    {cpDropdownOpen && (() => {
-                      const q = cpSearch.trim().toLowerCase()
-                      const filtered = !q ? counterparties : counterparties.filter(cp =>
-                        (cp.name || '').toLowerCase().includes(q) ||
-                        (cp.inn || '').toLowerCase().includes(q)
-                      )
-                      return (
-                        <div className="cp-search-dropdown">
-                          {filtered.length === 0 ? (
-                            <div className="cp-search-empty">Ничего не найдено</div>
-                          ) : (
-                            filtered.slice(0, 50).map(cp => (
+                    {cpSearch && (
+                      <button
+                        type="button"
+                        className="cp-search-clear"
+                        title="Очистить"
+                        aria-label="Очистить"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          setCpSearch('')
+                          setFormData(prev => ({ ...prev, counterparty_id: '' }))
+                          setCpDropdownOpen(true)
+                        }}
+                      >×</button>
+                    )}
+                    {cpDropdownOpen && (
+                      <div className="cp-search-dropdown">
+                        {cpVisible.length === 0 ? (
+                          <div className="cp-search-empty">Ничего не найдено</div>
+                        ) : (
+                          <>
+                            {cpVisible.map((cp, i) => (
                               <button
                                 type="button"
                                 key={cp.id}
-                                className={`cp-search-item ${cp.id === formData.counterparty_id ? 'active' : ''}`}
+                                className={`cp-search-item ${cp.id === formData.counterparty_id ? 'active' : ''} ${i === cpHighlight ? 'is-highlighted' : ''}`}
+                                onMouseEnter={() => setCpHighlight(i)}
                                 onMouseDown={() => handleSelectCp(cp)}
                               >
                                 <div className="cp-search-name">{cp.name}</div>
                                 {cp.inn && <div className="cp-search-inn">ИНН: {cp.inn}</div>}
                               </button>
-                            ))
-                          )}
-                        </div>
-                      )
-                    })()}
+                            ))}
+                            <div className="cp-search-hint">
+                              {cpMatches.length > CP_SEARCH_LIMIT
+                                ? `Показаны первые ${CP_SEARCH_LIMIT} из ${cpMatches.length} — уточните запрос`
+                                : `Найдено: ${cpMatches.length}`}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
