@@ -1725,6 +1725,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     && activeTab !== 'template'
     && isCompletedStatus(activeTab)
 
+  // Число колонок основной таблицы. Считаем один раз: и строка «нет данных», и
+  // раскрытый блок участников должны растягиваться ровно на всю ширину, иначе
+  // справа остаётся пустая клетка под «Действиями».
+  const mainTableColSpan = compactView
+    ? 9
+    : (isCompletedTab
+      ? (!isMaterialsView && department === 'construction' ? 12 : 10)
+      : (isMaterialsView ? 10 : (department === 'construction' ? 13 : 10)))
+
   // Проверка просроченности
   const today = new Date().toISOString().split('T')[0]
   const isOverdue = (tender) => tender.tender_end_date && tender.tender_end_date < today && !isCompletedStatus(tender.status)
@@ -2216,7 +2225,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <tbody>
             {sortedTenders.length === 0 ? (
               <tr>
-                <td colSpan={compactView ? 9 : (isCompletedTab ? (!isMaterialsView && department === 'construction' ? 12 : 10) : (isMaterialsView ? 10 : (department === 'construction' ? 13 : 10)))} className="no-data">
+                <td colSpan={mainTableColSpan} className="no-data">
                   {activeTab === 'deleted'
                     ? 'В корзине нет тендеров'
                     : activeTab === 'all'
@@ -2699,7 +2708,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </tr>
                   {expandedTenderId === tender.id && (
                     <tr>
-                      <td colSpan={compactView ? 8 : (isCompletedTab ? (!isMaterialsView && department === 'construction' ? 11 : 9) : (isMaterialsView ? 9 : (department === 'construction' ? 12 : 9)))} className="expanded-cp-row">
+                      <td colSpan={mainTableColSpan} className="expanded-cp-row">
                         <div className="expanded-cp-toolbar">
                           {canEditTenders && (
                             <button
