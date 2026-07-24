@@ -1314,6 +1314,29 @@
   color: var(--text-tertiary);
 }
 
+/* Контакты участника тендера: каждый контакт — блок с нижней разделительной полоской.
+   Одинаковые min-height/padding/box-sizing в колонках «Контактные данные» и «Email» держат
+   разделители на одной высоте, чтобы email визуально стоял на уровне своего контакта
+   (тот же приём, что в разделе «Контрагенты»). */
+.tc-contacts-stack {
+  display: flex;
+  flex-direction: column;
+}
+.tc-contact-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.0625rem;
+  min-height: 3.5rem;
+  padding: 0.375rem 0 0.4375rem;
+  border-bottom: 1px solid var(--border-color);
+  box-sizing: border-box;
+}
+.tc-contacts-stack > .tc-contact-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0.25rem;
+}
+
 /* Статус участника тендера на базе FilterDropdown: триггер выглядит как цветная
    пилюля-select (как раньше, привычный вид в таблице), а выпадающий список —
    аккуратный кастомный (чистые строки со статус-точкой), а не нативный.

@@ -2616,9 +2616,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                     </td>
                                     <td>
                                       {tc.counterparties?.counterparty_contacts && tc.counterparties.counterparty_contacts.length > 0 ? (
-                                        <div style={{ display: 'grid', gap: '0.25rem' }}>
+                                        <div className="tc-contacts-stack">
                                           {tc.counterparties.counterparty_contacts.map((contact, idx) => (
-                                            <div key={contact.id || idx}>
+                                            <div key={contact.id || idx} className="tc-contact-item">
                                               {contact.full_name && (
                                                 <div style={{ fontWeight: 500 }}>{contact.full_name}</div>
                                               )}
@@ -2655,27 +2655,30 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                     </td>
                                     <td>
                                       {tc.counterparties?.counterparty_contacts && tc.counterparties.counterparty_contacts.length > 0 ? (
-                                        <div style={{ display: 'grid', gap: '0.25rem' }}>
-                                          {tc.counterparties.counterparty_contacts
-                                            .filter(contact => contact.email)
-                                            .map((contact, idx) => (
-                                              <a
-                                                key={contact.id || idx}
-                                                href={`mailto:${contact.email}`}
-                                                style={{
-                                                  color: 'var(--primary-color)',
-                                                  textDecoration: 'none',
-                                                  display: 'block',
-                                                  fontSize: '0.75rem',
-                                                  wordBreak: 'break-all',
-                                                }}
-                                              >
-                                                {contact.email}
-                                              </a>
-                                            ))}
-                                          {tc.counterparties.counterparty_contacts.every(c => !c.email) && (
-                                            <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                                          )}
+                                        <div className="tc-contacts-stack">
+                                          {/* Итерируем ВСЕ контакты (1:1 с колонкой контактов),
+                                              чтобы разделители и email стояли на уровне своего контакта. */}
+                                          {tc.counterparties.counterparty_contacts.map((contact, idx) => (
+                                            <div key={contact.id || idx} className="tc-contact-item">
+                                              {contact.email
+                                                ? contact.email.split(';').map(em => em.trim()).filter(Boolean).map((em, ei) => (
+                                                  <a
+                                                    key={ei}
+                                                    href={`mailto:${em}`}
+                                                    style={{
+                                                      color: 'var(--primary-color)',
+                                                      textDecoration: 'none',
+                                                      display: 'block',
+                                                      fontSize: '0.75rem',
+                                                      wordBreak: 'break-all',
+                                                    }}
+                                                  >
+                                                    {em}
+                                                  </a>
+                                                ))
+                                                : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                                            </div>
+                                          ))}
                                         </div>
                                       ) : (
                                         <span style={{ color: 'var(--text-tertiary)' }}>—</span>
