@@ -496,44 +496,20 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     lawyer: 'Юрист ОСП'
   }
 
+  // Справочник сотрудников ведётся ВРУЧНУЮ в «Общая информация → Сотрудники».
+  // Раньше сюда подмешивались профили из user_roles, и недостающие автоматически
+  // вставлялись в contacts при каждом открытии страницы. Сверка шла по сырому ФИО,
+  // поэтому лишний пробел/иной регистр давали новую запись — так копились дубли,
+  // а в «Должность» попадал служебный слаг роли ('otiz', 'udorojanie').
+  // Связь с пользователями сайта разорвана: список = только таблица contacts.
   const fetchResponsibleContacts = async () => {
     try {
-      // Параллельная загрузка
-      const [contactsRes, profilesRes] = await Promise.all([
-        supabase.from('contacts').select('*, departments(name)').order('full_name', { ascending: true }),
-        supabase.from('user_roles').select('full_name, role, work_phone, work_email, email, is_approved').eq('is_approved', true)
-      ])
-
-      if (contactsRes.error) throw contactsRes.error
-
-      const contacts = contactsRes.data || []
-      const profiles = profilesRes.data || []
-
-      // Синхронизируем: добавляем профили, которых нет в contacts
-      const contactNames = new Set(contacts.map(c => c.full_name?.toLowerCase()))
-      const missing = profiles.filter(
-        p => p.full_name && !contactNames.has(p.full_name.toLowerCase())
-      )
-
-      if (missing.length > 0) {
-        const toInsert = missing.map(p => ({
-          full_name: p.full_name,
-          position: ROLE_LABELS_MAP[p.role] || p.role,
-          phone: p.work_phone || '',
-          email: p.work_email || p.email || ''
-        }))
-
-        const { data: inserted } = await supabase.from('contacts').insert(toInsert).select()
-
-        if (inserted) {
-          setResponsibleContacts([...contacts, ...inserted].sort((a, b) =>
-            (a.full_name || '').localeCompare(b.full_name || '', 'ru')
-          ))
-          return
-        }
-      }
-
-      setResponsibleContacts(contacts)
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*, departments(name)')
+        .order('full_name', { ascending: true })
+      if (error) throw error
+      setResponsibleContacts(data || [])
     } catch (error) {
       console.error('Ошибка загрузки сотрудников:', error.message)
     }
