@@ -129,6 +129,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // «Копировать email».
   const hideNotes = !!scopedObjectId
   const isScopedManager = !!scopedObjectId
+  // Сохранение настроенных фильтров: при переходе в тендер и возврате назад
+  // страница перемонтируется — читаем сохранённую выборку из localStorage, чтобы
+  // она не сбрасывалась. Ключ свой на каждое представление, чтобы
+  // construction/warranty/materials не мешали друг другу.
+  const filtersStorageKey = `tenders-filters:${tenderType}:${department}`
+  const [savedFilters] = useState(() => {
+    try {
+      const raw = localStorage.getItem(filtersStorageKey)
+      const parsed = raw ? JSON.parse(raw) : null
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch { return {} }
+  })
   const [tenders, setTenders] = useState([])
   const [objects, setObjects] = useState([])
   const [counterparties, setCounterparties] = useState([])
@@ -144,8 +156,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [packageDocCounts, setPackageDocCounts] = useState({}) // tenderId → число документов
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  // task 212: 'all' | <status> | 'template' | 'deleted'
-  const [activeTab, setActiveTab] = useState('all')
+  // task 212: 'all' | <status> | 'template' | 'deleted'.
+  // Вкладку «Шаблон письма» не восстанавливаем — это режим редактирования, а не
+  // выборка тендеров; в остальных случаях возвращаем сохранённую вкладку.
+  const [activeTab, setActiveTab] = useState(() => (
+    typeof savedFilters.activeTab === 'string' && savedFilters.activeTab !== 'template'
+      ? savedFilters.activeTab
+      : 'all'
+  ))
   // task 232/233: статус-вкладки скрыты под кнопкой «Статусы тендеров»
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [editingTender, setEditingTender] = useState(null)
@@ -199,10 +217,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   })
   const [templateSaved, setTemplateSaved] = useState(false)
   // Фильтры множественного выбора: пустой массив = фильтр не применён.
-  const [objectFilter, setObjectFilter] = useState([])
-  const [responsibleFilter, setResponsibleFilter] = useState([])
-  const [statusFilter, setStatusFilter] = useState([])
-  const [searchQuery, setSearchQuery] = useState('')
+  const [objectFilter, setObjectFilter] = useState(() => Array.isArray(savedFilters.objectFilter) ? savedFilters.objectFilter : [])
+  const [responsibleFilter, setResponsibleFilter] = useState(() => Array.isArray(savedFilters.responsibleFilter) ? savedFilters.responsibleFilter : [])
+  const [statusFilter, setStatusFilter] = useState(() => Array.isArray(savedFilters.statusFilter) ? savedFilters.statusFilter : [])
+  const [searchQuery, setSearchQuery] = useState(() => typeof savedFilters.searchQuery === 'string' ? savedFilters.searchQuery : '')
   // Компактный вид: скрывает столбцы «ВОРы и РД», «План затрат», «Тендер на материалы», «Сводная КП»
   // и сохраняется в localStorage отдельно для каждого представления (construction/warranty/materials).
   const compactStorageKey = `tenders-compact-view:${tenderType}:${department}`
@@ -212,10 +230,19 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   useEffect(() => {
     try { localStorage.setItem(compactStorageKey, compactView ? '1' : '0') } catch { /* noop */ }
   }, [compactView, compactStorageKey])
+  // Сохраняем настроенные фильтры при каждом изменении — восстановятся при
+  // возврате со страницы тендера (см. savedFilters выше).
+  useEffect(() => {
+    try {
+      localStorage.setItem(filtersStorageKey, JSON.stringify({
+        activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, sortField, sortOrder,
+      }))
+    } catch { /* noop */ }
+  }, [filtersStorageKey, activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, sortField, sortOrder])
   // Родительский тендер при создании дочернего тендера на материалы (preselect)
   const [materialsParentTender, setMaterialsParentTender] = useState(null)
-  const [sortField, setSortField] = useState('start_date') // 'start_date' | 'end_date'
-  const [sortOrder, setSortOrder] = useState('desc') // 'asc' | 'desc'
+  const [sortField, setSortField] = useState(() => savedFilters.sortField || 'start_date') // 'start_date' | 'end_date'
+  const [sortOrder, setSortOrder] = useState(() => savedFilters.sortOrder || 'desc') // 'asc' | 'desc'
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
