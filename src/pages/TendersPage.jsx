@@ -230,8 +230,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   useEffect(() => {
     try { localStorage.setItem(compactStorageKey, compactView ? '1' : '0') } catch { /* noop */ }
   }, [compactView, compactStorageKey])
+  // Родительский тендер при создании дочернего тендера на материалы (preselect)
+  const [materialsParentTender, setMaterialsParentTender] = useState(null)
+  const [sortField, setSortField] = useState(() => savedFilters.sortField || 'start_date') // 'start_date' | 'end_date'
+  const [sortOrder, setSortOrder] = useState(() => savedFilters.sortOrder || 'desc') // 'asc' | 'desc'
   // Сохраняем настроенные фильтры при каждом изменении — восстановятся при
-  // возврате со страницы тендера (см. savedFilters выше).
+  // возврате со страницы тендера (см. savedFilters выше). Эффект объявлен ПОСЛЕ
+  // sortField/sortOrder: массив зависимостей вычисляется сразу, а до их
+  // объявления они в TDZ (иначе ReferenceError и белый экран при рендере).
   useEffect(() => {
     try {
       localStorage.setItem(filtersStorageKey, JSON.stringify({
@@ -239,10 +245,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       }))
     } catch { /* noop */ }
   }, [filtersStorageKey, activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, sortField, sortOrder])
-  // Родительский тендер при создании дочернего тендера на материалы (preselect)
-  const [materialsParentTender, setMaterialsParentTender] = useState(null)
-  const [sortField, setSortField] = useState(() => savedFilters.sortField || 'start_date') // 'start_date' | 'end_date'
-  const [sortOrder, setSortOrder] = useState(() => savedFilters.sortOrder || 'desc') // 'asc' | 'desc'
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
