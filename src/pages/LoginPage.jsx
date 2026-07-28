@@ -145,6 +145,14 @@ function LoginPage({ variant = 'employee' }) {
     if (msg.includes('Email not confirmed')) return 'Email не подтверждён'
     if (msg.includes('User already registered')) return 'Пользователь уже зарегистрирован'
     if (msg.includes('Password should be at least')) return 'Пароль слишком короткий'
+    // Лимит писем встроенного почтовика Supabase (код over_email_send_rate_limit /
+    // текст «email rate limit exceeded»). Считаются письма за последний час на весь
+    // проект, а не число аккаунтов — поясняем это, чтобы не путали с лимитом на юзеров.
+    if (msg.toLowerCase().includes('rate limit')) {
+      return 'Отправлено слишком много писем-подтверждений за короткое время. ' +
+        'Это ограничение почтового сервера (считаются письма за последний час, ' +
+        'а не число аккаунтов). Подождите около часа и попробуйте снова.'
+    }
     return msg || 'Произошла ошибка'
   }
 
