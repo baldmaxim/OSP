@@ -301,9 +301,12 @@
 
 /* Контейнер таблицы — глушим горизонтальный скролл. При table-layout: fixed
    ширины колонок гарантированы, и любое микропереполнение от вложенных
-   inline-flex / grid (textarea, чипы) просто обрезается, а не разъезжается. */
+   inline-flex / grid (textarea, чипы) просто обрезается, а не разъезжается.
+   Важно: именно `clip`, а не `hidden` — `overflow-x: hidden` вынуждает
+   `overflow-y: auto` и делает контейнер скролл-контейнером, из-за чего у
+   sticky-шапки таблицы ломается прилипание. `clip` обрезает без скролл-контекста. */
 .dc-requests-page .table-container {
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Внутренние grid-контейнеры в ячейках должны уметь ужиматься, чтобы их
@@ -327,6 +330,12 @@
   border-bottom: 1px solid var(--border-color);
   white-space: nowrap;
   vertical-align: middle;
+  /* Закреплённая шапка: при прокрутке страницы остаётся вверху.
+     Прилипает к скролл-контейнеру страницы (.main-content), т.к. контейнер
+     таблицы использует overflow-x: clip и своего скролла не создаёт. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .dcr-table tbody td {
@@ -2111,4 +2120,38 @@
 
 [data-theme='dark'] .dcr-task-row-done .dcr-task-text {
   background: rgba(22, 163, 74, 0.08);
+}
+
+/* ── Телефон (≤640px): обвязка списка заявок на ДС ──────────────────────────
+   Карточки рендерятся вместо таблицы через useIsPhone (DcRequestsPage.jsx).
+   Тулбар фильтров переносим, поиск и дропдауны — на всю ширину. */
+@media (max-width: 640px) {
+  .dcr-toolbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .dcr-search {
+    min-width: 0;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .dcr-filter-drop {
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .dcr-filter-drop .fdrop,
+  .dcr-filter-drop .fdrop-trigger {
+    width: 100%;
+    max-width: none;
+  }
+  /* Действия на карточке заявки — компактные, аккуратный ряд */
+  .mcard .mcard-actions .btn-icon {
+    font-size: 0.8125rem;
+    padding: 0.25rem 0.4375rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1875rem;
+  }
 }

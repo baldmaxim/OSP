@@ -12,7 +12,9 @@ import {
   indentUpdates,
   outdentUpdates,
 } from '../utils/appendixTree'
+import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/ContractRegistry.css'
+import '../components/MobileCards.css'
 
 // Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
 const VAT_RATE_OPTIONS = ['', '0', '5', '7', '20', '22']
@@ -150,6 +152,8 @@ function ContractRegistry() {
   const { isAdmin, userProfile, canEdit, scopedObjectId } = useRole()
   // task 333: гейт add/edit/delete для раздела «contracts»
   const canEditContracts = canEdit('contracts')
+  // Телефон: реестр рендерим карточками вместо широкой таблицы
+  const isPhone = useIsPhone()
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания
   // (примечание юриста и примечания в приложениях к договору).
   const hideNotes = !!scopedObjectId
@@ -1340,6 +1344,64 @@ function ContractRegistry() {
 
       {loading ? (
         <div className="loading">Загрузка...</div>
+      ) : isPhone ? (
+        filteredSortedContracts.length === 0 ? (
+          <div className="no-data" style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+            {hasActiveFilters ? 'Нет договоров под выбранные фильтры.' : isDeletedTab ? 'Нет удалённых договоров.' : 'Договоров пока нет.'}
+          </div>
+        ) : (
+          <div className="mcard-list">
+            {pagedContracts.map((contract) => {
+              const overdue = !isDeletedTab && isOverdue(contract)
+              const dsNum = contract.contract_number
+              const dsDate = formatDateRu(contract.contract_date)
+              const opt = STATUS_OPTIONS.find(o => o.value === (contract.status || 'new_request'))
+              const partiesText = contractParties(contract).map(p => p.name).join(', ') || '—'
+              const lawyerName = contactNameById[contract.responsible_contact_id] || contract.responsible?.full_name || '—'
+              const workName = contract.work_name || contract.tenders?.work_description || ''
+              return (
+                <Link
+                  key={contract.id}
+                  to={`/contracts/${contract.id}`}
+                  className={`mcard is-tappable${overdue ? ' mcard-overdue' : ''}`}
+                >
+                  <div className="mcard-head">
+                    <span className="mcard-num">{dsNum ? `№ ${dsNum}` : '№ не присвоен'}</span>
+                    {isDeletedTab
+                      ? <span className="status-badge status-deleted">Удалён</span>
+                      : <span className={`status-badge ${opt?.className || ''}`}>{opt?.label || '—'}</span>}
+                  </div>
+                  <div className="mcard-title">{contract.objects?.name || '—'}</div>
+                  {workName && <div className="mcard-desc">{workName}</div>}
+                  <div className="mcard-rows">
+                    <div className="mcard-row">
+                      <span className="mcard-label">Контрагент</span>
+                      <span className="mcard-value">{partiesText}</span>
+                    </div>
+                    <div className="mcard-row">
+                      <span className="mcard-label">Сумма</span>
+                      <span className="mcard-value">{formatMoney(contract.contract_amount, contract.currency) || '—'}</span>
+                    </div>
+                    <div className="mcard-row">
+                      <span className="mcard-label">Юрист</span>
+                      <span className="mcard-value">{lawyerName}</span>
+                    </div>
+                    <div className="mcard-row">
+                      <span className="mcard-label">План. подписания</span>
+                      <span className={`mcard-value${overdue ? ' is-overdue' : ''}`}>
+                        {formatDateRu(contract.signed_date) || '—'}{overdue ? ' · просрочено' : ''}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mcard-foot">
+                    <span className="mcard-chip">{dsDate ? `от ${dsDate}` : 'дата не указана'}</span>
+                    <span className="mcard-open">Открыть ›</span>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        )
       ) : (
       <div className="table-container">
         <table className="contracts-table contracts-table-compact">

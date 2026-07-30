@@ -1,0 +1,144 @@
+/* Единый визуальный язык мобильных карточек-списков (Тендеры, Договоры, Заявки на ДС).
+   Рендерятся вместо таблицы на телефоне (см. useIsPhone). Тема — через общие
+   переменные, работает и в тёмной. Классы generic, страницы их переиспользуют. */
+
+.mcard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.25rem 0 1rem;
+}
+
+.mcard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  padding: 0.75rem 0.875rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Карточка-ссылка (тап открывает деталь) */
+.mcard.is-tappable {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.mcard.is-tappable:active {
+  border-color: var(--primary-color, #2563eb);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Подсветка просроченной карточки */
+.mcard.mcard-overdue {
+  border-color: rgba(220, 38, 38, 0.5);
+}
+
+/* Шапка: слева номер/идентификатор, справа статус */
+.mcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.mcard-num {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.mcard-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+  word-break: break-word;
+}
+.mcard-title .mcard-sub {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  margin-top: 0.125rem;
+}
+
+/* Описание/подзаголовок с ограничением в 2 строки */
+.mcard-desc {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Строки «Метка: значение» */
+.mcard-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+.mcard-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+.mcard-label {
+  flex: 0 0 40%;
+  max-width: 40%;
+  color: var(--text-tertiary);
+}
+.mcard-value {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+.mcard-value.is-overdue {
+  color: #dc2626;
+  font-weight: 600;
+}
+[data-theme='dark'] .mcard-value.is-overdue {
+  color: #f87171;
+}
+
+/* Нижняя строка: чипы слева, действия справа */
+.mcard-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.mcard-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.mcard-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+.mcard-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--primary-color, #2563eb);
+  white-space: nowrap;
+}

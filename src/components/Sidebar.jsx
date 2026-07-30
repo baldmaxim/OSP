@@ -1,5 +1,6 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
+import { useNotifications } from '../contexts/NotificationsContext'
 import ThemeToggle from './ThemeToggle'
 import BrandLogo from './BrandLogo'
 import {
@@ -12,6 +13,7 @@ import {
   IconReports,
   IconAdmin,
   IconProfile,
+  IconNotifications,
 } from './icons/NavIcons'
 import './Sidebar.css'
 
@@ -22,7 +24,8 @@ function IconContainer({ tone, children }) {
 
 // Один пункт меню. Активность — из текущего маршрута (NavLink), либо принудительно
 // через forceActive (раздел «Тендеры» подсвечивается на /cost-plans и /vors).
-function NavItem({ to, label, tone, Icon, forceActive }) {
+// badge — необязательный счётчик (например, непрочитанные уведомления).
+function NavItem({ to, label, tone, Icon, forceActive, badge }) {
   return (
     <NavLink
       to={to}
@@ -32,6 +35,11 @@ function NavItem({ to, label, tone, Icon, forceActive }) {
     >
       <IconContainer tone={tone}><Icon /></IconContainer>
       <span className="nav-label">{label}</span>
+      {badge > 0 && (
+        <span className="nav-badge" aria-label={`${badge} непрочитанных`}>
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </NavLink>
   )
 }
@@ -40,6 +48,7 @@ function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { logout, canView, isAdmin, isSuperAdmin, isEmployee, role, roleLabels, scopedObjectId } = useRole()
+  const { unreadCount } = useNotifications()
 
   // task 254: «Тендеры» — единый пункт-ссылка на страницу-хаб /tenders.
   // Подсвечиваем его активным на любой странице раздела тендеров.
@@ -51,6 +60,15 @@ function Sidebar() {
   // Конфиг пунктов навигации. Порядок, маршруты и права доступа — как были;
   // visible повторяет прежние гейты один-в-один.
   const navItems = [
+    {
+      key: 'notifications',
+      to: '/notifications',
+      label: 'Уведомления',
+      tone: 'rose',
+      Icon: IconNotifications,
+      visible: isEmployee,
+      badge: unreadCount,
+    },
     {
       key: 'general',
       to: '/general',
@@ -142,6 +160,7 @@ function Sidebar() {
             tone={item.tone}
             Icon={item.Icon}
             forceActive={item.forceActive}
+            badge={item.badge}
           />
         ))}
       </nav>

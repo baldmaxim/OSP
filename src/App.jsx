@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { RoleProvider, useRole } from './contexts/RoleContext'
+import { NotificationsProvider } from './contexts/NotificationsContext'
 import { lazy, Suspense } from 'react'
 import Sidebar from './components/Sidebar'
 import AccessError from './components/AccessError'
@@ -47,6 +48,7 @@ const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const ContractDetailPage = lazy(() => import('./pages/ContractDetailPage'))
 const DcRequestsPage = lazy(() => import('./pages/DcRequestsPage'))
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const PublicTendersPage = lazy(() => import('./pages/PublicTendersPage'))
 
 const PageLoader = () => (
@@ -71,12 +73,16 @@ function EmployeeLayout() {
   if (!isEmployee) return <Navigate to="/contractor/proposals" replace />
 
   return (
+    <NotificationsProvider>
     <div className="layout">
       <Sidebar />
       <main className="main-content">
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Navigate to="/general" replace />} />
+            {/* /notifications — доступен любому сотруднику; содержимое зависит от canView
+                разделов (тендеры/договоры) внутри провайдера уведомлений. */}
+            <Route path="/notifications" element={<PermissionRoute><NotificationsPage /></PermissionRoute>} />
             {/* /general — навигационный хаб; внутри карточки гейтятся по canView.
                 Доступен сотруднику, у которого есть право хотя бы на один из разделов хаба. */}
             <Route path="/general" element={<GeneralInfoPage />} />
@@ -109,6 +115,7 @@ function EmployeeLayout() {
         </Suspense>
       </main>
     </div>
+    </NotificationsProvider>
   )
 }
 

@@ -3897,3 +3897,32 @@
   gap: 0.625rem;
   padding: 1rem 1.25rem 1.25rem;
 }
+/* ── Телефон (≤640px): карточка тендера ─────────────────────────────────────
+   Инфо-поля в одну колонку; вкладки прокручиваются (уже задано на 768).
+   Глубокие таблицы (ВОР, сравнение КП min-width:800px, участники) намеренно
+   ОСТАЮТСЯ с горизонтальной прокруткой внутри своего .table-container —
+   это десктопные представления, пользователь выбрал «просмотр». */
+@media (max-width: 640px) {
+  .tender-info-grid {
+    grid-template-columns: 1fr;
+  }
+  .tender-detail-title h1,
+  .tender-detail-title h2 {
+    font-size: 1.125rem;
+  }
+  .tender-notes {
+    padding: 0.75rem 1rem;
+  }
+  .tender-tab {
+    white-space: nowrap;
+  }
+  /* Крупные таблицы не должны распирать страницу — только свой скролл */
+  .tender-detail-page .table-container {
+    max-width: 100%;
+  }
+  /* Тулбар раскрытых участников — в столбец */
+  .tenders-page .expanded-cp-toolbar,
+  .expanded-cp-toolbar {
+    flex-wrap: wrap;
+  }
+}

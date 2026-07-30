@@ -7,7 +7,9 @@ import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import FilterDropdown from '../components/FilterDropdown'
+import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/ContractRegistry.css'
+import '../components/MobileCards.css'
 import './DcRequestsPage.css'
 
 // Task 306 + 307 + 309 + 310. Реестр «Заявок на ДС» — независимая сущность.
@@ -263,6 +265,8 @@ function AmountCellInput({ value, disabled, onSave }) {
 
 function DcRequestsPage() {
   const { userProfile, canEdit, isAdmin, scopedObjectId } = useRole()
+  // Телефон: список заявок рендерим карточками вместо широкой таблицы
+  const isPhone = useIsPhone()
   // task 333: гейт add/edit/delete и inline-editing на этой странице.
   // Сам факт показа страницы контролируется EmployeeLayout (по App.jsx).
   const canEditDc = canEdit('dc_requests')
@@ -1252,6 +1256,98 @@ function DcRequestsPage() {
 
       {loading ? (
         <div className="loading">Загрузка...</div>
+      ) : isPhone ? (
+        filtered.length === 0 ? (
+          <div className="no-data" style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+            {searchQuery ? 'Ничего не найдено.' : isDeletedTab ? 'Нет удалённых заявок.' : 'Заявок пока нет.'}
+          </div>
+        ) : (
+          <div className="mcard-list">
+            {filtered.map((req) => {
+              const currentStatus = req.status || 'in_work'
+              const statusOpt = STATUS_OPTIONS.find(o => o.value === currentStatus)
+              const tasks = req.dc_request_tasks || []
+              const totalTasks = tasks.length
+              const completedTasks = tasks.filter(t => t.is_completed).length
+              const docsCount = (docsByReq.get(req.id) || []).length
+              return (
+                <div key={req.id} className={`mcard${req.deleted_at ? ' row-deleted' : ''}`}>
+                  <div className="mcard-head">
+                    <span className="mcard-num">{req.ds_number ? `№ ДС ${req.ds_number}` : '№ ДС не присвоен'}</span>
+                    <span className={`status-badge ${statusOpt?.className || ''}`}>{STATUS_LABEL[currentStatus]}</span>
+                  </div>
+                  <div className="mcard-title">{req.objects?.name || '—'}</div>
+                  {req.works_description && <div className="mcard-desc">{req.works_description}</div>}
+                  <div className="mcard-rows">
+                    <div className="mcard-row">
+                      <span className="mcard-label">Контрагент</span>
+                      <span className="mcard-value">{req.counterparties?.name || '—'}</span>
+                    </div>
+                    {req.material_type && (
+                      <div className="mcard-row">
+                        <span className="mcard-label">Материал</span>
+                        <span className="mcard-value">{MATERIAL_LABEL[req.material_type] || '—'}</span>
+                      </div>
+                    )}
+                    <div className="mcard-row">
+                      <span className="mcard-label">Сумма, руб.</span>
+                      <span className="mcard-value">
+                        {req.amount_before != null ? formatAmount(req.amount_before) : '—'}
+                        {' → '}
+                        {req.amount_after != null ? formatAmount(req.amount_after) : '—'}
+                      </span>
+                    </div>
+                    <div className="mcard-row">
+                      <span className="mcard-label">Ответственный</span>
+                      <span className="mcard-value">{req.responsible?.full_name || '—'}</span>
+                    </div>
+                    <div className="mcard-row">
+                      <span className="mcard-label">Ориент. срок</span>
+                      <span className="mcard-value">{req.expected_approval_date ? formatShortDate(req.expected_approval_date) : '—'}</span>
+                    </div>
+                  </div>
+                  <div className="mcard-foot">
+                    {docsCount > 0 && <span className="mcard-chip">📎 {docsCount}</span>}
+                    <div className="mcard-actions">
+                      <button
+                        className="btn-icon btn-history"
+                        onClick={() => openHistory(req)}
+                        title="История изменений"
+                        aria-label="История изменений"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 3v5h5" />
+                          <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+                          <path d="M12 7v5l3 2" />
+                        </svg>
+                      </button>
+                      <button
+                        className="btn-icon"
+                        onClick={() => setTasksModalFor(req.id)}
+                        title="Задачи и ответы"
+                        aria-label="Задачи и ответы"
+                      >
+                        ✔ {totalTasks > 0 ? `${completedTasks}/${totalTasks}` : '0'}
+                      </button>
+                      {isDeletedTab ? (
+                        <>
+                          {canEditDc && (
+                            <button className="btn-icon btn-restore" onClick={() => handleRestore(req.id)} title="Восстановить" aria-label="Восстановить">↩</button>
+                          )}
+                          {isAdmin && (
+                            <button className="btn-icon btn-delete" onClick={() => handleHardDelete(req.id)} title="Удалить безвозвратно" aria-label="Удалить безвозвратно">🗑️</button>
+                          )}
+                        </>
+                      ) : canEditDc ? (
+                        <button className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать" aria-label="Редактировать">✏️</button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )
       ) : (
         <div className="table-container">
           <table className="dcr-table">

@@ -1559,3 +1559,32 @@
   background: rgba(74, 222, 128, 0.18);
   color: #86efac;
 }
+
+/* ── Телефон (≤640px): обвязка списка тендеров ──────────────────────────────
+   Карточки рендерятся вместо таблицы через useIsPhone (см. TendersPage.jsx).
+   Здесь — только адаптация фильтров, вкладок и вложенной таблицы участников. */
+@media (max-width: 640px) {
+  /* Поиск и фильтры — каждый на всю ширину, удобные тап-таргеты */
+  .tenders-page .tenders-search-wrap {
+    max-width: none !important;
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+    width: 100%;
+  }
+  .tenders-page .tender-filter-item {
+    width: 100%;
+  }
+  .tenders-page .tender-filter-item > .fdrop {
+    width: 100%;
+  }
+  /* Чип «Дежурный по тендерам» не должен распирать шапку */
+  .tenders-page .tender-resp-chip {
+    max-width: 100%;
+  }
+  /* Вложенная таблица участников (в карточке тендера на детальной странице
+     раскрытие не используется, но на планшете 641–768 остаётся таблица) —
+     дать ей собственный горизонтальный скролл вместо overflow:hidden. */
+  .tenders-page .expanded-cp-table-wrap {
+    overflow-x: auto;
+  }
+}

@@ -2722,3 +2722,58 @@
 }
 .rp-btn:hover:not(:disabled) { border-color: var(--primary-color); color: var(--text-primary); }
 .rp-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Телефон (≤640px): обвязка реестра договоров ────────────────────────────
+   Карточки рендерятся вместо таблицы через useIsPhone (ContractsPage.jsx).
+   Здесь адаптируем фильтры, вкладки-реестры и пагинацию. */
+@media (max-width: 640px) {
+  /* Фильтры — каждый на всю ширину строки */
+  .registry-filters {
+    gap: 0.625rem;
+    padding: 0.75rem;
+  }
+  .rf-field-object,
+  .rf-field-lawyer,
+  .rf-field-search {
+    width: 100%;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .rf-quick {
+    margin-left: 0;
+    width: 100%;
+  }
+  /* Вкладки-реестры прокручиваются горизонтально, не переносясь на 2 ряда */
+  .status-tabs {
+    padding: 0 1rem;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  .status-tab {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  /* Пагинация — переносим и центрируем */
+  .registry-pagination {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Карточка договора: вкладки прокручиваются, поля-строки в столбец.
+     Глубокие таблицы (ПСДЦ, авансы, приложения) остаются с горизонтальной
+     прокруткой внутри своих обёрток (.psdc-table-wrapper, .oa-table-wrap). */
+  .contract-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .contract-tab {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .contract-section .info-row {
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+}

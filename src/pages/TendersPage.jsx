@@ -8,7 +8,9 @@ import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import FilterDropdown from '../components/FilterDropdown'
 import { copyToClipboard } from '../utils/clipboard'
+import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/Tenders.css'
+import '../components/MobileCards.css'
 
 // task 419+: еженедельно ротируемый «Ответственный по тендерам».
 // Ротация считается детерминированно на фронте (без cron): якорь + число недель % N.
@@ -124,6 +126,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const { scopedObjectId, userProfile, isAdmin, canEdit } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
   const canEditTenders = canEdit('tenders')
+  // Телефон: список рендерим карточками вместо широкой таблицы
+  const isPhone = useIsPhone()
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания,
   // а также элементы работы с подрядчиками: «Дежурный по тендерам», «Шаблон письма»,
   // «Копировать email».
@@ -1751,7 +1755,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     <div className="tenders-page">
       <div className="page-header page-header-tenders">
         <h2><span className="page-icon" aria-hidden>📋</span> {pageTitle}</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           {!isMaterialsView && department === 'construction' && !isScopedManager && (
             <div className="tender-resp-chip-wrap">
               <button
@@ -1888,7 +1892,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       {/* Фильтры и таблица (скрываем на вкладке шаблона) */}
       {activeTab !== 'template' && (<>
       <div style={{ padding: '0.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 240px', minWidth: '200px', maxWidth: '360px' }}>
+        <div className="tenders-search-wrap" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 240px', minWidth: '200px', maxWidth: '360px' }}>
           <input
             type="search"
             value={searchQuery}
@@ -1967,6 +1971,57 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         )}
       </div>
 
+      {isPhone ? (
+        sortedTenders.length === 0 ? (
+          <div className="no-data" style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+            Тендеры не найдены
+          </div>
+        ) : (
+          <div className="mcard-list">
+            {sortedTenders.map((tender) => (
+              <Link
+                key={tender.id}
+                to={`/tenders/${tender.id}`}
+                className={`mcard is-tappable${isOverdue(tender) ? ' mcard-overdue' : ''}`}
+              >
+                <div className="mcard-head">
+                  <span className="mcard-num">№{tender.public_tender_number ?? '—'}</span>
+                  {tender.status && (
+                    <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ padding: '0.1875rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
+                      {tender.status}
+                    </span>
+                  )}
+                </div>
+                <div className="mcard-title">{tender.objects?.name || '—'}</div>
+                {tender.work_description && (
+                  <div className="mcard-desc">{tender.work_description}</div>
+                )}
+                <div className="mcard-rows">
+                  <div className="mcard-row">
+                    <span className="mcard-label">Ответственный</span>
+                    <span className="mcard-value">{tender.responsible_contact?.full_name || '—'}</span>
+                  </div>
+                  <div className="mcard-row">
+                    <span className="mcard-label">Срок процедур</span>
+                    <span className={`mcard-value${isOverdue(tender) ? ' is-overdue' : ''}`}>
+                      {formatDateRange(tender.tender_start_date, tender.tender_end_date)}
+                    </span>
+                  </div>
+                </div>
+                <div className="mcard-foot">
+                  {(() => {
+                    const c = tenderProposalCounts[tender.id]
+                    return c && c.total > 0
+                      ? <span className="mcard-chip">{c.proposalProvided}/{c.total} КП</span>
+                      : <span />
+                  })()}
+                  <span className="mcard-open">Открыть ›</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )
+      ) : (
       <div className="table-container">
         <table className={`data-table ${compactView ? 'data-table--compact' : ''}`}>
           {isMaterialsView ? (
@@ -2972,6 +3027,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           )}
         </table>
       </div>
+      )}
       </>)}
 
       {/* Вкладка шаблона письма */}

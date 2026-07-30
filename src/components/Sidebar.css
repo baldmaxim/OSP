@@ -123,6 +123,23 @@
   text-overflow: ellipsis;
 }
 
+/* Счётчик непрочитанных уведомлений */
+.nav-badge {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: #dc2626;
+  border-radius: 999px;
+}
+
 /* ── Контейнер иконки ──────────────────────────────────── */
 .nav-ic {
   flex-shrink: 0;
@@ -224,6 +241,13 @@
     padding: 0.5rem 0.625rem;
     font-size: 0.6875rem;
     min-width: 84px;
+  }
+
+  /* На горизонтальной ленте бейдж — в правый верхний угол пункта */
+  .nav-badge {
+    position: absolute;
+    top: 4px;
+    right: 8px;
   }
 
   .nav-item.active::before {

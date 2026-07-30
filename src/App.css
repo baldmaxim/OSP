@@ -6,6 +6,10 @@
 
 .main-content {
   flex: 1;
+  /* min-width:0 обязателен на flex-элементе: без него широкий контент (таблицы)
+     распирает страницу и вызывает горизонтальную прокрутку всего экрана вместо
+     локального overflow-x внутри .table-container. */
+  min-width: 0;
   padding: 2rem;
   overflow-y: auto;
 }
