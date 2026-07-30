@@ -17,7 +17,7 @@ const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required
 const DONE_STATUSES = ['completed', 'not_required']
 
 function CostPlansPage() {
-  const { scopedObjectId, userProfile } = useRole()
+  const { scopedObjectIds, userProfile } = useRole()
 
   // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
   const logTenderEvent = async (tenderId, eventType, payload = {}) => {
@@ -89,10 +89,9 @@ function CostPlansPage() {
         t.objects?.status === 'main_construction'
         && (!t.tender_type || t.tender_type === 'main')
       )
-      if (scopedObjectId) {
-        // Запрос вернул объект только в JOIN — фильтруем дополнительно через REST-запрос id-объекта,
-        // но здесь данные уже содержат objects.id неявно. Используем другой путь:
-        filtered = filtered.filter(t => t.object_id === scopedObjectId)
+      if (scopedObjectIds.length > 0) {
+        // Скоуп: сотрудник видит только тендеры своих объектов.
+        filtered = filtered.filter(t => scopedObjectIds.includes(t.object_id))
       }
       setTenders(filtered)
     } catch (err) {
@@ -101,7 +100,7 @@ function CostPlansPage() {
     } finally {
       setLoading(false)
     }
-  }, [scopedObjectId])
+  }, [scopedObjectIds])
 
   useEffect(() => {
     fetchTenders()

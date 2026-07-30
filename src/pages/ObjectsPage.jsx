@@ -10,7 +10,7 @@ import '../components/GeneralInfo.css'
 let mapInstance = null
 
 function ObjectsPage() {
-  const { scopedObjectId, canEdit } = useRole()
+  const { scopedObjectIds, canEdit } = useRole()
   // task 333: гейт add/edit/delete объектов
   const canEditObjects = canEdit('objects')
   const [objects, setObjects] = useState([])
@@ -215,7 +215,7 @@ function ObjectsPage() {
         .from('objects')
         .select('*')
         .order('name', { ascending: true })
-      if (scopedObjectId) query = query.eq('id', scopedObjectId)
+      if (scopedObjectIds.length > 0) query = query.in('id', scopedObjectIds)
       const { data, error } = await query
 
       if (error) throw error
@@ -225,7 +225,7 @@ function ObjectsPage() {
     } finally {
       setLoading(false)
     }
-  }, [scopedObjectId])
+  }, [scopedObjectIds])
 
   useEffect(() => {
     fetchObjects()

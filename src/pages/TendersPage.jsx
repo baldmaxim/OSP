@@ -123,7 +123,7 @@ const HistoryIcon = () => (
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
-  const { scopedObjectId, userProfile, isAdmin, canEdit } = useRole()
+  const { scopedObjectIds, userProfile, isAdmin, canEdit } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
   const canEditTenders = canEdit('tenders')
   // Телефон: список рендерим карточками вместо широкой таблицы
@@ -131,8 +131,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания,
   // а также элементы работы с подрядчиками: «Дежурный по тендерам», «Шаблон письма»,
   // «Копировать email».
-  const hideNotes = !!scopedObjectId
-  const isScopedManager = !!scopedObjectId
+  const hideNotes = scopedObjectIds.length > 0
+  const isScopedManager = scopedObjectIds.length > 0
   // Сохранение настроенных фильтров: при переходе в тендер и возврате назад
   // страница перемонтируется — читаем сохранённую выборку из localStorage, чтобы
   // она не сбрасывалась. Ключ свой на каждое представление, чтобы
@@ -380,8 +380,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       let filteredTenders = isMaterialsView
         ? normalized
         : normalized.filter(tender => tender.objects?.status === objectStatus)
-      if (scopedObjectId) {
-        filteredTenders = filteredTenders.filter(t => t.object_id === scopedObjectId)
+      if (scopedObjectIds.length > 0) {
+        filteredTenders = filteredTenders.filter(t => scopedObjectIds.includes(t.object_id))
       }
 
       // task 223b: для тендеров на материалы подгружаем родительский тендер

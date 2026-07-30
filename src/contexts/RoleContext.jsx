@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../supabase'
 
 // security fix: понятное сообщение при невозможности загрузить права (fail-closed).
@@ -133,14 +133,25 @@ export function RoleProvider({ children }) {
   // Загрузить роль пользователя из БД.
   // security fix: НИКОГДА не выдаём admin при ошибке/пустом ответе/недоступности БД.
   // admin назначается только если роль admin реально подтверждена данными из Supabase.
+  // Привязанные объекты сотрудника: массив object_ids, с откатом на одиночный
+  // object_id (если миграция ещё не применена). Пустой массив = офис (видит всё).
+  const resolveObjectIds = (row) => {
+    if (Array.isArray(row?.object_ids) && row.object_ids.length) return row.object_ids
+    if (row?.object_id) return [row.object_id]
+    return []
+  }
+
   const fetchUserRole = useCallback(async (userId, userEmail) => {
     const isSuperAdmin = SUPER_ADMINS.includes(userEmail?.toLowerCase())
     setRoleError(null)
 
     try {
+      // select('*') — устойчиво к порядку миграций: колонка object_ids появляется
+      // только после миграции 20260730; если её ещё нет, просто отсутствует в data,
+      // а resolveObjectIds() откатывается на одиночный object_id. Так вход не ломается.
       const { data, error } = await supabase
         .from('user_roles')
-        .select('role, is_approved, full_name, work_phone, work_email, created_at, object_id')
+        .select('*')
         .eq('user_id', userId)
         .single()
 
@@ -158,7 +169,7 @@ export function RoleProvider({ children }) {
               .eq('user_id', userId)
           }
           await fetchPermissions(ROLES.ADMIN)
-          setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_id: data.object_id || null })
+          setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_ids: resolveObjectIds(data) })
           setRole(ROLES.ADMIN)
           return
         }
@@ -172,7 +183,7 @@ export function RoleProvider({ children }) {
           denyAccess(ROLE_LOAD_ERROR)
           return
         }
-        setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_id: data.object_id || null })
+        setUserProfile({ full_name: data.full_name || '', work_phone: data.work_phone || '', work_email: data.work_email || '', created_at: data.created_at || '', object_ids: resolveObjectIds(data) })
         setRole(data.role)
       } else {
         if (isSuperAdmin) {
@@ -351,10 +362,15 @@ export function RoleProvider({ children }) {
   const isContractor = role === ROLES.CONTRACTOR
   const isLoggedIn = role !== null && user !== null
 
-  // Scope доступа по объекту:
-  // null  → видит все объекты (админ или офисный сотрудник без привязки)
-  // uuid  → видит только этот объект
-  const scopedObjectId = isAdmin ? null : (userProfile?.object_id || null)
+  // Scope доступа по объектам:
+  // []            → видит все объекты (админ или офисный сотрудник без привязки)
+  // [uuid, ...]   → видит только перечисленные объекты
+  // Мемоизируем: массив кладётся в зависимости useEffect потребителей, а новая
+  // ссылка каждый рендер вызвала бы циклы перезапросов.
+  const scopedObjectIds = useMemo(
+    () => (isAdmin ? [] : (userProfile?.object_ids || [])),
+    [isAdmin, userProfile?.object_ids]
+  )
 
   // Проверка прав по разделу
   // Суперадмину доступ к разделу admin предоставляется всегда, даже если он переключился на другую роль.
@@ -405,7 +421,7 @@ export function RoleProvider({ children }) {
       availableRoles,
       roleLabels: dynamicRoleLabels,
       refreshAvailableRoles: fetchAvailableRoles,
-      scopedObjectId
+      scopedObjectIds
     }}>
       {children}
     </RoleContext.Provider>

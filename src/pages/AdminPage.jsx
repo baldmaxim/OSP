@@ -118,7 +118,11 @@ function AdminPage() {
           full_name: r?.full_name || '',
           work_phone: r?.work_phone || '',
           work_email: r?.work_email || '',
-          object_id: r?.object_id || null,
+          // Несколько объектов на пользователя. Откат на одиночный object_id,
+          // если миграция 20260730 ещё не применена.
+          object_ids: (Array.isArray(r?.object_ids) && r.object_ids.length)
+            ? r.object_ids
+            : (r?.object_id ? [r.object_id] : []),
           has_role: !!r,
           created_at: au.created_at,
           last_sign_in_at: au.last_sign_in_at,
@@ -187,21 +191,31 @@ function AdminPage() {
   // Единое сохранение из drawer (контакты + роль + объект + статус).
   const saveUserFromDrawer = async (form) => {
     const u = editUser
+    const objectIds = Array.isArray(form.object_ids) ? form.object_ids : []
     const payload = {
       full_name: form.full_name,
       work_phone: form.work_phone,
       work_email: form.work_email,
       role: form.role,
-      object_id: form.object_id,
+      object_ids: objectIds,
+      // Держим старую одиночную колонку в синхроне (первый объект) — на случай отката.
+      object_id: objectIds[0] || null,
       is_approved: form.is_approved,
     }
-    if (u.has_role) {
-      const { error } = await supabase.from('user_roles').update(payload).eq('user_id', u.user_id)
-      if (error) throw error
-    } else {
-      const { error } = await supabase.from('user_roles').insert([{ user_id: u.user_id, email: u.email, ...payload }])
-      if (error) throw error
+    // Запись с мягкой деградацией: если колонки object_ids ещё нет (миграция
+    // 20260730 не применена, код ошибки 42703), повторяем без неё — чтобы правка
+    // имени/роли/статуса не блокировалась. Тогда сохранится одиночный object_id.
+    const run = (p) => u.has_role
+      ? supabase.from('user_roles').update(p).eq('user_id', u.user_id)
+      : supabase.from('user_roles').insert([{ user_id: u.user_id, email: u.email, ...p }])
+    let { error } = await run(payload)
+    if (error && error.code === '42703') {
+      const { object_ids: _drop, ...rest } = payload
+      void _drop
+      ;({ error } = await run(rest))
+      if (!error) notify('err', 'Сохранено, но несколько объектов не записаны — примените миграцию 20260730')
     }
+    if (error) throw error
     await fetchUsers()
     setEditUser(null)
     notify('ok', 'Изменения сохранены')
@@ -296,9 +310,13 @@ function AdminPage() {
 
   // ── Производные данные (статистика, опции фильтров, фильтрация) ──────────
   const sectionKeys = Object.keys(SECTIONS)
-  const objectNameById = useMemo(() => {
+  // Имена привязанных объектов пользователя (несколько). Пустой массив = офис.
+  const objectNamesFor = useMemo(() => {
     const m = new Map(objectsList.map(o => [o.id, o.name]))
-    return (id) => (id ? (m.get(id) || 'Объект') : 'Офис (все объекты)')
+    return (ids) => {
+      if (!ids || ids.length === 0) return 'Офис (все объекты)'
+      return ids.map(id => m.get(id) || 'Объект').join(', ')
+    }
   }, [objectsList])
 
   const stats = useMemo(() => {
@@ -320,7 +338,11 @@ function AdminPage() {
   }, [userRoles, roleLabels])
 
   const objectFilterOptions = useMemo(() => {
-    const used = new Set(userRoles.map(u => u.object_id || '__office__'))
+    const used = new Set()
+    userRoles.forEach(u => {
+      if (!u.object_ids || u.object_ids.length === 0) used.add('__office__')
+      else u.object_ids.forEach(id => used.add(id))
+    })
     const opts = [{ value: '__office__', label: 'Офис (все объекты)' }]
     objectsList.forEach(o => { if (used.has(o.id)) opts.push({ value: o.id, label: o.name }) })
     return opts
@@ -331,7 +353,11 @@ function AdminPage() {
     return userRoles
       .filter(u => filterRoles.length === 0 || filterRoles.includes(u.role))
       .filter(u => filterStatuses.length === 0 || filterStatuses.includes(userStatus(u)))
-      .filter(u => filterObjects.length === 0 || filterObjects.includes(u.object_id || '__office__'))
+      .filter(u => {
+        if (filterObjects.length === 0) return true
+        const uObjs = (!u.object_ids || u.object_ids.length === 0) ? ['__office__'] : u.object_ids
+        return uObjs.some(id => filterObjects.includes(id))
+      })
       .filter(u => {
         if (!q) return true
         return [u.full_name, u.email, u.work_email, u.work_phone].filter(Boolean).join(' ').toLowerCase().includes(q)
@@ -441,8 +467,8 @@ function AdminPage() {
                   <option value="">Назначить роль…</option>
                   {roleOptionsForForm.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
                 </select>
-                <select className="bulk-select" defaultValue="" onChange={(e) => { const v = e.target.value; if (v) { bulkUpdate({ object_id: v === '__office__' ? null : v }, 'Объект изменён'); e.target.value = '' } }}>
-                  <option value="">Изменить объект…</option>
+                <select className="bulk-select" defaultValue="" onChange={(e) => { const v = e.target.value; if (v) { const ids = v === '__office__' ? [] : [v]; bulkUpdate({ object_ids: ids, object_id: ids[0] || null }, 'Объект изменён'); e.target.value = '' } }}>
+                  <option value="">Задать объект…</option>
                   <option value="__office__">Офис (все объекты)</option>
                   {objectsList.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
@@ -517,7 +543,7 @@ function AdminPage() {
                             </div>
                           </td>
                           <td className="col-role"><RoleBadge roleKey={u.role} label={roleLabels[u.role]} /></td>
-                          <td className="col-obj">{objectNameById(u.object_id)}</td>
+                          <td className="col-obj" title={objectNamesFor(u.object_ids)}>{objectNamesFor(u.object_ids)}</td>
                           <td className="col-status"><StatusBadge status={st} /></td>
                           <td className="col-login">{formatDateTime(u.last_login_at || u.last_sign_in_at)}</td>
                           <td className="col-actions">

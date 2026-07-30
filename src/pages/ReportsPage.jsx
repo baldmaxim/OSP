@@ -139,7 +139,7 @@ function computeTenderStats(allRows, { dept = 'all', respId = 'all', objectId = 
 }
 
 function ReportsPage() {
-  const { scopedObjectId } = useRole()
+  const { scopedObjectIds } = useRole()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
   const [activeTab, setActiveTab] = useState('tenders')
@@ -157,7 +157,7 @@ function ReportsPage() {
   useEffect(() => {
     fetchStats()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedObjectId])
+  }, [scopedObjectIds])
 
   // task: тендерная аналитика пересчитывается на клиенте при смене фильтров.
   const tStats = useMemo(
@@ -202,14 +202,14 @@ function ReportsPage() {
           vor_responsible:contacts!vor_responsible_id(id, full_name),
           winner:counterparties!winner_counterparty_id(id, name)
         `)
-      if (scopedObjectId) tendersQ = tendersQ.eq('object_id', scopedObjectId)
+      if (scopedObjectIds.length > 0) tendersQ = tendersQ.in('object_id', scopedObjectIds)
       const { data: tendersRaw } = await tendersQ
 
       let contractsQ = supabase
         .from('contracts')
         .select('id, object_id, status, contract_amount, currency, counterparty_id, responsible_contact_id, deleted_at, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
         .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят
-      if (scopedObjectId) contractsQ = contractsQ.eq('object_id', scopedObjectId)
+      if (scopedObjectIds.length > 0) contractsQ = contractsQ.in('object_id', scopedObjectIds)
       const { data: contracts } = await contractsQ
 
       // Отчёт по тендерам считаем только по основным тендерам, не по дочерним на материалы.

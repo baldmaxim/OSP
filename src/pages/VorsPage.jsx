@@ -15,7 +15,7 @@ const STATUS_LABELS = {
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
 
 function VorsPage() {
-  const { scopedObjectId, userProfile } = useRole()
+  const { scopedObjectIds, userProfile } = useRole()
 
   // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
   const logTenderEvent = async (tenderId, eventType, payload = {}) => {
@@ -83,8 +83,8 @@ function VorsPage() {
         t.objects?.status === 'main_construction'
         && (!t.tender_type || t.tender_type === 'main')
       )
-      if (scopedObjectId) {
-        filtered = filtered.filter(t => t.object_id === scopedObjectId)
+      if (scopedObjectIds.length > 0) {
+        filtered = filtered.filter(t => scopedObjectIds.includes(t.object_id))
       }
       setTenders(filtered)
       fetchVorDocCounts(filtered.map(t => t.id))
@@ -94,7 +94,7 @@ function VorsPage() {
     } finally {
       setLoading(false)
     }
-  }, [scopedObjectId])
+  }, [scopedObjectIds])
 
   // task 393: счётчики ВОР-документов одним запросом (для бейджа и статус-гейта)
   const fetchVorDocCounts = async (tenderIds) => {

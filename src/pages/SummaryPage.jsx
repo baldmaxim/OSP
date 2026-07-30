@@ -58,7 +58,7 @@ const daysBetween = (fromIso, toIso) => {
 
 function SummaryPage() {
   const navigate = useNavigate()
-  const { scopedObjectId } = useRole()
+  const { scopedObjectIds } = useRole()
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
   const [stageFilter, setStageFilter] = useState('all')
@@ -66,7 +66,7 @@ function SummaryPage() {
   useEffect(() => {
     fetchTenders()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedObjectId])
+  }, [scopedObjectIds])
 
   const fetchTenders = async () => {
     try {
@@ -84,7 +84,7 @@ function SummaryPage() {
           winner:counterparties!winner_counterparty_id(id, name)
         `)
         .order('start_date', { ascending: false })
-      if (scopedObjectId) query = query.eq('object_id', scopedObjectId)
+      if (scopedObjectIds.length > 0) query = query.in('object_id', scopedObjectIds)
       const { data, error } = await query
       if (error) throw error
       const filtered = (data || []).filter(t => t.objects?.status === 'main_construction')

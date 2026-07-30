@@ -1,6 +1,13 @@
 .layout {
   display: flex;
-  min-height: 100vh;
+  /* Фиксируем высоту вьюпорта и прокручиваем контент внутри .main-content, а не окно.
+     Иначе .main-content с overflow-y:auto без ограничения высоты — «мёртвый»
+     скролл-контейнер: реально скроллит окно, но перехватывает position:sticky,
+     из-за чего залипающие шапки таблиц не работают. dvh — корректная высота на
+     мобильных (адресная строка). */
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background-color: var(--bg-primary);
 }
 

@@ -37,9 +37,9 @@ const TABS = [
 function ContractDetailPage() {
   const { contractId } = useParams()
   const navigate = useNavigate()
-  const { userProfile, canEdit, scopedObjectId } = useRole()
+  const { userProfile, canEdit, scopedObjectIds } = useRole()
   // Руководитель строительства (привязан к объекту) не видит примечание юриста.
-  const hideNotes = !!scopedObjectId
+  const hideNotes = scopedObjectIds.length > 0
   // task 333: гейт редактирования раздела «contracts»
   const canEditContracts = canEdit('contracts')
 
@@ -372,7 +372,7 @@ function ContractDetailPage() {
     return <div className="contract-registry"><div className="loading" style={{ padding: '3rem', textAlign: 'center' }}>Загрузка...</div></div>
   }
   // Скоуп по объекту: руководитель не видит договор чужого объекта даже по прямой ссылке.
-  if (contract && scopedObjectId && contract.object_id !== scopedObjectId) {
+  if (contract && scopedObjectIds.length > 0 && !scopedObjectIds.includes(contract.object_id)) {
     return (
       <AccessDenied
         title="Договор недоступен"

@@ -149,14 +149,14 @@ const RestoreIcon = () => (
 
 function ContractRegistry() {
   const navigate = useNavigate()
-  const { isAdmin, userProfile, canEdit, scopedObjectId } = useRole()
+  const { isAdmin, userProfile, canEdit, scopedObjectIds } = useRole()
   // task 333: гейт add/edit/delete для раздела «contracts»
   const canEditContracts = canEdit('contracts')
   // Телефон: реестр рендерим карточками вместо широкой таблицы
   const isPhone = useIsPhone()
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания
   // (примечание юриста и примечания в приложениях к договору).
-  const hideNotes = !!scopedObjectId
+  const hideNotes = scopedObjectIds.length > 0
 
   // Раздел работает только с основным строительством (гарантийный отдел пока убран):
   // заходим сразу в него, без экрана выбора отдела.
@@ -281,7 +281,7 @@ function ContractRegistry() {
       const filtered = (data || [])
         .filter(c => c.objects?.status === objectStatus)
         // Скоуп по объекту: руководитель, привязанный к объекту, видит только его договоры.
-        .filter(c => !scopedObjectId || c.object_id === scopedObjectId)
+        .filter(c => scopedObjectIds.length === 0 || scopedObjectIds.includes(c.object_id))
         .sort((a, b) => {
           const cmp = (a.objects?.name || '').localeCompare(b.objects?.name || '', 'ru')
           if (cmp !== 0) return cmp

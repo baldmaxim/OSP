@@ -550,6 +550,9 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 15%, transparent);
 }
 .adm-drawer-field input:disabled { color: var(--text-tertiary); background: var(--bg-tertiary); cursor: not-allowed; }
+/* Мультивыбор объектов (FilterDropdown) занимает всю ширину поля, как select. */
+.adm-drawer-field .fdrop { display: flex; width: 100%; }
+.adm-drawer-field .fdrop-trigger { width: 100%; max-width: none; min-height: 40px; }
 .adm-drawer-note { margin: 0; font-size: 0.8125rem; line-height: 1.45; color: var(--text-tertiary); }
 .adm-drawer-error {
   padding: 0.625rem 0.75rem;

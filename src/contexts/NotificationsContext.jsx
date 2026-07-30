@@ -18,7 +18,9 @@ import { useRole } from './RoleContext'
 
 const NotificationsContext = createContext(null)
 
-const READ_KEY = 'notifications_read_v1'
+// v2: начинаем отсчёт заново с сегодняшнего дня (прежние/просроченные уведомления
+// и их отметки «прочитано» сбрасываются — bump ключа обнуляет старое состояние).
+const READ_KEY = 'notifications_read_v2'
 const HORIZON_DAYS = 5
 
 // Завершённые статусы, по которым не уведомляем.
@@ -38,9 +40,11 @@ function daysUntil(dateStr) {
   return Math.round((d - todayMidnight()) / 86400000)
 }
 
-// Бакет напоминания — на нём завязано повторное «непрочитано».
+// Бакет напоминания — на нём завязано повторное «непрочитано» за 5, 3 дня и в
+// день окончания. При переходе объекта в следующий бакет ключ меняется → снова
+// становится непрочитанным. Просроченные (days<0) не показываем вовсе.
 function bucketOf(days) {
-  if (days <= 0) return 'overdue'
+  if (days <= 0) return 'd0'   // день окончания (0); отрицательные отфильтрованы
   if (days <= 3) return 'd3'
   return 'd5'
 }
@@ -61,7 +65,7 @@ function loadReadSet() {
 }
 
 export function NotificationsProvider({ children }) {
-  const { isLoggedIn, isEmployee, canView, scopedObjectId } = useRole()
+  const { isLoggedIn, isEmployee, canView, scopedObjectIds } = useRole()
   // canView — нестабильная функция (пересоздаётся каждый рендер). Забираем нужные
   // права как примитивы, чтобы refresh/useEffect не уходили в цикл перезапросов.
   const canTenders = canView('tenders')
@@ -82,27 +86,32 @@ export function NotificationsProvider({ children }) {
     }
     setLoading(true)
     try {
+      const todayStr = toDateOnlyString(todayMidnight())
       const horizon = todayMidnight()
       horizon.setDate(horizon.getDate() + HORIZON_DAYS)
       const horizonStr = toDateOnlyString(horizon)
       const out = []
 
-      // Тендеры — по tender_end_date. Руководителя строительства ограничиваем его объектом.
+      // Тендеры — по tender_end_date. Окно [сегодня, сегодня+5]: просроченные не
+      // показываем, отсчёт идёт с сегодняшнего дня. Руководителя строительства
+      // ограничиваем его объектом.
       if (canTenders) {
         let q = supabase
           .from('tenders')
           .select('id, public_tender_number, work_description, tender_end_date, status, object_id, objects(name)')
           .is('deleted_at', null)
           .not('tender_end_date', 'is', null)
+          .gte('tender_end_date', todayStr)
           .lte('tender_end_date', horizonStr)
           .order('tender_end_date', { ascending: true })
           .limit(1000)
-        if (scopedObjectId) q = q.eq('object_id', scopedObjectId)
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
         const { data, error } = await q
         if (error) throw error
         for (const t of data || []) {
           if (TENDER_DONE.has(t.status)) continue
           const days = daysUntil(t.tender_end_date)
+          if (days < 0 || days > HORIZON_DAYS) continue
           out.push({
             kind: 'tender',
             id: t.id,
@@ -117,13 +126,14 @@ export function NotificationsProvider({ children }) {
         }
       }
 
-      // Договоры — по signed_date (планируемая дата подписания).
+      // Договоры — по signed_date (планируемая дата подписания). Окно [сегодня, +5].
       if (canContracts) {
         const { data, error } = await supabase
           .from('contracts')
           .select('id, contract_number, signed_date, status, objects(name)')
           .is('deleted_at', null)
           .not('signed_date', 'is', null)
+          .gte('signed_date', todayStr)
           .lte('signed_date', horizonStr)
           .order('signed_date', { ascending: true })
           .limit(1000)
@@ -131,6 +141,7 @@ export function NotificationsProvider({ children }) {
         for (const c of data || []) {
           if (CONTRACT_DONE.has(c.status)) continue
           const days = daysUntil(c.signed_date)
+          if (days < 0 || days > HORIZON_DAYS) continue
           out.push({
             kind: 'contract',
             id: c.id,
@@ -154,7 +165,7 @@ export function NotificationsProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }, [isLoggedIn, isEmployee, canTenders, canContracts, scopedObjectId])
+  }, [isLoggedIn, isEmployee, canTenders, canContracts, scopedObjectIds])
 
   useEffect(() => { refresh() }, [refresh])
 

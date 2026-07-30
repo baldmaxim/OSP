@@ -390,11 +390,11 @@ function ObjectDetailPage() {
   const { objectId } = useParams()
   const navigate = useNavigate()
   // task 333: гейт add/edit/delete документов, гарантий, удержаний, сметы.
-  const { canEdit, scopedObjectId } = useRole()
+  const { canEdit, scopedObjectIds } = useRole()
   const canEditObj = canEdit('objects')
   // Скоуп по объекту: руководитель, привязанный к объекту, не может открыть чужой
   // объект даже по прямой ссылке.
-  const objectDenied = !!scopedObjectId && objectId !== scopedObjectId
+  const objectDenied = scopedObjectIds.length > 0 && !scopedObjectIds.includes(objectId)
 
   const [object, setObject] = useState(null)
   const [documents, setDocuments] = useState([])

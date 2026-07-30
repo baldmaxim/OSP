@@ -47,7 +47,7 @@ function NavItem({ to, label, tone, Icon, forceActive, badge }) {
 function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { logout, canView, isAdmin, isSuperAdmin, isEmployee, role, roleLabels, scopedObjectId } = useRole()
+  const { logout, canView, isAdmin, isSuperAdmin, isEmployee, role, roleLabels, scopedObjectIds } = useRole()
   const { unreadCount } = useNotifications()
 
   // task 254: «Тендеры» — единый пункт-ссылка на страницу-хаб /tenders.
@@ -61,15 +61,6 @@ function Sidebar() {
   // visible повторяет прежние гейты один-в-один.
   const navItems = [
     {
-      key: 'notifications',
-      to: '/notifications',
-      label: 'Уведомления',
-      tone: 'rose',
-      Icon: IconNotifications,
-      visible: isEmployee,
-      badge: unreadCount,
-    },
-    {
       key: 'general',
       to: '/general',
       label: 'Общая информация',
@@ -81,7 +72,7 @@ function Sidebar() {
       key: 'tenders',
       // Руководитель строительства (привязан к объекту) попадает сразу в «Основное
       // строительство», минуя хаб-страницу /tenders.
-      to: scopedObjectId ? '/tenders/construction' : '/tenders',
+      to: scopedObjectIds.length > 0 ? '/tenders/construction' : '/tenders',
       label: 'Тендеры',
       tone: 'rose',
       Icon: IconTenders,
@@ -166,6 +157,21 @@ function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
+        {isEmployee && (
+          <NavLink
+            to="/notifications"
+            className={({ isActive }) => `nav-item nav-item--footer ${isActive ? 'active' : ''}`}
+            title="Уведомления"
+          >
+            <IconContainer tone="rose"><IconNotifications /></IconContainer>
+            <span className="nav-label">Уведомления</span>
+            {unreadCount > 0 && (
+              <span className="nav-badge" aria-label={`${unreadCount} непрочитанных`}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </NavLink>
+        )}
         <NavLink to="/profile" className={({ isActive }) => `nav-item nav-item--footer ${isActive ? 'active' : ''}`} title="Профиль">
           <IconContainer tone="slate"><IconProfile /></IconContainer>
           <span className="nav-label">Профиль</span>

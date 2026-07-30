@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { userStatus } from './StatusBadge'
+import FilterDropdown from '../FilterDropdown'
 
 // Правая выдвижная панель редактирования пользователя — единственная поверхность правки
 // (никаких постоянных select в строках таблицы). Сохранение идёт через onSave(form),
@@ -11,7 +12,10 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, onClo
     work_phone: user?.work_phone || '',
     work_email: user?.work_email || '',
     role: user?.role || 'engineer',
-    object_id: user?.object_id || '',
+    // Несколько объектов на пользователя. Откат на одиночный object_id (до миграции).
+    object_ids: Array.isArray(user?.object_ids)
+      ? user.object_ids
+      : (user?.object_id ? [user.object_id] : []),
     status: current,
   }))
   const [saving, setSaving] = useState(false)
@@ -46,7 +50,7 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, onClo
         work_phone: form.work_phone.trim() || null,
         work_email: form.work_email.trim() || null,
         role: form.role,
-        object_id: form.object_id || null,
+        object_ids: form.object_ids || [],
         // Активен → подтверждён; иначе доступ снят (pending/blocked).
         is_approved: form.status === 'active',
       })
@@ -99,13 +103,19 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, onClo
                 {roleOptions.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
               </select>
             </label>
-            <label className="adm-drawer-field">
-              <span>Подразделение / объект</span>
-              <select value={form.object_id} onChange={(e) => set({ object_id: e.target.value })}>
-                <option value="">Офис (все объекты)</option>
-                {objectOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-            </label>
+            <div className="adm-drawer-field">
+              <span>Подразделения / объекты</span>
+              <FilterDropdown
+                label=""
+                multiple
+                searchable
+                searchPlaceholder="Поиск объекта…"
+                allLabel="Офис (все объекты)"
+                value={form.object_ids}
+                onChange={(v) => set({ object_ids: v })}
+                options={objectOptions.map(o => ({ value: o.id, label: o.name }))}
+              />
+            </div>
           </div>
 
           <label className="adm-drawer-field">

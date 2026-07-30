@@ -577,9 +577,9 @@ function AggregateTable({ items, type, ratesMap }) {
 function TenderDetailPage() {
   const { tenderId } = useParams()
   const navigate = useNavigate()
-  const { userProfile, canEdit, scopedObjectId } = useRole()
+  const { userProfile, canEdit, scopedObjectIds } = useRole()
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания.
-  const hideNotes = !!scopedObjectId
+  const hideNotes = scopedObjectIds.length > 0
   // task 333: гейт add/edit/delete для раздела «tenders»
   const canEditTenders = canEdit('tenders')
 
@@ -1876,7 +1876,7 @@ function TenderDetailPage() {
 
   // Скоуп по объекту: руководитель, привязанный к объекту, не видит чужой тендер
   // даже по прямой ссылке.
-  if (tender && scopedObjectId && tender.object_id !== scopedObjectId) {
+  if (tender && scopedObjectIds.length > 0 && !scopedObjectIds.includes(tender.object_id)) {
     return (
       <AccessDenied
         title="Тендер недоступен"

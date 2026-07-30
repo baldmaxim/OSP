@@ -264,7 +264,7 @@ function AmountCellInput({ value, disabled, onSave }) {
 }
 
 function DcRequestsPage() {
-  const { userProfile, canEdit, isAdmin, scopedObjectId } = useRole()
+  const { userProfile, canEdit, isAdmin, scopedObjectIds } = useRole()
   // Телефон: список заявок рендерим карточками вместо широкой таблицы
   const isPhone = useIsPhone()
   // task 333: гейт add/edit/delete и inline-editing на этой странице.
@@ -361,8 +361,8 @@ function DcRequestsPage() {
         `)
         // task 325: хронология добавления — старые сверху (№1), новые внизу.
         .order('created_at', { ascending: true })
-      // Скоуп по объекту: руководитель видит только заявки своего объекта.
-      if (scopedObjectId) query = query.eq('object_id', scopedObjectId)
+      // Скоуп по объектам: сотрудник видит только заявки своих объектов.
+      if (scopedObjectIds.length > 0) query = query.in('object_id', scopedObjectIds)
       const { data, error } = await query
       if (error) throw error
       const sorted = (data || []).map(r => ({
