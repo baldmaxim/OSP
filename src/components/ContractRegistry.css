@@ -824,10 +824,27 @@
 
 .contracts-table-compact .cp-list li {
   overflow-wrap: anywhere;
+  /* Имя на своей строке, бейджи документов (СБ / должная осмотрительность) —
+     отдельной строкой ниже, чтобы в узкой колонке не вылезать на соседний столбец. */
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1875rem;
+  min-width: 0;
+}
+/* task 426 fix: бейджи с датами переносятся и стекаются внутри колонки, не выходя за неё */
+.contracts-table-compact .cp-list .cp-doc-badges {
   flex-wrap: wrap;
-  gap: 0.25rem 0.375rem;
+  max-width: 100%;
+  gap: 0.1875rem 0.25rem;
+}
+.contracts-table-compact .cp-list .cp-doc-badge {
+  font-size: 0.625rem;
+  padding: 0.0625rem 0.25rem;
+}
+.contracts-table-compact .cp-list .cp-doc-badge svg {
+  width: 12px;
+  height: 12px;
 }
 
 .contracts-table-compact .cp-list li + li {
