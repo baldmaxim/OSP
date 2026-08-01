@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotifications } from '../contexts/NotificationsContext'
 import './NotificationsPage.css'
@@ -70,32 +70,20 @@ function NotifItem({ n, read, onOpen }) {
 function NotificationsPage() {
   const navigate = useNavigate()
   const { notifications, unreadCount, loading, markAllRead, markRead, isRead } = useNotifications()
+  const [tab, setTab] = useState('tender') // 'tender' | 'contract'
 
   const openItem = (n) => {
     markRead(n.key)
     navigate(n.to)
   }
 
-  // Разбиваем на разделы по виду; порядок внутри сохраняется (уже отсортированы по срочности).
+  // Разбиваем по виду; порядок внутри сохраняется (уже отсортированы по срочности).
   const tenderItems = useMemo(() => notifications.filter(n => n.kind === 'tender'), [notifications])
   const contractItems = useMemo(() => notifications.filter(n => n.kind === 'contract'), [notifications])
+  const tenderUnread = useMemo(() => tenderItems.filter(n => !isRead(n.key)).length, [tenderItems, isRead])
+  const contractUnread = useMemo(() => contractItems.filter(n => !isRead(n.key)).length, [contractItems, isRead])
 
-  const renderSection = (kind, title, items) => {
-    if (items.length === 0) return null
-    return (
-      <section className={`notif-section notif-section-${kind}`}>
-        <div className="notif-section-head">
-          <span className="notif-section-title">{title}</span>
-          <span className="notif-section-count">{items.length}</span>
-        </div>
-        <ul className="notif-list">
-          {items.map((n) => (
-            <NotifItem key={n.key} n={n} read={isRead(n.key)} onOpen={openItem} />
-          ))}
-        </ul>
-      </section>
-    )
-  }
+  const activeItems = tab === 'tender' ? tenderItems : contractItems
 
   return (
     <div className="notifications-page">
@@ -115,18 +103,43 @@ function NotificationsPage() {
         Напоминания повторяются за 5, 3 дня и в день окончания.
       </p>
 
+      {/* Переключатель между тендерами и договорами со счётчиками (task 424) */}
+      <div className="notif-toggle" role="tablist" aria-label="Тип уведомлений">
+        <button
+          role="tab"
+          aria-selected={tab === 'tender'}
+          className={`notif-toggle-btn notif-toggle-tender${tab === 'tender' ? ' is-active' : ''}`}
+          onClick={() => setTab('tender')}
+        >
+          <span>Тендеры</span>
+          <span className="notif-toggle-count">{tenderItems.length}</span>
+          {tenderUnread > 0 && <span className="notif-toggle-dot" title={`${tenderUnread} непрочитанных`} />}
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === 'contract'}
+          className={`notif-toggle-btn notif-toggle-contract${tab === 'contract' ? ' is-active' : ''}`}
+          onClick={() => setTab('contract')}
+        >
+          <span>Договоры</span>
+          <span className="notif-toggle-count">{contractItems.length}</span>
+          {contractUnread > 0 && <span className="notif-toggle-dot" title={`${contractUnread} непрочитанных`} />}
+        </button>
+      </div>
+
       {loading ? (
         <div className="notif-empty">Загрузка…</div>
-      ) : notifications.length === 0 ? (
+      ) : activeItems.length === 0 ? (
         <div className="notif-empty">
-          <p>Нет приближающихся сроков.</p>
-          <p className="notif-empty-hint">Здесь появятся тендеры и договоры, которые скоро завершаются.</p>
+          <p>{tab === 'tender' ? 'Нет тендеров с приближающимся сроком.' : 'Нет договоров с приближающимся сроком.'}</p>
+          <p className="notif-empty-hint">Здесь появятся записи, которые скоро завершаются.</p>
         </div>
       ) : (
-        <div className="notif-sections">
-          {renderSection('tender', 'Тендеры', tenderItems)}
-          {renderSection('contract', 'Договоры', contractItems)}
-        </div>
+        <ul className="notif-list">
+          {activeItems.map((n) => (
+            <NotifItem key={n.key} n={n} read={isRead(n.key)} onOpen={openItem} />
+          ))}
+        </ul>
       )}
     </div>
   )

@@ -2031,6 +2031,47 @@
 
 /* ===== Инлайн-правки в таблице реестра договоров (задача 391) ===== */
 .inline-cell-select,
+/* task 426: аккуратная инлайн-дата (кнопка с форматированной датой + скрытый picker) */
+.inline-date {
+  position: relative;
+  display: inline-flex;
+}
+.inline-date-native {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.inline-date-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.25rem 0.4375rem;
+  font-size: 0.75rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.1s, background 0.1s;
+}
+.inline-date-btn:hover:not(:disabled) {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.inline-date-btn:disabled { cursor: default; }
+.inline-date-btn svg { color: var(--text-tertiary); flex-shrink: 0; }
+.inline-date.is-empty .inline-date-text { color: var(--text-tertiary); }
+.inline-date.is-overdue .inline-date-text { color: #dc2626; font-weight: 600; }
+[data-theme='dark'] .inline-date.is-overdue .inline-date-text { color: #f87171; }
+
 .inline-cell-date,
 .inline-cell-notes {
   width: 100%;

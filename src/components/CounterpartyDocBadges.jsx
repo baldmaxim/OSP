@@ -71,6 +71,7 @@ export default function CounterpartyDocBadges({ summary, onOpen, showDate = fals
         onClick={onOpen ? handle : undefined}
       >
         <DueDiligenceIcon />
+        {showDate && other && <span className="cp-doc-badge-text">{formatDate(other.date)}</span>}
         {other && other.count > 1 && <span className="cp-doc-badge-count">{other.count}</span>}
       </Tag>
     </span>

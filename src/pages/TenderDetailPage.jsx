@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
 import { normName, supplyKey } from '../utils/supplyRateHelpers'
+import { reorderSiblings } from '../utils/appendixTree'
 import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
@@ -383,7 +384,11 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
     const isHeader = !!next && !next._isDocDivider && lvlOf(next) > L
     const key = sectionKey(it, idx)
     const collapsed = collapsedSections.has(key)
-    const isSectionLike = it.is_section || isHeader
+    // task 428: «пустая» строка ВОР (без наименования) — всегда обычная строка,
+    // никогда не секция/заголовок (иначе следующий более глубокий item сделал бы её
+    // сворачиваемым заголовком с пустым названием).
+    const isEmptyItem = !it.is_section && !String(it.cost_name || '').trim()
+    const isSectionLike = !isEmptyItem && (it.is_section || isHeader)
 
     // Считаем номер заранее — даже для скрытых, чтобы порядок не «прыгал».
     let displayNum = ''
@@ -432,20 +437,25 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
         // Опираемся на unitPrice (а не на итог): итог может быть null из-за отсутствия
         // объёма ВОР, хотя цена снабжения есть — это не «нерасценено».
         const supplyMissing = showSupply && !isWorkItem(it) && sc.unitPrice[idx] == null
+        // task 428: строка без наименования — сохранённая «пустая» строка ВОР.
+        const isEmptyRow = isEmptyItem
+        const rowClass = isEmptyRow ? 'estimate-empty-row' : (supplyMissing ? 'supply-row-missing' : undefined)
         rendered.push(
-          <tr key={it.id || idx} className={supplyMissing ? 'supply-row-missing' : undefined}>
+          <tr key={it.id || idx} className={rowClass}>
             <td className="estimate-num">{displayNum}</td>
             <td>{it.code || '—'}</td>
-            <td style={indent}>{it.cost_name}</td>
+            <td style={indent}>
+              {isEmptyRow ? <span className="estimate-empty-label">(пустая строка)</span> : it.cost_name}
+            </td>
             <td>{it.unit || '—'}</td>
             {!hideWorkVolume && <td className="estimate-num-cell">{fmtNum(it.work_volume)}</td>}
             <td className="estimate-num-cell">{fmtNum(it.material_consumption)}</td>
             {showSupply && (
               <>
-                <td className={`estimate-num-cell estimate-supply-cell${supplyMissing ? ' supply-price-missing' : ''}`}>
+                <td className={`estimate-num-cell estimate-supply-cell${supplyMissing && !isEmptyRow ? ' supply-price-missing' : ''}`}>
                   {fmtMoney(sc.unitPrice[idx])}
                 </td>
-                <td className={`estimate-num-cell estimate-supply-cell estimate-supply-total-cell${supplyMissing ? ' supply-price-missing' : ''}`}>
+                <td className={`estimate-num-cell estimate-supply-cell estimate-supply-total-cell${supplyMissing && !isEmptyRow ? ' supply-price-missing' : ''}`}>
                   {fmtMoney(sc.leaf[idx])}
                 </td>
               </>
@@ -585,6 +595,9 @@ function TenderDetailPage() {
 
   const [tender, setTender] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState([])
+  // task 427: DnD-перестановка участников
+  const [draggedTc, setDraggedTc] = useState(null) // { id }
+  const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'supply' | 'proposals' | 'participants' | 'documents' | 'history'
   // Версия документов тендера: любое изменение (во вкладке «Документы» или в блоке
@@ -904,7 +917,26 @@ function TenderDetailPage() {
           && workVolume == null && materialConsumption == null
           && numA && !looksLikeBareNumber(numA)
         if (isSectionByA) name = numA
-        if (!name) continue
+        if (!name) {
+          // task 428: строка без наименования (обычно пустая строка в блоке
+          // материалов). Раньше отбрасывалась через continue — данные терялись.
+          // Теперь сохраняем как есть (cost_name NOT NULL → ''), чтобы позиция не
+          // пропала, и подсвечиваем на рендере (см. EstimateTable, estimate-empty-row).
+          items.push({
+            row_number: rowNum++,
+            code: code || null,
+            cost_name: '',
+            unit: unit || null,
+            calculation_note: note || null,
+            work_volume: workVolume,
+            material_consumption: materialConsumption,
+            is_section: false,
+            outline_level: runSecLvl + 1,
+            cost_type: String(runSecLvl + 1),
+            original_row_number: numA || String(i + 1),
+          })
+          continue
+        }
 
         // Секция: либо детектирована по А, либо строка только с наименованием.
         const isSection = isSectionByA
@@ -1523,6 +1555,8 @@ function TenderDetailPage() {
           )
         `)
         .eq('tender_id', tenderId)
+        .order('sort_order', { ascending: true })
+        .order('invited_at', { ascending: true })
 
       if (cpError) throw cpError
       setTenderCounterparties(counterpartiesData || [])
@@ -1826,6 +1860,27 @@ function TenderDetailPage() {
     } catch (error) {
       console.error('Ошибка добавления участников:', error)
       alert('Ошибка добавления: ' + error.message)
+    }
+  }
+
+  // task 427: перетаскивание участника внутри списка (общий порядок со страницей
+  // тендеров — сохраняется в tender_counterparties.sort_order).
+  const handleReorderParticipant = async (draggedId, targetId) => {
+    const position = tcDragOver?.position || 'before'
+    setDraggedTc(null)
+    setTcDragOver(null)
+    const pairs = reorderSiblings(tenderCounterparties, draggedId, targetId, position)
+    if (!pairs) return
+    setTenderCounterparties(prev => prev
+      .map(tc => { const p = pairs.find(x => x.id === tc.id); return p ? { ...tc, sort_order: p.sort_order } : tc })
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)))
+    try {
+      await Promise.all(pairs.map(p =>
+        supabase.from('tender_counterparties').update({ sort_order: p.sort_order }).eq('id', p.id)
+      ))
+    } catch (err) {
+      alert('Не удалось сохранить порядок участников: ' + (err.message || err))
+      fetchTenderData()
     }
   }
 
@@ -2541,6 +2596,7 @@ function TenderDetailPage() {
                 <table className="data-table" style={{ fontSize: '0.8125rem' }}>
                   <thead>
                     <tr>
+                      {canEditTenders && <th style={{ width: '26px' }}></th>}
                       <th style={{ width: '40px' }}>№</th>
                       <th>Наименование контрагента</th>
                       <th>Контакт</th>
@@ -2556,7 +2612,40 @@ function TenderDetailPage() {
                       const isWinner = winnerIds.has(tc.counterparty_id)
                       const winnerScope = winnersList.find(w => w.id === tc.counterparty_id)?.scope || ''
                       return (
-                        <tr key={tc.id} style={isWinner ? { background: 'rgba(22, 163, 74, 0.08)' } : {}}>
+                        <tr
+                          key={tc.id}
+                          className={`${draggedTc?.id === tc.id ? 'tc-dragging' : ''}${tcDragOver?.id === tc.id ? ` tc-drop-${tcDragOver.position}` : ''}`}
+                          style={isWinner ? { background: 'rgba(22, 163, 74, 0.08)' } : {}}
+                          onDragOver={!canEditTenders ? undefined : (e) => {
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            const position = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after'
+                            if (tc.id === draggedTc?.id) { setTcDragOver(null); return }
+                            setTcDragOver(prev => (prev?.id === tc.id && prev?.position === position) ? prev : { id: tc.id, position })
+                          }}
+                          onDragLeave={!canEditTenders ? undefined : () => setTcDragOver(prev => prev?.id === tc.id ? null : prev)}
+                          onDrop={!canEditTenders ? undefined : (e) => {
+                            e.preventDefault()
+                            const draggedId = e.dataTransfer.getData('text/plain')
+                            handleReorderParticipant(draggedId, tc.id)
+                          }}
+                        >
+                          {canEditTenders && (
+                            <td className="tc-drag-cell">
+                              <span
+                                className="tc-drag-handle"
+                                draggable
+                                title="Перетащите, чтобы изменить порядок"
+                                onDragStart={(e) => {
+                                  e.dataTransfer.effectAllowed = 'move'
+                                  e.dataTransfer.setData('text/plain', tc.id)
+                                  setDraggedTc({ id: tc.id })
+                                }}
+                                onDragEnd={() => { setDraggedTc(null); setTcDragOver(null) }}
+                              >⋮⋮</span>
+                            </td>
+                          )}
                           <td style={{ textAlign: 'center', fontWeight: 600, color: 'var(--text-tertiary)' }}>{idx + 1}</td>
                           <td>
                             <div style={{ fontWeight: 600 }}>

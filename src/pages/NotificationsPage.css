@@ -56,7 +56,64 @@
   border-radius: 999px;
 }
 
-/* Разделы «Тендеры» / «Договоры» */
+/* Переключатель тендеры/договоры со счётчиком (task 424) */
+.notif-toggle {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  margin-bottom: 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+.notif-toggle-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.notif-toggle-btn:hover { color: var(--text-primary); }
+.notif-toggle-btn.is-active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.notif-toggle-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+.notif-toggle-btn.is-active.notif-toggle-tender .notif-toggle-count { background: rgba(37, 99, 235, 0.14); color: #2563eb; }
+.notif-toggle-btn.is-active.notif-toggle-contract .notif-toggle-count { background: rgba(217, 119, 6, 0.16); color: #b45309; }
+[data-theme='dark'] .notif-toggle-btn.is-active.notif-toggle-tender .notif-toggle-count { color: #93c5fd; }
+[data-theme='dark'] .notif-toggle-btn.is-active.notif-toggle-contract .notif-toggle-count { color: #fcd34d; }
+/* Точка «есть непрочитанные» */
+.notif-toggle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #dc2626;
+}
+
+/* Разделы «Тендеры» / «Договоры» (legacy, оставлены на случай отката) */
 .notif-sections {
   display: flex;
   flex-direction: column;

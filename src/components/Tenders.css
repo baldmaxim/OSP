@@ -1588,3 +1588,32 @@
     overflow-x: auto;
   }
 }
+
+/* ── Перетаскивание участников тендера (task 427) ───────────────────────────
+   Ручка ⋮⋮ в первой ячейке; строка-цель подсвечивается сверху/снизу. */
+.tc-drag-cell {
+  text-align: center;
+  vertical-align: middle;
+  width: 26px;
+  padding: 0 !important;
+}
+.tc-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  color: var(--text-tertiary);
+  cursor: grab;
+  letter-spacing: -2px;
+  font-size: 0.875rem;
+  line-height: 1;
+  user-select: none;
+  border-radius: 4px;
+}
+.tc-drag-handle:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.tc-drag-handle:active { cursor: grabbing; }
+
+.expanded-cp-table-wrap tr.tc-dragging td { opacity: 0.5; }
+.expanded-cp-table-wrap tr.tc-drop-before td { box-shadow: inset 0 2px 0 var(--primary-color); }
+.expanded-cp-table-wrap tr.tc-drop-after td { box-shadow: inset 0 -2px 0 var(--primary-color); }

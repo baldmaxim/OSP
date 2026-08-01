@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useMemo, useCallback } from 'react'
+import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
@@ -148,6 +148,44 @@ const RestoreIcon = () => (
     <path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7" />
   </svg>
 )
+
+const CalendarIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <rect x="3" y="4" width="18" height="18" rx="2" />
+    <path d="M16 2v4M8 2v4M3 10h18" />
+  </svg>
+)
+
+// Аккуратная инлайн-дата: показывает форматированную дату (или «—») кнопкой,
+// клик открывает нативный календарь (showPicker) через визуально скрытый input.
+// task 426 — замена «сырых» <input type="date"> в реестре договоров.
+function InlineDateCell({ value, onChange, disabled, overdue }) {
+  const ref = useRef(null)
+  const openPicker = () => {
+    if (disabled) return
+    const el = ref.current
+    if (!el) return
+    try { el.showPicker() } catch { el.focus() }
+  }
+  return (
+    <span className={`inline-date${value ? ' has-value' : ' is-empty'}${overdue ? ' is-overdue' : ''}${disabled ? ' is-disabled' : ''}`}>
+      <button type="button" className="inline-date-btn" onClick={openPicker} disabled={disabled} title={value ? 'Изменить дату' : 'Указать дату'}>
+        <CalendarIcon />
+        <span className="inline-date-text">{value ? formatDateRu(value) : '—'}</span>
+      </button>
+      <input
+        ref={ref}
+        type="date"
+        className="inline-date-native"
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+    </span>
+  )
+}
 
 function ContractRegistry() {
   const navigate = useNavigate()
@@ -1396,7 +1434,7 @@ function ContractRegistry() {
                       <span className="mcard-value">
                         {partiesText}
                         {cardParties[0] && (
-                          <CounterpartyDocBadges summary={cpDocSummary.get(cardParties[0].id)} />
+                          <CounterpartyDocBadges summary={cpDocSummary.get(cardParties[0].id)} showDate />
                         )}
                       </span>
                     </div>
@@ -1524,7 +1562,7 @@ function ContractRegistry() {
                         {parties.map(p => (
                           <li key={p.id}>
                             <span>{p.name}</span>
-                            <CounterpartyDocBadges summary={cpDocSummary.get(p.id)} />
+                            <CounterpartyDocBadges summary={cpDocSummary.get(p.id)} showDate />
                           </li>
                         ))}
                       </ul>
@@ -1565,23 +1603,18 @@ function ContractRegistry() {
                     />
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="date"
-                      className="inline-cell-date"
-                      value={contract.accepted_date || ''}
-                      onChange={(e) => handleInlineField(contract.id, 'accepted_date', e.target.value)}
-                      onClick={(e) => { try { e.currentTarget.showPicker?.() } catch { /* браузер без showPicker — остаётся ручной ввод */ } }}
+                    <InlineDateCell
+                      value={contract.accepted_date}
+                      onChange={(v) => handleInlineField(contract.id, 'accepted_date', v)}
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>
                   <td className={`date-cell ${overdue ? 'date-overdue' : ''}`} onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="date"
-                      className="inline-cell-date"
-                      value={contract.signed_date || ''}
-                      onChange={(e) => handleInlineField(contract.id, 'signed_date', e.target.value)}
-                      onClick={(e) => { try { e.currentTarget.showPicker?.() } catch { /* браузер без showPicker — остаётся ручной ввод */ } }}
+                    <InlineDateCell
+                      value={contract.signed_date}
+                      onChange={(v) => handleInlineField(contract.id, 'signed_date', v)}
                       disabled={!canEditContracts || isDeletedTab}
+                      overdue={overdue}
                     />
                     {overdue && <span className="overdue-note">Просрочено</span>}
                   </td>

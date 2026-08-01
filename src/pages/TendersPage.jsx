@@ -8,6 +8,7 @@ import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import FilterDropdown from '../components/FilterDropdown'
 import { copyToClipboard } from '../utils/clipboard'
+import { reorderSiblings } from '../utils/appendixTree'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/Tenders.css'
 import '../components/MobileCards.css'
@@ -173,6 +174,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [editingTender, setEditingTender] = useState(null)
   const [expandedTenderId, setExpandedTenderId] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState({})
+  // task 427: DnD-перестановка участников
+  const [draggedTc, setDraggedTc] = useState(null) // { tenderId, id }
+  const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
   // Сводка по каждому тендеру: { tenderId: { total, proposalProvided } }
   const [tenderProposalCounts, setTenderProposalCounts] = useState({})
   // Примечание участника: явное редактирование (одна строка за раз) и хронология правок
@@ -593,6 +597,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           )
         `)
         .eq('tender_id', tenderId)
+        .order('sort_order', { ascending: true })
+        .order('invited_at', { ascending: true })
 
       if (error) throw error
       setTenderCounterparties(prev => ({
@@ -903,6 +909,31 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       setTimeout(() => setCopiedEmailsTenderId(prev => prev === tenderId ? null : prev), 2000)
     } else {
       alert('Не удалось скопировать в буфер обмена')
+    }
+  }
+
+  // task 427: перетаскивание участника внутри списка тендера (общий порядок с
+  // карточкой тендера — сохраняется в tender_counterparties.sort_order).
+  const handleReorderTc = async (tenderId, draggedId, targetId) => {
+    const position = tcDragOver?.position || 'before'
+    setDraggedTc(null)
+    setTcDragOver(null)
+    const list = tenderCounterparties[tenderId] || []
+    const pairs = reorderSiblings(list, draggedId, targetId, position)
+    if (!pairs) return
+    setTenderCounterparties(prev => ({
+      ...prev,
+      [tenderId]: (prev[tenderId] || [])
+        .map(tc => { const p = pairs.find(x => x.id === tc.id); return p ? { ...tc, sort_order: p.sort_order } : tc })
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
+    }))
+    try {
+      await Promise.all(pairs.map(p =>
+        supabase.from('tender_counterparties').update({ sort_order: p.sort_order }).eq('id', p.id)
+      ))
+    } catch (err) {
+      alert('Не удалось сохранить порядок участников: ' + (err.message || err))
+      fetchTenderCounterparties(tenderId)
     }
   }
 
@@ -2796,6 +2827,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             <table className="data-table" style={{ margin: 0 }}>
                               <thead>
                                 <tr>
+                                  {canEditTenders && <th style={{ width: '26px' }}></th>}
                                   <th style={{ width: '40px' }}>№</th>
                                   <th style={{ width: '20%' }}>Наименование</th>
                                   <th style={{ width: '13%' }}>Контактные данные</th>
@@ -2808,7 +2840,39 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               </thead>
                               <tbody>
                                 {tenderCounterparties[tender.id].map((tc, index) => (
-                                  <tr key={tc.id}>
+                                  <tr
+                                    key={tc.id}
+                                    className={`${draggedTc?.id === tc.id ? 'tc-dragging' : ''}${tcDragOver?.id === tc.id ? ` tc-drop-${tcDragOver.position}` : ''}`}
+                                    onDragOver={!canEditTenders ? undefined : (e) => {
+                                      e.preventDefault()
+                                      e.dataTransfer.dropEffect = 'move'
+                                      const rect = e.currentTarget.getBoundingClientRect()
+                                      const position = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after'
+                                      if (tc.id === draggedTc?.id) { setTcDragOver(null); return }
+                                      setTcDragOver(prev => (prev?.id === tc.id && prev?.position === position) ? prev : { id: tc.id, position })
+                                    }}
+                                    onDragLeave={!canEditTenders ? undefined : () => setTcDragOver(prev => prev?.id === tc.id ? null : prev)}
+                                    onDrop={!canEditTenders ? undefined : (e) => {
+                                      e.preventDefault()
+                                      const draggedId = e.dataTransfer.getData('text/plain')
+                                      handleReorderTc(tender.id, draggedId, tc.id)
+                                    }}
+                                  >
+                                    {canEditTenders && (
+                                      <td className="tc-drag-cell">
+                                        <span
+                                          className="tc-drag-handle"
+                                          draggable
+                                          title="Перетащите, чтобы изменить порядок"
+                                          onDragStart={(e) => {
+                                            e.dataTransfer.effectAllowed = 'move'
+                                            e.dataTransfer.setData('text/plain', tc.id)
+                                            setDraggedTc({ tenderId: tender.id, id: tc.id })
+                                          }}
+                                          onDragEnd={() => { setDraggedTc(null); setTcDragOver(null) }}
+                                        >⋮⋮</span>
+                                      </td>
+                                    )}
                                     <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>
                                       {index + 1}
                                     </td>
