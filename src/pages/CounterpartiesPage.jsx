@@ -5,8 +5,10 @@ import { formatPhone } from '../utils/phoneFormat'
 import { generateUUID } from '../utils/uuid'
 import { useRole } from '../contexts/RoleContext'
 import CounterpartyCardChip from '../components/CounterpartyCardChip'
+import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import S3DocumentList from '../components/S3DocumentList'
+import { fetchCounterpartyDocSummary } from '../services/s3'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
@@ -53,6 +55,8 @@ function CounterpartiesPage() {
   const [workTypeFilter, setWorkTypeFilter] = useState('')
   // task 302: карточки компаний (s3_documents owner_type='counterparty') — map по owner_id, latest first.
   const [cardsByCp, setCardsByCp] = useState(() => new Map())
+  // task 422: сводка документов СБ/должной осмотрительности — map по owner_id.
+  const [docSummaryByCp, setDocSummaryByCp] = useState(() => new Map())
   const fileInputRef = useRef(null)
 
   const [counterpartyFormData, setCounterpartyFormData] = useState({
@@ -194,6 +198,15 @@ function CounterpartiesPage() {
       } catch (cardsError) {
         console.warn('Не удалось загрузить карточки компаний:', cardsError.message)
         setCardsByCp(new Map())
+      }
+
+      // Сводка документов «Согласование СБ» / «Должная осмотрительность» по всем
+      // контрагентам — для иконок-индикаторов в строке (task 422).
+      try {
+        setDocSummaryByCp(await fetchCounterpartyDocSummary())
+      } catch (sumError) {
+        console.warn('Не удалось загрузить сводку документов контрагентов:', sumError.message)
+        setDocSummaryByCp(new Map())
       }
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error.message)
@@ -1653,6 +1666,13 @@ function CounterpartiesPage() {
                                 return next
                               })}
                             />
+                            {/* task 422: индикаторы Согласование СБ / Должная осмотрительность.
+                                Клик открывает detail-модалку на вкладке «Документы». */}
+                            <CounterpartyDocBadges
+                              summary={docSummaryByCp.get(counterparty.id)}
+                              showDate
+                              onOpen={() => openDetail(counterparty)}
+                            />
                             {(canEditCp || relCount > 0) && (
                               <button
                                 type="button"
@@ -1966,7 +1986,7 @@ function CounterpartiesPage() {
                       ownerType="counterparty"
                       ownerId={detailCp.id}
                       category="other"
-                      title="Прочие документы"
+                      title="Должная осмотрительность"
                       canEdit={canEditCp}
                     />
                   </section>

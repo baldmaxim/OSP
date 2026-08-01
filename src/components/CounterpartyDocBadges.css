@@ -1,0 +1,69 @@
+/* Иконки-индикаторы документов контрагента (Согласование СБ / Должная осмотрительность).
+   Используются в строке контрагента (Общая информация) и в реестре договоров. */
+.cp-doc-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.cp-doc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+  padding: 0.125rem 0.3125rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  line-height: 1;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+.cp-doc-badge svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* Есть документ — акцент; нет — приглушённо */
+.cp-doc-badge.is-on {
+  color: #15803d;
+  background: rgba(22, 163, 74, 0.10);
+}
+.cp-doc-badge.is-off {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+[data-theme='dark'] .cp-doc-badge.is-on {
+  color: #86efac;
+  background: rgba(22, 163, 74, 0.18);
+}
+
+.cp-doc-badge.is-clickable {
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.cp-doc-badge.is-clickable:hover {
+  border-color: var(--border-color);
+  background: var(--bg-tertiary);
+}
+.cp-doc-badge.is-clickable.is-on:hover {
+  background: rgba(22, 163, 74, 0.16);
+}
+
+.cp-doc-badge-text {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cp-doc-badge-count {
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #15803d;
+  color: #fff;
+  font-size: 0.625rem;
+}
+[data-theme='dark'] .cp-doc-badge-count { background: #86efac; color: #0b1220; }

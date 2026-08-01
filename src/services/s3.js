@@ -127,3 +127,43 @@ export async function fetchDocuments(ownerType, ownerId, category = null) {
   if (error) throw error
   return data || []
 }
+
+// Сводка документов контрагентов по категориям «Согласование СБ» и «Должная
+// осмотрительность» (doc_category 'sb_approval'/'other'). Возвращает
+// Map<counterpartyId, { sb: {date}|null, other: {date, count}|null }>, где date —
+// created_at последнего документа категории. `ids` (необязательно) ограничивает
+// выборку конкретными контрагентами (для реестра договоров); без ids — по всем.
+export async function fetchCounterpartyDocSummary(ids = null) {
+  if (Array.isArray(ids) && ids.length === 0) return new Map()
+  const PAGE = 1000
+  const rows = []
+  for (let from = 0; ; from += PAGE) {
+    let query = supabase
+      .from('s3_documents')
+      .select('owner_id, doc_category, created_at')
+      .eq('owner_type', 'counterparty')
+      .in('doc_category', ['sb_approval', 'other'])
+    if (Array.isArray(ids)) query = query.in('owner_id', ids)
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    if (data?.length) rows.push(...data)
+    if (!data || data.length < PAGE) break
+  }
+
+  const map = new Map()
+  for (const r of rows) {
+    let entry = map.get(r.owner_id)
+    if (!entry) { entry = { sb: null, other: null }; map.set(r.owner_id, entry) }
+    if (r.doc_category === 'sb_approval') {
+      // created_at desc → первый встреченный = последний по дате.
+      if (!entry.sb) entry.sb = { date: r.created_at }
+    } else if (r.doc_category === 'other') {
+      if (!entry.other) entry.other = { date: r.created_at, count: 1 }
+      else entry.other.count += 1
+    }
+  }
+  return map
+}

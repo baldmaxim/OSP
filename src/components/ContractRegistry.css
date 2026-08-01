@@ -824,6 +824,10 @@
 
 .contracts-table-compact .cp-list li {
   overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.375rem;
 }
 
 .contracts-table-compact .cp-list li + li {

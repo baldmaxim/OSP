@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotifications } from '../contexts/NotificationsContext'
 import './NotificationsPage.css'
@@ -28,6 +29,44 @@ function formatDateRu(dateStr) {
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`
 }
 
+// Иконка «двойная галочка» для кнопки «Прочитать все».
+const CheckAllIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m2 12 5 5L18 6" />
+    <path d="m13 17 1 1 8-8" />
+  </svg>
+)
+
+// Один пункт списка уведомлений. Внутри раздела вид (Тендер/Договор) очевиден из
+// заголовка секции, поэтому бейдж вида не показываем.
+function NotifItem({ n, read, onOpen }) {
+  return (
+    <li
+      className={`notif-item ${urgencyClass(n.days)}${read ? ' is-read' : ''}`}
+      onClick={() => onOpen(n)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(n) }}
+    >
+      <span className="notif-dot" aria-hidden />
+      <div className="notif-body">
+        <div className="notif-top">
+          {n.badge && <span className="notif-num">{n.badge}</span>}
+          <span className={`notif-days ${urgencyClass(n.days)}`}>{daysLabel(n.days)}</span>
+          {!read && <span className="notif-unread" title="Не прочитано" aria-label="Не прочитано" />}
+        </div>
+        <div className="notif-object">{n.objectName}</div>
+        {n.subtitle && <div className="notif-subtitle">{n.subtitle}</div>}
+        <div className="notif-date">
+          {n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание'}: {formatDateRu(n.date)}
+        </div>
+      </div>
+      <span className="notif-open" aria-hidden>›</span>
+    </li>
+  )
+}
+
 function NotificationsPage() {
   const navigate = useNavigate()
   const { notifications, unreadCount, loading, markAllRead, markRead, isRead } = useNotifications()
@@ -37,13 +76,36 @@ function NotificationsPage() {
     navigate(n.to)
   }
 
+  // Разбиваем на разделы по виду; порядок внутри сохраняется (уже отсортированы по срочности).
+  const tenderItems = useMemo(() => notifications.filter(n => n.kind === 'tender'), [notifications])
+  const contractItems = useMemo(() => notifications.filter(n => n.kind === 'contract'), [notifications])
+
+  const renderSection = (kind, title, items) => {
+    if (items.length === 0) return null
+    return (
+      <section className={`notif-section notif-section-${kind}`}>
+        <div className="notif-section-head">
+          <span className="notif-section-title">{title}</span>
+          <span className="notif-section-count">{items.length}</span>
+        </div>
+        <ul className="notif-list">
+          {items.map((n) => (
+            <NotifItem key={n.key} n={n} read={isRead(n.key)} onOpen={openItem} />
+          ))}
+        </ul>
+      </section>
+    )
+  }
+
   return (
     <div className="notifications-page">
       <div className="notif-header">
         <h2><span className="notif-title-icon" aria-hidden>🔔</span> Уведомления</h2>
-        {notifications.length > 0 && unreadCount > 0 && (
-          <button className="btn-secondary" onClick={markAllRead}>
-            Отметить все прочитанными
+        {unreadCount > 0 && (
+          <button className="notif-mark-all" onClick={markAllRead} title="Отметить все уведомления прочитанными">
+            <CheckAllIcon />
+            <span>Прочитать все</span>
+            <span className="notif-mark-all-count">{unreadCount}</span>
           </button>
         )}
       </div>
@@ -61,39 +123,10 @@ function NotificationsPage() {
           <p className="notif-empty-hint">Здесь появятся тендеры и договоры, которые скоро завершаются.</p>
         </div>
       ) : (
-        <ul className="notif-list">
-          {notifications.map((n) => {
-            const read = isRead(n.key)
-            return (
-              <li
-                key={n.key}
-                className={`notif-item ${urgencyClass(n.days)}${read ? ' is-read' : ''}`}
-                onClick={() => openItem(n)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => { if (e.key === 'Enter') openItem(n) }}
-              >
-                <span className="notif-dot" aria-hidden />
-                <div className="notif-body">
-                  <div className="notif-top">
-                    <span className={`notif-kind notif-kind-${n.kind}`}>
-                      {n.kind === 'tender' ? 'Тендер' : 'Договор'}
-                    </span>
-                    {n.badge && <span className="notif-num">{n.badge}</span>}
-                    <span className={`notif-days ${urgencyClass(n.days)}`}>{daysLabel(n.days)}</span>
-                    {!read && <span className="notif-unread" title="Не прочитано" aria-label="Не прочитано" />}
-                  </div>
-                  <div className="notif-object">{n.objectName}</div>
-                  {n.subtitle && <div className="notif-subtitle">{n.subtitle}</div>}
-                  <div className="notif-date">
-                    {n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание'}: {formatDateRu(n.date)}
-                  </div>
-                </div>
-                <span className="notif-open" aria-hidden>›</span>
-              </li>
-            )
-          })}
-        </ul>
+        <div className="notif-sections">
+          {renderSection('tender', 'Тендеры', tenderItems)}
+          {renderSection('contract', 'Договоры', contractItems)}
+        </div>
       )}
     </div>
   )

@@ -401,6 +401,12 @@
   font-weight: 600;
 }
 
+/* task 422: индикаторы документов — на своей строке под чипом «карточка компании». */
+.col-name .cp-doc-badges {
+  display: flex;
+  margin-top: 0.25rem;
+}
+
 .has-notes {
   color: var(--primary-color);
   font-weight: 700;

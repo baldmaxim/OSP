@@ -5,6 +5,8 @@ import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
 import FilterDropdown from '../components/FilterDropdown'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
+import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
+import { fetchCounterpartyDocSummary } from '../services/s3'
 import {
   buildAppendixTree,
   reorderSiblings,
@@ -192,6 +194,8 @@ function ContractRegistry() {
   const [availableAttachments, setAvailableAttachments] = useState([])
   // Задача 419: «Приложения к Договору»: contract_id → массив строк
   const [contractAppendicesMap, setContractAppendicesMap] = useState({})
+  // task 423: сводка документов СБ/должной осмотрительности по id контрагента.
+  const [cpDocSummary, setCpDocSummary] = useState(() => new Map())
   // DnD-переупорядочивание приложений договора (внутри одного уровня)
   const [draggedAppendix, setDraggedAppendix] = useState(null) // { contractId, id }
   const [appendixDragOver, setAppendixDragOver] = useState(null) // { id, position }
@@ -309,6 +313,18 @@ function ContractRegistry() {
         setContractAppendicesMap(apMap)
       } else {
         setContractAppendicesMap({})
+      }
+
+      // task 423: сводка документов СБ/должной осмотрительности по контрагентам
+      // всех загруженных договоров — для иконок-индикаторов рядом с контрагентом.
+      try {
+        const cpIds = [...new Set(
+          filtered.flatMap(c => contractParties(c).map(p => p.id)).filter(Boolean)
+        )]
+        setCpDocSummary(await fetchCounterpartyDocSummary(cpIds))
+      } catch (sumError) {
+        console.warn('Не удалось загрузить сводку документов контрагентов:', sumError.message)
+        setCpDocSummary(new Map())
       }
     } catch (error) {
       console.error('Ошибка загрузки договоров:', error.message)
@@ -1356,7 +1372,8 @@ function ContractRegistry() {
               const dsNum = contract.contract_number
               const dsDate = formatDateRu(contract.contract_date)
               const opt = STATUS_OPTIONS.find(o => o.value === (contract.status || 'new_request'))
-              const partiesText = contractParties(contract).map(p => p.name).join(', ') || '—'
+              const cardParties = contractParties(contract)
+              const partiesText = cardParties.map(p => p.name).join(', ') || '—'
               const lawyerName = contactNameById[contract.responsible_contact_id] || contract.responsible?.full_name || '—'
               const workName = contract.work_name || contract.tenders?.work_description || ''
               return (
@@ -1376,7 +1393,12 @@ function ContractRegistry() {
                   <div className="mcard-rows">
                     <div className="mcard-row">
                       <span className="mcard-label">Контрагент</span>
-                      <span className="mcard-value">{partiesText}</span>
+                      <span className="mcard-value">
+                        {partiesText}
+                        {cardParties[0] && (
+                          <CounterpartyDocBadges summary={cpDocSummary.get(cardParties[0].id)} />
+                        )}
+                      </span>
                     </div>
                     <div className="mcard-row">
                       <span className="mcard-label">Сумма</span>
@@ -1499,7 +1521,12 @@ function ContractRegistry() {
                   <td className="cell-counterparty">
                     {parties.length === 0 ? '—' : (
                       <ul className="cp-list">
-                        {parties.map(p => <li key={p.id}>{p.name}</li>)}
+                        {parties.map(p => (
+                          <li key={p.id}>
+                            <span>{p.name}</span>
+                            <CounterpartyDocBadges summary={cpDocSummary.get(p.id)} />
+                          </li>
+                        ))}
                       </ul>
                     )}
                   </td>
@@ -1612,6 +1639,7 @@ function ContractRegistry() {
                                   <span className="ce-party-name">{p.name}</span>
                                   {p.inn && <span className="ce-party-inn">ИНН: {p.inn}</span>}
                                   {i === 0 && <span className="ce-party-main">основной</span>}
+                                  <CounterpartyDocBadges summary={cpDocSummary.get(p.id)} showDate />
                                 </li>
                               ))}
                             </ul>
