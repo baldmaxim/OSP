@@ -6,6 +6,8 @@ import {
   parseByAggregate,
   getColumnPreviews,
   mergeAggregateRecords,
+  detectColumnsFromHeader,
+  buildDisplayNumberMap,
 } from '../utils/parseProposalExcel'
 import { addProposalFile } from '../services/tenderProposalFiles'
 
@@ -24,6 +26,9 @@ const A_FIELDS = [
   { key: 'priceMaterial', label: 'Цена материалов', default: 6 },
   { key: 'priceWork',     label: 'Цена работ',      default: 7 },
   { key: 'note',          label: 'Примечание',      default: null },
+  // Скрытый якорь из шаблона, выгруженного из ОСП (столбец «ID (не изменять)»).
+  // Если задан — матчинг идёт точно по нему, без угадывания № и сдвига строк.
+  { key: 'anchor',        label: 'Якорь ID (шаблон ОСП)', default: null },
 ]
 const A_DEFAULTS = Object.fromEntries(A_FIELDS.map(f => [f.key, f.default]))
 
@@ -109,6 +114,24 @@ function TenderProposalUploadModal({
     [workbook, sheetName]
   )
 
+  // Авто-определение столбцов формата A по заголовкам листа (в т.ч. скрытый якорь
+  // ID из шаблона ОСП, а также «Цена материалов»/«Цена работ»). Найденные поля
+  // заполняются, остальные (и ручные правки) сохраняются.
+  const autodetectColumns = (wb, sheetNm) => {
+    if (!wb || !sheetNm) return
+    const sheet = wb.Sheets[sheetNm]
+    if (!sheet) return
+    try {
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+      const detected = detectColumnsFromHeader(rows)
+      if (Object.keys(detected).length > 0) {
+        // anchor выставляем строго по факту: у внешнего файла без столбца-якоря
+        // сбрасываем его (иначе тянулся бы якорь от ранее загруженного шаблона ОСП).
+        setMapA(prev => ({ ...prev, ...detected, anchor: detected.anchor ?? null }))
+      }
+    } catch { /* игнорируем — останется дефолт/ручной маппинг */ }
+  }
+
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -116,18 +139,37 @@ function TenderProposalUploadModal({
     try {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
+      const firstSheet = wb.SheetNames?.[0] || ''
       setWorkbook(wb)
       setSheetNames(wb.SheetNames || [])
-      setSheetName(wb.SheetNames?.[0] || '')
+      setSheetName(firstSheet)
       setSheetNameWork('') // task 367: reset second sheet
       setStartRow('2')
       setEndRow('')
       setPreview(null)
+      autodetectColumns(wb, firstSheet)
     } catch (err) {
       alert('Ошибка чтения файла: ' + err.message)
     }
     if (fileRef.current) fileRef.current.value = ''
   }
+
+  // Наименование + иерархический № позиции ВОР по estimate_item_id — для превью цифр.
+  const itemInfoById = useMemo(() => {
+    const items = (estimateItems || []).filter(
+      it => (it.estimate_name || 'Основная смета') === docName && !it.is_section
+    )
+    const displayMap = buildDisplayNumberMap(items)
+    const m = new Map()
+    for (const [disp, it] of displayMap) m.set(it.id, { name: it.cost_name, num: disp })
+    return m
+  }, [estimateItems, docName])
+
+  const fmtMoney = (n) => (Number(n) || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const previewTotal = useMemo(
+    () => (preview?.records || []).reduce((s, r) => s + (Number(r.total_cost) || 0), 0),
+    [preview]
+  )
 
   const handleRecognize = () => {
     if (!workbook || !sheetName) {
@@ -460,7 +502,7 @@ function TenderProposalUploadModal({
                       <label>Лист Excel</label>
                       <select
                         value={sheetName}
-                        onChange={(e) => { setSheetName(e.target.value); setPreview(null) }}
+                        onChange={(e) => { setSheetName(e.target.value); setPreview(null); if (format === 'A') autodetectColumns(workbook, e.target.value) }}
                       >
                         {sheetNames.map(n => <option key={n} value={n}>{n}</option>)}
                       </select>
@@ -497,6 +539,13 @@ function TenderProposalUploadModal({
                     onClick={() => format === 'A' ? setMapA({ ...A_DEFAULTS }) : setMapB({ ...B_DEFAULTS })}
                   >Сбросить</button>
                 </div>
+                {format === 'A' && (
+                  <p style={{ margin: '0 0 0.625rem', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                    Столбцы определяются автоматически по заголовкам. Указывайте столбцы с
+                    <strong> ценой ЗА ЕДИНИЦУ</strong> (не суммы/итоги). Если файл выгружен из ОСП —
+                    заполнен скрытый «Якорь ID», и сопоставление точное. Проверьте цифры в превью ниже.
+                  </p>
+                )}
                 <div className="vor-column-map-grid">
                   {currentFields.map(f => {
                     const required = (format === 'A' && (f.key === 'priceMaterial' || f.key === 'priceWork'))
@@ -541,7 +590,68 @@ function TenderProposalUploadModal({
                 <span className="vor-import-section-title">
                   Распознано: {preview.records.length} позиций
                 </span>
+                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  ИТОГО КП: {fmtMoney(previewTotal)} ₽
+                </span>
               </div>
+
+              {/* Структура файла не совпадает с ВОР: много «уже была» / «не похоже» —
+                  формат «По позициям» не подходит, рекомендуем шаблон с якорем. */}
+              {format === 'A' && preview.warnings.length > 8 && (
+                <div style={{
+                  background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.35)',
+                  borderRadius: 8, padding: '0.625rem 0.75rem', marginBottom: '0.625rem',
+                  fontSize: '0.75rem', color: '#b91c1c', lineHeight: 1.45,
+                }}>
+                  <strong>Много несовпадений ({preview.warnings.length}).</strong> Похоже, структура
+                  файла отличается от ВОР (детальная смета с повторами/лишними материалами) —
+                  формат «По позициям ВОР» тут не подойдёт, цены привяжутся не к своим позициям.
+                  {' '}Надёжнее: <strong>скачайте ВОР из ОСП</strong> (кнопка «Экспорт» на вкладке
+                  ВОР), впишите цены в столбцы «Цена материалов/работ» и загрузите обратно —
+                  сопоставление пойдёт по скрытому ID, без ошибок.
+                </div>
+              )}
+
+              {/* Живой превью цифр — чтобы сразу увидеть, если цена «съехала» (миллиарды) */}
+              {preview.records.length > 0 && (
+                <div style={{ maxHeight: 260, overflow: 'auto', border: '1px solid var(--border-color)', borderRadius: 8, marginBottom: '0.625rem' }}>
+                  <table className="data-table" style={{ margin: 0, fontSize: '0.75rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: 48 }}>№</th>
+                        <th>Наименование (ВОР)</th>
+                        <th style={{ width: 90, textAlign: 'right' }}>Цена мат.</th>
+                        <th style={{ width: 90, textAlign: 'right' }}>Цена раб.</th>
+                        <th style={{ width: 120, textAlign: 'right' }}>ИТОГО</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.records.slice(0, 40).map((r, i) => {
+                        const info = itemInfoById.get(r.estimate_item_id)
+                        return (
+                          <tr key={r.estimate_item_id || i}>
+                            <td style={{ color: 'var(--text-tertiary)' }}>{info?.num || '—'}</td>
+                            <td style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={info?.name || ''}>
+                              {info?.name || <span style={{ color: 'var(--text-tertiary)' }}>— не сопоставлено —</span>}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>{r.unit_price_materials ? fmtMoney(r.unit_price_materials) : '—'}</td>
+                            <td style={{ textAlign: 'right' }}>{r.unit_price_works ? fmtMoney(r.unit_price_works) : '—'}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(r.total_cost)}</td>
+                          </tr>
+                        )
+                      })}
+                      {preview.records.length > 40 && (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>… и ещё {preview.records.length - 40} позиций</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p style={{ margin: '0 0 0.625rem', fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
+                Проверьте цены и ИТОГО. Если суммы неправдоподобно большие — вероятно выбран не тот
+                столбец цены (взята сумма вместо цены за единицу): поправьте «Сопоставление столбцов».
+              </p>
+
               {preview.warnings.length > 0 && (
                 <ul style={{ margin: '0 0 0.625rem', paddingLeft: '1.25rem', fontSize: '0.75rem', color: '#b45309' }}>
                   {preview.warnings.map((w, i) => <li key={i}>{w}</li>)}

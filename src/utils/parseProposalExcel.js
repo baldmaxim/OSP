@@ -103,6 +103,33 @@ export function buildDisplayNumberMap(itemsOfVor) {
   return map
 }
 
+// Авто-определение столбцов по строке заголовков (первые несколько строк листа).
+// Возвращает частичный columnMap только для НАЙДЕННЫХ полей (остальные не трогаем).
+// anchor — скрытый столбец «ID (не изменять)» из шаблона, выгруженного из ОСП;
+// по нему матчинг самый надёжный. priceMaterial/priceWork ищем по «цена … материал/работ».
+export function detectColumnsFromHeader(rows, maxScanRows = 6) {
+  const out = {}
+  const norm = (s) => String(s || '').toLowerCase().replace(SPACES_RE, ' ').trim()
+  const limit = Math.min(rows?.length || 0, maxScanRows)
+  for (let r = 0; r < limit; r++) {
+    const header = rows[r]
+    if (!Array.isArray(header)) continue
+    let hit = false
+    header.forEach((cellVal, idx) => {
+      const h = norm(cellVal)
+      if (!h) return
+      if (out.anchor == null && (/не изменя/.test(h) || /^id\b/.test(h) || /ид позиц/.test(h))) { out.anchor = idx; hit = true }
+      if (out.num == null && (/№ ?п|п\/п|^№$|^n$/.test(h))) { out.num = idx; hit = true }
+      if (out.code == null && /^код/.test(h)) { out.code = idx; hit = true }
+      if (out.name == null && /наимен/.test(h)) { out.name = idx; hit = true }
+      if (out.priceMaterial == null && /цена/.test(h) && /матер/.test(h)) { out.priceMaterial = idx; hit = true }
+      if (out.priceWork == null && /цена/.test(h) && /работ/.test(h)) { out.priceWork = idx; hit = true }
+    })
+    if (hit) break // нашли строку заголовков — дальше не сканируем
+  }
+  return out
+}
+
 // ===== Формат A: по позициям ВОР =====
 // columnMap: { num, code, name, priceMaterial, priceWork, note }.
 // rowRange: { start: 1-based, end: 1-based|null }.
@@ -139,6 +166,8 @@ export function parseByPosition({
   )
   const itemsByDisplay = buildDisplayNumberMap(itemsOfVor)
   const itemsByRowNum = new Map(itemsOfVor.map(it => [String(it.row_number), it]))
+  // Матчинг по скрытому якорю (ID позиции) — если файл выгружен из ОСП.
+  const itemsById = new Map(itemsOfVor.map(it => [String(it.id), it]))
 
   const cell = (row, idx) => (idx != null && row[idx] != null) ? row[idx] : null
   const seenItemIds = new Set()
@@ -173,8 +202,22 @@ export function parseByPosition({
 
     let item = null
 
-    // 1. Приоритет: матчинг по явному № (если он есть).
-    if (hasNum) {
+    // 0. Якорь: скрытый ID позиции ВОР из шаблона, выгруженного из ОСП. Самый
+    // надёжный матч — точно по позиции, без угадывания по № и без сдвига курсора.
+    if (columnMap.anchor != null) {
+      const rawId = cell(row, columnMap.anchor)
+      const id = rawId != null ? String(rawId).trim() : ''
+      if (id) {
+        const byId = itemsById.get(id)
+        if (byId) {
+          item = byId
+          cursor = itemsOfVor.indexOf(byId)
+        }
+      }
+    }
+
+    // 1. Приоритет: матчинг по явному № (если якорь не сработал).
+    if (!item && hasNum) {
       const key = normalizeNum(rawNum)
       item = itemsByDisplay.get(key) || itemsByRowNum.get(key)
       if (item) {
@@ -185,8 +228,8 @@ export function parseByPosition({
         unmatched.push({ row: i + 1, rowNumber: key, reason: 'нет позиции с таким №' })
         continue
       }
-    } else {
-      // 2. Нет № — берём следующий ВОР-item.
+    } else if (!item) {
+      // 2. Нет № и нет якоря — берём следующий ВОР-item.
       cursor++
       item = itemsOfVor[cursor]
       if (!item) {

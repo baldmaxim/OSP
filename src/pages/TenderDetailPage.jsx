@@ -1418,21 +1418,24 @@ function TenderDetailPage() {
     const wb = XLSX.utils.book_new()
 
     // ===== Лист 1: Исходный ВОР =====
-    const sourceHeaders = ['№ п/п', 'КОД', 'Наименование затрат', 'Ед. изм.', 'Объём работ', 'Объём материалов', 'Стоимость материалов от снабжения']
+    // task: столбцы «Цена материалов/работ» — контрагент заполняет их; скрытый
+    // столбец «ID (не изменять)» = estimate_item_id → надёжный реимпорт без
+    // угадывания столбцов и без сдвига строк (матчинг по якорю в парсере).
+    const sourceHeaders = ['№ п/п', 'КОД', 'Наименование затрат', 'Ед. изм.', 'Объём работ', 'Объём материалов', 'Стоимость материалов от снабжения', 'Цена материалов, ₽', 'Цена работ, ₽', 'ID (не изменять)']
     const sourceRows = [sourceHeaders]
     let workCount = 0
     let matCount = 0
     let exportDoc = null // текущий ВОР-документ (для сопоставления расценок снабжения)
     for (const it of currentEstimate) {
       if (it._isDocDivider) {
-        sourceRows.push([`=== ВОР: ${it._docName} (${it._docCount} позиций) ===`, '', '', '', '', '', ''])
+        sourceRows.push([`=== ВОР: ${it._docName} (${it._docCount} позиций) ===`, '', '', '', '', '', '', '', '', ''])
         workCount = 0
         matCount = 0
         exportDoc = it._docName
         continue
       }
       if (it.is_section) {
-        sourceRows.push(['', '', it.cost_name || '', '', '', '', ''])
+        sourceRows.push(['', '', it.cost_name || '', '', '', '', '', '', '', ''])
         continue
       }
       let num
@@ -1455,11 +1458,15 @@ function TenderDetailPage() {
         it.work_volume ?? '',
         it.material_consumption ?? '',
         supplyVal,
+        '', // Цена материалов — заполняет контрагент
+        '', // Цена работ — заполняет контрагент
+        it.id, // якорь для реимпорта
       ])
     }
     const wsSource = XLSX.utils.aoa_to_sheet(sourceRows)
     wsSource['!cols'] = [
       { wch: 8 }, { wch: 10 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 22 },
+      { wch: 16 }, { wch: 16 }, { wch: 38, hidden: true },
     ]
     XLSX.utils.book_append_sheet(wb, wsSource, 'Исходный ВОР')
 
