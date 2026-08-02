@@ -121,3 +121,8 @@
 .profile-message.error {
   color: #dc2626;
 }
+
+@media (max-width: 640px) {
+  .profile-page { padding-top: 0.5rem; }
+  .profile-card { padding: 1.125rem 1rem; }
+}

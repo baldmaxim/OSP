@@ -1,0 +1,140 @@
+/* Глобальный мобильный слой. Импортируется ПОСЛЕДНИМ в App.jsx, поэтому при равной
+   специфичности перебивает базовые правила. Брейкпоинт 640px совпадает с useIsPhone()
+   — так CSS и JS-переключение карточек синхронны.
+
+   Базовые классы (.modal, .data-table, .table-container, .form-grid, .page-header)
+   объявлены глобально и дублируются во многих файлах — здесь чиним их разом.
+   Страницы со своим карточным режимом (Тендеры/Договоры/ДС) на телефоне таблицу
+   не показывают, поэтому table-правила им не мешают, а модалки/формы — дополняют. */
+
+@media (max-width: 640px) {
+  /* ── Контент ────────────────────────────────────────────── */
+  .main-content { padding: 0.75rem; }
+
+  /* ── Модалки → лист на весь экран ───────────────────────── */
+  .modal-overlay,
+  .gd-modal-overlay,
+  .s3-doc-modal-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+  .gd-modal, .s3-doc-modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 100dvh;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  /* max-width:100% !important перебивает именованные модалки (cp-detail 1080px,
+     dcr-tasks 1180px, calc(100vw-48px) и т.п.). Скоуп-модалки (.counterparties-page
+     .modal, .object-detail-page .modal) имеют бОльшую специфичность — перечислены ниже. */
+  .modal-overlay > .modal,
+  .modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 100dvh;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  .counterparties-page .modal,
+  .object-detail-page .modal,
+  .cost-plans-page .modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    border-radius: 0 !important;
+  }
+  /* Правые выдвижные панели — во всю ширину */
+  .adm-drawer, .emp-drawer {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+
+  /* ── Таблицы → горизонтальная прокрутка с инерцией ──────── */
+  .table-container, .table-wrapper,
+  .users-table-wrap, .gd-table-container, .bsm-table-wrap,
+  .summary-table-wrap, .public-tenders-table-wrap, .roles-table-wrap,
+  .permissions-list-table-wrap, .rr-table-wrap,
+  .estimate-table-wrapper, .psdc-table-wrapper, .work-types-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  .data-table,
+  table.compact-table,
+  table.contracts-table,
+  table.dcr-table,
+  table.rr-table,
+  table.users-table,
+  table.gd-table,
+  table.bsm-table,
+  table.summary-table,
+  table.public-tenders-table,
+  table.dense-table {
+    font-size: 0.75rem;
+  }
+  .data-table th, .data-table td { padding: 0.5rem 0.4rem; }
+
+  /* ── Формы → одна колонка ───────────────────────────────── */
+  .form-grid { grid-template-columns: 1fr !important; }
+  .form-row { flex-direction: column; align-items: stretch; }
+  .form-row > * { width: 100%; }
+
+  /* ── Шапки страниц → в столбец ──────────────────────────── */
+  .page-header, .registry-header,
+  .rr-header, .bsm-header, .gd-header, .reports-header,
+  .contractor-header, .public-header-inner, .thub-header,
+  .general-info-header, .summary-header-board,
+  .object-detail-header, .info-header, .tender-detail-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.75rem;
+  }
+  /* Инфо-гриды детальных карточек → одна колонка */
+  .tender-info-grid, .contract-detail-grid, .info-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .page-header h2, .registry-header h2 { font-size: 1.25rem; }
+
+  /* ── Панели фильтров/тулбары → перенос, поля во всю ширину ─ */
+  .registry-filters, .rr-filters, .summary-filters, .reports-filters,
+  .user-filters, .bsm-filters, .map-filters, .emp-filters, .gd-toolbar,
+  .counterparties-toolbar, .toolbar-row, .toolbar-center, .toolbar-actions,
+  .report-toolbar, .rf-quick, .dcr-toolbar {
+    flex-wrap: wrap !important;
+    gap: 0.5rem;
+  }
+  /* Дочерние поля фильтров — на всю ширину строки */
+  .registry-filters > *, .rr-filters > *, .summary-filters > *,
+  .reports-filters > *, .user-filters > *, .gd-toolbar > *,
+  .counterparties-toolbar > *, .toolbar-center > * {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: none;
+  }
+  /* FilterDropdown внутри фильтров — на всю ширину */
+  .registry-filters .fdrop, .rr-filters .fdrop, .user-filters .fdrop,
+  .gd-toolbar .fdrop, .counterparties-toolbar .fdrop, .reports-filters .fdrop {
+    width: 100%;
+  }
+
+  /* ── Ряды кнопок/действий → перенос ─────────────────────── */
+  .page-header-actions, .header-actions, .modal-actions,
+  .form-actions, .drawer-actions, .bulk-bar {
+    flex-wrap: wrap;
+  }
+
+  /* ── Вкладки → горизонтальная прокрутка вместо переноса ──── */
+  .contract-tabs, .admin-tabs, .bsm-tabs-main, .bsm-tabs-sub,
+  .contacts-tabs, .estimate-doc-tabs, .status-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .contract-tab, .admin-tab, .contacts-tabs button, .status-tab {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  /* ── KPI/дашборд-сетки → одна колонка ───────────────────── */
+  .kpi-grid, .dash-grid { grid-template-columns: 1fr !important; }
+}

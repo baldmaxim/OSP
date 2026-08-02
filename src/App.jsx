@@ -7,6 +7,9 @@ import Sidebar from './components/Sidebar'
 import AccessError from './components/AccessError'
 import AccessDenied from './components/AccessDenied'
 import './App.css'
+// Глобальный мобильный слой — импортируется последним, чтобы перебивать базовые
+// правила при равной специфичности (модалки/формы/таблицы/шапки на всех страницах).
+import './mobile.css'
 
 // security fix: route-level гейт по конкретному праву раздела (canView). Самодостаточен
 // (проверяет загрузку/ошибку/тип пользователя), поэтому при отсутствии права запрещённая

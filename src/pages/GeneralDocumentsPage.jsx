@@ -5,6 +5,8 @@ import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
+import { useIsPhone } from '../hooks/useMediaQuery'
+import '../components/MobileCards.css'
 import './GeneralDocumentsPage.css'
 
 // task 416: реестр общих документов компании. Одна запись — «карточка документа»,
@@ -111,6 +113,7 @@ function uploadFailureReason(err, fileName) {
 export default function GeneralDocumentsPage() {
   const navigate = useNavigate()
   const { user, userProfile, canEdit } = useRole()
+  const isPhone = useIsPhone()
   const canEditDocs = canEdit('general_documents')
   // Отображаемое имя текущего пользователя (ФИО → email → null) для created_by/updated_by.
   const currentUserName = userProfile?.full_name || user?.email || null
@@ -482,6 +485,41 @@ export default function GeneralDocumentsPage() {
                 {canEditDocs && <button className="btn-primary" onClick={openAdd} style={{ marginTop: '0.75rem' }}>+ Добавить документ</button>}
               </>
             )}
+          </div>
+        ) : isPhone ? (
+          <div className="mcard-list">
+            {filtered.map((doc) => {
+              const materials = buildMaterials(doc)
+              return (
+                <div key={doc.id} className="mcard">
+                  <div className="mcard-head">
+                    <span className="mcard-title" style={{ fontSize: '0.9375rem' }}>{doc.title}</span>
+                    {canEditDocs && (
+                      <div className="mcard-actions">
+                        <button className="gd-icon-btn" onClick={() => openEdit(doc)} title="Редактировать" aria-label="Редактировать"><EditIcon /></button>
+                        <button className="gd-icon-btn gd-icon-danger" onClick={() => handleDelete(doc)} title="Удалить" aria-label="Удалить"><TrashIcon /></button>
+                      </div>
+                    )}
+                  </div>
+                  {doc.description && <div className="mcard-desc">{doc.description}</div>}
+                  {materials.length > 0 && (
+                    <div className="gd-materials" style={{ marginTop: '0.25rem' }}>
+                      {materials.map(renderMaterial)}
+                    </div>
+                  )}
+                  <div className="mcard-rows">
+                    <div className="mcard-row">
+                      <span className="mcard-label">Обновлено</span>
+                      <span className="mcard-value">{formatDateTime(doc.updated_at || doc.created_at)}</span>
+                    </div>
+                    <div className="mcard-row">
+                      <span className="mcard-label">Обновил</span>
+                      <span className="mcard-value">{doc.updated_by_name || doc.created_by_name || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         ) : (
           <div className="gd-table-container">

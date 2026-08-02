@@ -4,7 +4,9 @@ import { useRole } from '../contexts/RoleContext'
 import { formatPhone } from '../utils/phoneFormat'
 import FilterDropdown from '../components/FilterDropdown'
 import RowActionsMenu from '../components/RowActionsMenu'
+import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/GeneralInfo.css'
+import '../components/MobileCards.css'
 
 // Инициалы из ФИО (для нейтрального аватара — без фотографий).
 const initials = (name) => {
@@ -14,6 +16,7 @@ const initials = (name) => {
 }
 
 function ContactsPage() {
+  const isPhone = useIsPhone()
   // task 333: гейт add/edit/delete и inline-editing для раздела «contacts».
   const { canEdit } = useRole()
   const canEditContacts = canEdit('contacts')
@@ -611,6 +614,43 @@ function ContactsPage() {
             )}
           </div>
 
+          {isPhone && visibleContacts.length > 0 ? (
+            <div className="mcard-list">
+              {empPaged.map((contact) => {
+                const loc = contact.object_id ? (contact.objects?.name || 'Объект') : 'Офис'
+                const posName = normalizePosition(contact.position) || ''
+                const deptName = contact.departments?.name || ''
+                return (
+                  <div
+                    key={contact.id}
+                    className="mcard is-tappable"
+                    onClick={() => handleEditContact(contact)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleEditContact(contact) }}
+                  >
+                    <div className="mcard-head">
+                      <span className="mcard-title" style={{ fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span className="emp-avatar" aria-hidden>{initials(contact.full_name)}</span>
+                        {contact.full_name}
+                      </span>
+                    </div>
+                    <div className="mcard-rows">
+                      <div className="mcard-row"><span className="mcard-label">Офис / объект</span><span className="mcard-value">{loc}</span></div>
+                      {posName && <div className="mcard-row"><span className="mcard-label">Должность</span><span className="mcard-value">{posName}</span></div>}
+                      {deptName && <div className="mcard-row"><span className="mcard-label">Отдел</span><span className="mcard-value">{deptName}</span></div>}
+                      {(contact.phone || contact.email) && (
+                        <div className="mcard-row">
+                          <span className="mcard-label">Контакты</span>
+                          <span className="mcard-value">{[contact.phone, contact.email].filter(Boolean).join(' · ')}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
           <div className="table-container emp-table-wrap">
             <table className="data-table emp-table">
               <thead>
@@ -684,6 +724,7 @@ function ContactsPage() {
               </tbody>
             </table>
           </div>
+          )}
 
           {visibleContacts.length > 0 && (
             <div className="emp-pagination">

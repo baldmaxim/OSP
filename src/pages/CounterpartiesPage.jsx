@@ -9,6 +9,8 @@ import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import S3DocumentList from '../components/S3DocumentList'
 import { fetchCounterpartyDocSummary } from '../services/s3'
+import { useIsPhone } from '../hooks/useMediaQuery'
+import '../components/MobileCards.css'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
@@ -36,6 +38,7 @@ function CounterpartiesPage() {
   // task 333: гейт add/edit/delete и inline-editing для раздела «counterparties».
   const canEditCp = canEdit('counterparties')
   const [counterparties, setCounterparties] = useState([])
+  const isPhone = useIsPhone()
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null) // { success: [], errors: [], totalParsed: 0 }
@@ -1603,6 +1606,56 @@ function CounterpartiesPage() {
               </p>
               {!searchQuery.trim() && !workTypeFilter && canEditCp && (
                 <button className="btn-add" onClick={handleAddNewCounterparty}>+ Добавить</button>
+              )}
+            </div>
+          ) : isPhone ? (
+            <div className="mcard-list">
+              {filteredCounterparties.slice(0, visibleCount).map((cp) => {
+                const c0 = (cp.counterparty_contacts || [])[0]
+                const isBl = cp.status === 'blacklist'
+                return (
+                  <div
+                    key={cp.id}
+                    className="mcard is-tappable"
+                    onClick={() => openDetail(cp)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') openDetail(cp) }}
+                  >
+                    <div className="mcard-head">
+                      <span className="mcard-title" style={{ fontSize: '0.9375rem' }}>{cp.name}</span>
+                      <span className="mcard-chip" style={{
+                        color: isBl ? '#dc2626' : '#15803d',
+                        background: isBl ? 'rgba(220,38,38,0.12)' : 'rgba(22,163,74,0.12)',
+                      }}>{isBl ? 'ЧС' : 'Активный'}</span>
+                    </div>
+                    <div className="mcard-rows">
+                      {cp.work_type && (
+                        <div className="mcard-row"><span className="mcard-label">Вид работ</span><span className="mcard-value">{cp.work_type}</span></div>
+                      )}
+                      {cp.inn && (
+                        <div className="mcard-row"><span className="mcard-label">ИНН</span><span className="mcard-value">{cp.inn}</span></div>
+                      )}
+                      {c0 && (
+                        <div className="mcard-row"><span className="mcard-label">Контакт</span><span className="mcard-value">{c0.full_name}{c0.phone ? ` · ${c0.phone}` : ''}</span></div>
+                      )}
+                    </div>
+                    <div className="mcard-foot">
+                      <CounterpartyDocBadges summary={docSummaryByCp.get(cp.id)} showDate />
+                      <span className="mcard-open">Открыть ›</span>
+                    </div>
+                  </div>
+                )
+              })}
+              {visibleCount < filteredCounterparties.length && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ alignSelf: 'center' }}
+                  onClick={() => setVisibleCount(v => v + RENDER_STEP)}
+                >
+                  Показать ещё {Math.min(RENDER_STEP, filteredCounterparties.length - visibleCount)}
+                </button>
               )}
             </div>
           ) : (
