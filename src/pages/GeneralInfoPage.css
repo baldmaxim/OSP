@@ -98,3 +98,11 @@
     max-width: 300px;
   }
 }
+
+@media (max-width: 640px) {
+  .general-info-page .page-header { padding: 1rem; }
+  .general-info-page .page-header h2 { font-size: 1.25rem; }
+  .section-selection { padding: 1.25rem 1rem 1.75rem; }
+  .section-selection .selection-label { font-size: 1rem; margin-bottom: 1.25rem; }
+  .section-card { max-width: none; padding: 1.25rem 1rem; }
+}

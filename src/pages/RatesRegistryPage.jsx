@@ -24,6 +24,22 @@ const fmtDate = (iso) => {
   return d.toLocaleDateString('ru-RU')
 }
 
+// Понятное сообщение вместо «сырой» ошибки Postgres. Реестр опирается на
+// представления БД (kp_rates_registry / supply_rates_registry и т.д.) — если
+// миграция ещё не применена, вью нет и запрос падает с 42P01; на больших
+// выборках точный count может упереться в statement_timeout (57014).
+const describeRegistryError = (err) => {
+  const code = err?.code
+  const msg = String(err?.message || '')
+  if (code === '42P01' || /does not exist|не существует|relation .* does not exist/i.test(msg)) {
+    return 'Реестр расценок ещё не настроен в базе данных: не найдено нужное представление. Обратитесь к администратору — требуется применить миграции реестра (kp_rates_registry / supply_rates_registry).'
+  }
+  if (code === '57014' || /statement timeout|canceling statement/i.test(msg)) {
+    return 'Слишком большой объём данных для подсчёта. Уточните фильтры (объект, наименование или тендер), чтобы сузить выборку.'
+  }
+  return msg || 'Не удалось загрузить реестр'
+}
+
 const PAGE_SIZES = [50, 100, 250]
 // Сопоставление UI-сортировки → колонке представления.
 const SORT_COLUMN = {
@@ -133,6 +149,20 @@ function SupplyRegistrySection() {
   }, [debouncedSearch, objectIds, tenderIds, objects.length, tenders.length,
       priceMin, priceMax, dateFrom, dateTo])
 
+  // Best-effort точный count — таймаут подсчёта не роняет уже загруженные строки.
+  const countSupply = useCallback(async (from, data) => {
+    try {
+      let cq = supabase.from('supply_rates_registry').select('id', { count: 'exact', head: true })
+      cq = applyFilters(cq)
+      const { count, error } = await cq
+      if (error) throw error
+      return count || 0
+    } catch {
+      const n = data?.length || 0
+      return from + n + (n === pageSize ? pageSize : 0)
+    }
+  }, [applyFilters, pageSize])
+
   useEffect(() => {
     let cancelled = false
     const loadRefs = async () => {
@@ -168,21 +198,21 @@ function SupplyRegistrySection() {
       try {
         const from = page * pageSize
         const to = from + pageSize - 1
-        let q = supabase.from('supply_rates_registry').select(SUPPLY_SELECT_COLS, { count: 'exact' })
+        let q = supabase.from('supply_rates_registry').select(SUPPLY_SELECT_COLS)
         q = applyFilters(q)
         q = q
           .order(SUPPLY_SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
           .order('id', { ascending: true })
           .range(from, to)
-        const { data, count, error: qErr } = await q
+        const { data, error: qErr } = await q
         if (qErr) throw qErr
         if (cancelled) return
         setRows(data || [])
-        setTotalCount(count || 0)
+        setTotalCount(await countSupply(from, data))
       } catch (err) {
         if (cancelled) return
         console.error('Ошибка загрузки расценок снабжения:', err.message)
-        setError(err.message || 'Не удалось загрузить расценки снабжения')
+        setError(describeRegistryError(err))
         setRows([])
         setTotalCount(0)
       } finally {
@@ -191,7 +221,7 @@ function SupplyRegistrySection() {
     }
     run()
     return () => { cancelled = true }
-  }, [page, pageSize, sortBy, sortDir, applyFilters])
+  }, [page, pageSize, sortBy, sortDir, applyFilters, countSupply])
 
   const resetFilters = () => {
     setSearch(''); setObjectIds([]); setTenderIds([])
@@ -452,6 +482,23 @@ function RatesRegistryPage() {
   }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, objects.length,
       counterparties.length, tenders.length, priceMin, priceMax, dateFrom, dateTo])
 
+  // Best-effort точный count (для пагинации). Если подсчёт упал (statement_timeout
+  // по дедуп-вью на большой выборке) — не роняем уже загруженные строки, а оцениваем
+  // общее число так, чтобы «Вперёд»/«Назад» продолжали работать до реального конца.
+  const countRegistry = useCallback(async (view, itemType, from, data) => {
+    try {
+      let cq = supabase.from(view).select('id', { count: 'exact', head: true })
+      if (itemType) cq = cq.eq('item_type', itemType)
+      cq = applyFilters(cq)
+      const { count, error } = await cq
+      if (error) throw error
+      return count || 0
+    } catch {
+      const n = data?.length || 0
+      return from + n + (n === pageSize ? pageSize : 0)
+    }
+  }, [applyFilters, pageSize])
+
   // Справочники фильтров — один раз (лёгкие запросы к distinct-вью реестра).
   useEffect(() => {
     let cancelled = false
@@ -495,24 +542,28 @@ function RatesRegistryPage() {
       try {
         const from = page * pageSize
         const to = from + pageSize - 1
+        const itemType = kindTab === 'materials' ? 'material' : 'work'
+        // Данные — без count: точный подсчёт по дедуп-вью иногда упирается в
+        // statement_timeout и раньше ронял всю выборку. Теперь считаем отдельно
+        // и best-effort — таймаут count не мешает показать строки.
         let q = supabase
           .from('kp_rates_registry')
-          .select(SELECT_COLS, { count: 'exact' })
-          .eq('item_type', kindTab === 'materials' ? 'material' : 'work')
+          .select(SELECT_COLS)
+          .eq('item_type', itemType)
         q = applyFilters(q)
         q = q
           .order(SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
           .order('id', { ascending: true })
           .range(from, to)
-        const { data, count, error: qErr } = await q
+        const { data, error: qErr } = await q
         if (qErr) throw qErr
         if (cancelled) return
         setRows(data || [])
-        setTotalCount(count || 0)
+        setTotalCount(await countRegistry('kp_rates_registry', itemType, from, data))
       } catch (err) {
         if (cancelled) return
         console.error('Ошибка загрузки реестра:', err.message)
-        setError(err.message || 'Не удалось загрузить реестр')
+        setError(describeRegistryError(err))
         setRows([])
         setTotalCount(0)
       } finally {
@@ -521,7 +572,7 @@ function RatesRegistryPage() {
     }
     run()
     return () => { cancelled = true }
-  }, [topTab, kindTab, page, pageSize, sortBy, sortDir, applyFilters])
+  }, [topTab, kindTab, page, pageSize, sortBy, sortDir, applyFilters, countRegistry])
 
   // Счётчики обеих подвкладок с учётом фильтров (две лёгкие head-выборки count).
   useEffect(() => {

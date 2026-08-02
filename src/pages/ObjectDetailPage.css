@@ -2305,3 +2305,42 @@ tr:hover .btn-delete-row {
   font-style: italic;
 }
 
+
+/* ── Мобильная адаптация карточки объекта (≤768px) ─────────────────────────── */
+@media (max-width: 768px) {
+  /* Инфо-блок «Информация об объекте» — одна колонка (жёсткие 2 кривят на узком). */
+  .object-detail-page .info-grid { grid-template-columns: 1fr !important; }
+
+  /* Вкладки — горизонтальная прокрутка вместо обрезки/распирания 6 кнопок. */
+  .object-detail-page .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .object-detail-page .tabs::-webkit-scrollbar { display: none; }
+  .object-detail-page .tab {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Документы — широкие таблицы (6–7 колонок) прокручиваются вбок, а не схлопываются. */
+  .doc-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .doc-table { min-width: 620px; }
+
+  /* Таблицы вкладок «Гарантия»/«Площади»/«Удержания» — свой горизонтальный скролл. */
+  .object-detail-page .tab-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .object-detail-page .estimate-table-wrapper { overflow-x: auto; }
+}
+
+@media (max-width: 640px) {
+  /* Мельче служебные ширины, чтобы меньше скроллить. */
+  .doc-table { min-width: 560px; }
+  .object-detail-page .tab { padding: 0.5rem 0.75rem; font-size: 0.8125rem; }
+  .object-detail-page .cost-header,
+  .object-detail-page .doc-section-header,
+  .object-detail-page .info-header { flex-wrap: wrap; gap: 0.5rem; }
+}

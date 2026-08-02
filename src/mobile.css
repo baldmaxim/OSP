@@ -126,12 +126,20 @@
 
   /* ── Вкладки → горизонтальная прокрутка вместо переноса ──── */
   .contract-tabs, .admin-tabs, .bsm-tabs-main, .bsm-tabs-sub,
-  .contacts-tabs, .estimate-doc-tabs, .status-tabs {
+  .contacts-tabs, .estimate-doc-tabs, .status-tabs,
+  .tender-tabs, .estimate-subtabs, .estimate-subtabs-left, .rr-top-tabs {
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
-  .contract-tab, .admin-tab, .contacts-tabs button, .status-tab {
+  .contract-tabs::-webkit-scrollbar, .admin-tabs::-webkit-scrollbar,
+  .bsm-tabs-main::-webkit-scrollbar, .bsm-tabs-sub::-webkit-scrollbar,
+  .contacts-tabs::-webkit-scrollbar, .estimate-doc-tabs::-webkit-scrollbar,
+  .status-tabs::-webkit-scrollbar, .tender-tabs::-webkit-scrollbar,
+  .estimate-subtabs::-webkit-scrollbar, .rr-top-tabs::-webkit-scrollbar { display: none; }
+  .contract-tab, .admin-tab, .contacts-tabs button, .status-tab,
+  .tender-tabs button, .estimate-subtabs button, .rr-top-tab {
     white-space: nowrap;
     flex: 0 0 auto;
   }
