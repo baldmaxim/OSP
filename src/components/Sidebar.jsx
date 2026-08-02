@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import { useNotifications } from '../contexts/NotificationsContext'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import ThemeToggle from './ThemeToggle'
 import BrandLogo from './BrandLogo'
 import {
@@ -44,11 +46,69 @@ function NavItem({ to, label, tone, Icon, forceActive, badge }) {
   )
 }
 
+// Иконка-бургер для мобильного топбара.
+function MenuIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  )
+}
+
 function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { logout, canView, isAdmin, isSuperAdmin, isEmployee, role, roleLabels, scopedObjectIds } = useRole()
   const { unreadCount } = useNotifications()
+
+  // Мобильное меню: скрытый off-canvas drawer вместо горизонтальной ленты.
+  const isMobileNav = useMediaQuery('(max-width: 768px)')
+  const [open, setOpen] = useState(false)
+
+  // Закрываем drawer при переходе (клик по пункту → навигация) и по Escape.
+  useEffect(() => { setOpen(false) }, [location.pathname])
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
+
+  // Блокируем прокрутку фона, пока меню открыто.
+  useEffect(() => {
+    if (!(isMobileNav && open)) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [isMobileNav, open])
+
+  // Свайп: от левого края вправо — открыть; влево по открытому — закрыть.
+  useEffect(() => {
+    if (!isMobileNav) return
+    let sx = 0, sy = 0, track = false
+    const onStart = (e) => {
+      const t = e.touches[0]
+      sx = t.clientX; sy = t.clientY
+      track = open || sx <= 24 // тянем либо при открытом (для закрытия), либо от левого края
+    }
+    const onEnd = (e) => {
+      if (!track) return
+      const t = e.changedTouches[0]
+      const dx = t.clientX - sx
+      const dy = t.clientY - sy
+      if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy)) return // не горизонтальный жест
+      if (!open && sx <= 24 && dx > 0) setOpen(true)
+      else if (open && dx < 0) setOpen(false)
+    }
+    document.addEventListener('touchstart', onStart, { passive: true })
+    document.addEventListener('touchend', onEnd, { passive: true })
+    return () => {
+      document.removeEventListener('touchstart', onStart)
+      document.removeEventListener('touchend', onEnd)
+    }
+  }, [isMobileNav, open])
 
   // task 254: «Тендеры» — единый пункт-ссылка на страницу-хаб /tenders.
   // Подсвечиваем его активным на любой странице раздела тендеров.
@@ -133,7 +193,40 @@ function Sidebar() {
   ]
 
   return (
-    <aside className="sidebar">
+    <>
+      {isMobileNav && (
+        <header className="mobile-topbar">
+          <button
+            type="button"
+            className="mobile-menu-btn"
+            onClick={() => setOpen(true)}
+            aria-label="Открыть меню"
+            aria-expanded={open}
+          >
+            <MenuIcon />
+          </button>
+          <div className="mobile-topbar-brand">
+            <BrandLogo />
+            <span className="mobile-topbar-sub">Тендеры</span>
+          </div>
+          {isEmployee && (
+            <NavLink to="/notifications" className="mobile-topbar-bell" title="Уведомления" aria-label="Уведомления">
+              <IconNotifications />
+              {unreadCount > 0 && (
+                <span className="mobile-topbar-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+              )}
+            </NavLink>
+          )}
+        </header>
+      )}
+      {isMobileNav && (
+        <div
+          className={`mobile-nav-backdrop ${open ? 'is-open' : ''}`}
+          onClick={() => setOpen(false)}
+          aria-hidden
+        />
+      )}
+      <aside className={`sidebar ${open ? 'is-open' : ''}`}>
       <div className="sidebar-header">
         <h1 className="sidebar-title"><BrandLogo /></h1>
         <p className="sidebar-subtitle">Тендеры</p>
@@ -188,6 +281,7 @@ function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   )
 }
 

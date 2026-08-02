@@ -9,7 +9,8 @@
 
 @media (max-width: 640px) {
   /* ── Контент ────────────────────────────────────────────── */
-  .main-content { padding: 0.75rem; }
+  /* padding-top сохраняет зазор под фиксированным слим-топбаром (52px, см. Sidebar.css). */
+  .main-content { padding: calc(52px + 0.75rem) 0.75rem 0.75rem; }
 
   /* ── Модалки → лист на весь экран ───────────────────────── */
   .modal-overlay,

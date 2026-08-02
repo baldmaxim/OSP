@@ -40,11 +40,10 @@
 }
 
 @media (max-width: 768px) {
-  .layout {
-    flex-direction: column;
-  }
-
+  /* Сайдбар на телефоне — fixed off-canvas drawer (см. Sidebar.css), вне потока,
+     поэтому .main-content и так во всю ширину. flex-direction не нужен.
+     padding-top очищает контент из-под фиксированного слим-топбара (52px). */
   .main-content {
-    padding: 1rem;
+    padding: calc(52px + 0.75rem) 1rem 1rem;
   }
 }
