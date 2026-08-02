@@ -116,6 +116,7 @@ function Sidebar() {
     location.pathname.startsWith('/tenders')
     || location.pathname.startsWith('/cost-plans')
     || location.pathname.startsWith('/vors')
+    || location.pathname.startsWith('/kp-review')
 
   // Конфиг пунктов навигации. Порядок, маршруты и права доступа — как были;
   // visible повторяет прежние гейты один-в-один.

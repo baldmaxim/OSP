@@ -3,6 +3,19 @@
 // version_label, чтобы выделять «коммерческое предложение» и группировать его версии.
 import { supabase } from '../supabase'
 import { deleteDocument, uploadFile } from './s3'
+import { fetchAllRows } from '../utils/fetchAllRows'
+
+// task 431: статусы проверки КП аналитиком-экономистом.
+export const KP_REVIEW_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  HAS_REMARKS: 'has_remarks',
+}
+export const KP_REVIEW_LABEL = {
+  pending: 'На проверке',
+  approved: 'Проверено',
+  has_remarks: 'Есть замечания',
+}
 
 // Возвращает структуру для UI:
 //   {
@@ -84,6 +97,46 @@ export async function addProposalFile({
     throw error
   }
   return data
+}
+
+// task 431: проставить результат проверки КП аналитиком.
+// status: 'approved' (проверено, ОК) | 'has_remarks' (есть замечания) | 'pending' (вернуть на проверку).
+// Замечания (review_note) сохраняются только для has_remarks; reviewer — ФИО/e-mail проверяющего.
+export async function setProposalReview(fileId, { status, note = '', reviewer = '' }) {
+  const payload = {
+    review_status: status,
+    review_note: status === 'has_remarks' ? (note?.trim() || null) : null,
+    reviewed_at: status === 'pending' ? null : new Date().toISOString(),
+    reviewed_by: status === 'pending' ? null : (reviewer?.trim() || null),
+  }
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .update(payload)
+    .eq('id', fileId)
+    .select('*, s3:s3_documents!s3_document_id(*)')
+    .single()
+  if (error) throw error
+  return data
+}
+
+// task 431: очередь КП на проверку (вкладка «Проверка КП»). Тянет все КП-файлы
+// (file_kind='commercial_proposal') с джойном тендера/объекта/контрагента/ответственного.
+// statuses — массив статусов (null = все); objectIds — ограничение по объектам (scope сотрудника).
+export async function fetchProposalFilesForReview({ statuses = null, objectIds = null } = {}) {
+  return fetchAllRows((from, to) => {
+    let q = supabase
+      .from('tender_proposal_files')
+      .select(`id, tender_id, counterparty_id, version_label, created_at,
+               review_status, review_note, reviewed_at, reviewed_by,
+               s3:s3_documents!s3_document_id(*),
+               counterparties(name),
+               tenders!inner(id, work_description, object_id, objects(name),
+                 responsible_contact:contacts!responsible_contact_id(full_name))`)
+      .eq('file_kind', 'commercial_proposal')
+    if (statuses && statuses.length) q = q.in('review_status', statuses)
+    if (objectIds && objectIds.length) q = q.in('tenders.object_id', objectIds)
+    return q.order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to)
+  })
 }
 
 // Удаляет файл КП/документа. ON DELETE CASCADE на FK s3_document_id снесёт строку

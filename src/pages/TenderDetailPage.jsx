@@ -2619,7 +2619,7 @@ function TenderDetailPage() {
                     <tr>
                       {canEditTenders && <th style={{ width: '26px' }}></th>}
                       <th style={{ width: '40px' }}>№</th>
-                      <th>Наименование контрагента</th>
+                      <th style={{ width: '16%', minWidth: '150px' }}>Наименование компании</th>
                       <th>Контакт</th>
                       <th style={{ width: '140px' }}>Телефон</th>
                       <th style={{ width: '190px' }}>Статус</th>
@@ -2669,7 +2669,7 @@ function TenderDetailPage() {
                           )}
                           <td style={{ textAlign: 'center', fontWeight: 600, color: 'var(--text-tertiary)' }}>{idx + 1}</td>
                           <td>
-                            <div style={{ fontWeight: 600 }}>
+                            <div style={{ fontWeight: 600, wordBreak: 'break-word' }}>
                               {isWinner && <span title="Победитель" style={{ marginRight: '0.25rem' }}>🏆</span>}
                               {tc.counterparties?.name}
                               {isWinner && winnerScope && (

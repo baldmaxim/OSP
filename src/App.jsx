@@ -38,6 +38,7 @@ const TendersPage = lazy(() => import('./pages/TendersPage'))
 const TenderDetailPage = lazy(() => import('./pages/TenderDetailPage'))
 const CostPlansPage = lazy(() => import('./pages/CostPlansPage'))
 const VorsPage = lazy(() => import('./pages/VorsPage'))
+const KpReviewPage = lazy(() => import('./pages/KpReviewPage'))
 const SummaryPage = lazy(() => import('./pages/SummaryPage'))
 const ContractsPage = lazy(() => import('./pages/ContractsPage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
@@ -101,6 +102,7 @@ function EmployeeLayout() {
             <Route path="/tenders/:tenderId" element={<PermissionRoute section="tenders"><TenderDetailPage /></PermissionRoute>} />
             <Route path="/cost-plans" element={<PermissionRoute section="tenders"><CostPlansPage /></PermissionRoute>} />
             <Route path="/vors" element={<PermissionRoute section="tenders"><VorsPage /></PermissionRoute>} />
+            <Route path="/kp-review" element={<PermissionRoute section="tenders"><KpReviewPage /></PermissionRoute>} />
             <Route path="/summary" element={<PermissionRoute section="tenders"><SummaryPage /></PermissionRoute>} />
             <Route path="/analysis-kp" element={<PermissionRoute section="analysis_kp"><BSMPage /></PermissionRoute>} />
             <Route path="/contracts" element={<PermissionRoute section="contracts"><ContractsPage /></PermissionRoute>} />

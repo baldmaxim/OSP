@@ -41,9 +41,12 @@ const CheckAllIcon = () => (
 // Один пункт списка уведомлений. Внутри раздела вид (Тендер/Договор) очевиден из
 // заголовка секции, поэтому бейдж вида не показываем.
 function NotifItem({ n, read, onOpen }) {
+  const isReview = n.kind === 'kp_review'
+  const dateLabel = isReview ? 'Проверено'
+    : n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание'
   return (
     <li
-      className={`notif-item ${urgencyClass(n.days)}${read ? ' is-read' : ''}`}
+      className={`notif-item ${isReview ? 'is-review' : urgencyClass(n.days)}${read ? ' is-read' : ''}`}
       onClick={() => onOpen(n)}
       role="button"
       tabIndex={0}
@@ -53,14 +56,24 @@ function NotifItem({ n, read, onOpen }) {
       <div className="notif-body">
         <div className="notif-top">
           {n.badge && <span className="notif-num">{n.badge}</span>}
-          <span className={`notif-days ${urgencyClass(n.days)}`}>{daysLabel(n.days)}</span>
+          {isReview ? (
+            <span className={`notif-review-chip ${n.reviewStatus === 'has_remarks' ? 'is-remarks' : 'is-ok'}`}>
+              {n.reviewStatus === 'has_remarks' ? 'Есть замечания' : 'Проверено'}
+            </span>
+          ) : (
+            <span className={`notif-days ${urgencyClass(n.days)}`}>{daysLabel(n.days)}</span>
+          )}
           {!read && <span className="notif-unread" title="Не прочитано" aria-label="Не прочитано" />}
         </div>
         <div className="notif-object">{n.objectName}</div>
         {n.subtitle && <div className="notif-subtitle">{n.subtitle}</div>}
-        <div className="notif-date">
-          {n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание'}: {formatDateRu(n.date)}
-        </div>
+        {isReview && n.responsible && (
+          <div className="notif-subtitle notif-responsible">
+            Ответственный: {n.responsible} — направить контрагенту
+          </div>
+        )}
+        {isReview && n.note && <div className="notif-review-note">{n.note}</div>}
+        <div className="notif-date">{dateLabel}: {formatDateRu(n.date)}</div>
       </div>
       <span className="notif-open" aria-hidden>›</span>
     </li>
@@ -70,7 +83,7 @@ function NotifItem({ n, read, onOpen }) {
 function NotificationsPage() {
   const navigate = useNavigate()
   const { notifications, unreadCount, loading, markAllRead, markRead, isRead } = useNotifications()
-  const [tab, setTab] = useState('tender') // 'tender' | 'contract'
+  const [tab, setTab] = useState('tender') // 'tender' | 'contract' | 'kp_review'
 
   const openItem = (n) => {
     markRead(n.key)
@@ -80,10 +93,12 @@ function NotificationsPage() {
   // Разбиваем по виду; порядок внутри сохраняется (уже отсортированы по срочности).
   const tenderItems = useMemo(() => notifications.filter(n => n.kind === 'tender'), [notifications])
   const contractItems = useMemo(() => notifications.filter(n => n.kind === 'contract'), [notifications])
+  const kpReviewItems = useMemo(() => notifications.filter(n => n.kind === 'kp_review'), [notifications])
   const tenderUnread = useMemo(() => tenderItems.filter(n => !isRead(n.key)).length, [tenderItems, isRead])
   const contractUnread = useMemo(() => contractItems.filter(n => !isRead(n.key)).length, [contractItems, isRead])
+  const kpUnread = useMemo(() => kpReviewItems.filter(n => !isRead(n.key)).length, [kpReviewItems, isRead])
 
-  const activeItems = tab === 'tender' ? tenderItems : contractItems
+  const activeItems = tab === 'tender' ? tenderItems : tab === 'contract' ? contractItems : kpReviewItems
 
   return (
     <div className="notifications-page">
@@ -125,14 +140,32 @@ function NotificationsPage() {
           <span className="notif-toggle-count">{contractItems.length}</span>
           {contractUnread > 0 && <span className="notif-toggle-dot" title={`${contractUnread} непрочитанных`} />}
         </button>
+        <button
+          role="tab"
+          aria-selected={tab === 'kp_review'}
+          className={`notif-toggle-btn notif-toggle-review${tab === 'kp_review' ? ' is-active' : ''}`}
+          onClick={() => setTab('kp_review')}
+        >
+          <span>Проверка КП</span>
+          <span className="notif-toggle-count">{kpReviewItems.length}</span>
+          {kpUnread > 0 && <span className="notif-toggle-dot" title={`${kpUnread} непрочитанных`} />}
+        </button>
       </div>
 
       {loading ? (
         <div className="notif-empty">Загрузка…</div>
       ) : activeItems.length === 0 ? (
         <div className="notif-empty">
-          <p>{tab === 'tender' ? 'Нет тендеров с приближающимся сроком.' : 'Нет договоров с приближающимся сроком.'}</p>
-          <p className="notif-empty-hint">Здесь появятся записи, которые скоро завершаются.</p>
+          <p>{tab === 'tender'
+            ? 'Нет тендеров с приближающимся сроком.'
+            : tab === 'contract'
+              ? 'Нет договоров с приближающимся сроком.'
+              : 'Нет недавно проверенных КП.'}</p>
+          <p className="notif-empty-hint">
+            {tab === 'kp_review'
+              ? 'Здесь появятся результаты проверки КП аналитиком — их нужно направить контрагенту.'
+              : 'Здесь появятся записи, которые скоро завершаются.'}
+          </p>
         </div>
       ) : (
         <ul className="notif-list">

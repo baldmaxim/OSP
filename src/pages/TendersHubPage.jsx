@@ -17,6 +17,8 @@ const CONSTRUCTION_SUBSECTIONS = [
   { to: '/vors', Icon: IconDocument, title: 'ВОРы и РД', desc: 'Ведомости объёмов работ и рабочая документация' },
   { to: '/tenders/materials', Icon: IconPackage, title: 'Тендеры на материалы', desc: 'Закупка материалов по объектам' },
   { to: '/cost-plans', Icon: IconCalculator, title: 'Планы затрат', desc: 'Планирование стоимости по тендерам' },
+  // task 431: очередь проверки КП аналитиком-экономистом.
+  { to: '/kp-review', Icon: IconShieldCheck, title: 'Проверка КП', desc: 'Проверка коммерческих предложений аналитиком' },
 ]
 
 // task 254: страница-хаб «Тендеры» — два направления работы

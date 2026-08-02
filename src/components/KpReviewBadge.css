@@ -1,0 +1,48 @@
+/* task 431: бейдж статуса проверки КП */
+.kpb-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+  max-width: 100%;
+}
+.kpb-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.kpb-pill-inner { display: inline-flex; align-items: center; gap: 0.3rem; }
+button.kpb-pill { cursor: pointer; font-family: inherit; }
+.kpb-clickable:hover { filter: brightness(0.96); }
+
+.kpb-pending {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+}
+.kpb-approved {
+  background: color-mix(in srgb, #16a34a 14%, transparent);
+  color: #15803d;
+  border-color: color-mix(in srgb, #16a34a 35%, transparent);
+}
+.kpb-remarks {
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
+  color: #b45309;
+  border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+}
+[data-theme='dark'] .kpb-approved { color: #4ade80; }
+[data-theme='dark'] .kpb-remarks { color: #fbbf24; }
+
+.kpb-remarks-text {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}

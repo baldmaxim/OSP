@@ -22,6 +22,8 @@ const NotificationsContext = createContext(null)
 // и их отметки «прочитано» сбрасываются — bump ключа обнуляет старое состояние).
 const READ_KEY = 'notifications_read_v2'
 const HORIZON_DAYS = 5
+// task 431: недавно проверенные КП попадают в уведомления в течение N дней после проверки.
+const REVIEW_LOOKBACK_DAYS = 14
 
 // Завершённые статусы, по которым не уведомляем.
 const TENDER_DONE = new Set(['Завершен', 'Завершён', 'Принято в работу'])
@@ -109,7 +111,7 @@ export function NotificationsProvider({ children }) {
       const contractsQ = canContracts
         ? supabase
           .from('contracts')
-          .select('id, contract_number, signed_date, status, objects(name)')
+          .select('id, contract_number, work_name, signed_date, status, objects(name)')
           .is('deleted_at', null)
           .not('signed_date', 'is', null)
           .gte('signed_date', todayStr)
@@ -118,9 +120,27 @@ export function NotificationsProvider({ children }) {
           .limit(1000)
         : null
 
-      const [tendersRes, contractsRes] = await Promise.all([
+      // task 431: недавно завершённые проверки КП (approved/has_remarks) — уведомляем
+      // ответственного по тендеру, чтобы он направил результат контрагенту.
+      let kpReviewQ = null
+      if (canTenders) {
+        const reviewSince = todayMidnight()
+        reviewSince.setDate(reviewSince.getDate() - REVIEW_LOOKBACK_DAYS)
+        kpReviewQ = supabase
+          .from('tender_proposal_files')
+          .select('id, tender_id, review_status, review_note, reviewed_at, counterparties(name), tenders!inner(work_description, object_id, objects(name), responsible_contact:contacts!responsible_contact_id(full_name))')
+          .eq('file_kind', 'commercial_proposal')
+          .in('review_status', ['approved', 'has_remarks'])
+          .gte('reviewed_at', reviewSince.toISOString())
+          .order('reviewed_at', { ascending: false })
+          .limit(1000)
+        if (scopedObjectIds.length > 0) kpReviewQ = kpReviewQ.in('tenders.object_id', scopedObjectIds)
+      }
+
+      const [tendersRes, contractsRes, kpReviewRes] = await Promise.all([
         tendersQ ? tendersQ : Promise.resolve({ data: [], error: null }),
         contractsQ ? contractsQ : Promise.resolve({ data: [], error: null }),
+        kpReviewQ ? kpReviewQ : Promise.resolve({ data: [], error: null }),
       ])
       if (tendersRes.error) throw tendersRes.error
       if (contractsRes.error) throw contractsRes.error
@@ -153,15 +173,44 @@ export function NotificationsProvider({ children }) {
           id: c.id,
           key: `contract:${c.id}:${bucketOf(days)}`,
           objectName: c.objects?.name || 'Договор',
-          subtitle: c.contract_number ? `№ ${c.contract_number}` : '№ не присвоен',
-          badge: null,
+          // Показываем выполняемые работы (как у тендеров), номер договора — бейджем.
+          subtitle: c.work_name || (c.contract_number ? `№ ${c.contract_number}` : '№ не присвоен'),
+          badge: c.contract_number ? `№ ${c.contract_number}` : null,
           date: c.signed_date,
           days,
           to: `/contracts/${c.id}`,
         })
       }
 
-      // Самые срочные (просроченные и «сегодня») — вверху.
+      // task 431: проверки КП. Query best-effort — если миграция 20260802 ещё не
+      // применена (нет review-полей), просто пропускаем, не ломая остальные уведомления.
+      if (kpReviewRes.error) {
+        console.warn('Проверки КП не загружены (миграция 20260802?):', kpReviewRes.error.message)
+      } else {
+        for (const f of kpReviewRes.data || []) {
+          const t = f.tenders
+          const statusLabel = f.review_status === 'has_remarks'
+            ? 'есть замечания'
+            : 'проверено, замечаний нет'
+          out.push({
+            kind: 'kp_review',
+            id: f.id,
+            key: `kp_review:${f.id}:${f.review_status}`,
+            objectName: t?.objects?.name || 'Тендер',
+            subtitle: `${f.counterparties?.name || 'Контрагент'} — ${statusLabel}`,
+            responsible: t?.responsible_contact?.full_name || '',
+            note: f.review_status === 'has_remarks' ? (f.review_note || '') : '',
+            reviewStatus: f.review_status,
+            badge: null,
+            date: f.reviewed_at,
+            days: 0,
+            to: `/tenders/${f.tender_id}`,
+          })
+        }
+      }
+
+      // Самые срочные (просроченные и «сегодня») — вверху. Проверки КП (days=0)
+      // остаются в порядке добавления (по дате проверки, свежие сверху).
       out.sort((a, b) => a.days - b.days)
       setNotifications(out)
     } catch (err) {

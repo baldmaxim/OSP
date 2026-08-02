@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS tender_proposal_files (
   file_kind TEXT NOT NULL CHECK (file_kind IN ('commercial_proposal', 'attachment')),
   proposal_group_id UUID,
   version_label TEXT,
+  -- task 431: проверка КП аналитиком-экономистом.
+  review_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (review_status IN ('pending', 'approved', 'has_remarks')),
+  review_note TEXT,
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

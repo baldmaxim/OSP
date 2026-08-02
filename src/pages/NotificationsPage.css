@@ -208,6 +208,36 @@
 .notif-item.is-today .notif-dot { background: #ea580c; }
 .notif-item.is-soon .notif-dot { background: #d97706; }
 .notif-item.is-upcoming .notif-dot { background: #2563eb; }
+.notif-item.is-review .notif-dot { background: #16a34a; }
+
+/* task 431: вкладка и элементы «Проверка КП» */
+.notif-toggle-btn.is-active.notif-toggle-review .notif-toggle-count { background: rgba(22, 163, 74, 0.16); color: #15803d; }
+[data-theme='dark'] .notif-toggle-btn.is-active.notif-toggle-review .notif-toggle-count { color: #4ade80; }
+
+.notif-review-chip {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+}
+.notif-review-chip.is-ok { background: rgba(22, 163, 74, 0.14); color: #15803d; }
+.notif-review-chip.is-remarks { background: rgba(245, 158, 11, 0.18); color: #b45309; }
+[data-theme='dark'] .notif-review-chip.is-ok { color: #4ade80; }
+[data-theme='dark'] .notif-review-chip.is-remarks { color: #fbbf24; }
+
+.notif-responsible { font-weight: 600; }
+.notif-review-note {
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.55rem;
+  border-left: 2px solid rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 .notif-body {
   flex: 1;

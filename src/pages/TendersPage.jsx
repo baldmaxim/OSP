@@ -2829,7 +2829,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                 <tr>
                                   {canEditTenders && <th style={{ width: '26px' }}></th>}
                                   <th style={{ width: '40px' }}>№</th>
-                                  <th style={{ width: '20%' }}>Наименование</th>
+                                  <th style={{ width: '16%', minWidth: '150px' }}>Наименование компании</th>
                                   <th style={{ width: '13%' }}>Контактные данные</th>
                                   <th style={{ width: '140px' }}>Email</th>
                                   <th style={{ width: '190px' }}>Статус</th>
@@ -2877,7 +2877,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                       {index + 1}
                                     </td>
                                     <td>
-                                      <div style={{ fontWeight: 600 }}>
+                                      <div style={{ fontWeight: 600, wordBreak: 'break-word' }}>
                                         {tc.counterparties?.name}
                                       </div>
                                       {tc.counterparties?.work_type && (

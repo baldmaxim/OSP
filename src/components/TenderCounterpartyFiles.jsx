@@ -7,6 +7,8 @@ import {
   fetchProposalFiles,
 } from '../services/tenderProposalFiles'
 import S3DocumentPreview from './S3DocumentPreview'
+import KpReviewModal from './KpReviewModal'
+import KpReviewBadge from './KpReviewBadge'
 import './TenderCounterpartyFiles.css'
 
 // Файлы КП и сопутствующие документы одного контрагента в рамках тендера (task 290).
@@ -34,9 +36,11 @@ function formatDateTime(iso) {
   return `${dd}.${mm}.${yyyy} ${hh}:${mi}`
 }
 
-function FileRow({ file, variant, onDownload, onPreview, onDelete }) {
+function FileRow({ file, variant, onDownload, onPreview, onDelete, canReview, onReview }) {
   const s3 = file.s3
   if (!s3) return null
+  // Проверку показываем только для КП (не для вспомогательных документов).
+  const isProposal = file.file_kind === 'commercial_proposal'
   const cls =
     `tcpf-row${variant === 'primary' ? ' tcpf-row-primary' : ''}${variant === 'muted' ? ' tcpf-row-muted' : ''}`
   return (
@@ -49,6 +53,9 @@ function FileRow({ file, variant, onDownload, onPreview, onDelete }) {
           <span className="tcpf-row-label" title={file.version_label}>
             {file.version_label}
           </span>
+        )}
+        {isProposal && (
+          <KpReviewBadge file={file} canReview={canReview} onReview={onReview} showRemarks />
         )}
       </div>
       <div className="tcpf-row-meta">
@@ -79,8 +86,10 @@ export default function TenderCounterpartyFiles({
   counterpartyId,
   canEdit: canEditProp,
 }) {
-  const { isEmployee } = useRole()
+  const { isEmployee, isAdmin, role } = useRole()
   const canEdit = canEditProp !== undefined ? canEditProp : isEmployee
+  // task 431: проверять КП может экономист ОСП и админ.
+  const canReview = isAdmin || role === 'economist'
 
   const [data, setData] = useState({ proposals: [], attachments: [] })
   const [loading, setLoading] = useState(true)
@@ -88,6 +97,8 @@ export default function TenderCounterpartyFiles({
   const [uploading, setUploading] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState(() => new Set())
   const [previewDoc, setPreviewDoc] = useState(null)
+  // task 431: файл, для которого открыта модалка проверки КП.
+  const [reviewFile, setReviewFile] = useState(null)
   // task 300: список файлов свёрнут по умолчанию.
   const [isExpanded, setIsExpanded] = useState(false)
   // task 300: модалка для ввода метки версии при загрузке КП.
@@ -277,6 +288,8 @@ export default function TenderCounterpartyFiles({
                   onDownload={handleDownload}
                   onPreview={setPreviewDoc}
                   onDelete={canEdit ? handleDelete : null}
+                  canReview={canReview}
+                  onReview={setReviewFile}
                 />
                 {group.older.length > 0 && (
                   <>
@@ -297,6 +310,8 @@ export default function TenderCounterpartyFiles({
                             onDownload={handleDownload}
                             onPreview={setPreviewDoc}
                             onDelete={canEdit ? handleDelete : null}
+                            canReview={canReview}
+                            onReview={setReviewFile}
                           />
                         ))}
                       </div>
@@ -333,6 +348,15 @@ export default function TenderCounterpartyFiles({
 
       {previewDoc && (
         <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+      )}
+
+      {/* task 431: модалка проверки КП */}
+      {reviewFile && (
+        <KpReviewModal
+          file={reviewFile}
+          onClose={() => setReviewFile(null)}
+          onSaved={reload}
+        />
       )}
 
       {/* Модалка загрузки КП */}
