@@ -92,11 +92,10 @@ export function NotificationsProvider({ children }) {
       const horizonStr = toDateOnlyString(horizon)
       const out = []
 
-      // Тендеры — по tender_end_date. Окно [сегодня, сегодня+5]: просроченные не
-      // показываем, отсчёт идёт с сегодняшнего дня. Руководителя строительства
-      // ограничиваем его объектом.
+      // Тендеры и договоры независимы — грузим параллельно (быстрее старт приложения).
+      let tendersQ = null
       if (canTenders) {
-        let q = supabase
+        tendersQ = supabase
           .from('tenders')
           .select('id, public_tender_number, work_description, tender_end_date, status, object_id, objects(name)')
           .is('deleted_at', null)
@@ -105,30 +104,10 @@ export function NotificationsProvider({ children }) {
           .lte('tender_end_date', horizonStr)
           .order('tender_end_date', { ascending: true })
           .limit(1000)
-        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
-        const { data, error } = await q
-        if (error) throw error
-        for (const t of data || []) {
-          if (TENDER_DONE.has(t.status)) continue
-          const days = daysUntil(t.tender_end_date)
-          if (days < 0 || days > HORIZON_DAYS) continue
-          out.push({
-            kind: 'tender',
-            id: t.id,
-            key: `tender:${t.id}:${bucketOf(days)}`,
-            objectName: t.objects?.name || 'Тендер',
-            subtitle: t.work_description || '',
-            badge: t.public_tender_number != null ? `№${t.public_tender_number}` : null,
-            date: t.tender_end_date,
-            days,
-            to: `/tenders/${t.id}`,
-          })
-        }
+        if (scopedObjectIds.length > 0) tendersQ = tendersQ.in('object_id', scopedObjectIds)
       }
-
-      // Договоры — по signed_date (планируемая дата подписания). Окно [сегодня, +5].
-      if (canContracts) {
-        const { data, error } = await supabase
+      const contractsQ = canContracts
+        ? supabase
           .from('contracts')
           .select('id, contract_number, signed_date, status, objects(name)')
           .is('deleted_at', null)
@@ -137,23 +116,49 @@ export function NotificationsProvider({ children }) {
           .lte('signed_date', horizonStr)
           .order('signed_date', { ascending: true })
           .limit(1000)
-        if (error) throw error
-        for (const c of data || []) {
-          if (CONTRACT_DONE.has(c.status)) continue
-          const days = daysUntil(c.signed_date)
-          if (days < 0 || days > HORIZON_DAYS) continue
-          out.push({
-            kind: 'contract',
-            id: c.id,
-            key: `contract:${c.id}:${bucketOf(days)}`,
-            objectName: c.objects?.name || 'Договор',
-            subtitle: c.contract_number ? `№ ${c.contract_number}` : '№ не присвоен',
-            badge: null,
-            date: c.signed_date,
-            days,
-            to: `/contracts/${c.id}`,
-          })
-        }
+        : null
+
+      const [tendersRes, contractsRes] = await Promise.all([
+        tendersQ ? tendersQ : Promise.resolve({ data: [], error: null }),
+        contractsQ ? contractsQ : Promise.resolve({ data: [], error: null }),
+      ])
+      if (tendersRes.error) throw tendersRes.error
+      if (contractsRes.error) throw contractsRes.error
+
+      // Тендеры — по tender_end_date. Окно [сегодня, сегодня+5].
+      for (const t of tendersRes.data || []) {
+        if (TENDER_DONE.has(t.status)) continue
+        const days = daysUntil(t.tender_end_date)
+        if (days < 0 || days > HORIZON_DAYS) continue
+        out.push({
+          kind: 'tender',
+          id: t.id,
+          key: `tender:${t.id}:${bucketOf(days)}`,
+          objectName: t.objects?.name || 'Тендер',
+          subtitle: t.work_description || '',
+          badge: t.public_tender_number != null ? `№${t.public_tender_number}` : null,
+          date: t.tender_end_date,
+          days,
+          to: `/tenders/${t.id}`,
+        })
+      }
+
+      // Договоры — по signed_date (планируемая дата подписания). Окно [сегодня, +5].
+      for (const c of contractsRes.data || []) {
+        if (CONTRACT_DONE.has(c.status)) continue
+        const days = daysUntil(c.signed_date)
+        if (days < 0 || days > HORIZON_DAYS) continue
+        out.push({
+          kind: 'contract',
+          id: c.id,
+          key: `contract:${c.id}:${bucketOf(days)}`,
+          objectName: c.objects?.name || 'Договор',
+          subtitle: c.contract_number ? `№ ${c.contract_number}` : '№ не присвоен',
+          badge: null,
+          date: c.signed_date,
+          days,
+          to: `/contracts/${c.id}`,
+        })
       }
 
       // Самые срочные (просроченные и «сегодня») — вверху.

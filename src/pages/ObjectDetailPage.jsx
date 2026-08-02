@@ -9,6 +9,7 @@ import S3DocumentPreview from '../components/S3DocumentPreview'
 import WarrantyActSignModal from '../components/WarrantyActSignModal'
 import WarrantyDocSelect from '../components/WarrantyDocSelect'
 import AccessDenied from '../components/AccessDenied'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import './ObjectDetailPage.css'
 
 // task 372: подсказки для полей площадей (datalist — список + своё значение).
@@ -546,9 +547,15 @@ function ObjectDetailPage() {
         }
       }
 
-      const { data: estimateData, error: estimateError } = await supabase
-        .from('object_estimate_items').select('*').eq('object_id', objectId).order('row_number')
-      if (!estimateError) setEstimateItems(estimateData || [])
+      // Постранично — смета объекта может превышать потолок PostgREST в 1000 строк.
+      try {
+        const estimateData = await fetchAllRows((from, to) => supabase
+          .from('object_estimate_items').select('*').eq('object_id', objectId)
+          .order('row_number').order('id').range(from, to))
+        setEstimateItems(estimateData)
+      } catch (estimateError) {
+        console.error('Ошибка загрузки сметы объекта:', estimateError.message)
+      }
 
       // task 357: подтягиваем s3-документ подписанного акта (если есть)
       //   как нэстед-поле actual_start_doc — отдельный SELECT не нужен.
@@ -837,7 +844,7 @@ function ObjectDetailPage() {
         document_number: documentFormData.document_number.trim() || null,
         document_date: documentFormData.document_date || null,
         notes: documentFormData.notes?.trim() || null,
-        order_number: editingDocument?.order_number || documents.length + 1,
+        order_number: editingDocument?.order_number ?? (documents.length + 1),
         signed_s3_document_id: docFiles.signed?.id || null,
         editable_s3_document_id: docFiles.editable?.id || null,
       }
@@ -1212,7 +1219,7 @@ function ObjectDetailPage() {
         end_date_override: fd.end_date_override || null,
         notes: fd.notes.trim() || null,
         actual_start_document_id: actualStartDocId,
-        order_number: editingWarranty?.order_number || warranties.length + 1
+        order_number: editingWarranty?.order_number ?? (warranties.length + 1)
       }
       if (editingWarranty) {
         const { error } = await supabase.from('object_warranties').update(dataToSave).eq('id', editingWarranty.id)
@@ -1383,7 +1390,7 @@ function ObjectDetailPage() {
         retention_percent: parseFloat(retentionFormData.retention_percent) || 0,
         retention_period: retentionFormData.retention_period.trim() || null,
         notes: retentionFormData.notes.trim() || null,
-        order_number: editingRetention?.order_number || retentions.length + 1
+        order_number: editingRetention?.order_number ?? (retentions.length + 1)
       }
       // Получаем id записи (для UPDATE он известен, для INSERT — берём из inserted).
       let retentionId = editingRetention?.id
@@ -2178,7 +2185,7 @@ function ObjectDetailPage() {
                         <td colSpan={hasSections ? 7 : 6}><strong>ИТОГО</strong></td>
                         <td className="money total-cell"><strong>{formatMoney(estimateTotal)}</strong></td>
                         <td>{/* примечание */}</td>
-                        {!isEstimateApproved && <td></td>}
+                        {!isEstimateApproved && canEditObj && <td></td>}
                       </>
                     ) : (
                       <>
@@ -2187,7 +2194,7 @@ function ObjectDetailPage() {
                         <td className="money"><strong>{formatMoney(estimateTotalWorks)}</strong></td>
                         <td className="money total-cell"><strong>{formatMoney(estimateTotal)}</strong></td>
                         <td>{/* примечание */}</td>
-                        {!isEstimateApproved && <td></td>}
+                        {!isEstimateApproved && canEditObj && <td></td>}
                       </>
                     )}
                   </tr>

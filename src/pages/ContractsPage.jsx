@@ -7,6 +7,7 @@ import FilterDropdown from '../components/FilterDropdown'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import { fetchCounterpartyDocSummary } from '../services/s3'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import {
   buildAppendixTree,
   reorderSiblings,
@@ -336,13 +337,16 @@ function ContractRegistry() {
       // остальные поля (ответственный, статус, примечание) юристы заполняют сами.
       const ids = filtered.map(c => c.id)
       if (ids.length > 0) {
-        const { data: apRows, error: apErr } = await supabase
+        // Постранично — приложений по всему реестру договоров может быть >1000
+        // (потолок PostgREST), иначе у части договоров они молча пропадают.
+        const apRows = await fetchAllRows((from, to) => supabase
           .from('contract_appendices')
           .select('*')
           .in('contract_id', ids)
           .order('sort_order', { ascending: true })
           .order('created_at', { ascending: true })
-        if (apErr) throw apErr
+          .order('id', { ascending: true })
+          .range(from, to))
         const apMap = {}
         for (const r of apRows || []) {
           if (!apMap[r.contract_id]) apMap[r.contract_id] = []

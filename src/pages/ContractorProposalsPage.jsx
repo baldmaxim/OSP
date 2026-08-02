@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
+import { cleanNumeric } from '../utils/parseProposalExcel'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import './ContractorProposalsPage.css'
 
 function ContractorProposalsPage() {
@@ -71,13 +73,14 @@ function ContractorProposalsPage() {
 
   const fetchEstimateItems = async (tenderId) => {
     try {
-      const { data, error } = await supabase
+      // Постранично — ВОР может превышать потолок PostgREST в 1000 строк.
+      const data = await fetchAllRows((from, to) => supabase
         .from('tender_estimate_items')
         .select('*')
         .eq('tender_id', tenderId)
         .order('row_number')
-
-      if (error) throw error
+        .order('id')
+        .range(from, to))
       setEstimateItems(data || [])
     } catch (error) {
       console.error('Ошибка загрузки сметы:', error)
@@ -187,8 +190,10 @@ function ContractorProposalsPage() {
       const estimateItem = estimateItems.find(item => item.row_number === rowNumber)
       if (!estimateItem) continue
 
-      const unitPriceMaterials = parseFloat(row[8]) || 0
-      const unitPriceWorks = parseFloat(row[9]) || 0
+      // cleanNumeric чистит пробелы/валюту/запятые — иначе текстовая ячейка «1 200,50»
+      // усечётся parseFloat'ом и исказит цену.
+      const unitPriceMaterials = cleanNumeric(row[8])
+      const unitPriceWorks = cleanNumeric(row[9])
       const participantNote = row[15] || ''
 
       const workVolume = estimateItem.work_volume || 0

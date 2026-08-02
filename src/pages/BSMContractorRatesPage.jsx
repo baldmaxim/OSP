@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
+import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './BSMRatesPage.css'
 import './BSMPage.css'
 
@@ -124,12 +125,12 @@ function BSMContractorRatesPage() {
   }
 
   const fetchCounterparties = async () => {
-    const { data, error } = await supabase
-      .from('counterparties')
-      .select('id, name')
-      .eq('status', 'active')
-      .order('name')
-    if (!error && data) setCounterparties(data)
+    // Постранично — активных контрагентов >1000 (потолок PostgREST).
+    try {
+      setCounterparties(await fetchAllActiveCounterparties('id, name'))
+    } catch (err) {
+      console.error('Ошибка загрузки контрагентов:', err.message)
+    }
   }
 
   const fetchRates = useCallback(async () => {
@@ -519,8 +520,10 @@ function BSMContractorRatesPage() {
               code,
               name: row[1] || '',
               unit: row[2] || '',
-              volume: parseFloat(row[3]) || 0,
-              priceMaterials: parseFloat(row[4]) || 0,
+              // parsePrice чистит пробелы/запятые — иначе текстовая ячейка «1 200,50»
+              // усечётся parseFloat'ом до 1 и исказит цену.
+              volume: parsePrice(row[3]),
+              priceMaterials: parsePrice(row[4]),
               sourceFile: file.name
             })
           }

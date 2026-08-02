@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
-import { supabase } from '../supabase'
 import BrandLogo from '../components/BrandLogo'
+import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './LoginPage.css'
 
 // variant: 'employee' — вход для сотрудников (+ регистрация); 'contractor' — вход для
@@ -41,12 +41,9 @@ function LoginPage({ variant = 'employee' }) {
   const fetchCounterparties = async () => {
     setLoadingCounterparties(true)
     try {
-      const { data, error } = await supabase
-        .from('counterparties')
-        .select('id, name')
-        .eq('status', 'active')
-        .order('name')
-      if (error) throw error
+      // Постранично — активных контрагентов >1000 (потолок PostgREST), иначе часть
+      // не попадёт в выпадашку выбора.
+      const data = await fetchAllActiveCounterparties('id, name')
       setCounterparties(data || [])
     } catch (err) {
       console.error('Ошибка загрузки контрагентов:', err)

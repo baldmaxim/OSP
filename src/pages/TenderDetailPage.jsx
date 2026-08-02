@@ -803,9 +803,11 @@ function TenderDetailPage() {
         if (!data || data.length < PAGE) break
       }
       setSupplyRates(rows)
+      return rows
     } catch (err) {
       console.error('Ошибка загрузки расценок снабжения:', err.message)
       setSupplyRates([])
+      return []
     }
   }
 
@@ -1410,10 +1412,22 @@ function TenderDetailPage() {
   const expandAllSections = () => setCollapsedSections(new Set())
 
   // task 352: экспорт текущего ВОР в Excel — 3 листа (Исходный / Материалы / Работы).
-  const handleExportEstimate = () => {
+  const handleExportEstimate = async () => {
     if (!currentEstimate || currentEstimate.length === 0) {
       alert('Нечего экспортировать.')
       return
+    }
+    // Расценки снабжения грузятся лениво (только при открытии их вкладки). Если
+    // экспорт нажали с вкладки «ВОР», не посетив «Расценки снабжения», подгружаем их
+    // здесь и строим локальную карту — иначе столбец «Стоимость от снабжения» пуст.
+    let ratesMap = supplyRatesMap
+    if (!loadedTabsRef.current.has('supply')) {
+      const rows = await fetchSupplyRates()
+      loadedTabsRef.current.add('supply')
+      ratesMap = new Map()
+      for (const r of rows || []) {
+        ratesMap.set(supplyKey(r.estimate_name, r.material_name), Number(r.supply_price) || 0)
+      }
     }
     const wb = XLSX.utils.book_new()
 
@@ -1447,7 +1461,7 @@ function TenderDetailPage() {
       } else {
         matCount++
         num = workCount > 0 ? `${workCount}.${matCount}` : String(matCount)
-        const price = supplyRatesMap.get(supplyKey(it.estimate_name || exportDoc, it.cost_name))
+        const price = ratesMap.get(supplyKey(it.estimate_name || exportDoc, it.cost_name))
         if (price != null) supplyVal = Math.round((Number(it.material_consumption) || 0) * Number(price) * 100) / 100
       }
       sourceRows.push([
@@ -1487,7 +1501,7 @@ function TenderDetailPage() {
         cur.total += Number(vol) || 0
         cur.count += 1
         if (type === 'materials') {
-          const price = supplyRatesMap.get(supplyKey(it.estimate_name, name))
+          const price = ratesMap.get(supplyKey(it.estimate_name, name))
           if (price != null) cur.supplyCost += (Number(it.material_consumption) || 0) * Number(price)
         }
         map.set(key, cur)

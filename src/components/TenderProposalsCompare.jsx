@@ -470,18 +470,21 @@ function TenderProposalsCompare({
   }
 
   // Счётчики для tabs (контрагенты с КП в этом ВОРе).
+  // Раньше — O(docs × proposals × items) из-за вложенного .find() на каждый proposal:
+  // на крупных тендерах давало заметный фриз при открытии вкладки. Теперь один
+  // проход: item.id → estimate_name (Map), затем один проход по proposals.
   const cpCountByDoc = useMemo(() => {
-    const out = new Map()
-    for (const name of docNames) {
-      const set = new Set()
-      for (const p of proposals) {
-        const item = estimateItems.find(i => i.id === p.estimate_item_id)
-        if (!item) continue
-        if ((item.estimate_name || 'Основная смета') !== name) continue
-        set.add(p.counterparty_id)
-      }
-      out.set(name, set.size)
+    const docByItemId = new Map(
+      estimateItems.map(i => [i.id, i.estimate_name || 'Основная смета'])
+    )
+    const sets = new Map(docNames.map(n => [n, new Set()]))
+    for (const p of proposals) {
+      const doc = docByItemId.get(p.estimate_item_id)
+      const set = doc != null ? sets.get(doc) : undefined
+      if (set) set.add(p.counterparty_id)
     }
+    const out = new Map()
+    for (const [name, set] of sets) out.set(name, set.size)
     return out
   }, [docNames, estimateItems, proposals])
 

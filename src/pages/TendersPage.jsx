@@ -2288,7 +2288,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <th style={{ width: '36px' }}></th>
               <th style={{ minWidth: '160px' }}>Наименование<br />объекта</th>
               <th style={{ minWidth: '140px', maxWidth: '220px' }}>Описание работ</th>
-              {activeTab !== 'completed' && <th style={{ width: '100px' }}>Статус</th>}
+              {!isCompletedTab && <th style={{ width: '100px' }}>Статус</th>}
               {isCompletedTab && <th style={{ width: '130px' }}>Победитель</th>}
               <th
                 className="sortable-th"
@@ -2303,7 +2303,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 <th style={{ width: '90px' }}>ВОРы<br />и&nbsp;РД</th>
               )}
               <th style={{ width: '105px' }}>Тендерный<br />пакет</th>
-              {!compactView && department === 'construction' && activeTab !== 'completed' && (
+              {!compactView && department === 'construction' && !isCompletedTab && (
                 <th style={{ width: '95px' }}>План<br />затрат</th>
               )}
               {!compactView && !isMaterialsView && department === 'construction' && (
@@ -2399,7 +2399,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         {tender.work_description}
                       </Link>
                     </td>
-                    {activeTab !== 'completed' && (
+                    {!isCompletedTab && (
                       <td>
                         {canEditTenders ? (
                           <StatusDropdown
@@ -2622,7 +2622,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         </div>
                       </td>
                     {/* План затрат */}
-                    {!compactView && department === 'construction' && activeTab !== 'completed' && (
+                    {!compactView && department === 'construction' && !isCompletedTab && (
                       <td>
                         <div className="phase-cell">
                           {(() => {

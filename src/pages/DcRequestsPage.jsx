@@ -984,6 +984,18 @@ function DcRequestsPage() {
     })
   })()
 
+  // Любой id контакта → «представитель» (первый id с тем же ФИО), который и есть в
+  // dedupedContacts. Иначе сохранённый ответственный из non-first дубля не совпадёт
+  // ни с одной опцией селекта и покажется «Не назначен» (хотя в таблице виден).
+  const contactRepById = (() => {
+    const nameToRep = new Map(dedupedContacts.map(c => [(c.full_name || '').trim().toLowerCase(), c.id]))
+    const m = {}
+    for (const c of contacts) {
+      m[c.id] = nameToRep.get((c.full_name || '').trim().toLowerCase()) || c.id
+    }
+    return m
+  })()
+
   // Фильтр ответственных — только те сотрудники, что реально назначены хотя бы на одну заявку.
   const usedResponsibleIds = new Set(
     requests.map(r => r.responsible_contact_id).filter(Boolean)
@@ -1889,7 +1901,7 @@ function DcRequestsPage() {
                   <label>Ответственный сотрудник</label>
                   <select
                     name="responsible_contact_id"
-                    value={formData.responsible_contact_id}
+                    value={contactRepById[formData.responsible_contact_id] || formData.responsible_contact_id || ''}
                     onChange={handleInputChange}
                   >
                     <option value="">— Не назначен —</option>
