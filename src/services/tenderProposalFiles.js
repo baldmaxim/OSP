@@ -127,12 +127,14 @@ export async function fetchProposalFilesForReview({ statuses = null, objectIds =
     let q = supabase
       .from('tender_proposal_files')
       .select(`id, tender_id, counterparty_id, version_label, created_at,
-               review_status, review_note, reviewed_at, reviewed_by,
+               review_status, review_note, reviewed_at, reviewed_by, review_required,
                s3:s3_documents!s3_document_id(*),
                counterparties(name),
                tenders!inner(id, work_description, object_id, objects(name),
                  responsible_contact:contacts!responsible_contact_id(full_name))`)
       .eq('file_kind', 'commercial_proposal')
+      // Только КП, загруженные с момента запуска (легаси-бэклог в очередь не попадает).
+      .eq('review_required', true)
     if (statuses && statuses.length) q = q.in('review_status', statuses)
     if (objectIds && objectIds.length) q = q.in('tenders.object_id', objectIds)
     return q.order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to)

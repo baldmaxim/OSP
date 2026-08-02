@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS tender_proposal_files (
   review_note TEXT,
   reviewed_at TIMESTAMPTZ,
   reviewed_by TEXT,
+  -- Попадает ли КП в очередь «Проверка КП» (легаси до миграции 20260802 = false).
+  review_required BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

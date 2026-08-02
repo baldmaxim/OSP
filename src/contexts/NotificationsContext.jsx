@@ -130,6 +130,7 @@ export function NotificationsProvider({ children }) {
           .from('tender_proposal_files')
           .select('id, tender_id, review_status, review_note, reviewed_at, counterparties(name), tenders!inner(work_description, object_id, objects(name), responsible_contact:contacts!responsible_contact_id(full_name))')
           .eq('file_kind', 'commercial_proposal')
+          .eq('review_required', true)
           .in('review_status', ['approved', 'has_remarks'])
           .gte('reviewed_at', reviewSince.toISOString())
           .order('reviewed_at', { ascending: false })

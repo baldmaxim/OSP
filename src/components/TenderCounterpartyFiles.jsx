@@ -39,8 +39,9 @@ function formatDateTime(iso) {
 function FileRow({ file, variant, onDownload, onPreview, onDelete, canReview, onReview }) {
   const s3 = file.s3
   if (!s3) return null
-  // Проверку показываем только для КП (не для вспомогательных документов).
-  const isProposal = file.file_kind === 'commercial_proposal'
+  // Проверку показываем только для КП (не для документов) и только для тех, что
+  // требуют проверки (review_required). Легаси-КП до запуска фичи — без бейджа.
+  const isProposal = file.file_kind === 'commercial_proposal' && file.review_required === true
   const cls =
     `tcpf-row${variant === 'primary' ? ' tcpf-row-primary' : ''}${variant === 'muted' ? ' tcpf-row-muted' : ''}`
   return (
