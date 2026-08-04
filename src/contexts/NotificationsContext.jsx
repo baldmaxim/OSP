@@ -12,9 +12,12 @@ import { useRole } from './RoleContext'
 //   тендер   → tender_end_date (окончание тендерной процедуры)
 //   договор  → signed_date     (планируемая дата подписания)
 //
-// Пороговые «бакеты» 5/3/0 зашиты в ключ уведомления: когда объект переходит из
-// «≤5 дней» в «≤3 дня» и затем в «просрочено», ключ меняется и уведомление снова
-// становится непрочитанным — так реализуется повторное напоминание за 5, 3 и 0 дней.
+// Ключ уведомления СТАБИЛЕН для конкретной сущности (tender:<id>, contract:<id>,
+// kp_review:<id>:<status>) и НЕ зависит от количества дней до срока. Поэтому один
+// раз прочитанное уведомление остаётся прочитанным — при пересчёте списка, смене дня,
+// перезагрузке или ремаунте оно не «всплывает» снова непрочитанным. (Раньше ключ
+// включал «бакет» дней 5/3/0 — из-за этого прочитанные уведомления периодически
+// снова становились непрочитанными; это и была причина цикличных повторов.)
 
 const NotificationsContext = createContext(null)
 
@@ -42,15 +45,6 @@ function daysUntil(dateStr) {
   return Math.round((d - todayMidnight()) / 86400000)
 }
 
-// Бакет напоминания — на нём завязано повторное «непрочитано» за 5, 3 дня и в
-// день окончания. При переходе объекта в следующий бакет ключ меняется → снова
-// становится непрочитанным. Просроченные (days<0) не показываем вовсе.
-function bucketOf(days) {
-  if (days <= 0) return 'd0'   // день окончания (0); отрицательные отфильтрованы
-  if (days <= 3) return 'd3'
-  return 'd5'
-}
-
 function toDateOnlyString(d) {
   const p = (x) => String(x).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
@@ -60,7 +54,13 @@ function loadReadSet() {
   try {
     const raw = localStorage.getItem(READ_KEY)
     const arr = raw ? JSON.parse(raw) : []
-    return new Set(Array.isArray(arr) ? arr : [])
+    // Миграция: старые ключи с бакетом дней (`tender:<id>:d5`) приводим к стабильному
+    // виду (`tender:<id>`), чтобы ранее прочитанные уведомления не всплыли снова после
+    // перехода на стабильные ключи.
+    const norm = (Array.isArray(arr) ? arr : []).map(k =>
+      typeof k === 'string' ? k.replace(/:(d0|d3|d5)$/, '') : k
+    )
+    return new Set(norm)
   } catch {
     return new Set()
   }
@@ -154,7 +154,7 @@ export function NotificationsProvider({ children }) {
         out.push({
           kind: 'tender',
           id: t.id,
-          key: `tender:${t.id}:${bucketOf(days)}`,
+          key: `tender:${t.id}`,
           objectName: t.objects?.name || 'Тендер',
           subtitle: t.work_description || '',
           badge: t.public_tender_number != null ? `№${t.public_tender_number}` : null,
@@ -172,7 +172,7 @@ export function NotificationsProvider({ children }) {
         out.push({
           kind: 'contract',
           id: c.id,
-          key: `contract:${c.id}:${bucketOf(days)}`,
+          key: `contract:${c.id}`,
           objectName: c.objects?.name || 'Договор',
           // Показываем выполняемые работы (как у тендеров), номер договора — бейджем.
           subtitle: c.work_name || (c.contract_number ? `№ ${c.contract_number}` : '№ не присвоен'),
@@ -223,6 +223,17 @@ export function NotificationsProvider({ children }) {
   }, [isLoggedIn, isEmployee, canTenders, canContracts, scopedObjectIds])
 
   useEffect(() => { refresh() }, [refresh])
+
+  // Синхронизация «прочитано» между вкладками: если в другой вкладке отметили
+  // уведомления прочитанными, подхватываем актуальный набор — иначе в этой вкладке
+  // они продолжали бы показываться непрочитанными (и «возвращались» бы при действиях).
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === READ_KEY) setReadSet(loadReadSet())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   const unreadCount = useMemo(
     () => notifications.filter(n => !readSet.has(n.key)).length,

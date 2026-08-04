@@ -19,6 +19,15 @@ function fmtDate(iso) {
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`
 }
 
+// Небольшая SVG-иконка документа (проект использует SVG-иконки, не эмодзи).
+const IconFile = () => (
+  <svg className="kprv-file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6" />
+  </svg>
+)
+
 const TABS = [
   { key: 'pending', label: 'На проверке', statuses: ['pending'] },
   { key: 'has_remarks', label: 'Замечания', statuses: ['has_remarks'] },
@@ -135,7 +144,7 @@ function KpReviewPage() {
                 <th>Загружен</th>
                 <th>Ответственный</th>
                 <th>Статус проверки</th>
-                <th></th>
+                <th className="kprv-col-action"></th>
               </tr>
             </thead>
             <tbody>
@@ -158,16 +167,17 @@ function KpReviewPage() {
                       onClick={() => r.s3 && setPreviewDoc(r.s3)}
                       disabled={!r.s3}
                     >
-                      📄 {r.s3?.file_name || '—'}
+                      <IconFile />
+                      <span className="kprv-file-name">{r.s3?.file_name || '—'}</span>
                     </button>
                     {r.version_label && <span className="kprv-vlabel">{r.version_label}</span>}
                   </td>
-                  <td>{fmtDate(r.created_at)}</td>
+                  <td className="kprv-col-date">{fmtDate(r.created_at)}</td>
                   <td>{r.tenders?.responsible_contact?.full_name || '—'}</td>
                   <td>
                     <KpReviewBadge file={r} canReview={canReview} onReview={setReviewFile} showRemarks />
                   </td>
-                  <td>
+                  <td className="kprv-col-action">
                     {canReview && (
                       <button
                         type="button"

@@ -6,6 +6,7 @@ import { lazy, Suspense } from 'react'
 import Sidebar from './components/Sidebar'
 import AccessError from './components/AccessError'
 import AccessDenied from './components/AccessDenied'
+import UpdatePrompt from './components/UpdatePrompt'
 import './App.css'
 // Глобальный мобильный слой — импортируется последним, чтобы перебивать базовые
 // правила при равной специфичности (модалки/формы/таблицы/шапки на всех страницах).
@@ -176,6 +177,8 @@ function App() {
           <AuthRoutes />
         </BrowserRouter>
       </RoleProvider>
+      {/* Попап «доступна новая версия» — на всех маршрутах, вне роутера (fixed). */}
+      <UpdatePrompt />
     </ThemeProvider>
   )
 }
