@@ -9,7 +9,11 @@ ALTER TABLE tender_proposal_files
     CHECK (review_status IN ('pending', 'approved', 'has_remarks')),
   ADD COLUMN IF NOT EXISTS review_note TEXT,
   ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS reviewed_by TEXT;  -- ФИО/e-mail проверяющего (для отображения)
+  ADD COLUMN IF NOT EXISTS reviewed_by TEXT,  -- ФИО/e-mail проверяющего (для отображения)
+  -- Файл с замечаниями (S3), опционально прикреплённый при has_remarks. Ссылка на
+  -- s3_documents (owner_type='tender'); ON DELETE SET NULL — удалили файл, ссылка обнулилась.
+  ADD COLUMN IF NOT EXISTS review_note_s3_document_id UUID
+    REFERENCES s3_documents(id) ON DELETE SET NULL;
 
 -- «Требует проверки»: только КП, загруженные с момента применения миграции, попадают
 -- в очередь «Проверка КП». Весь исторический бэклог остаётся в тендерах как обычные
@@ -29,6 +33,8 @@ COMMENT ON COLUMN tender_proposal_files.reviewed_at IS
   'Момент завершения проверки';
 COMMENT ON COLUMN tender_proposal_files.reviewed_by IS
   'Кто проверил (ФИО или e-mail из профиля)';
+COMMENT ON COLUMN tender_proposal_files.review_note_s3_document_id IS
+  'Файл с замечаниями (S3), прикреплённый аналитиком при has_remarks';
 COMMENT ON COLUMN tender_proposal_files.review_required IS
   'Попадает ли КП в очередь «Проверка КП». Легаси (до миграции) = false, новые загрузки = true';
 

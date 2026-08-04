@@ -1,8 +1,11 @@
+import { requestDownloadUrl } from '../services/s3'
 import './KpReviewBadge.css'
 
 // task 431: индикатор статуса проверки КП (галочка/замечания/на проверке).
 // Показывается всем; если canReview — кликабелен и открывает проверку (onReview).
-// showRemarks=true — под бейджем выводится текст замечаний (для has_remarks).
+// showRemarks=true — под бейджем выводится текст замечаний и ссылка на приложенный
+// файл замечаний (для has_remarks). Виден и в тендерах (раскрытие контрагентов), и
+// на вкладке «Проверка КП».
 
 const IconCheck = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -23,6 +26,12 @@ const IconClock = () => (
     <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
   </svg>
 )
+const IconPaperclip = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+  </svg>
+)
 
 function fmt(iso) {
   if (!iso) return ''
@@ -41,6 +50,17 @@ export default function KpReviewBadge({ file, canReview = false, onReview, showR
   const status = file.review_status || 'pending'
   const m = META[status] || META.pending
   const Icon = m.icon
+  const remarksDoc = file.review_note_s3 || null
+
+  const openRemarksFile = async () => {
+    if (!remarksDoc?.s3_key) return
+    try {
+      const { presigned_url } = await requestDownloadUrl(remarksDoc.s3_key)
+      window.open(presigned_url, '_blank', 'noopener')
+    } catch (e) {
+      alert('Не удалось открыть файл замечаний: ' + (e.message || e))
+    }
+  }
 
   const tooltip = status === 'has_remarks'
     ? (file.review_note || 'Есть замечания')
@@ -69,6 +89,17 @@ export default function KpReviewBadge({ file, canReview = false, onReview, showR
       )}
       {showRemarks && status === 'has_remarks' && file.review_note && (
         <span className="kpb-remarks-text">{file.review_note}</span>
+      )}
+      {status === 'has_remarks' && remarksDoc && (
+        <button
+          type="button"
+          className="kpb-remarks-file"
+          onClick={openRemarksFile}
+          title={`Открыть файл замечаний: ${remarksDoc.file_name || ''}`}
+        >
+          <IconPaperclip />
+          <span className="kpb-remarks-file-name">{remarksDoc.file_name || 'Файл замечаний'}</span>
+        </button>
       )}
     </span>
   )

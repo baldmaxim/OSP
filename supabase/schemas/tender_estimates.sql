@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS tender_proposal_files (
   review_note TEXT,
   reviewed_at TIMESTAMPTZ,
   reviewed_by TEXT,
+  -- Файл с замечаниями (S3), опционально прикреплённый при has_remarks.
+  review_note_s3_document_id UUID REFERENCES s3_documents(id) ON DELETE SET NULL,
   -- Попадает ли КП в очередь «Проверка КП» (легаси до миграции 20260802 = false).
   review_required BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()

@@ -27,7 +27,7 @@ export async function fetchProposalFiles(tenderId, counterpartyId) {
 
   const { data, error } = await supabase
     .from('tender_proposal_files')
-    .select('*, s3:s3_documents!s3_document_id(*)')
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
     .eq('tender_id', tenderId)
     .eq('counterparty_id', counterpartyId)
     .order('created_at', { ascending: false })
@@ -101,21 +101,56 @@ export async function addProposalFile({
 
 // task 431: проставить результат проверки КП аналитиком.
 // status: 'approved' (проверено, ОК) | 'has_remarks' (есть замечания) | 'pending' (вернуть на проверку).
-// Замечания (review_note) сохраняются только для has_remarks; reviewer — ФИО/e-mail проверяющего.
-export async function setProposalReview(fileId, { status, note = '', reviewer = '' }) {
+// Замечания (review_note) и файл замечаний сохраняются только для has_remarks.
+// Опциональный файл замечаний:
+//   remarksFile        — новый File для загрузки (заменяет текущий);
+//   removeRemarksFile  — снять текущий файл без загрузки нового;
+//   tenderId           — владелец S3 при загрузке (owner_type='tender');
+//   currentRemarksDoc  — текущая запись s3_documents файла замечаний (для замены/очистки).
+export async function setProposalReview(fileId, {
+  status,
+  note = '',
+  reviewer = '',
+  remarksFile = null,
+  removeRemarksFile = false,
+  tenderId = null,
+  currentRemarksDoc = null,
+}) {
+  // Вычисляем итоговую ссылку на файл замечаний.
+  let uploadedDoc = null
+  let noteDocId = currentRemarksDoc?.id || null
+  if (status !== 'has_remarks') {
+    noteDocId = null // нет замечаний → файла тоже нет
+  } else if (remarksFile) {
+    uploadedDoc = await uploadFile({ file: remarksFile, ownerType: 'tender', ownerId: tenderId })
+    noteDocId = uploadedDoc.id
+  } else if (removeRemarksFile) {
+    noteDocId = null
+  }
+
   const payload = {
     review_status: status,
     review_note: status === 'has_remarks' ? (note?.trim() || null) : null,
     reviewed_at: status === 'pending' ? null : new Date().toISOString(),
     reviewed_by: status === 'pending' ? null : (reviewer?.trim() || null),
+    review_note_s3_document_id: noteDocId,
   }
   const { data, error } = await supabase
     .from('tender_proposal_files')
     .update(payload)
     .eq('id', fileId)
-    .select('*, s3:s3_documents!s3_document_id(*)')
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
     .single()
-  if (error) throw error
+  if (error) {
+    // Откат только что залитого файла, если запись не прошла.
+    if (uploadedDoc) { try { await deleteDocument(uploadedDoc) } catch { /* best effort */ } }
+    throw error
+  }
+  // Старый файл замечаний больше не нужен (заменён или снят) — убираем из S3,
+  // чтобы не оставлять orphan (запись уже разлинкована апдейтом выше).
+  if (currentRemarksDoc?.id && currentRemarksDoc.id !== noteDocId && currentRemarksDoc.s3_key) {
+    try { await deleteDocument(currentRemarksDoc) } catch { /* best effort */ }
+  }
   return data
 }
 
@@ -129,6 +164,7 @@ export async function fetchProposalFilesForReview({ statuses = null, objectIds =
       .select(`id, tender_id, counterparty_id, version_label, created_at,
                review_status, review_note, reviewed_at, reviewed_by, review_required,
                s3:s3_documents!s3_document_id(*),
+               review_note_s3:s3_documents!review_note_s3_document_id(*),
                counterparties(name),
                tenders!inner(id, work_description, object_id, objects(name),
                  responsible_contact:contacts!responsible_contact_id(full_name))`)
@@ -147,6 +183,12 @@ export async function deleteProposalFile(file) {
   const s3doc = file.s3
   if (!s3doc?.id || !s3doc?.s3_key) {
     throw new Error('deleteProposalFile: ожидается file.s3 со связкой s3_documents')
+  }
+  // Прикреплённый файл замечаний не удаляется каскадом (он лишь SET NULL) — сносим явно,
+  // иначе останется orphan в S3 после удаления самого КП.
+  const remarksDoc = file.review_note_s3
+  if (remarksDoc?.id && remarksDoc?.s3_key) {
+    try { await deleteDocument(remarksDoc) } catch { /* best effort */ }
   }
   await deleteDocument(s3doc)
 }

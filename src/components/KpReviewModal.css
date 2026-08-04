@@ -115,6 +115,64 @@
   resize: vertical;
 }
 
+/* Файл с замечаниями */
+.kprm-attach {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.kprm-attach-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kprm-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: none;
+  color: var(--primary-color, #2563eb);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.kprm-attach-btn:hover { background: var(--bg-tertiary); }
+.kprm-attach-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary-color, #2563eb);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kprm-attach-link:hover { text-decoration: underline; }
+.kprm-attach-remove {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #dc2626;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kprm-attach-remove:hover { text-decoration: underline; }
+.kprm-attach-hint {
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
 .kprm-error {
   margin-top: 0.75rem;
   color: #dc2626;
