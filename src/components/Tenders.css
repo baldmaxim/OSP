@@ -1141,6 +1141,28 @@
   font-size: 0.8125rem;
 }
 
+/* Индикатор загрузки списка контрагентов при раскрытии тендера */
+.tenders-page .expanded-cp-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem 0.625rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+.tenders-page .expanded-cp-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary-color, #2563eb);
+  border-radius: 50%;
+  animation: tenders-cp-spin 0.7s linear infinite;
+}
+@keyframes tenders-cp-spin {
+  to { transform: rotate(360deg); }
+}
+
 .tenders-page .expand-toggle {
   display: inline-flex;
   align-items: center;

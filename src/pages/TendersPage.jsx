@@ -174,6 +174,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [editingTender, setEditingTender] = useState(null)
   const [expandedTenderId, setExpandedTenderId] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState({})
+  // Идентификаторы тендеров, у которых список контрагентов сейчас грузится
+  // (чтобы при раскрытии показать индикатор загрузки, а не «контрагентов нет»).
+  const [loadingCounterparties, setLoadingCounterparties] = useState(() => new Set())
   // task 427: DnD-перестановка участников
   const [draggedTc, setDraggedTc] = useState(null) // { tenderId, id }
   const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
@@ -577,6 +580,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   const fetchTenderCounterparties = async (tenderId) => {
+    setLoadingCounterparties(prev => new Set(prev).add(tenderId))
     try {
       const { data, error } = await supabase
         .from('tender_counterparties')
@@ -607,6 +611,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       }))
     } catch (error) {
       console.error('Ошибка загрузки контрагентов тендера:', error.message)
+    } finally {
+      setLoadingCounterparties(prev => {
+        const next = new Set(prev)
+        next.delete(tenderId)
+        return next
+      })
     }
   }
 
@@ -3074,6 +3084,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                 ))}
                               </tbody>
                             </table>
+                          </div>
+                        ) : loadingCounterparties.has(tender.id) ? (
+                          <div className="expanded-cp-loading">
+                            <span className="expanded-cp-spinner" aria-hidden />
+                            <span>Загрузка подрядчиков…</span>
                           </div>
                         ) : (
                           <p className="expanded-cp-empty">
