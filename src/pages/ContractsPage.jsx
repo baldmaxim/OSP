@@ -305,7 +305,7 @@ function ContractRegistry() {
       // (fetchAllRows) — иначе потолок PostgREST в 1000 строк молча резал бы реестр.
       const data = await fetchAllRows((from, to) => supabase
         .from('contracts')
-        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position), concept_agreement:s3_documents!concept_agreement_s3_document_id(id, file_name, s3_key)')
+        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position), concept_agreement:s3_documents!concept_agreement_s3_document_id(id, file_name, s3_key, mime_type, size_bytes)')
         .order('contract_date', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })

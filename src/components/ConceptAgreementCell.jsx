@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { supabase } from '../supabase'
-import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
+import { uploadFile, deleteDocument } from '../services/s3'
+import S3DocumentPreview from './S3DocumentPreview'
 import './ConceptAgreementCell.css'
 
 // «Понятийное соглашение» договора — документ-основание для заключения договора
@@ -34,10 +35,17 @@ const IconTrash = () => (
     <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
   </svg>
 )
+const IconEye = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
+  </svg>
+)
 
 export default function ConceptAgreementCell({ contract, canEdit = false, onChanged }) {
   const doc = contract.concept_agreement || null
   const [busy, setBusy] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const fileRef = useRef(null)
 
   const pick = () => { if (!busy) fileRef.current?.click() }
@@ -68,16 +76,6 @@ export default function ConceptAgreementCell({ contract, canEdit = false, onChan
     }
   }
 
-  const open = async () => {
-    if (!doc?.s3_key) return
-    try {
-      const { presigned_url } = await requestDownloadUrl(doc.s3_key)
-      window.open(presigned_url, '_blank', 'noopener')
-    } catch (err) {
-      alert('Не удалось открыть файл: ' + (err.message || err))
-    }
-  }
-
   const remove = async () => {
     if (!doc) return
     if (!window.confirm('Удалить понятийное соглашение?')) return
@@ -104,20 +102,25 @@ export default function ConceptAgreementCell({ contract, canEdit = false, onChan
         <span className="ca-busy">Загрузка…</span>
       ) : doc ? (
         <div className="ca-has">
-          <button type="button" className="ca-chip" onClick={open} title={`Понятийное соглашение: ${doc.file_name || ''}`}>
+          <span className="ca-chip" title={`Понятийное соглашение: ${doc.file_name || ''}`}>
             <IconDoc />
             <span className="ca-chip-label">Понятийное соглашение</span>
-          </button>
-          {canEdit && (
-            <span className="ca-actions">
+          </span>
+          <span className="ca-actions">
+            <button type="button" className="ca-mini ca-preview" onClick={() => setShowPreview(true)} title="Предпросмотр" aria-label="Предпросмотр">
+              <IconEye />
+            </button>
+            {canEdit && (
               <button type="button" className="ca-mini" onClick={pick} title="Заменить файл" aria-label="Заменить">
                 <IconReplace />
               </button>
+            )}
+            {canEdit && (
               <button type="button" className="ca-mini ca-danger" onClick={remove} title="Удалить" aria-label="Удалить">
                 <IconTrash />
               </button>
-            </span>
-          )}
+            )}
+          </span>
         </div>
       ) : canEdit ? (
         <button type="button" className="ca-add" onClick={pick} title="Прикрепить понятийное соглашение">
@@ -125,6 +128,10 @@ export default function ConceptAgreementCell({ contract, canEdit = false, onChan
           <span className="ca-chip-label">Понятийное соглашение</span>
         </button>
       ) : null}
+
+      {showPreview && doc && (
+        <S3DocumentPreview doc={doc} onClose={() => setShowPreview(false)} />
+      )}
     </div>
   )
 }
