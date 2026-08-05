@@ -6,7 +6,8 @@ import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
 import FilterDropdown from '../components/FilterDropdown'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
-import { fetchCounterpartyDocSummary } from '../services/s3'
+import ConceptAgreementCell from '../components/ConceptAgreementCell'
+import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import {
   buildAppendixTree,
@@ -203,6 +204,8 @@ function ContractRegistry() {
   // заходим сразу в него, без экрана выбора отдела.
   const department = 'construction'
   const [activeTab, setActiveTab] = useState('all')
+  // Кол-во договоров по каждой вкладке (в рамках текущего отдела/скоупа).
+  const [tabCounts, setTabCounts] = useState({})
 
   const [contracts, setContracts] = useState([])
   const [objects, setObjects] = useState([])
@@ -301,7 +304,7 @@ function ContractRegistry() {
       setLoading(true)
       let query = supabase
         .from('contracts')
-        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position)')
+        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position), concept_agreement:s3_documents!concept_agreement_s3_document_id(*)')
 
       if (activeTab === 'deleted') {
         query = query.not('deleted_at', 'is', null)
@@ -372,6 +375,41 @@ function ContractRegistry() {
       console.error('Ошибка загрузки договоров:', error.message)
     } finally {
       setLoading(false)
+    }
+    // Счётчики вкладок — независимо от активной вкладки/фильтров (общий обзор).
+    fetchTabCounts()
+  }
+
+  // Кол-во договоров по каждой вкладке (текущий отдел + скоуп). Серверные head-count'ы
+  // с inner-join на objects для фильтра по отделу — без переноса строк.
+  const fetchTabCounts = async () => {
+    try {
+      const base = () => {
+        let q = supabase
+          .from('contracts')
+          .select('id, objects!inner(status)', { count: 'exact', head: true })
+          .eq('objects.status', objectStatus)
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        return q
+      }
+      const [all, requests, inWork, paused, completed, deleted] = await Promise.all([
+        base().is('deleted_at', null),
+        base().is('deleted_at', null).in('status', PROCESSING_STATUSES),
+        base().is('deleted_at', null).eq('status', 'in_work'),
+        base().is('deleted_at', null).eq('status', 'paused'),
+        base().is('deleted_at', null).eq('status', 'completed'),
+        base().not('deleted_at', 'is', null),
+      ])
+      setTabCounts({
+        all: all.count || 0,
+        requests: requests.count || 0,
+        in_work: inWork.count || 0,
+        paused: paused.count || 0,
+        completed: completed.count || 0,
+        deleted: deleted.count || 0,
+      })
+    } catch (error) {
+      console.error('Ошибка подсчёта вкладок договоров:', error.message)
     }
   }
 
@@ -1211,8 +1249,13 @@ function ContractRegistry() {
     }
     if (!window.confirm(`Безвозвратно удалить договор ${contractLabel(contractNumber)}? Это действие нельзя отменить.`)) return
     try {
+      const target = contracts.find(c => c.id === id)
       const { error } = await supabase.from('contracts').delete().eq('id', id)
       if (error) throw error
+      // Понятийное соглашение не удаляется каскадом (FK лишь SET NULL) — сносим явно,
+      // иначе останется orphan-файл в S3 после безвозвратного удаления договора.
+      const ca = target?.concept_agreement
+      if (ca?.id && ca?.s3_key) { try { await deleteDocument(ca) } catch { /* best effort */ } }
       fetchContracts()
     } catch (error) {
       console.error('Ошибка безвозвратного удаления:', error.message)
@@ -1345,6 +1388,9 @@ function ContractRegistry() {
             onClick={() => setActiveTab(tab.key)}
           >
             {tab.label}
+            {tabCounts[tab.key] != null && (
+              <span className="status-tab-count">{tabCounts[tab.key]}</span>
+            )}
           </button>
         ))}
       </div>
@@ -1559,6 +1605,13 @@ function ContractRegistry() {
                         ? <span className="cds-sub">от {dsDate}</span>
                         : <span className="cds-sub cds-missing">дата не указана</span>}
                     </Link>
+                    {!isDeletedTab && (
+                      <ConceptAgreementCell
+                        contract={contract}
+                        canEdit={canEditContracts}
+                        onChanged={fetchContracts}
+                      />
+                    )}
                   </td>
                   <td className="cell-counterparty">
                     {parties.length === 0 ? '—' : (

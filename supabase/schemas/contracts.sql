@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS contracts (
   tender_id UUID REFERENCES tenders(id),
   work_name TEXT,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  -- Понятийное соглашение — документ-основание для договора (с визой акционера).
+  concept_agreement_s3_document_id UUID REFERENCES s3_documents(id) ON DELETE SET NULL,
   notes TEXT,
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

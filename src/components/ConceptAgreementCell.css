@@ -1,0 +1,75 @@
+/* «Понятийное соглашение» под № договора в реестре */
+.ca {
+  margin-top: 0.3rem;
+}
+.ca-busy {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+.ca-has {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+}
+.ca-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  max-width: 100%;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--primary-color, #2563eb) 30%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 8%, transparent);
+  color: var(--primary-color, #2563eb);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ca-chip:hover { background: color-mix(in srgb, var(--primary-color, #2563eb) 15%, transparent); }
+.ca-chip svg { flex-shrink: 0; }
+
+.ca-actions {
+  display: inline-flex;
+  gap: 0.15rem;
+}
+.ca-mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.ca-mini:hover { color: var(--text-primary); border-color: var(--border-color-dark, var(--border-color)); }
+.ca-mini.ca-danger:hover { color: #dc2626; border-color: color-mix(in srgb, #dc2626 40%, transparent); }
+
+.ca-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ca-add:hover {
+  color: var(--primary-color, #2563eb);
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 40%, transparent);
+}
+.ca-add svg { flex-shrink: 0; }

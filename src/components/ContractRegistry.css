@@ -609,6 +609,33 @@
   border-radius: 3px 3px 0 0;
 }
 
+/* Счётчик количества в каждой вкладке */
+.status-tab-count {
+  display: inline-block;
+  min-width: 1.25rem;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.status-tab.active .status-tab-count {
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary-color) 30%, transparent);
+}
+.status-tab.tab-deleted.active .status-tab-count {
+  color: var(--danger-color, #dc2626);
+  background: color-mix(in srgb, var(--danger-color, #dc2626) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger-color, #dc2626) 30%, transparent);
+}
+
 /* Dark theme adjustments */
 [data-theme='dark'] .department-card {
   background: var(--bg-tertiary);
