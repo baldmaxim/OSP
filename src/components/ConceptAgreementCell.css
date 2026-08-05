@@ -1,40 +1,61 @@
 /* «Понятийное соглашение» под № договора в реестре */
 .ca {
   margin-top: 0.3rem;
+  max-width: 100%;
+  min-width: 0;
 }
 .ca-busy {
   font-size: 0.72rem;
   color: var(--text-tertiary);
 }
 .ca-has {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;         /* если не влезает — действия переносятся под чип, без наезда на соседний столбец */
   align-items: center;
   gap: 0.25rem;
   max-width: 100%;
+  min-width: 0;
 }
+
+/* Приятный «живой» зелёный (изумруд), не ядовитый; мягкое свечение при наличии файла. */
 .ca-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
+  gap: 0.3rem;
   max-width: 100%;
-  padding: 0.1rem 0.4rem;
-  border: 1px solid color-mix(in srgb, var(--primary-color, #2563eb) 30%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--primary-color, #2563eb) 8%, transparent);
-  color: var(--primary-color, #2563eb);
-  font-size: 0.72rem;
+  min-width: 0;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid color-mix(in srgb, #10b981 42%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, #10b981 13%, transparent);
+  color: #047857;
+  font-size: 0.7rem;
   font-weight: 600;
   line-height: 1.3;
   cursor: pointer;
-  white-space: nowrap;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #10b981 8%, transparent);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.ca-chip:hover {
+  background: color-mix(in srgb, #10b981 20%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, #10b981 16%, transparent);
+}
+.ca-chip svg { flex-shrink: 0; }
+.ca-chip-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.ca-chip:hover { background: color-mix(in srgb, var(--primary-color, #2563eb) 15%, transparent); }
-.ca-chip svg { flex-shrink: 0; }
+[data-theme='dark'] .ca-chip {
+  color: #6ee7b7;
+  background: color-mix(in srgb, #10b981 20%, transparent);
+  border-color: color-mix(in srgb, #10b981 45%, transparent);
+}
 
 .ca-actions {
   display: inline-flex;
+  flex-shrink: 0;
   gap: 0.15rem;
 }
 .ca-mini {
@@ -57,19 +78,20 @@
   display: inline-flex;
   align-items: center;
   gap: 0.28rem;
-  padding: 0.1rem 0.4rem;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.12rem 0.45rem;
   border: 1px dashed var(--border-color);
-  border-radius: 6px;
+  border-radius: 999px;
   background: none;
   color: var(--text-tertiary);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 500;
   line-height: 1.3;
   cursor: pointer;
-  white-space: nowrap;
 }
 .ca-add:hover {
-  color: var(--primary-color, #2563eb);
-  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 40%, transparent);
+  color: #047857;
+  border-color: color-mix(in srgb, #10b981 40%, transparent);
 }
 .ca-add svg { flex-shrink: 0; }

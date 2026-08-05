@@ -204,8 +204,6 @@ function ContractRegistry() {
   // заходим сразу в него, без экрана выбора отдела.
   const department = 'construction'
   const [activeTab, setActiveTab] = useState('all')
-  // Кол-во договоров по каждой вкладке (в рамках текущего отдела/скоупа).
-  const [tabCounts, setTabCounts] = useState({})
 
   const [contracts, setContracts] = useState([])
   const [objects, setObjects] = useState([])
@@ -297,30 +295,21 @@ function ContractRegistry() {
       fetchTenders()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [department, activeTab])
+  }, [department])
 
   const fetchContracts = async () => {
     try {
       setLoading(true)
-      let query = supabase
+      // Грузим ВЕСЬ реестр один раз (все статусы + удалённые), а по вкладкам фильтруем
+      // в памяти — переключение вкладок мгновенное, без повторных запросов. Постранично
+      // (fetchAllRows) — иначе потолок PostgREST в 1000 строк молча резал бы реестр.
+      const data = await fetchAllRows((from, to) => supabase
         .from('contracts')
-        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position), concept_agreement:s3_documents!concept_agreement_s3_document_id(*)')
-
-      if (activeTab === 'deleted') {
-        query = query.not('deleted_at', 'is', null)
-      } else if (activeTab === 'all') {
-        // Общий реестр — все не удалённые, любой статус.
-        query = query.is('deleted_at', null)
-      } else if (activeTab === 'requests') {
-        // Заявки на заключение — договоры на стадии обработки (ещё не заключены).
-        query = query.is('deleted_at', null).in('status', PROCESSING_STATUSES)
-      } else {
-        query = query.is('deleted_at', null).eq('status', activeTab)
-      }
-      query = query.order('contract_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true })
-
-      const { data, error } = await query
-      if (error) throw error
+        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position), concept_agreement:s3_documents!concept_agreement_s3_document_id(id, file_name, s3_key)')
+        .order('contract_date', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to))
 
       // Задача 391: сортировка по объекту (затем по дате договора). Сортируем в JS,
       // т.к. серверный .order() по join-колонке objects.name недоступен.
@@ -334,34 +323,37 @@ function ContractRegistry() {
           return (a.contract_date || '').localeCompare(b.contract_date || '')
         })
       setContracts(filtered)
+      // Таблицу показываем сразу; приложения и сводку документов догружаем в фоне,
+      // чтобы реестр не ждал их (бейджи появятся чуть позже).
+      setLoading(false)
 
-      // «Приложения к Договору» — единая таблица (task 419). При создании договора сюда
-      // автоматически подтягиваются наименования стандартных приложений объекта,
-      // остальные поля (ответственный, статус, примечание) юристы заполняют сами.
       const ids = filtered.map(c => c.id)
+      // «Приложения к Договору» — единая таблица (task 419).
       if (ids.length > 0) {
-        // Постранично — приложений по всему реестру договоров может быть >1000
-        // (потолок PostgREST), иначе у части договоров они молча пропадают.
-        const apRows = await fetchAllRows((from, to) => supabase
-          .from('contract_appendices')
-          .select('*')
-          .in('contract_id', ids)
-          .order('sort_order', { ascending: true })
-          .order('created_at', { ascending: true })
-          .order('id', { ascending: true })
-          .range(from, to))
-        const apMap = {}
-        for (const r of apRows || []) {
-          if (!apMap[r.contract_id]) apMap[r.contract_id] = []
-          apMap[r.contract_id].push(r)
+        try {
+          const apRows = await fetchAllRows((from, to) => supabase
+            .from('contract_appendices')
+            .select('*')
+            .in('contract_id', ids)
+            .order('sort_order', { ascending: true })
+            .order('created_at', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to))
+          const apMap = {}
+          for (const r of apRows || []) {
+            if (!apMap[r.contract_id]) apMap[r.contract_id] = []
+            apMap[r.contract_id].push(r)
+          }
+          setContractAppendicesMap(apMap)
+        } catch (apError) {
+          console.warn('Не удалось загрузить приложения договоров:', apError.message)
+          setContractAppendicesMap({})
         }
-        setContractAppendicesMap(apMap)
       } else {
         setContractAppendicesMap({})
       }
 
-      // task 423: сводка документов СБ/должной осмотрительности по контрагентам
-      // всех загруженных договоров — для иконок-индикаторов рядом с контрагентом.
+      // task 423: сводка документов СБ/должной осмотрительности по контрагентам.
       try {
         const cpIds = [...new Set(
           filtered.flatMap(c => contractParties(c).map(p => p.id)).filter(Boolean)
@@ -373,43 +365,7 @@ function ContractRegistry() {
       }
     } catch (error) {
       console.error('Ошибка загрузки договоров:', error.message)
-    } finally {
       setLoading(false)
-    }
-    // Счётчики вкладок — независимо от активной вкладки/фильтров (общий обзор).
-    fetchTabCounts()
-  }
-
-  // Кол-во договоров по каждой вкладке (текущий отдел + скоуп). Серверные head-count'ы
-  // с inner-join на objects для фильтра по отделу — без переноса строк.
-  const fetchTabCounts = async () => {
-    try {
-      const base = () => {
-        let q = supabase
-          .from('contracts')
-          .select('id, objects!inner(status)', { count: 'exact', head: true })
-          .eq('objects.status', objectStatus)
-        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
-        return q
-      }
-      const [all, requests, inWork, paused, completed, deleted] = await Promise.all([
-        base().is('deleted_at', null),
-        base().is('deleted_at', null).in('status', PROCESSING_STATUSES),
-        base().is('deleted_at', null).eq('status', 'in_work'),
-        base().is('deleted_at', null).eq('status', 'paused'),
-        base().is('deleted_at', null).eq('status', 'completed'),
-        base().not('deleted_at', 'is', null),
-      ])
-      setTabCounts({
-        all: all.count || 0,
-        requests: requests.count || 0,
-        in_work: inWork.count || 0,
-        paused: paused.count || 0,
-        completed: completed.count || 0,
-        deleted: deleted.count || 0,
-      })
-    } catch (error) {
-      console.error('Ошибка подсчёта вкладок договоров:', error.message)
     }
   }
 
@@ -964,9 +920,32 @@ function ContractRegistry() {
     () => [{ value: '', label: 'Не назначен' }, ...dedupContacts.map(c => ({ value: c.name, label: c.name }))],
     [dedupContacts])
 
+  // Реестр загружается целиком; по вкладкам фильтруем в памяти (мгновенно).
+  const tabContracts = useMemo(() => contracts.filter(c => {
+    const deleted = !!c.deleted_at
+    if (activeTab === 'deleted') return deleted
+    if (deleted) return false
+    if (activeTab === 'all') return true
+    if (activeTab === 'requests') return PROCESSING_STATUSES.includes(c.status || 'new_request')
+    return (c.status || 'new_request') === activeTab
+  }), [contracts, activeTab])
+
+  // Счётчики вкладок — из уже загруженного реестра (без отдельных запросов).
+  const tabCounts = useMemo(() => {
+    const active = contracts.filter(c => !c.deleted_at)
+    return {
+      all: active.length,
+      requests: active.filter(c => PROCESSING_STATUSES.includes(c.status || 'new_request')).length,
+      in_work: active.filter(c => (c.status || 'new_request') === 'in_work').length,
+      paused: active.filter(c => c.status === 'paused').length,
+      completed: active.filter(c => c.status === 'completed').length,
+      deleted: contracts.filter(c => c.deleted_at).length,
+    }
+  }, [contracts])
+
   const filteredSortedContracts = useMemo(() => {
     const q = searchText.trim().toLowerCase()
-    const list = contracts.filter(c => {
+    const list = tabContracts.filter(c => {
       if (filterObjectId && c.object_id !== filterObjectId) return false
       if (filterLawyerId) {
         // Сопоставляем по нормализованному ФИО — чтобы фильтр по одному «представителю»
@@ -1012,7 +991,7 @@ function ContractRegistry() {
       if (so !== 0) return so
       return (a.contract_date || '').localeCompare(b.contract_date || '')
     })
-  }, [contracts, filterObjectId, filterLawyerId, onlyOverdue, searchText, sortKey, sortDir, isOverdue, normNameById])
+  }, [tabContracts, filterObjectId, filterLawyerId, onlyOverdue, searchText, sortKey, sortDir, isOverdue, normNameById])
 
   const hasActiveFilters = !!(filterObjectId || filterLawyerId || searchText || onlyOverdue)
 

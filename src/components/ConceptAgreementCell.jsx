@@ -105,7 +105,8 @@ export default function ConceptAgreementCell({ contract, canEdit = false, onChan
       ) : doc ? (
         <div className="ca-has">
           <button type="button" className="ca-chip" onClick={open} title={`Понятийное соглашение: ${doc.file_name || ''}`}>
-            <IconDoc /> Понятийное соглашение
+            <IconDoc />
+            <span className="ca-chip-label">Понятийное соглашение</span>
           </button>
           {canEdit && (
             <span className="ca-actions">
@@ -120,7 +121,8 @@ export default function ConceptAgreementCell({ contract, canEdit = false, onChan
         </div>
       ) : canEdit ? (
         <button type="button" className="ca-add" onClick={pick} title="Прикрепить понятийное соглашение">
-          <IconPlus /> Понятийное соглашение
+          <IconPlus />
+          <span className="ca-chip-label">Понятийное соглашение</span>
         </button>
       ) : null}
     </div>
