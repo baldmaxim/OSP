@@ -35,7 +35,7 @@ const describeRegistryError = (err) => {
     return 'Реестр расценок ещё не настроен в базе данных: не найдено нужное представление. Обратитесь к администратору — требуется применить миграции реестра (kp_rates_registry / supply_rates_registry).'
   }
   if (code === '57014' || /statement timeout|canceling statement/i.test(msg)) {
-    return 'Слишком большой объём данных для подсчёта. Уточните фильтры (объект, наименование или тендер), чтобы сузить выборку.'
+    return 'Запрос к реестру не успел выполниться из-за большого объёма данных. Уточните фильтры (объект, тендер или наименование), чтобы сузить выборку, либо повторите попытку.'
   }
   return msg || 'Не удалось загрузить реестр'
 }
@@ -347,10 +347,12 @@ function SupplyRegistrySection() {
       {error ? (
         <div className="rr-empty rr-error">
           Ошибка загрузки: {error}
-          <div className="rr-error-hint">
-            Если вкладка ещё не оптимизирована — примените миграцию
-            <code> 20260611_add_supply_rates_registry.sql</code> (создаёт представление supply_rates_registry).
-          </div>
+          {error.includes('не настроен') && (
+            <div className="rr-error-hint">
+              Если вкладка ещё не оптимизирована — примените миграцию
+              <code> 20260611_add_supply_rates_registry.sql</code> (создаёт представление supply_rates_registry).
+            </div>
+          )}
         </div>
       ) : loading && rows.length === 0 ? (
         <div className="rr-empty">Загрузка…</div>
@@ -800,10 +802,12 @@ function RatesRegistryPage() {
           {error ? (
             <div className="rr-empty rr-error">
               Ошибка загрузки: {error}
-              <div className="rr-error-hint">
-                Если реестр ещё не оптимизирован — примените миграцию
-                <code> 20260610_optimize_rates_registry.sql</code> (создаёт представление kp_rates_registry).
-              </div>
+              {error.includes('не настроен') && (
+                <div className="rr-error-hint">
+                  Если реестр ещё не оптимизирован — примените миграцию
+                  <code> 20260610_optimize_rates_registry.sql</code> (создаёт представление kp_rates_registry).
+                </div>
+              )}
             </div>
           ) : loading && rows.length === 0 ? (
             <div className="rr-empty">Загрузка…</div>
