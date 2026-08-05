@@ -1096,6 +1096,7 @@ function ObjectDetailPage() {
   // Object info handlers
   const handleEditInfo = () => {
     setInfoFormData({
+      developer: object.developer || '',
       planned_start_date: object.planned_start_date || '',
       planned_end_date: object.planned_end_date || '',
       total_area: object.total_area || '',
@@ -1111,6 +1112,7 @@ function ObjectDetailPage() {
       const { error } = await supabase
         .from('objects')
         .update({
+          developer: infoFormData.developer.trim() || null,
           planned_start_date: infoFormData.planned_start_date || null,
           planned_end_date: infoFormData.planned_end_date || null,
           total_area: parseFloat(infoFormData.total_area) || null,
@@ -1550,6 +1552,9 @@ function ObjectDetailPage() {
         <button className="btn-back" onClick={() => navigate('/general/objects')}>←</button>
         <div className="header-info">
           <h1>{object.name}</h1>
+          {object.developer && (
+            <span className="header-developer">Застройщик: {object.developer}</span>
+          )}
           <span className="header-address">{object.address}</span>
         </div>
         <span className={`status-badge ${object.status}`}>
@@ -1589,6 +1594,12 @@ function ObjectDetailPage() {
             )}
           </div>
           <div className="info-grid">
+            <div className="info-item">
+              <span className="info-label">Застройщик</span>
+              <span className="info-value">
+                {object.developer || <span className="muted">—</span>}
+              </span>
+            </div>
             <div className="info-item">
               <span className="info-label">Планируемое начало работ</span>
               <span className="info-value">{formatDate(object.planned_start_date)}</span>
@@ -2389,6 +2400,15 @@ function ObjectDetailPage() {
               <button onClick={() => setShowInfoModal(false)}>×</button>
             </div>
             <form onSubmit={handleSubmitInfo}>
+              <div className="form-row-1">
+                <label>Застройщик</label>
+                <input
+                  type="text"
+                  value={infoFormData.developer}
+                  onChange={(e) => setInfoFormData({ ...infoFormData, developer: e.target.value })}
+                  placeholder="Например: ООО «Специализированный застройщик …»"
+                />
+              </div>
               <div className="form-row-2">
                 <div>
                   <label>Планируемое начало работ</label>

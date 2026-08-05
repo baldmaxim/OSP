@@ -584,6 +584,10 @@ function ObjectsPage() {
                     <div className="object-card-body">
                       <h3 className="object-card-name">{object.name}</h3>
 
+                      {object.developer && (
+                        <div className="object-card-developer">{object.developer}</div>
+                      )}
+
                       <div className="object-card-address">
                         <span className="object-card-address-icon">📍</span>
                         <span>{object.address}</span>

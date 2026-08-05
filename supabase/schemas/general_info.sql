@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS objects (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   address TEXT NOT NULL,
+  developer VARCHAR(255),               -- Застройщик объекта
   description TEXT,
   map_link TEXT,
   latitude DECIMAL(10, 8),
