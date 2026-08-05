@@ -7,6 +7,7 @@ import FilterDropdown from '../components/FilterDropdown'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
+import LarixEntryBlock from '../components/LarixEntryBlock'
 import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import {
@@ -255,6 +256,8 @@ function ContractRegistry() {
   const [filterLawyerId, setFilterLawyerId] = useState('')
   const [searchText, setSearchText] = useState('')
   const [onlyOverdue, setOnlyOverdue] = useState(false)
+  // Быстрый фильтр: заключённые договоры, ещё не внесённые в Larix.
+  const [onlyNoLarix, setOnlyNoLarix] = useState(false)
 
   // Сортировка по клику на заголовок (default — по имени объекта, как раньше)
   const [sortKey, setSortKey] = useState('object')
@@ -954,6 +957,8 @@ function ContractRegistry() {
         if (!selName || normNameById[c.responsible_contact_id] !== selName) return false
       }
       if (onlyOverdue && !isOverdue(c)) return false
+      // «Не в Larix» — только заключённые (не «Новая заявка») и ещё не внесённые.
+      if (onlyNoLarix && (c.larix_entered || (c.status || 'new_request') === 'new_request')) return false
       if (q) {
         const hay = [
           ...contractParties(c).map(p => p.name),
@@ -991,9 +996,9 @@ function ContractRegistry() {
       if (so !== 0) return so
       return (a.contract_date || '').localeCompare(b.contract_date || '')
     })
-  }, [tabContracts, filterObjectId, filterLawyerId, onlyOverdue, searchText, sortKey, sortDir, isOverdue, normNameById])
+  }, [tabContracts, filterObjectId, filterLawyerId, onlyOverdue, onlyNoLarix, searchText, sortKey, sortDir, isOverdue, normNameById])
 
-  const hasActiveFilters = !!(filterObjectId || filterLawyerId || searchText || onlyOverdue)
+  const hasActiveFilters = !!(filterObjectId || filterLawyerId || searchText || onlyOverdue || onlyNoLarix)
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -1002,7 +1007,7 @@ function ContractRegistry() {
 
   const resetFilters = () => {
     setFilterObjectId(''); setFilterLawyerId(''); setSearchText('')
-    setOnlyOverdue(false)
+    setOnlyOverdue(false); setOnlyNoLarix(false)
   }
 
   // Сохранение примечания юриста из раскрытого блока (по blur), с индикатором «Сохранение…».
@@ -1031,7 +1036,7 @@ function ContractRegistry() {
   useEffect(() => {
     setPage(1)
     setExpandedContractId(null)
-  }, [activeTab, filterObjectId, filterLawyerId, searchText, onlyOverdue, sortKey, sortDir, pageSize])
+  }, [activeTab, filterObjectId, filterLawyerId, searchText, onlyOverdue, onlyNoLarix, sortKey, sortDir, pageSize])
 
   // Закрываем раскрытие при перелистывании страниц.
   useEffect(() => {
@@ -1316,6 +1321,33 @@ function ContractRegistry() {
     }
   }
 
+  // Отметка о внесении договора в Larix. action: 'mark' | 'update' | 'unmark'.
+  const handleLarix = async (contractId, action, number = '') => {
+    const by = userProfile?.full_name || 'Сотрудник'
+    let patch
+    if (action === 'mark') {
+      patch = { larix_entered: true, larix_number: number.trim() || null, larix_entered_at: new Date().toISOString(), larix_entered_by: by }
+    } else if (action === 'update') {
+      patch = { larix_number: number.trim() || null }
+    } else {
+      patch = { larix_entered: false, larix_number: null, larix_entered_at: null, larix_entered_by: null }
+    }
+    try {
+      const { error } = await supabase.from('contracts').update(patch).eq('id', contractId)
+      if (error) throw error
+      setContracts(prev => prev.map(c => c.id === contractId ? { ...c, ...patch } : c))
+      await logContractEvent(contractId, 'field_updated', {
+        fieldName: 'larix',
+        description: action === 'mark' ? 'Отмечено внесение в Larix'
+          : action === 'unmark' ? 'Снята отметка о внесении в Larix'
+            : 'Изменён № договора в Larix',
+      })
+    } catch (error) {
+      console.error('Ошибка Larix:', error.message)
+      alert('Ошибка: ' + error.message)
+    }
+  }
+
   // Управление приложениями
   const handleOpenAttachmentsModal = () => {
     setShowAttachmentsModal(true)
@@ -1416,6 +1448,11 @@ function ContractRegistry() {
             onClick={() => setOnlyOverdue(v => !v)}
             title="Просроченная плановая дата подписания"
           >Просрочено</button>
+          <button
+            className={`qfilter ${onlyNoLarix ? 'active' : ''}`}
+            onClick={() => setOnlyNoLarix(v => !v)}
+            title="Заключённые договоры, ещё не внесённые в Larix"
+          >Не в Larix</button>
           <button
             className="qfilter qfilter-reset"
             onClick={resetFilters}
@@ -1606,7 +1643,7 @@ function ContractRegistry() {
                   </td>
                   <td className="cell-work" title={contract.work_name || contract.tenders?.work_description || ''}>{contract.work_name || contract.tenders?.work_description || '—'}</td>
                   <td className="cell-amount">{formatMoney(contract.contract_amount, contract.currency) || '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td className="cell-status" onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
                       <span className="status-badge status-deleted">Удалён</span>
                     ) : (
@@ -1624,6 +1661,15 @@ function ContractRegistry() {
                         renderOption={(o) => <span className={`status-badge ${o.className || ''}`}>{o.label}</span>}
                       />
                     )}
+                    {!isDeletedTab && contract.larix_entered && (
+                      <span
+                        className="larix-badge is-in"
+                        title={`Внесён в Larix${contract.larix_number ? ` · № ${contract.larix_number}` : ''}${contract.larix_entered_by ? ` · ${contract.larix_entered_by}` : ''}`}
+                      >Larix ✓</span>
+                    )}
+                    {!isDeletedTab && !contract.larix_entered && (contract.status || 'new_request') !== 'new_request' && (
+                      <span className="larix-badge is-out" title="Договор ещё не внесён в Larix">Larix: нет</span>
+                    )}
                   </td>
                   <td className="cell-lawyer" onClick={(e) => e.stopPropagation()}>
                     <FilterDropdown
@@ -1638,14 +1684,14 @@ function ContractRegistry() {
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td className="cell-date" onClick={(e) => e.stopPropagation()}>
                     <InlineDateCell
                       value={contract.accepted_date}
                       onChange={(v) => handleInlineField(contract.id, 'accepted_date', v)}
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>
-                  <td className={`date-cell ${overdue ? 'date-overdue' : ''}`} onClick={(e) => e.stopPropagation()}>
+                  <td className={`cell-date date-cell ${overdue ? 'date-overdue' : ''}`} onClick={(e) => e.stopPropagation()}>
                     <InlineDateCell
                       value={contract.signed_date}
                       onChange={(v) => handleInlineField(contract.id, 'signed_date', v)}
@@ -1714,6 +1760,13 @@ function ContractRegistry() {
                             </ul>
                           </section>
                         )}
+
+                        {/* Внесение договора в систему Larix (после заключения) */}
+                        <LarixEntryBlock
+                          contract={contract}
+                          canEdit={canEditContracts && !isDeletedTab}
+                          onAction={(action, number) => handleLarix(contract.id, action, number)}
+                        />
 
                         {/* Блок 1: Примечание юриста — скрыто для руководителя строительства */}
                         {!hideNotes && (

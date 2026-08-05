@@ -1049,24 +1049,75 @@
 .contracts-table-compact col.cg-actions { width: 7%; }
 
 .contracts-table-compact thead th {
-  padding: 0.625rem 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 600;
+  padding: 0.7rem 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
   background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   white-space: normal;
-  line-height: 1.25;
+  line-height: 1.3;
+  text-align: left;
+  border-bottom: 2px solid var(--border-color);
+  vertical-align: middle;
 }
 
+/* Выравнивание колонок: числовые/статус/даты/действия — по центру, сумма — вправо,
+   текстовые (объект/договор/контрагент/работы/юрист) — влево. Заголовки совпадают
+   с данными по выравниванию. */
+.contracts-table-compact thead th:nth-child(1),   /* № */
+.contracts-table-compact thead th:nth-child(7),   /* Статус */
+.contracts-table-compact thead th:nth-child(9),   /* Дата принятия */
+.contracts-table-compact thead th:nth-child(10),  /* План. дата */
+.contracts-table-compact thead th:nth-child(11) { /* Действия */
+  text-align: center;
+}
+.contracts-table-compact thead th:nth-child(6) {  /* Сумма */
+  text-align: right;
+}
+/* Сортируемый заголовок — метка и стрелка по центру, если колонка центрирована */
+.contracts-table-compact thead th.th-sortable { display: table-cell; }
+
 .contracts-table-compact tbody td {
-  padding: 0.5rem 0.75rem;
+  padding: 0.55rem 0.75rem;
   vertical-align: middle;
   line-height: 1.35;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
+
+/* Центрированные колонки данных */
+.contracts-table-compact .cell-status,
+.contracts-table-compact .cell-date {
+  text-align: center;
+}
+.contracts-table-compact .cell-date .inline-cell-date { text-align: center; }
+
+/* Индикатор внесения в Larix — под статусом */
+.contracts-table-compact .larix-badge {
+  display: block;
+  width: fit-content;
+  margin: 0.3rem auto 0;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.contracts-table-compact .larix-badge.is-in {
+  color: #047857;
+  background: color-mix(in srgb, #10b981 13%, transparent);
+  border: 1px solid color-mix(in srgb, #10b981 35%, transparent);
+}
+.contracts-table-compact .larix-badge.is-out {
+  color: #b45309;
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 38%, transparent);
+}
+[data-theme='dark'] .contracts-table-compact .larix-badge.is-in { color: #6ee7b7; }
+[data-theme='dark'] .contracts-table-compact .larix-badge.is-out { color: #fbbf24; }
 
 .contracts-table-compact .cell-num {
   text-align: center;

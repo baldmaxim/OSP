@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS contracts (
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
   -- Понятийное соглашение — документ-основание для договора (с визой акционера).
   concept_agreement_s3_document_id UUID REFERENCES s3_documents(id) ON DELETE SET NULL,
+  -- Внесение договора в систему Larix (после заключения).
+  larix_entered BOOLEAN NOT NULL DEFAULT false,
+  larix_number TEXT,
+  larix_entered_at TIMESTAMPTZ,
+  larix_entered_by TEXT,
   notes TEXT,
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
