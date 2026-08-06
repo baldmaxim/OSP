@@ -220,16 +220,6 @@ function KpReviewPage() {
                   <td>{r.tenders?.responsible_contact?.full_name || '—'}</td>
                   <td>
                     <KpReviewBadge file={r} canReview={canReview} onReview={setReviewFile} showRemarks />
-                    {r.review_status === 'has_remarks' && (
-                      r.remarks_sent ? (
-                        <span
-                          className="kprv-send-state is-sent"
-                          title={`Отправлено контрагенту${r.remarks_sent_by ? ` · ${r.remarks_sent_by}` : ''}${r.remarks_sent_at ? ` · ${fmtDate(r.remarks_sent_at)}` : ''}`}
-                        >✓ Отправлено контрагенту</span>
-                      ) : (
-                        <span className="kprv-send-state is-todo">Ожидает отправки контрагенту</span>
-                      )
-                    )}
                   </td>
                   <td className="kprv-col-reviewer">
                     {r.reviewed_by ? (

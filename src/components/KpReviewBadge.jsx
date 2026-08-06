@@ -101,6 +101,14 @@ export default function KpReviewBadge({ file, canReview = false, onReview, showR
           <span className="kpb-remarks-file-name">{remarksDoc.file_name || 'Файл замечаний'}</span>
         </button>
       )}
+      {showRemarks && status === 'has_remarks' && (
+        <span
+          className={`kpb-sent ${file.remarks_sent ? 'is-sent' : 'is-todo'}`}
+          title={file.remarks_sent
+            ? `Отправлено контрагенту${file.remarks_sent_by ? ` · ${file.remarks_sent_by}` : ''}${file.remarks_sent_at ? ` · ${fmt(file.remarks_sent_at)}` : ''}`
+            : 'Замечания ещё не отправлены контрагенту'}
+        >{file.remarks_sent ? '✓ Отправлено контрагенту' : 'К отправке контрагенту'}</span>
+      )}
     </span>
   )
 }

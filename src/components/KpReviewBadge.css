@@ -69,3 +69,14 @@ button.kpb-pill { cursor: pointer; font-family: inherit; }
   white-space: nowrap;
 }
 [data-theme='dark'] .kpb-remarks-file { color: #fbbf24; }
+
+/* Шаг цепочки замечаний: отправлено контрагенту / к отправке */
+.kpb-sent {
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.kpb-sent.is-sent { color: #0369a1; }
+.kpb-sent.is-todo { color: #b45309; }
+[data-theme='dark'] .kpb-sent.is-sent { color: #7dd3fc; }
+[data-theme='dark'] .kpb-sent.is-todo { color: #fbbf24; }

@@ -190,18 +190,6 @@
 .kprv-send-btn.is-undo:hover { color: #dc2626; border-color: color-mix(in srgb, #dc2626 40%, transparent); background: none; }
 [data-theme='dark'] .kprv-send-btn { color: #7dd3fc; }
 
-/* Состояние отправки замечаний — под бейджем статуса */
-.kprv-send-state {
-  display: block;
-  margin-top: 0.3rem;
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-.kprv-send-state.is-sent { color: #0369a1; }
-.kprv-send-state.is-todo { color: #b45309; }
-[data-theme='dark'] .kprv-send-state.is-sent { color: #7dd3fc; }
-[data-theme='dark'] .kprv-send-state.is-todo { color: #fbbf24; }
-
 /* Схема двух цепочек проверки (легенда под заголовком) */
 .kprv-flow {
   display: flex;
