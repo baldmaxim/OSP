@@ -154,6 +154,22 @@ export async function setProposalReview(fileId, {
   return data
 }
 
+// task 431 (цепочка замечаний): инженер отмечает, что замечания по КП отправлены
+// контрагенту (sent=true) или снимает отметку (sent=false). sender — ФИО/e-mail.
+export async function setRemarksSent(fileId, { sent, sender = '' }) {
+  const payload = sent
+    ? { remarks_sent: true, remarks_sent_at: new Date().toISOString(), remarks_sent_by: sender?.trim() || null }
+    : { remarks_sent: false, remarks_sent_at: null, remarks_sent_by: null }
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .update(payload)
+    .eq('id', fileId)
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
+    .single()
+  if (error) throw error
+  return data
+}
+
 // task 431: очередь КП на проверку (вкладка «Проверка КП»). Тянет все КП-файлы
 // (file_kind='commercial_proposal') с джойном тендера/объекта/контрагента/ответственного.
 // statuses — массив статусов (null = все); objectIds — ограничение по объектам (scope сотрудника).
@@ -163,6 +179,7 @@ export async function fetchProposalFilesForReview({ statuses = null, objectIds =
       .from('tender_proposal_files')
       .select(`id, tender_id, counterparty_id, version_label, created_at,
                review_status, review_note, reviewed_at, reviewed_by, review_required,
+               remarks_sent, remarks_sent_at, remarks_sent_by,
                s3:s3_documents!s3_document_id(*),
                review_note_s3:s3_documents!review_note_s3_document_id(*),
                counterparties(name),

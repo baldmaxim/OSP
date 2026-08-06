@@ -173,6 +173,90 @@
 }
 .kprv-review-btn:hover { background: color-mix(in srgb, var(--primary-color, #2563eb) 10%, transparent); }
 
+/* Действия — в столбик (проверка аналитика + отправка инженера) */
+.kprv-actions { display: inline-flex; flex-direction: column; gap: 0.3rem; align-items: flex-end; }
+.kprv-send-btn {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid #0ea5e9;
+  border-radius: 7px;
+  background: none;
+  color: #0369a1;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kprv-send-btn:hover { background: color-mix(in srgb, #0ea5e9 10%, transparent); }
+.kprv-send-btn.is-undo { border-color: var(--border-color); color: var(--text-secondary); }
+.kprv-send-btn.is-undo:hover { color: #dc2626; border-color: color-mix(in srgb, #dc2626 40%, transparent); background: none; }
+[data-theme='dark'] .kprv-send-btn { color: #7dd3fc; }
+
+/* Состояние отправки замечаний — под бейджем статуса */
+.kprv-send-state {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.kprv-send-state.is-sent { color: #0369a1; }
+.kprv-send-state.is-todo { color: #b45309; }
+[data-theme='dark'] .kprv-send-state.is-sent { color: #7dd3fc; }
+[data-theme='dark'] .kprv-send-state.is-todo { color: #fbbf24; }
+
+/* Схема двух цепочек проверки (легенда под заголовком) */
+.kprv-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  font-size: 0.8125rem;
+}
+.kprv-flow-start {
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  white-space: nowrap;
+}
+.kprv-flow-split { display: flex; flex-direction: column; gap: 0.45rem; }
+.kprv-flow-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.kprv-flow-arrow { color: var(--text-tertiary); font-weight: 700; }
+.kprv-flow-step {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.15;
+  padding: 0.22rem 0.55rem;
+  border-radius: 8px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.kprv-flow-step small { font-weight: 500; font-size: 0.65rem; opacity: 0.85; }
+.kprv-flow-step.is-ok {
+  color: #15803d;
+  background: color-mix(in srgb, #16a34a 12%, transparent);
+  border-color: color-mix(in srgb, #16a34a 30%, transparent);
+}
+.kprv-flow-step.is-warn {
+  color: #b45309;
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  border-color: color-mix(in srgb, #f59e0b 34%, transparent);
+}
+.kprv-flow-step.is-sent {
+  color: #0369a1;
+  background: color-mix(in srgb, #0ea5e9 12%, transparent);
+  border-color: color-mix(in srgb, #0ea5e9 32%, transparent);
+}
+[data-theme='dark'] .kprv-flow-step.is-ok { color: #6ee7b7; }
+[data-theme='dark'] .kprv-flow-step.is-warn { color: #fbbf24; }
+[data-theme='dark'] .kprv-flow-step.is-sent { color: #7dd3fc; }
+
 @media (max-width: 640px) {
   .kprv-toolbar { flex-direction: column; align-items: stretch; }
   .kprv-tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }

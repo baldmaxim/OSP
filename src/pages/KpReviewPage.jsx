@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
-import { fetchProposalFilesForReview } from '../services/tenderProposalFiles'
+import { fetchProposalFilesForReview, setRemarksSent } from '../services/tenderProposalFiles'
 import KpReviewBadge from '../components/KpReviewBadge'
 import KpReviewModal from '../components/KpReviewModal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
@@ -28,16 +28,31 @@ const IconFile = () => (
   </svg>
 )
 
+// Этап (стадия) КП в цепочке проверки:
+//   pending         — на проверке (ждёт аналитика);
+//   approved        — «нет замечаний» (цепочка 1 завершена);
+//   remarks_pending — есть замечания, инженер ещё не отправил их контрагенту;
+//   remarks_sent    — замечания отправлены контрагенту (цепочка 2 завершена).
+function stageOf(r) {
+  if (r.review_status === 'approved') return 'approved'
+  if (r.review_status === 'has_remarks') return r.remarks_sent ? 'remarks_sent' : 'remarks_pending'
+  return 'pending'
+}
+
 const TABS = [
-  { key: 'pending', label: 'На проверке', statuses: ['pending'] },
-  { key: 'has_remarks', label: 'Замечания', statuses: ['has_remarks'] },
-  { key: 'approved', label: 'Проверено', statuses: ['approved'] },
-  { key: 'all', label: 'Все', statuses: null },
+  { key: 'pending', label: 'На проверке' },
+  { key: 'approved', label: 'Нет замечаний' },
+  { key: 'remarks_pending', label: 'Замечания: к отправке' },
+  { key: 'remarks_sent', label: 'Отправлено контрагенту' },
+  { key: 'all', label: 'Все' },
 ]
 
 function KpReviewPage() {
-  const { isAdmin, role, scopedObjectIds } = useRole()
+  const { isAdmin, role, scopedObjectIds, userProfile, user } = useRole()
+  // Аналитик-экономист (или админ) проставляет вердикт/замечания.
   const canReview = isAdmin || role === 'economist'
+  // Инженер (или админ) отмечает отправку замечаний контрагенту.
+  const canSend = isAdmin || role === 'engineer'
 
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -65,17 +80,25 @@ function KpReviewPage() {
 
   useEffect(() => { load() }, [load])
 
+  const handleSend = async (r, sent) => {
+    try {
+      await setRemarksSent(r.id, { sent, sender: userProfile?.full_name || user?.email || '' })
+      load()
+    } catch (e) {
+      alert('Ошибка отметки отправки: ' + (e.message || e))
+    }
+  }
+
   const counts = useMemo(() => {
-    const c = { pending: 0, has_remarks: 0, approved: 0, all: rows.length }
-    for (const r of rows) c[r.review_status] = (c[r.review_status] || 0) + 1
+    const c = { pending: 0, approved: 0, remarks_pending: 0, remarks_sent: 0, all: rows.length }
+    for (const r of rows) { const st = stageOf(r); c[st] = (c[st] || 0) + 1 }
     return c
   }, [rows])
 
   const visibleRows = useMemo(() => {
-    const active = TABS.find(t => t.key === tab)
     const s = search.trim().toLowerCase()
     return rows.filter(r => {
-      if (active?.statuses && !active.statuses.includes(r.review_status)) return false
+      if (tab !== 'all' && stageOf(r) !== tab) return false
       if (!s) return true
       const hay = [
         r.counterparties?.name,
@@ -83,6 +106,7 @@ function KpReviewPage() {
         r.tenders?.objects?.name,
         r.s3?.file_name,
         r.tenders?.responsible_contact?.full_name,
+        r.reviewed_by,
       ].filter(Boolean).join(' ').toLowerCase()
       return hay.includes(s)
     })
@@ -93,11 +117,26 @@ function KpReviewPage() {
       <div className="kprv-header">
         <h2>Проверка КП</h2>
         <p className="kprv-hint">
-          Коммерческие предложения контрагентов на проверку аналитиком-экономистом.
-          Сюда попадают только КП, загруженные с момента запуска функции; ранее загруженные
-          остаются в тендерах.
-          {!canReview && ' Просмотр — только чтение; проставлять проверку могут экономист ОСП и администратор.'}
+          Коммерческие предложения контрагентов на проверку. Сюда попадают только КП,
+          загруженные с момента запуска функции; ранее загруженные остаются в тендерах.
         </p>
+
+        {/* Схема прохождения КП по двум цепочкам — чтобы всем было понятно, что к чему */}
+        <div className="kprv-flow" aria-hidden>
+          <span className="kprv-flow-start">На&nbsp;проверке</span>
+          <span className="kprv-flow-split">
+            <span className="kprv-flow-row">
+              <span className="kprv-flow-arrow">→</span>
+              <span className="kprv-flow-step is-ok">Нет замечаний</span>
+            </span>
+            <span className="kprv-flow-row">
+              <span className="kprv-flow-arrow">→</span>
+              <span className="kprv-flow-step is-warn">Есть замечания<small>аналитик</small></span>
+              <span className="kprv-flow-arrow">→</span>
+              <span className="kprv-flow-step is-sent">Отправлено контрагенту<small>инженер</small></span>
+            </span>
+          </span>
+        </div>
       </div>
 
       <div className="kprv-toolbar">
@@ -130,7 +169,11 @@ function KpReviewPage() {
         <div className="kprv-error">Ошибка: {error}</div>
       ) : visibleRows.length === 0 ? (
         <div className="kprv-empty">
-          {tab === 'pending' ? 'Нет КП, ожидающих проверки.' : 'Нет записей.'}
+          {tab === 'pending' ? 'Нет КП, ожидающих проверки.'
+            : tab === 'remarks_pending' ? 'Нет замечаний, ожидающих отправки контрагенту.'
+              : tab === 'remarks_sent' ? 'Нет отправленных контрагенту замечаний.'
+                : tab === 'approved' ? 'Нет КП без замечаний.'
+                  : 'Нет записей.'}
         </div>
       ) : (
         <div className="kprv-table-wrap">
@@ -177,6 +220,16 @@ function KpReviewPage() {
                   <td>{r.tenders?.responsible_contact?.full_name || '—'}</td>
                   <td>
                     <KpReviewBadge file={r} canReview={canReview} onReview={setReviewFile} showRemarks />
+                    {r.review_status === 'has_remarks' && (
+                      r.remarks_sent ? (
+                        <span
+                          className="kprv-send-state is-sent"
+                          title={`Отправлено контрагенту${r.remarks_sent_by ? ` · ${r.remarks_sent_by}` : ''}${r.remarks_sent_at ? ` · ${fmtDate(r.remarks_sent_at)}` : ''}`}
+                        >✓ Отправлено контрагенту</span>
+                      ) : (
+                        <span className="kprv-send-state is-todo">Ожидает отправки контрагенту</span>
+                      )
+                    )}
                   </td>
                   <td className="kprv-col-reviewer">
                     {r.reviewed_by ? (
@@ -187,13 +240,30 @@ function KpReviewPage() {
                     ) : <span className="kprv-muted">—</span>}
                   </td>
                   <td className="kprv-col-action">
-                    {canReview && (
-                      <button
-                        type="button"
-                        className="kprv-review-btn"
-                        onClick={() => setReviewFile(r)}
-                      >{r.review_status === 'pending' ? 'Проверить' : 'Изменить'}</button>
-                    )}
+                    <div className="kprv-actions">
+                      {canReview && (
+                        <button
+                          type="button"
+                          className="kprv-review-btn"
+                          onClick={() => setReviewFile(r)}
+                        >{r.review_status === 'pending' ? 'Проверить' : 'Изменить'}</button>
+                      )}
+                      {canSend && r.review_status === 'has_remarks' && (
+                        r.remarks_sent ? (
+                          <button
+                            type="button"
+                            className="kprv-send-btn is-undo"
+                            onClick={() => handleSend(r, false)}
+                          >Отменить отправку</button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="kprv-send-btn"
+                            onClick={() => handleSend(r, true)}
+                          >Отправлено контрагенту</button>
+                        )
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

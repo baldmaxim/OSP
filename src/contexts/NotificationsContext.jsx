@@ -128,7 +128,7 @@ export function NotificationsProvider({ children }) {
         reviewSince.setDate(reviewSince.getDate() - REVIEW_LOOKBACK_DAYS)
         kpReviewQ = supabase
           .from('tender_proposal_files')
-          .select('id, tender_id, review_status, review_note, reviewed_at, counterparties(name), tenders!inner(work_description, object_id, objects(name), responsible_contact:contacts!responsible_contact_id(full_name))')
+          .select('id, tender_id, review_status, review_note, reviewed_at, remarks_sent, counterparties(name), tenders!inner(work_description, object_id, objects(name), responsible_contact:contacts!responsible_contact_id(full_name))')
           .eq('file_kind', 'commercial_proposal')
           .eq('review_required', true)
           .in('review_status', ['approved', 'has_remarks'])
@@ -189,9 +189,12 @@ export function NotificationsProvider({ children }) {
         console.warn('Проверки КП не загружены (миграция 20260802?):', kpReviewRes.error.message)
       } else {
         for (const f of kpReviewRes.data || []) {
+          // Замечания, уже отправленные контрагенту инженером, — задача закрыта,
+          // напоминание «направьте контрагенту» больше не нужно.
+          if (f.review_status === 'has_remarks' && f.remarks_sent) continue
           const t = f.tenders
           const statusLabel = f.review_status === 'has_remarks'
-            ? 'есть замечания'
+            ? 'есть замечания — направить контрагенту'
             : 'проверено, замечаний нет'
           out.push({
             kind: 'kp_review',
