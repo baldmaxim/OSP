@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS tenders (
   tender_package_link TEXT,
   winner_counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  -- Публикация тендера в Telegram-канале (после запуска).
+  tg_published BOOLEAN NOT NULL DEFAULT false,
+  tg_published_at TIMESTAMPTZ,
+  tg_published_by TEXT,
   cost_plan_link TEXT,
   cost_plan_responsible_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
   cost_plan_status TEXT NOT NULL DEFAULT 'not_started',

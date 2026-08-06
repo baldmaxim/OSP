@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
+import TgPublishToggle from '../components/TgPublishToggle'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
@@ -852,6 +853,26 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       }
     } catch (err) {
       console.error('Ошибка назначения ответственного:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // Отметка публикации тендера в Telegram-канале (галочка под описанием работ).
+  const handleToggleTgPublished = async (tenderId, published) => {
+    const by = userProfile?.full_name || 'Сотрудник'
+    const patch = published
+      ? { tg_published: true, tg_published_at: new Date().toISOString(), tg_published_by: by }
+      : { tg_published: false, tg_published_at: null, tg_published_by: null }
+    try {
+      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, ...patch } : t))
+      logTenderEvent(tenderId, 'field_updated', {
+        fieldName: 'tg_published',
+        description: published ? 'Отмечена публикация в ТГ-канале' : 'Снята отметка о публикации в ТГ-канале',
+      })
+    } catch (err) {
+      console.error('Ошибка отметки публикации в ТГ:', err.message)
       alert('Ошибка: ' + err.message)
     }
   }
@@ -2037,6 +2058,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 {tender.work_description && (
                   <div className="mcard-desc">{tender.work_description}</div>
                 )}
+                <div>
+                  <TgPublishToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleTgPublished} />
+                </div>
                 <div className="mcard-rows">
                   <div className="mcard-row">
                     <span className="mcard-label">Ответственный</span>
@@ -2408,6 +2432,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       >
                         {tender.work_description}
                       </Link>
+                      <div>
+                        <TgPublishToggle
+                          tender={tender}
+                          canEdit={canEditTenders}
+                          onToggle={handleToggleTgPublished}
+                        />
+                      </div>
                     </td>
                     {!isCompletedTab && (
                       <td>
