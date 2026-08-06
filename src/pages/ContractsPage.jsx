@@ -388,12 +388,15 @@ function ContractRegistry() {
 
   const fetchCounterparties = async () => {
     try {
-      const { data, error } = await supabase
+      // Постранично: контрагентов >1000, иначе потолок PostgREST молча режет список
+      // и часть (например, по алфавиту после ~«Т») не появляется в форме договора.
+      const data = await fetchAllRows((from, to) => supabase
         .from('counterparties')
         .select('*')
         .order('name', { ascending: true })
-      if (error) throw error
-      setCounterparties(data || [])
+        .order('id', { ascending: true })
+        .range(from, to))
+      setCounterparties(data)
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error.message)
     }
