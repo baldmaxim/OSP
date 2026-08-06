@@ -114,6 +114,18 @@
 [data-theme='dark'] .kprv-table tbody tr:hover td { background: rgba(148, 163, 184, 0.10); }
 /* Дата — моноширинные цифры */
 .kprv-col-date { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-secondary); }
+/* Колонка «Кто проверил» */
+.kprv-col-reviewer { white-space: normal; }
+.kprv-reviewer-name { display: block; color: var(--text-primary); }
+.kprv-reviewer-date {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.kprv-muted { color: var(--text-tertiary); }
+
 /* Колонка действия — прижата вправо, не «висит» */
 .kprv-col-action { width: 1%; white-space: nowrap; text-align: right; }
 

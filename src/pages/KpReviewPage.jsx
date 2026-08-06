@@ -144,6 +144,7 @@ function KpReviewPage() {
                 <th>Загружен</th>
                 <th>Ответственный</th>
                 <th>Статус проверки</th>
+                <th>Кто проверил</th>
                 <th className="kprv-col-action"></th>
               </tr>
             </thead>
@@ -176,6 +177,14 @@ function KpReviewPage() {
                   <td>{r.tenders?.responsible_contact?.full_name || '—'}</td>
                   <td>
                     <KpReviewBadge file={r} canReview={canReview} onReview={setReviewFile} showRemarks />
+                  </td>
+                  <td className="kprv-col-reviewer">
+                    {r.reviewed_by ? (
+                      <>
+                        <span className="kprv-reviewer-name">{r.reviewed_by}</span>
+                        {r.reviewed_at && <span className="kprv-reviewer-date">{fmtDate(r.reviewed_at)}</span>}
+                      </>
+                    ) : <span className="kprv-muted">—</span>}
                   </td>
                   <td className="kprv-col-action">
                     {canReview && (
