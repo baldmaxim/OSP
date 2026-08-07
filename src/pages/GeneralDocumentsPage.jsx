@@ -77,12 +77,43 @@ function fileBadge(name) {
   return { label: (ext || 'FILE').slice(0, 4).toUpperCase(), cls: 'badge-other' }
 }
 
+// Иконки подгрупп документов (SVG, currentColor — цвет задаётся из CSS).
+const catIconProps = {
+  viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+  strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round',
+  width: 17, height: 17, 'aria-hidden': true,
+}
+const IconFolder = () => (
+  <svg {...catIconProps}><path d="M4 5h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" /></svg>
+)
+const IconHardHat = () => (
+  <svg {...catIconProps}>
+    <path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1Z" />
+    <path d="M10 10V6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4" />
+    <path d="M4 16v-3a6 6 0 0 1 6-6" /><path d="M14 7a6 6 0 0 1 6 6v3" />
+  </svg>
+)
+const IconCalculator = () => (
+  <svg {...catIconProps}>
+    <rect x="4" y="2" width="16" height="20" rx="2" /><path d="M8 6h8" />
+    <path d="M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h4" />
+  </svg>
+)
+const IconScale = () => (
+  <svg {...catIconProps}>
+    <path d="M12 3v18" /><path d="M7 21h10" />
+    <path d="M5 7h4c1.5 0 3-.7 3-1.5 0 .8 1.5 1.5 3 1.5h4" />
+    <path d="m5 7-3 7c0 1.1 1.3 2 3 2s3-.9 3-2Z" />
+    <path d="m19 7-3 7c0 1.1 1.3 2 3 2s3-.9 3-2Z" />
+  </svg>
+)
+
 // Подгруппы раздела «Документы». 'general' — текущий реестр «Общая информация».
 const CATEGORIES = [
-  { key: 'general', label: 'Общая информация' },
-  { key: 'engineers', label: 'Инженеры' },
-  { key: 'economists', label: 'Экономисты' },
-  { key: 'lawyers', label: 'Юристы' },
+  { key: 'general', label: 'Общая информация', Icon: IconFolder },
+  { key: 'engineers', label: 'Инженеры', Icon: IconHardHat },
+  { key: 'economists', label: 'Экономисты', Icon: IconCalculator },
+  { key: 'lawyers', label: 'Юристы', Icon: IconScale },
 ]
 const CATEGORY_LABEL = Object.fromEntries(CATEGORIES.map(c => [c.key, c.label]))
 
@@ -494,10 +525,11 @@ export default function GeneralDocumentsPage() {
             key={c.key}
             role="tab"
             aria-selected={activeCat === c.key}
-            className={`gd-tab${activeCat === c.key ? ' is-active' : ''}`}
+            className={`gd-tab gd-tab--${c.key}${activeCat === c.key ? ' is-active' : ''}`}
             onClick={() => setActiveCat(c.key)}
           >
-            {c.label}
+            <span className="gd-tab-icon" aria-hidden><c.Icon /></span>
+            <span className="gd-tab-label">{c.label}</span>
             <span className="gd-tab-count">{catCounts[c.key] || 0}</span>
           </button>
         ))}
