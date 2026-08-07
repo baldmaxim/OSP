@@ -100,17 +100,23 @@
   .registry-filters, .rr-filters, .summary-filters, .reports-filters,
   .user-filters, .bsm-filters, .map-filters, .emp-filters, .gd-toolbar,
   .counterparties-toolbar, .toolbar-row, .toolbar-center, .toolbar-actions,
-  .report-toolbar, .rf-quick, .dcr-toolbar {
+  .report-toolbar, .rf-quick, .dcr-toolbar, .cost-plans-toolbar {
     flex-wrap: wrap !important;
     gap: 0.5rem;
   }
   /* Дочерние поля фильтров — на всю ширину строки */
   .registry-filters > *, .rr-filters > *, .summary-filters > *,
   .reports-filters > *, .user-filters > *, .gd-toolbar > *,
-  .counterparties-toolbar > *, .toolbar-center > * {
+  .counterparties-toolbar > *, .toolbar-center > *, .cost-plans-toolbar > * {
     flex: 1 1 100%;
     min-width: 0;
     max-width: none;
+  }
+  /* Поля внутри тулбара «Планы затрат / ВОРы» — на всю ширину, без фикс. min/max */
+  .cost-plans-search, .cost-plans-toolbar select, .cost-plans-toolbar .fdrop {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
   }
   /* FilterDropdown внутри фильтров — на всю ширину */
   .registry-filters .fdrop, .rr-filters .fdrop, .user-filters .fdrop,
@@ -127,7 +133,8 @@
   /* ── Вкладки → горизонтальная прокрутка вместо переноса ──── */
   .contract-tabs, .admin-tabs, .bsm-tabs-main, .bsm-tabs-sub,
   .contacts-tabs, .estimate-doc-tabs, .status-tabs,
-  .tender-tabs, .estimate-subtabs, .estimate-subtabs-left, .rr-top-tabs {
+  .tender-tabs, .estimate-subtabs, .estimate-subtabs-left, .rr-top-tabs,
+  .cost-plans-tabs, .gd-tabs {
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -137,13 +144,33 @@
   .bsm-tabs-main::-webkit-scrollbar, .bsm-tabs-sub::-webkit-scrollbar,
   .contacts-tabs::-webkit-scrollbar, .estimate-doc-tabs::-webkit-scrollbar,
   .status-tabs::-webkit-scrollbar, .tender-tabs::-webkit-scrollbar,
-  .estimate-subtabs::-webkit-scrollbar, .rr-top-tabs::-webkit-scrollbar { display: none; }
+  .estimate-subtabs::-webkit-scrollbar, .rr-top-tabs::-webkit-scrollbar,
+  .cost-plans-tabs::-webkit-scrollbar, .gd-tabs::-webkit-scrollbar { display: none; }
   .contract-tab, .admin-tab, .contacts-tabs button, .status-tab,
-  .tender-tabs button, .estimate-subtabs button, .rr-top-tab {
+  .tender-tabs button, .estimate-subtabs button, .rr-top-tab,
+  .cost-plans-tabs button, .gd-tab {
     white-space: nowrap;
     flex: 0 0 auto;
   }
 
   /* ── KPI/дашборд-сетки → одна колонка ───────────────────── */
-  .kpi-grid, .dash-grid { grid-template-columns: 1fr !important; }
+  .kpi-grid, .dash-grid, .summary-kpis { grid-template-columns: 1fr !important; }
+
+  /* ── Точечные фиксы наездов (аудит) ──────────────────────── */
+  /* Импорт цен снабжения (модалка тендера): строка конфликтов вылезала за экран
+     фикс-колонками — радио «обновить/пропустить» было недоступно. Даём скролл. */
+  .supply-conflict-list { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .supply-conflict-row, .supply-conflict-head { min-width: 34rem; }
+
+  /* BSM: панель сопоставления столбцов была шире экрана (min-width:360) → выезд. */
+  .bsm-column-map-panel {
+    min-width: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    width: calc(100vw - 1.5rem) !important;
+    max-width: calc(100vw - 1.5rem) !important;
+  }
+
+  /* Заявка на ДС: строка задачи (чекбокс + задача + ответ + кнопка) — в столбик. */
+  .dcr-task-row { grid-template-columns: 1fr !important; }
 }

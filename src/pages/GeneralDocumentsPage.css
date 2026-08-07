@@ -191,15 +191,15 @@
 .gd-table .cg-actions { width: 108px; }
 
 .gd-table thead th {
-  padding: 0.75rem 1rem;
+  padding: 0.7rem 1rem;
   text-align: left;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.6875rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
   background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
   white-space: nowrap;
 }
 .gd-table tbody td {
@@ -217,9 +217,14 @@
 .gd-table td:last-child {
   border-right: none;
 }
-.gd-table tbody tr:hover {
-  background: var(--bg-tertiary);
-}
+/* Зебра-полоски + hover (отдельно настроены для тёмной темы) */
+.gd-table tbody tr:nth-child(even) { background: rgba(71, 85, 105, 0.025); }
+.gd-table tbody tr:hover { background: rgba(71, 85, 105, 0.06); }
+[data-theme='dark'] .gd-table tbody tr:nth-child(even) { background: rgba(148, 163, 184, 0.04); }
+[data-theme='dark'] .gd-table tbody tr:hover { background: rgba(148, 163, 184, 0.09); }
+/* Колонка «Обновлено» — по центру */
+.gd-table thead th.gd-col-updated,
+.gd-table tbody td.gd-col-updated { text-align: center; }
 /* Колонка «№» — заголовок и значения строго по центру */
 .gd-table thead th.gd-col-num,
 .gd-table tbody td.gd-col-num {
