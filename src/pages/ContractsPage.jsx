@@ -33,12 +33,9 @@ const STATUS_OPTIONS = [
 ]
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(s => [s.value, s.label]))
 
-// «Заявки на заключение» — договоры на стадии обработки (ещё не заключены).
-const PROCESSING_STATUSES = ['new_request', 'in_work', 'paused']
-
-// Вкладки: «Общий реестр» = все не удалённые (любой статус, включая «Новая заявка»);
-// «Заявки на заключение» = договоры в обработке (PROCESSING_STATUSES);
-// далее фильтры по статусу; «Удалённые» — soft-delete (deleted_at IS NOT NULL).
+// Вкладки взаимоисключающие по статусу: «Общий реестр» = все не удалённые;
+// «Заявки на заключение» = статус «Новая заявка» (new_request); далее — по своему
+// статусу (В работе / Приостановка / Завершено); «Удалённые» — soft-delete.
 const TABS = [
   { key: 'all', label: 'Общий реестр' },
   { key: 'requests', label: 'Заявки на заключение' },
@@ -235,6 +232,8 @@ function ContractRegistry() {
   const [availableAttachments, setAvailableAttachments] = useState([])
   // Задача 419: «Приложения к Договору»: contract_id → массив строк
   const [contractAppendicesMap, setContractAppendicesMap] = useState({})
+  // Понятийные соглашения (несколько файлов на договор): contractId → [s3_documents].
+  const [conceptDocsByContract, setConceptDocsByContract] = useState({})
   // task 423: сводка документов СБ/должной осмотрительности по id контрагента.
   const [cpDocSummary, setCpDocSummary] = useState(() => new Map())
   // DnD-переупорядочивание приложений договора (внутри одного уровня)
@@ -308,7 +307,7 @@ function ContractRegistry() {
       // (fetchAllRows) — иначе потолок PostgREST в 1000 строк молча резал бы реестр.
       const data = await fetchAllRows((from, to) => supabase
         .from('contracts')
-        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position), concept_agreement:s3_documents!concept_agreement_s3_document_id(id, file_name, s3_key, mime_type, size_bytes)')
+        .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position)')
         .order('contract_date', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
@@ -354,6 +353,32 @@ function ContractRegistry() {
         }
       } else {
         setContractAppendicesMap({})
+      }
+
+      // Понятийные соглашения (несколько файлов на договор) — s3_documents по категории.
+      if (ids.length > 0) {
+        try {
+          const caRows = await fetchAllRows((from, to) => supabase
+            .from('s3_documents')
+            .select('id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at')
+            .eq('owner_type', 'contract')
+            .eq('doc_category', 'concept_agreement')
+            .in('owner_id', ids)
+            .order('created_at', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, to))
+          const caMap = {}
+          for (const r of caRows || []) {
+            if (!caMap[r.owner_id]) caMap[r.owner_id] = []
+            caMap[r.owner_id].push(r)
+          }
+          setConceptDocsByContract(caMap)
+        } catch (caError) {
+          console.warn('Не удалось загрузить понятийные соглашения:', caError.message)
+          setConceptDocsByContract({})
+        }
+      } else {
+        setConceptDocsByContract({})
       }
 
       // task 423: сводка документов СБ/должной осмотрительности по контрагентам.
@@ -932,7 +957,10 @@ function ContractRegistry() {
     if (activeTab === 'deleted') return deleted
     if (deleted) return false
     if (activeTab === 'all') return true
-    if (activeTab === 'requests') return PROCESSING_STATUSES.includes(c.status || 'new_request')
+    // «Заявки на заключение» = только статус «Новая заявка» (new_request).
+    // Договоры «В работе»/«Приостановка» показываются в своих вкладках, а не здесь —
+    // так вкладки взаимоисключающие и статус договора совпадает с его вкладкой.
+    if (activeTab === 'requests') return (c.status || 'new_request') === 'new_request'
     return (c.status || 'new_request') === activeTab
   }), [contracts, activeTab])
 
@@ -941,7 +969,7 @@ function ContractRegistry() {
     const active = contracts.filter(c => !c.deleted_at)
     return {
       all: active.length,
-      requests: active.filter(c => PROCESSING_STATUSES.includes(c.status || 'new_request')).length,
+      requests: active.filter(c => (c.status || 'new_request') === 'new_request').length,
       in_work: active.filter(c => (c.status || 'new_request') === 'in_work').length,
       paused: active.filter(c => c.status === 'paused').length,
       completed: active.filter(c => c.status === 'completed').length,
@@ -1236,13 +1264,14 @@ function ContractRegistry() {
     }
     if (!window.confirm(`Безвозвратно удалить договор ${contractLabel(contractNumber)}? Это действие нельзя отменить.`)) return
     try {
-      const target = contracts.find(c => c.id === id)
+      const caDocs = conceptDocsByContract[id] || []
       const { error } = await supabase.from('contracts').delete().eq('id', id)
       if (error) throw error
-      // Понятийное соглашение не удаляется каскадом (FK лишь SET NULL) — сносим явно,
-      // иначе останется orphan-файл в S3 после безвозвратного удаления договора.
-      const ca = target?.concept_agreement
-      if (ca?.id && ca?.s3_key) { try { await deleteDocument(ca) } catch { /* best effort */ } }
+      // Понятийные соглашения не удаляются каскадом (s3_documents.owner_id — свободный
+      // UUID) — сносим явно, иначе останутся orphan-файлы в S3 после удаления договора.
+      for (const d of caDocs) {
+        if (d?.id && d?.s3_key) { try { await deleteDocument(d) } catch { /* best effort */ } }
+      }
       fetchContracts()
     } catch (error) {
       console.error('Ошибка безвозвратного удаления:', error.message)
@@ -1626,7 +1655,8 @@ function ContractRegistry() {
                     </Link>
                     {!isDeletedTab && (
                       <ConceptAgreementCell
-                        contract={contract}
+                        files={conceptDocsByContract[contract.id] || []}
+                        contractId={contract.id}
                         canEdit={canEditContracts}
                         onChanged={fetchContracts}
                       />

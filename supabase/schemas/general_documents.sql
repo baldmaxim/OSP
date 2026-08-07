@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS general_documents (
   -- 'mixed' — карточка с несколькими ссылками и/или файлами (текущая модель).
   -- 'file'/'link' — старые одиночные записи (обратная совместимость).
   source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link', 'mixed')),
+  -- Подгруппа: general (Общая информация) | engineers | economists | lawyers.
+  category TEXT NOT NULL DEFAULT 'general',
   link_url TEXT,                          -- DEPRECATED (старые одиночные ссылки → general_document_links)
   s3_document_id UUID REFERENCES s3_documents(id) ON DELETE SET NULL,  -- DEPRECATED (файлы — по owner_type/owner_id)
   sort_order INTEGER,

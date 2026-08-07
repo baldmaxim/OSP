@@ -115,6 +115,51 @@
   white-space: nowrap;
 }
 
+/* ── Подгруппы (вкладки) ── */
+.gd-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.gd-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.gd-tab:hover { color: var(--text-primary); }
+.gd-tab.is-active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff;
+  font-weight: 600;
+}
+.gd-tab-count {
+  min-width: 1.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}
+.gd-tab.is-active .gd-tab-count {
+  color: #fff;
+  background: color-mix(in srgb, #fff 25%, transparent);
+}
+
 /* ── Карточка-контейнер таблицы ── */
 .gd-card {
   background: var(--bg-secondary);
@@ -483,7 +528,8 @@
   color: var(--text-secondary);
 }
 .gd-form-group input[type='text'],
-.gd-form-group textarea {
+.gd-form-group textarea,
+.gd-form-group .gd-select {
   width: 100%;
   padding: 0.5rem 0.625rem;
   font-size: 0.875rem;
@@ -494,8 +540,10 @@
   border-radius: 8px;
   box-sizing: border-box;
 }
+.gd-form-group .gd-select { height: 40px; cursor: pointer; }
 .gd-form-group input[type='text']:focus,
-.gd-form-group textarea:focus {
+.gd-form-group textarea:focus,
+.gd-form-group .gd-select:focus {
   outline: none;
   border-color: var(--primary-color);
 }
@@ -762,4 +810,13 @@
   .gd-link-title { grid-area: title; }
   .gd-link-url { grid-area: url; }
   .gd-row-remove { grid-area: remove; }
+  /* Подгруппы — горизонтальная прокрутка вместо переноса */
+  .gd-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .gd-tabs::-webkit-scrollbar { display: none; }
+  .gd-tab { flex: 0 0 auto; }
 }

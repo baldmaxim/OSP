@@ -1,5 +1,9 @@
-/* «Понятийное соглашение» под № договора в реестре */
+/* «Понятийное соглашение» под № договора в реестре — список файлов + добавить */
 .ca {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
   margin-top: 0.3rem;
   max-width: 100%;
   min-width: 0;

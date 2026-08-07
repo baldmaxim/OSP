@@ -77,7 +77,16 @@ function fileBadge(name) {
   return { label: (ext || 'FILE').slice(0, 4).toUpperCase(), cls: 'badge-other' }
 }
 
-const EMPTY_FORM = { title: '', description: '', links: [], newFiles: [] }
+// Подгруппы раздела «Документы». 'general' — текущий реестр «Общая информация».
+const CATEGORIES = [
+  { key: 'general', label: 'Общая информация' },
+  { key: 'engineers', label: 'Инженеры' },
+  { key: 'economists', label: 'Экономисты' },
+  { key: 'lawyers', label: 'Юристы' },
+]
+const CATEGORY_LABEL = Object.fromEntries(CATEGORIES.map(c => [c.key, c.label]))
+
+const EMPTY_FORM = { title: '', description: '', links: [], newFiles: [], category: 'general' }
 
 // Ограничения загрузки файлов для корпоративного реестра документов.
 const MAX_FILE_SIZE_MB = 50
@@ -121,6 +130,7 @@ export default function GeneralDocumentsPage() {
   const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [activeCat, setActiveCat] = useState('general')
   const [expanded, setExpanded] = useState(() => new Set())
 
   const [showModal, setShowModal] = useState(false)
@@ -179,10 +189,21 @@ export default function GeneralDocumentsPage() {
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
 
+  // Кол-во документов по каждой подгруппе (для бейджей во вкладках).
+  const catCounts = useMemo(() => {
+    const c = {}
+    for (const d of documents) {
+      const k = d.category || 'general'
+      c[k] = (c[k] || 0) + 1
+    }
+    return c
+  }, [documents])
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return documents
     return documents.filter(d => {
+      if ((d.category || 'general') !== activeCat) return false
+      if (!q) return true
       const hay = [
         d.title,
         d.description,
@@ -191,7 +212,7 @@ export default function GeneralDocumentsPage() {
       ].filter(Boolean).join(' ').toLowerCase()
       return hay.includes(q)
     })
-  }, [documents, search])
+  }, [documents, activeCat, search])
 
   const toggleExpand = (id) => {
     setExpanded(prev => {
@@ -205,7 +226,8 @@ export default function GeneralDocumentsPage() {
   const clearErrors = () => { setFormError(''); setLinkError(''); setFileErrors([]) }
   const openAdd = () => {
     setEditing(null)
-    setForm({ ...EMPTY_FORM, links: [] })
+    // Новый документ создаётся в текущей открытой подгруппе.
+    setForm({ ...EMPTY_FORM, links: [], category: activeCat })
     setRemoveFileIds(new Set())
     clearErrors()
     setShowModal(true)
@@ -217,6 +239,7 @@ export default function GeneralDocumentsPage() {
       description: doc.description || '',
       links: (doc.links || []).map(l => ({ title: l.title || '', url: l.url || '' })),
       newFiles: [],
+      category: doc.category || 'general',
     })
     setRemoveFileIds(new Set())
     clearErrors()
@@ -314,6 +337,7 @@ export default function GeneralDocumentsPage() {
           .update({
             title,
             description: form.description.trim() || null,
+            category: form.category || 'general',
             updated_at: new Date().toISOString(),
             updated_by: user?.id || null,
             updated_by_name: currentUserName,
@@ -347,6 +371,7 @@ export default function GeneralDocumentsPage() {
           .insert({
             title,
             description: form.description.trim() || null,
+            category: form.category || 'general',
             source_type: 'mixed',
             created_by: user?.id || null,
             created_by_name: currentUserName,
@@ -395,6 +420,8 @@ export default function GeneralDocumentsPage() {
         setFormError('Документ сохранён, но часть операций не выполнена. Проверьте список ниже и сохраните снова.')
         return
       }
+      // Показываем подгруппу, в которую попал документ (могли создать/перенести в другую).
+      setActiveCat(form.category || 'general')
       closeModal()
     } catch (err) {
       setFormError('Не удалось сохранить документ: ' + err.message)
@@ -460,6 +487,22 @@ export default function GeneralDocumentsPage() {
         )}
       </div>
 
+      {/* Подгруппы раздела «Документы» */}
+      <div className="gd-tabs" role="tablist" aria-label="Подгруппы документов">
+        {CATEGORIES.map(c => (
+          <button
+            key={c.key}
+            role="tab"
+            aria-selected={activeCat === c.key}
+            className={`gd-tab${activeCat === c.key ? ' is-active' : ''}`}
+            onClick={() => setActiveCat(c.key)}
+          >
+            {c.label}
+            <span className="gd-tab-count">{catCounts[c.key] || 0}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="gd-toolbar">
         <input
           type="text"
@@ -480,7 +523,7 @@ export default function GeneralDocumentsPage() {
               <p>Ничего не найдено.</p>
             ) : (
               <>
-                <p className="gd-empty-title">Документы пока не добавлены</p>
+                <p className="gd-empty-title">В подгруппе «{CATEGORY_LABEL[activeCat]}» документов пока нет</p>
                 <p className="gd-empty-hint">Добавьте первую ссылку, инструкцию или файл</p>
                 {canEditDocs && <button className="btn-primary" onClick={openAdd} style={{ marginTop: '0.75rem' }}>+ Добавить документ</button>}
               </>
@@ -650,6 +693,19 @@ export default function GeneralDocumentsPage() {
                       placeholder="Например: Обучение Excel и Revit"
                       autoFocus
                     />
+                  </div>
+                  <div className="gd-form-group">
+                    <label htmlFor="gd-category">Подгруппа</label>
+                    <select
+                      id="gd-category"
+                      className="gd-select"
+                      value={form.category}
+                      onChange={(e) => setForm(f => ({ ...f, category: e.target.value }))}
+                    >
+                      {CATEGORIES.map(c => (
+                        <option key={c.key} value={c.key}>{c.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="gd-form-group">
                     <label htmlFor="gd-desc">Описание / примечание</label>

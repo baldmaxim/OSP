@@ -1,13 +1,15 @@
 import { useRef, useState } from 'react'
-import { supabase } from '../supabase'
 import { uploadFile, deleteDocument } from '../services/s3'
 import S3DocumentPreview from './S3DocumentPreview'
 import './ConceptAgreementCell.css'
 
-// «Понятийное соглашение» договора — документ-основание для заключения договора
-// (с визой акционера). Один файл на договор, хранится в S3 (owner_type='contract'),
-// ссылка в contracts.concept_agreement_s3_document_id. Показывается под № договора
-// в реестре: открыть / прикрепить / заменить / удалить.
+// «Понятийное соглашение» договора — документы-основания для заключения договора
+// (с визой акционера). Согласований может быть НЕСКОЛЬКО, поэтому это список файлов,
+// хранящихся в S3 как s3_documents(owner_type='contract', doc_category='concept_agreement').
+// Показывается под № договора в реестре: список файлов + добавить / предпросмотр / удалить.
+// Пропсы: files — массив s3_documents; contractId; canEdit; onChanged — колбэк перезагрузки.
+
+const CATEGORY = 'concept_agreement'
 
 const IconDoc = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -20,13 +22,6 @@ const IconPlus = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M12 5v14M5 12h14" />
-  </svg>
-)
-const IconReplace = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M21 3v5h-5" /><path d="M3 21v-5h5" />
-    <path d="M21 8A9 9 0 0 0 6.6 4.6L3 8" /><path d="M3 16a9 9 0 0 0 14.4 3.4L21 16" />
   </svg>
 )
 const IconTrash = () => (
@@ -42,51 +37,37 @@ const IconEye = () => (
   </svg>
 )
 
-export default function ConceptAgreementCell({ contract, canEdit = false, onChanged }) {
-  const doc = contract.concept_agreement || null
+export default function ConceptAgreementCell({ files = [], contractId, canEdit = false, onChanged }) {
   const [busy, setBusy] = useState(false)
-  const [showPreview, setShowPreview] = useState(false)
+  const [previewDoc, setPreviewDoc] = useState(null)
   const fileRef = useRef(null)
 
   const pick = () => { if (!busy) fileRef.current?.click() }
 
-  const onFile = async (e) => {
-    const file = e.target.files?.[0]
+  const onFiles = async (e) => {
+    const picked = Array.from(e.target.files || [])
     e.target.value = ''
-    if (!file) return
+    if (!picked.length) return
     setBusy(true)
-    let uploaded = null
-    try {
-      uploaded = await uploadFile({ file, ownerType: 'contract', ownerId: contract.id })
-      const { error } = await supabase
-        .from('contracts')
-        .update({ concept_agreement_s3_document_id: uploaded.id })
-        .eq('id', contract.id)
-      if (error) throw error
-      // Старый файл (при замене) больше не нужен — убираем из S3.
-      if (doc?.id && doc?.s3_key) {
-        try { await deleteDocument(doc) } catch { /* best effort */ }
+    const failed = []
+    for (const file of picked) {
+      try {
+        await uploadFile({ file, ownerType: 'contract', ownerId: contractId, category: CATEGORY })
+      } catch (err) {
+        console.error('ПС не загружено:', file.name, err?.message)
+        failed.push(file.name)
       }
-      onChanged?.()
-    } catch (err) {
-      if (uploaded) { try { await deleteDocument(uploaded) } catch { /* best effort */ } }
-      alert('Ошибка загрузки понятийного соглашения: ' + (err.message || err))
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
+    if (failed.length) alert('Не удалось загрузить: ' + failed.join(', '))
+    onChanged?.()
   }
 
-  const remove = async () => {
-    if (!doc) return
-    if (!window.confirm('Удалить понятийное соглашение?')) return
+  const remove = async (doc) => {
+    if (!window.confirm(`Удалить понятийное соглашение «${doc.file_name || ''}»?`)) return
     setBusy(true)
     try {
-      const { error } = await supabase
-        .from('contracts')
-        .update({ concept_agreement_s3_document_id: null })
-        .eq('id', contract.id)
-      if (error) throw error
-      if (doc.id && doc.s3_key) { try { await deleteDocument(doc) } catch { /* best effort */ } }
+      await deleteDocument(doc)
       onChanged?.()
     } catch (err) {
       alert('Ошибка удаления: ' + (err.message || err))
@@ -97,40 +78,38 @@ export default function ConceptAgreementCell({ contract, canEdit = false, onChan
 
   return (
     <div className="ca">
-      <input ref={fileRef} type="file" style={{ display: 'none' }} onChange={onFile} />
-      {busy ? (
-        <span className="ca-busy">Загрузка…</span>
-      ) : doc ? (
-        <div className="ca-has">
+      <input ref={fileRef} type="file" multiple style={{ display: 'none' }} onChange={onFiles} />
+
+      {files.map(doc => (
+        <div className="ca-has" key={doc.id}>
           <span className="ca-chip" title={`Понятийное соглашение: ${doc.file_name || ''}`}>
             <IconDoc />
-            <span className="ca-chip-label">Понятийное соглашение</span>
+            <span className="ca-chip-label">{doc.file_name || 'Понятийное соглашение'}</span>
           </span>
           <span className="ca-actions">
-            <button type="button" className="ca-mini ca-preview" onClick={() => setShowPreview(true)} title="Предпросмотр" aria-label="Предпросмотр">
+            <button type="button" className="ca-mini ca-preview" onClick={() => setPreviewDoc(doc)} title="Предпросмотр" aria-label="Предпросмотр">
               <IconEye />
             </button>
             {canEdit && (
-              <button type="button" className="ca-mini" onClick={pick} title="Заменить файл" aria-label="Заменить">
-                <IconReplace />
-              </button>
-            )}
-            {canEdit && (
-              <button type="button" className="ca-mini ca-danger" onClick={remove} title="Удалить" aria-label="Удалить">
+              <button type="button" className="ca-mini ca-danger" onClick={() => remove(doc)} title="Удалить" aria-label="Удалить">
                 <IconTrash />
               </button>
             )}
           </span>
         </div>
-      ) : canEdit ? (
-        <button type="button" className="ca-add" onClick={pick} title="Прикрепить понятийное соглашение">
-          <IconPlus />
-          <span className="ca-chip-label">Понятийное соглашение</span>
-        </button>
-      ) : null}
+      ))}
 
-      {showPreview && doc && (
-        <S3DocumentPreview doc={doc} onClose={() => setShowPreview(false)} />
+      {busy && <span className="ca-busy">Загрузка…</span>}
+
+      {canEdit && !busy && (
+        <button type="button" className="ca-add" onClick={pick} title="Прикрепить понятийное соглашение (можно несколько)">
+          <IconPlus />
+          <span className="ca-chip-label">{files.length ? 'Ещё соглашение' : 'Понятийное соглашение'}</span>
+        </button>
+      )}
+
+      {previewDoc && (
+        <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
       )}
     </div>
   )
