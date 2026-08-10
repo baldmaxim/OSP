@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS objects (
   name VARCHAR(255) NOT NULL,
   address TEXT NOT NULL,
   developer VARCHAR(255),               -- Застройщик объекта
+  design VARCHAR(255),                  -- Проектирование (проектная организация)
   description TEXT,
   map_link TEXT,
   latitude DECIMAL(10, 8),

@@ -56,24 +56,37 @@ export default function UpdatePrompt() {
   if (!show) return null
 
   return (
-    <div className="upd-prompt" role="status" aria-live="polite">
-      <div className="upd-prompt-body">
-        <div className="upd-prompt-title">Доступна новая версия</div>
-        <div className="upd-prompt-text">
-          Обновите страницу, чтобы применить изменения.
+    <div className="upd-overlay" onClick={() => setShow(false)}>
+      <div
+        className="upd-prompt"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="upd-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="upd-prompt-icon" aria-hidden>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v5h-5" />
+          </svg>
         </div>
-      </div>
-      <div className="upd-prompt-actions">
-        <button
-          type="button"
-          className="upd-prompt-later"
-          onClick={() => setShow(false)}
-        >Позже</button>
-        <button
-          type="button"
-          className="upd-prompt-reload"
-          onClick={() => window.location.reload()}
-        >Обновить</button>
+        <div className="upd-prompt-title" id="upd-title">Доступна новая версия</div>
+        <div className="upd-prompt-text">
+          Обновите страницу, чтобы применить последние изменения.
+        </div>
+        <div className="upd-prompt-actions">
+          <button
+            type="button"
+            className="upd-prompt-later"
+            onClick={() => setShow(false)}
+          >Позже</button>
+          <button
+            type="button"
+            className="upd-prompt-reload"
+            onClick={() => window.location.reload()}
+          >Обновить</button>
+        </div>
       </div>
     </div>
   )

@@ -588,6 +588,10 @@ function ObjectsPage() {
                         <div className="object-card-developer">{object.developer}</div>
                       )}
 
+                      {object.design && (
+                        <div className="object-card-design">Проектирование: {object.design}</div>
+                      )}
+
                       <div className="object-card-address">
                         <span className="object-card-address-icon">📍</span>
                         <span>{object.address}</span>

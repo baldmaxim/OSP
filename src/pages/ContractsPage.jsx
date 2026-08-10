@@ -1440,6 +1440,16 @@ function ContractRegistry() {
 
       {/* Панель фильтров реестра */}
       <div className="registry-filters">
+        <div className="rf-field rf-field-search">
+          <label className="rf-label">Поиск</label>
+          <input
+            type="text"
+            className="rf-search"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Поиск по контрагенту, работам, № договора"
+          />
+        </div>
         <div className="rf-field rf-field-object">
           <label className="rf-label">Объект</label>
           <FilterDropdown
@@ -1462,16 +1472,6 @@ function ContractRegistry() {
             searchable
             searchPlaceholder="Поиск юриста…"
             allLabel="Все юристы"
-          />
-        </div>
-        <div className="rf-field rf-field-search">
-          <label className="rf-label">Поиск</label>
-          <input
-            type="text"
-            className="rf-search"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Поиск по контрагенту, работам, № договора"
           />
         </div>
         <div className="rf-quick">

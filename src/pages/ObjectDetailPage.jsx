@@ -1097,6 +1097,7 @@ function ObjectDetailPage() {
   const handleEditInfo = () => {
     setInfoFormData({
       developer: object.developer || '',
+      design: object.design || '',
       planned_start_date: object.planned_start_date || '',
       planned_end_date: object.planned_end_date || '',
       total_area: object.total_area || '',
@@ -1113,6 +1114,7 @@ function ObjectDetailPage() {
         .from('objects')
         .update({
           developer: infoFormData.developer.trim() || null,
+          design: infoFormData.design.trim() || null,
           planned_start_date: infoFormData.planned_start_date || null,
           planned_end_date: infoFormData.planned_end_date || null,
           total_area: parseFloat(infoFormData.total_area) || null,
@@ -1598,6 +1600,12 @@ function ObjectDetailPage() {
               <span className="info-label">Застройщик</span>
               <span className="info-value">
                 {object.developer || <span className="muted">—</span>}
+              </span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Проектирование</span>
+              <span className="info-value">
+                {object.design || <span className="muted">—</span>}
               </span>
             </div>
             <div className="info-item">
@@ -2408,6 +2416,19 @@ function ObjectDetailPage() {
                   onChange={(e) => setInfoFormData({ ...infoFormData, developer: e.target.value })}
                   placeholder="Например: ООО «Специализированный застройщик …»"
                 />
+              </div>
+              <div className="form-row-1">
+                <label>Проектирование</label>
+                <input
+                  type="text"
+                  list="obj-design-opts"
+                  value={infoFormData.design}
+                  onChange={(e) => setInfoFormData({ ...infoFormData, design: e.target.value })}
+                  placeholder="Например: СУ-10"
+                />
+                <datalist id="obj-design-opts">
+                  <option value="СУ-10" />
+                </datalist>
               </div>
               <div className="form-row-2">
                 <div>

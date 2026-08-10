@@ -1,50 +1,80 @@
-/* Попап «Доступна новая версия» — небольшая карточка снизу-справа */
-.upd-prompt {
+/* Попап «Доступна новая версия» — центрированная модалка с затемнением */
+.upd-overlay {
   position: fixed;
-  right: 1.25rem;
-  bottom: 1.25rem;
+  inset: 0;
   z-index: 3000;
-  max-width: 340px;
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem 1.125rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-left: 3px solid var(--primary-color, #0891b2);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.22);
-  animation: upd-in 0.18s ease-out;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  animation: upd-overlay-in 0.18s ease-out;
+}
+@keyframes upd-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
+.upd-prompt {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 1.75rem 1.5rem 1.375rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
+  animation: upd-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
 @keyframes upd-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.upd-prompt-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 0.4rem;
+  border-radius: 50%;
+  color: var(--primary-color, #0891b2);
+  background: color-mix(in srgb, var(--primary-color, #0891b2) 14%, transparent);
 }
 
 .upd-prompt-title {
   font-weight: 700;
-  font-size: 0.9375rem;
+  font-size: 1.0625rem;
   color: var(--text-primary);
-  margin-bottom: 0.2rem;
 }
 .upd-prompt-text {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: 1.45;
+  max-width: 300px;
 }
 
 .upd-prompt-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 0.5rem;
+  margin-top: 0.9rem;
+  width: 100%;
 }
 .upd-prompt-later,
 .upd-prompt-reload {
-  padding: 0.4rem 0.85rem;
-  border-radius: 7px;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  flex: 1 1 auto;
+  max-width: 150px;
+  padding: 0.55rem 1rem;
+  border-radius: 9px;
+  font-size: 0.875rem;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
 }
@@ -61,10 +91,5 @@
 .upd-prompt-reload:hover { background: var(--primary-hover, #0e7490); }
 
 @media (max-width: 640px) {
-  .upd-prompt {
-    left: 0.75rem;
-    right: 0.75rem;
-    bottom: 0.75rem;
-    max-width: none;
-  }
+  .upd-prompt { max-width: none; padding: 1.5rem 1.25rem 1.25rem; }
 }

@@ -2284,7 +2284,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.375rem;
-  margin-left: auto;
+  /* Поиск (flex:1) заполняет левую часть → Объект/Юрист + быстрые фильтры уходят вправо.
+     margin-left:auto здесь больше не нужен (иначе разрывал бы группу справа). */
 }
 .qfilter {
   height: 40px;
