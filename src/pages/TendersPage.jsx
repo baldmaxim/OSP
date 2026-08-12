@@ -10,6 +10,8 @@ import PaperclipIcon from '../components/icons/PaperclipIcon'
 import FilterDropdown from '../components/FilterDropdown'
 import { copyToClipboard } from '../utils/clipboard'
 import { reorderSiblings } from '../utils/appendixTree'
+import { sanitizeUserText, sanitizeDeep } from '../utils/text'
+import { describeSupabaseError, isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/Tenders.css'
 import '../components/MobileCards.css'
@@ -745,18 +747,39 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   const handleUpdateCounterpartyNotes = async (tenderId, tenderCounterpartyId, notes, oldNotes = '', cpName = '') => {
+    // Текст, вставленный из Word/PDF/1С, приносит служебные символы, которые Postgres
+    // отвергает (22P05) — снаружи это выглядело как необъяснимая «ошибка сохранения»
+    // у отдельного сотрудника. Чистим до отправки.
+    const cleanNotes = sanitizeUserText(notes) || ''
+    const cleanOldNotes = sanitizeUserText(oldNotes) || ''
     try {
-      const { error } = await supabase
+      // .select() обязателен: без него не отличить успешную запись от «0 строк».
+      // При истёкшей сессии запрос уходит как anon, RLS молча отсекает строку и
+      // ошибки нет — раньше UI в этом случае рисовал сохранение как успешное.
+      const { data, error } = await supabase
         .from('tender_counterparties')
-        .update({ notes: notes || null })
+        .update({ notes: cleanNotes || null })
         .eq('id', tenderCounterpartyId)
+        .select('id')
 
-      if (error) throw error
+      if (error) {
+        console.error('Ошибка сохранения примечания участника:', error)
+        alert(isAuthError(error)
+          ? SESSION_EXPIRED_MESSAGE
+          : 'Не удалось сохранить примечание: ' + describeSupabaseError(error))
+        return false
+      }
+
+      if (!data || data.length === 0) {
+        console.warn('Примечание участника: UPDATE не затронул ни одной строки', { tenderId, tenderCounterpartyId })
+        alert('Примечание не сохранено: строка участника недоступна. Обычно это истёкшая сессия или удалённый участник — обновите страницу (F5) и повторите.')
+        return false
+      }
 
       setTenderCounterparties(prev => ({
         ...prev,
-        [tenderId]: prev[tenderId].map(tc =>
-          tc.id === tenderCounterpartyId ? { ...tc, notes } : tc
+        [tenderId]: (prev[tenderId] || []).map(tc =>
+          tc.id === tenderCounterpartyId ? { ...tc, notes: cleanNotes } : tc
         )
       }))
 
@@ -766,14 +789,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       // бы имя контрагента вместо самого примечания.
       await logTenderEvent(tenderId, 'field_updated', {
         fieldName: 'participant_notes',
-        oldValue: { tc_id: tenderCounterpartyId, cp_name: cpName || null, text: oldNotes || '' },
-        newValue: { tc_id: tenderCounterpartyId, cp_name: cpName || null, text: notes || '' },
+        oldValue: { tc_id: tenderCounterpartyId, cp_name: cpName || null, text: cleanOldNotes },
+        newValue: { tc_id: tenderCounterpartyId, cp_name: cpName || null, text: cleanNotes },
         description: cpName ? `Примечание участника: ${cpName}` : 'Примечание участника',
       })
       return true
-    } catch (error) {
-      console.error('Ошибка сохранения примечания:', error.message)
-      alert('Ошибка сохранения примечания: ' + error.message)
+    } catch (err) {
+      // Сюда попадают только исключения самого фронта — их нельзя показывать как
+      // отказ базы, иначе диагностика уходит не в ту сторону.
+      console.error('Непредвиденная ошибка при сохранении примечания участника:', err)
+      alert('Непредвиденная ошибка при сохранении примечания: ' + (err?.message || err))
       return false
     }
   }
@@ -1558,18 +1583,22 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     if (!tenderId || !eventType) return
     try {
       const role = localStorage.getItem('userRole') || null
-      await supabase.from('tender_audit_log').insert([{
+      // supabase-js не бросает исключение — без проверки { error } провал вставки
+      // исчезал бесследно, и история молча переставала писаться.
+      const { error } = await supabase.from('tender_audit_log').insert([{
         tender_id: tenderId,
         event_type: eventType,
         field_name: payload.fieldName || null,
-        old_value: payload.oldValue ?? null,
-        new_value: payload.newValue ?? null,
-        description: payload.description || null,
+        old_value: sanitizeDeep(payload.oldValue ?? null),
+        new_value: sanitizeDeep(payload.newValue ?? null),
+        description: sanitizeUserText(payload.description) || null,
         changed_by_role: role,
         changed_by_name: userProfile?.full_name || null
       }])
+      // Пользователю не показываем: основное изменение уже сохранено, история вторична.
+      if (error) console.error('Не удалось записать историю тендера:', describeSupabaseError(error), error)
     } catch (err) {
-      console.error('Ошибка записи истории тендера:', err.message)
+      console.error('Ошибка записи истории тендера:', err?.message || err)
     }
   }
 

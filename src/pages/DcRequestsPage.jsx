@@ -13,7 +13,7 @@ import '../components/MobileCards.css'
 import './DcRequestsPage.css'
 
 // Task 306 + 307 + 309 + 310. Реестр «Заявок на ДС» — независимая сущность.
-// Только для основного строительства (objects.status='main_construction').
+// Объект можно выбрать из ОБОИХ отделов: основное строительство и гарантийный отдел.
 // У каждой заявки несколько задач (dc_request_tasks) с парой «текст / ответ» и
 // признаком выполнения (is_completed). Сама заявка имеет status: in_work | completed.
 // Документы хранятся в s3_documents с owner_type='dc_request', notes = описание.
@@ -380,10 +380,12 @@ function DcRequestsPage() {
   }
 
   const fetchObjects = async () => {
+    // Оба отдела: основное строительство И гарантийный отдел. Сортируем по статусу
+    // ('main_construction' < 'warranty_service'), затем по имени — в пикере ОС идут первыми.
     const { data, error } = await supabase
       .from('objects')
-      .select('id, name')
-      .eq('status', 'main_construction')
+      .select('id, name, status')
+      .order('status', { ascending: true })
       .order('name', { ascending: true })
     if (!error) setObjects(data || [])
   }
@@ -613,6 +615,8 @@ function DcRequestsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    // Пикер объекта — кастомный (не native required), поэтому проверяем вручную.
+    if (!formData.object_id) { alert('Выберите объект'); return }
     try {
       const payload = {
         object_id: formData.object_id || null,
@@ -1735,14 +1739,27 @@ function DcRequestsPage() {
               <div className="form-grid">
                 <div className="form-group full-width">
                   <label>Объект *</label>
-                  <select name="object_id" value={formData.object_id} onChange={handleInputChange} required>
-                    <option value="">Выберите объект</option>
-                    {objects.map(o => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </select>
-                  <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
-                    Только объекты основного строительства
+                  <FilterDropdown
+                    className="dcr-object-picker"
+                    label=""
+                    value={formData.object_id}
+                    onChange={(v) => setFormData(prev => ({ ...prev, object_id: v }))}
+                    options={objects.map(o => ({ value: o.id, label: o.name, status: o.status }))}
+                    searchable
+                    searchPlaceholder="Поиск объекта…"
+                    allLabel="Выберите объект"
+                    renderOption={(o) => (
+                      <span className="dcr-obj-option">
+                        <span className="dcr-obj-name">{o.label}</span>
+                        <span
+                          className={`dcr-obj-badge ${o.status === 'warranty_service' ? 'is-go' : 'is-os'}`}
+                          title={o.status === 'warranty_service' ? 'Гарантийный отдел' : 'Основное строительство'}
+                        >{o.status === 'warranty_service' ? 'ГО' : 'ОС'}</span>
+                      </span>
+                    )}
+                  />
+                  <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem', display: 'block' }}>
+                    Основное строительство (ОС) и гарантийный отдел (ГО)
                   </small>
                 </div>
 

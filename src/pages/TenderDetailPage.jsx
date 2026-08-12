@@ -5,6 +5,8 @@ import { supabase } from '../supabase'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
 import { normName, supplyKey } from '../utils/supplyRateHelpers'
 import { reorderSiblings } from '../utils/appendixTree'
+import { sanitizeUserText, sanitizeDeep } from '../utils/text'
+import { describeSupabaseError, isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
@@ -1621,35 +1623,55 @@ function TenderDetailPage() {
 
   const handleSaveNotes = async () => {
     if (!tender) return
-    const oldValue = tender.notes || ''
-    const newValue = notesDraft || ''
+    // Служебные символы из Word/PDF/1С Postgres не принимает (22P05) — чистим до отправки.
+    const oldValue = sanitizeUserText(tender.notes) || ''
+    const newValue = sanitizeUserText(notesDraft) || ''
     if (oldValue === newValue) return
     try {
       setNotesSaving(true)
-      const { error } = await supabase
+      // .select() отличает успешную запись от «0 строк» (истёкшая сессия: запрос уходит
+      // как anon, RLS молча отсекает строку, ошибки при этом нет).
+      const { data, error } = await supabase
         .from('tenders')
         .update({ notes: newValue || null })
         .eq('id', tender.id)
-      if (error) throw error
+        .select('id')
+
+      if (error) {
+        console.error('Ошибка сохранения примечания тендера:', error)
+        alert(isAuthError(error)
+          ? SESSION_EXPIRED_MESSAGE
+          : 'Не удалось сохранить примечание: ' + describeSupabaseError(error))
+        return
+      }
+      if (!data || data.length === 0) {
+        console.warn('Примечание тендера: UPDATE не затронул ни одной строки', { tenderId: tender.id })
+        alert('Примечание не сохранено: тендер недоступен. Обычно это истёкшая сессия — обновите страницу (F5) и повторите.')
+        return
+      }
 
       const role = localStorage.getItem('userRole') || null
-      await supabase.from('tender_audit_log').insert([{
+      // История вторична: ошибку пишем в консоль, пользователя не тревожим.
+      const { error: logError } = await supabase.from('tender_audit_log').insert([{
         tender_id: tender.id,
         event_type: 'field_updated',
         field_name: 'notes',
-        old_value: oldValue || null,
-        new_value: newValue || null,
+        old_value: sanitizeDeep(oldValue) || null,
+        new_value: sanitizeDeep(newValue) || null,
         description: 'Изменено: Примечание',
         changed_by_role: role,
         changed_by_name: userProfile?.full_name || null
       }])
+      if (logError) console.error('Не удалось записать историю примечания:', describeSupabaseError(logError), logError)
 
       setTender(prev => prev ? { ...prev, notes: newValue } : prev)
+      setNotesDraft(newValue)
       setNotesSavedAt(Date.now())
       loadAuditLog()
     } catch (err) {
-      console.error('Ошибка сохранения примечания:', err.message)
-      alert('Ошибка сохранения примечания: ' + err.message)
+      // Только исключения фронта — не выдаём их за отказ базы.
+      console.error('Непредвиденная ошибка при сохранении примечания:', err)
+      alert('Непредвиденная ошибка при сохранении примечания: ' + (err?.message || err))
     } finally {
       setNotesSaving(false)
     }
@@ -1928,21 +1950,35 @@ function TenderDetailPage() {
   }
 
   const handleUpdateParticipantNotes = async (tenderCounterpartyId, notes) => {
+    const cleanNotes = sanitizeUserText(notes) || ''
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tender_counterparties')
-        .update({ notes })
+        .update({ notes: cleanNotes || null })
         .eq('id', tenderCounterpartyId)
+        .select('id')
 
-      if (error) throw error
+      if (error) {
+        console.error('Ошибка сохранения примечания участника:', error)
+        alert(isAuthError(error)
+          ? SESSION_EXPIRED_MESSAGE
+          : 'Не удалось сохранить примечание: ' + describeSupabaseError(error))
+        return
+      }
+      if (!data || data.length === 0) {
+        console.warn('Примечание участника: UPDATE не затронул ни одной строки', { tenderCounterpartyId })
+        alert('Примечание не сохранено: строка участника недоступна. Обычно это истёкшая сессия или удалённый участник — обновите страницу (F5) и повторите.')
+        return
+      }
 
       setTenderCounterparties(prev =>
         prev.map(tc =>
-          tc.id === tenderCounterpartyId ? { ...tc, notes } : tc
+          tc.id === tenderCounterpartyId ? { ...tc, notes: cleanNotes } : tc
         )
       )
-    } catch (error) {
-      console.error('Ошибка сохранения примечания:', error)
+    } catch (err) {
+      console.error('Непредвиденная ошибка при сохранении примечания участника:', err)
+      alert('Непредвиденная ошибка при сохранении примечания: ' + (err?.message || err))
     }
   }
 

@@ -2155,3 +2155,43 @@
     gap: 0.1875rem;
   }
 }
+
+/* Пикер объекта в заявке на ДС (FilterDropdown) — на всю ширину + бейдж отдела ОС/ГО */
+.dcr-object-picker { display: flex; width: 100%; }
+.dcr-object-picker .fdrop-trigger { width: 100%; max-width: none; height: 40px; }
+
+.dcr-obj-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+.dcr-obj-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.dcr-obj-badge {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.dcr-obj-badge.is-os {
+  color: #1d4ed8;
+  background: color-mix(in srgb, #3b82f6 14%, transparent);
+  border-color: color-mix(in srgb, #3b82f6 30%, transparent);
+}
+.dcr-obj-badge.is-go {
+  color: #15803d;
+  background: color-mix(in srgb, #16a34a 14%, transparent);
+  border-color: color-mix(in srgb, #16a34a 30%, transparent);
+}
+[data-theme='dark'] .dcr-obj-badge.is-os { color: #93c5fd; }
+[data-theme='dark'] .dcr-obj-badge.is-go { color: #6ee7b7; }
