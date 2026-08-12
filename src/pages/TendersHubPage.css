@@ -344,6 +344,58 @@
   transform: translateX(2px);
 }
 
+/* ── Индикаторы количества ──────────────────────────────── */
+/* Компактный бейдж «12 в работе»: число выделено, подпись — обычным весом.
+   Показывается только при ненулевом значении (см. TendersHubPage.jsx). */
+.thub-count {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.thub-count strong {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* В работе — акцент направления. */
+.thub-count--blue {
+  color: var(--thub-blue);
+  background: var(--thub-blue-soft);
+  border-color: var(--thub-blue-border);
+}
+
+/* Требует внимания (очередь проверки КП). */
+.thub-count--warn {
+  color: var(--warning-color);
+  background: var(--warning-light);
+  border-color: var(--warning-muted);
+}
+
+/* Ещё не начато — нейтрально, не должно перетягивать внимание. */
+.thub-count--muted {
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+}
+
+/* Столбик бейджей в строке подраздела: «не начат» сверху, «в работе» снизу. */
+.thub-sub-counts {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
 /* ── Адаптив ────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .thub-grid {

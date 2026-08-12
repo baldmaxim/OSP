@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   IconBuilding,
@@ -10,6 +10,8 @@ import {
   IconChevronDown,
   IconArrowRight,
 } from '../components/icons/TenderHubIcons'
+import { useRole } from '../contexts/RoleContext'
+import { fetchTenderHubCounters } from '../services/tenderCounters'
 import './TendersHubPage.css'
 
 // Связанные разделы принадлежат только «Основному строительству».
@@ -21,11 +23,46 @@ const CONSTRUCTION_SUBSECTIONS = [
   { to: '/kp-review', Icon: IconShieldCheck, title: 'Проверка КП', desc: 'Проверка коммерческих предложений аналитиком' },
 ]
 
+// Индикаторы для подраздела: что показать справа от названия.
+// tone задаёт цвет: warn — требует внимания, blue — в работе, muted — ещё не начато.
+function subsectionCounters(to, counts) {
+  if (!counts) return []
+  switch (to) {
+    case '/kp-review':
+      return [{ label: 'на проверке', value: counts.kpPending, tone: 'warn' }]
+    case '/cost-plans':
+      return [
+        { label: 'не начат', value: counts.costPlanNotStarted, tone: 'muted' },
+        { label: 'в работе', value: counts.costPlanInProgress, tone: 'blue' },
+      ]
+    case '/tenders/materials':
+      return [
+        { label: 'не начат', value: counts.materialsNotStarted, tone: 'muted' },
+        { label: 'в работе', value: counts.materialsInProgress, tone: 'blue' },
+      ]
+    default:
+      return []
+  }
+}
+
 // task 254: страница-хаб «Тендеры» — два направления работы
 // (Основное строительство / Гарантийный отдел). У «Основного строительства» —
 // раскрывающийся блок связанных разделов; у «Гарантийного отдела» его нет.
 function TendersHubPage() {
+  const { scopedObjectIds } = useRole()
   const [expanded, setExpanded] = useState(true)
+  // Счётчики «сколько сейчас в работе». null = ещё не загружены: пока их нет,
+  // бейджи не рисуем, чтобы карточки не «прыгали» от подстановки чисел.
+  const [counts, setCounts] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchTenderHubCounters(scopedObjectIds)
+      .then((data) => { if (!cancelled) setCounts(data) })
+      // Индикаторы декоративные: молча остаёмся без них, страница работает как раньше.
+      .catch((err) => console.error('Не удалось загрузить счётчики тендеров:', err?.message || err))
+    return () => { cancelled = true }
+  }, [scopedObjectIds])
 
   return (
     <div className="tenders-hub">
@@ -48,6 +85,11 @@ function TendersHubPage() {
             <span className="thub-badge thub-badge--blue" aria-hidden><IconHardHat size={24} /></span>
             <div className="thub-title-row">
               <h3 className="thub-title">Основное строительство</h3>
+              {counts?.constructionInProgress > 0 && (
+                <span className="thub-count thub-count--blue" title="Тендеры в статусе «Идет тендерная процедура»">
+                  <strong>{counts.constructionInProgress}</strong> в работе
+                </span>
+              )}
               <button
                 type="button"
                 className={`thub-toggle ${expanded ? 'is-open' : ''}`}
@@ -67,16 +109,29 @@ function TendersHubPage() {
 
           {expanded && (
             <div className="thub-sub" id="thub-construction-sub">
-              {CONSTRUCTION_SUBSECTIONS.map(({ to, Icon, title, desc }) => (
-                <Link key={to} to={to} className="thub-sub-item">
-                  <span className="thub-sub-icon" aria-hidden><Icon size={20} /></span>
-                  <span className="thub-sub-text">
-                    <strong>{title}</strong>
-                    <small>{desc}</small>
-                  </span>
-                  <span className="thub-sub-arrow" aria-hidden><IconArrowRight size={16} /></span>
-                </Link>
-              ))}
+              {CONSTRUCTION_SUBSECTIONS.map(({ to, Icon, title, desc }) => {
+                // Нули не показываем — пустые бейджи только зашумляют карточку.
+                const counters = subsectionCounters(to, counts).filter(c => c.value > 0)
+                return (
+                  <Link key={to} to={to} className="thub-sub-item">
+                    <span className="thub-sub-icon" aria-hidden><Icon size={20} /></span>
+                    <span className="thub-sub-text">
+                      <strong>{title}</strong>
+                      <small>{desc}</small>
+                    </span>
+                    {counters.length > 0 && (
+                      <span className="thub-sub-counts">
+                        {counters.map(c => (
+                          <span key={c.label} className={`thub-count thub-count--${c.tone}`}>
+                            <strong>{c.value}</strong> {c.label}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                    <span className="thub-sub-arrow" aria-hidden><IconArrowRight size={16} /></span>
+                  </Link>
+                )
+              })}
             </div>
           )}
         </section>
