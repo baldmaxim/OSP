@@ -25,21 +25,28 @@ const CONSTRUCTION_SUBSECTIONS = [
 
 // Индикаторы для подраздела: что показать справа от названия.
 // tone задаёт цвет: warn — требует внимания, blue — в работе, muted — ещё не начато.
+// Нули не прячем: одинаковый набор бейджей во всех строках держит колонки ровными,
+// а «0 на проверке» — такая же полезная информация, как и «22».
 function subsectionCounters(to, counts) {
   if (!counts) return []
   switch (to) {
-    case '/kp-review':
-      return [{ label: 'на проверке', value: counts.kpPending, tone: 'warn' }]
-    case '/cost-plans':
+    case '/vors':
       return [
-        { label: 'не начат', value: counts.costPlanNotStarted, tone: 'muted' },
-        { label: 'в работе', value: counts.costPlanInProgress, tone: 'blue' },
+        { label: 'не начат', value: counts.vorNotStarted, tone: 'muted' },
+        { label: 'в работе', value: counts.vorInProgress, tone: 'blue' },
       ]
     case '/tenders/materials':
       return [
         { label: 'не начат', value: counts.materialsNotStarted, tone: 'muted' },
         { label: 'в работе', value: counts.materialsInProgress, tone: 'blue' },
       ]
+    case '/cost-plans':
+      return [
+        { label: 'не начат', value: counts.costPlanNotStarted, tone: 'muted' },
+        { label: 'в работе', value: counts.costPlanInProgress, tone: 'blue' },
+      ]
+    case '/kp-review':
+      return [{ label: 'на проверке', value: counts.kpPending, tone: 'warn' }]
     default:
       return []
   }
@@ -86,7 +93,7 @@ function TendersHubPage() {
             <div className="thub-title-row">
               <h3 className="thub-title">Основное строительство</h3>
               {counts?.constructionInProgress > 0 && (
-                <span className="thub-count thub-count--blue" title="Тендеры в статусе «Идет тендерная процедура»">
+                <span className="thub-count thub-count--solid" title="Тендеры в статусе «Идет тендерная процедура»">
                   <strong>{counts.constructionInProgress}</strong> в работе
                 </span>
               )}
@@ -110,8 +117,7 @@ function TendersHubPage() {
           {expanded && (
             <div className="thub-sub" id="thub-construction-sub">
               {CONSTRUCTION_SUBSECTIONS.map(({ to, Icon, title, desc }) => {
-                // Нули не показываем — пустые бейджи только зашумляют карточку.
-                const counters = subsectionCounters(to, counts).filter(c => c.value > 0)
+                const counters = subsectionCounters(to, counts)
                 return (
                   <Link key={to} to={to} className="thub-sub-item">
                     <span className="thub-sub-icon" aria-hidden><Icon size={20} /></span>
@@ -119,15 +125,18 @@ function TendersHubPage() {
                       <strong>{title}</strong>
                       <small>{desc}</small>
                     </span>
-                    {counters.length > 0 && (
-                      <span className="thub-sub-counts">
-                        {counters.map(c => (
-                          <span key={c.label} className={`thub-count thub-count--${c.tone}`}>
-                            <strong>{c.value}</strong> {c.label}
-                          </span>
-                        ))}
-                      </span>
-                    )}
+                    {/* Колонка фиксированной ширины — бейджи и стрелки выстраиваются
+                        по одной вертикали во всех строках, даже если счётчиков нет. */}
+                    <span className="thub-sub-counts">
+                      {counters.map(c => (
+                        <span
+                          key={c.label}
+                          className={`thub-count thub-count--${c.tone}${c.value ? '' : ' is-zero'}`}
+                        >
+                          <strong>{c.value}</strong> {c.label}
+                        </span>
+                      ))}
+                    </span>
                     <span className="thub-sub-arrow" aria-hidden><IconArrowRight size={16} /></span>
                   </Link>
                 )
@@ -142,6 +151,11 @@ function TendersHubPage() {
           <div className="thub-card-body thub-card-body--centered">
             <span className="thub-badge thub-badge--green" aria-hidden><IconShieldCheck size={24} /></span>
             <h3 className="thub-title">Гарантийный отдел</h3>
+            {counts?.warrantyInProgress > 0 && (
+              <span className="thub-count thub-count--solid-green" title="Тендеры в статусе «Идет тендерная процедура»">
+                <strong>{counts.warrantyInProgress}</strong> в работе
+              </span>
+            )}
             <p className="thub-desc">Тендеры по гарантийному обслуживанию сданных объектов</p>
             <Link to="/tenders/warranty" className="thub-btn thub-btn--green">
               Перейти к тендерам <IconArrowRight size={16} />

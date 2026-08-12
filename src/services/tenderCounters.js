@@ -27,12 +27,14 @@ async function runCount(label, query) {
 }
 
 // Живые (не удалённые) тендеры нужного типа. objectIds — скоуп сотрудника ([] = все).
-function tendersQuery({ tenderType, objectIds, mainConstructionOnly }) {
-  // objects!inner нужен только там, где важен статус объекта: у тендеров на материалы
-  // страница показывает все объекты, без деления на строительство/гарантию.
-  let q = mainConstructionOnly
+// objectStatus — статус объекта ('main_construction' | 'warranty_service'); при
+// mainConstructionOnly подставляется основное строительство. Без него фильтра по
+// объекту нет: страница тендеров на материалы показывает все объекты сразу.
+function tendersQuery({ tenderType, objectIds, mainConstructionOnly = false, objectStatus = null }) {
+  const status = objectStatus || (mainConstructionOnly ? 'main_construction' : null)
+  let q = status
     ? supabase.from('tenders').select('id, objects!inner(status)', { count: 'exact', head: true })
-        .eq('objects.status', 'main_construction')
+        .eq('objects.status', status)
     : supabase.from('tenders').select('id', { count: 'exact', head: true })
 
   q = q.eq('tender_type', tenderType).is('deleted_at', null)
@@ -53,23 +55,28 @@ function kpPendingQuery(objectIds) {
 }
 
 // Все счётчики хаба одним вызовом.
-// Возвращает { constructionInProgress, kpPending, costPlanNotStarted,
-//              costPlanInProgress, materialsNotStarted, materialsInProgress }.
 export async function fetchTenderHubCounters(objectIds = []) {
   const construction = () => tendersQuery({ tenderType: 'main', objectIds, mainConstructionOnly: true })
   const materials = () => tendersQuery({ tenderType: 'materials', objectIds, mainConstructionOnly: false })
+  const warranty = () => tendersQuery({ tenderType: 'main', objectIds, objectStatus: 'warranty_service' })
 
   const [
     constructionInProgress,
+    warrantyInProgress,
     kpPending,
+    vorNotStarted,
+    vorInProgress,
     costPlanNotStarted,
     costPlanInProgress,
     materialsNotStarted,
     materialsInProgress,
   ] = await Promise.all([
     runCount('тендеры в работе', construction().eq('status', STATUS_IN_PROGRESS)),
+    runCount('гарантия: в работе', warranty().eq('status', STATUS_IN_PROGRESS)),
     runCount('КП на проверке', kpPendingQuery(objectIds)),
-    // На странице планов затрат пустой cost_plan_status трактуется как «не начат».
+    // На страницах ВОРов и планов затрат пустой статус трактуется как «не начат».
+    runCount('ВОРы: не начат', construction().or('vor_status.is.null,vor_status.eq.not_started')),
+    runCount('ВОРы: в работе', construction().eq('vor_status', 'in_progress')),
     runCount('планы затрат: не начат', construction().or('cost_plan_status.is.null,cost_plan_status.eq.not_started')),
     runCount('планы затрат: в работе', construction().eq('cost_plan_status', 'in_progress')),
     runCount('материалы: не начат', materials().eq('status', STATUS_NOT_STARTED)),
@@ -78,7 +85,10 @@ export async function fetchTenderHubCounters(objectIds = []) {
 
   return {
     constructionInProgress,
+    warrantyInProgress,
     kpPending,
+    vorNotStarted,
+    vorInProgress,
     costPlanNotStarted,
     costPlanInProgress,
     materialsNotStarted,

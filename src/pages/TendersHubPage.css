@@ -79,7 +79,9 @@
   gap: 1.5rem;
   padding: 1.75rem;
   background: var(--bg-primary);
-  align-items: stretch;
+  /* Карточки по высоте контента: у «Гарантийного отдела» подразделов нет, и при
+     stretch он растягивался под соседа, оставляя внутри большую пустоту. */
+  align-items: start;
 }
 
 /* ── Карточка направления ───────────────────────────────── */
@@ -275,7 +277,9 @@
   display: flex;
   align-items: center;
   gap: 0.875rem;
-  padding: 0.75rem 0.875rem;
+  /* Единая высота строк: иначе строка с двумя бейджами выше соседней без них. */
+  min-height: 62px;
+  padding: 0.625rem 0.875rem;
   border-radius: 10px;
   text-decoration: none;
   color: inherit;
@@ -345,17 +349,19 @@
 }
 
 /* ── Индикаторы количества ──────────────────────────────── */
-/* Компактный бейдж «12 в работе»: число выделено, подпись — обычным весом.
-   Показывается только при ненулевом значении (см. TendersHubPage.jsx). */
+/* Бейдж «12 в работе»: число выделено, подпись — приглушённая.
+   Одна высота и одна ширина у всех бейджей, иначе строки разъезжаются. */
 .thub-count {
   flex-shrink: 0;
   display: inline-flex;
   align-items: baseline;
+  justify-content: center;
   gap: 0.3rem;
-  padding: 0.1875rem 0.5rem;
-  border-radius: 999px;
+  height: 24px;
+  padding: 0 0.625rem;
+  border-radius: 7px;
   font-size: 0.75rem;
-  line-height: 1.35;
+  line-height: 24px;
   white-space: nowrap;
   border: 1px solid transparent;
 }
@@ -382,18 +388,62 @@
 
 /* Ещё не начато — нейтрально, не должно перетягивать внимание. */
 .thub-count--muted {
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   background: var(--bg-tertiary);
   border-color: var(--border-color);
 }
 
-/* Столбик бейджей в строке подраздела: «не начат» сверху, «в работе» снизу. */
+/* Ноль показываем ради ровных колонок, но гасим: это не повод для внимания. */
+.thub-count.is-zero {
+  color: var(--text-tertiary);
+  background: transparent;
+  border-color: var(--border-color);
+  opacity: 0.7;
+}
+
+.thub-count.is-zero strong {
+  font-weight: 600;
+}
+
+/* Бейджи в шапке карточки направления — крупнее, чем в списке подразделов. */
+.thub-count--solid,
+.thub-count--solid-green {
+  height: 26px;
+  line-height: 26px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.thub-count--solid strong,
+.thub-count--solid-green strong {
+  font-size: 0.9375rem;
+}
+
+.thub-count--solid {
+  color: var(--thub-blue);
+  background: var(--thub-blue-soft);
+  border-color: var(--thub-blue-border);
+}
+
+.thub-count--solid-green {
+  color: var(--thub-green);
+  background: var(--thub-green-soft);
+  border-color: var(--thub-green-border);
+}
+
+/* Колонка счётчиков фиксированной ширины: бейджи «не начат» / «в работе» и
+   стрелки стоят на одной вертикали во всех строках, включая строки без счётчиков. */
 .thub-sub-counts {
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.375rem;
+  width: 208px;
+}
+
+.thub-sub-counts .thub-count {
+  min-width: 100px;
 }
 
 /* ── Адаптив ────────────────────────────────────────────── */
@@ -409,10 +459,37 @@
   }
 }
 
+@media (max-width: 900px) {
+  /* Узкая карточка — фиксированная колонка счётчиков только мешает. */
+  .thub-sub-counts {
+    width: auto;
+  }
+}
+
 @media (max-width: 560px) {
   .thub-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
+  }
+
+  /* На телефоне бейджи уезжают под текст, стрелку прячем — вся строка кликабельна. */
+  .thub-sub-item {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
+  .thub-sub-counts {
+    width: 100%;
+    justify-content: flex-start;
+    padding-left: calc(38px + 0.875rem);
+  }
+
+  .thub-sub-counts .thub-count {
+    min-width: 0;
+  }
+
+  .thub-sub-arrow {
+    display: none;
   }
 }
