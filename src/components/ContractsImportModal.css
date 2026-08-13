@@ -1,0 +1,149 @@
+/* Модалка импорта договоров из Excel. Использует общие классы .modal-overlay/.modal. */
+
+.cim-modal {
+  max-width: 920px;
+  width: 100%;
+}
+
+.cim-body {
+  padding: 1.25rem 1.5rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.cim-hint {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0 0 1rem;
+}
+
+/* --- Шаг выбора --- */
+.cim-select-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cim-file-label {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.cim-file-label.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.cim-loading {
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  margin-top: 0.75rem;
+}
+
+.cim-error {
+  color: var(--danger-color, #c0392b);
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+}
+
+/* --- Предпросмотр --- */
+.cim-file {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.875rem;
+}
+
+.cim-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.625rem;
+  margin-bottom: 1.25rem;
+}
+
+.cim-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.cim-stat-v { font-size: 1.375rem; font-weight: 700; color: var(--text-primary); }
+.cim-stat-l { font-size: 0.6875rem; color: var(--text-tertiary); text-align: center; margin-top: 0.25rem; }
+
+.cim-stat.is-ready { border-color: #2e7d32; }
+.cim-stat.is-ready .cim-stat-v { color: #2e7d32; }
+.cim-stat.is-warn { border-color: #b8860b; }
+.cim-stat.is-warn .cim-stat-v { color: #b8860b; }
+.cim-stat.is-error { border-color: #c0392b; }
+.cim-stat.is-error .cim-stat-v { color: #c0392b; }
+.cim-stat.is-ds .cim-stat-v { color: var(--text-secondary); }
+
+/* --- Таблица предупреждений --- */
+.cim-warn-block {
+  border-top: 1px solid var(--border-color);
+  padding-top: 1rem;
+}
+
+.cim-warn-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cim-warn-head h4 { margin: 0; font-size: 0.9375rem; }
+.cim-warn-bulk { display: flex; gap: 0.5rem; }
+
+.cim-warn-table-wrap { overflow-x: auto; }
+
+.cim-warn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.cim-warn-table th,
+.cim-warn-table td {
+  text-align: left;
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+}
+
+.cim-warn-table th {
+  color: var(--text-tertiary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cim-warn-table tr.is-checked { background: var(--bg-secondary); }
+.cim-warn-table .cim-cb { width: 32px; text-align: center; }
+
+.cim-note {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin: 0.75rem 0 0;
+}
+.cim-note-error { color: var(--danger-color, #c0392b); }
+
+/* --- Итог --- */
+.cim-result-big { font-size: 1.125rem; margin-bottom: 0.5rem; }
+
+/* --- Футер --- */
+.cim-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 640px) {
+  .cim-stats { grid-template-columns: repeat(2, 1fr); }
+}

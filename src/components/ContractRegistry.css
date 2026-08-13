@@ -1306,6 +1306,30 @@
   font-weight: 600;
   color: var(--text-primary);
 }
+/* Реквизиты договора в раскрытой строке — сетка «метка/значение». */
+.ce-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem 1.25rem;
+}
+.ce-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.ce-detail-wide { grid-column: 1 / -1; }
+.ce-detail-l {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.ce-detail-v {
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
 .ce-count {
   margin-left: auto;
   font-size: 0.75rem;
@@ -2371,6 +2395,15 @@
 .contract-ds-link .cds-sub {
   font-size: 0.6875rem;
   color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Постоянный ID портала — компактно, приглушённо, моноширинно. */
+.contract-ds-link .cds-id {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 

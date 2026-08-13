@@ -50,6 +50,12 @@
   white-space: nowrap;
 }
 
+.mcard-id {
+  font-weight: 500;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
 .mcard-title {
   font-size: 0.9375rem;
   font-weight: 600;

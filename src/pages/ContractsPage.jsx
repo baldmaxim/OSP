@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { Fragment, useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
@@ -8,6 +8,8 @@ import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
 import LarixEntryBlock from '../components/LarixEntryBlock'
+// Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
+const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
 import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import {
@@ -22,7 +24,13 @@ import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 
 // Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
-const VAT_RATE_OPTIONS = ['', '0', '5', '7', '20', '22']
+const VAT_RATE_OPTIONS = ['', '0', '5', '7', '10', '20', '22']
+
+// Тип записи договора (задача импорта): ДП — основной договор, ДС — доп. соглашение.
+const RECORD_TYPE_OPTIONS = [
+  { value: 'dp', label: 'ДП — основной договор' },
+  { value: 'ds', label: 'ДС — доп. соглашение' },
+]
 
 // Task 174 + 190: статусы договоров
 const STATUS_OPTIONS = [
@@ -46,6 +54,8 @@ const TABS = [
 ]
 
 const EMPTY_FORM = {
+  record_type: 'dp',
+  parent_contract_id: '',
   contract_number: '',
   contract_date: '',
   object_id: '',
@@ -66,6 +76,11 @@ const EMPTY_FORM = {
   work_name: '',
   responsible_contact_id: '',
   notes: '',
+  gen_director_name: '',
+  phone: '',
+  email: '',
+  bsm: '',
+  comments: '',
 }
 
 // ДД.ММ.ГГГГ из ISO-даты (или null, если пусто/некорректно)
@@ -210,6 +225,7 @@ function ContractRegistry() {
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(false)
   const [showModal, setShowModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const [editingContract, setEditingContract] = useState(null)
 
   // Task 168: поиск контрагента. Договор может быть многосторонним (трёхсторонний):
@@ -996,6 +1012,7 @@ function ContractRegistry() {
           c.work_name,
           c.tenders?.work_description,
           c.contract_number,
+          c.display_id != null ? String(c.display_id) : '',
           c.notes,
           c.objects?.name,
         ].filter(Boolean).join(' ').toLowerCase()
@@ -1105,6 +1122,12 @@ function ContractRegistry() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    // Полноценный функционал ДС пока не реализован: не создаём и не превращаем
+    // договор в ДС из формы (у ДС появится собственный ID и связь с родителем позже).
+    if (formData.record_type === 'ds') {
+      alert('Создание дополнительных соглашений (ДС) будет реализовано позже. Сейчас можно создавать только основной договор (ДП).')
+      return
+    }
     try {
       const payload = {
         ...formData,
@@ -1113,6 +1136,8 @@ function ContractRegistry() {
         object_id: formData.object_id || null,
         tender_id: formData.tender_id || null,
         responsible_contact_id: formData.responsible_contact_id || null,
+        // parent_contract_id — задел для будущих ДС; у ДП всегда пусто.
+        parent_contract_id: formData.parent_contract_id || null,
         // Пустые даты → NULL (иначе Postgres: invalid input syntax for type date: "").
         contract_date: formData.contract_date || null,
         work_start_date: formData.work_start_date || null,
@@ -1125,8 +1150,8 @@ function ContractRegistry() {
         vat_rate: formData.vat_rate === '' ? null : formData.vat_rate,
         currency: formData.currency || 'RUB',
         amount_includes_vat: formData.amount_includes_vat !== false,
-        // Номер необязателен. Пустая строка → NULL: в UNIQUE-индексе NULL не конфликтует
-        // с NULL, а вот двух договоров с номером '' быть не может.
+        // Номер необязателен и НЕ уникален (допускается второй ДП с тем же №).
+        // Пустая строка → NULL. Уникальность записи обеспечивает display_id.
         contract_number: formData.contract_number.trim() || null,
       }
 
@@ -1197,6 +1222,8 @@ function ContractRegistry() {
   const handleEditContract = (contract) => {
     setEditingContract(contract)
     setFormData({
+      record_type: contract.record_type || 'dp',
+      parent_contract_id: contract.parent_contract_id || '',
       contract_number: contract.contract_number || '',
       contract_date: contract.contract_date || '',
       object_id: contract.object_id || '',
@@ -1217,6 +1244,11 @@ function ContractRegistry() {
       work_name: contract.work_name || '',
       responsible_contact_id: contract.responsible_contact_id || '',
       notes: contract.notes || '',
+      gen_director_name: contract.gen_director_name || '',
+      phone: contract.phone || '',
+      email: contract.email || '',
+      bsm: contract.bsm || '',
+      comments: contract.comments || '',
     })
     setFormCounterpartyIds(contractParties(contract).map(p => p.id))
     setCounterpartySearch('')
@@ -1415,6 +1447,16 @@ function ContractRegistry() {
             📎 Приложения объектов
           </button>
           {!isDeletedTab && canEditContracts && (
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="btn-secondary"
+              style={{ padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
+              title="Пакетное создание договоров (ДП) из Excel-файла"
+            >
+              Импорт Excel
+            </button>
+          )}
+          {!isDeletedTab && canEditContracts && (
             <button className="btn-primary" onClick={handleAddNew}>
               + Добавить договор
             </button>
@@ -1447,7 +1489,7 @@ function ContractRegistry() {
             className="rf-search"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Поиск по контрагенту, работам, № договора"
+            placeholder="Поиск по ID, контрагенту, работам, № договора"
           />
         </div>
         <div className="rf-field rf-field-object">
@@ -1519,7 +1561,10 @@ function ContractRegistry() {
                   className={`mcard is-tappable${overdue ? ' mcard-overdue' : ''}`}
                 >
                   <div className="mcard-head">
-                    <span className="mcard-num">{dsNum ? `№ ${dsNum}` : '№ не присвоен'}</span>
+                    <span className="mcard-num">
+                      {dsNum ? `№ ${dsNum}` : '№ не присвоен'}
+                      {contract.display_id != null && <small className="mcard-id"> · ID {contract.display_id}</small>}
+                    </span>
                     {isDeletedTab
                       ? <span className="status-badge status-deleted">Удалён</span>
                       : <span className={`status-badge ${opt?.className || ''}`}>{opt?.label || '—'}</span>}
@@ -1652,6 +1697,9 @@ function ContractRegistry() {
                       {dsDate
                         ? <span className="cds-sub">от {dsDate}</span>
                         : <span className="cds-sub cds-missing">дата не указана</span>}
+                      {contract.display_id != null && (
+                        <span className="cds-id" title="Постоянный ID договора в портале">ID {contract.display_id}</span>
+                      )}
                     </Link>
                     {!isDeletedTab && (
                       <ConceptAgreementCell
@@ -1793,6 +1841,32 @@ function ContractRegistry() {
                             </ul>
                           </section>
                         )}
+
+                        {/* Реквизиты договора: постоянный ID, тип и дополнительные поля */}
+                        <section className="ce-block">
+                          <div className="ce-block-title">Реквизиты</div>
+                          <div className="ce-details-grid">
+                            {contract.display_id != null && (
+                              <div className="ce-detail"><span className="ce-detail-l">ID портала</span><span className="ce-detail-v">{contract.display_id}</span></div>
+                            )}
+                            <div className="ce-detail"><span className="ce-detail-l">Тип</span><span className="ce-detail-v">{contract.record_type === 'ds' ? 'ДС' : 'ДП'}</span></div>
+                            {contract.gen_director_name && (
+                              <div className="ce-detail"><span className="ce-detail-l">Ген.директор</span><span className="ce-detail-v">{contract.gen_director_name}</span></div>
+                            )}
+                            {contract.phone && (
+                              <div className="ce-detail"><span className="ce-detail-l">Телефон</span><span className="ce-detail-v">{contract.phone}</span></div>
+                            )}
+                            {contract.email && (
+                              <div className="ce-detail"><span className="ce-detail-l">Email</span><span className="ce-detail-v">{contract.email}</span></div>
+                            )}
+                            {contract.bsm && (
+                              <div className="ce-detail"><span className="ce-detail-l">БСМ</span><span className="ce-detail-v">{contract.bsm}</span></div>
+                            )}
+                            {contract.comments && (
+                              <div className="ce-detail ce-detail-wide"><span className="ce-detail-l">Комментарии</span><span className="ce-detail-v">{contract.comments}</span></div>
+                            )}
+                          </div>
+                        </section>
 
                         {/* Внесение договора в систему Larix (после заключения) */}
                         <LarixEntryBlock
@@ -2095,6 +2169,17 @@ function ContractRegistry() {
       )}
 
       {/* Модалка добавления/редактирования договора */}
+      {showImportModal && canEditContracts && (
+        <Suspense fallback={null}>
+          <ContractsImportModal
+            counterparties={counterparties}
+            objects={objects}
+            onClose={() => setShowImportModal(false)}
+            onImported={() => { setShowImportModal(false); fetchContracts() }}
+          />
+        </Suspense>
+      )}
+
       {showModal && (
         <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -2108,6 +2193,38 @@ function ContractRegistry() {
 
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
+                <div className="form-group">
+                  <label>Тип *</label>
+                  <select name="record_type" value={formData.record_type} onChange={handleInputChange}>
+                    {RECORD_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  {formData.record_type === 'ds' && (
+                    <small className="form-hint">Создание ДС будет реализовано позже — сохранить можно только ДП.</small>
+                  )}
+                </div>
+
+                {editingContract && editingContract.display_id != null && (
+                  <div className="form-group">
+                    <label>ID портала</label>
+                    <input type="text" value={editingContract.display_id} readOnly disabled />
+                    <small className="form-hint">Постоянный идентификатор договора. Не изменяется.</small>
+                  </div>
+                )}
+
+                {formData.record_type === 'ds' && (
+                  <div className="form-group">
+                    <label>ID основного договора</label>
+                    <input
+                      type="text"
+                      name="parent_contract_id"
+                      value={formData.parent_contract_id}
+                      onChange={handleInputChange}
+                      placeholder="Заготовка для будущих ДС"
+                    />
+                    <small className="form-hint">Поле-заглушка для связи ДС с основным договором.</small>
+                  </div>
+                )}
+
                 <div className="form-group">
                   <label>№ договора</label>
                   <input type="text" name="contract_number" value={formData.contract_number} onChange={handleInputChange} placeholder="Можно оставить пустым" />
@@ -2298,9 +2415,34 @@ function ContractRegistry() {
                   <input type="url" name="document_link" value={formData.document_link} onChange={handleInputChange} placeholder="https://docs.google.com/document/d/..." />
                 </div>
 
+                <div className="form-group">
+                  <label>ФИО ген.директора</label>
+                  <input type="text" name="gen_director_name" value={formData.gen_director_name} onChange={handleInputChange} placeholder="Необязательно" />
+                </div>
+
+                <div className="form-group">
+                  <label>Телефон</label>
+                  <input type="text" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="Необязательно" />
+                </div>
+
+                <div className="form-group">
+                  <label>Email</label>
+                  <input type="text" name="email" value={formData.email} onChange={handleInputChange} placeholder="Необязательно" />
+                </div>
+
+                <div className="form-group">
+                  <label>БСМ</label>
+                  <input type="text" name="bsm" value={formData.bsm} onChange={handleInputChange} placeholder="да / нет / частично / …" />
+                </div>
+
                 <div className="form-group full-width">
                   <label>Примечание</label>
                   <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows={2} placeholder="Примечание (необязательно)" />
+                </div>
+
+                <div className="form-group full-width">
+                  <label>Комментарии</label>
+                  <textarea name="comments" value={formData.comments} onChange={handleInputChange} rows={2} placeholder="Комментарии (необязательно)" />
                 </div>
 
                 {/* Стандартные приложения объекта — только при СОЗДАНИИ договора: отмеченные

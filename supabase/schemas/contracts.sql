@@ -1,7 +1,16 @@
 -- Таблица contracts (Реестр договоров)
+-- Последовательность для компактного постоянного ID портала (display_id).
+CREATE SEQUENCE IF NOT EXISTS contracts_display_id_seq;
+
 CREATE TABLE IF NOT EXISTS contracts (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  contract_number VARCHAR(100) UNIQUE,      -- необязателен (можно завести договор без номера)
+  -- Постоянный компактный ID портала (авто, уникален, не переиспользуется после удаления).
+  display_id BIGINT NOT NULL DEFAULT nextval('contracts_display_id_seq') UNIQUE,
+  -- Тип записи: dp — основной договор (ДП), ds — доп. соглашение (ДС). Существующие → dp.
+  record_type TEXT NOT NULL DEFAULT 'dp' CHECK (record_type IN ('dp', 'ds')),
+  -- Родительский договор для будущих ДС (не является ID самого ДС).
+  parent_contract_id UUID REFERENCES contracts(id) ON DELETE SET NULL,
+  contract_number VARCHAR(100),             -- необязателен и НЕ уникален: допускается второй ДП с тем же № (уникальность даёт display_id)
   contract_date DATE,                       -- необязательна (можно завести договор без даты)
   counterparty_id UUID REFERENCES counterparties(id) ON DELETE SET NULL,
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,
@@ -30,12 +39,21 @@ CREATE TABLE IF NOT EXISTS contracts (
   larix_entered_at TIMESTAMPTZ,
   larix_entered_by TEXT,
   notes TEXT,
+  -- Новые свободные текстовые поля (без справочников и валидации).
+  gen_director_name TEXT,
+  phone TEXT,
+  email TEXT,
+  bsm TEXT,
+  comments TEXT,
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Индексы для оптимизации запросов
+CREATE INDEX IF NOT EXISTS idx_contracts_display_id ON contracts(display_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_record_type ON contracts(record_type);
+CREATE INDEX IF NOT EXISTS idx_contracts_parent_contract_id ON contracts(parent_contract_id);
 CREATE INDEX IF NOT EXISTS idx_contracts_contract_number ON contracts(contract_number);
 CREATE INDEX IF NOT EXISTS idx_contracts_counterparty_id ON contracts(counterparty_id);
 CREATE INDEX IF NOT EXISTS idx_contracts_object_id ON contracts(object_id);

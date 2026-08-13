@@ -439,6 +439,8 @@ function ContractDetailPage() {
           <div className="contract-section">
             <h3>Основная информация</h3>
             <div className="info-rows">
+              <InfoRow label="ID портала" value={contract.display_id} mono />
+              <InfoRow label="Тип" value={contract.record_type === 'ds' ? 'ДС — доп. соглашение' : 'ДП — основной договор'} />
               <InfoRow label="№ договора" value={contract.contract_number} />
               <InfoRow label="Дата" value={formatDate(contract.contract_date)} />
               <InfoRow label="Объект" value={contract.objects?.name} />
@@ -496,6 +498,19 @@ function ContractDetailPage() {
               <InfoRow label="Срок удержания" value={contract.warranty_retention_period} />
             </div>
           </div>
+
+          {(contract.gen_director_name || contract.phone || contract.email || contract.bsm || contract.comments) && (
+            <div className="contract-section">
+              <h3>Дополнительно</h3>
+              <div className="info-rows">
+                {contract.gen_director_name && <InfoRow label="ФИО ген.директора" value={contract.gen_director_name} />}
+                {contract.phone && <InfoRow label="Телефон" value={contract.phone} />}
+                {contract.email && <InfoRow label="Email" value={contract.email} />}
+                {contract.bsm && <InfoRow label="БСМ" value={contract.bsm} />}
+                {contract.comments && <InfoRow label="Комментарии" value={contract.comments} />}
+              </div>
+            </div>
+          )}
 
           {attachments.length > 0 && (
             <div className="contract-section contract-section-wide">
