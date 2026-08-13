@@ -5,6 +5,7 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { parseEstimateSheet, formatMoney } from '../utils/estimateImport'
 import S3DocumentList from '../components/S3DocumentList'
+import ContractClausesTab from '../components/ContractClausesTab'
 import AccessDenied from '../components/AccessDenied'
 import '../components/ContractRegistry.css'
 
@@ -30,6 +31,7 @@ const TABS = [
   { key: 'info', label: 'Информация' },
   { key: 'psdc', label: 'ПСДЦ' },
   { key: 'advances', label: 'Авансирование' },
+  { key: 'clauses', label: 'Согласование' },
   { key: 'documents', label: 'Документы' },
   { key: 'history', label: 'История' },
 ]
@@ -792,6 +794,10 @@ function ContractDetailPage() {
       )}
 
       {/* ВКЛАДКА: Документы (S3) */}
+      {activeTab === 'clauses' && (
+        <ContractClausesTab contractId={contractId} parties={parties} canEdit={canEditContracts && !isDeleted} />
+      )}
+
       {activeTab === 'documents' && (
         <div className="contract-documents-tab">
           <S3DocumentList ownerType="contract" ownerId={contractId} title="Документы договора" />
