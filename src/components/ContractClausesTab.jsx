@@ -20,6 +20,44 @@ const STATUS_LABEL = Object.fromEntries(DISPUTE_STATUS.map((s) => [s.value, s.la
 // Тон подсветки/бейджа по статусу: открытый вопрос — жёлтый, согласован — зелёный, отклонён — серый.
 const statusTone = (s) => (s === 'agreed' ? 'agreed' : s === 'rejected' ? 'rejected' : 'open')
 
+const norm = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim()
+
+// Иконки (аккуратный SVG вместо эмодзи).
+const Svg = (p) => <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p} />
+const IconUpload = () => <Svg><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></Svg>
+const IconChevron = ({ up }) => <Svg style={{ transform: up ? 'rotate(180deg)' : 'none' }}><path d="m6 9 6 6 6-6" /></Svg>
+
+// Красивый выбор статуса: цветной бейдж-кнопка + выпадающее меню с цветными пунктами.
+function StatusPicker({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+  return (
+    <div className="cct-statuspick" ref={ref}>
+      <button type="button" className={`cct-badge tone-${statusTone(value)} cct-badge-btn`} onClick={() => setOpen((o) => !o)}>
+        {STATUS_LABEL[value] || value}
+        <span className="cct-badge-chev"><IconChevron up={open} /></span>
+      </button>
+      {open && (
+        <div className="cct-statuspick-menu">
+          {DISPUTE_STATUS.map((s) => (
+            <button key={s.value} type="button"
+              className={`cct-statuspick-item tone-${statusTone(s.value)}${s.value === value ? ' is-active' : ''}`}
+              onClick={() => { onChange(s.value); setOpen(false) }}>
+              <span className="cct-dot" />{s.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function fmtDateTime(s) {
   if (!s) return ''
   const d = new Date(s)
@@ -46,6 +84,8 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
   const [replyNonce, setReplyNonce] = useState({})
   const [textCollapsed, setTextCollapsed] = useState(false)
   const [collapsedDisputes, setCollapsedDisputes] = useState(() => new Set())
+  const [paraOrder, setParaOrder] = useState([])   // порядок абзацев документа (для сортировки)
+  const [popup, setPopup] = useState(null)          // { text, top, left } — всплывашка у выделения
   const fileRef = useRef(null)
   const previewRef = useRef(null) // контейнер docx-preview — читаем из него выделение
 
@@ -111,6 +151,22 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
     [activeDisputes],
   )
 
+  // Хронологический порядок: сортируем разногласия по позиции их текста в документе,
+  // а не по времени создания. Позиция = индекс первого совпавшего абзаца предпросмотра.
+  const orderedDisputes = useMemo(() => {
+    if (paraOrder.length === 0) return activeDisputes
+    const posOf = (d) => {
+      const dt = norm(d.our_text)
+      if (!dt) return Number.MAX_SAFE_INTEGER
+      const i = paraOrder.findIndex((pt) => dt.includes(pt) || (dt.length >= 20 && pt.includes(dt)))
+      return i < 0 ? Number.MAX_SAFE_INTEGER : i
+    }
+    return [...activeDisputes]
+      .map((d) => ({ d, pos: posOf(d) }))
+      .sort((a, b) => a.pos - b.pos || String(a.d.created_at).localeCompare(String(b.d.created_at)))
+      .map((x) => x.d)
+  }, [activeDisputes, paraOrder])
+
   async function handleUpload(e) {
     const file = e.target.files?.[0]
     if (fileRef.current) fileRef.current.value = ''
@@ -136,25 +192,39 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
     }
   }
 
-  // Текст выделения — только если оно внутри предпросмотра договора.
-  function getSelectionText() {
+  // При выделении текста внутри предпросмотра — показываем всплывашку у выделения.
+  function handlePreviewMouseUp() {
+    if (!canCreateDispute) return
     const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return ''
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) { setPopup(null); return }
     const c = previewRef.current
-    if (c && (!c.contains(sel.anchorNode) || !c.contains(sel.focusNode))) return ''
-    return sel.toString().trim()
+    if (c && (!c.contains(sel.anchorNode) || !c.contains(sel.focusNode))) { setPopup(null); return }
+    const text = sel.toString().trim()
+    if (!text) { setPopup(null); return }
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    setPopup({ text, top: rect.top - 8, left: rect.left + rect.width / 2 })
   }
 
-  async function createDisputeFromSelection() {
+  // Скрываем всплывашку при прокрутке/ресайзе (координаты станут неверными).
+  useEffect(() => {
+    if (!popup) return
+    const hide = () => setPopup(null)
+    window.addEventListener('scroll', hide, true)
+    window.addEventListener('resize', hide)
+    return () => { window.removeEventListener('scroll', hide, true); window.removeEventListener('resize', hide) }
+  }, [popup])
+
+  async function createDispute(text) {
     if (!activeCpId) return alert('У договора нет контрагента — протокол вести не с кем.')
-    const text = getSelectionText()
-    if (!text) return alert('Сначала выделите мышью нужный фрагмент договора в предпросмотре.')
-    const numMatch = text.match(/^\s*(\d+(?:\.\d+)*)/)
-    const label = numMatch ? `п. ${numMatch[1]}` : (text.slice(0, 40) + (text.length > 40 ? '…' : ''))
+    const t = (text || '').trim()
+    if (!t) return
+    const numMatch = t.match(/^\s*(\d+(?:\.\d+)*)/)
+    const label = numMatch ? `п. ${numMatch[1]}` : (t.slice(0, 40) + (t.length > 40 ? '…' : ''))
     try {
       const { error } = await supabase.from('contract_clause_disputes')
-        .insert({ contract_id: contractId, counterparty_id: activeCpId, label, our_text: text, created_by_side: side })
+        .insert({ contract_id: contractId, counterparty_id: activeCpId, label, our_text: t, created_by_side: side })
       if (error) throw error
+      setPopup(null)
       window.getSelection()?.removeAllRanges()
       loadDisputes()
     } catch (err) {
@@ -188,30 +258,36 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
 
   return (
     <div className="cct-wrap">
+      {/* Всплывашка у выделения — «Вынести в протокол» */}
+      {popup && canCreateDispute && (
+        <div className="cct-sel-popup" style={{ top: popup.top, left: popup.left }}
+          onMouseDown={(e) => e.preventDefault()}>
+          <button type="button" onClick={() => createDispute(popup.text)}>Вынести в протокол</button>
+        </div>
+      )}
+
       {/* Тулбар */}
-      <div className="cct-toolbar">
-        <div className="cct-toolbar-left">
-          {canUpload && (
-            <label className={`btn-primary cct-file${importing ? ' is-disabled' : ''}`}>
-              {importing ? 'Загрузка…' : (templateDoc ? 'Заменить шаблон (.docx)' : 'Загрузить шаблон (.docx)')}
-              <input ref={fileRef} type="file" accept=".docx" hidden disabled={importing} onChange={handleUpload} />
-            </label>
-          )}
-          {templateDoc && canCreateDispute && (
-            <button type="button" className="btn-secondary" onClick={createDisputeFromSelection}>
-              Вынести выделенное в протокол
-            </button>
+      {(canUpload || (isEmployee && parties.length > 1)) && (
+        <div className="cct-toolbar">
+          <div className="cct-toolbar-left">
+            {canUpload && (
+              <label className={`cct-upload${importing ? ' is-disabled' : ''}`}>
+                <IconUpload />
+                {importing ? 'Загрузка…' : (templateDoc ? 'Заменить шаблон' : 'Загрузить шаблон .docx')}
+                <input ref={fileRef} type="file" accept=".docx" hidden disabled={importing} onChange={handleUpload} />
+              </label>
+            )}
+          </div>
+          {isEmployee && parties.length > 1 && (
+            <div className="cct-party-pick">
+              <span>Протокол с:</span>
+              <select value={activeCpId || ''} onChange={(e) => setActiveCpId(e.target.value)}>
+                {parties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
           )}
         </div>
-        {isEmployee && parties.length > 1 && (
-          <div className="cct-party-pick">
-            <span>Протокол с:</span>
-            <select value={activeCpId || ''} onChange={(e) => setActiveCpId(e.target.value)}>
-              {parties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Текст договора — предпросмотр как в Word */}
       <section className="cct-section">
@@ -219,6 +295,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
           <h3>Текст договора</h3>
           {templateDoc && (
             <button type="button" className="cct-collapse-btn" onClick={() => setTextCollapsed((v) => !v)}>
+              <IconChevron up={!textCollapsed} />
               {textCollapsed ? 'Развернуть' : 'Свернуть'}
             </button>
           )}
@@ -235,7 +312,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
           <>
             {canCreateDispute && (
               <p className="cct-preview-hint">
-                Выделите нужный пункт (или несколько) мышью и нажмите «Вынести выделенное в протокол».
+                Выделите нужный пункт (или несколько) мышью — рядом появится кнопка «Вынести в протокол».
                 {activeDisputes.length > 0 && (
                   <span className="cct-hint-legend">
                     {' '}Подсветка: <span className="cct-hint-swatch open" /> открыт · <span className="cct-hint-swatch agreed" /> согласован.
@@ -243,9 +320,11 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
                 )}
               </p>
             )}
-            <Suspense fallback={<div className="cct-empty">Загрузка предпросмотра…</div>}>
-              <DocxPreview s3Key={templateDoc.s3_key} containerRef={previewRef} highlights={highlightItems} />
-            </Suspense>
+            <div onMouseUp={handlePreviewMouseUp}>
+              <Suspense fallback={<div className="cct-empty">Загрузка предпросмотра…</div>}>
+                <DocxPreview s3Key={templateDoc.s3_key} containerRef={previewRef} highlights={highlightItems} onParagraphs={setParaOrder} />
+              </Suspense>
+            </div>
           </>
         )}
       </section>
@@ -265,7 +344,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
           </div>
         ) : (
           <div className="cct-disputes">
-            {activeDisputes.map((d) => {
+            {orderedDisputes.map((d) => {
               const tone = statusTone(d.status)
               const isCollapsed = collapsedDisputes.has(d.id)
               const cnt = (commentsByDispute[d.id] || []).length
@@ -273,17 +352,13 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
                 <div key={d.id} className={`cct-dispute tone-${tone}`}>
                   <div className="cct-dispute-head">
                     <button type="button" className="cct-dispute-toggle" onClick={() => toggleDispute(d.id)}>
-                      <span className="cct-chev">{isCollapsed ? '▸' : '▾'}</span>
+                      <span className="cct-chev" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}><IconChevron /></span>
                       <span className="cct-dispute-label">{d.label || 'Пункт'}</span>
-                      <span className={`cct-badge tone-${tone}`}>{STATUS_LABEL[d.status] || d.status}</span>
-                      {cnt > 0 && <span className="cct-thread-count" title="Сообщений в обсуждении">💬 {cnt}</span>}
+                      {!canEditFinal && <span className={`cct-badge tone-${tone}`}>{STATUS_LABEL[d.status] || d.status}</span>}
+                      {cnt > 0 && <span className="cct-thread-count" title="Сообщений в обсуждении">{cnt}</span>}
                     </button>
                     <div className="cct-dispute-actions">
-                      {canEditFinal && (
-                        <select className="cct-status" value={d.status} onChange={(e) => saveDispute(d.id, { status: e.target.value })}>
-                          {DISPUTE_STATUS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                        </select>
-                      )}
+                      {canEditFinal && <StatusPicker value={d.status} onChange={(v) => saveDispute(d.id, { status: v })} />}
                       {canEditFinal && <button type="button" className="cct-clause-del" title="Удалить" onClick={() => deleteDispute(d.id)}>×</button>}
                     </div>
                   </div>

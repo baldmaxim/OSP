@@ -10,9 +10,11 @@ const norm = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' '
 // containerRef, чтобы родитель мог читать выделение (window.getSelection) внутри него.
 // highlights — массив { text, status } разногласий: совпавшие абзацы подсвечиваются
 // цветом по статусу (open/in_review — жёлтый, agreed — зелёный, rejected — серый).
-function DocxPreview({ s3Key, containerRef, highlights = [] }) {
+function DocxPreview({ s3Key, containerRef, highlights = [], onParagraphs }) {
   const localRef = useRef(null)
   const styleRef = useRef(null)
+  const onParagraphsRef = useRef(onParagraphs)
+  onParagraphsRef.current = onParagraphs
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [errorMsg, setErrorMsg] = useState('')
 
@@ -40,7 +42,15 @@ function DocxPreview({ s3Key, containerRef, highlights = [] }) {
           ignoreLastRenderedPageBreak: true,
           className: 'docx',
         })
-        if (!cancelled) setStatus('ready')
+        if (!cancelled) {
+          // Отдаём наверх порядок абзацев — по нему протокол сортируется хронологически.
+          if (onParagraphsRef.current) {
+            const list = [...bodyEl.querySelectorAll('p, td')]
+              .map((el) => norm(el.textContent)).filter((t) => t.length >= 3)
+            onParagraphsRef.current(list)
+          }
+          setStatus('ready')
+        }
       } catch (err) {
         console.error('Ошибка предпросмотра .docx:', err)
         if (!cancelled) { setErrorMsg(err.message || 'Ошибка предпросмотра'); setStatus('error') }

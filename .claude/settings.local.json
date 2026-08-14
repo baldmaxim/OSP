@@ -37,7 +37,10 @@
       "Bash(xargs -I{} bash -c 'echo \"File: {}\" && cat {}')",
       "Bash(npx vite *)",
       "Bash(node c:/tmp/fix_ws.cjs)",
-      "Bash(grep -A 4 \"BSMPage.jsx$\")"
+      "Bash(grep -A 4 \"BSMPage.jsx$\")",
+      "Bash(node ./node_modules/eslint/bin/eslint.js src/components/DocxPreview.jsx src/components/ContractClausesTab.jsx --ext js,jsx)",
+      "Bash(echo \"LINT_EXIT=$?\")",
+      "Bash(NODE_OPTIONS=--max-old-space-size=4096 node ./node_modules/vite/bin/vite.js build)"
     ],
     "deny": [],
     "ask": []
