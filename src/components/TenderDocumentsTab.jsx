@@ -160,7 +160,7 @@ export default function TenderDocumentsTab({ tenderId, canEdit = false, version 
 
   const handleDownload = async (s3doc) => {
     try {
-      const { presigned_url } = await requestDownloadUrl(s3doc.s3_key)
+      const { presigned_url } = await requestDownloadUrl(s3doc.s3_key, { fileName: s3doc.file_name, download: true })
       const a = document.createElement('a')
       a.href = presigned_url; a.download = s3doc.file_name || ''; a.target = '_blank'; a.rel = 'noopener noreferrer'
       document.body.appendChild(a); a.click(); a.remove()

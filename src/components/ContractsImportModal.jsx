@@ -117,7 +117,10 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
     }
     try {
       const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf, { type: 'array', cellDates: true })
+      // БЕЗ cellDates: даты-ячейки остаются Excel-серийниками (число в cell.v) и
+      // разбираются через XLSX.SSF независимо от часового пояса. cellDates:true
+      // создавал Date-объекты, зависящие от TZ, из-за чего даты «съезжали» на день.
+      const wb = XLSX.read(buf, { type: 'array' })
       const ws = wb.Sheets[wb.SheetNames[0]]
       if (!ws || !ws['!ref']) { setParseError('Файл пуст или не содержит данных.'); e.target.value = ''; return }
       const range = XLSX.utils.decode_range(ws['!ref'])

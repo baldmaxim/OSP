@@ -156,7 +156,21 @@ Deno.serve(async (req) => {
       case 'download': {
         const s3_key = String(body.s3_key || '')
         if (!s3_key) return jsonResponse({ error: 'Missing s3_key' }, 400)
-        const cmd = new GetObjectCommand({ Bucket: bucket, Key: s3_key })
+        // При скачивании (не превью) отдаём файл под ОРИГИНАЛЬНЫМ именем через
+        // Content-Disposition: браузер сохраняет его как file_name, а не как S3-ключ
+        // с uuid-префиксом. filename= — ASCII-fallback, filename*= — UTF-8 (кириллица).
+        // Для превью (download не передан) заголовок не ставим — файл открывается inline.
+        const rawName = String(body.file_name || '')
+        const wantDownload = body.download === true || body.download === 'true'
+        const params: { Bucket: string; Key: string; ResponseContentDisposition?: string } = {
+          Bucket: bucket, Key: s3_key,
+        }
+        if (wantDownload && rawName) {
+          const ascii = sanitizeFileName(rawName)
+          const encoded = encodeURIComponent(rawName)
+          params.ResponseContentDisposition = `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`
+        }
+        const cmd = new GetObjectCommand(params)
         const presigned_url = await getSignedUrl(s3, cmd, { expiresIn: DOWNLOAD_TTL_SEC })
         return jsonResponse({ presigned_url, expires_in: DOWNLOAD_TTL_SEC })
       }

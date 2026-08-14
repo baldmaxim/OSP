@@ -45,6 +45,7 @@ const ContractsPage = lazy(() => import('./pages/ContractsPage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const ContractorProposalsPage = lazy(() => import('./pages/ContractorProposalsPage'))
+const ContractorNegotiationsPage = lazy(() => import('./pages/ContractorNegotiationsPage'))
 const BSMPage = lazy(() => import('./pages/BSMPage'))
 const GeneralInfoPage = lazy(() => import('./pages/GeneralInfoPage'))
 const GeneralDocumentsPage = lazy(() => import('./pages/GeneralDocumentsPage'))
@@ -160,6 +161,14 @@ function AuthRoutes() {
           element={
             isContractor
               ? <ContractorProposalsPage />
+              : <Navigate to="/partner" replace />
+          }
+        />
+        <Route
+          path="/contractor/negotiations"
+          element={
+            isContractor
+              ? <ContractorNegotiationsPage />
               : <Navigate to="/partner" replace />
           }
         />

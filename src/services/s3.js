@@ -35,8 +35,16 @@ export async function requestUploadUrl({ ownerType, ownerId, fileName, mimeType 
   })
 }
 
-export async function requestDownloadUrl(s3Key) {
-  return invokePresign('download', { s3_key: s3Key })
+// requestDownloadUrl(s3Key) — presigned GET для превью (inline).
+// requestDownloadUrl(s3Key, { fileName, download: true }) — для СКАЧИВАНИЯ: сервер
+// проставит Content-Disposition с оригинальным именем (иначе браузер сохраняет файл
+// под именем S3-ключа с uuid-префиксом, т.к. cross-origin игнорирует a.download).
+export async function requestDownloadUrl(s3Key, { fileName = null, download = false } = {}) {
+  return invokePresign('download', {
+    s3_key: s3Key,
+    ...(download ? { download: true } : {}),
+    ...(fileName ? { file_name: fileName } : {}),
+  })
 }
 
 export async function deleteS3Object(s3Key) {

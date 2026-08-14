@@ -70,6 +70,7 @@ textarea.cct-clause-body:focus { border-color: var(--border-color); background: 
 }
 .cct-dispute-label { font-weight: 600; }
 .cct-status { margin-left: auto; font-size: 0.8125rem; }
+.cct-status-ro { margin-left: auto; font-size: 0.75rem; color: var(--text-secondary); padding: 0.1rem 0.5rem; border: 1px solid var(--border-color); border-radius: 10px; }
 
 .cct-editions {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; padding: 0.75rem;

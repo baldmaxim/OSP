@@ -162,6 +162,19 @@ ALTER TABLE contract_clause_disputes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contract_clause_dispute_clauses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contract_clause_comments ENABLE ROW LEVEL SECURITY;
 
+-- DROP перед CREATE — миграция идемпотентна (можно применять повторно после сбоя).
+DROP POLICY IF EXISTS clauses_employee_all ON contract_clauses;
+DROP POLICY IF EXISTS clauses_contractor_read ON contract_clauses;
+DROP POLICY IF EXISTS disputes_employee_all ON contract_clause_disputes;
+DROP POLICY IF EXISTS disputes_contractor_select ON contract_clause_disputes;
+DROP POLICY IF EXISTS disputes_contractor_insert ON contract_clause_disputes;
+DROP POLICY IF EXISTS disputes_contractor_update ON contract_clause_disputes;
+DROP POLICY IF EXISTS dispute_clauses_employee_all ON contract_clause_dispute_clauses;
+DROP POLICY IF EXISTS dispute_clauses_contractor ON contract_clause_dispute_clauses;
+DROP POLICY IF EXISTS comments_employee_all ON contract_clause_comments;
+DROP POLICY IF EXISTS comments_contractor_select ON contract_clause_comments;
+DROP POLICY IF EXISTS comments_contractor_insert ON contract_clause_comments;
+
 -- Пункты договора: сотрудник — всё; контрагент — только читает пункты своих договоров.
 CREATE POLICY clauses_employee_all ON contract_clauses
   FOR ALL TO authenticated

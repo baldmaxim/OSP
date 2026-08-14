@@ -1,0 +1,53 @@
+/* Кабинет подрядчика — согласование договоров. */
+.cn-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+.cn-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+.cn-header h2 { margin: 0; }
+.cn-sub { margin: 0.25rem 0 0; color: var(--text-secondary); font-size: 0.875rem; }
+.cn-header-actions { display: flex; gap: 0.75rem; align-items: center; }
+.btn-link { background: none; border: none; color: var(--primary-color); cursor: pointer; font-size: 0.875rem; }
+
+.cn-empty, .cn-error {
+  padding: 1.25rem; border: 1px dashed var(--border-color); border-radius: 10px;
+  color: var(--text-secondary); background: var(--bg-secondary); font-size: 0.9375rem;
+}
+.cn-error { border-style: solid; border-color: var(--danger-color, #c0392b); color: var(--danger-color, #c0392b); }
+
+.cn-body {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+.cn-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.cn-list-item {
+  display: flex; flex-direction: column; gap: 0.15rem; text-align: left;
+  padding: 0.6rem 0.75rem; border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-primary); cursor: pointer; color: var(--text-primary);
+}
+.cn-list-item:hover { border-color: var(--primary-color); }
+.cn-list-item.is-active { border-color: var(--primary-color); background: var(--bg-secondary); }
+.cn-list-num { font-weight: 600; font-size: 0.875rem; }
+.cn-list-obj { font-size: 0.8125rem; color: var(--text-secondary); }
+.cn-list-work { font-size: 0.75rem; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cn-main {
+  border: 1px solid var(--border-color); border-radius: 12px; padding: 1.25rem;
+  background: var(--bg-primary); min-height: 300px;
+}
+
+@media (max-width: 760px) {
+  .cn-body { grid-template-columns: 1fr; }
+  .cn-list { flex-direction: row; overflow-x: auto; }
+  .cn-list-item { min-width: 200px; }
+}

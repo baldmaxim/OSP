@@ -7,6 +7,7 @@ import StatusBadge, { userStatus } from '../components/admin/StatusBadge'
 import UserAvatar from '../components/admin/UserAvatar'
 import UserActionsMenu from '../components/admin/UserActionsMenu'
 import UserEditDrawer from '../components/admin/UserEditDrawer'
+import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './AdminPage.css'
 
 const PAGE_SIZES = [10, 25, 50, 100]
@@ -35,6 +36,7 @@ function AdminPage() {
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [usersError, setUsersError] = useState(false)
   const [objectsList, setObjectsList] = useState([])
+  const [counterpartiesList, setCounterpartiesList] = useState([])
   const [editUser, setEditUser] = useState(null)
   const [toast, setToast] = useState(null) // { kind:'ok'|'err', text }
 
@@ -60,7 +62,7 @@ function AdminPage() {
   const [roleFeedback, setRoleFeedback] = useState(null)
 
   useEffect(() => {
-    if (activeTab === 'users') { fetchUsers(); fetchObjectsList() }
+    if (activeTab === 'users') { fetchUsers(); fetchObjectsList(); fetchCounterpartiesList() }
     else if (activeTab === 'permissions') fetchPermissions()
   }, [activeTab])
 
@@ -85,6 +87,16 @@ function AdminPage() {
       setObjectsList(data || [])
     } catch (err) {
       console.warn('Не удалось загрузить список объектов:', err.message)
+    }
+  }
+
+  // Контрагенты для привязки логина к кабинету подрядчика (Фаза 4 согласования).
+  const fetchCounterpartiesList = async () => {
+    try {
+      const data = await fetchAllActiveCounterparties('id, name')
+      setCounterpartiesList(data || [])
+    } catch (err) {
+      console.warn('Не удалось загрузить список контрагентов:', err.message)
     }
   }
 
@@ -123,6 +135,7 @@ function AdminPage() {
           object_ids: (Array.isArray(r?.object_ids) && r.object_ids.length)
             ? r.object_ids
             : (r?.object_id ? [r.object_id] : []),
+          counterparty_id: r?.counterparty_id || null,
           has_role: !!r,
           created_at: au.created_at,
           last_sign_in_at: au.last_sign_in_at,
@@ -200,6 +213,7 @@ function AdminPage() {
       object_ids: objectIds,
       // Держим старую одиночную колонку в синхроне (первый объект) — на случай отката.
       object_id: objectIds[0] || null,
+      counterparty_id: form.counterparty_id || null,
       is_approved: form.is_approved,
     }
     // Запись с мягкой деградацией: если колонки object_ids ещё нет (миграция
@@ -696,6 +710,7 @@ function AdminPage() {
           user={editUser}
           roleOptions={roleOptionsForForm}
           objectOptions={objectsList}
+          counterpartyOptions={counterpartiesList}
           onClose={() => setEditUser(null)}
           onSave={saveUserFromDrawer}
         />

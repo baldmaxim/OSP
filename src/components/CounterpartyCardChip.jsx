@@ -86,7 +86,7 @@ export default function CounterpartyCardChip({ counterparty, card, canEdit, onCh
     e.stopPropagation()
     if (!card) return
     try {
-      const { presigned_url } = await requestDownloadUrl(card.s3_key)
+      const { presigned_url } = await requestDownloadUrl(card.s3_key, { fileName: card.file_name, download: true })
       const a = document.createElement('a')
       a.href = presigned_url
       a.download = card.file_name

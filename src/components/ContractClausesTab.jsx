@@ -11,6 +11,7 @@ const DISPUTE_STATUS = [
   { value: 'agreed', label: 'Согласовано' },
   { value: 'rejected', label: 'Отклонено' },
 ]
+const STATUS_LABEL = Object.fromEntries(DISPUTE_STATUS.map((s) => [s.value, s.label]))
 
 function chunks(arr, size) {
   const out = []
@@ -23,11 +24,14 @@ function fmtDateTime(s) {
   return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-// Вкладка «Согласование» (сторона сотрудника): шаблон договора по пунктам +
-// протокол разногласий (наша / контрагент / итоговая редакция) + обсуждение.
-function ContractClausesTab({ contractId, parties = [], canEdit }) {
-  const { userProfile } = useRole()
-  const authorName = userProfile?.full_name || 'Сотрудник'
+// Согласование условий договора: текст по пунктам + протокол разногласий
+// (наша / контрагент / итоговая редакция) + обсуждение.
+// side='employee' — сторона СУ-10 (правит пункты, итоговую редакцию, статус).
+// side='contractor' — кабинет подрядчика (читает пункты, вносит свою редакцию и комментарии).
+function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employee', counterpartyId = null }) {
+  const { userProfile, contractorInfo } = useRole()
+  const isEmployee = side === 'employee'
+  const authorName = isEmployee ? (userProfile?.full_name || 'Сотрудник') : (contractorInfo?.name || userProfile?.full_name || 'Контрагент')
 
   const [clauses, setClauses] = useState([])
   const [disputes, setDisputes] = useState([])
@@ -36,12 +40,21 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
   const [loadError, setLoadError] = useState('')
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
-  const [activeCpId, setActiveCpId] = useState(parties[0]?.id || null)
+  const [activeCpId, setActiveCpId] = useState(isEmployee ? (parties[0]?.id || null) : counterpartyId)
   const [replyDrafts, setReplyDrafts] = useState({})
-  const [replyNonce, setReplyNonce] = useState({}) // bump → remount textarea, чтобы очистить после отправки
+  const [replyNonce, setReplyNonce] = useState({})
   const fileRef = useRef(null)
 
-  useEffect(() => { if (!activeCpId && parties[0]) setActiveCpId(parties[0].id) }, [parties, activeCpId])
+  useEffect(() => {
+    if (!isEmployee) { setActiveCpId(counterpartyId); return }
+    if (!activeCpId && parties[0]) setActiveCpId(parties[0].id)
+  }, [parties, activeCpId, isEmployee, counterpartyId])
+
+  // Права по действиям.
+  const canEditClauseText = isEmployee && canEdit          // править сам текст договора
+  const canCreateDispute = isEmployee ? !!canEdit : true   // выносить пункты в протокол
+  const canEditFinal = isEmployee && canEdit               // итоговая редакция + статус
+  const canEditOwnEdition = !isEmployee                    // подрядчик правит свою редакцию
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -50,8 +63,9 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
       const { data: cl, error: e1 } = await supabase
         .from('contract_clauses').select('*').eq('contract_id', contractId).order('order_index', { ascending: true })
       if (e1) throw e1
-      const { data: ds, error: e2 } = await supabase
-        .from('contract_clause_disputes').select('*').eq('contract_id', contractId).order('created_at', { ascending: true })
+      let dq = supabase.from('contract_clause_disputes').select('*').eq('contract_id', contractId)
+      if (!isEmployee && counterpartyId) dq = dq.eq('counterparty_id', counterpartyId)
+      const { data: ds, error: e2 } = await dq.order('created_at', { ascending: true })
       if (e2) throw e2
       setClauses(cl || [])
       setDisputes(ds || [])
@@ -71,7 +85,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
     } finally {
       setLoading(false)
     }
-  }, [contractId])
+  }, [contractId, isEmployee, counterpartyId])
 
   useEffect(() => { load() }, [load])
 
@@ -84,13 +98,17 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
     const file = e.target.files?.[0]
     if (fileRef.current) fileRef.current.value = ''
     if (!file) return
+    if (/\.doc$/i.test(file.name)) {
+      alert('Формат .doc не поддерживается напрямую. Откройте файл в Word и сохраните как .docx (Файл → Сохранить как → Документ Word .docx), затем загрузите его.')
+      return
+    }
+    if (!/\.docx$/i.test(file.name)) { alert('Нужен файл .docx.'); return }
     if (clauses.length > 0 && !window.confirm('Заменить текущий текст договора новым из файла? Существующие споры протокола сохранятся.')) return
     setImporting(true)
     try {
       const buf = await file.arrayBuffer()
       const parsed = parseDocxClauses(buf)
       if (parsed.length === 0) { alert('Не удалось извлечь пункты из файла.'); return }
-      // Заменяем набор пунктов: удаляем старые, вставляем новые.
       const { error: delErr } = await supabase.from('contract_clauses').delete().eq('contract_id', contractId)
       if (delErr) throw delErr
       const rows = parsed.map((c) => ({ ...c, contract_id: contractId }))
@@ -102,7 +120,12 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
       alert(`Загружено пунктов: ${parsed.length}`)
     } catch (err) {
       console.error('Импорт .docx:', err)
-      alert('Ошибка импорта: ' + (err.message || err))
+      const msg = String(err?.message || err)
+      if (/Failed to fetch|schema cache|contract_clauses/i.test(msg)) {
+        alert('Не удалось сохранить пункты. Похоже, миграция 20260815 ещё не применена (нет таблиц раздела «Согласование») или не перезагружен кэш схемы Supabase. Примените миграцию и выполните NOTIFY pgrst, \'reload schema\';, затем повторите.')
+      } else {
+        alert('Ошибка импорта: ' + msg)
+      }
     } finally {
       setImporting(false)
     }
@@ -139,7 +162,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
     const ourText = picked.map((c) => `${c.clause_number ? c.clause_number + '. ' : ''}${c.body}`).join('\n\n')
     try {
       const { data, error } = await supabase.from('contract_clause_disputes')
-        .insert({ contract_id: contractId, counterparty_id: activeCpId, label, our_text: ourText, created_by_side: 'employee' })
+        .insert({ contract_id: contractId, counterparty_id: activeCpId, label, our_text: ourText, created_by_side: side })
         .select('id').single()
       if (error) throw error
       const links = picked.map((c) => ({ dispute_id: data.id, clause_id: c.id }))
@@ -167,7 +190,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
     if (!body) return
     const { error } = await supabase.from('contract_clause_comments').insert({
       dispute_id: dispute.id, counterparty_id: dispute.counterparty_id,
-      author_side: 'employee', author_name: authorName, body,
+      author_side: side, author_name: authorName, body,
     })
     if (error) return alert('Ошибка: ' + error.message)
     setReplyDrafts((p) => ({ ...p, [dispute.id]: '' }))
@@ -180,10 +203,9 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
 
   return (
     <div className="cct-wrap">
-      {/* Тулбар */}
       <div className="cct-toolbar">
         <div className="cct-toolbar-left">
-          {canEdit && (
+          {canEditClauseText && (
             <>
               <label className={`btn-primary cct-file${importing ? ' is-disabled' : ''}`}>
                 {importing ? 'Загрузка…' : (clauses.length ? 'Заменить шаблон (.docx)' : 'Загрузить шаблон (.docx)')}
@@ -193,7 +215,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
             </>
           )}
         </div>
-        {parties.length > 1 && (
+        {isEmployee && parties.length > 1 && (
           <div className="cct-party-pick">
             <span>Протокол с:</span>
             <select value={activeCpId || ''} onChange={(e) => setActiveCpId(e.target.value)}>
@@ -208,25 +230,29 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
         <h3>Текст договора {clauses.length > 0 && <span className="cct-count">{clauses.length} пунктов</span>}</h3>
         {clauses.length === 0 ? (
           <div className="cct-empty">
-            Загрузите шаблон договора из .docx — он разобьётся на пункты, которые можно обсуждать.
+            {isEmployee
+              ? 'Загрузите шаблон договора из .docx — он разобьётся на пункты, которые можно обсуждать.'
+              : 'Текст договора пока не загружен представителем СУ-10.'}
           </div>
         ) : (
           <>
-            {canEdit && selected.size > 0 && (
+            {canCreateDispute && selected.size > 0 && (
               <div className="cct-selbar">
                 Выбрано пунктов: {selected.size}
-                <button type="button" className="btn-primary" onClick={createDispute}>Вынести в протокол разногласий</button>
+                <button type="button" className="btn-primary" onClick={createDispute}>
+                  {isEmployee ? 'Вынести в протокол разногласий' : 'Вынести на обсуждение'}
+                </button>
                 <button type="button" className="btn-link" onClick={() => setSelected(new Set())}>Сбросить</button>
               </div>
             )}
             <div className="cct-clauses">
               {clauses.map((c) => (
                 <div key={c.id} className={`cct-clause${c.is_heading ? ' is-heading' : ''}`} style={{ marginLeft: `${(c.level - 1) * 1.25}rem` }}>
-                  {canEdit && !c.is_heading && (
+                  {canCreateDispute && !c.is_heading && (
                     <input type="checkbox" className="cct-clause-cb" checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} />
                   )}
                   <span className="cct-clause-num">{c.clause_number}</span>
-                  {canEdit ? (
+                  {canEditClauseText ? (
                     <AutoGrowTextarea
                       className="cct-clause-body"
                       minHeight={36}
@@ -236,7 +262,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
                   ) : (
                     <div className="cct-clause-body ro">{c.body}</div>
                   )}
-                  {canEdit && (
+                  {canEditClauseText && (
                     <button type="button" className="cct-clause-del" title="Удалить пункт" onClick={() => deleteClause(c.id)}>×</button>
                   )}
                 </div>
@@ -250,17 +276,25 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
       <section className="cct-section">
         <h3>Протокол разногласий {activeDisputes.length > 0 && <span className="cct-count">{activeDisputes.length}</span>}</h3>
         {activeDisputes.length === 0 ? (
-          <div className="cct-empty">Разногласий пока нет. Контрагент вносит пункты на обсуждение из своего кабинета, либо отметьте пункты выше и вынесите сами.</div>
+          <div className="cct-empty">
+            {isEmployee
+              ? 'Разногласий пока нет. Контрагент вносит пункты на обсуждение из своего кабинета, либо отметьте пункты выше и вынесите сами.'
+              : 'Разногласий пока нет. Отметьте пункт(ы) выше и нажмите «Вынести на обсуждение», чтобы предложить свою редакцию.'}
+          </div>
         ) : (
           <div className="cct-disputes">
             {activeDisputes.map((d) => (
               <div key={d.id} className="cct-dispute">
                 <div className="cct-dispute-head">
                   <span className="cct-dispute-label">{d.label || 'Пункт'}</span>
-                  <select className="cct-status" value={d.status} disabled={!canEdit} onChange={(e) => saveDispute(d.id, { status: e.target.value })}>
-                    {DISPUTE_STATUS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
-                  {canEdit && <button type="button" className="cct-clause-del" title="Удалить" onClick={() => deleteDispute(d.id)}>×</button>}
+                  {canEditFinal ? (
+                    <select className="cct-status" value={d.status} onChange={(e) => saveDispute(d.id, { status: e.target.value })}>
+                      {DISPUTE_STATUS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  ) : (
+                    <span className="cct-status-ro">{STATUS_LABEL[d.status] || d.status}</span>
+                  )}
+                  {canEditFinal && <button type="button" className="cct-clause-del" title="Удалить" onClick={() => deleteDispute(d.id)}>×</button>}
                 </div>
                 <div className="cct-editions">
                   <div className="cct-ed">
@@ -269,11 +303,17 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
                   </div>
                   <div className="cct-ed">
                     <div className="cct-ed-label">Редакция контрагента</div>
-                    <div className="cct-ed-text ro">{d.counterparty_text || '—'}</div>
+                    {canEditOwnEdition ? (
+                      <AutoGrowTextarea className="cct-ed-text" minHeight={60} defaultValue={d.counterparty_text}
+                        placeholder="Ваша предлагаемая формулировка пункта…"
+                        onBlur={(e) => e.target.value !== d.counterparty_text && saveDispute(d.id, { counterparty_text: e.target.value })} />
+                    ) : (
+                      <div className="cct-ed-text ro">{d.counterparty_text || '—'}</div>
+                    )}
                   </div>
                   <div className="cct-ed">
                     <div className="cct-ed-label">Итоговая редакция</div>
-                    {canEdit ? (
+                    {canEditFinal ? (
                       <AutoGrowTextarea className="cct-ed-text" minHeight={60} defaultValue={d.final_text}
                         onBlur={(e) => e.target.value !== d.final_text && saveDispute(d.id, { final_text: e.target.value })} />
                     ) : (
@@ -281,7 +321,6 @@ function ContractClausesTab({ contractId, parties = [], canEdit }) {
                     )}
                   </div>
                 </div>
-                {/* Обсуждение */}
                 <div className="cct-thread">
                   {(commentsByDispute[d.id] || []).map((c) => (
                     <div key={c.id} className={`cct-msg cct-msg-${c.author_side}`}>

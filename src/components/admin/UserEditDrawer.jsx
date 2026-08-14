@@ -5,7 +5,7 @@ import FilterDropdown from '../FilterDropdown'
 // Правая выдвижная панель редактирования пользователя — единственная поверхность правки
 // (никаких постоянных select в строках таблицы). Сохранение идёт через onSave(form),
 // который возвращает Promise; ошибки и индикатор загрузки показываем здесь.
-export default function UserEditDrawer({ user, roleOptions, objectOptions, onClose, onSave }) {
+export default function UserEditDrawer({ user, roleOptions, objectOptions, counterpartyOptions = [], onClose, onSave }) {
   const current = user ? userStatus(user) : 'active'
   const [form, setForm] = useState(() => ({
     full_name: user?.full_name || '',
@@ -16,6 +16,8 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, onClo
     object_ids: Array.isArray(user?.object_ids)
       ? user.object_ids
       : (user?.object_id ? [user.object_id] : []),
+    // Привязка логина к контрагенту → кабинет подрядчика (пусто = сотрудник СУ-10).
+    counterparty_id: user?.counterparty_id || '',
     status: current,
   }))
   const [saving, setSaving] = useState(false)
@@ -51,6 +53,7 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, onClo
         work_email: form.work_email.trim() || null,
         role: form.role,
         object_ids: form.object_ids || [],
+        counterparty_id: form.counterparty_id || null,
         // Активен → подтверждён; иначе доступ снят (pending/blocked).
         is_approved: form.status === 'active',
       })
@@ -116,6 +119,22 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, onClo
                 options={objectOptions.map(o => ({ value: o.id, label: o.name }))}
               />
             </div>
+          </div>
+
+          <div className="adm-drawer-field">
+            <span>Контрагент (кабинет подрядчика)</span>
+            <FilterDropdown
+              label=""
+              searchable
+              searchPlaceholder="Поиск контрагента…"
+              allLabel="— сотрудник СУ-10 —"
+              value={form.counterparty_id || ''}
+              onChange={(v) => set({ counterparty_id: v || '' })}
+              options={counterpartyOptions.map(c => ({ value: c.id, label: c.name }))}
+            />
+            <small className="adm-drawer-hint">
+              Если выбрать контрагента — этот логин становится кабинетом подрядчика и видит только договоры этой организации (согласование условий). Пусто = сотрудник СУ-10.
+            </small>
           </div>
 
           <label className="adm-drawer-field">

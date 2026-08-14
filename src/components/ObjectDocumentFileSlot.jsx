@@ -74,7 +74,7 @@ export default function ObjectDocumentFileSlot({
   const handleDownload = async () => {
     if (!currentDoc) return
     try {
-      const { presigned_url } = await requestDownloadUrl(currentDoc.s3_key)
+      const { presigned_url } = await requestDownloadUrl(currentDoc.s3_key, { fileName: currentDoc.file_name, download: true })
       // Принудительное скачивание в новой вкладке/без навигации.
       const a = document.createElement('a')
       a.href = presigned_url

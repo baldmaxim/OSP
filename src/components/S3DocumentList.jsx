@@ -90,7 +90,7 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
 
   const handleDownload = async (doc) => {
     try {
-      const { presigned_url } = await requestDownloadUrl(doc.s3_key)
+      const { presigned_url } = await requestDownloadUrl(doc.s3_key, { fileName: doc.file_name, download: true })
       const a = document.createElement('a')
       a.href = presigned_url
       a.download = doc.file_name

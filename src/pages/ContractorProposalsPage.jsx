@@ -271,9 +271,14 @@ function ContractorProposalsPage() {
           <h1>Личный кабинет подрядчика</h1>
           <p className="company-name">{contractorInfo?.name}</p>
         </div>
-        <button className="logout-button" onClick={handleLogout}>
-          Выйти
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <button className="btn-secondary" onClick={() => navigate('/contractor/negotiations')}>
+            Согласование договоров
+          </button>
+          <button className="logout-button" onClick={handleLogout}>
+            Выйти
+          </button>
+        </div>
       </header>
 
       <div className="contractor-content">
