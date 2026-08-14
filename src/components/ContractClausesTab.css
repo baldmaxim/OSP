@@ -213,6 +213,78 @@ textarea.cct-ed-text:focus { outline: none; border-color: var(--primary-color); 
 }
 .cct-reply-input:focus { outline: none; border-color: var(--primary-color); }
 
+/* ===== Двухколоночный макет: основная зона + правый rail ===== */
+.cct-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1.25rem; align-items: start; }
+.cct-main { min-width: 0; display: flex; flex-direction: column; gap: 1.25rem; }
+.cct-rail { display: flex; flex-direction: column; gap: 1rem; position: sticky; top: 1rem; }
+
+/* Карточки (основные секции и rail). */
+.cct-card {
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: 12px; padding: 1rem 1.15rem; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+.cct-rail-card {
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: 12px; padding: 0.9rem 1rem; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+.cct-rail-title { font-size: 0.8125rem; font-weight: 700; margin-bottom: 0.6rem; }
+.cct-rail-empty { font-size: 0.8125rem; color: var(--text-tertiary); }
+.cct-rr { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.3rem 0; font-size: 0.8125rem; border-bottom: 1px solid var(--border-color); }
+.cct-rr:last-child { border-bottom: none; }
+.cct-rr-l { color: var(--text-tertiary); flex-shrink: 0; }
+.cct-rr-v { color: var(--text-primary); text-align: right; word-break: break-word; }
+
+/* Прогресс согласования. */
+.cct-progress-head { font-size: 0.875rem; margin-bottom: 0.5rem; color: var(--text-secondary); }
+.cct-progress-head strong { font-size: 1.05rem; color: #16a34a; }
+.cct-progress-bar { height: 8px; background: var(--bg-secondary); border-radius: 999px; overflow: hidden; margin-bottom: 0.65rem; }
+.cct-progress-bar span { display: block; height: 100%; background: #16a34a; border-radius: 999px; transition: width 0.3s; }
+.cct-prow {
+  display: flex; align-items: center; gap: 0.5rem; width: 100%; text-align: left;
+  background: none; border: none; cursor: pointer; padding: 0.34rem 0.4rem; border-radius: 7px;
+  font-size: 0.8125rem; color: var(--text-primary);
+}
+.cct-prow:hover { background: var(--bg-secondary); }
+.cct-prow.is-active { background: var(--bg-secondary); font-weight: 600; }
+.cct-prow-n { margin-left: auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.cct-prow .cct-dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; flex-shrink: 0; background: var(--text-tertiary); }
+.cct-prow.tone-open .cct-dot { background: #e6a600; }
+.cct-prow.tone-agreed .cct-dot { background: #16a34a; }
+.cct-prow.tone-rejected .cct-dot { background: #94a3b8; }
+
+/* Быстрые действия. */
+.cct-qa {
+  display: flex; align-items: center; gap: 0.5rem; width: 100%; text-align: left;
+  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px;
+  padding: 0.5rem 0.65rem; margin-top: 0.4rem; font-size: 0.8125rem; color: var(--text-primary); cursor: pointer;
+}
+.cct-qa:first-of-type { margin-top: 0; }
+.cct-qa:hover { background: var(--bg-secondary); border-color: var(--text-tertiary); }
+.cct-qa svg { color: var(--primary-color); }
+
+/* Фильтр-чипы протокола. */
+.cct-filters { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.cct-chip-btn {
+  font-size: 0.75rem; padding: 0.24rem 0.65rem; border-radius: 999px; cursor: pointer;
+  background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-secondary);
+}
+.cct-chip-btn:hover { color: var(--text-primary); }
+.cct-chip-btn.is-active { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
+.cct-chip-btn.tone-open.is-active { background: #e6a600; border-color: #e6a600; color: #fff; }
+.cct-chip-btn.tone-agreed.is-active { background: #16a34a; border-color: #16a34a; color: #fff; }
+.cct-chip-btn.tone-rejected.is-active { background: #64748b; border-color: #64748b; color: #fff; }
+
+/* Превью «нашей редакции» в свёрнутой строке протокола. */
+.cct-dispute-preview {
+  color: var(--text-tertiary); font-size: 0.8125rem; font-weight: 400;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .cct-layout { grid-template-columns: 1fr; }
+  .cct-rail { position: static; flex-direction: row; flex-wrap: wrap; }
+  .cct-rail-card { flex: 1 1 260px; }
+}
 @media (max-width: 720px) {
   .cct-editions { grid-template-columns: 1fr; }
   .cct-msg { max-width: 100%; }

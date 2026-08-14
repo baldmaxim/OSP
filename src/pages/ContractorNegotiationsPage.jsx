@@ -107,6 +107,7 @@ function ContractorNegotiationsPage() {
               <ContractClausesTab
                 key={activeContract.id}
                 contractId={activeContract.id}
+                contract={activeContract}
                 side="contractor"
                 counterpartyId={counterpartyId}
                 canEdit={false}

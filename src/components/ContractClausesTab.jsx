@@ -3,7 +3,14 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import AutoGrowTextarea from './AutoGrowTextarea'
 import { uploadFile, fetchDocuments, deleteDocument } from '../services/s3'
+import { formatMoney } from '../utils/estimateImport'
 import './ContractClausesTab.css'
+
+function fmtDate(s) {
+  if (!s) return '—'
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU')
+}
 
 // docx-preview крупный — грузим лениво, только когда открыта вкладка «Согласование».
 const DocxPreview = lazy(() => import('./DocxPreview'))
@@ -68,7 +75,7 @@ function fmtDateTime(s) {
 // (наша / контрагент / итоговая редакция) + обсуждение.
 // side='employee' — СУ-10 (грузит шаблон, правит итоговую редакцию/статус).
 // side='contractor' — кабинет подрядчика (читает договор, вносит свою редакцию + комментарии).
-function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employee', counterpartyId = null }) {
+function ContractClausesTab({ contractId, parties = [], contract = null, canEdit, side = 'employee', counterpartyId = null }) {
   const { userProfile, contractorInfo } = useRole()
   const isEmployee = side === 'employee'
   const authorName = isEmployee ? (userProfile?.full_name || 'Сотрудник') : (contractorInfo?.name || userProfile?.full_name || 'Контрагент')
@@ -83,13 +90,14 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
   const [replyDrafts, setReplyDrafts] = useState({})
   const [replyNonce, setReplyNonce] = useState({})
   const [textCollapsed, setTextCollapsed] = useState(false)
-  const [collapsedDisputes, setCollapsedDisputes] = useState(() => new Set())
+  const [expandedDisputes, setExpandedDisputes] = useState(() => new Set()) // по умолчанию все свёрнуты
+  const [statusFilter, setStatusFilter] = useState(null) // null | 'open' | 'in_review' | 'agreed' | 'rejected'
   const [paraOrder, setParaOrder] = useState([])   // порядок абзацев документа (для сортировки)
   const [popup, setPopup] = useState(null)          // { text, top, left } — всплывашка у выделения
   const fileRef = useRef(null)
   const previewRef = useRef(null) // контейнер docx-preview — читаем из него выделение
 
-  const toggleDispute = (id) => setCollapsedDisputes((p) => {
+  const toggleDispute = (id) => setExpandedDisputes((p) => {
     const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n
   })
 
@@ -166,6 +174,20 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
       .sort((a, b) => a.pos - b.pos || String(a.d.created_at).localeCompare(String(b.d.created_at)))
       .map((x) => x.d)
   }, [activeDisputes, paraOrder])
+
+  // Сводка по статусам (для карточки «Прогресс согласования» и фильтра).
+  const stats = useMemo(() => {
+    const s = { total: activeDisputes.length, open: 0, in_review: 0, agreed: 0, rejected: 0 }
+    activeDisputes.forEach((d) => { if (s[d.status] != null) s[d.status]++ })
+    s.progress = s.total ? Math.round((s.agreed / s.total) * 100) : 0
+    return s
+  }, [activeDisputes])
+
+  const visibleDisputes = useMemo(() => {
+    if (!statusFilter) return orderedDisputes
+    if (statusFilter === 'open') return orderedDisputes.filter((d) => d.status === 'open' || d.status === 'in_review')
+    return orderedDisputes.filter((d) => d.status === statusFilter)
+  }, [orderedDisputes, statusFilter])
 
   async function handleUpload(e) {
     const file = e.target.files?.[0]
@@ -266,8 +288,10 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
         </div>
       )}
 
+      <div className="cct-layout">
+      <div className="cct-main">
       {/* Текст договора — предпросмотр как в Word. Единый заголовок-бар с действиями. */}
-      <section className="cct-section">
+      <section className="cct-section cct-card">
         <div className="cct-section-head">
           <h3>Текст договора</h3>
           <div className="cct-head-actions">
@@ -324,8 +348,24 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
       </section>
 
       {/* Протокол разногласий */}
-      <section className="cct-section">
-        <h3>Протокол разногласий {activeDisputes.length > 0 && <span className="cct-count">{activeDisputes.length}</span>}</h3>
+      <section className="cct-section cct-card">
+        <div className="cct-section-head">
+          <h3>Протокол разногласий {activeDisputes.length > 0 && <span className="cct-count">{activeDisputes.length}</span>}</h3>
+          {activeDisputes.length > 0 && (
+            <div className="cct-filters">
+              <button type="button" className={`cct-chip-btn${!statusFilter ? ' is-active' : ''}`} onClick={() => setStatusFilter(null)}>Все</button>
+              {stats.open + stats.in_review > 0 && (
+                <button type="button" className={`cct-chip-btn tone-open${statusFilter === 'open' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'open' ? null : 'open')}>Открытые</button>
+              )}
+              {stats.agreed > 0 && (
+                <button type="button" className={`cct-chip-btn tone-agreed${statusFilter === 'agreed' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'agreed' ? null : 'agreed')}>Согласованные</button>
+              )}
+              {stats.rejected > 0 && (
+                <button type="button" className={`cct-chip-btn tone-rejected${statusFilter === 'rejected' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'rejected' ? null : 'rejected')}>Отклонённые</button>
+              )}
+            </div>
+          )}
+        </div>
         {loadError ? (
           <div className="cct-error">{loadError}</div>
         ) : loading ? (
@@ -338,17 +378,18 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
           </div>
         ) : (
           <div className="cct-disputes">
-            {orderedDisputes.map((d) => {
+            {visibleDisputes.map((d) => {
               const tone = statusTone(d.status)
-              const isCollapsed = collapsedDisputes.has(d.id)
+              const isExpanded = expandedDisputes.has(d.id)
               const cnt = (commentsByDispute[d.id] || []).length
               return (
-                <div key={d.id} className={`cct-dispute tone-${tone}`}>
+                <div key={d.id} className={`cct-dispute tone-${tone}${isExpanded ? ' is-expanded' : ''}`}>
                   <div className="cct-dispute-head">
                     <button type="button" className="cct-dispute-toggle" onClick={() => toggleDispute(d.id)}>
-                      <span className="cct-chev" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}><IconChevron /></span>
+                      <span className="cct-chev" style={{ transform: isExpanded ? 'none' : 'rotate(-90deg)' }}><IconChevron /></span>
                       <span className="cct-dispute-label">{d.label || 'Пункт'}</span>
                       {!canEditFinal && <span className={`cct-badge tone-${tone}`}>{STATUS_LABEL[d.status] || d.status}</span>}
+                      {!isExpanded && d.our_text && <span className="cct-dispute-preview">{d.our_text}</span>}
                       {cnt > 0 && <span className="cct-thread-count" title="Сообщений в обсуждении">{cnt}</span>}
                     </button>
                     <div className="cct-dispute-actions">
@@ -356,7 +397,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
                       {canEditFinal && <button type="button" className="cct-clause-del" title="Удалить" onClick={() => deleteDispute(d.id)}>×</button>}
                     </div>
                   </div>
-                  {!isCollapsed && (
+                  {isExpanded && (
                     <div className="cct-dispute-body">
                       <div className="cct-editions">
                         <div className="cct-ed tone-our">
@@ -409,6 +450,62 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
           </div>
         )}
       </section>
+      </div>{/* /cct-main */}
+
+      <aside className="cct-rail">
+        {contract && (
+          <div className="cct-rail-card">
+            <div className="cct-rail-title">О договоре</div>
+            <div className="cct-rr"><span className="cct-rr-l">№</span><span className="cct-rr-v">{contract.contract_number || '—'}</span></div>
+            <div className="cct-rr"><span className="cct-rr-l">Дата</span><span className="cct-rr-v">{fmtDate(contract.contract_date)}</span></div>
+            <div className="cct-rr"><span className="cct-rr-l">Объект</span><span className="cct-rr-v">{contract.objects?.name || '—'}</span></div>
+            <div className="cct-rr"><span className="cct-rr-l">Контрагент</span><span className="cct-rr-v">{parties[0]?.name || contract.counterparties?.name || '—'}</span></div>
+            {contract.contract_amount != null && <div className="cct-rr"><span className="cct-rr-l">Сумма</span><span className="cct-rr-v">{formatMoney(contract.contract_amount, contract.currency) || '—'}</span></div>}
+            {contract.vat_rate != null && <div className="cct-rr"><span className="cct-rr-l">НДС</span><span className="cct-rr-v">{contract.vat_rate}%{contract.amount_includes_vat === false ? ' (без НДС)' : ''}</span></div>}
+            {contract.responsible?.full_name && <div className="cct-rr"><span className="cct-rr-l">Юрист</span><span className="cct-rr-v">{contract.responsible.full_name}</span></div>}
+            {contract.work_name && <div className="cct-rr"><span className="cct-rr-l">Работы</span><span className="cct-rr-v">{contract.work_name}</span></div>}
+          </div>
+        )}
+
+        <div className="cct-rail-card">
+          <div className="cct-rail-title">Прогресс согласования</div>
+          {stats.total === 0 ? (
+            <div className="cct-rail-empty">Разногласий пока нет.</div>
+          ) : (
+            <>
+              <div className="cct-progress-head"><strong>{stats.agreed}</strong> из {stats.total} согласовано</div>
+              <div className="cct-progress-bar"><span style={{ width: `${stats.progress}%` }} /></div>
+              <button type="button" className={`cct-prow tone-open${statusFilter === 'open' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'open' ? null : 'open')}>
+                <span className="cct-dot" /> Открытые <span className="cct-prow-n">{stats.open + stats.in_review}</span>
+              </button>
+              <button type="button" className={`cct-prow tone-agreed${statusFilter === 'agreed' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'agreed' ? null : 'agreed')}>
+                <span className="cct-dot" /> Согласовано <span className="cct-prow-n">{stats.agreed}</span>
+              </button>
+              {stats.rejected > 0 && (
+                <button type="button" className={`cct-prow tone-rejected${statusFilter === 'rejected' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'rejected' ? null : 'rejected')}>
+                  <span className="cct-dot" /> Отклонено <span className="cct-prow-n">{stats.rejected}</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        {(canUpload || activeDisputes.length > 0) && (
+          <div className="cct-rail-card">
+            <div className="cct-rail-title">Быстрые действия</div>
+            {canUpload && (
+              <button type="button" className="cct-qa" onClick={() => fileRef.current?.click()}><IconUpload /> Заменить шаблон</button>
+            )}
+            {activeDisputes.length > 0 && (
+              <>
+                <button type="button" className="cct-qa" onClick={() => setExpandedDisputes(new Set(activeDisputes.map((x) => x.id)))}>Развернуть все пункты</button>
+                <button type="button" className="cct-qa" onClick={() => setExpandedDisputes(new Set())}>Свернуть все пункты</button>
+              </>
+            )}
+          </div>
+        )}
+      </aside>
+      </div>{/* /cct-layout */}
     </div>
   )
 }

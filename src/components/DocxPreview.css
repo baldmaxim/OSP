@@ -1,21 +1,21 @@
 /* Предпросмотр .docx. Лист документа — всегда белый (как в Word), в любой теме. */
 .docx-preview-wrap {
   position: relative;
-  max-height: 60vh;
+  max-height: 62vh;
   overflow: auto;
-  border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: #6b7280; /* серый фон вокруг «листа», как в Word */
-  padding: 1rem 0;
+  background: #e8edf3; /* мягкий «стол» вокруг листа (светлая тема) */
+  padding: 1.25rem 0.5rem;
 }
+[data-theme="dark"] .docx-preview-wrap { background: #0f172a; } /* тёмный «стол» в тёмной теме */
 
 .docx-preview-status {
   padding: 1.25rem;
   text-align: center;
-  color: #fff;
+  color: var(--text-secondary);
   font-size: 0.9375rem;
 }
-.docx-preview-status.is-error { color: #ffd5d5; }
+.docx-preview-status.is-error { color: var(--danger-color, #c0392b); }
 
 /* Контейнер, куда docx-preview кладёт «лист». Библиотека сама задаёт белый фон
    и внутренние отступы страницы; центрируем его. */

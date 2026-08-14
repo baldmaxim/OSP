@@ -400,22 +400,27 @@ function ContractDetailPage() {
 
   return (
     <div className="contract-registry contract-detail">
-      <div className="registry-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button onClick={() => navigate('/contracts')} style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>←</button>
-          <div>
-            <h2 style={{ margin: 0 }}>
+      <div className="registry-header cd-header">
+        <button className="cd-back" onClick={() => navigate('/contracts')} aria-label="Назад к списку">←</button>
+        <div className="cd-header-info">
+          <div className="cd-title-row">
+            <h2>
               {contract.contract_number
                 ? `Договор № ${contract.contract_number}`
                 : <>Договор <span className="cds-missing">(№ не присвоен)</span></>}
-              {isDeleted && <span className="deleted-marker"> (удалён)</span>}
             </h2>
-            <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
-              {contract.contract_date
-                ? `от ${formatDate(contract.contract_date)}`
-                : <span className="cds-missing">дата не указана</span>}
-              {' · '}<span className={`status-badge-inline status-${contract.status}`}>{statusLabel}</span>
+            <span className={`cd-status status-${contract.status}`}>{statusLabel}</span>
+            {isDeleted && <span className="cd-status cd-status-deleted">Удалён</span>}
+          </div>
+          <div className="cd-chips">
+            <span className="cd-chip">
+              {contract.contract_date ? `от ${formatDate(contract.contract_date)}` : <span className="cds-missing">дата не указана</span>}
             </span>
+            {contract.objects?.name && <span className="cd-chip"><span className="cd-chip-l">Объект</span> {contract.objects.name}</span>}
+            {parties[0]?.name && <span className="cd-chip"><span className="cd-chip-l">Контрагент</span> {parties[0].name}</span>}
+            {money(contract.contract_amount) !== '—' && <span className="cd-chip"><span className="cd-chip-l">Сумма</span> {money(contract.contract_amount)}</span>}
+            {contract.responsible?.full_name && <span className="cd-chip"><span className="cd-chip-l">Юрист</span> {contract.responsible.full_name}</span>}
+            {contract.signed_date && <span className="cd-chip"><span className="cd-chip-l">План. подписания</span> {formatDate(contract.signed_date)}</span>}
           </div>
         </div>
       </div>
@@ -795,7 +800,7 @@ function ContractDetailPage() {
 
       {/* ВКЛАДКА: Документы (S3) */}
       {activeTab === 'clauses' && (
-        <ContractClausesTab contractId={contractId} parties={parties} canEdit={canEditContracts && !isDeleted} />
+        <ContractClausesTab contractId={contractId} parties={parties} contract={contract} canEdit={canEditContracts && !isDeleted} />
       )}
 
       {activeTab === 'documents' && (

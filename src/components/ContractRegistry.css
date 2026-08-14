@@ -2019,10 +2019,12 @@
   transition: color 0.1s, border-color 0.1s;
 }
 .contract-tab:hover { color: var(--text-primary); }
+.contract-tab { padding: 0.6rem 1rem; border-radius: 8px 8px 0 0; }
 .contract-tab.active {
   color: var(--primary-color);
   border-bottom-color: var(--primary-color);
   font-weight: 600;
+  background: var(--bg-secondary);
 }
 .contract-tab-badge {
   font-size: 0.6875rem;
@@ -2033,6 +2035,34 @@
   min-width: 1.1rem;
   text-align: center;
 }
+
+/* ===== Шапка карточки договора: заголовок + статус + метачипы ===== */
+.cd-header { display: flex; align-items: flex-start; gap: 0.75rem; }
+.cd-back {
+  background: none; border: none; font-size: 1.25rem; cursor: pointer; color: var(--text-secondary);
+  line-height: 1; padding: 0.15rem 0.35rem; border-radius: 6px; margin-top: 0.15rem;
+}
+.cd-back:hover { background: var(--bg-secondary); color: var(--text-primary); }
+.cd-header-info { flex: 1; min-width: 0; }
+.cd-title-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.cd-title-row h2 { margin: 0; font-size: 1.375rem; }
+.cd-status {
+  font-size: 0.75rem; font-weight: 600; padding: 0.22rem 0.7rem; border-radius: 999px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.cd-status.status-new_request { background: rgba(59, 130, 246, 0.12); color: #2563eb; border-color: rgba(59, 130, 246, 0.35); }
+.cd-status.status-in_work { background: rgba(234, 179, 8, 0.16); color: #a16207; border-color: rgba(234, 179, 8, 0.4); }
+.cd-status.status-paused { background: rgba(148, 163, 184, 0.2); color: #64748b; border-color: rgba(148, 163, 184, 0.5); }
+.cd-status.status-completed { background: rgba(34, 197, 94, 0.15); color: #15803d; border-color: rgba(34, 197, 94, 0.4); }
+.cd-status-deleted { background: rgba(220, 38, 38, 0.12); color: #dc2626; border-color: rgba(220, 38, 38, 0.4); }
+.cd-chips { display: flex; flex-wrap: wrap; gap: 0.4rem 0.5rem; margin-top: 0.55rem; }
+.cd-chip {
+  font-size: 0.75rem; color: var(--text-secondary);
+  background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: 8px; padding: 0.22rem 0.55rem; max-width: 22rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cd-chip-l { color: var(--text-tertiary); margin-right: 0.3rem; }
 
 /* ===== Кнопка danger / модалка импорта ===== */
 .btn-danger {
