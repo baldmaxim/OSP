@@ -17,6 +17,8 @@ const DISPUTE_STATUS = [
   { value: 'rejected', label: 'Отклонено' },
 ]
 const STATUS_LABEL = Object.fromEntries(DISPUTE_STATUS.map((s) => [s.value, s.label]))
+// Тон подсветки/бейджа по статусу: открытый вопрос — жёлтый, согласован — зелёный, отклонён — серый.
+const statusTone = (s) => (s === 'agreed' ? 'agreed' : s === 'rejected' ? 'rejected' : 'open')
 
 function fmtDateTime(s) {
   if (!s) return ''
@@ -42,8 +44,14 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
   const [activeCpId, setActiveCpId] = useState(isEmployee ? (parties[0]?.id || null) : counterpartyId)
   const [replyDrafts, setReplyDrafts] = useState({})
   const [replyNonce, setReplyNonce] = useState({})
+  const [textCollapsed, setTextCollapsed] = useState(false)
+  const [collapsedDisputes, setCollapsedDisputes] = useState(() => new Set())
   const fileRef = useRef(null)
   const previewRef = useRef(null) // контейнер docx-preview — читаем из него выделение
+
+  const toggleDispute = (id) => setCollapsedDisputes((p) => {
+    const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
 
   useEffect(() => {
     if (!isEmployee) { setActiveCpId(counterpartyId); return }
@@ -96,6 +104,11 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
   const activeDisputes = useMemo(
     () => disputes.filter((d) => !activeCpId || d.counterparty_id === activeCpId),
     [disputes, activeCpId],
+  )
+  // Тексты + статусы для подсветки абзацев в предпросмотре (мемо — чтобы не пересчитывать при печати).
+  const highlightItems = useMemo(
+    () => activeDisputes.map((d) => ({ text: d.our_text, status: d.status })),
+    [activeDisputes],
   )
 
   async function handleUpload(e) {
@@ -202,27 +215,36 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
 
       {/* Текст договора — предпросмотр как в Word */}
       <section className="cct-section">
-        <h3>Текст договора</h3>
+        <div className="cct-section-head">
+          <h3>Текст договора</h3>
+          {templateDoc && (
+            <button type="button" className="cct-collapse-btn" onClick={() => setTextCollapsed((v) => !v)}>
+              {textCollapsed ? 'Развернуть' : 'Свернуть'}
+            </button>
+          )}
+        </div>
         {!templateDoc ? (
           <div className="cct-empty">
             {isEmployee
               ? 'Загрузите шаблон договора (.docx) — он отобразится как в Word, и можно будет выделять пункты для протокола.'
               : 'Текст договора пока не загружен представителем СУ-10.'}
           </div>
+        ) : textCollapsed ? (
+          <div className="cct-collapsed-note">Текст договора свёрнут.</div>
         ) : (
           <>
-            {templateDoc && canCreateDispute && (
+            {canCreateDispute && (
               <p className="cct-preview-hint">
                 Выделите нужный пункт (или несколько) мышью и нажмите «Вынести выделенное в протокол».
-                {activeDisputes.length > 0 && <span className="cct-hint-legend"> Пункты в протоколе подсвечены <span className="cct-hint-swatch" />.</span>}
+                {activeDisputes.length > 0 && (
+                  <span className="cct-hint-legend">
+                    {' '}Подсветка: <span className="cct-hint-swatch open" /> открыт · <span className="cct-hint-swatch agreed" /> согласован.
+                  </span>
+                )}
               </p>
             )}
             <Suspense fallback={<div className="cct-empty">Загрузка предпросмотра…</div>}>
-              <DocxPreview
-                s3Key={templateDoc.s3_key}
-                containerRef={previewRef}
-                highlights={activeDisputes.map((d) => d.our_text)}
-              />
+              <DocxPreview s3Key={templateDoc.s3_key} containerRef={previewRef} highlights={highlightItems} />
             </Suspense>
           </>
         )}
@@ -243,64 +265,78 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
           </div>
         ) : (
           <div className="cct-disputes">
-            {activeDisputes.map((d) => (
-              <div key={d.id} className="cct-dispute">
-                <div className="cct-dispute-head">
-                  <span className="cct-dispute-label">{d.label || 'Пункт'}</span>
-                  {canEditFinal ? (
-                    <select className="cct-status" value={d.status} onChange={(e) => saveDispute(d.id, { status: e.target.value })}>
-                      {DISPUTE_STATUS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                  ) : (
-                    <span className="cct-status-ro">{STATUS_LABEL[d.status] || d.status}</span>
-                  )}
-                  {canEditFinal && <button type="button" className="cct-clause-del" title="Удалить" onClick={() => deleteDispute(d.id)}>×</button>}
-                </div>
-                <div className="cct-editions">
-                  <div className="cct-ed">
-                    <div className="cct-ed-label">Наша редакция</div>
-                    <div className="cct-ed-text ro">{d.our_text || '—'}</div>
-                  </div>
-                  <div className="cct-ed">
-                    <div className="cct-ed-label">Редакция контрагента</div>
-                    {canEditOwnEdition ? (
-                      <AutoGrowTextarea className="cct-ed-text" minHeight={60} defaultValue={d.counterparty_text}
-                        placeholder="Ваша предлагаемая формулировка пункта…"
-                        onBlur={(e) => e.target.value !== d.counterparty_text && saveDispute(d.id, { counterparty_text: e.target.value })} />
-                    ) : (
-                      <div className="cct-ed-text ro">{d.counterparty_text || '—'}</div>
-                    )}
-                  </div>
-                  <div className="cct-ed">
-                    <div className="cct-ed-label">Итоговая редакция</div>
-                    {canEditFinal ? (
-                      <AutoGrowTextarea className="cct-ed-text" minHeight={60} defaultValue={d.final_text}
-                        onBlur={(e) => e.target.value !== d.final_text && saveDispute(d.id, { final_text: e.target.value })} />
-                    ) : (
-                      <div className="cct-ed-text ro">{d.final_text || '—'}</div>
-                    )}
-                  </div>
-                </div>
-                <div className="cct-thread">
-                  {(commentsByDispute[d.id] || []).map((c) => (
-                    <div key={c.id} className={`cct-msg cct-msg-${c.author_side}`}>
-                      <div className="cct-msg-meta">
-                        <span className="cct-msg-author">{c.author_side === 'employee' ? (c.author_name || 'Сотрудник') : (c.author_name || 'Контрагент')}</span>
-                        <span className="cct-msg-date">{fmtDateTime(c.created_at)}</span>
-                      </div>
-                      <div className="cct-msg-body">{c.body}</div>
+            {activeDisputes.map((d) => {
+              const tone = statusTone(d.status)
+              const isCollapsed = collapsedDisputes.has(d.id)
+              const cnt = (commentsByDispute[d.id] || []).length
+              return (
+                <div key={d.id} className={`cct-dispute tone-${tone}`}>
+                  <div className="cct-dispute-head">
+                    <button type="button" className="cct-dispute-toggle" onClick={() => toggleDispute(d.id)}>
+                      <span className="cct-chev">{isCollapsed ? '▸' : '▾'}</span>
+                      <span className="cct-dispute-label">{d.label || 'Пункт'}</span>
+                      <span className={`cct-badge tone-${tone}`}>{STATUS_LABEL[d.status] || d.status}</span>
+                      {cnt > 0 && <span className="cct-thread-count" title="Сообщений в обсуждении">💬 {cnt}</span>}
+                    </button>
+                    <div className="cct-dispute-actions">
+                      {canEditFinal && (
+                        <select className="cct-status" value={d.status} onChange={(e) => saveDispute(d.id, { status: e.target.value })}>
+                          {DISPUTE_STATUS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        </select>
+                      )}
+                      {canEditFinal && <button type="button" className="cct-clause-del" title="Удалить" onClick={() => deleteDispute(d.id)}>×</button>}
                     </div>
-                  ))}
-                  <div className="cct-reply">
-                    <AutoGrowTextarea key={`r-${d.id}-${replyNonce[d.id] || 0}`} className="cct-reply-input" minHeight={36}
-                      defaultValue={replyDrafts[d.id] || ''}
-                      onInput={(e) => setReplyDrafts((p) => ({ ...p, [d.id]: e.target.value }))}
-                      placeholder="Ответить в обсуждении…" />
-                    <button type="button" className="btn-secondary" onClick={() => addComment(d)}>Отправить</button>
                   </div>
+                  {!isCollapsed && (
+                    <div className="cct-dispute-body">
+                      <div className="cct-editions">
+                        <div className="cct-ed tone-our">
+                          <div className="cct-ed-label">Наша редакция</div>
+                          <div className="cct-ed-text ro">{d.our_text || '—'}</div>
+                        </div>
+                        <div className="cct-ed tone-cp">
+                          <div className="cct-ed-label">Редакция контрагента</div>
+                          {canEditOwnEdition ? (
+                            <AutoGrowTextarea className="cct-ed-text" minHeight={60} defaultValue={d.counterparty_text}
+                              placeholder="Ваша предлагаемая формулировка пункта…"
+                              onBlur={(e) => e.target.value !== d.counterparty_text && saveDispute(d.id, { counterparty_text: e.target.value })} />
+                          ) : (
+                            <div className="cct-ed-text ro">{d.counterparty_text || '—'}</div>
+                          )}
+                        </div>
+                        <div className="cct-ed tone-final">
+                          <div className="cct-ed-label">Итоговая редакция</div>
+                          {canEditFinal ? (
+                            <AutoGrowTextarea className="cct-ed-text" minHeight={60} defaultValue={d.final_text}
+                              onBlur={(e) => e.target.value !== d.final_text && saveDispute(d.id, { final_text: e.target.value })} />
+                          ) : (
+                            <div className="cct-ed-text ro">{d.final_text || '—'}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="cct-thread">
+                        {(commentsByDispute[d.id] || []).map((c) => (
+                          <div key={c.id} className={`cct-msg cct-msg-${c.author_side}`}>
+                            <div className="cct-msg-meta">
+                              <span className="cct-msg-author">{c.author_side === 'employee' ? (c.author_name || 'Сотрудник') : (c.author_name || 'Контрагент')}</span>
+                              <span className="cct-msg-date">{fmtDateTime(c.created_at)}</span>
+                            </div>
+                            <div className="cct-msg-body">{c.body}</div>
+                          </div>
+                        ))}
+                        <div className="cct-reply">
+                          <AutoGrowTextarea key={`r-${d.id}-${replyNonce[d.id] || 0}`} className="cct-reply-input" minHeight={36}
+                            defaultValue={replyDrafts[d.id] || ''}
+                            onInput={(e) => setReplyDrafts((p) => ({ ...p, [d.id]: e.target.value }))}
+                            placeholder="Ответить в обсуждении…" />
+                          <button type="button" className="btn-secondary" onClick={() => addComment(d)}>Отправить</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </section>

@@ -8,7 +8,8 @@ const norm = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' '
 // Предпросмотр .docx «как в Word» через docx-preview. Берёт файл из S3 по s3Key,
 // рендерит в контейнер (только чтение). Пробрасывает ref контейнера наружу через
 // containerRef, чтобы родитель мог читать выделение (window.getSelection) внутри него.
-// highlights — массив текстов разногласий (our_text): совпавшие абзацы подсвечиваются.
+// highlights — массив { text, status } разногласий: совпавшие абзацы подсвечиваются
+// цветом по статусу (open/in_review — жёлтый, agreed — зелёный, rejected — серый).
 function DocxPreview({ s3Key, containerRef, highlights = [] }) {
   const localRef = useRef(null)
   const styleRef = useRef(null)
@@ -55,15 +56,22 @@ function DocxPreview({ s3Key, containerRef, highlights = [] }) {
   const applyHighlights = useCallback(() => {
     const bodyEl = localRef.current
     if (!bodyEl) return
-    const targets = norm(highlights.join('\n')) // быстрый предварительный фильтр
-    const normed = highlights.map(norm).filter((t) => t.length >= 3)
-    bodyEl.querySelectorAll('p.cct-disputed, td.cct-disputed').forEach((el) => el.classList.remove('cct-disputed'))
-    if (normed.length === 0 || !targets) return
+    const items = highlights
+      .map((h) => ({ t: norm(h.text), status: h.status }))
+      .filter((h) => h.t.length >= 3)
+    bodyEl.querySelectorAll('.cct-hl-open, .cct-hl-agreed, .cct-hl-rejected')
+      .forEach((el) => el.classList.remove('cct-hl-open', 'cct-hl-agreed', 'cct-hl-rejected'))
+    if (items.length === 0) return
     bodyEl.querySelectorAll('p, td').forEach((el) => {
       const pt = norm(el.textContent)
       if (pt.length < 3) return
-      const hit = normed.some((dt) => dt.includes(pt) || (dt.length >= 20 && pt.includes(dt)))
-      if (hit) el.classList.add('cct-disputed')
+      const matched = items.filter((h) => h.t.includes(pt) || (h.t.length >= 20 && pt.includes(h.t)))
+      if (matched.length === 0) return
+      // Приоритет цвета: открытый вопрос важнее → жёлтый; иначе согласован → зелёный; иначе отклонён.
+      const statuses = matched.map((m) => m.status)
+      const tone = statuses.some((s) => s === 'open' || s === 'in_review') ? 'open'
+        : statuses.some((s) => s === 'agreed') ? 'agreed' : 'rejected'
+      el.classList.add(`cct-hl-${tone}`)
     })
   }, [highlights])
 
