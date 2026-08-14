@@ -800,7 +800,7 @@ function ContractDetailPage() {
 
       {activeTab === 'documents' && (
         <div className="contract-documents-tab">
-          <S3DocumentList ownerType="contract" ownerId={contractId} title="Документы договора" />
+          <S3DocumentList ownerType="contract" ownerId={contractId} title="Документы договора" excludeCategory="negotiation_template" />
         </div>
       )}
 

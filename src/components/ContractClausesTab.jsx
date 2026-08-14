@@ -1,9 +1,14 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import AutoGrowTextarea from './AutoGrowTextarea'
-import { parseDocxClauses } from '../utils/docxClauses'
+import { uploadFile, fetchDocuments, deleteDocument } from '../services/s3'
 import './ContractClausesTab.css'
+
+// docx-preview крупный — грузим лениво, только когда открыта вкладка «Согласование».
+const DocxPreview = lazy(() => import('./DocxPreview'))
+
+const TEMPLATE_CATEGORY = 'negotiation_template'
 
 const DISPUTE_STATUS = [
   { value: 'open', label: 'Открыт' },
@@ -13,61 +18,60 @@ const DISPUTE_STATUS = [
 ]
 const STATUS_LABEL = Object.fromEntries(DISPUTE_STATUS.map((s) => [s.value, s.label]))
 
-function chunks(arr, size) {
-  const out = []
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
-  return out
-}
 function fmtDateTime(s) {
   if (!s) return ''
   const d = new Date(s)
   return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-// Согласование условий договора: текст по пунктам + протокол разногласий
+// Согласование условий договора: Word-предпросмотр текста + протокол разногласий
 // (наша / контрагент / итоговая редакция) + обсуждение.
-// side='employee' — сторона СУ-10 (правит пункты, итоговую редакцию, статус).
-// side='contractor' — кабинет подрядчика (читает пункты, вносит свою редакцию и комментарии).
+// side='employee' — СУ-10 (грузит шаблон, правит итоговую редакцию/статус).
+// side='contractor' — кабинет подрядчика (читает договор, вносит свою редакцию + комментарии).
 function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employee', counterpartyId = null }) {
   const { userProfile, contractorInfo } = useRole()
   const isEmployee = side === 'employee'
   const authorName = isEmployee ? (userProfile?.full_name || 'Сотрудник') : (contractorInfo?.name || userProfile?.full_name || 'Контрагент')
 
-  const [clauses, setClauses] = useState([])
+  const [templateDoc, setTemplateDoc] = useState(null)
   const [disputes, setDisputes] = useState([])
   const [commentsByDispute, setCommentsByDispute] = useState({})
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [importing, setImporting] = useState(false)
-  const [selected, setSelected] = useState(() => new Set())
   const [activeCpId, setActiveCpId] = useState(isEmployee ? (parties[0]?.id || null) : counterpartyId)
   const [replyDrafts, setReplyDrafts] = useState({})
   const [replyNonce, setReplyNonce] = useState({})
   const fileRef = useRef(null)
+  const previewRef = useRef(null) // контейнер docx-preview — читаем из него выделение
 
   useEffect(() => {
     if (!isEmployee) { setActiveCpId(counterpartyId); return }
     if (!activeCpId && parties[0]) setActiveCpId(parties[0].id)
   }, [parties, activeCpId, isEmployee, counterpartyId])
 
-  // Права по действиям.
-  const canEditClauseText = isEmployee && canEdit          // править сам текст договора
-  const canCreateDispute = isEmployee ? !!canEdit : true   // выносить пункты в протокол
-  const canEditFinal = isEmployee && canEdit               // итоговая редакция + статус
-  const canEditOwnEdition = !isEmployee                    // подрядчик правит свою редакцию
+  const canUpload = isEmployee && canEdit           // грузить/заменять шаблон
+  const canCreateDispute = isEmployee ? !!canEdit : true
+  const canEditFinal = isEmployee && canEdit        // итоговая редакция + статус
+  const canEditOwnEdition = !isEmployee             // подрядчик правит свою редакцию
 
-  const load = useCallback(async () => {
+  const loadTemplate = useCallback(async () => {
+    try {
+      const docs = await fetchDocuments('contract', contractId, TEMPLATE_CATEGORY)
+      setTemplateDoc(docs[0] || null) // fetchDocuments сортирует created_at desc → [0] новейший
+    } catch (err) {
+      console.error('Загрузка шаблона согласования:', err)
+    }
+  }, [contractId])
+
+  const loadDisputes = useCallback(async () => {
     setLoading(true)
     setLoadError('')
     try {
-      const { data: cl, error: e1 } = await supabase
-        .from('contract_clauses').select('*').eq('contract_id', contractId).order('order_index', { ascending: true })
-      if (e1) throw e1
       let dq = supabase.from('contract_clause_disputes').select('*').eq('contract_id', contractId)
       if (!isEmployee && counterpartyId) dq = dq.eq('counterparty_id', counterpartyId)
-      const { data: ds, error: e2 } = await dq.order('created_at', { ascending: true })
-      if (e2) throw e2
-      setClauses(cl || [])
+      const { data: ds, error } = await dq.order('created_at', { ascending: true })
+      if (error) throw error
       setDisputes(ds || [])
       const ids = (ds || []).map((d) => d.id)
       if (ids.length) {
@@ -80,95 +84,66 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
         setCommentsByDispute({})
       }
     } catch (err) {
-      console.error('Загрузка согласования:', err)
+      console.error('Загрузка протокола:', err)
       setLoadError(err.message || 'Ошибка загрузки. Возможно, миграция 20260815 ещё не применена.')
     } finally {
       setLoading(false)
     }
   }, [contractId, isEmployee, counterpartyId])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { loadTemplate(); loadDisputes() }, [loadTemplate, loadDisputes])
 
   const activeDisputes = useMemo(
     () => disputes.filter((d) => !activeCpId || d.counterparty_id === activeCpId),
     [disputes, activeCpId],
   )
 
-  async function handleImport(e) {
+  async function handleUpload(e) {
     const file = e.target.files?.[0]
     if (fileRef.current) fileRef.current.value = ''
     if (!file) return
     if (/\.doc$/i.test(file.name)) {
-      alert('Формат .doc не поддерживается напрямую. Откройте файл в Word и сохраните как .docx (Файл → Сохранить как → Документ Word .docx), затем загрузите его.')
+      alert('Формат .doc не поддерживается. Откройте файл в Word и сохраните как .docx (Файл → Сохранить как → Документ Word .docx), затем загрузите его.')
       return
     }
     if (!/\.docx$/i.test(file.name)) { alert('Нужен файл .docx.'); return }
-    if (clauses.length > 0 && !window.confirm('Заменить текущий текст договора новым из файла? Существующие споры протокола сохранятся.')) return
+    if (templateDoc && !window.confirm('Заменить текущий шаблон договора? Существующие разногласия протокола сохранятся.')) return
     setImporting(true)
     try {
-      const buf = await file.arrayBuffer()
-      const parsed = parseDocxClauses(buf)
-      if (parsed.length === 0) { alert('Не удалось извлечь пункты из файла.'); return }
-      const { error: delErr } = await supabase.from('contract_clauses').delete().eq('contract_id', contractId)
-      if (delErr) throw delErr
-      const rows = parsed.map((c) => ({ ...c, contract_id: contractId }))
-      for (const ch of chunks(rows, 200)) {
-        const { error } = await supabase.from('contract_clauses').insert(ch)
-        if (error) throw error
-      }
-      await load()
-      alert(`Загружено пунктов: ${parsed.length}`)
+      // Убираем прежние шаблоны, чтобы всегда был ровно один актуальный.
+      const old = await fetchDocuments('contract', contractId, TEMPLATE_CATEGORY)
+      for (const d of old) { try { await deleteDocument(d) } catch { /* лучшее усилие */ } }
+      await uploadFile({ file, ownerType: 'contract', ownerId: contractId, category: TEMPLATE_CATEGORY })
+      await loadTemplate()
     } catch (err) {
-      console.error('Импорт .docx:', err)
-      const msg = String(err?.message || err)
-      if (/Failed to fetch|schema cache|contract_clauses/i.test(msg)) {
-        alert('Не удалось сохранить пункты. Похоже, миграция 20260815 ещё не применена (нет таблиц раздела «Согласование») или не перезагружен кэш схемы Supabase. Примените миграцию и выполните NOTIFY pgrst, \'reload schema\';, затем повторите.')
-      } else {
-        alert('Ошибка импорта: ' + msg)
-      }
+      console.error('Загрузка шаблона:', err)
+      alert('Ошибка загрузки шаблона: ' + (err.message || err))
     } finally {
       setImporting(false)
     }
   }
 
-  async function addClause() {
-    const order = clauses.length ? Math.max(...clauses.map((c) => c.order_index)) + 1 : 0
-    const { error } = await supabase.from('contract_clauses')
-      .insert({ contract_id: contractId, clause_number: '', body: '', order_index: order, level: 1 })
-    if (error) return alert('Ошибка: ' + error.message)
-    load()
-  }
-  async function saveClause(id, patch) {
-    const { error } = await supabase.from('contract_clauses').update(patch).eq('id', id)
-    if (error) alert('Ошибка сохранения: ' + error.message)
-  }
-  async function deleteClause(id) {
-    if (!window.confirm('Удалить пункт?')) return
-    const { error } = await supabase.from('contract_clauses').delete().eq('id', id)
-    if (error) return alert('Ошибка: ' + error.message)
-    setSelected((p) => { const n = new Set(p); n.delete(id); return n })
-    load()
-  }
-  function toggleSelect(id) {
-    setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n })
+  // Текст выделения — только если оно внутри предпросмотра договора.
+  function getSelectionText() {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return ''
+    const c = previewRef.current
+    if (c && (!c.contains(sel.anchorNode) || !c.contains(sel.focusNode))) return ''
+    return sel.toString().trim()
   }
 
-  async function createDispute() {
+  async function createDisputeFromSelection() {
     if (!activeCpId) return alert('У договора нет контрагента — протокол вести не с кем.')
-    const picked = clauses.filter((c) => selected.has(c.id)).sort((a, b) => a.order_index - b.order_index)
-    if (picked.length === 0) return alert('Отметьте пункт(ы) для выноса в протокол.')
-    const nums = picked.map((c) => c.clause_number).filter(Boolean)
-    const label = nums.length ? `п. ${nums[0]}${nums.length > 1 ? '–' + nums[nums.length - 1] : ''}` : 'Пункт'
-    const ourText = picked.map((c) => `${c.clause_number ? c.clause_number + '. ' : ''}${c.body}`).join('\n\n')
+    const text = getSelectionText()
+    if (!text) return alert('Сначала выделите мышью нужный фрагмент договора в предпросмотре.')
+    const numMatch = text.match(/^\s*(\d+(?:\.\d+)*)/)
+    const label = numMatch ? `п. ${numMatch[1]}` : (text.slice(0, 40) + (text.length > 40 ? '…' : ''))
     try {
-      const { data, error } = await supabase.from('contract_clause_disputes')
-        .insert({ contract_id: contractId, counterparty_id: activeCpId, label, our_text: ourText, created_by_side: side })
-        .select('id').single()
+      const { error } = await supabase.from('contract_clause_disputes')
+        .insert({ contract_id: contractId, counterparty_id: activeCpId, label, our_text: text, created_by_side: side })
       if (error) throw error
-      const links = picked.map((c) => ({ dispute_id: data.id, clause_id: c.id }))
-      await supabase.from('contract_clause_dispute_clauses').insert(links)
-      setSelected(new Set())
-      load()
+      window.getSelection()?.removeAllRanges()
+      loadDisputes()
     } catch (err) {
       alert('Ошибка создания разногласия: ' + (err.message || err))
     }
@@ -183,7 +158,7 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
     if (!window.confirm('Удалить разногласие из протокола?')) return
     const { error } = await supabase.from('contract_clause_disputes').delete().eq('id', id)
     if (error) return alert('Ошибка: ' + error.message)
-    load()
+    loadDisputes()
   }
   async function addComment(dispute) {
     const body = (replyDrafts[dispute.id] || '').trim()
@@ -195,24 +170,24 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
     if (error) return alert('Ошибка: ' + error.message)
     setReplyDrafts((p) => ({ ...p, [dispute.id]: '' }))
     setReplyNonce((p) => ({ ...p, [dispute.id]: (p[dispute.id] || 0) + 1 }))
-    load()
+    loadDisputes()
   }
-
-  if (loading) return <div className="cct-wrap"><div className="cct-empty">Загрузка…</div></div>
-  if (loadError) return <div className="cct-wrap"><div className="cct-error">{loadError}</div></div>
 
   return (
     <div className="cct-wrap">
+      {/* Тулбар */}
       <div className="cct-toolbar">
         <div className="cct-toolbar-left">
-          {canEditClauseText && (
-            <>
-              <label className={`btn-primary cct-file${importing ? ' is-disabled' : ''}`}>
-                {importing ? 'Загрузка…' : (clauses.length ? 'Заменить шаблон (.docx)' : 'Загрузить шаблон (.docx)')}
-                <input ref={fileRef} type="file" accept=".docx" hidden disabled={importing} onChange={handleImport} />
-              </label>
-              <button type="button" className="btn-secondary" onClick={addClause}>+ Пункт</button>
-            </>
+          {canUpload && (
+            <label className={`btn-primary cct-file${importing ? ' is-disabled' : ''}`}>
+              {importing ? 'Загрузка…' : (templateDoc ? 'Заменить шаблон (.docx)' : 'Загрузить шаблон (.docx)')}
+              <input ref={fileRef} type="file" accept=".docx" hidden disabled={importing} onChange={handleUpload} />
+            </label>
+          )}
+          {templateDoc && canCreateDispute && (
+            <button type="button" className="btn-secondary" onClick={createDisputeFromSelection}>
+              Вынести выделенное в протокол
+            </button>
           )}
         </div>
         {isEmployee && parties.length > 1 && (
@@ -225,49 +200,23 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
         )}
       </div>
 
-      {/* Текст договора по пунктам */}
+      {/* Текст договора — предпросмотр как в Word */}
       <section className="cct-section">
-        <h3>Текст договора {clauses.length > 0 && <span className="cct-count">{clauses.length} пунктов</span>}</h3>
-        {clauses.length === 0 ? (
+        <h3>Текст договора</h3>
+        {!templateDoc ? (
           <div className="cct-empty">
             {isEmployee
-              ? 'Загрузите шаблон договора из .docx — он разобьётся на пункты, которые можно обсуждать.'
+              ? 'Загрузите шаблон договора (.docx) — он отобразится как в Word, и можно будет выделять пункты для протокола.'
               : 'Текст договора пока не загружен представителем СУ-10.'}
           </div>
         ) : (
           <>
-            {canCreateDispute && selected.size > 0 && (
-              <div className="cct-selbar">
-                Выбрано пунктов: {selected.size}
-                <button type="button" className="btn-primary" onClick={createDispute}>
-                  {isEmployee ? 'Вынести в протокол разногласий' : 'Вынести на обсуждение'}
-                </button>
-                <button type="button" className="btn-link" onClick={() => setSelected(new Set())}>Сбросить</button>
-              </div>
+            {templateDoc && canCreateDispute && (
+              <p className="cct-preview-hint">Выделите нужный пункт (или несколько) мышью и нажмите «Вынести выделенное в протокол».</p>
             )}
-            <div className="cct-clauses">
-              {clauses.map((c) => (
-                <div key={c.id} className={`cct-clause${c.is_heading ? ' is-heading' : ''}`} style={{ marginLeft: `${(c.level - 1) * 1.25}rem` }}>
-                  {canCreateDispute && !c.is_heading && (
-                    <input type="checkbox" className="cct-clause-cb" checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} />
-                  )}
-                  <span className="cct-clause-num">{c.clause_number}</span>
-                  {canEditClauseText ? (
-                    <AutoGrowTextarea
-                      className="cct-clause-body"
-                      minHeight={36}
-                      defaultValue={c.body}
-                      onBlur={(e) => e.target.value !== c.body && saveClause(c.id, { body: e.target.value })}
-                    />
-                  ) : (
-                    <div className="cct-clause-body ro">{c.body}</div>
-                  )}
-                  {canEditClauseText && (
-                    <button type="button" className="cct-clause-del" title="Удалить пункт" onClick={() => deleteClause(c.id)}>×</button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <Suspense fallback={<div className="cct-empty">Загрузка предпросмотра…</div>}>
+              <DocxPreview s3Key={templateDoc.s3_key} containerRef={previewRef} />
+            </Suspense>
           </>
         )}
       </section>
@@ -275,11 +224,15 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
       {/* Протокол разногласий */}
       <section className="cct-section">
         <h3>Протокол разногласий {activeDisputes.length > 0 && <span className="cct-count">{activeDisputes.length}</span>}</h3>
-        {activeDisputes.length === 0 ? (
+        {loadError ? (
+          <div className="cct-error">{loadError}</div>
+        ) : loading ? (
+          <div className="cct-empty">Загрузка…</div>
+        ) : activeDisputes.length === 0 ? (
           <div className="cct-empty">
             {isEmployee
-              ? 'Разногласий пока нет. Контрагент вносит пункты на обсуждение из своего кабинета, либо отметьте пункты выше и вынесите сами.'
-              : 'Разногласий пока нет. Отметьте пункт(ы) выше и нажмите «Вынести на обсуждение», чтобы предложить свою редакцию.'}
+              ? 'Разногласий пока нет. Контрагент вносит пункты из своего кабинета, либо выделите текст выше и вынесите сами.'
+              : 'Разногласий пока нет. Выделите пункт в договоре и нажмите «Вынести выделенное в протокол», чтобы предложить свою редакцию.'}
           </div>
         ) : (
           <div className="cct-disputes">

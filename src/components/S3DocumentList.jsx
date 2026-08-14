@@ -43,7 +43,7 @@ function formatDateTime(iso) {
   return `${dd}.${mm}.${yyyy} ${hh}:${mi}`
 }
 
-export default function S3DocumentList({ ownerType, ownerId, title = 'Документы', canEdit: canEditProp, category = null, onChange }) {
+export default function S3DocumentList({ ownerType, ownerId, title = 'Документы', canEdit: canEditProp, category = null, excludeCategory = null, onChange }) {
   const { isEmployee } = useRole()
   const canEdit = canEditProp !== undefined ? canEditProp : isEmployee
 
@@ -60,13 +60,14 @@ export default function S3DocumentList({ ownerType, ownerId, title = 'Докум
     setError(null)
     try {
       const list = await fetchDocuments(ownerType, ownerId, category)
-      setDocuments(list)
+      // Служебные категории (напр. шаблон согласования) не показываем в общем списке.
+      setDocuments(excludeCategory ? list.filter((d) => d.doc_category !== excludeCategory) : list)
     } catch (e) {
       setError(e.message || 'Не удалось загрузить список документов')
     } finally {
       setLoading(false)
     }
-  }, [ownerType, ownerId, category])
+  }, [ownerType, ownerId, category, excludeCategory])
 
   useEffect(() => { reload() }, [reload])
 
