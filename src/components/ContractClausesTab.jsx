@@ -212,10 +212,17 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
         ) : (
           <>
             {templateDoc && canCreateDispute && (
-              <p className="cct-preview-hint">Выделите нужный пункт (или несколько) мышью и нажмите «Вынести выделенное в протокол».</p>
+              <p className="cct-preview-hint">
+                Выделите нужный пункт (или несколько) мышью и нажмите «Вынести выделенное в протокол».
+                {activeDisputes.length > 0 && <span className="cct-hint-legend"> Пункты в протоколе подсвечены <span className="cct-hint-swatch" />.</span>}
+              </p>
             )}
             <Suspense fallback={<div className="cct-empty">Загрузка предпросмотра…</div>}>
-              <DocxPreview s3Key={templateDoc.s3_key} containerRef={previewRef} />
+              <DocxPreview
+                s3Key={templateDoc.s3_key}
+                containerRef={previewRef}
+                highlights={activeDisputes.map((d) => d.our_text)}
+              />
             </Suspense>
           </>
         )}

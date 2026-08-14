@@ -32,6 +32,14 @@
 /* Выделение текста в предпросмотре — заметное. */
 .docx-preview-body ::selection { background: rgba(59, 130, 246, 0.35); }
 
+/* Абзацы, вынесенные в протокол разногласий — мягкая жёлтая подсветка + акцент слева. */
+.docx-preview-body p.cct-disputed,
+.docx-preview-body td.cct-disputed {
+  background: rgba(255, 196, 0, 0.28);
+  box-shadow: inset 3px 0 0 rgba(230, 150, 0, 0.9);
+  border-radius: 2px;
+}
+
 @media (max-width: 640px) {
   .docx-preview-wrap { max-height: 70vh; }
 }

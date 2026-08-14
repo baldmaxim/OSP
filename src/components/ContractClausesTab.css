@@ -29,6 +29,16 @@
   color: var(--text-secondary);
   margin: 0 0 0.5rem;
 }
+.cct-hint-legend { color: var(--text-tertiary); }
+.cct-hint-swatch {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  vertical-align: -0.15rem;
+  border-radius: 3px;
+  background: rgba(255, 196, 0, 0.5);
+  box-shadow: inset 2px 0 0 rgba(230, 150, 0, 0.9);
+}
 
 .cct-empty, .cct-error {
   padding: 1rem; border: 1px dashed var(--border-color); border-radius: 8px;

@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { renderAsync } from 'docx-preview'
 import { requestDownloadUrl } from '../services/s3'
 import './DocxPreview.css'
 
+const norm = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim()
+
 // Предпросмотр .docx «как в Word» через docx-preview. Берёт файл из S3 по s3Key,
 // рендерит в контейнер (только чтение). Пробрасывает ref контейнера наружу через
 // containerRef, чтобы родитель мог читать выделение (window.getSelection) внутри него.
-function DocxPreview({ s3Key, containerRef }) {
+// highlights — массив текстов разногласий (our_text): совпавшие абзацы подсвечиваются.
+function DocxPreview({ s3Key, containerRef, highlights = [] }) {
   const localRef = useRef(null)
   const styleRef = useRef(null)
   const [status, setStatus] = useState('loading') // loading | ready | error
@@ -45,6 +48,28 @@ function DocxPreview({ s3Key, containerRef }) {
     run()
     return () => { cancelled = true }
   }, [s3Key, containerRef])
+
+  // Подсветка абзацев, вынесенных в протокол. Абзац красим, если его текст целиком
+  // входит в текст разногласия (выделяли пункт целиком) либо разногласие целиком
+  // внутри абзаца (выделяли фрагмент одного пункта).
+  const applyHighlights = useCallback(() => {
+    const bodyEl = localRef.current
+    if (!bodyEl) return
+    const targets = norm(highlights.join('\n')) // быстрый предварительный фильтр
+    const normed = highlights.map(norm).filter((t) => t.length >= 3)
+    bodyEl.querySelectorAll('p.cct-disputed, td.cct-disputed').forEach((el) => el.classList.remove('cct-disputed'))
+    if (normed.length === 0 || !targets) return
+    bodyEl.querySelectorAll('p, td').forEach((el) => {
+      const pt = norm(el.textContent)
+      if (pt.length < 3) return
+      const hit = normed.some((dt) => dt.includes(pt) || (dt.length >= 20 && pt.includes(dt)))
+      if (hit) el.classList.add('cct-disputed')
+    })
+  }, [highlights])
+
+  useEffect(() => {
+    if (status === 'ready') applyHighlights()
+  }, [status, applyHighlights])
 
   return (
     <div className="docx-preview-wrap">
