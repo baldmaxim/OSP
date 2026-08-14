@@ -266,39 +266,33 @@ function ContractClausesTab({ contractId, parties = [], canEdit, side = 'employe
         </div>
       )}
 
-      {/* Тулбар */}
-      {(canUpload || (isEmployee && parties.length > 1)) && (
-        <div className="cct-toolbar">
-          <div className="cct-toolbar-left">
-            {canUpload && (
-              <label className={`cct-upload${importing ? ' is-disabled' : ''}`}>
-                <IconUpload />
-                {importing ? 'Загрузка…' : (templateDoc ? 'Заменить шаблон' : 'Загрузить шаблон .docx')}
-                <input ref={fileRef} type="file" accept=".docx" hidden disabled={importing} onChange={handleUpload} />
-              </label>
-            )}
-          </div>
-          {isEmployee && parties.length > 1 && (
-            <div className="cct-party-pick">
-              <span>Протокол с:</span>
-              <select value={activeCpId || ''} onChange={(e) => setActiveCpId(e.target.value)}>
-                {parties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Текст договора — предпросмотр как в Word */}
+      {/* Текст договора — предпросмотр как в Word. Единый заголовок-бар с действиями. */}
       <section className="cct-section">
         <div className="cct-section-head">
           <h3>Текст договора</h3>
-          {templateDoc && (
-            <button type="button" className="cct-collapse-btn" onClick={() => setTextCollapsed((v) => !v)}>
-              <IconChevron up={!textCollapsed} />
-              {textCollapsed ? 'Развернуть' : 'Свернуть'}
-            </button>
-          )}
+          <div className="cct-head-actions">
+            {isEmployee && parties.length > 1 && (
+              <div className="cct-party-pick">
+                <span>Протокол&nbsp;с:</span>
+                <select value={activeCpId || ''} onChange={(e) => setActiveCpId(e.target.value)}>
+                  {parties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            )}
+            {canUpload && (
+              <label className={`cct-btn cct-btn-accent${importing ? ' is-disabled' : ''}`}>
+                <IconUpload />
+                {importing ? 'Загрузка…' : (templateDoc ? 'Заменить шаблон' : 'Загрузить шаблон')}
+                <input ref={fileRef} type="file" accept=".docx" hidden disabled={importing} onChange={handleUpload} />
+              </label>
+            )}
+            {templateDoc && (
+              <button type="button" className="cct-btn" onClick={() => setTextCollapsed((v) => !v)}>
+                <IconChevron up={!textCollapsed} />
+                {textCollapsed ? 'Развернуть' : 'Свернуть'}
+              </button>
+            )}
+          </div>
         </div>
         {!templateDoc ? (
           <div className="cct-empty">
