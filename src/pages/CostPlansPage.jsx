@@ -73,7 +73,7 @@ function CostPlansPage() {
       const { data, error } = await supabase
         .from('tenders')
         .select(`
-          id, object_id, status, tender_type, cost_plan_status, cost_plan_link,
+          id, object_id, public_tender_number, status, tender_type, cost_plan_status, cost_plan_link,
           cost_plan_responsible_id, cost_plan_start_date, cost_plan_end_date,
           start_date, end_date, tender_start_date, tender_end_date,
           work_description, cost_plan_notes, deleted_at,
@@ -276,6 +276,7 @@ function CostPlansPage() {
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase()
     filtered = filtered.filter(t =>
+      String(t.public_tender_number ?? '').includes(q) ||
       (t.work_description || '').toLowerCase().includes(q) ||
       (t.objects?.name || '').toLowerCase().includes(q) ||
       (t.cost_plan_responsible?.full_name || '').toLowerCase().includes(q) ||
@@ -378,7 +379,7 @@ function CostPlansPage() {
         <input
           type="search"
           className="cost-plans-search"
-          placeholder="🔍 Поиск по объекту, описанию, ответственному…"
+          placeholder="🔍 Поиск по № тендера, объекту, описанию, ответственному…"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -423,7 +424,14 @@ function CostPlansPage() {
         <table className="data-table">
           <thead>
             <tr>
-              <th style={{ width: '52px' }}>№ п/п</th>
+              <th
+                className="sortable-th"
+                onClick={() => toggleSort('public_tender_number')}
+                title="Номер тендера. Кликните для сортировки"
+                style={{ width: '64px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+              >
+                №<br />тендера{sortIndicator('public_tender_number')}
+              </th>
               <th style={{ width: '150px' }}>Объект</th>
               <th>Описание работ</th>
               <th>Ответственный</th>
@@ -467,9 +475,11 @@ function CostPlansPage() {
                 </td>
               </tr>
             ) : (
-              visible.map((t, idx) => (
+              visible.map((t) => (
                 <tr key={t.id}>
-                  <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</td>
+                  <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                    {t.public_tender_number ?? '—'}
+                  </td>
                   <td style={{ width: '150px', maxWidth: '150px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                     {t.objects?.name || '—'}
                   </td>

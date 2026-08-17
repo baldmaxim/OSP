@@ -46,6 +46,9 @@ function VorsPage() {
   const [searchQuery, setSearchQuery] = useState('') // task 239: поиск
   const [allContacts, setAllContacts] = useState([])
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
+  // task 432: сортировка по номеру тендера (клик по заголовку колонки «№ тендера»)
+  const [sortKey, setSortKey] = useState('') // '' | 'public_tender_number'
+  const [sortDir, setSortDir] = useState('asc') // 'asc' | 'desc'
   // task 393: документы «ВОРы и РД» (S3, категория 'vor')
   const [vorDocsModalTenderId, setVorDocsModalTenderId] = useState(null)
   const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
@@ -69,7 +72,7 @@ function VorsPage() {
       const { data, error } = await supabase
         .from('tenders')
         .select(`
-          id, object_id, status, tender_type, vor_status, vor_link,
+          id, object_id, public_tender_number, status, tender_type, vor_status, vor_link,
           vor_responsible_id, vor_start_date, vor_end_date,
           start_date, end_date, work_description, deleted_at,
           objects(name, status),
@@ -225,6 +228,16 @@ function VorsPage() {
     }
   }
 
+  // task 432: сортировка по клику на заголовок колонки
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+  const sortIndicator = (key) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
 
   if (loading) {
     return (
@@ -264,10 +277,25 @@ function VorsPage() {
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase()
     filtered = filtered.filter(t =>
+      String(t.public_tender_number ?? '').includes(q) ||
       (t.objects?.name || '').toLowerCase().includes(q) ||
       (t.work_description || '').toLowerCase().includes(q) ||
       (t.vor_responsible?.full_name || '').toLowerCase().includes(q)
     )
+  }
+
+  // task 432: сортировка по выбранной колонке (сейчас — только № тендера)
+  if (sortKey) {
+    filtered = [...filtered].sort((a, b) => {
+      const av = a[sortKey] || ''
+      const bv = b[sortKey] || ''
+      if (av === bv) return 0
+      // пустые значения уходят в конец независимо от направления
+      if (!av) return 1
+      if (!bv) return -1
+      const cmp = av < bv ? -1 : 1
+      return sortDir === 'asc' ? cmp : -cmp
+    })
   }
 
   // task 267: удалённые тендеры — в отдельной вкладке «Удалённые»
@@ -350,7 +378,7 @@ function VorsPage() {
         <input
           type="search"
           className="cost-plans-search"
-          placeholder="🔍 Поиск по объекту, описанию, ответственному…"
+          placeholder="🔍 Поиск по № тендера, объекту, описанию, ответственному…"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -403,7 +431,14 @@ function VorsPage() {
         <table className="data-table">
           <thead>
             <tr>
-              <th style={{ width: '52px' }}>№ п/п</th>
+              <th
+                className="sortable-th"
+                onClick={() => toggleSort('public_tender_number')}
+                title="Номер тендера. Кликните для сортировки"
+                style={{ width: '64px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+              >
+                №<br />тендера{sortIndicator('public_tender_number')}
+              </th>
               <th>Объект</th>
               <th>Описание работ</th>
               <th>Ответственный</th>
@@ -430,9 +465,11 @@ function VorsPage() {
                 </td>
               </tr>
             ) : (
-              visible.map((t, idx) => (
+              visible.map((t) => (
                 <tr key={t.id}>
-                  <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{idx + 1}</td>
+                  <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                    {t.public_tender_number ?? '—'}
+                  </td>
                   <td>
                     {t.object_id ? (
                       <Link
