@@ -23,6 +23,16 @@ import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 
+// Реестр общий для двух отделов, поэтому у объекта показываем, к какому он относится:
+// ОС — основное строительство, ГО — гарантийное обслуживание.
+const isWarrantyObject = (status) => status === 'warranty_service'
+const ObjectDeptBadge = ({ status }) => (
+  <span
+    className={`obj-dept-badge ${isWarrantyObject(status) ? 'is-go' : 'is-os'}`}
+    title={isWarrantyObject(status) ? 'Гарантийное обслуживание' : 'Основное строительство'}
+  >{isWarrantyObject(status) ? 'ГО' : 'ОС'}</span>
+)
+
 // Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
 const VAT_RATE_OPTIONS = ['', '0', '5', '7', '10', '20', '22']
 
@@ -213,9 +223,8 @@ function ContractRegistry() {
   // (примечание юриста и примечания в приложениях к договору).
   const hideNotes = scopedObjectIds.length > 0
 
-  // Раздел работает только с основным строительством (гарантийный отдел пока убран):
-  // заходим сразу в него, без экрана выбора отдела.
-  const department = 'construction'
+  // Раздел — единый реестр без выбора отдела: договоры ведутся и по объектам
+  // основного строительства, и по объектам гарантийного обслуживания.
   const [activeTab, setActiveTab] = useState('all')
 
   const [contracts, setContracts] = useState([])
@@ -282,7 +291,10 @@ function ContractRegistry() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
 
-  const objectStatus = department === 'construction' ? 'main_construction' : 'warranty_service'
+  // Реестр договоров — общий для обоих отделов: и основное строительство (ОС),
+  // и гарантийное обслуживание (ГО). Фильтра по статусу объекта здесь нет намеренно —
+  // иначе договор, заведённый на объект ГО, пропадал бы из реестра сразу после сохранения.
+  // Разделение по отделам, если понадобится, делается фильтром «Объект».
 
   // Универсальная запись в аудит-лог (task 187)
   const logContractEvent = async (contractId, eventType, payload = {}) => {
@@ -305,15 +317,13 @@ function ContractRegistry() {
   }
 
   useEffect(() => {
-    if (department) {
-      fetchContracts()
-      fetchObjects()
-      fetchCounterparties()
-      fetchContacts()
-      fetchTenders()
-    }
+    fetchContracts()
+    fetchObjects()
+    fetchCounterparties()
+    fetchContacts()
+    fetchTenders()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [department])
+  }, [])
 
   const fetchContracts = async () => {
     try {
@@ -332,7 +342,6 @@ function ContractRegistry() {
       // Задача 391: сортировка по объекту (затем по дате договора). Сортируем в JS,
       // т.к. серверный .order() по join-колонке objects.name недоступен.
       const filtered = (data || [])
-        .filter(c => c.objects?.status === objectStatus)
         // Скоуп по объекту: руководитель, привязанный к объекту, видит только его договоры.
         .filter(c => scopedObjectIds.length === 0 || scopedObjectIds.includes(c.object_id))
         .sort((a, b) => {
@@ -415,10 +424,13 @@ function ContractRegistry() {
 
   const fetchObjects = async () => {
     try {
+      // Оба отдела: основное строительство И гарантийное обслуживание — договор
+      // можно завести на любой объект. Сортировка по статусу ('main_construction'
+      // < 'warranty_service') ставит ОС первыми, затем по имени.
       const { data, error } = await supabase
         .from('objects')
         .select('id, name, status')
-        .eq('status', objectStatus)
+        .order('status', { ascending: true })
         .order('name', { ascending: true })
       if (error) throw error
       setObjects(data || [])
@@ -929,7 +941,8 @@ function ContractRegistry() {
     return m
   }, [contacts, dedupContacts])
 
-  // Опции фильтра «Объект» — из объектов текущего отдела
+  // Опции фильтра «Объект» — объекты обоих отделов (ОС и ГО), по алфавиту:
+  // отдел виден по бейджу в списке, поэтому разделять их здесь не нужно.
   const objectFilterOptions = useMemo(() =>
     [...objects].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru')),
   [objects])
@@ -950,7 +963,7 @@ function ContractRegistry() {
 
   // Опции для кастомных FilterDropdown (первая — «Все …»).
   const objectDropdownOptions = useMemo(
-    () => [{ value: '', label: 'Все объекты' }, ...objectFilterOptions.map(o => ({ value: o.id, label: o.name }))],
+    () => [{ value: '', label: 'Все объекты' }, ...objectFilterOptions.map(o => ({ value: o.id, label: o.name, status: o.status }))],
     [objectFilterOptions])
   const lawyerDropdownOptions = useMemo(
     () => [{ value: '', label: 'Все юристы' }, ...lawyerFilterOptions.map(l => ({ value: l.id, label: l.name }))],
@@ -1126,6 +1139,11 @@ function ContractRegistry() {
     // договор в ДС из формы (у ДС появится собственный ID и связь с родителем позже).
     if (formData.record_type === 'ds') {
       alert('Создание дополнительных соглашений (ДС) будет реализовано позже. Сейчас можно создавать только основной договор (ДП).')
+      return
+    }
+    // Объект выбирается кастомным пикером (не <select required>), поэтому проверяем сами.
+    if (!formData.object_id) {
+      alert('Выберите объект работ')
       return
     }
     try {
@@ -1435,7 +1453,7 @@ function ContractRegistry() {
     <div className="contract-registry contracts-page-v2">
       <div className="registry-header">
         <div className="header-left">
-          <h2>Договоры — Основное строительство</h2>
+          <h2>Договоры и ДС</h2>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <button
@@ -1502,6 +1520,12 @@ function ContractRegistry() {
             searchable
             searchPlaceholder="Поиск объекта…"
             allLabel="Все объекты"
+            renderOption={(o) => (
+              <span className="obj-option">
+                <span className="obj-option-name">{o.label}</span>
+                {o.value !== '' && <ObjectDeptBadge status={o.status} />}
+              </span>
+            )}
           />
         </div>
         <div className="rf-field rf-field-lawyer">
@@ -1569,7 +1593,10 @@ function ContractRegistry() {
                       ? <span className="status-badge status-deleted">Удалён</span>
                       : <span className={`status-badge ${opt?.className || ''}`}>{opt?.label || '—'}</span>}
                   </div>
-                  <div className="mcard-title">{contract.objects?.name || '—'}</div>
+                  <div className="mcard-title">
+                    {contract.objects?.name || '—'}
+                    {isWarrantyObject(contract.objects?.status) && <ObjectDeptBadge status={contract.objects?.status} />}
+                  </div>
                   {workName && <div className="mcard-desc">{workName}</div>}
                   <div className="mcard-rows">
                     <div className="mcard-row">
@@ -1679,7 +1706,11 @@ function ContractRegistry() {
                     <span className="cell-num-value">{pageStart + index + 1}</span>
                     {appendices.length > 0 && <span className="expand-badge" title={`Приложений: ${appendices.length}`}>{appendices.length}</span>}
                   </td>
-                  <td className="cell-object">{contract.objects?.name || '—'}</td>
+                  <td className="cell-object">
+                    {contract.objects?.name || '—'}
+                    {/* Бейдж только у ГО: объектов ОС большинство, метка на каждом — визуальный шум. */}
+                    {isWarrantyObject(contract.objects?.status) && <ObjectDeptBadge status={contract.objects?.status} />}
+                  </td>
                   <td
                     className={`cell-contract-num ${(!dsNum || !dsDate) && !isDeletedTab ? 'is-incomplete' : ''}`}
                     onClick={(e) => e.stopPropagation()}
@@ -2295,12 +2326,23 @@ function ContractRegistry() {
 
                 <div className="form-group full-width">
                   <label>Объект работ *</label>
-                  <select name="object_id" value={formData.object_id} onChange={handleInputChange} required>
-                    <option value="">Выберите объект</option>
-                    {objects.map(obj => (
-                      <option key={obj.id} value={obj.id}>{obj.name}</option>
-                    ))}
-                  </select>
+                  <FilterDropdown
+                    className="contract-object-picker"
+                    label=""
+                    value={formData.object_id}
+                    onChange={(v) => setFormData(prev => ({ ...prev, object_id: v }))}
+                    options={objects.map(o => ({ value: o.id, label: o.name, status: o.status }))}
+                    searchable
+                    searchPlaceholder="Поиск объекта…"
+                    allLabel="Выберите объект"
+                    renderOption={(o) => (
+                      <span className="obj-option">
+                        <span className="obj-option-name">{o.label}</span>
+                        <ObjectDeptBadge status={o.status} />
+                      </span>
+                    )}
+                  />
+                  <small className="form-hint">Основное строительство (ОС) и гарантийное обслуживание (ГО)</small>
                 </div>
 
                 <div className="form-group full-width">

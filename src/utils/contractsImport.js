@@ -292,7 +292,7 @@ export function validateRow(raw, ctx) {
     }
   }
 
-  // 3) Объект (обязателен, только существующий, main_construction)
+  // 3) Объект (обязателен, только существующий; оба отдела — ОС и ГО)
   const objName = String(raw.object_name == null ? '' : raw.object_name).trim()
   let objectId = null
   if (!objName) {
