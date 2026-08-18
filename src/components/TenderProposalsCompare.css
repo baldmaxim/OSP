@@ -246,6 +246,16 @@
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
+/* Дата загрузки КП на сайт — чуть тусклее «КП от …», чтобы не спорили за внимание. */
+.proposals-summary-matrix-table .psmt-th-cp-uploaded {
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .proposals-summary-matrix-table .psmt-th-cp-remove {
   position: absolute;
   top: 0.3125rem;
@@ -454,6 +464,16 @@
   color: var(--text-tertiary);
   letter-spacing: 0;
   text-transform: none;
+}
+.proposals-table thead .th-cp-uploaded {
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  opacity: 0.85;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
 }
 .proposals-table thead .th-sub {
   text-align: right;

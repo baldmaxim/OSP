@@ -56,7 +56,21 @@ function ContractorProposalsPage() {
           participationStatus: p.status
         }))
 
-      setTenders(activeTenders)
+      // Когда КП по каждому тендеру реально ушло на сайт — самая свежая строка расценок.
+      // По одному запросу на тендер (их единицы), ошибки не критичны.
+      const uploaded = await Promise.all(activeTenders.map(t =>
+        supabase
+          .from('tender_counterparty_proposals')
+          .select('created_at')
+          .eq('tender_id', t.id)
+          .eq('counterparty_id', contractorInfo.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          .then(r => r?.data?.created_at || null, () => null)
+      ))
+
+      setTenders(activeTenders.map((t, i) => ({ ...t, uploadedAt: uploaded[i] })))
     } catch (error) {
       console.error('Ошибка загрузки тендеров:', error)
     } finally {
@@ -161,6 +175,8 @@ function ContractorProposalsPage() {
 
           await parseAndSaveProposals(jsonData)
           setUploadSuccess(true)
+          // Обновляем список — чтобы сразу показать дату загрузки КП.
+          fetchTenders()
 
         } catch (parseError) {
           console.error('Ошибка парсинга:', parseError)
@@ -245,6 +261,15 @@ function ContractorProposalsPage() {
     return new Date(dateString).toLocaleDateString('ru-RU')
   }
 
+  // Момент загрузки КП на сайт — с временем, чтобы было видно «когда именно».
+  const formatDateTime = (dateString) => {
+    if (!dateString) return ''
+    const d = new Date(dateString)
+    if (Number.isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('ru-RU') + ', ' +
+      d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  }
+
   const getStatusLabel = (status) => {
     const labels = {
       'request_sent': 'Запрос отправлен',
@@ -308,6 +333,11 @@ function ContractorProposalsPage() {
                       {getStatusLabel(tender.participationStatus)}
                     </span>
                   </div>
+                  {tender.uploadedAt && (
+                    <div className="tender-uploaded" title="Когда КП загрузили на сайт">
+                      КП загружено {formatDateTime(tender.uploadedAt)}
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
@@ -329,6 +359,13 @@ function ContractorProposalsPage() {
                 <p>{selectedTender.work_description}</p>
                 <div className="tender-dates">
                   <span>Срок подачи: {formatDate(selectedTender.tender_start_date)} — {formatDate(selectedTender.tender_end_date)}</span>
+                  {(() => {
+                    // Берём дату из списка: после загрузки список обновляется и она появляется здесь же.
+                    const uploadedAt = tenders.find(t => t.id === selectedTender.id)?.uploadedAt
+                    return uploadedAt
+                      ? <span title="Когда КП загрузили на сайт">КП загружено: {formatDateTime(uploadedAt)}</span>
+                      : null
+                  })()}
                 </div>
               </div>
 

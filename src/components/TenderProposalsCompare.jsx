@@ -27,6 +27,21 @@ const fmtDate = (iso) => {
   return d.toLocaleDateString('ru-RU')
 }
 
+// task 432/КП: момент фактической загрузки КП на сайт (created_at строк предложения).
+// Отличается от proposal_date — та вводится вручную в модалке («КП от …»).
+const fmtDateTime = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('ru-RU') + ', ' +
+    d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
+// Подпись «загружено дд.мм.гггг, чч:мм» под названием контрагента в шапке колонки.
+const UploadedAt = ({ at, className }) => (
+  at ? <div className={className} title="Когда КП загрузили на сайт">загружено {fmtDateTime(at)}</div> : null
+)
+
 // «Р»/«р-…» → работа, иначе материал.
 const isWorkRow = (it) => {
   const c = String(it.code || '').trim().toLowerCase()
@@ -107,19 +122,23 @@ function TenderProposalsCompare({
 
   // Контрагенты в текущем scope.
   const counterpartiesInScope = useMemo(() => {
-    const map = new Map() // cp_id → { id, name, latestDate }
+    const map = new Map() // cp_id → { id, name, latestDate, uploadedAt }
     for (const p of proposals) {
       if (!itemIds.has(p.estimate_item_id)) continue
       const cur = map.get(p.counterparty_id)
       const date = p.proposal_date || null
+      // Дата загрузки на сайт — самая свежая created_at среди строк этого КП.
+      const uploaded = p.created_at || null
       if (!cur) {
         map.set(p.counterparty_id, {
           id: p.counterparty_id,
           name: p.counterparties?.name || p.counterparty_id,
           latestDate: date,
+          uploadedAt: uploaded,
         })
-      } else if (date && (!cur.latestDate || date > cur.latestDate)) {
-        cur.latestDate = date
+      } else {
+        if (date && (!cur.latestDate || date > cur.latestDate)) cur.latestDate = date
+        if (uploaded && (!cur.uploadedAt || uploaded > cur.uploadedAt)) cur.uploadedAt = uploaded
       }
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
@@ -687,6 +706,7 @@ function SummaryMatrixTable({
               <th key={cp.id} colSpan={3} className="psmt-th-cp">
                 <div className="psmt-th-cp-name" title={cp.name}>{cp.name}</div>
                 {cp.latestDate && <div className="psmt-th-cp-date">КП от {fmtDate(cp.latestDate)}</div>}
+                <UploadedAt at={cp.uploadedAt} className="psmt-th-cp-uploaded" />
                 {canEdit && (
                   <button
                     type="button"
@@ -974,6 +994,7 @@ function SourceTable({
               <th key={cp.id} colSpan={5} className="th-cp">
                 <div className="th-cp-name" title={cp.name}>{cp.name}</div>
                 {cp.latestDate && <div className="th-cp-date">КП от {fmtDate(cp.latestDate)}</div>}
+                <UploadedAt at={cp.uploadedAt} className="th-cp-uploaded" />
               </th>
             ))}
           </tr>
@@ -1160,6 +1181,7 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
               <th key={cp.id} colSpan={2} className="th-cp">
                 <div className="th-cp-name" title={cp.name}>{cp.name}</div>
                 {cp.latestDate && <div className="th-cp-date">КП от {fmtDate(cp.latestDate)}</div>}
+                <UploadedAt at={cp.uploadedAt} className="th-cp-uploaded" />
               </th>
             ))}
           </tr>

@@ -204,6 +204,7 @@ S3-ключ объекта формируется автоматически: `{
 | `S3_BUCKET` | Имя бакета (`osp`) |
 | `S3_ACCESS_KEY_ID` | Access Key ID для S3 |
 | `S3_SECRET_ACCESS_KEY` | Secret Access Key для S3 |
+| `ANTHROPIC_API_KEY` | Ключ Claude API для Edge Function `ai-assist` (см. раздел «ИИ-помощник») |
 
 `SUPABASE_URL` и `SUPABASE_ANON_KEY` без префикса `VITE_` Supabase инжектирует в runtime функции автоматически — указывать не нужно.
 
@@ -278,6 +279,25 @@ curl -i -X OPTIONS https://s3.cloud.ru/osp \
 1. Добавить ключ в `FOLDER_BY_OWNER` в [supabase/functions/s3-presign/index.ts](supabase/functions/s3-presign/index.ts).
 2. Передавать новый `ownerType` в `<S3DocumentList>`.
 3. Никаких миграций БД не нужно — `owner_type` это свободный TEXT.
+
+## ИИ-помощник по протоколу разногласий (Edge Function `ai-assist`)
+
+Подсказка юристу по конкретному пункту договора во вкладке «Согласование». Архитектура та же, что у S3: браузер → Edge Function → Claude API. Ключ Anthropic живёт только в секретах функции, в браузер не попадает.
+
+- Edge Function [supabase/functions/ai-assist/index.ts](supabase/functions/ai-assist/index.ts) — `action='clause_suggest'`, модель `claude-opus-5`, требует Authorization (Supabase JWT), как `s3-presign`.
+- Frontend сервис [src/services/aiAssist.js](src/services/aiAssist.js): `suggestClause({mode, clauseLabel, ourText, counterpartyText, finalText, counterpartyName, contract, comments})` + список режимов `AI_MODES`.
+- UI — модалка `AiSuggestModal` внутри [src/components/ContractClausesTab.jsx](src/components/ContractClausesTab.jsx), кнопка «ИИ» на пункте видна только сотруднику (`isEmployee`).
+
+Режимы (`mode`): `compromise` — компромиссная редакция пункта, `reply` — ответ подрядчику (позиция + текст), `risks` — разбор рисков редакции подрядчика. В модель уходит только этот пункт и переписка по нему. Результат — черновик: вставить в итоговую редакцию или отправить в обсуждение решает человек.
+
+**Деплой** (после `supabase link`, разово):
+
+```bash
+supabase secrets set ANTHROPIC_API_KEY=<claude-api-key>
+supabase functions deploy ai-assist
+```
+
+Без секрета функция отвечает 500 «ANTHROPIC_API_KEY не задан в секретах функции».
 
 ## Excel Import/Export (xlsx)
 

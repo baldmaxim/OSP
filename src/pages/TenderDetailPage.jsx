@@ -34,6 +34,15 @@ const fmtMoney = (v) => (v === null || v === undefined || v === '' || !Number.is
   ? '—'
   : MONEY_FMT.format(Number(v)) + ' ₽'
 
+// Момент загрузки КП на сайт — «дд.мм.гггг, чч:мм».
+const formatKpUploadedAt = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('ru-RU') + ', ' +
+    d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
 // task 406/407/408: normName и supplyKey вынесены в ../utils/supplyRateHelpers
 // (переиспользуются в TenderProposalsCompare для колонки «Цена от снабжения»).
 
@@ -597,6 +606,9 @@ function TenderDetailPage() {
 
   const [tender, setTender] = useState(null)
   const [tenderCounterparties, setTenderCounterparties] = useState([])
+  // Когда КП контрагента фактически попало на сайт: counterparty_id → ISO-дата.
+  // Источник — загруженный файл КП, а если файла нет (кабинет подрядчика) — строки расценок.
+  const [kpUploadedAt, setKpUploadedAt] = useState({})
   // task 427: DnD-перестановка участников
   const [draggedTc, setDraggedTc] = useState(null) // { id }
   const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
@@ -1545,6 +1557,44 @@ function TenderDetailPage() {
     XLSX.writeFile(wb, `ВОР_${docLabel}${tenderLabel}.xlsx`)
   }
 
+  // Даты загрузки КП по каждому участнику. Сначала файлы КП (одним запросом),
+  // затем — только для участников без файла — самая свежая строка расценок.
+  // Ошибки глушим: подпись «загружено …» вспомогательная и не должна ронять вкладку.
+  const loadKpUploadedAt = async (participants) => {
+    if (!tenderId || participants.length === 0) return
+    const map = {}
+    try {
+      const { data: files } = await supabase
+        .from('tender_proposal_files')
+        .select('counterparty_id, created_at')
+        .eq('tender_id', tenderId)
+        .eq('file_kind', 'commercial_proposal')
+        .order('created_at', { ascending: false })
+      for (const f of files || []) {
+        if (!map[f.counterparty_id]) map[f.counterparty_id] = f.created_at
+      }
+      const withoutFile = participants
+        .map(p => p.counterparty_id)
+        .filter(id => id && !map[id])
+      const rows = await Promise.all(withoutFile.map(id =>
+        supabase
+          .from('tender_counterparty_proposals')
+          .select('counterparty_id, created_at')
+          .eq('tender_id', tenderId)
+          .eq('counterparty_id', id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      ))
+      for (const r of rows) {
+        if (r?.data?.created_at) map[r.data.counterparty_id] = r.data.created_at
+      }
+    } catch (err) {
+      console.warn('Не удалось получить даты загрузки КП:', err.message || err)
+    }
+    setKpUploadedAt(map)
+  }
+
   const fetchTenderData = async () => {
     setLoading(true)
     try {
@@ -1583,6 +1633,7 @@ function TenderDetailPage() {
 
       if (cpError) throw cpError
       setTenderCounterparties(counterpartiesData || [])
+      loadKpUploadedAt(counterpartiesData || [])
     } catch (error) {
       console.error('Ошибка загрузки данных тендера:', error.message)
       alert('Ошибка загрузки данных: ' + error.message)
@@ -2757,6 +2808,14 @@ function TenderDetailPage() {
                               <option value="proposal_provided">КП предоставлено</option>
                               <option value="declined">Отказ</option>
                             </select>
+                            {kpUploadedAt[tc.counterparty_id] && (
+                              <div
+                                title="Когда КП загрузили на сайт"
+                                style={{ marginTop: '0.25rem', fontSize: '0.6875rem', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}
+                              >
+                                КП загружено {formatKpUploadedAt(kpUploadedAt[tc.counterparty_id])}
+                              </div>
+                            )}
                           </td>
                           <td style={{ verticalAlign: 'top', padding: '0.5rem' }}>
                             <TenderCounterpartyFiles

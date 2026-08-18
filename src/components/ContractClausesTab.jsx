@@ -4,7 +4,12 @@ import { useRole } from '../contexts/RoleContext'
 import AutoGrowTextarea from './AutoGrowTextarea'
 import { uploadFile, fetchDocuments, deleteDocument } from '../services/s3'
 import { formatMoney } from '../utils/estimateImport'
+import { diffWords, countDiffWords } from '../utils/textDiff'
+import { suggestClause, AI_MODES } from '../services/aiAssist'
 import './ContractClausesTab.css'
+
+// Наша сторона в протоколе и в чате подписывается всегда так.
+const OUR_COMPANY = 'СУ-10'
 
 function fmtDate(s) {
   if (!s) return '—'
@@ -33,6 +38,7 @@ const norm = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' '
 const Svg = (p) => <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p} />
 const IconUpload = () => <Svg><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></Svg>
 const IconChevron = ({ up }) => <Svg style={{ transform: up ? 'rotate(180deg)' : 'none' }}><path d="m6 9 6 6 6-6" /></Svg>
+const IconSpark = () => <Svg><path d="M12 3v4M12 17v4M3 12h4M17 12h4" /><path d="M12 8.5 13.4 11l2.6 1-2.6 1-1.4 2.5L10.6 13 8 12l2.6-1L12 8.5Z" /></Svg>
 
 // Красивый выбор статуса: цветной бейдж-кнопка + выпадающее меню с цветными пунктами.
 function StatusPicker({ value, onChange }) {
@@ -71,6 +77,130 @@ function fmtDateTime(s) {
   return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+// Четвёртая колонка пункта: что подрядчик убрал и что добавил относительно
+// исходной редакции. Пословный diff + легенда и счётчик «+N / −M слов».
+function ClauseDiff({ base, draft, cpName }) {
+  const parts = useMemo(() => diffWords(base || '', draft || ''), [base, draft])
+  const { added, removed } = useMemo(() => countDiffWords(parts), [parts])
+
+  return (
+    <div className="cct-ed tone-diff">
+      <div className="cct-ed-label">Изменения</div>
+      <div className="cct-diff-box">
+        <div className="cct-diff-legend">
+          <span className="cct-diff-key"><i className="cct-diff-sw added" />добавлено</span>
+          <span className="cct-diff-key"><i className="cct-diff-sw removed" />удалено</span>
+          {(added > 0 || removed > 0) && (
+            <span className="cct-diff-count" title="Изменено слов относительно исходной редакции">
+              +{added} / −{removed}
+            </span>
+          )}
+        </div>
+        {!draft ? (
+          <div className="cct-diff-empty">{cpName} ещё не предложил свою редакцию.</div>
+        ) : added === 0 && removed === 0 ? (
+          <div className="cct-diff-empty">Текст совпадает с исходной редакцией.</div>
+        ) : (
+          <div className="cct-diff-text">
+            {parts.map((p, i) => (
+              p.type === 'same'
+                ? <span key={i}>{p.text}</span>
+                : <span key={i} className={`cct-diff-${p.type}`}>{p.text}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Модалка ИИ-помощника по одному пункту протокола: три режима подсказки,
+// результат можно вставить в итоговую редакцию или отправить в обсуждение.
+// Ответ ИИ — черновик: решение всё равно принимает юрист.
+function AiSuggestModal({ dispute, cpName, contract, comments, canInsertFinal, onInsertFinal, onSendToThread, onClose }) {
+  const [mode, setMode] = useState('compromise')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState('')
+
+  const run = useCallback(async (nextMode) => {
+    setLoading(true)
+    setError('')
+    setResult('')
+    try {
+      const data = await suggestClause({
+        mode: nextMode,
+        clauseLabel: dispute.label,
+        ourText: dispute.our_text,
+        counterpartyText: dispute.counterparty_text,
+        finalText: dispute.final_text,
+        counterpartyName: cpName,
+        contract: {
+          number: contract?.contract_number || '',
+          date: contract?.contract_date || '',
+          object: contract?.objects?.name || '',
+          work: contract?.work_name || '',
+        },
+        comments,
+      })
+      setResult(data.text)
+    } catch (err) {
+      setError(err.message || String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [dispute, cpName, contract, comments])
+
+  return (
+    <div className="cct-modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="cct-modal" role="dialog" aria-modal="true">
+        <div className="cct-modal-head">
+          <h3><IconSpark /> ИИ-помощник — {dispute.label || 'пункт'}</h3>
+          <button type="button" className="cct-modal-close" onClick={onClose} aria-label="Закрыть">×</button>
+        </div>
+
+        <div className="cct-modal-body">
+          <div className="cct-ai-modes">
+            {AI_MODES.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                className={`cct-ai-mode${mode === m.value ? ' is-active' : ''}`}
+                title={m.hint}
+                disabled={loading}
+                onClick={() => { setMode(m.value); run(m.value) }}
+              >{m.label}</button>
+            ))}
+          </div>
+
+          {loading && <div className="cct-empty">ИИ читает пункт и переписку…</div>}
+          {error && <div className="cct-error">{error}</div>}
+          {!loading && !error && !result && (
+            <div className="cct-empty">Выберите, что подсказать по этому пункту.</div>
+          )}
+          {result && <div className="cct-ai-result">{result}</div>}
+        </div>
+
+        <div className="cct-modal-foot">
+          <span className="cct-ai-note">Черновик ИИ. Проверьте формулировку перед отправкой контрагенту.</span>
+          <div className="cct-modal-actions">
+            {result && (
+              <>
+                <button type="button" className="cct-btn" onClick={() => navigator.clipboard?.writeText(result)}>Копировать</button>
+                <button type="button" className="cct-btn" onClick={() => onSendToThread(result)}>В обсуждение</button>
+                {canInsertFinal && (
+                  <button type="button" className="cct-btn cct-btn-accent" onClick={() => onInsertFinal(result)}>В итоговую редакцию</button>
+                )}
+              </>
+            )}
+            <button type="button" className="cct-btn" onClick={onClose}>Закрыть</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Согласование условий договора: Word-предпросмотр текста + протокол разногласий
 // (наша / контрагент / итоговая редакция) + обсуждение.
 // side='employee' — СУ-10 (грузит шаблон, правит итоговую редакцию/статус).
@@ -87,6 +217,13 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
   const [loadError, setLoadError] = useState('')
   const [importing, setImporting] = useState(false)
   const [activeCpId, setActiveCpId] = useState(isEmployee ? (parties[0]?.id || null) : counterpartyId)
+  // Наименование компании подрядчика: у сотрудника — из списка сторон договора,
+  // в кабинете подрядчика — из его собственного профиля.
+  const cpName = useMemo(() => {
+    if (!isEmployee) return contractorInfo?.name || 'Подрядчик'
+    const party = parties.find((p) => p.id === activeCpId) || parties[0]
+    return party?.name || contract?.counterparties?.name || 'Подрядчик'
+  }, [isEmployee, contractorInfo, parties, activeCpId, contract])
   const [replyDrafts, setReplyDrafts] = useState({})
   const [replyNonce, setReplyNonce] = useState({})
   const [textCollapsed, setTextCollapsed] = useState(false)
@@ -94,6 +231,7 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
   const [statusFilter, setStatusFilter] = useState(null) // null | 'open' | 'in_review' | 'agreed' | 'rejected'
   const [paraOrder, setParaOrder] = useState([])   // порядок абзацев документа (для сортировки)
   const [popup, setPopup] = useState(null)          // { text, top, left } — всплывашка у выделения
+  const [aiDispute, setAiDispute] = useState(null)  // пункт, по которому открыт ИИ-помощник
   const fileRef = useRef(null)
   const previewRef = useRef(null) // контейнер docx-preview — читаем из него выделение
 
@@ -393,6 +531,14 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
                       {cnt > 0 && <span className="cct-thread-count" title="Сообщений в обсуждении">{cnt}</span>}
                     </button>
                     <div className="cct-dispute-actions">
+                      {isEmployee && (
+                        <button
+                          type="button"
+                          className="cct-ai-btn"
+                          title="ИИ-помощник: компромиссная редакция, ответ подрядчику, риски"
+                          onClick={() => setAiDispute(d)}
+                        ><IconSpark /> ИИ</button>
+                      )}
                       {canEditFinal && <StatusPicker value={d.status} onChange={(v) => saveDispute(d.id, { status: v })} />}
                       {canEditFinal && <button type="button" className="cct-clause-del" title="Удалить" onClick={() => deleteDispute(d.id)}>×</button>}
                     </div>
@@ -401,11 +547,11 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
                     <div className="cct-dispute-body">
                       <div className="cct-editions">
                         <div className="cct-ed tone-our">
-                          <div className="cct-ed-label">Наша редакция</div>
+                          <div className="cct-ed-label">Исходная редакция</div>
                           <div className="cct-ed-text ro">{d.our_text || '—'}</div>
                         </div>
                         <div className="cct-ed tone-cp">
-                          <div className="cct-ed-label">Редакция контрагента</div>
+                          <div className="cct-ed-label" title={cpName}>Редакция {cpName}</div>
                           {canEditOwnEdition ? (
                             <AutoGrowTextarea className="cct-ed-text" minHeight={60} defaultValue={d.counterparty_text}
                               placeholder="Ваша предлагаемая формулировка пункта…"
@@ -423,17 +569,25 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
                             <div className="cct-ed-text ro">{d.final_text || '—'}</div>
                           )}
                         </div>
+                        <ClauseDiff base={d.our_text} draft={d.counterparty_text} cpName={cpName} />
                       </div>
                       <div className="cct-thread">
-                        {(commentsByDispute[d.id] || []).map((c) => (
-                          <div key={c.id} className={`cct-msg cct-msg-${c.author_side}`}>
-                            <div className="cct-msg-meta">
-                              <span className="cct-msg-author">{c.author_side === 'employee' ? (c.author_name || 'Сотрудник') : (c.author_name || 'Контрагент')}</span>
-                              <span className="cct-msg-date">{fmtDateTime(c.created_at)}</span>
+                        {(commentsByDispute[d.id] || []).map((c) => {
+                          // Свои сообщения — справа, сообщения второй стороны — слева
+                          // (как в мессенджерах), поэтому ориентируемся на side текущего кабинета.
+                          const isOwn = c.author_side === side
+                          const company = c.author_side === 'employee' ? OUR_COMPANY : cpName
+                          return (
+                            <div key={c.id} className={`cct-msg cct-msg-${c.author_side}${isOwn ? ' is-own' : ''}`}>
+                              <div className="cct-msg-meta">
+                                <span className="cct-msg-author">{c.author_name || (c.author_side === 'employee' ? 'Сотрудник' : 'Подрядчик')}</span>
+                                <span className="cct-msg-company" title="Сторона договора">{company}</span>
+                              </div>
+                              <div className="cct-msg-body">{c.body}</div>
+                              <div className="cct-msg-date">{fmtDateTime(c.created_at)}</div>
                             </div>
-                            <div className="cct-msg-body">{c.body}</div>
-                          </div>
-                        ))}
+                          )
+                        })}
                         <div className="cct-reply">
                           <AutoGrowTextarea key={`r-${d.id}-${replyNonce[d.id] || 0}`} className="cct-reply-input" minHeight={36}
                             defaultValue={replyDrafts[d.id] || ''}
@@ -506,6 +660,30 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
         )}
       </aside>
       </div>{/* /cct-layout */}
+
+      {aiDispute && (
+        <AiSuggestModal
+          dispute={aiDispute}
+          cpName={cpName}
+          contract={contract}
+          comments={commentsByDispute[aiDispute.id] || []}
+          canInsertFinal={canEditFinal}
+          onClose={() => setAiDispute(null)}
+          onInsertFinal={async (text) => {
+            // Не затираем молча уже написанную итоговую редакцию.
+            if (aiDispute.final_text && !window.confirm('Заменить текущую итоговую редакцию текстом от ИИ?')) return
+            await saveDispute(aiDispute.id, { final_text: text })
+            setAiDispute(null)
+          }}
+          onSendToThread={(text) => {
+            // Кладём в поле ответа — отправляет человек, прочитав текст.
+            setReplyDrafts((p) => ({ ...p, [aiDispute.id]: text }))
+            setReplyNonce((p) => ({ ...p, [aiDispute.id]: (p[aiDispute.id] || 0) + 1 }))
+            setExpandedDisputes((p) => new Set(p).add(aiDispute.id))
+            setAiDispute(null)
+          }}
+        />
+      )}
     </div>
   )
 }

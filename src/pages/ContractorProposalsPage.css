@@ -125,6 +125,14 @@
   color: var(--text-tertiary);
 }
 
+/* Дата загрузки КП на сайт — отдельной строкой под статусом участия. */
+.tender-uploaded {
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
 .tender-status {
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
