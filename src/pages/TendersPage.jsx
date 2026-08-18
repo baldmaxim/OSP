@@ -2825,6 +2825,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               className="btn-primary"
                               onClick={() => {
                                 setSelectedTenderForCounterparty(tender.id)
+                                // Сбрасываем поиск/фильтр ПРИ ОТКРЫТИИ, а не только при
+                                // закрытии: иначе оставшийся с прошлого раза фильтр молча
+                                // прячет часть контрагентов, и кажется, что компании нет.
+                                setCounterpartySearchQuery('')
+                                setCounterpartyWorkTypeFilter('')
+                                setSelectedCounterpartyIds([])
                                 setShowAddCounterpartyModal(true)
                               }}
                             >
@@ -3586,6 +3592,30 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       />
                     )}
                   </div>
+
+                  {/* Сколько строк скрыто фильтром — иначе непонятно, почему нужной
+                      компании нет в списке. Рядом — сброс в один клик. */}
+                  {(counterpartySearchQuery.trim() || counterpartyWorkTypeFilter) && (
+                    <div style={{
+                      marginTop: '0.5rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      fontSize: '0.8125rem',
+                      color: 'var(--text-secondary)'
+                    }}>
+                      <span>Показано {availableCounterparties.length} из {counterparties.length}</span>
+                      <button
+                        className="btn-secondary"
+                        onClick={() => {
+                          setCounterpartySearchQuery('')
+                          setCounterpartyWorkTypeFilter('')
+                        }}
+                      >
+                        Сбросить фильтры
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Таблица контрагентов */}
@@ -3594,9 +3624,21 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     Нет активных контрагентов
                   </p>
                 ) : availableCounterparties.length === 0 ? (
-                  <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
-                    Контрагенты не найдены по заданным критериям
-                  </p>
+                  <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
+                    <p>Контрагенты не найдены по заданным критериям</p>
+                    <p style={{ fontSize: '0.8125rem' }}>
+                      Всего активных контрагентов: {counterparties.length}
+                    </p>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        setCounterpartySearchQuery('')
+                        setCounterpartyWorkTypeFilter('')
+                      }}
+                    >
+                      Показать всех
+                    </button>
+                  </div>
                 ) : (
                   <>
                     <div style={{

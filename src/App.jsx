@@ -102,9 +102,14 @@ function EmployeeLayout() {
                 отдельного маршрута для неё нет — ссылка из уведомления ведёт сюда. */}
             <Route path="/tasks" element={<PermissionRoute section="tasks"><TasksPage /></PermissionRoute>} />
             <Route path="/tenders" element={<PermissionRoute section="tenders"><TendersHubPage /></PermissionRoute>} />
-            <Route path="/tenders/construction" element={<PermissionRoute section="tenders"><TendersPage department="construction" tenderType="main" /></PermissionRoute>} />
-            <Route path="/tenders/warranty" element={<PermissionRoute section="tenders"><TendersPage department="warranty" tenderType="main" /></PermissionRoute>} />
-            <Route path="/tenders/materials" element={<PermissionRoute section="tenders"><TendersPage tenderType="materials" /></PermissionRoute>} />
+            {/* key обязателен: все три маршрута рендерят ОДИН И ТОТ ЖЕ компонент, и без
+                разных ключей React переиспользует его экземпляр при переходе между
+                отделами — состояние (фильтры списка, фильтры окна выбора контрагентов,
+                раскрытая строка) переезжало из основного строительства в гарантийное
+                и обратно, из-за чего часть данных «пропадала» из списков. */}
+            <Route path="/tenders/construction" element={<PermissionRoute section="tenders"><TendersPage key="tenders-construction" department="construction" tenderType="main" /></PermissionRoute>} />
+            <Route path="/tenders/warranty" element={<PermissionRoute section="tenders"><TendersPage key="tenders-warranty" department="warranty" tenderType="main" /></PermissionRoute>} />
+            <Route path="/tenders/materials" element={<PermissionRoute section="tenders"><TendersPage key="tenders-materials" tenderType="materials" /></PermissionRoute>} />
             <Route path="/tenders/:tenderId" element={<PermissionRoute section="tenders"><TenderDetailPage /></PermissionRoute>} />
             <Route path="/cost-plans" element={<PermissionRoute section="tenders"><CostPlansPage /></PermissionRoute>} />
             <Route path="/vors" element={<PermissionRoute section="tenders"><VorsPage /></PermissionRoute>} />
