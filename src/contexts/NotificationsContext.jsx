@@ -11,6 +11,7 @@ import { useRole } from './RoleContext'
 // Даты «окончания»:
 //   тендер   → tender_end_date (окончание тендерной процедуры)
 //   договор  → signed_date     (планируемая дата подписания)
+//   задача   → due_date        (крайний срок; просроченные тоже показываем)
 //
 // Ключ уведомления СТАБИЛЕН для конкретной сущности (tender:<id>, contract:<id>,
 // kp_review:<id>:<status>) и НЕ зависит от количества дней до срока. Поэтому один
@@ -67,11 +68,14 @@ function loadReadSet() {
 }
 
 export function NotificationsProvider({ children }) {
-  const { isLoggedIn, isEmployee, canView, scopedObjectIds } = useRole()
+  const { isLoggedIn, isEmployee, canView, scopedObjectIds, user } = useRole()
   // canView — нестабильная функция (пересоздаётся каждый рендер). Забираем нужные
   // права как примитивы, чтобы refresh/useEffect не уходили в цикл перезапросов.
   const canTenders = canView('tenders')
   const canContracts = canView('contracts')
+  // task 433: задачи уведомляют конкретного человека, поэтому нужен его user_id.
+  const canTasks = canView('tasks')
+  const userId = user?.id || null
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(false)
   const [readSet, setReadSet] = useState(loadReadSet)
@@ -138,10 +142,38 @@ export function NotificationsProvider({ children }) {
         if (scopedObjectIds.length > 0) kpReviewQ = kpReviewQ.in('tenders.object_id', scopedObjectIds)
       }
 
-      const [tendersRes, contractsRes, kpReviewRes] = await Promise.all([
+      // task 433: мои задачи с приближающимся/прошедшим сроком и задачи, которые
+      // ждут МОЕЙ приёмки (я — постановщик, исполнитель сдал работу). Два простых
+      // запроса вместо одного с or(and(...)) — читаемее и надёжнее.
+      const myTasksQ = canTasks && userId
+        ? supabase
+          .from('tasks')
+          .select('id, title, status, due_date, objects(name)')
+          .is('deleted_at', null)
+          .eq('assignee_user_id', userId)
+          .neq('status', 'done')
+          .not('due_date', 'is', null)
+          .lte('due_date', horizonStr)
+          .order('due_date', { ascending: true })
+          .limit(1000)
+        : null
+      const reviewTasksQ = canTasks && userId
+        ? supabase
+          .from('tasks')
+          .select('id, title, status, due_date, updated_at, assignee_user_id, objects(name)')
+          .is('deleted_at', null)
+          .eq('created_by_user_id', userId)
+          .eq('status', 'review')
+          .order('updated_at', { ascending: false })
+          .limit(1000)
+        : null
+
+      const [tendersRes, contractsRes, kpReviewRes, myTasksRes, reviewTasksRes] = await Promise.all([
         tendersQ ? tendersQ : Promise.resolve({ data: [], error: null }),
         contractsQ ? contractsQ : Promise.resolve({ data: [], error: null }),
         kpReviewQ ? kpReviewQ : Promise.resolve({ data: [], error: null }),
+        myTasksQ ? myTasksQ : Promise.resolve({ data: [], error: null }),
+        reviewTasksQ ? reviewTasksQ : Promise.resolve({ data: [], error: null }),
       ])
       if (tendersRes.error) throw tendersRes.error
       if (contractsRes.error) throw contractsRes.error
@@ -213,6 +245,45 @@ export function NotificationsProvider({ children }) {
         }
       }
 
+      // task 433: задачи. Запросы best-effort — если миграция 20260818 ещё не
+      // применена, просто пропускаем, не ломая остальные уведомления.
+      if (myTasksRes.error || reviewTasksRes.error) {
+        console.warn('Задачи не загружены (миграция 20260818?):',
+          (myTasksRes.error || reviewTasksRes.error).message)
+      } else {
+        for (const t of myTasksRes.data || []) {
+          // Просроченные НЕ отбрасываем (в отличие от тендеров/договоров):
+          // для задачи просрочка — главный повод напомнить.
+          const days = daysUntil(t.due_date)
+          if (days > HORIZON_DAYS) continue
+          out.push({
+            kind: 'task',
+            id: t.id,
+            key: `task:${t.id}:due`,
+            objectName: t.title,
+            subtitle: t.objects?.name || '',
+            badge: null,
+            date: t.due_date,
+            days,
+            to: `/tasks?task=${t.id}`,
+          })
+        }
+        for (const t of reviewTasksRes.data || []) {
+          out.push({
+            kind: 'task',
+            id: t.id,
+            key: `task:${t.id}:review`,
+            objectName: t.title,
+            subtitle: 'Исполнитель сдал работу — нужна ваша приёмка',
+            taskReview: true,
+            badge: null,
+            date: t.updated_at,
+            days: 0,
+            to: `/tasks?task=${t.id}`,
+          })
+        }
+      }
+
       // Самые срочные (просроченные и «сегодня») — вверху. Проверки КП (days=0)
       // остаются в порядке добавления (по дате проверки, свежие сверху).
       out.sort((a, b) => a.days - b.days)
@@ -223,7 +294,7 @@ export function NotificationsProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }, [isLoggedIn, isEmployee, canTenders, canContracts, scopedObjectIds])
+  }, [isLoggedIn, isEmployee, canTenders, canContracts, canTasks, userId, scopedObjectIds])
 
   useEffect(() => { refresh() }, [refresh])
 

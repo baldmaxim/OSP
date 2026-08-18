@@ -43,7 +43,8 @@ const CheckAllIcon = () => (
 function NotifItem({ n, read, onOpen }) {
   const isReview = n.kind === 'kp_review'
   const dateLabel = isReview ? 'Проверено'
-    : n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание'
+    : n.kind === 'task' ? (n.taskReview ? 'Сдано на приёмку' : 'Срок')
+      : n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание'
   return (
     <li
       className={`notif-item ${isReview ? 'is-review' : urgencyClass(n.days)}${read ? ' is-read' : ''}`}
@@ -60,6 +61,9 @@ function NotifItem({ n, read, onOpen }) {
             <span className={`notif-review-chip ${n.reviewStatus === 'has_remarks' ? 'is-remarks' : 'is-ok'}`}>
               {n.reviewStatus === 'has_remarks' ? 'Есть замечания' : 'Проверено'}
             </span>
+          ) : n.taskReview ? (
+            // Задача сдана исполнителем: срок тут ни при чём, важно само действие.
+            <span className="notif-review-chip is-remarks">Ждёт приёмки</span>
           ) : (
             <span className={`notif-days ${urgencyClass(n.days)}`}>{daysLabel(n.days)}</span>
           )}
@@ -83,7 +87,7 @@ function NotifItem({ n, read, onOpen }) {
 function NotificationsPage() {
   const navigate = useNavigate()
   const { notifications, unreadCount, loading, markAllRead, markRead, isRead } = useNotifications()
-  const [tab, setTab] = useState('tender') // 'tender' | 'contract' | 'kp_review'
+  const [tab, setTab] = useState('tender') // 'tender' | 'contract' | 'kp_review' | 'task'
 
   const openItem = (n) => {
     markRead(n.key)
@@ -94,11 +98,16 @@ function NotificationsPage() {
   const tenderItems = useMemo(() => notifications.filter(n => n.kind === 'tender'), [notifications])
   const contractItems = useMemo(() => notifications.filter(n => n.kind === 'contract'), [notifications])
   const kpReviewItems = useMemo(() => notifications.filter(n => n.kind === 'kp_review'), [notifications])
+  const taskItems = useMemo(() => notifications.filter(n => n.kind === 'task'), [notifications])
   const tenderUnread = useMemo(() => tenderItems.filter(n => !isRead(n.key)).length, [tenderItems, isRead])
   const contractUnread = useMemo(() => contractItems.filter(n => !isRead(n.key)).length, [contractItems, isRead])
   const kpUnread = useMemo(() => kpReviewItems.filter(n => !isRead(n.key)).length, [kpReviewItems, isRead])
+  const taskUnread = useMemo(() => taskItems.filter(n => !isRead(n.key)).length, [taskItems, isRead])
 
-  const activeItems = tab === 'tender' ? tenderItems : tab === 'contract' ? contractItems : kpReviewItems
+  const activeItems = tab === 'tender' ? tenderItems
+    : tab === 'contract' ? contractItems
+      : tab === 'task' ? taskItems
+        : kpReviewItems
 
   return (
     <div className="notifications-page">
@@ -114,8 +123,8 @@ function NotificationsPage() {
       </div>
 
       <p className="notif-hint">
-        Тендеры и договоры, у которых окончание в ближайшие 5 дней.
-        Напоминания повторяются за 5, 3 дня и в день окончания.
+        Тендеры и договоры, у которых окончание в ближайшие 5 дней, и ваши задачи
+        с горящим сроком. Напоминания повторяются за 5, 3 дня и в день окончания.
       </p>
 
       {/* Переключатель между тендерами и договорами со счётчиками (task 424) */}
@@ -142,6 +151,16 @@ function NotificationsPage() {
         </button>
         <button
           role="tab"
+          aria-selected={tab === 'task'}
+          className={`notif-toggle-btn notif-toggle-task${tab === 'task' ? ' is-active' : ''}`}
+          onClick={() => setTab('task')}
+        >
+          <span>Задачи</span>
+          <span className="notif-toggle-count">{taskItems.length}</span>
+          {taskUnread > 0 && <span className="notif-toggle-dot" title={`${taskUnread} непрочитанных`} />}
+        </button>
+        <button
+          role="tab"
           aria-selected={tab === 'kp_review'}
           className={`notif-toggle-btn notif-toggle-review${tab === 'kp_review' ? ' is-active' : ''}`}
           onClick={() => setTab('kp_review')}
@@ -160,11 +179,15 @@ function NotificationsPage() {
             ? 'Нет тендеров с приближающимся сроком.'
             : tab === 'contract'
               ? 'Нет договоров с приближающимся сроком.'
-              : 'Нет недавно проверенных КП.'}</p>
+              : tab === 'task'
+                ? 'Нет задач с горящим сроком.'
+                : 'Нет недавно проверенных КП.'}</p>
           <p className="notif-empty-hint">
             {tab === 'kp_review'
               ? 'Здесь появятся результаты проверки КП аналитиком — их нужно направить контрагенту.'
-              : 'Здесь появятся записи, которые скоро завершаются.'}
+              : tab === 'task'
+                ? 'Здесь появятся ваши задачи со сроком в ближайшие дни и задачи, ждущие вашей приёмки.'
+                : 'Здесь появятся записи, которые скоро завершаются.'}
           </p>
         </div>
       ) : (

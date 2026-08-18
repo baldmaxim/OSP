@@ -7,6 +7,7 @@ import ThemeToggle from './ThemeToggle'
 import BrandLogo from './BrandLogo'
 import {
   IconGeneral,
+  IconTasks,
   IconTenders,
   IconAnalysis,
   IconContracts,
@@ -61,7 +62,12 @@ function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { logout, canView, isAdmin, isSuperAdmin, isEmployee, role, roleLabels, scopedObjectIds } = useRole()
-  const { unreadCount } = useNotifications()
+  const { unreadCount, notifications } = useNotifications()
+
+  // task 433: бейдж «Задачи» — мои задачи, которые горят (просрочены или на сегодня),
+  // плюс задачи, ждущие моей приёмки. Берём из уже загруженных уведомлений, без
+  // дополнительного запроса к БД.
+  const urgentTasksCount = notifications.filter(n => n.kind === 'task' && n.days <= 0).length
 
   // Мобильное меню: скрытый off-canvas drawer вместо горизонтальной ленты.
   const isMobileNav = useMediaQuery('(max-width: 768px)')
@@ -128,6 +134,16 @@ function Sidebar() {
       tone: 'amber',
       Icon: IconGeneral,
       visible: canView('objects') || canView('contacts') || canView('counterparties') || canView('general_documents'),
+    },
+    {
+      key: 'tasks',
+      to: '/tasks',
+      label: 'Задачи',
+      tone: 'teal',
+      Icon: IconTasks,
+      // task 433: распределение задач по сотрудникам (канбан-доска + реестр).
+      visible: canView('tasks'),
+      badge: urgentTasksCount,
     },
     {
       key: 'tenders',

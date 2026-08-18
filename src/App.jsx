@@ -49,6 +49,7 @@ const ContractorNegotiationsPage = lazy(() => import('./pages/ContractorNegotiat
 const BSMPage = lazy(() => import('./pages/BSMPage'))
 const GeneralInfoPage = lazy(() => import('./pages/GeneralInfoPage'))
 const GeneralDocumentsPage = lazy(() => import('./pages/GeneralDocumentsPage'))
+const TasksPage = lazy(() => import('./pages/TasksPage'))
 const RatesRegistryPage = lazy(() => import('./pages/RatesRegistryPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
@@ -97,6 +98,9 @@ function EmployeeLayout() {
             <Route path="/general/contacts" element={<PermissionRoute section="contacts"><ContactsPage /></PermissionRoute>} />
             <Route path="/general/counterparties" element={<PermissionRoute section="counterparties"><CounterpartiesPage /></PermissionRoute>} />
             <Route path="/general/documents" element={<PermissionRoute section="general_documents"><GeneralDocumentsPage /></PermissionRoute>} />
+            {/* task 433: карточка задачи открывается query-параметром ?task=<id>,
+                отдельного маршрута для неё нет — ссылка из уведомления ведёт сюда. */}
+            <Route path="/tasks" element={<PermissionRoute section="tasks"><TasksPage /></PermissionRoute>} />
             <Route path="/tenders" element={<PermissionRoute section="tenders"><TendersHubPage /></PermissionRoute>} />
             <Route path="/tenders/construction" element={<PermissionRoute section="tenders"><TendersPage department="construction" tenderType="main" /></PermissionRoute>} />
             <Route path="/tenders/warranty" element={<PermissionRoute section="tenders"><TendersPage department="warranty" tenderType="main" /></PermissionRoute>} />

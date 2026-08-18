@@ -31,6 +31,7 @@ const FOLDER_BY_OWNER: Record<string, string> = {
   dc_request: 'dc-requests',
   general: 'general',
   general_document: 'general-documents',
+  task: 'tasks',
 }
 
 const UPLOAD_TTL_SEC = 15 * 60     // 15 минут — окно для PUT

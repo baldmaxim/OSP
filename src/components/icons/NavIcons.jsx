@@ -19,6 +19,16 @@ export const IconGeneral = () => (
   <NavSvg><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></NavSvg>
 )
 
+// Задачи — планшет со списком и галочкой
+export const IconTasks = () => (
+  <NavSvg>
+    <path d="M9 3h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+    <path d="M16 4.5h1.5A1.5 1.5 0 0 1 19 6v13.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19.5V6a1.5 1.5 0 0 1 1.5-1.5H8" />
+    <path d="m8.5 12.5 1.75 1.75L14 10.5" />
+    <path d="M8.5 17.5h7" />
+  </NavSvg>
+)
+
 // Тендеры — молоток аукциона
 export const IconTenders = () => (
   <NavSvg>

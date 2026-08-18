@@ -1,0 +1,670 @@
+/* task 433 — раздел «Задачи».
+   Базовые модалка/кнопки/поля формы берутся из ContractRegistry.css (импортируется
+   страницей), здесь — только то, что специфично для доски, реестра и карточки задачи. */
+
+.tasks-page {
+  padding: 1.5rem 2rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 100%;
+}
+
+/* ── Шапка ─────────────────────────────────────────────────────────────────── */
+.tasks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.tasks-header h2 {
+  margin: 0;
+  font-size: 1.375rem;
+  color: var(--text-primary);
+}
+.tasks-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.tasks-view-switch {
+  display: inline-flex;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 2px;
+}
+.tasks-view-switch button {
+  border: none;
+  background: none;
+  padding: 0.4rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.tasks-view-switch button.is-active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: var(--card-shadow);
+}
+
+/* ── Скоуп-вкладки (Мои / Я поставил / …) ──────────────────────────────────── */
+.tasks-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-color);
+}
+.tasks-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: none;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tasks-tab:hover { color: var(--text-secondary); }
+.tasks-tab.is-active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+.tasks-tab-count {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+.tasks-tab.is-active .tasks-tab-count {
+  background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+  color: var(--primary-color);
+}
+
+/* ── Панель фильтров ───────────────────────────────────────────────────────── */
+.tasks-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.tasks-search {
+  flex: 0 1 280px;
+  height: 34px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.tasks-search:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+.tasks-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tasks-empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.tasks-empty-hint { font-size: 0.8125rem; }
+
+/* ── Канбан-доска ──────────────────────────────────────────────────────────── */
+.task-board {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 0.75rem;
+  /* Доска занимает остаток высоты экрана, скроллится внутри колонок. */
+  flex: 1;
+  min-height: 0;
+}
+.task-column {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 320px);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.task-column.is-over {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-tertiary));
+}
+.task-column-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.task-column-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.task-column-count {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  background: var(--bg-secondary);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+}
+.task-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  overflow-y: auto;
+  min-height: 60px;
+}
+.task-column-empty {
+  margin: 0;
+  padding: 0.75rem 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* ── Карточка на доске ─────────────────────────────────────────────────────── */
+.task-card {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--border-color-dark);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 0.15s, transform 0.1s;
+}
+.task-card:hover { box-shadow: var(--card-shadow-hover); }
+.task-card.is-dragging { opacity: 0.45; transform: scale(0.98); }
+/* Приоритет — цвет левой границы: заметно, но не кричит. */
+.task-card.tp-high { border-left-color: var(--danger-color); }
+.task-card.tp-normal { border-left-color: var(--border-color-dark); }
+.task-card.tp-low { border-left-color: var(--success-color); }
+
+.task-card-priority {
+  display: inline-block;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--danger-color);
+  margin-bottom: 0.2rem;
+}
+.task-card.tp-low .task-card-priority { color: var(--text-tertiary); }
+
+.task-card-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.task-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.45rem;
+}
+.task-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.task-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+.task-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+.task-count.is-full { color: var(--success-color); }
+
+/* ── Чипы связей ───────────────────────────────────────────────────────────── */
+.task-chip {
+  display: inline-block;
+  max-width: 100%;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.chip-object {
+  color: var(--warning-color);
+  background: color-mix(in srgb, var(--warning-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warning-color) 28%, transparent);
+}
+.chip-tender {
+  color: var(--info-color);
+  background: color-mix(in srgb, var(--info-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--info-color) 28%, transparent);
+}
+.chip-contract {
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary-color) 28%, transparent);
+}
+.task-links { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; }
+
+/* ── Дедлайн-«светофор» ────────────────────────────────────────────────────── */
+.task-due {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.task-due.is-overdue { color: var(--danger-color); background: color-mix(in srgb, var(--danger-color) 14%, transparent); }
+.task-due.is-today { color: var(--warning-color); background: color-mix(in srgb, var(--warning-color) 16%, transparent); }
+.task-due.is-soon { color: var(--warning-color); }
+.task-due.is-upcoming { color: var(--text-tertiary); }
+.task-due.is-none,
+.task-due.is-closed { color: var(--text-tertiary); }
+
+/* ── Аватарка инициалами ───────────────────────────────────────────────────── */
+.task-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+.task-avatar-sm { width: 22px; height: 22px; font-size: 0.625rem; }
+.task-avatar-md { width: 30px; height: 30px; font-size: 0.75rem; }
+.task-avatar.is-empty {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  border: 1px dashed var(--border-color-dark);
+}
+.task-avatar.tone-0 { background: #6d8fbf; }
+.task-avatar.tone-1 { background: #c98a5e; }
+.task-avatar.tone-2 { background: #6fae87; }
+.task-avatar.tone-3 { background: #b07aa8; }
+.task-avatar.tone-4 { background: #d1747f; }
+.task-avatar.tone-5 { background: #5fa8b8; }
+.task-avatar.tone-6 { background: #a3985e; }
+.task-avatar.tone-7 { background: #8a8fbf; }
+
+/* ── Бейджи статуса (дополняют .status-badge из ContractRegistry.css) ──────── */
+.status-badge.ts-new { background: color-mix(in srgb, var(--text-tertiary) 16%, transparent); color: var(--text-secondary); }
+.status-badge.ts-progress { background: color-mix(in srgb, var(--info-color) 16%, transparent); color: var(--info-color); }
+.status-badge.ts-review { background: color-mix(in srgb, var(--warning-color) 18%, transparent); color: var(--warning-color); }
+.status-badge.ts-done { background: color-mix(in srgb, var(--success-color) 18%, transparent); color: var(--success-color); }
+.status-badge.ts-deferred { background: color-mix(in srgb, var(--text-tertiary) 12%, transparent); color: var(--text-tertiary); }
+
+.task-column-head.ts-new .task-column-title { color: var(--text-secondary); }
+.task-column-head.ts-progress .task-column-title { color: var(--info-color); }
+.task-column-head.ts-review .task-column-title { color: var(--warning-color); }
+.task-column-head.ts-done .task-column-title { color: var(--success-color); }
+
+.task-priority-badge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+.task-priority-badge.tp-high { color: var(--danger-color); background: color-mix(in srgb, var(--danger-color) 14%, transparent); }
+.task-priority-badge.tp-normal { color: var(--text-tertiary); background: var(--bg-tertiary); }
+.task-priority-badge.tp-low { color: var(--success-color); background: color-mix(in srgb, var(--success-color) 14%, transparent); }
+
+/* ── Реестр задач ──────────────────────────────────────────────────────────── */
+.task-table-wrap {
+  overflow-x: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+.task-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.task-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+.task-table th.is-sortable { cursor: pointer; user-select: none; }
+.task-table th.is-sorted { color: var(--primary-color); }
+.task-table .sort-caret { font-size: 0.5rem; margin-left: 0.25rem; }
+.task-table tbody tr {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+}
+.task-table tbody tr:hover { background: var(--hover-bg); }
+.task-table tbody tr.is-overdue { background: color-mix(in srgb, var(--danger-color) 6%, transparent); }
+.task-table td { padding: 0.5rem 0.75rem; color: var(--text-primary); vertical-align: middle; }
+.task-table .col-title { min-width: 260px; }
+.task-table .col-person { min-width: 150px; }
+.task-table .col-due,
+.task-table .col-updated { white-space: nowrap; }
+.task-title-cell { font-weight: 600; }
+.task-person { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.task-person-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+  display: inline-block;
+  vertical-align: middle;
+}
+.task-muted { color: var(--text-tertiary); font-size: 0.75rem; }
+
+.tasks-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.tasks-pagination-controls { display: flex; align-items: center; gap: 0.5rem; }
+.tasks-pagination-controls button {
+  min-width: 32px;
+  height: 30px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.tasks-pagination-controls button:disabled { opacity: 0.4; cursor: default; }
+.tasks-pagination-controls select {
+  height: 30px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* ── Карточка задачи (drawer) ──────────────────────────────────────────────── */
+.task-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1000;
+}
+.task-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18);
+  z-index: 1001;
+}
+.task-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.task-drawer-close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  font-size: 1.75rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.task-drawer-close:hover { color: var(--text-secondary); }
+.task-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.task-drawer-foot {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.task-drawer-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+.task-drawer-title-input,
+.task-drawer-desc {
+  width: 100%;
+  resize: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  padding: 0.5rem 0.6rem;
+  font-family: inherit;
+}
+.task-drawer-title-input {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.task-drawer-desc { font-size: 0.8125rem; line-height: 1.5; }
+.task-drawer-title-input:focus,
+.task-drawer-desc:focus { outline: none; border-color: var(--primary-color); background: var(--bg-secondary); }
+.task-desc-text { margin: 0; font-size: 0.8125rem; line-height: 1.55; color: var(--text-secondary); white-space: pre-wrap; }
+
+.task-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.task-hint { font-size: 0.75rem; color: var(--text-tertiary); align-self: center; }
+
+.task-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 0.75rem;
+}
+.task-field { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.task-field-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+.task-field input[type='date'] {
+  height: 34px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+/* Пикеры в карточке и в форме — во всю ширину поля, как остальные контролы. */
+.task-field-picker { display: flex; width: 100%; }
+.task-field-picker .fdrop-trigger { width: 100%; max-width: none; height: 34px; }
+
+.task-section { display: flex; flex-direction: column; gap: 0.5rem; }
+.task-section-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.task-checklist-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+.task-checklist-progress span { display: block; height: 100%; background: var(--success-color); }
+.task-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.task-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+.task-checklist li label { display: flex; align-items: center; gap: 0.45rem; flex: 1; cursor: pointer; }
+.task-checklist li.is-done span { text-decoration: line-through; color: var(--text-tertiary); }
+.task-checklist-del {
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.task-checklist-del:hover { color: var(--danger-color); }
+
+.task-inline-add { display: flex; gap: 0.4rem; }
+.task-inline-add input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.task-inline-add input:focus { outline: none; border-color: var(--primary-color); }
+
+.task-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.task-tabs button {
+  border: none;
+  background: none;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.task-tabs button.is-active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+.task-tab-count {
+  font-size: 0.625rem;
+  font-weight: 700;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  margin-left: 0.25rem;
+}
+
+.task-comments { display: flex; flex-direction: column; gap: 0.5rem; }
+.task-comment {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-tertiary);
+}
+.task-comment.is-mine {
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--primary-color) 25%, transparent);
+}
+.task-comment-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  margin-bottom: 0.2rem;
+}
+.task-comment-body { margin: 0; font-size: 0.8125rem; line-height: 1.5; white-space: pre-wrap; color: var(--text-primary); }
+
+.task-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.task-history li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  border-left: 2px solid var(--border-color);
+  padding-left: 0.6rem;
+}
+.task-history-when { color: var(--text-tertiary); font-size: 0.6875rem; }
+.task-history-what { color: var(--text-primary); }
+
+/* ── Телефон ───────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .tasks-page { padding: 1rem 0.75rem 1.5rem; }
+  .tasks-header h2 { font-size: 1.125rem; }
+  .tasks-search { flex: 1 1 100%; }
+  /* Колонки доски листаются по одной. */
+  .task-board { scroll-snap-type: x mandatory; }
+  .task-column { flex-basis: 85vw; scroll-snap-align: start; max-height: none; }
+  .task-drawer { width: 100vw; border-left: none; }
+  .task-fields { grid-template-columns: 1fr; }
+  .mcard.is-overdue { border-left: 3px solid var(--danger-color); }
+}
