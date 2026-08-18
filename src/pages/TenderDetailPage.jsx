@@ -23,6 +23,15 @@ import '../components/TenderDetail.css'
 // Ниже порога — обычный рендер (поведение 1:1 как раньше, нулевой риск для мелких ВОР).
 const VIRTUALIZE_FROM = 150
 
+// Подписи статусов участника тендера — для истории и отчёта «Работа инженеров»
+// (в выпадающем списке те же значения).
+const PARTICIPANT_STATUS_LABEL = {
+  request_sent: 'Запрос отправлен',
+  accepted_for_work: 'Принято в работу',
+  proposal_provided: 'КП предоставлено',
+  declined: 'Отказ',
+}
+
 // task 261: числа выводим с округлением до сотых
 const fmtNum = (v) => (v === null || v === undefined || v === '')
   ? '—'
@@ -1781,6 +1790,7 @@ function TenderDetailPage() {
       case 'field_updated': return '📝'
       case 'participant_added': return '➕'
       case 'participant_removed': return '➖'
+      case 'participant_status': return '📞'
       default: return '•'
     }
   }
@@ -1809,6 +1819,29 @@ function TenderDetailPage() {
       'Принято в работу': 'status-completed'
     }
     return classes[status] || ''
+  }
+
+  // Запись в журнал по действию с участником тендера (примечание, смена статуса).
+  // Привязка к участнику — внутри JSONB (tc_id), как на странице списка тендеров:
+  // отдельной колонки в tender_audit_log нет. История вторична, поэтому ошибку
+  // только логируем — основное изменение уже сохранено.
+  const logParticipantEvent = async (tenderCounterpartyId, eventType, payload) => {
+    try {
+      const role = localStorage.getItem('userRole') || null
+      const { error } = await supabase.from('tender_audit_log').insert([{
+        tender_id: tenderId,
+        event_type: eventType,
+        field_name: payload.fieldName,
+        old_value: sanitizeDeep({ tc_id: tenderCounterpartyId, cp_name: payload.cpName || null, text: payload.oldText ?? '' }),
+        new_value: sanitizeDeep({ tc_id: tenderCounterpartyId, cp_name: payload.cpName || null, text: payload.newText ?? '' }),
+        description: sanitizeUserText(payload.description) || null,
+        changed_by_role: role,
+        changed_by_name: userProfile?.full_name || null,
+      }])
+      if (error) console.error('Не удалось записать историю по участнику:', describeSupabaseError(error), error)
+    } catch (err) {
+      console.error('Ошибка записи истории по участнику:', err?.message || err)
+    }
   }
 
   const getCounterpartyStatusColor = (status) => {
@@ -1979,6 +2012,9 @@ function TenderDetailPage() {
   }
 
   const handleUpdateParticipantStatus = async (tenderCounterpartyId, newStatus) => {
+    const tc = tenderCounterparties.find(x => x.id === tenderCounterpartyId)
+    const oldStatus = tc?.status || 'request_sent'
+    const cpName = tc?.counterparties?.name || null
     try {
       const { error } = await supabase
         .from('tender_counterparties')
@@ -1987,6 +2023,19 @@ function TenderDetailPage() {
 
       if (error) throw error
 
+      // Отметка «КП предоставлено»/«Отказ» — результат работы с подрядчиком.
+      // Пишем в журнал, чтобы она была видна в истории тендера и в отчёте
+      // «Работа инженеров» (раньше смена статуса нигде не фиксировалась).
+      if (oldStatus !== newStatus) {
+        await logParticipantEvent(tenderCounterpartyId, 'participant_status', {
+          fieldName: 'participant_status',
+          cpName,
+          oldText: PARTICIPANT_STATUS_LABEL[oldStatus] || oldStatus,
+          newText: PARTICIPANT_STATUS_LABEL[newStatus] || newStatus,
+          description: `Статус участника${cpName ? ` (${cpName})` : ''}: ${PARTICIPANT_STATUS_LABEL[oldStatus] || oldStatus} → ${PARTICIPANT_STATUS_LABEL[newStatus] || newStatus}`,
+        })
+      }
+
       setTenderCounterparties(prev =>
         prev.map(tc =>
           tc.id === tenderCounterpartyId
@@ -1994,6 +2043,7 @@ function TenderDetailPage() {
             : tc
         )
       )
+      loadAuditLog()
     } catch (error) {
       console.error('Ошибка обновления статуса:', error)
       alert('Ошибка обновления статуса: ' + error.message)
@@ -2002,6 +2052,9 @@ function TenderDetailPage() {
 
   const handleUpdateParticipantNotes = async (tenderCounterpartyId, notes) => {
     const cleanNotes = sanitizeUserText(notes) || ''
+    const tc = tenderCounterparties.find(x => x.id === tenderCounterpartyId)
+    const oldNotes = sanitizeUserText(tc?.notes || '') || ''
+    const cpName = tc?.counterparties?.name || null
     try {
       const { data, error } = await supabase
         .from('tender_counterparties')
@@ -2022,11 +2075,24 @@ function TenderDetailPage() {
         return
       }
 
+      // Тот же формат записи, что на странице списка тендеров: привязка к участнику
+      // живёт внутри JSONB (tc_id), ключ текста — text.
+      if (cleanNotes !== oldNotes) {
+        await logParticipantEvent(tenderCounterpartyId, 'field_updated', {
+          fieldName: 'participant_notes',
+          cpName,
+          oldText: oldNotes,
+          newText: cleanNotes,
+          description: cpName ? `Примечание участника: ${cpName}` : 'Примечание участника',
+        })
+      }
+
       setTenderCounterparties(prev =>
         prev.map(tc =>
           tc.id === tenderCounterpartyId ? { ...tc, notes: cleanNotes } : tc
         )
       )
+      loadAuditLog()
     } catch (err) {
       console.error('Непредвиденная ошибка при сохранении примечания участника:', err)
       alert('Непредвиденная ошибка при сохранении примечания: ' + (err?.message || err))

@@ -637,6 +637,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   const handleUpdateCounterpartyStatus = async (tenderId, tenderCounterpartyId, newStatus) => {
+    const tc = (tenderCounterparties[tenderId] || []).find(x => x.id === tenderCounterpartyId)
+    const oldStatus = tc?.status || 'request_sent'
+    const cpName = tc?.counterparties?.name || null
     try {
       const { error } = await supabase
         .from('tender_counterparties')
@@ -644,6 +647,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         .eq('id', tenderCounterpartyId)
 
       if (error) throw error
+
+      // Пишем в журнал: отметка «КП предоставлено»/«Отказ» — это результат работы
+      // инженера с подрядчиком, и он должен попадать и в историю тендера, и в отчёт
+      // «Работа инженеров». Раньше смена статуса нигде не фиксировалась.
+      if (oldStatus !== newStatus) {
+        logTenderEvent(tenderId, 'participant_status', {
+          fieldName: 'participant_status',
+          oldValue: { tc_id: tenderCounterpartyId, cp_name: cpName, text: getCounterpartyStatusLabel(oldStatus) },
+          newValue: { tc_id: tenderCounterpartyId, cp_name: cpName, text: getCounterpartyStatusLabel(newStatus) },
+          description: `Статус участника${cpName ? ` (${cpName})` : ''}: ${getCounterpartyStatusLabel(oldStatus)} → ${getCounterpartyStatusLabel(newStatus)}`,
+        })
+      }
 
       // Обновляем локальное состояние
       setTenderCounterparties(prev => ({

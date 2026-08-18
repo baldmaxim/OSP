@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { currencySymbol } from '../utils/estimateImport'
+import EngineersActivity from '../components/reports/EngineersActivity'
 import './ReportsPage.css'
 
 // «В работе» — только активная процедура; «Не начат» сюда не входит.
@@ -567,6 +568,8 @@ function ReportsPage() {
     { key: 'cost_plans', label: 'Планы затрат', icon: '💰', count: s.cp.total },
     { key: 'vors', label: 'ВОРы и РД', icon: '📐', count: s.vor.total },
     { key: 'contracts', label: 'Договоры', icon: '📝', count: s.cTotal },
+    // Счётчик не показываем: данные вкладки грузятся отдельно, по выбранному дню.
+    { key: 'activity', label: 'Работа инженеров', icon: '📞', count: null },
   ]
   const updatedLabel = loadedAt
     ? `Обновлено: сегодня, ${loadedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
@@ -602,7 +605,7 @@ function ReportsPage() {
           >
             <span className="reports-tab-icon" aria-hidden>{tab.icon}</span>
             <span className="reports-tab-label">{tab.label}</span>
-            <span className="reports-tab-count">{tab.count}</span>
+            {tab.count != null && <span className="reports-tab-count">{tab.count}</span>}
           </button>
         ))}
       </nav>
@@ -1163,6 +1166,12 @@ function ReportsPage() {
               </table>
             </section>
           </>
+        )}
+
+        {/* Ежедневная работа инженеров в тендерах — считается по журналу изменений,
+            поэтому вкладка грузит свои данные сама и не зависит от fetchStats. */}
+        {activeTab === 'activity' && (
+          <EngineersActivity scopedObjectIds={scopedObjectIds} />
         )}
       </div>
     </div>
