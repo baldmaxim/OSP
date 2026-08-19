@@ -6,6 +6,12 @@
   --thub-green: #2f9e68;
   --thub-green-soft: rgba(47, 158, 104, 0.09);
   --thub-green-border: rgba(47, 158, 104, 0.26);
+  --thub-violet: #6b64d6;
+  --thub-violet-soft: rgba(107, 100, 214, 0.09);
+  --thub-violet-border: rgba(107, 100, 214, 0.26);
+  --thub-slate: #5f7391;
+  --thub-slate-soft: rgba(95, 115, 145, 0.09);
+  --thub-slate-border: rgba(95, 115, 145, 0.26);
   --thub-shadow-hover: 0 10px 28px rgba(16, 24, 40, 0.08);
 
   background: var(--bg-primary);
@@ -22,6 +28,12 @@
   --thub-green: #57c48a;
   --thub-green-soft: rgba(87, 196, 138, 0.14);
   --thub-green-border: rgba(87, 196, 138, 0.30);
+  --thub-violet: #9b95ee;
+  --thub-violet-soft: rgba(155, 149, 238, 0.14);
+  --thub-violet-border: rgba(155, 149, 238, 0.30);
+  --thub-slate: #93a9c6;
+  --thub-slate-soft: rgba(147, 169, 198, 0.14);
+  --thub-slate-border: rgba(147, 169, 198, 0.30);
   --thub-shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
@@ -112,6 +124,8 @@
 
 .thub-card--blue .thub-accent { background: var(--thub-blue); }
 .thub-card--green .thub-accent { background: var(--thub-green); }
+.thub-card--violet .thub-accent { background: var(--thub-violet); }
+.thub-card--slate .thub-accent { background: var(--thub-slate); }
 
 .thub-card-body {
   display: flex;
@@ -150,6 +164,18 @@
   color: var(--thub-green);
   background: var(--thub-green-soft);
   border-color: var(--thub-green-border);
+}
+
+.thub-badge--violet {
+  color: var(--thub-violet);
+  background: var(--thub-violet-soft);
+  border-color: var(--thub-violet-border);
+}
+
+.thub-badge--slate {
+  color: var(--thub-slate);
+  background: var(--thub-slate-soft);
+  border-color: var(--thub-slate-border);
 }
 
 /* Заголовок + chevron */
@@ -260,6 +286,30 @@
 .thub-btn--green:hover {
   background: var(--thub-green);
   border-color: var(--thub-green);
+  color: #ffffff;
+}
+
+.thub-btn--violet {
+  color: var(--thub-violet);
+  background: var(--thub-violet-soft);
+  border-color: var(--thub-violet-border);
+}
+
+.thub-btn--violet:hover {
+  background: var(--thub-violet);
+  border-color: var(--thub-violet);
+  color: #ffffff;
+}
+
+.thub-btn--slate {
+  color: var(--thub-slate);
+  background: var(--thub-slate-soft);
+  border-color: var(--thub-slate-border);
+}
+
+.thub-btn--slate:hover {
+  background: var(--thub-slate);
+  border-color: var(--thub-slate);
   color: #ffffff;
 }
 
@@ -407,7 +457,9 @@
 
 /* Бейджи в шапке карточки направления — крупнее, чем в списке подразделов. */
 .thub-count--solid,
-.thub-count--solid-green {
+.thub-count--solid-green,
+.thub-count--solid-violet,
+.thub-count--solid-slate {
   height: 26px;
   line-height: 26px;
   font-size: 0.8125rem;
@@ -415,7 +467,9 @@
 }
 
 .thub-count--solid strong,
-.thub-count--solid-green strong {
+.thub-count--solid-green strong,
+.thub-count--solid-violet strong,
+.thub-count--solid-slate strong {
   font-size: 0.9375rem;
 }
 
@@ -429,6 +483,18 @@
   color: var(--thub-green);
   background: var(--thub-green-soft);
   border-color: var(--thub-green-border);
+}
+
+.thub-count--solid-violet {
+  color: var(--thub-violet);
+  background: var(--thub-violet-soft);
+  border-color: var(--thub-violet-border);
+}
+
+.thub-count--solid-slate {
+  color: var(--thub-slate);
+  background: var(--thub-slate-soft);
+  border-color: var(--thub-slate-border);
 }
 
 /* Колонка счётчиков фиксированной ширины: бейджи «не начат» / «в работе» и

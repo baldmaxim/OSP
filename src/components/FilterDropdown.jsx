@@ -31,6 +31,9 @@ export default function FilterDropdown({
   // Необязательно: кастомный рендер опции в списке (напр. цветной бейдж статуса).
   // Получает объект опции целиком. Работает в одиночном режиме.
   renderOption = null,
+  // Необязательная иконка слева в триггере (ReactNode). В отличие от значка
+  // внутри allLabel держится постоянно — и когда фильтр пуст, и когда выбран.
+  icon = null,
   // Необязательный доп. класс на корень (напр. компактный вид status-fdrop).
   className = '',
   // Необязательный inline-стиль на корень (напр. проброс CSS-переменной цвета статуса).
@@ -163,6 +166,7 @@ export default function FilterDropdown({
         aria-expanded={open}
         title={label ? `${label}: ${selectedLabel}` : selectedLabel}
       >
+        {icon && <span className="fdrop-icon" aria-hidden>{icon}</span>}
         {label && <span className="fdrop-label">{label}</span>}
         <span className="fdrop-value">{formatTrigger ? formatTrigger(selectedLabel) : selectedLabel}</span>
         <span className="fdrop-arrow" aria-hidden>▾</span>

@@ -5,7 +5,7 @@
 //
 // ВАЖНО: условия обязаны совпадать с фильтрами самих страниц, иначе бейдж покажет
 // одно число, а страница — другое:
-//   • основное строительство — TendersPage (department='construction', tenderType='main');
+//   • направления тендеров   — TendersPage фильтрует по tenders.department;
 //   • планы затрат           — CostPlansPage;
 //   • тендеры на материалы   — TendersPage (tenderType='materials');
 //   • проверка КП            — fetchProposalFilesForReview() в tenderProposalFiles.js.
@@ -27,16 +27,12 @@ async function runCount(label, query) {
 }
 
 // Живые (не удалённые) тендеры нужного типа. objectIds — скоуп сотрудника ([] = все).
-// objectStatus — статус объекта ('main_construction' | 'warranty_service'); при
-// mainConstructionOnly подставляется основное строительство. Без него фильтра по
-// объекту нет: страница тендеров на материалы показывает все объекты сразу.
-function tendersQuery({ tenderType, objectIds, mainConstructionOnly = false, objectStatus = null }) {
-  const status = objectStatus || (mainConstructionOnly ? 'main_construction' : null)
-  let q = status
-    ? supabase.from('tenders').select('id, objects!inner(status)', { count: 'exact', head: true })
-        .eq('objects.status', status)
-    : supabase.from('tenders').select('id', { count: 'exact', head: true })
-
+// department — направление из tenders.department ('construction' | 'warranty' |
+// 'joint' | 'other'); null = без фильтра по направлению (тендеры на материалы
+// показываются все сразу).
+function tendersQuery({ tenderType, objectIds, department = null }) {
+  let q = supabase.from('tenders').select('id', { count: 'exact', head: true })
+  if (department) q = q.eq('department', department)
   q = q.eq('tender_type', tenderType).is('deleted_at', null)
   if (objectIds?.length) q = q.in('object_id', objectIds)
   return q
@@ -56,13 +52,17 @@ function kpPendingQuery(objectIds) {
 
 // Все счётчики хаба одним вызовом.
 export async function fetchTenderHubCounters(objectIds = []) {
-  const construction = () => tendersQuery({ tenderType: 'main', objectIds, mainConstructionOnly: true })
-  const materials = () => tendersQuery({ tenderType: 'materials', objectIds, mainConstructionOnly: false })
-  const warranty = () => tendersQuery({ tenderType: 'main', objectIds, objectStatus: 'warranty_service' })
+  const construction = () => tendersQuery({ tenderType: 'main', objectIds, department: 'construction' })
+  const materials = () => tendersQuery({ tenderType: 'materials', objectIds })
+  const warranty = () => tendersQuery({ tenderType: 'main', objectIds, department: 'warranty' })
+  const joint = () => tendersQuery({ tenderType: 'main', objectIds, department: 'joint' })
+  const other = () => tendersQuery({ tenderType: 'main', objectIds, department: 'other' })
 
   const [
     constructionInProgress,
     warrantyInProgress,
+    jointInProgress,
+    otherInProgress,
     kpPending,
     vorNotStarted,
     vorInProgress,
@@ -73,6 +73,8 @@ export async function fetchTenderHubCounters(objectIds = []) {
   ] = await Promise.all([
     runCount('тендеры в работе', construction().eq('status', STATUS_IN_PROGRESS)),
     runCount('гарантия: в работе', warranty().eq('status', STATUS_IN_PROGRESS)),
+    runCount('совместные: в работе', joint().eq('status', STATUS_IN_PROGRESS)),
+    runCount('прочее: в работе', other().eq('status', STATUS_IN_PROGRESS)),
     runCount('КП на проверке', kpPendingQuery(objectIds)),
     // На страницах ВОРов и планов затрат пустой статус трактуется как «не начат».
     runCount('ВОРы: не начат', construction().or('vor_status.is.null,vor_status.eq.not_started')),
@@ -86,6 +88,8 @@ export async function fetchTenderHubCounters(objectIds = []) {
   return {
     constructionInProgress,
     warrantyInProgress,
+    jointInProgress,
+    otherInProgress,
     kpPending,
     vorNotStarted,
     vorInProgress,

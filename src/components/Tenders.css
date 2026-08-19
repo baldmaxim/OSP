@@ -694,15 +694,22 @@
   gap: 0.5rem;
 }
 
-/* Цветной акцент шапки страницы — визуальное отличие разделов */
+/* Цветной акцент шапки страницы — визуальное отличие разделов.
+   Тон приходит классом hdr-tone--* и совпадает с тоном плитки-иконки
+   (см. tenderDepartments.js и IconTile.css). */
 .page-header-tenders {
-  border-left: 4px solid #2563eb;
-  background: linear-gradient(90deg, rgba(37, 99, 235, 0.06) 0%, transparent 60%);
+  --hdr-tone: 95, 168, 216;
+  border-left: 4px solid rgb(var(--hdr-tone));
+  background: linear-gradient(90deg, rgba(var(--hdr-tone), 0.07) 0%, transparent 60%);
 }
+.page-header-tenders.hdr-tone--sky    { --hdr-tone: 95, 168, 216; }
+.page-header-tenders.hdr-tone--green  { --hdr-tone: 109, 191, 146; }
+.page-header-tenders.hdr-tone--violet { --hdr-tone: 143, 143, 230; }
+.page-header-tenders.hdr-tone--slate  { --hdr-tone: 138, 160, 189; }
+.page-header-tenders.hdr-tone--sand   { --hdr-tone: 201, 177, 131; }
 
-.page-header-tenders .page-icon {
-  color: #2563eb;
-}
+/* Плитка иконки в заголовке чуть меньше, чем в боковом меню. */
+.tenders-page .page-header h2 .page-icon-tile { width: 26px; height: 26px; }
 
 /* Переключатель вида таблицы (Компактный / Все столбцы) */
 .btn-view-toggle {

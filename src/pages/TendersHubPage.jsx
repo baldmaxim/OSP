@@ -10,6 +10,7 @@ import {
   IconChevronDown,
   IconArrowRight,
 } from '../components/icons/TenderHubIcons'
+import { IconJoint, IconOther } from '../components/icons/ToolbarIcons'
 import { useRole } from '../contexts/RoleContext'
 import { fetchTenderHubCounters } from '../services/tenderCounters'
 import './TendersHubPage.css'
@@ -21,6 +22,28 @@ const CONSTRUCTION_SUBSECTIONS = [
   { to: '/cost-plans', Icon: IconCalculator, title: 'Планы затрат', desc: 'Планирование стоимости по тендерам' },
   // task 431: очередь проверки КП аналитиком-экономистом.
   { to: '/kp-review', Icon: IconShieldCheck, title: 'Проверка КП', desc: 'Проверка коммерческих предложений аналитиком' },
+]
+
+// Направления, добавленные к основному строительству и гарантийному отделу.
+// Собственных подразделов у них нет — ВОРы, планы затрат и тендеры на материалы
+// остаются за основным строительством.
+const EXTRA_DIRECTIONS = [
+  {
+    to: '/tenders/joint',
+    tone: 'violet',
+    Icon: IconJoint,
+    title: 'Совместные тендеры',
+    desc: 'Тендеры, охватывающие объекты обоих отделов',
+    countKey: 'jointInProgress',
+  },
+  {
+    to: '/tenders/other',
+    tone: 'slate',
+    Icon: IconOther,
+    title: 'Тендеры (прочее)',
+    desc: 'Закупки и работы без привязки к конкретному объекту',
+    countKey: 'otherInProgress',
+  },
 ]
 
 // Индикаторы для подраздела: что показать справа от названия.
@@ -162,6 +185,27 @@ function TendersHubPage() {
             </Link>
           </div>
         </section>
+
+        {/* Совместные и прочие — такие же самостоятельные реестры, как гарантийный
+            отдел: подразделы (ВОРы, планы затрат, материалы) остаются у ОС. */}
+        {EXTRA_DIRECTIONS.map(({ to, tone, Icon, title, desc, countKey }) => (
+          <section key={to} className={`thub-card thub-card--${tone}`}>
+            <span className="thub-accent" aria-hidden />
+            <div className="thub-card-body thub-card-body--centered">
+              <span className={`thub-badge thub-badge--${tone}`} aria-hidden><Icon size={24} /></span>
+              <h3 className="thub-title">{title}</h3>
+              {counts?.[countKey] > 0 && (
+                <span className={`thub-count thub-count--solid-${tone}`} title="Тендеры в статусе «Идет тендерная процедура»">
+                  <strong>{counts[countKey]}</strong> в работе
+                </span>
+              )}
+              <p className="thub-desc">{desc}</p>
+              <Link to={to} className={`thub-btn thub-btn--${tone}`}>
+                Перейти к тендерам <IconArrowRight size={16} />
+              </Link>
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   )

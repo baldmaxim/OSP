@@ -109,6 +109,8 @@ function EmployeeLayout() {
                 и обратно, из-за чего часть данных «пропадала» из списков. */}
             <Route path="/tenders/construction" element={<PermissionRoute section="tenders"><TendersPage key="tenders-construction" department="construction" tenderType="main" /></PermissionRoute>} />
             <Route path="/tenders/warranty" element={<PermissionRoute section="tenders"><TendersPage key="tenders-warranty" department="warranty" tenderType="main" /></PermissionRoute>} />
+            <Route path="/tenders/joint" element={<PermissionRoute section="tenders"><TendersPage key="tenders-joint" department="joint" tenderType="main" /></PermissionRoute>} />
+            <Route path="/tenders/other" element={<PermissionRoute section="tenders"><TendersPage key="tenders-other" department="other" tenderType="main" /></PermissionRoute>} />
             <Route path="/tenders/materials" element={<PermissionRoute section="tenders"><TendersPage key="tenders-materials" tenderType="materials" /></PermissionRoute>} />
             <Route path="/tenders/:tenderId" element={<PermissionRoute section="tenders"><TenderDetailPage /></PermissionRoute>} />
             <Route path="/cost-plans" element={<PermissionRoute section="tenders"><CostPlansPage /></PermissionRoute>} />

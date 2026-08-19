@@ -34,6 +34,18 @@
   background: var(--bg-tertiary);
 }
 
+/* Иконка слева в триггере: приглушена, но подсвечивается вместе с активным
+   фильтром — так значок читается как часть контрола, а не как украшение. */
+.fdrop-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  margin-right: -0.15rem;
+}
+.fdrop.is-active .fdrop-icon,
+.fdrop.is-open .fdrop-icon { color: var(--primary-color); }
+
 .fdrop-label { color: var(--text-tertiary); white-space: nowrap; }
 .fdrop-value {
   font-weight: 600;

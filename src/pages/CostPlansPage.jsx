@@ -73,7 +73,7 @@ function CostPlansPage() {
       const { data, error } = await supabase
         .from('tenders')
         .select(`
-          id, object_id, public_tender_number, status, tender_type, cost_plan_status, cost_plan_link,
+          id, object_id, public_tender_number, status, tender_type, department, cost_plan_status, cost_plan_link,
           cost_plan_responsible_id, cost_plan_start_date, cost_plan_end_date,
           start_date, end_date, tender_start_date, tender_end_date,
           work_description, cost_plan_notes, deleted_at,
@@ -85,8 +85,10 @@ function CostPlansPage() {
       if (error) throw error
       // Только основные тендеры по основному строительству — план затрат имеет смысл только там.
       // Дочерние тендеры на материалы (tender_type='materials') исключаем, чтобы не дублировать.
+      // Направление — из tenders.department (миграция 20260820), а не из статуса объекта:
+      // «совместные» и «прочие» могут ссылаться на тот же объект основного строительства.
       let filtered = (data || []).filter(t =>
-        t.objects?.status === 'main_construction'
+        (t.department || 'construction') === 'construction'
         && (!t.tender_type || t.tender_type === 'main')
       )
       if (scopedObjectIds.length > 0) {

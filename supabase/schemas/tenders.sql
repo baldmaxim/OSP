@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS tenders (
   summary_proposal_link TEXT,
   notes TEXT,
   cost_plan_notes TEXT,                -- примечание для страницы «Планы затрат»
+  -- Направление тендера. Раньше вычислялось из objects.status; вынесено в явное
+  -- поле, потому что «совместные» и «прочее» из статуса объекта не выводятся.
+  department TEXT NOT NULL DEFAULT 'construction',
   tender_type TEXT NOT NULL DEFAULT 'main',
   parent_tender_id UUID REFERENCES tenders(id) ON DELETE SET NULL,
   materials_proposal_deadline DATE,
@@ -41,6 +44,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   CONSTRAINT valid_cost_plan_status CHECK (cost_plan_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
   CONSTRAINT valid_vor_status CHECK (vor_status IN ('not_started', 'in_progress', 'completed')),
   CONSTRAINT valid_materials_status CHECK (materials_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
+  CONSTRAINT valid_tender_department CHECK (department IN ('construction', 'warranty', 'joint', 'other')),
   CONSTRAINT valid_tender_type CHECK (tender_type IN ('main', 'materials')),
   CONSTRAINT tenders_parent_only_for_materials CHECK (
     (tender_type = 'materials') OR (parent_tender_id IS NULL)
@@ -58,6 +62,8 @@ CREATE INDEX IF NOT EXISTS idx_tenders_cost_plan_responsible_id ON tenders(cost_
 CREATE INDEX IF NOT EXISTS idx_tenders_cost_plan_status ON tenders(cost_plan_status);
 CREATE INDEX IF NOT EXISTS idx_tenders_vor_responsible_id ON tenders(vor_responsible_id);
 CREATE INDEX IF NOT EXISTS idx_tenders_vor_status ON tenders(vor_status);
+CREATE INDEX IF NOT EXISTS idx_tenders_department ON tenders(department);
+CREATE INDEX IF NOT EXISTS idx_tenders_department_type ON tenders(department, tender_type);
 CREATE INDEX IF NOT EXISTS idx_tenders_tender_type ON tenders(tender_type);
 CREATE INDEX IF NOT EXISTS idx_tenders_parent_tender_id ON tenders(parent_tender_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tenders_public_tender_number ON tenders(public_tender_number);
@@ -111,6 +117,7 @@ COMMENT ON COLUMN tenders.vor_responsible_id IS 'Ответственный со
 COMMENT ON COLUMN tenders.vor_status IS 'Статус ВОР: not_started | in_progress | completed';
 COMMENT ON COLUMN tenders.summary_proposal_link IS 'Ссылка на сводную таблицу КП (Google/Yandex Drive)';
 COMMENT ON COLUMN tenders.notes IS 'Примечание по тендеру (свободный текст, ведётся ответственным)';
+COMMENT ON COLUMN tenders.department IS 'Направление: construction | warranty | joint (совместные) | other (прочее). См. миграцию 20260820_tender_departments.sql — там же триггер синхронизации со статусом объекта';
 COMMENT ON COLUMN tenders.tender_type IS 'Тип тендера: main (основной — работы) | materials (тендер на закупку материалов)';
 COMMENT ON COLUMN tenders.parent_tender_id IS 'Ссылка на родительский основной тендер (только для tender_type = materials)';
 COMMENT ON COLUMN tenders.materials_proposal_deadline IS 'Срок предоставления КП на материалы (для tender_type = materials)';

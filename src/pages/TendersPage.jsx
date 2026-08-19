@@ -8,6 +8,13 @@ import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import FilterDropdown from '../components/FilterDropdown'
+import IconTile from '../components/IconTile'
+import { IconHardHat, IconShieldCheck, IconPackage } from '../components/icons/TenderHubIcons'
+import {
+  IconObject, IconTag, IconUser, IconMail, IconColumns, IconColumnsWide,
+  IconJoint, IconOther,
+} from '../components/icons/ToolbarIcons'
+import { departmentConfig, objectDeptBadge } from '../utils/tenderDepartments'
 import { copyToClipboard } from '../utils/clipboard'
 import { reorderSiblings } from '../utils/appendixTree'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
@@ -228,13 +235,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     notes: '',
   })
 
-  // Определяем статус объекта в зависимости от отдела (только для основных тендеров)
-  const objectStatus = department === 'construction' ? 'main_construction' : 'warranty_service'
-  const pageTitle = isMaterialsView
-    ? 'Тендеры на материалы'
-    : department === 'construction'
-      ? 'Тендеры — Основное строительство'
-      : 'Тендеры — Гарантийный отдел'
+  // Настройки направления: какие объекты доступны, обязателен ли объект, заголовок,
+  // тон плитки-иконки. Единый справочник — src/utils/tenderDepartments.js.
+  const dept = departmentConfig(department)
+  // Статус объектов для формы: null = объекты обоих отделов (совместные / прочее).
+  const objectStatus = dept.objectStatus
+  const pageTitle = isMaterialsView ? 'Тендеры на материалы' : dept.title
+  // Иконка в шапке — своя на каждое направление, как у пунктов бокового меню.
+  const HeaderIcon = isMaterialsView
+    ? IconPackage
+    : { construction: IconHardHat, warranty: IconShieldCheck, joint: IconJoint, other: IconOther }[dept.key]
+  const headerTone = isMaterialsView ? 'sand' : dept.tone
+  // Объект обязателен везде, кроме «прочего»: там встречаются общехозяйственные
+  // закупки, не привязанные к стройплощадке.
+  const objectRequired = isMaterialsView ? true : dept.requireObject
+  // Смешанный список объектов показываем с бейджем отдела — иначе одноимённые
+  // объекты ОС и ГО в одном списке не различить.
+  const showObjectDeptBadge = !isMaterialsView && dept.objectStatus === null
 
   const statusOptions = ['Заявка на тендер', 'Подготовка ВОР', 'Идет тендерная процедура', 'Подведение итогов', 'Завершен', 'Приостановка тендера']
   // Отдельный набор статусов для тендеров на материалы — не пересекается со статусами основного тендера.
@@ -334,11 +351,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           ? (t.materials_tender[0] || null)
           : (t.materials_tender || null)
       }))
-      // Для основных тендеров фильтруем по статусу объекта (construction/warranty).
-      // Для тендеров на материалы показываем все объекты без фильтрации по отделу.
+      // Основные тендеры разложены по направлениям через tenders.department
+      // (миграция 20260820). Раньше направление вычислялось из статуса объекта —
+      // так «совместные» и «прочие» не выразить, объекта у них может не быть вовсе.
+      // Тендеры на материалы показываем все, без деления по направлениям.
       let filteredTenders = isMaterialsView
         ? normalized
-        : normalized.filter(tender => tender.objects?.status === objectStatus)
+        : normalized.filter(tender => (tender.department || 'construction') === dept.key)
       if (scopedObjectIds.length > 0) {
         filteredTenders = filteredTenders.filter(t => scopedObjectIds.includes(t.object_id))
       }
@@ -442,8 +461,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         .from('objects')
         .select('*')
         .order('name', { ascending: true })
-      // Для тендеров на материалы доступны объекты любого отдела
-      if (!isMaterialsView) {
+      // Объекты любого отдела — для тендеров на материалы и для направлений
+      // «совместные» / «прочее» (objectStatus = null).
+      if (!isMaterialsView && objectStatus) {
         query = query.eq('status', objectStatus)
       }
       const { data, error } = await query
@@ -1117,6 +1137,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           start_date: formData.start_date || null,
           end_date: formData.end_date || null,
           tender_type: newTenderType,
+          // Направление задаётся разделом, в котором создают тендер; дочерний
+          // тендер на материалы наследует направление родителя.
+          department: materialsParentTender
+            ? (materialsParentTender.department || 'construction')
+            : dept.key,
         }
         if (materialsParentTender) {
           insertPayload.parent_tender_id = materialsParentTender.id
@@ -1183,6 +1208,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 end_date: insertPayload.end_date,
                 tender_type: 'materials',
                 parent_tender_id: createdMainId,
+                department: insertPayload.department,
               }
               const { res: matRes, finalPayload: matFinalPayload } = await insertTenderWithRetry(materialsPayload)
               if (matRes.error) {
@@ -1808,8 +1834,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   return (
     <div className="tenders-page">
-      <div className="page-header page-header-tenders">
-        <h2><span className="page-icon" aria-hidden>📋</span> {pageTitle}</h2>
+      {/* Акцент шапки — тон направления: разделы отличаются с одного взгляда. */}
+      <div className={`page-header page-header-tenders hdr-tone--${headerTone}`}>
+        <h2>
+          <IconTile tone={headerTone} className="page-icon-tile"><HeaderIcon size={17} /></IconTile>
+          {pageTitle}
+        </h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           {!isMaterialsView && department === 'construction' && !isScopedManager && (
             <div className="tender-resp-chip-wrap">
@@ -1864,7 +1894,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               onClick={() => setActiveTab(activeTab === 'template' ? 'all' : 'template')}
               title="Шаблон письма для запроса КП"
             >
-              <span aria-hidden style={{ fontSize: '0.875rem' }}>✉️</span>
+              <IconMail size={15} />
               <span>Шаблон письма</span>
             </button>
           )}
@@ -1877,7 +1907,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 ? 'Показать все столбцы'
                 : 'Скрыть столбцы: ВОРы и РД, План затрат, Тендер на материалы, Сводная КП'}
             >
-              <span aria-hidden style={{ fontSize: '0.875rem' }}>{compactView ? '⊞' : '⊟'}</span>
+              {compactView ? <IconColumnsWide size={15} /> : <IconColumns size={15} />}
               <span>{compactView ? 'Все столбцы' : 'Компактный вид'}</span>
             </button>
           )}
@@ -1972,10 +2002,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             multiple
             searchable
             searchPlaceholder="Начните вводить объект…"
-            allLabel="🏢 Все объекты"
+            allLabel="Все объекты"
+            icon={<IconObject size={15} />}
             value={objectFilter}
             onChange={setObjectFilter}
-            options={tenderObjects.map(obj => ({ value: obj.id, label: obj.name }))}
+            options={tenderObjects.map(obj => ({
+              value: obj.id,
+              label: showObjectDeptBadge && objectDeptBadge(obj.status)
+                ? `${obj.name} · ${objectDeptBadge(obj.status)}`
+                : obj.name,
+            }))}
           />
         </div>
 
@@ -1989,7 +2025,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             multiple
             searchable
             searchPlaceholder="Поиск статуса…"
-            allLabel="🏷 Все статусы"
+            allLabel="Все статусы"
+            icon={<IconTag size={15} />}
             value={statusFilter}
             onChange={setStatusFilter}
             options={currentStatusOptions.map(s => ({ value: s, label: s }))}
@@ -2004,7 +2041,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             multiple
             searchable
             searchPlaceholder="Поиск сотрудника…"
-            allLabel="👤 Все ответственные"
+            allLabel="Все ответственные"
+            icon={<IconUser size={15} />}
             value={responsibleFilter}
             onChange={setResponsibleFilter}
             options={[
@@ -3245,27 +3283,36 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
                 <div className="form-group full-width">
-                  <label>Наименование объекта *</label>
+                  <label>Наименование объекта {objectRequired ? '*' : ''}</label>
                   <select
                     name="object_id"
                     value={formData.object_id}
                     onChange={handleInputChange}
-                    required
+                    required={objectRequired}
                     disabled={!!materialsParentTender}
                   >
-                    <option value="">Выберите объект</option>
+                    <option value="">{objectRequired ? 'Выберите объект' : 'Без привязки к объекту'}</option>
                     {(materialsParentTender && !objects.some(o => o.id === materialsParentTender.object_id)
                       ? [{ id: materialsParentTender.object_id, name: materialsParentTender.objects?.name || '—' }, ...objects]
                       : objects
                     ).map((obj) => (
                       <option key={obj.id} value={obj.id}>
-                        {obj.name}
+                        {/* В смешанном списке (совместные / прочее) объекты ОС и ГО
+                            бывают одноимёнными — помечаем отделом. */}
+                        {showObjectDeptBadge && objectDeptBadge(obj.status)
+                          ? `${obj.name} · ${objectDeptBadge(obj.status)}`
+                          : obj.name}
                       </option>
                     ))}
                   </select>
                   {materialsParentTender && (
                     <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
                       Объект унаследован от родительского тендера на работы
+                    </small>
+                  )}
+                  {!objectRequired && !materialsParentTender && (
+                    <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                      Объект можно не указывать — например, для общехозяйственных закупок
                     </small>
                   )}
                 </div>

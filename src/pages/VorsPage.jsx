@@ -72,7 +72,7 @@ function VorsPage() {
       const { data, error } = await supabase
         .from('tenders')
         .select(`
-          id, object_id, public_tender_number, status, tender_type, vor_status, vor_link,
+          id, object_id, public_tender_number, status, tender_type, department, vor_status, vor_link,
           vor_responsible_id, vor_start_date, vor_end_date,
           start_date, end_date, work_description, deleted_at,
           objects(name, status),
@@ -82,8 +82,10 @@ function VorsPage() {
 
       if (error) throw error
       // Только основные тендеры (без дочерних на материалы) по основному строительству.
+      // Направление берём из tenders.department (миграция 20260820), а не из статуса
+      // объекта: у «совместных» и «прочих» объект может быть тот же самый.
       let filtered = (data || []).filter(t =>
-        t.objects?.status === 'main_construction'
+        (t.department || 'construction') === 'construction'
         && (!t.tender_type || t.tender_type === 'main')
       )
       if (scopedObjectIds.length > 0) {
