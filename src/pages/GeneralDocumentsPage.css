@@ -846,3 +846,160 @@
   .gd-tabs::-webkit-scrollbar { display: none; }
   .gd-tab { flex: 0 0 auto; }
 }
+
+/* ── task 434: папки (проводник) ───────────────────────────────────────────
+   Префикс gdf-, чтобы не задеть gd-*: этот файл импортирует и переиспользует
+   TenderDocumentsTab. Цвета — только через существующие переменные темы. */
+
+.gdf-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* Хлебные крошки */
+.gdf-breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  margin-top: 0.85rem;
+  font-size: 0.875rem;
+}
+.gdf-crumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+.gdf-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.gdf-crumb:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+.gdf-crumb.is-current {
+  color: var(--text-primary);
+  cursor: default;
+}
+.gdf-crumb:disabled { cursor: default; }
+.gdf-crumb-icon {
+  display: inline-flex;
+  color: var(--primary-color, #0891b2);
+}
+.gdf-crumb-sep {
+  color: var(--text-tertiary);
+  user-select: none;
+}
+
+/* Строка «наверх» */
+.gdf-up-row { cursor: pointer; }
+.gdf-up-row:hover { background: var(--bg-tertiary); }
+.gdf-up-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gdf-up-btn:hover { color: var(--text-primary); }
+
+/* Строка папки */
+.gdf-row .gdf-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.gdf-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.gdf-name-btn:hover .gd-title-text,
+.gdf-name-btn:hover .mcard-title { text-decoration: underline; }
+.gdf-folder-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--primary-color, #0891b2);
+}
+.gdf-count {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+/* Путь в результатах поиска */
+.gdf-path {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+.gdf-path-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.gdf-path-btn:hover { color: var(--primary-color, #0891b2); text-decoration: underline; }
+
+/* Пустое состояние с двумя кнопками */
+.gdf-empty-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+/* Модалка папки — компактнее карточки документа */
+.gdf-modal { max-width: 520px; }
+
+/* Мобильные карточки папок */
+.gdf-mcard-folder .mcard-head { align-items: center; }
+.gdf-mcard-up {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  /* Крошки — горизонтальная прокрутка вместо переноса */
+  .gdf-breadcrumbs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .gdf-breadcrumbs::-webkit-scrollbar { display: none; }
+  .gdf-crumb, .gdf-crumb-item { flex: 0 0 auto; }
+  .gdf-header-actions { flex-direction: column; align-items: stretch; }
+  .gdf-empty-actions { flex-direction: column; }
+}

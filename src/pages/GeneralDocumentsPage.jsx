@@ -1,17 +1,26 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import { useIsPhone } from '../hooks/useMediaQuery'
+import {
+  foldersIn, docsIn, folderPathOf, folderOptions, collectFolderIds,
+  subtreeCounts, nextFolderOrder, nextDocOrder, searchInCategory,
+} from '../utils/documentFolders'
 import '../components/MobileCards.css'
 import './GeneralDocumentsPage.css'
 
 // task 416: реестр общих документов компании. Одна запись — «карточка документа»,
 // в которой может быть несколько ссылок (general_document_links) и несколько файлов
 // (s3_documents по owner_type='general_document', owner_id=id).
+//
+// task 434: внутри каждой подгруппы — папки произвольной вложенности
+// (general_document_folders). Навигация как в Проводнике: показывается содержимое
+// одной папки, сверху хлебные крошки, первой строкой «..». Текущая папка живёт
+// в URL (?cat=&folder=), поэтому работают F5 и кнопка «назад» браузера.
 
 const MATERIALS_PREVIEW = 4  // сколько материалов показывать в строке до «Ещё N»
 
@@ -117,7 +126,8 @@ const CATEGORIES = [
 ]
 const CATEGORY_LABEL = Object.fromEntries(CATEGORIES.map(c => [c.key, c.label]))
 
-const EMPTY_FORM = { title: '', description: '', links: [], newFiles: [], category: 'general' }
+const EMPTY_FORM = { title: '', description: '', links: [], newFiles: [], category: 'general', folder_id: null }
+const EMPTY_FOLDER_FORM = { open: false, editing: null, name: '', parentId: null, saving: false, error: '' }
 
 // Ограничения загрузки файлов для корпоративного реестра документов.
 const MAX_FILE_SIZE_MB = 50
@@ -159,10 +169,19 @@ export default function GeneralDocumentsPage() {
   const currentUserName = userProfile?.full_name || user?.email || null
 
   const [documents, setDocuments] = useState([])
+  const [folders, setFolders] = useState([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
-  const [activeCat, setActiveCat] = useState('general')
   const [expanded, setExpanded] = useState(() => new Set())
+
+  // Подгруппа и текущая папка живут в URL (?cat=&folder=): работают F5, «назад»
+  // браузера и ссылка на конкретную папку, отправленная коллеге.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const catParam = searchParams.get('cat')
+  const activeCat = CATEGORY_LABEL[catParam] ? catParam : 'general'
+  const folderParam = searchParams.get('folder') || null
+  // Каждая вкладка помнит папку, в которой её оставили.
+  const folderMemory = useRef({})
 
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -175,16 +194,30 @@ export default function GeneralDocumentsPage() {
   const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef(null)
 
-  // Загрузка: карточки + ссылки (join) + файлы из s3_documents (по owner).
+  // Модалка папки: создание / переименование / перенос.
+  const [folderForm, setFolderForm] = useState(EMPTY_FOLDER_FORM)
+  const [deletingFolderId, setDeletingFolderId] = useState(null)
+
+  // Загрузка: папки + карточки + ссылки (join) + файлы из s3_documents (по owner).
   const fetchDocs = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: docs, error } = await supabase
-        .from('general_documents')
-        .select('*, general_document_links(*)')
-        .order('sort_order', { ascending: true, nullsFirst: false })
-        .order('created_at', { ascending: true })
-      if (error) throw error
+      const [docsRes, foldersRes] = await Promise.all([
+        supabase
+          .from('general_documents')
+          .select('*, general_document_links(*)')
+          .order('sort_order', { ascending: true, nullsFirst: false })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('general_document_folders')
+          .select('*')
+          .order('sort_order', { ascending: true, nullsFirst: false })
+          .order('created_at', { ascending: true }),
+      ])
+      if (docsRes.error) throw docsRes.error
+      if (foldersRes.error) throw foldersRes.error
+      const docs = docsRes.data
+      const folderRows = foldersRes.data || []
 
       const ids = (docs || []).map(d => d.id)
       let filesByDoc = {}
@@ -208,11 +241,12 @@ export default function GeneralDocumentsPage() {
         files: filesByDoc[d.id] || [],
       }))
       setDocuments(mapped)
-      return mapped
+      setFolders(folderRows)
+      return { docs: mapped, folders: folderRows }
     } catch (err) {
       console.error('Ошибка загрузки документов:', err.message)
       alert('Ошибка загрузки документов: ' + err.message)
-      return []
+      return { docs: [], folders: [] }
     } finally {
       setLoading(false)
     }
@@ -230,20 +264,65 @@ export default function GeneralDocumentsPage() {
     return c
   }, [documents])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return documents.filter(d => {
-      if ((d.category || 'general') !== activeCat) return false
-      if (!q) return true
-      const hay = [
-        d.title,
-        d.description,
-        ...(d.links || []).flatMap(l => [l.title, l.url]),
-        ...(d.files || []).map(f => f.file_name),
-      ].filter(Boolean).join(' ').toLowerCase()
-      return hay.includes(q)
-    })
-  }, [documents, activeCat, search])
+  // ── Навигация по папкам ────────────────────────────────────────────────
+  // Папка из URL могла быть удалена в другой вкладке или относиться к другой
+  // подгруппе — в обоих случаях спокойно показываем корень.
+  const currentFolderId = useMemo(() => {
+    if (!folderParam) return null
+    const f = folders.find(x => x.id === folderParam)
+    if (!f || (f.category || 'general') !== activeCat) return null
+    return f.id
+  }, [folderParam, folders, activeCat])
+
+  const folderPath = useMemo(() => folderPathOf(folders, currentFolderId), [folders, currentFolderId])
+
+  useEffect(() => { folderMemory.current[activeCat] = currentFolderId }, [activeCat, currentFolderId])
+
+  const goTo = useCallback((cat, folderId) => {
+    const next = {}
+    if (cat && cat !== 'general') next.cat = cat
+    if (folderId) next.folder = folderId
+    setSearchParams(next)
+  }, [setSearchParams])
+
+  const setActiveCat = useCallback((cat) => {
+    goTo(cat, folderMemory.current[cat] || null)
+  }, [goTo])
+
+  const enterFolder = useCallback((folderId) => { setSearch(''); goTo(activeCat, folderId) }, [goTo, activeCat])
+  const goUp = useCallback(() => {
+    const parent = folderPath.length > 1 ? folderPath[folderPath.length - 2].id : null
+    goTo(activeCat, parent)
+  }, [goTo, activeCat, folderPath])
+
+  // ── Содержимое текущей папки / результаты поиска ───────────────────────
+  const matchDoc = useCallback((d, q) => {
+    const hay = [
+      d.title,
+      d.description,
+      ...(d.links || []).flatMap(l => [l.title, l.url]),
+      ...(d.files || []).map(f => f.file_name),
+    ].filter(Boolean).join(' ').toLowerCase()
+    return hay.includes(q)
+  }, [])
+
+  // При поиске игнорируем текущую папку и ищем по всей подгруппе: пользователь
+  // не знает, в какой папке лежит нужный документ.
+  const searchMode = search.trim().length > 0
+  const searchResults = useMemo(
+    () => searchInCategory(folders, documents, activeCat, search, matchDoc),
+    [folders, documents, activeCat, search, matchDoc],
+  )
+
+  const visibleFolders = useMemo(
+    () => (searchMode ? searchResults.folders : foldersIn(folders, activeCat, currentFolderId)),
+    [searchMode, searchResults, folders, activeCat, currentFolderId],
+  )
+  const visibleDocs = useMemo(
+    () => (searchMode ? searchResults.docs : docsIn(documents, activeCat, currentFolderId)),
+    [searchMode, searchResults, documents, activeCat, currentFolderId],
+  )
+  const isEmptyView = visibleFolders.length === 0 && visibleDocs.length === 0
 
   const toggleExpand = (id) => {
     setExpanded(prev => {
@@ -257,8 +336,8 @@ export default function GeneralDocumentsPage() {
   const clearErrors = () => { setFormError(''); setLinkError(''); setFileErrors([]) }
   const openAdd = () => {
     setEditing(null)
-    // Новый документ создаётся в текущей открытой подгруппе.
-    setForm({ ...EMPTY_FORM, links: [], category: activeCat })
+    // Новый документ создаётся в текущей открытой подгруппе и папке.
+    setForm({ ...EMPTY_FORM, links: [], category: activeCat, folder_id: currentFolderId })
     setRemoveFileIds(new Set())
     clearErrors()
     setShowModal(true)
@@ -271,11 +350,15 @@ export default function GeneralDocumentsPage() {
       links: (doc.links || []).map(l => ({ title: l.title || '', url: l.url || '' })),
       newFiles: [],
       category: doc.category || 'general',
+      folder_id: doc.folder_id || null,
     })
     setRemoveFileIds(new Set())
     clearErrors()
     setShowModal(true)
   }
+  // Смена подгруппы обнуляет папку: папки чужой подгруппы недоступны, а триггер
+  // general_documents_sync_folder_category молча вернул бы документ обратно.
+  const changeFormCategory = (cat) => setForm(f => ({ ...f, category: cat, folder_id: null }))
   const closeModal = () => {
     if (saving) return
     setShowModal(false); setEditing(null); setForm(EMPTY_FORM); setRemoveFileIds(new Set())
@@ -369,6 +452,7 @@ export default function GeneralDocumentsPage() {
             title,
             description: form.description.trim() || null,
             category: form.category || 'general',
+            folder_id: form.folder_id || null,
             updated_at: new Date().toISOString(),
             updated_by: user?.id || null,
             updated_by_name: currentUserName,
@@ -403,6 +487,8 @@ export default function GeneralDocumentsPage() {
             title,
             description: form.description.trim() || null,
             category: form.category || 'general',
+            folder_id: form.folder_id || null,
+            sort_order: nextDocOrder(documents, form.category || 'general', form.folder_id || null),
             source_type: 'mixed',
             created_by: user?.id || null,
             created_by_name: currentUserName,
@@ -433,11 +519,13 @@ export default function GeneralDocumentsPage() {
         }
       }
 
-      const docs = await fetchDocs()
+      const { docs } = await fetchDocs()
 
       if (problems.length) {
         // Оставляем модалку открытой в режиме редактирования сохранённого документа,
         // чтобы можно было повторить проблемные операции без дублей.
+        // category и folder_id обязательно переносим: без них повторное сохранение
+        // перебросило бы документ в «Общую информацию» и в корень.
         const saved = docs.find(d => d.id === docId) || editing
         setEditing(saved)
         setForm({
@@ -445,14 +533,17 @@ export default function GeneralDocumentsPage() {
           description: form.description,
           links: (saved?.links || validLinks).map(l => ({ title: l.title || '', url: l.url || '' })),
           newFiles: failedFiles,
+          category: form.category || 'general',
+          folder_id: form.folder_id || null,
         })
         setRemoveFileIds(new Set())
         setFileErrors(problems)
         setFormError('Документ сохранён, но часть операций не выполнена. Проверьте список ниже и сохраните снова.')
         return
       }
-      // Показываем подгруппу, в которую попал документ (могли создать/перенести в другую).
-      setActiveCat(form.category || 'general')
+      // Показываем подгруппу и папку, в которые попал документ.
+      setSearch('')
+      goTo(form.category || 'general', form.folder_id || null)
       closeModal()
     } catch (err) {
       setFormError('Не удалось сохранить документ: ' + err.message)
@@ -474,6 +565,81 @@ export default function GeneralDocumentsPage() {
       await fetchDocs()
     } catch (err) {
       alert('Не удалось удалить документ: ' + err.message)
+    }
+  }
+
+  // ── Папки ──────────────────────────────────────────────────────────────
+  const openFolderAdd = () => setFolderForm({ ...EMPTY_FOLDER_FORM, open: true, parentId: currentFolderId })
+  const openFolderEdit = (folder) => setFolderForm({
+    ...EMPTY_FOLDER_FORM, open: true, editing: folder, name: folder.name || '', parentId: folder.parent_id || null,
+  })
+  const closeFolderModal = () => setFolderForm(prev => (prev.saving ? prev : EMPTY_FOLDER_FORM))
+
+  const submitFolder = async (e) => {
+    e.preventDefault()
+    const name = folderForm.name.trim()
+    if (!name) { setFolderForm(f => ({ ...f, error: 'Укажите название папки' })); return }
+
+    setFolderForm(f => ({ ...f, saving: true, error: '' }))
+    try {
+      const parentId = folderForm.parentId || null
+      if (folderForm.editing) {
+        const { error } = await supabase.from('general_document_folders')
+          .update({
+            name,
+            parent_id: parentId,
+            updated_by: user?.id || null,
+            updated_by_name: currentUserName,
+          })
+          .eq('id', folderForm.editing.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('general_document_folders')
+          .insert({
+            name,
+            category: activeCat,
+            parent_id: parentId,
+            sort_order: nextFolderOrder(folders, activeCat, parentId),
+            created_by: user?.id || null,
+            created_by_name: currentUserName,
+            updated_by: user?.id || null,
+            updated_by_name: currentUserName,
+          })
+        if (error) throw error
+      }
+      await fetchDocs()
+      setFolderForm(EMPTY_FOLDER_FORM)
+    } catch (err) {
+      // 23505 — уникальный индекс на имя внутри одной папки.
+      const msg = err?.code === '23505'
+        ? 'Папка с таким именем уже есть в этой папке'
+        : 'Не удалось сохранить папку: ' + err.message
+      setFolderForm(f => ({ ...f, saving: false, error: msg }))
+    }
+  }
+
+  const handleDeleteFolder = async (folder) => {
+    const { folders: nf, docs: nd } = subtreeCounts(folders, documents, folder.id)
+    if (nf || nd) {
+      const parts = []
+      if (nf) parts.push(`${nf} ${pluralFolders(nf)}`)
+      if (nd) parts.push(`${nd} ${pluralDocs(nd)}`)
+      alert(`Нельзя удалить папку «${folder.name}».\n\nВнутри: ${parts.join(' и ')}.\nСначала переместите или удалите содержимое.`)
+      return
+    }
+    if (!window.confirm(`Удалить пустую папку «${folder.name}»?`)) return
+    setDeletingFolderId(folder.id)
+    try {
+      const { error } = await supabase.from('general_document_folders').delete().eq('id', folder.id)
+      if (error) throw error
+      await fetchDocs()
+    } catch (err) {
+      // 23503 — FK RESTRICT: содержимое появилось из другой вкладки браузера.
+      alert(err?.code === '23503'
+        ? 'Папка уже не пуста — обновите страницу и проверьте содержимое.'
+        : 'Не удалось удалить папку: ' + err.message)
+    } finally {
+      setDeletingFolderId(null)
     }
   }
 
@@ -503,6 +669,11 @@ export default function GeneralDocumentsPage() {
 
   const colCount = canEditDocs ? 6 : 5
 
+  // Подпись со счётчиками: в режиме поиска — сколько нашли, иначе — что в папке.
+  const countsLabel = searchMode
+    ? `Найдено: ${visibleFolders.length} ${pluralFolders(visibleFolders.length)} и ${visibleDocs.length} ${pluralDocs(visibleDocs.length)}`
+    : `${visibleFolders.length} ${pluralFolders(visibleFolders.length)} · ${visibleDocs.length} ${pluralDocs(visibleDocs.length)}`
+
   return (
     <div className="general-documents-page">
       <div className="gd-header">
@@ -514,7 +685,10 @@ export default function GeneralDocumentsPage() {
           </div>
         </div>
         {canEditDocs && (
-          <button className="btn-primary" onClick={openAdd}>+ Добавить документ</button>
+          <div className="gdf-header-actions">
+            <button className="btn-secondary gdf-add-folder" onClick={openFolderAdd}>+ Папка</button>
+            <button className="btn-primary" onClick={openAdd}>+ Добавить документ</button>
+          </div>
         )}
       </div>
 
@@ -535,35 +709,100 @@ export default function GeneralDocumentsPage() {
         ))}
       </div>
 
+      {/* Хлебные крошки: путь до текущей папки. Каждый уровень кликабелен. */}
+      <nav className="gdf-breadcrumbs" aria-label="Путь к папке">
+        <button
+          type="button"
+          className={`gdf-crumb${currentFolderId ? '' : ' is-current'}`}
+          onClick={() => enterFolder(null)}
+          disabled={!currentFolderId}
+        >
+          <span className="gdf-crumb-icon" aria-hidden><IconFolder /></span>
+          {CATEGORY_LABEL[activeCat]}
+        </button>
+        {folderPath.map((f, i) => (
+          <span key={f.id} className="gdf-crumb-item">
+            <span className="gdf-crumb-sep" aria-hidden>/</span>
+            <button
+              type="button"
+              className={`gdf-crumb${i === folderPath.length - 1 ? ' is-current' : ''}`}
+              onClick={() => enterFolder(f.id)}
+              disabled={i === folderPath.length - 1}
+            >{f.name}</button>
+          </span>
+        ))}
+      </nav>
+
       <div className="gd-toolbar">
         <input
           type="text"
           className="gd-search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Поиск по наименованию, файлу или ссылке"
+          placeholder={`Поиск по подгруппе «${CATEGORY_LABEL[activeCat]}»`}
         />
-        <span className="gd-total">Всего: {filtered.length} {pluralDocs(filtered.length)}</span>
+        <span className="gd-total">{countsLabel}</span>
       </div>
 
       <div className="gd-card">
         {loading ? (
           <div className="gd-loading">Загрузка...</div>
-        ) : filtered.length === 0 ? (
+        ) : isEmptyView ? (
           <div className="gd-empty">
-            {search.trim() ? (
-              <p>Ничего не найдено.</p>
+            {searchMode ? (
+              <p>Ничего не найдено в подгруппе «{CATEGORY_LABEL[activeCat]}».</p>
+            ) : currentFolderId ? (
+              <>
+                <p className="gd-empty-title">Папка «{folderPath[folderPath.length - 1]?.name}» пуста</p>
+                <p className="gd-empty-hint">Создайте вложенную папку или добавьте документ</p>
+                {canEditDocs && (
+                  <div className="gdf-empty-actions">
+                    <button className="btn-secondary" onClick={openFolderAdd}>+ Папка</button>
+                    <button className="btn-primary" onClick={openAdd}>+ Добавить документ</button>
+                  </div>
+                )}
+                <button className="gdf-up-btn" onClick={goUp} style={{ marginTop: '0.75rem' }}>↑ Наверх</button>
+              </>
             ) : (
               <>
                 <p className="gd-empty-title">В подгруппе «{CATEGORY_LABEL[activeCat]}» документов пока нет</p>
                 <p className="gd-empty-hint">Добавьте первую ссылку, инструкцию или файл</p>
-                {canEditDocs && <button className="btn-primary" onClick={openAdd} style={{ marginTop: '0.75rem' }}>+ Добавить документ</button>}
+                {canEditDocs && (
+                  <div className="gdf-empty-actions">
+                    <button className="btn-secondary" onClick={openFolderAdd}>+ Папка</button>
+                    <button className="btn-primary" onClick={openAdd}>+ Добавить документ</button>
+                  </div>
+                )}
               </>
             )}
           </div>
         ) : isPhone ? (
           <div className="mcard-list">
-            {filtered.map((doc) => {
+            {!searchMode && currentFolderId && (
+              <button type="button" className="mcard gdf-mcard-up" onClick={goUp}>↑ Наверх</button>
+            )}
+            {visibleFolders.map((folder) => {
+              const cnt = subtreeCounts(folders, documents, folder.id)
+              return (
+                <div key={folder.id} className="mcard gdf-mcard-folder">
+                  <div className="mcard-head">
+                    <button type="button" className="gdf-name-btn" onClick={() => enterFolder(folder.id)}>
+                      <span className="gdf-folder-icon" aria-hidden><IconFolder /></span>
+                      <span className="mcard-title" style={{ fontSize: '0.9375rem' }}>{folder.name}</span>
+                    </button>
+                    {canEditDocs && (
+                      <div className="mcard-actions">
+                        <button className="gd-icon-btn" onClick={() => openFolderEdit(folder)} title="Переименовать" aria-label="Переименовать"><EditIcon /></button>
+                        <button className="gd-icon-btn gd-icon-danger" onClick={() => handleDeleteFolder(folder)} disabled={deletingFolderId === folder.id} title="Удалить" aria-label="Удалить"><TrashIcon /></button>
+                      </div>
+                    )}
+                  </div>
+                  {searchMode && folder.__path && <div className="gdf-path">{folder.__path}</div>}
+                  <div className="gdf-count">{cnt.folders} {pluralFolders(cnt.folders)} · {cnt.docs} {pluralDocs(cnt.docs)}</div>
+                </div>
+              )
+            })}
+            {visibleDocs.map((doc) => {
               const materials = buildMaterials(doc)
               return (
                 <div key={doc.id} className="mcard">
@@ -576,6 +815,11 @@ export default function GeneralDocumentsPage() {
                       </div>
                     )}
                   </div>
+                  {searchMode && doc.__path && (
+                    <button type="button" className="gdf-path gdf-path-btn" onClick={() => enterFolder(doc.folder_id || null)}>
+                      {doc.__path}
+                    </button>
+                  )}
                   {doc.description && <div className="mcard-desc">{doc.description}</div>}
                   {materials.length > 0 && (
                     <div className="gd-materials" style={{ marginTop: '0.25rem' }}>
@@ -618,14 +862,67 @@ export default function GeneralDocumentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((doc, index) => {
+                {/* Выход на уровень выше — первой строкой, как «..» в Проводнике. */}
+                {!searchMode && currentFolderId && (
+                  <tr className="gdf-up-row" onClick={goUp}>
+                    <td className="gd-col-num" aria-hidden>↑</td>
+                    <td className="gd-col-title" colSpan={colCount - 1}>
+                      {/* Кликабельна вся строка; на кнопке гасим всплытие, иначе goUp дважды. */}
+                      <button type="button" className="gdf-up-btn" onClick={(e) => { e.stopPropagation(); goUp() }}>.. Наверх</button>
+                    </td>
+                  </tr>
+                )}
+                {visibleFolders.map((folder, index) => {
+                  const cnt = subtreeCounts(folders, documents, folder.id)
+                  return (
+                    <tr key={folder.id} className="gdf-row" onDoubleClick={() => enterFolder(folder.id)}>
+                      <td className="gd-col-num">{index + 1}</td>
+                      <td className="gd-col-title gd-title-cell">
+                        <div className="document-title-cell">
+                          <button type="button" className="gdf-name-btn" onClick={() => enterFolder(folder.id)} title="Открыть папку">
+                            <span className="gdf-folder-icon" aria-hidden><IconFolder /></span>
+                            <span className="document-title gd-title-text">{folder.name}</span>
+                          </button>
+                          {canEditDocs && (
+                            <button
+                              className="document-title-edit-button"
+                              onClick={() => openFolderEdit(folder)}
+                              title="Переименовать или переместить папку"
+                              aria-label="Переименовать или переместить папку"
+                            ><EditIcon /></button>
+                          )}
+                        </div>
+                        {searchMode && folder.__path && <span className="gdf-path">{folder.__path}</span>}
+                      </td>
+                      <td className="gd-col-materials">
+                        <span className="gdf-count">{cnt.folders} {pluralFolders(cnt.folders)} · {cnt.docs} {pluralDocs(cnt.docs)}</span>
+                      </td>
+                      <td className="gd-col-updated gd-updated-cell">{formatDateTime(folder.updated_at || folder.created_at)}</td>
+                      <td className="gd-col-updatedby gd-updatedby-cell">
+                        {folder.updated_by_name || folder.created_by_name || '—'}
+                      </td>
+                      {canEditDocs && (
+                        <td className="gd-col-actions">
+                          <button
+                            className="gd-icon-btn gd-icon-danger"
+                            onClick={() => handleDeleteFolder(folder)}
+                            disabled={deletingFolderId === folder.id}
+                            title="Удалить папку"
+                            aria-label="Удалить папку"
+                          ><TrashIcon /></button>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+                {visibleDocs.map((doc, index) => {
                   const materials = buildMaterials(doc)
                   const isExp = expanded.has(doc.id)
                   const shown = isExp ? materials : materials.slice(0, MATERIALS_PREVIEW)
                   const hiddenCount = materials.length - shown.length
                   return (
                     <tr key={doc.id}>
-                      <td className="gd-col-num">{index + 1}</td>
+                      <td className="gd-col-num">{visibleFolders.length + index + 1}</td>
                       <td className="gd-col-title gd-title-cell">
                         <div className="document-title-cell">
                           <span className="document-title gd-title-text">{doc.title}</span>
@@ -638,6 +935,15 @@ export default function GeneralDocumentsPage() {
                             ><EditIcon /></button>
                           )}
                         </div>
+                        {/* В режиме поиска показываем, в какой папке лежит найденное. */}
+                        {searchMode && doc.__path && (
+                          <button
+                            type="button"
+                            className="gdf-path gdf-path-btn"
+                            onClick={() => enterFolder(doc.folder_id || null)}
+                            title="Показать в папке"
+                          >{doc.__path}</button>
+                        )}
                         {/* Описание свёрнуто до 2 строк. Клик открывает карточку документа —
                             быстрый доступ к полному тексту и редактированию прямо из таблицы. */}
                         {doc.description && (
@@ -681,10 +987,10 @@ export default function GeneralDocumentsPage() {
                   )
                 })}
               </tbody>
-              {filtered.length > 0 && (
+              {!isEmptyView && (
                 <tfoot>
                   <tr>
-                    <td colSpan={colCount} className="gd-tfoot">Всего: {filtered.length} {pluralDocs(filtered.length)}</td>
+                    <td colSpan={colCount} className="gd-tfoot">{countsLabel}</td>
                   </tr>
                 </tfoot>
               )}
@@ -732,10 +1038,24 @@ export default function GeneralDocumentsPage() {
                       id="gd-category"
                       className="gd-select"
                       value={form.category}
-                      onChange={(e) => setForm(f => ({ ...f, category: e.target.value }))}
+                      onChange={(e) => changeFormCategory(e.target.value)}
                     >
                       {CATEGORIES.map(c => (
                         <option key={c.key} value={c.key}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="gd-form-group">
+                    <label htmlFor="gd-folder">Папка</label>
+                    <select
+                      id="gd-folder"
+                      className="gd-select"
+                      value={form.folder_id || ''}
+                      onChange={(e) => setForm(f => ({ ...f, folder_id: e.target.value || null }))}
+                    >
+                      <option value="">— Корень подгруппы —</option>
+                      {folderOptions(folders, form.category || 'general').map(o => (
+                        <option key={o.id} value={o.id}>{o.label}</option>
                       ))}
                     </select>
                   </div>
@@ -876,6 +1196,64 @@ export default function GeneralDocumentsPage() {
           </div>
         </div>
       )}
+
+      {/* Модалка папки: создание, переименование и перенос в другую папку. */}
+      {folderForm.open && (
+        <div className="gd-modal-overlay">
+          <div className="gd-modal gdf-modal" role="dialog" aria-modal="true">
+            <div className="gd-modal-header">
+              <div className="gd-modal-heading">
+                <h3>{folderForm.editing ? 'Папка' : 'Новая папка'}</h3>
+                <p className="gd-modal-subtitle">
+                  Подгруппа «{CATEGORY_LABEL[activeCat]}»
+                </p>
+              </div>
+              <button className="gd-modal-close" onClick={closeFolderModal} aria-label="Закрыть">×</button>
+            </div>
+
+            <form onSubmit={submitFolder}>
+              <div className="gd-modal-body">
+                <div className="gd-form-group">
+                  <label htmlFor="gdf-name">Название папки *</label>
+                  <input
+                    id="gdf-name"
+                    type="text"
+                    value={folderForm.name}
+                    onChange={(e) => setFolderForm(f => ({ ...f, name: e.target.value, error: '' }))}
+                    placeholder="Например: Проектная документация"
+                    autoFocus
+                  />
+                </div>
+                <div className="gd-form-group">
+                  <label htmlFor="gdf-parent">Расположение</label>
+                  <select
+                    id="gdf-parent"
+                    className="gd-select"
+                    value={folderForm.parentId || ''}
+                    onChange={(e) => setFolderForm(f => ({ ...f, parentId: e.target.value || null }))}
+                  >
+                    <option value="">— Корень подгруппы —</option>
+                    {/* Себя и своих потомков в списке нет — иначе получился бы цикл. */}
+                    {folderOptions(folders, activeCat, {
+                      excludeIds: folderForm.editing ? collectFolderIds(folders, folderForm.editing.id) : null,
+                    }).map(o => (
+                      <option key={o.id} value={o.id}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="gd-modal-footer">
+                {folderForm.error && <span className="gd-form-error">{folderForm.error}</span>}
+                <div className="gd-footer-actions">
+                  <button type="button" className="btn-secondary" onClick={closeFolderModal} disabled={folderForm.saving}>Отмена</button>
+                  <button type="submit" className="btn-primary" disabled={folderForm.saving}>{folderForm.saving ? 'Сохранение…' : 'Сохранить'}</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -886,4 +1264,12 @@ function pluralDocs(n) {
   if (mod10 === 1 && mod100 !== 11) return 'документ'
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'документа'
   return 'документов'
+}
+
+function pluralFolders(n) {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'папка'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'папки'
+  return 'папок'
 }

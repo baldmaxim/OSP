@@ -140,7 +140,10 @@ function computeTenderStats(allRows, { dept = 'all', respId = 'all', objectId = 
 }
 
 function ReportsPage() {
-  const { scopedObjectIds } = useRole()
+  // isSuperAdmin — доступ по e-mail из SUPER_ADMINS (RoleContext). Отчёт «Работа
+  // инженеров» показывает персональную активность сотрудников, поэтому виден только
+  // владельцу системы, а не всем администраторам.
+  const { scopedObjectIds, isSuperAdmin } = useRole()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
   const [activeTab, setActiveTab] = useState('tenders')
@@ -569,7 +572,8 @@ function ReportsPage() {
     { key: 'vors', label: 'ВОРы и РД', icon: '📐', count: s.vor.total },
     { key: 'contracts', label: 'Договоры', icon: '📝', count: s.cTotal },
     // Счётчик не показываем: данные вкладки грузятся отдельно, по выбранному дню.
-    { key: 'activity', label: 'Работа инженеров', icon: '📞', count: null },
+    // Вкладка только для владельца системы — это персональная активность сотрудников.
+    ...(isSuperAdmin ? [{ key: 'activity', label: 'Работа инженеров', icon: '📞', count: null }] : []),
   ]
   const updatedLabel = loadedAt
     ? `Обновлено: сегодня, ${loadedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
@@ -1169,8 +1173,10 @@ function ReportsPage() {
         )}
 
         {/* Ежедневная работа инженеров в тендерах — считается по журналу изменений,
-            поэтому вкладка грузит свои данные сама и не зависит от fetchStats. */}
-        {activeTab === 'activity' && (
+            поэтому вкладка грузит свои данные сама и не зависит от fetchStats.
+            Проверку isSuperAdmin дублируем здесь: скрытой вкладки мало, содержимое
+            не должно отрисоваться, даже если activeTab окажется 'activity'. */}
+        {activeTab === 'activity' && isSuperAdmin && (
           <EngineersActivity scopedObjectIds={scopedObjectIds} />
         )}
       </div>
