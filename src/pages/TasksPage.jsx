@@ -10,7 +10,7 @@ import { logTaskEvent, reorderTasks, setTaskParticipants, updateTask } from '../
 import FilterDropdown from '../components/FilterDropdown'
 import TaskBoard from '../components/tasks/TaskBoard'
 import TaskListTable from '../components/tasks/TaskListTable'
-import TaskDetailDrawer from '../components/tasks/TaskDetailDrawer'
+import TaskDetailModal from '../components/tasks/TaskDetailModal'
 import TaskFormModal from '../components/tasks/TaskFormModal'
 import {
   CLOSED_STATUSES,
@@ -302,7 +302,7 @@ function TasksPage() {
       const { error } = await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', task.id)
       if (error) throw error
       await logTaskEvent(task.id, 'soft_deleted', {}, author)
-      closeDrawer()
+      closeTaskCard()
       await afterChange()
     } catch (err) {
       alert('Не удалось удалить задачу: ' + err.message)
@@ -320,12 +320,12 @@ function TasksPage() {
     }
   }
 
-  const openDrawer = (taskId) => {
+  const openTaskCard = (taskId) => {
     const next = new URLSearchParams(searchParams)
     next.set('task', taskId)
     setSearchParams(next, { replace: false })
   }
-  const closeDrawer = () => {
+  const closeTaskCard = () => {
     const next = new URLSearchParams(searchParams)
     next.delete('task')
     setSearchParams(next, { replace: true })
@@ -447,7 +447,7 @@ function TasksPage() {
           groupBy={boardGroup}
           employees={employees}
           employeeMap={employeeMap}
-          onOpen={openDrawer}
+          onOpen={openTaskCard}
           onMove={handleMove}
           canEdit={canEditTasks && tab !== 'deleted'}
         />
@@ -456,7 +456,7 @@ function TasksPage() {
           <TaskListTable
             tasks={pageTasks}
             employeeMap={employeeMap}
-            onOpen={openDrawer}
+            onOpen={openTaskCard}
             onStatusChange={handleStatusChange}
             sort={sort}
             onSort={handleSort}
@@ -492,7 +492,7 @@ function TasksPage() {
       )}
 
       {openTask && (
-        <TaskDetailDrawer
+        <TaskDetailModal
           task={openTask}
           employees={employees}
           employeeMap={employeeMap}
@@ -502,7 +502,7 @@ function TasksPage() {
           canEdit={canEditTasks}
           currentUserId={currentUserId}
           author={author}
-          onClose={closeDrawer}
+          onClose={closeTaskCard}
           onChanged={afterChange}
           onDelete={handleDelete}
           onRestore={handleRestore}

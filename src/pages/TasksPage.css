@@ -476,27 +476,19 @@
   color: var(--text-primary);
 }
 
-/* ── Карточка задачи (drawer) ──────────────────────────────────────────────── */
-.task-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 1000;
-}
-.task-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(560px, 100vw);
+/* ── Карточка задачи (модальное окно) ──────────────────────────────────────── */
+/* Базовые .modal-overlay/.modal приходят из ContractRegistry.css, который
+   импортирует страница; на телефоне mobile.css сам разворачивает .modal в лист
+   на весь экран — поэтому здесь только то, что специфично для карточки. */
+.modal.task-modal {
+  max-width: 1240px;
+  max-height: min(88vh, 940px);
+  overflow: hidden;              /* у .modal стоит overflow-y: auto — колонки скроллятся сами */
   display: flex;
   flex-direction: column;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border-color);
-  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18);
-  z-index: 1001;
+  background: var(--bg-primary);
 }
-.task-drawer-head {
+.task-modal-head {
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -504,8 +496,9 @@
   padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-tertiary);
+  border-radius: 16px 16px 0 0;
 }
-.task-drawer-close {
+.task-modal-close {
   margin-left: auto;
   width: 30px;
   height: 30px;
@@ -521,25 +514,42 @@
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.task-drawer-close:hover { background: var(--bg-secondary); color: var(--text-primary); }
-.task-drawer-body {
+.task-modal-close:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+.task-modal-title { padding: 0.85rem 1rem 0; }
+
+/* Две колонки: слева работа, справа свойства. Прокручиваются независимо —
+   исполнитель, срок и статус остаются на виду при длинном обсуждении. */
+.task-modal-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 1rem;
   flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
+  min-height: 0;                 /* иначе колонки растягивают окно вместо прокрутки */
+  padding: 0.85rem 1rem 1rem;
+}
+.task-modal-main,
+.task-modal-side {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  background: var(--bg-primary);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;  /* прокрутка не «протекает» на страницу под окном */
 }
-.task-drawer-foot {
+/* В узкой боковой колонке два столбца полей не помещаются. */
+.task-modal-side .task-fields { grid-template-columns: minmax(0, 1fr); }
+
+.task-modal-foot {
   padding: 0.6rem 1rem;
   border-top: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   gap: 0.75rem;
   background: var(--bg-secondary);
+  border-radius: 0 0 16px 16px;
 }
-.task-drawer-meta { font-size: 0.6875rem; color: var(--text-tertiary); }
+.task-modal-meta { font-size: 0.6875rem; color: var(--text-tertiary); }
 /* Удаление — тихая кнопка: краснеет только под курсором, чтобы не тянуть на себя
    внимание при каждом открытии карточки. */
 .task-delete-btn {
@@ -559,18 +569,18 @@
   border-color: color-mix(in srgb, var(--danger-color) 35%, transparent);
   background: color-mix(in srgb, var(--danger-color) 8%, transparent);
 }
-.task-drawer-foot .btn-secondary { margin-left: auto; }
+.task-modal-foot .btn-secondary { margin-left: auto; }
 
 /* Заголовок: в покое — обычный заголовок, поле проявляется на hover/focus. */
-.task-drawer-title,
-.task-drawer-title-input {
-  font-size: 1.125rem;
+.task-modal-title-text,
+.task-modal-title-input {
+  font-size: 1.25rem;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.35;
   color: var(--text-primary);
 }
-.task-drawer-title { margin: 0; padding: 0.35rem 0.5rem; }
-.task-drawer-title-input {
+.task-modal-title-text { margin: 0; padding: 0.35rem 0.5rem; }
+.task-modal-title-input {
   width: 100%;
   display: block;
   resize: none;
@@ -583,15 +593,15 @@
   cursor: text;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
-.task-drawer-title-input:hover { background: var(--bg-secondary); border-color: var(--border-color); }
-.task-drawer-title-input:focus {
+.task-modal-title-input:hover { background: var(--bg-secondary); border-color: var(--border-color); }
+.task-modal-title-input:focus {
   outline: none;
   background: var(--bg-secondary);
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 16%, transparent);
 }
 
-.task-drawer-desc {
+.task-modal-desc {
   width: 100%;
   resize: none;
   overflow: hidden;
@@ -604,7 +614,7 @@
   font-size: 0.8125rem;
   line-height: 1.5;
 }
-.task-drawer-desc:focus {
+.task-modal-desc:focus {
   outline: none;
   border-color: var(--primary-color);
   background: var(--bg-secondary);
@@ -810,6 +820,20 @@
 .task-history-when { color: var(--text-tertiary); font-size: 0.6875rem; }
 .task-history-what { color: var(--text-primary); }
 
+/* ── Узкий экран: колонки карточки складываются в одну ─────────────────────── */
+@media (max-width: 1100px) {
+  .task-modal-columns {
+    grid-template-columns: minmax(0, 1fr);
+    /* Одна колонка — прокрутка общая, иначе получилось бы две вложенные. */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .task-modal-main,
+  .task-modal-side { overflow: visible; }
+  /* Свойства уходят под работу, но в две колонки — места хватает. */
+  .task-modal-side .task-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* ── Телефон ───────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .tasks-page { padding: 1rem 0.75rem 1.5rem; }
@@ -818,7 +842,11 @@
   /* Колонки доски листаются по одной. */
   .task-board { scroll-snap-type: x mandatory; }
   .task-column { flex-basis: 85vw; scroll-snap-align: start; max-height: none; }
-  .task-drawer { width: 100vw; border-left: none; }
-  .task-fields { grid-template-columns: 1fr; }
+  /* Разворот в лист на весь экран приходит из mobile.css (.modal). */
+  .task-modal-head, .task-modal-foot { border-radius: 0; }
+  .task-modal-title { padding: 0.75rem 0.75rem 0; }
+  .task-modal-columns { padding: 0.75rem; }
+  .task-fields,
+  .task-modal-side .task-fields { grid-template-columns: 1fr; }
   .mcard.is-overdue { border-left: 3px solid var(--danger-color); }
 }
