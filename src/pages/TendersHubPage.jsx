@@ -33,7 +33,7 @@ const EXTRA_DIRECTIONS = [
     tone: 'violet',
     Icon: IconJoint,
     title: 'Совместные тендеры',
-    desc: 'Тендеры, охватывающие объекты обоих отделов',
+    desc: 'Тендеры с Заказчиком/Застройщиком',
     countKey: 'jointInProgress',
   },
   {
@@ -98,7 +98,7 @@ function TendersHubPage() {
     <div className="tenders-hub">
       <header className="thub-header">
         <div className="thub-header-title">
-          <span className="thub-header-icon" aria-hidden><IconBuilding size={22} /></span>
+          <span className="thub-header-icon" aria-hidden><IconBuilding size={19} /></span>
           <h2>Тендеры</h2>
         </div>
         <div className="thub-header-select">
@@ -112,7 +112,7 @@ function TendersHubPage() {
         <section className="thub-card thub-card--blue">
           <span className="thub-accent" aria-hidden />
           <div className="thub-card-body">
-            <span className="thub-badge thub-badge--blue" aria-hidden><IconHardHat size={24} /></span>
+            <span className="thub-badge thub-badge--blue" aria-hidden><IconHardHat size={20} /></span>
             <div className="thub-title-row">
               <h3 className="thub-title">Основное строительство</h3>
               {counts?.constructionInProgress > 0 && (
@@ -143,7 +143,7 @@ function TendersHubPage() {
                 const counters = subsectionCounters(to, counts)
                 return (
                   <Link key={to} to={to} className="thub-sub-item">
-                    <span className="thub-sub-icon" aria-hidden><Icon size={20} /></span>
+                    <span className="thub-sub-icon" aria-hidden><Icon size={17} /></span>
                     <span className="thub-sub-text">
                       <strong>{title}</strong>
                       <small>{desc}</small>
@@ -172,7 +172,7 @@ function TendersHubPage() {
         <section className="thub-card thub-card--green">
           <span className="thub-accent" aria-hidden />
           <div className="thub-card-body thub-card-body--centered">
-            <span className="thub-badge thub-badge--green" aria-hidden><IconShieldCheck size={24} /></span>
+            <span className="thub-badge thub-badge--green" aria-hidden><IconShieldCheck size={20} /></span>
             <h3 className="thub-title">Гарантийный отдел</h3>
             {counts?.warrantyInProgress > 0 && (
               <span className="thub-count thub-count--solid-green" title="Тендеры в статусе «Идет тендерная процедура»">
@@ -192,7 +192,7 @@ function TendersHubPage() {
           <section key={to} className={`thub-card thub-card--${tone}`}>
             <span className="thub-accent" aria-hidden />
             <div className="thub-card-body thub-card-body--centered">
-              <span className={`thub-badge thub-badge--${tone}`} aria-hidden><Icon size={24} /></span>
+              <span className={`thub-badge thub-badge--${tone}`} aria-hidden><Icon size={20} /></span>
               <h3 className="thub-title">{title}</h3>
               {counts?.[countKey] > 0 && (
                 <span className={`thub-count thub-count--solid-${tone}`} title="Тендеры в статусе «Идет тендерная процедура»">

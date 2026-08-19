@@ -33,7 +33,7 @@ export const TENDER_DEPARTMENTS = [
     key: 'joint',
     label: 'Совместные тендеры',
     title: 'Тендеры — Совместные',
-    desc: 'Тендеры, охватывающие объекты обоих отделов',
+    desc: 'Тендеры с Заказчиком/Застройщиком',
     objectStatus: null,
     requireObject: true,
     tone: 'violet',
