@@ -34,7 +34,14 @@ function AutoGrowTextarea({
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = Math.max(el.scrollHeight, minHeight) + 'px'
+    // scrollHeight не включает рамку, а при box-sizing: border-box заданная
+    // height включает — без этой поправки поле с рамкой обрезает последнюю
+    // строку на 1-2px и показывает лишний скроллбар.
+    const cs = window.getComputedStyle(el)
+    const borders = cs.boxSizing === 'border-box'
+      ? (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+      : 0
+    el.style.height = Math.max(el.scrollHeight + borders, minHeight) + 'px'
   }, [minHeight])
 
   // Подстраиваем высоту под defaultValue — при mount и при смене defaultValue

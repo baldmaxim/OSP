@@ -7,8 +7,12 @@
 -- вью employee_directory, чтобы переименование сотрудника отражалось везде.
 
 -- Справочник сотрудников для выбора исполнителя. Нужен потому, что политика
--- user_roles_select_self_or_admin отдаёт обычному сотруднику только его строку.
-CREATE OR REPLACE VIEW public.employee_directory AS
+-- user_roles_select_self_or_admin отдаёт обычному сотруднику только его строку,
+-- поэтому вью намеренно SECURITY DEFINER (security_invoker = false).
+-- is_negotiation_employee() в WHERE — чтобы справочник не читали логины
+-- подрядчиков: они тоже authenticated (миграция 20260819_employee_directory_restrict).
+CREATE OR REPLACE VIEW public.employee_directory
+WITH (security_barrier = true) AS
   SELECT
     ur.user_id,
     ur.role,
@@ -18,7 +22,8 @@ CREATE OR REPLACE VIEW public.employee_directory AS
   FROM public.user_roles ur
   WHERE ur.is_approved = true
     AND ur.counterparty_id IS NULL
-    AND ur.role <> 'contractor';
+    AND ur.role <> 'contractor'
+    AND public.is_negotiation_employee();
 
 CREATE TABLE IF NOT EXISTS tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -13,6 +13,7 @@ import {
 } from '../../services/tasks'
 import {
   TASK_PRIORITIES,
+  TASK_PRIORITY_CLASS,
   TASK_STATUSES,
   TASK_STATUS_CLASS,
   TASK_STATUS_LABEL,
@@ -164,21 +165,34 @@ function TaskDetailDrawer({
       <aside className="task-drawer" role="dialog" aria-label="Карточка задачи">
         <header className="task-drawer-head">
           <span className={`status-badge ${TASK_STATUS_CLASS[task.status]}`}>{TASK_STATUS_LABEL[task.status]}</span>
+          {task.priority !== 'normal' && (
+            <span className={`task-priority-badge ${TASK_PRIORITY_CLASS[task.priority]}`}>
+              {TASK_PRIORITIES.find(p => p.value === task.priority)?.label}
+            </span>
+          )}
+          {task.due_date && (
+            <span className={`task-due ${dueClass(task.due_date, task.status)}`}>
+              {formatDateRu(task.due_date)} · {dueLabel(task.due_date)}
+            </span>
+          )}
           {isDeleted && <span className="status-badge status-deleted">Удалена</span>}
           <button className="task-drawer-close" onClick={onClose} aria-label="Закрыть">×</button>
         </header>
 
         <div className="task-drawer-body">
+          {/* Заголовок редактируется по клику: в покое выглядит как обычный
+              заголовок, рамка и фон появляются на hover/focus. */}
           {canEditFields && !isDeleted ? (
             <AutoGrowTextarea
               key={`title-${task.id}-${task.title}`}
               className="task-drawer-title-input"
               defaultValue={task.title}
+              minHeight={40}
               onBlur={(e) => {
                 const v = e.target.value.trim()
                 if (v && v !== task.title) patch({ title: v })
               }}
-              title="Название задачи"
+              title="Название задачи — нажмите, чтобы изменить"
             />
           ) : (
             <h3 className="task-drawer-title">{task.title}</h3>
@@ -223,7 +237,7 @@ function TaskDetailDrawer({
           )}
 
           {/* Поля задачи */}
-          <div className="task-fields">
+          <div className="task-fields task-card-block">
             <div className="task-field">
               <span className="task-field-label">Исполнитель</span>
               {canEditFields && !isDeleted ? (
@@ -238,7 +252,7 @@ function TaskDetailDrawer({
                   allLabel="Не назначен"
                 />
               ) : (
-                <span className="task-person">
+                <span className="task-person task-field-value">
                   <UserAvatar userId={task.assignee_user_id} name={nameOf(task.assignee_user_id)} />
                   <span>{nameOf(task.assignee_user_id)}</span>
                 </span>
@@ -247,9 +261,9 @@ function TaskDetailDrawer({
 
             <div className="task-field">
               <span className="task-field-label">Постановщик</span>
-              <span className="task-person">
+              <span className="task-person task-field-value">
                 <UserAvatar userId={task.created_by_user_id} name={nameOf(task.created_by_user_id)} />
-                <span>{nameOf(task.created_by_user_id)}</span>
+                <span className="task-person-name">{nameOf(task.created_by_user_id)}</span>
               </span>
             </div>
 
@@ -262,8 +276,10 @@ function TaskDetailDrawer({
                   onChange={(e) => patch({ due_date: e.target.value || null })}
                 />
               ) : (
-                <span className={`task-due ${dueClass(task.due_date, task.status)}`}>
-                  {task.due_date ? `${formatDateRu(task.due_date)} · ${dueLabel(task.due_date)}` : '—'}
+                <span className="task-field-value">
+                  <span className={`task-due ${dueClass(task.due_date, task.status)}`}>
+                    {task.due_date ? `${formatDateRu(task.due_date)} · ${dueLabel(task.due_date)}` : '—'}
+                  </span>
                 </span>
               )}
             </div>
@@ -280,7 +296,7 @@ function TaskDetailDrawer({
                   allLabel="Обычный"
                 />
               ) : (
-                <span>{TASK_PRIORITIES.find(p => p.value === task.priority)?.label || '—'}</span>
+                <span className="task-field-value">{TASK_PRIORITIES.find(p => p.value === task.priority)?.label || '—'}</span>
               )}
             </div>
 
@@ -296,7 +312,7 @@ function TaskDetailDrawer({
                   allLabel={TASK_STATUS_LABEL[task.status]}
                 />
               ) : (
-                <span>{TASK_STATUS_LABEL[task.status]}</span>
+                <span className="task-field-value">{TASK_STATUS_LABEL[task.status]}</span>
               )}
             </div>
 
@@ -315,7 +331,7 @@ function TaskDetailDrawer({
                   allLabel="Нет"
                 />
               ) : (
-                <span>{coassignees.length ? coassignees.map(nameOf).join(', ') : '—'}</span>
+                <span className="task-field-value">{coassignees.length ? coassignees.map(nameOf).join(', ') : '—'}</span>
               )}
             </div>
 
@@ -334,13 +350,13 @@ function TaskDetailDrawer({
                   allLabel="Нет"
                 />
               ) : (
-                <span>{watchers.length ? watchers.map(nameOf).join(', ') : '—'}</span>
+                <span className="task-field-value">{watchers.length ? watchers.map(nameOf).join(', ') : '—'}</span>
               )}
             </div>
           </div>
 
           {/* Связи с разделами системы */}
-          <div className="task-section">
+          <div className="task-section task-card-block">
             <h4 className="task-section-title">Связано с</h4>
             <div className="task-fields">
               <div className="task-field">
@@ -354,7 +370,7 @@ function TaskDetailDrawer({
                   />
                 ) : task.object_id ? (
                   <Link to={`/general/objects/${task.object_id}`} className="task-chip chip-object">{task.objects?.name || 'Объект'}</Link>
-                ) : <span className="task-muted">—</span>}
+                ) : <span className="task-field-value task-muted">—</span>}
               </div>
               <div className="task-field">
                 <span className="task-field-label">Тендер</span>
@@ -369,7 +385,7 @@ function TaskDetailDrawer({
                   <Link to={`/tenders/${task.tender_id}`} className="task-chip chip-tender">
                     Тендер{task.tenders?.public_tender_number != null ? ` №${task.tenders.public_tender_number}` : ''}
                   </Link>
-                ) : <span className="task-muted">—</span>}
+                ) : <span className="task-field-value task-muted">—</span>}
               </div>
               <div className="task-field">
                 <span className="task-field-label">Договор</span>
@@ -384,13 +400,13 @@ function TaskDetailDrawer({
                   <Link to={`/contracts/${task.contract_id}`} className="task-chip chip-contract">
                     Договор{task.contracts?.contract_number ? ` № ${task.contracts.contract_number}` : ''}
                   </Link>
-                ) : <span className="task-muted">—</span>}
+                ) : <span className="task-field-value task-muted">—</span>}
               </div>
             </div>
           </div>
 
           {/* Описание */}
-          <div className="task-section">
+          <div className="task-section task-card-block">
             <h4 className="task-section-title">Описание</h4>
             {canEditFields && !isDeleted ? (
               <AutoGrowTextarea
@@ -410,7 +426,7 @@ function TaskDetailDrawer({
           </div>
 
           {/* Чек-лист */}
-          <div className="task-section">
+          <div className="task-section task-card-block">
             <h4 className="task-section-title">
               Чек-лист {checklist.length > 0 && <span className="task-muted">{doneCount} / {checklist.length}</span>}
             </h4>
@@ -452,74 +468,78 @@ function TaskDetailDrawer({
           </div>
 
           {/* Вкладки: обсуждение / файлы / история */}
-          <div className="task-tabs" role="tablist">
-            <button role="tab" aria-selected={tab === 'discussion'}
-              className={tab === 'discussion' ? 'is-active' : ''} onClick={() => setTab('discussion')}>
-              Обсуждение {comments.length > 0 && <span className="task-tab-count">{comments.length}</span>}
-            </button>
-            <button role="tab" aria-selected={tab === 'files'}
-              className={tab === 'files' ? 'is-active' : ''} onClick={() => setTab('files')}>Файлы</button>
-            <button role="tab" aria-selected={tab === 'history'}
-              className={tab === 'history' ? 'is-active' : ''} onClick={() => setTab('history')}>История</button>
-          </div>
-
-          {tab === 'discussion' && (
-            <div className="task-comments">
-              {comments.length === 0 && <p className="task-muted">Сообщений пока нет.</p>}
-              {comments.map(c => (
-                <div key={c.id} className={`task-comment${c.author_user_id === currentUserId ? ' is-mine' : ''}`}>
-                  <div className="task-comment-head">
-                    <b>{c.author_name || 'Сотрудник'}</b>
-                    <span className="task-muted">{formatDateTimeRu(c.created_at)}</span>
-                  </div>
-                  <p className="task-comment-body">{c.body}</p>
-                </div>
-              ))}
-              {!isDeleted && (
-                <div className="task-inline-add">
-                  <input
-                    type="text"
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addComment() } }}
-                    placeholder="Написать сообщение…"
-                  />
-                  <button className="btn-primary" onClick={addComment}>Отправить</button>
-                </div>
-              )}
+          <div className="task-section task-card-block task-talk">
+            <div className="task-tabs" role="tablist">
+              <button role="tab" aria-selected={tab === 'discussion'}
+                className={tab === 'discussion' ? 'is-active' : ''} onClick={() => setTab('discussion')}>
+                Обсуждение {comments.length > 0 && <span className="task-tab-count">{comments.length}</span>}
+              </button>
+              <button role="tab" aria-selected={tab === 'files'}
+                className={tab === 'files' ? 'is-active' : ''} onClick={() => setTab('files')}>Файлы</button>
+              <button role="tab" aria-selected={tab === 'history'}
+                className={tab === 'history' ? 'is-active' : ''} onClick={() => setTab('history')}>История</button>
             </div>
-          )}
 
-          {tab === 'files' && (
-            <S3DocumentList ownerType="task" ownerId={task.id} title="Файлы задачи" canEdit={!isDeleted} />
-          )}
+            {tab === 'discussion' && (
+              <div className="task-comments">
+                {comments.length === 0 && <p className="task-muted">Сообщений пока нет.</p>}
+                {comments.map(c => (
+                  <div key={c.id} className={`task-comment${c.author_user_id === currentUserId ? ' is-mine' : ''}`}>
+                    <div className="task-comment-head">
+                      <b>{c.author_name || 'Сотрудник'}</b>
+                      <span className="task-muted">{formatDateTimeRu(c.created_at)}</span>
+                    </div>
+                    <p className="task-comment-body">{c.body}</p>
+                  </div>
+                ))}
+                {!isDeleted && (
+                  <div className="task-inline-add">
+                    <input
+                      type="text"
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addComment() } }}
+                      placeholder="Написать сообщение…"
+                    />
+                    <button className="btn-primary" onClick={addComment}>Отправить</button>
+                  </div>
+                )}
+              </div>
+            )}
 
-          {tab === 'history' && (
-            <ul className="task-history">
-              {history.length === 0 && <li className="task-muted">История пуста.</li>}
-              {history.map(h => (
-                <li key={h.id}>
-                  <span className="task-history-when">{formatDateTimeRu(h.changed_at)}</span>
-                  <span className="task-history-what">
-                    <b>{TASK_EVENT_LABEL[h.event_type] || h.event_type}</b>
-                    {h.description
-                      ? ` — ${h.description}`
-                      : h.field_name ? ` — ${TASK_FIELD_LABEL[h.field_name] || h.field_name}` : ''}
-                  </span>
-                  {h.changed_by_name && <span className="task-muted">{h.changed_by_name}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
+            {tab === 'files' && (
+              <S3DocumentList ownerType="task" ownerId={task.id} title="Файлы задачи" canEdit={!isDeleted} />
+            )}
+
+            {tab === 'history' && (
+              <ul className="task-history">
+                {history.length === 0 && <li className="task-muted">История пуста.</li>}
+                {history.map(h => (
+                  <li key={h.id}>
+                    <span className="task-history-when">{formatDateTimeRu(h.changed_at)}</span>
+                    <span className="task-history-what">
+                      <b>{TASK_EVENT_LABEL[h.event_type] || h.event_type}</b>
+                      {h.description
+                        ? ` — ${h.description}`
+                        : h.field_name ? ` — ${TASK_FIELD_LABEL[h.field_name] || h.field_name}` : ''}
+                    </span>
+                    {h.changed_by_name && <span className="task-muted">{h.changed_by_name}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
-        {canEditFields && (
-          <footer className="task-drawer-foot">
-            {isDeleted
-              ? <button className="btn-secondary" onClick={() => onRestore(task)}>Восстановить</button>
-              : <button className="btn-danger" onClick={() => onDelete(task)}>Удалить задачу</button>}
-          </footer>
-        )}
+        <footer className="task-drawer-foot">
+          <span className="task-drawer-meta">
+            Создана {formatDateTimeRu(task.created_at)}
+            {task.completed_at ? ` · завершена ${formatDateTimeRu(task.completed_at)}` : ''}
+          </span>
+          {canEditFields && (isDeleted
+            ? <button className="btn-secondary" onClick={() => onRestore(task)}>Восстановить</button>
+            : <button className="task-delete-btn" onClick={() => onDelete(task)}>Удалить задачу</button>)}
+        </footer>
       </aside>
     </>
   )

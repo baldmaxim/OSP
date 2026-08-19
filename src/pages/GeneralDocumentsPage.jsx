@@ -710,7 +710,10 @@ export default function GeneralDocumentsPage() {
       </div>
 
       {/* Хлебные крошки: путь до текущей папки. Каждый уровень кликабелен. */}
-      <nav className="gdf-breadcrumbs" aria-label="Путь к папке">
+      <nav className={`gdf-breadcrumbs${currentFolderId ? ' is-nested' : ''}`} aria-label="Путь к папке">
+        {currentFolderId && (
+          <button type="button" className="gdf-crumb gdf-crumb-up" onClick={goUp} title="На уровень выше">↑</button>
+        )}
         <button
           type="button"
           className={`gdf-crumb${currentFolderId ? '' : ' is-current'}`}
@@ -722,7 +725,7 @@ export default function GeneralDocumentsPage() {
         </button>
         {folderPath.map((f, i) => (
           <span key={f.id} className="gdf-crumb-item">
-            <span className="gdf-crumb-sep" aria-hidden>/</span>
+            <span className="gdf-crumb-sep" aria-hidden>›</span>
             <button
               type="button"
               className={`gdf-crumb${i === folderPath.length - 1 ? ' is-current' : ''}`}
@@ -744,7 +747,21 @@ export default function GeneralDocumentsPage() {
         <span className="gd-total">{countsLabel}</span>
       </div>
 
-      <div className="gd-card">
+      {/* Шапка открытой папки — главный признак «мы внутри», а не в корне. */}
+      {currentFolderId && !searchMode && (
+        <div className="gdf-folder-banner">
+          <span className="gdf-folder-banner-icon" aria-hidden><IconFolder /></span>
+          <div className="gdf-folder-banner-text">
+            <span className="gdf-folder-banner-name">{folderPath[folderPath.length - 1]?.name}</span>
+            <span className="gdf-folder-banner-path">
+              {[CATEGORY_LABEL[activeCat], ...folderPath.slice(0, -1).map(f => f.name)].join(' › ')}
+            </span>
+          </div>
+          <button type="button" className="gdf-folder-banner-up" onClick={goUp}>↑ Наверх</button>
+        </div>
+      )}
+
+      <div className={`gd-card${currentFolderId && !searchMode ? ' gdf-in-folder' : ''}`}>
         {loading ? (
           <div className="gd-loading">Загрузка...</div>
         ) : isEmptyView ? (
