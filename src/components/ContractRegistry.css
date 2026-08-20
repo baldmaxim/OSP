@@ -415,6 +415,14 @@
   border: 1px solid #93c5fd;
 }
 
+/* Согласование позади, ждём живые подписи — тёплый оранжевый: работа не стоит,
+   но и не закрыта. Отличается и от синего «В работе», и от зелёного «Завершено». */
+.status-awaiting-paper {
+  background-color: #ffedd5;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+}
+
 /* task 190: новый статус «Приостановка» — серо-фиолетовый */
 .status-paused {
   background-color: #ede9fe;

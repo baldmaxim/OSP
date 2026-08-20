@@ -9,11 +9,24 @@ import ContractClausesTab from '../components/ContractClausesTab'
 import AccessDenied from '../components/AccessDenied'
 import '../components/ContractRegistry.css'
 
+// Держать в согласии со STATUS_OPTIONS в ContractsPage.jsx.
 const STATUS_LABEL = {
   new_request: 'Новая заявка',
   in_work: 'В работе',
+  awaiting_paper_sign: 'Ожидание подписания в бум. виде',
   paused: 'Приостановка',
   completed: 'Завершено',
+}
+
+// CSS-классы статусов пишутся через дефис, а значения — через подчёркивание,
+// поэтому шаблон `status-${status}` промахивался мимо стилей для new_request
+// и in_work. Явное соответствие вместо склейки строк.
+const STATUS_CLASS = {
+  new_request: 'status-new-request',
+  in_work: 'status-in-work',
+  awaiting_paper_sign: 'status-awaiting-paper',
+  paused: 'status-paused',
+  completed: 'status-completed',
 }
 
 const EVENT_LABEL = {
@@ -409,7 +422,7 @@ function ContractDetailPage() {
                 ? `Договор № ${contract.contract_number}`
                 : <>Договор <span className="cds-missing">(№ не присвоен)</span></>}
             </h2>
-            <span className={`cd-status status-${contract.status}`}>{statusLabel}</span>
+            <span className={`cd-status ${STATUS_CLASS[contract.status] || ''}`}>{statusLabel}</span>
             {isDeleted && <span className="cd-status cd-status-deleted">Удалён</span>}
           </div>
           <div className="cd-chips">

@@ -46,6 +46,9 @@ const RECORD_TYPE_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: 'new_request', label: 'Новая заявка', className: 'status-new-request' },
   { value: 'in_work', label: 'В работе', className: 'status-in-work' },
+  // Согласование закончено, ждём живые подписи на бумаге. Значение уложено в
+  // VARCHAR(20) колонки contracts.status — миграция не нужна.
+  { value: 'awaiting_paper_sign', label: 'Ожидание подписания в бум. виде', className: 'status-awaiting-paper' },
   { value: 'paused', label: 'Приостановка', className: 'status-paused' },
   { value: 'completed', label: 'Завершено', className: 'status-completed' },
 ]
@@ -58,6 +61,9 @@ const TABS = [
   { key: 'all', label: 'Общий реестр' },
   { key: 'requests', label: 'Заявки на заключение' },
   { key: 'in_work', label: 'В работе' },
+  // Подпись вкладки короче полного названия статуса — иначе панель вкладок
+  // переносится на вторую строку.
+  { key: 'awaiting_paper_sign', label: 'Ожидание подписания' },
   { key: 'paused', label: 'Приостановка' },
   { key: 'completed', label: 'Завершено' },
   { key: 'deleted', label: 'Удаленные' },
@@ -1000,6 +1006,7 @@ function ContractRegistry() {
       all: active.length,
       requests: active.filter(c => (c.status || 'new_request') === 'new_request').length,
       in_work: active.filter(c => (c.status || 'new_request') === 'in_work').length,
+      awaiting_paper_sign: active.filter(c => c.status === 'awaiting_paper_sign').length,
       paused: active.filter(c => c.status === 'paused').length,
       completed: active.filter(c => c.status === 'completed').length,
       deleted: contracts.filter(c => c.deleted_at).length,

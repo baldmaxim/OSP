@@ -217,6 +217,11 @@ export function normalizeStatus(v) {
   if (!s) return { value: 'completed' }
   if (s.includes('заявк') || s.includes('заключени')) return { value: 'new_request' }
   if (s.includes('приостанов')) return { value: 'paused' }
+  // Проверяем до «заверш» и «в работ»: формулировка «ожидание подписания» может
+  // соседствовать с ними в одной ячейке, а этот статус конкретнее.
+  if (s.includes('подписан') && (s.includes('ожидан') || s.includes('бум'))) {
+    return { value: 'awaiting_paper_sign' }
+  }
   if (s.includes('заверш')) return { value: 'completed' }
   if (s.includes('в работ') || s === 'работа' || s.includes('в работе')) return { value: 'in_work' }
   return { error: true }
