@@ -503,6 +503,7 @@ function TasksPage() {
         <>
           <TaskListTable
             tasks={pageTasks}
+            startIndex={(Math.min(page, totalPages) - 1) * pageSize}
             employeeMap={employeeMap}
             onOpen={openTaskCard}
             onStatusChange={handleStatusChange}

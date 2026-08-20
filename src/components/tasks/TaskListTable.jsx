@@ -19,31 +19,41 @@ const STATUS_LABELS = TASK_STATUSES.map(s => s.label)
 const VALUE_BY_LABEL = Object.fromEntries(TASK_STATUSES.map(s => [s.label, s.value]))
 const CLASS_BY_LABEL = Object.fromEntries(TASK_STATUSES.map(s => [s.label, s.className]))
 
-// Ссылка на связанную сущность: объект / тендер / договор.
-function TaskLinks({ task }) {
-  const items = []
-  if (task.object_id && task.objects?.name) {
-    items.push(<Link key="o" to={`/general/objects/${task.object_id}`} className="task-chip chip-object"
-      onClick={(e) => e.stopPropagation()}>{task.objects.name}</Link>)
-  }
-  if (task.tender_id) {
-    items.push(<Link key="t" to={`/tenders/${task.tender_id}`} className="task-chip chip-tender"
-      onClick={(e) => e.stopPropagation()}>
-      Тендер{task.tenders?.public_tender_number != null ? ` №${task.tenders.public_tender_number}` : ''}
-    </Link>)
-  }
-  if (task.contract_id) {
-    items.push(<Link key="c" to={`/contracts/${task.contract_id}`} className="task-chip chip-contract"
+// Договор встречается у задач заметно реже объекта и тендера, поэтому отдельную
+// колонку под него не заводим — чип идёт подписью под названием задачи, чтобы не
+// растить и без того широкую таблицу.
+function ContractLink({ task }) {
+  if (!task.contract_id) return null
+  return (
+    <Link to={`/contracts/${task.contract_id}`} className="task-chip chip-contract"
       onClick={(e) => e.stopPropagation()}>
       Договор{task.contracts?.contract_number ? ` № ${task.contracts.contract_number}` : ''}
-    </Link>)
-  }
-  if (!items.length) return <span className="task-muted">—</span>
-  return <span className="task-links">{items}</span>
+    </Link>
+  )
+}
+
+// Объект и тендер вынесены в отдельные колонки — по ним чаще всего ищут глазами.
+function ObjectLink({ task }) {
+  if (!task.object_id || !task.objects?.name) return <span className="task-muted">—</span>
+  return (
+    <Link to={`/general/objects/${task.object_id}`} className="task-chip chip-object"
+      title={task.objects.name} onClick={(e) => e.stopPropagation()}>{task.objects.name}</Link>
+  )
+}
+
+function TenderLink({ task }) {
+  if (!task.tender_id) return <span className="task-muted">—</span>
+  const num = task.tenders?.public_tender_number
+  return (
+    <Link to={`/tenders/${task.tender_id}`} className="task-chip chip-tender"
+      onClick={(e) => e.stopPropagation()}>{num != null ? `№ ${num}` : 'Тендер'}</Link>
+  )
 }
 
 // task 433: реестровый вид задач — для контроля сроков, когда карточек уже много.
-function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSort, isPhone, canEdit }) {
+// startIndex — смещение текущей страницы: нумерация сквозная, а не заново с
+// единицы на каждой странице.
+function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSort, isPhone, canEdit, startIndex = 0 }) {
   const nameOf = (userId) => (userId
     ? (employeeMap.get(userId)?.display_name || 'Пользователь удалён')
     : 'Не назначен')
@@ -93,19 +103,22 @@ function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSor
       <table className="task-table">
         <thead>
           <tr>
+            <th className="col-num" title="Порядковый номер">№</th>
             <SortTh field="priority" className="col-priority">Приоритет</SortTh>
             <SortTh field="title" className="col-title">Задача</SortTh>
             <th className="col-person">Исполнитель</th>
             <th className="col-person">Постановщик</th>
             <SortTh field="due_date" className="col-due">Срок</SortTh>
             <th className="col-status">Статус</th>
-            <th className="col-links">Связь</th>
+            <th className="col-object">Объект</th>
+            <th className="col-tender">№ тендера</th>
             <SortTh field="updated_at" className="col-updated">Обновлено</SortTh>
           </tr>
         </thead>
         <tbody>
-          {tasks.map(task => (
+          {tasks.map((task, index) => (
             <tr key={task.id} className={isOverdue(task) ? 'is-overdue' : ''} onClick={() => onOpen(task.id)}>
+              <td className="col-num">{startIndex + index + 1}</td>
               <td className="col-priority">
                 <span className={`task-priority-badge ${TASK_PRIORITY_CLASS[task.priority]}`}>
                   {TASK_PRIORITY_LABEL[task.priority]}
@@ -115,6 +128,9 @@ function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSor
                 <span className="task-title-cell">{task.title}</span>
                 {task.checklistTotal > 0 && (
                   <span className="task-muted"> · чек-лист {task.checklistDone}/{task.checklistTotal}</span>
+                )}
+                {task.contract_id && (
+                  <div className="task-title-sub"><ContractLink task={task} /></div>
                 )}
               </td>
               <td className="col-person">
@@ -144,7 +160,8 @@ function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSor
                   <span className={`status-badge ${TASK_STATUS_CLASS[task.status]}`}>{TASK_STATUS_LABEL[task.status]}</span>
                 )}
               </td>
-              <td className="col-links"><TaskLinks task={task} /></td>
+              <td className="col-object"><ObjectLink task={task} /></td>
+              <td className="col-tender"><TenderLink task={task} /></td>
               <td className="col-updated">{formatDateRu(task.updated_at)}</td>
             </tr>
           ))}
