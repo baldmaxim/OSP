@@ -53,9 +53,12 @@ function GeneralInfo() {
   const fetchContacts = async () => {
     try {
       setLoading(true)
+      // objects!object_id — связь указана явно: с миграции 20260822 между
+      // contacts и objects несколько внешних ключей, и короткое objects(name)
+      // становится неоднозначным (PGRST201).
       const { data, error } = await supabase
         .from('contacts')
-        .select('*, objects(name)')
+        .select('*, objects!object_id(name)')
         .order('full_name', { ascending: true })
 
       if (error) throw error

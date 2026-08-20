@@ -242,15 +242,21 @@ function ContactsPage() {
   const fetchContacts = async () => {
     try {
       setLoading(true)
+      // objects!object_id — связь указана явно. С миграции 20260822 между
+      // contacts и objects три внешних ключа (contacts.object_id и две обратные
+      // ссылки objects.construction_manager_contact_id / economist_contact_id),
+      // и короткое objects(name) стало неоднозначным: PostgREST отвечает PGRST201,
+      // а список сотрудников оставался пустым.
       const { data, error } = await supabase
         .from('contacts')
-        .select('*, objects(name), departments(id, name)')
+        .select('*, objects!object_id(name), departments(id, name)')
         .order('full_name', { ascending: true })
 
       if (error) throw error
       setContacts(data || [])
     } catch (error) {
       console.error('Ошибка загрузки контактов:', error.message)
+      alert('Не удалось загрузить сотрудников: ' + error.message)
     } finally {
       setLoading(false)
     }
