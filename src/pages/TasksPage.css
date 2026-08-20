@@ -622,6 +622,14 @@
 .task-table tbody tr:last-child { border-bottom: none; }
 .task-table tbody tr.is-overdue { background: color-mix(in srgb, var(--danger-color) 6%, transparent); }
 .task-table td { padding: 0.6rem 0.75rem; color: var(--text-primary); vertical-align: middle; }
+
+/* Вертикальные разделители колонок: в широкой таблице глаз без них теряет
+   строку. Линия мягче горизонтальной (границы строк остаются главной сеткой),
+   у последней колонки её нет — иначе получалась бы рамка по краю. */
+.task-table thead th:not(:last-child),
+.task-table tbody td:not(:last-child) {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+}
 .task-table .col-num {
   width: 48px;
   text-align: center;

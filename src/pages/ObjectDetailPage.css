@@ -177,6 +177,20 @@
   font-weight: 500;
 }
 
+/* Ответственный по объекту: ФИО крупно, должность и контакты — подписью. */
+.obj-staff { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.obj-staff-name { overflow-wrap: anywhere; }
+.obj-staff-meta {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+.obj-staff-meta:empty { display: none; }
+/* Пикер во всю ширину строки формы, как остальные поля модалки. */
+.obj-staff-picker { display: flex; width: 100%; }
+.obj-staff-picker .fdrop-trigger { width: 100%; max-width: none; }
+
 /* Document Section */
 .documents-content {
   display: flex;

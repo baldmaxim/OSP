@@ -9,6 +9,7 @@ import S3DocumentPreview from '../components/S3DocumentPreview'
 import WarrantyActSignModal from '../components/WarrantyActSignModal'
 import WarrantyDocSelect from '../components/WarrantyDocSelect'
 import AccessDenied from '../components/AccessDenied'
+import FilterDropdown from '../components/FilterDropdown'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import './ObjectDetailPage.css'
 
@@ -448,8 +449,12 @@ function ObjectDetailPage() {
     planned_end_date: '',
     total_area: '',
     budget: '',
-    email: '' // task 335
+    email: '', // task 335
+    construction_manager_contact_id: '',
+    economist_contact_id: '',
   })
+  // Реестр сотрудников для выбора ответственных по объекту.
+  const [staffContacts, setStaffContacts] = useState([])
 
   // task 372: площади объекта (с вложенными подпунктами).
   const [areas, setAreas] = useState([])
@@ -518,10 +523,19 @@ function ObjectDetailPage() {
   const fetchObjectData = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: objectData, error: objectError } = await supabase
-        .from('objects').select('*').eq('id', objectId).single()
-      if (objectError) throw objectError
-      setObject(objectData)
+      // Ответственных подтягиваем именованными связями: у objects две ссылки на
+      // contacts, и без явных имён Supabase не разберёт, какая из них какая.
+      // Если миграция 20260822 ещё не применена, связей нет и запрос падает —
+      // тогда грузим объект как раньше, просто без ответственных. Иначе вся
+      // карточка объекта была бы недоступна до накатывания миграции.
+      const STAFF_EMBED = '*, construction_manager:contacts!construction_manager_contact_id(id, full_name, position, phone, email), economist:contacts!economist_contact_id(id, full_name, position, phone, email)'
+      let objectRes = await supabase.from('objects').select(STAFF_EMBED).eq('id', objectId).single()
+      if (objectRes.error) {
+        console.warn('Ответственные по объекту недоступны, грузим без них:', objectRes.error.message)
+        objectRes = await supabase.from('objects').select('*').eq('id', objectId).single()
+      }
+      if (objectRes.error) throw objectRes.error
+      setObject(objectRes.data)
 
       const { data: docsData, error: docsError } = await supabase
         .from('object_documents')
@@ -627,6 +641,20 @@ function ObjectDetailPage() {
     el.style.height = 'auto'
     el.style.height = el.scrollHeight + 'px'
   }, [warrantyFormData.work_name, showWarrantyModal])
+
+  // Реестр сотрудников для выбора ответственных. Грузим один раз при монтировании:
+  // список нужен только в модалке редактирования, но он небольшой и статичный.
+  useEffect(() => {
+    let alive = true
+    supabase.from('contacts')
+      .select('id, full_name, position')
+      .order('full_name', { ascending: true })
+      .then(({ data, error }) => {
+        if (error) { console.error('Ошибка загрузки сотрудников:', error.message); return }
+        if (alive) setStaffContacts(data || [])
+      })
+    return () => { alive = false }
+  }, [])
 
   // Автораскрытие групп с совпавшими приложениями при поиске (task 297).
   useEffect(() => {
@@ -1093,6 +1121,30 @@ function ObjectDetailPage() {
     return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
   }
 
+  // Ответственный по объекту: ФИО плюс должность и контакты второй строкой —
+  // чтобы не бегать за телефоном в реестр сотрудников.
+  const renderStaff = (person) => {
+    if (!person) return <span className="muted">—</span>
+    return (
+      <span className="obj-staff">
+        <span className="obj-staff-name">{person.full_name}</span>
+        <span className="obj-staff-meta">
+          {[
+            person.position,
+            person.phone,
+            person.email,
+          ].filter(Boolean).join(' · ') || null}
+        </span>
+      </span>
+    )
+  }
+
+  // Опции выбора сотрудника: должность в подписи помогает не перепутать однофамильцев.
+  const staffOptions = staffContacts.map(c => ({
+    value: c.id,
+    label: c.position ? `${c.full_name} — ${c.position}` : c.full_name,
+  }))
+
   // Object info handlers
   const handleEditInfo = () => {
     setInfoFormData({
@@ -1102,7 +1154,9 @@ function ObjectDetailPage() {
       planned_end_date: object.planned_end_date || '',
       total_area: object.total_area || '',
       budget: object.budget || '',
-      email: object.email || '' // task 335
+      email: object.email || '', // task 335
+      construction_manager_contact_id: object.construction_manager_contact_id || '',
+      economist_contact_id: object.economist_contact_id || '',
     })
     setShowInfoModal(true)
   }
@@ -1119,7 +1173,10 @@ function ObjectDetailPage() {
           planned_end_date: infoFormData.planned_end_date || null,
           total_area: parseFloat(infoFormData.total_area) || null,
           budget: parseFloat(infoFormData.budget) || null,
-          email: infoFormData.email.trim() || null // task 335
+          email: infoFormData.email.trim() || null, // task 335
+          // Пустая строка — не валидный UUID, Postgres на ней падает.
+          construction_manager_contact_id: infoFormData.construction_manager_contact_id || null,
+          economist_contact_id: infoFormData.economist_contact_id || null,
         })
         .eq('id', objectId)
       if (error) throw error
@@ -1629,6 +1686,15 @@ function ObjectDetailPage() {
                   ? <a href={`mailto:${object.email}`}>{object.email}</a>
                   : <span className="muted">—</span>}
               </span>
+            </div>
+            {/* Ответственные по объекту — из реестра сотрудников. */}
+            <div className="info-item">
+              <span className="info-label">Руководитель строительства</span>
+              <span className="info-value">{renderStaff(object.construction_manager)}</span>
+            </div>
+            <div className="info-item">
+              <span className="info-label">Экономист</span>
+              <span className="info-value">{renderStaff(object.economist)}</span>
             </div>
           </div>
         </div>
@@ -2453,6 +2519,33 @@ function ObjectDetailPage() {
                   value={infoFormData.email}
                   onChange={(e) => setInfoFormData({ ...infoFormData, email: e.target.value })}
                   placeholder="object@example.com"
+                />
+              </div>
+              {/* Ответственные по объекту — выбираются из реестра сотрудников. */}
+              <div className="form-row-1">
+                <label>Руководитель строительства</label>
+                <FilterDropdown
+                  className="obj-staff-picker"
+                  label=""
+                  value={infoFormData.construction_manager_contact_id}
+                  onChange={(v) => setInfoFormData({ ...infoFormData, construction_manager_contact_id: v || '' })}
+                  options={staffOptions}
+                  searchable
+                  searchPlaceholder="Поиск сотрудника…"
+                  allLabel="Не назначен"
+                />
+              </div>
+              <div className="form-row-1">
+                <label>Экономист</label>
+                <FilterDropdown
+                  className="obj-staff-picker"
+                  label=""
+                  value={infoFormData.economist_contact_id}
+                  onChange={(v) => setInfoFormData({ ...infoFormData, economist_contact_id: v || '' })}
+                  options={staffOptions}
+                  searchable
+                  searchPlaceholder="Поиск сотрудника…"
+                  allLabel="Не назначен"
                 />
               </div>
               <div className="modal-footer">

@@ -38,6 +38,15 @@ CREATE TABLE IF NOT EXISTS contacts (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Ответственные сотрудники объекта (миграция 20260822). Объявлены после contacts:
+-- ссылка идёт из objects, а сама таблица создаётся выше по файлу.
+ALTER TABLE objects
+  ADD COLUMN IF NOT EXISTS construction_manager_contact_id UUID
+    REFERENCES contacts(id) ON DELETE SET NULL;
+ALTER TABLE objects
+  ADD COLUMN IF NOT EXISTS economist_contact_id UUID
+    REFERENCES contacts(id) ON DELETE SET NULL;
+
 -- Индексы для быстрого поиска
 CREATE INDEX IF NOT EXISTS idx_objects_name ON objects(name);
 CREATE INDEX IF NOT EXISTS idx_objects_coordinates ON objects(latitude, longitude);
