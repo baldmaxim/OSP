@@ -50,12 +50,14 @@ function TenderLink({ task }) {
   )
 }
 
-// «Иванов Иван Иванович» → «Иванов И.». В строке соисполнителей их бывает
-// несколько, полные ФИО не помещаются.
+// «Базаркин Андрей Геннадьевич» → «Базаркин А. Г.». Полные ФИО в колонки людей
+// не помещаются и обрезаются многоточием; полное имя остаётся в title ячейки.
+// Одно слово или почта (display_name падает на email, если ФИО пустое) — как есть.
 function shortName(full) {
   const parts = String(full || '').trim().split(/\s+/)
   if (parts.length < 2) return full || ''
-  return `${parts[0]} ${parts[1].charAt(0)}.`
+  const initials = parts.slice(1, 3).map(w => `${w.charAt(0).toUpperCase()}.`).join(' ')
+  return `${parts[0]} ${initials}`
 }
 
 // task 433: реестровый вид задач — для контроля сроков, когда карточек уже много.
@@ -144,13 +146,13 @@ function TaskListTable({
                   <div className="task-title-sub"><ContractLink task={task} /></div>
                 )}
               </td>
-              <td className="col-person">
-                <span className="task-person-name">{nameOf(task.created_by_user_id)}</span>
+              <td className="col-person" title={nameOf(task.created_by_user_id)}>
+                <span className="task-person-name">{shortName(nameOf(task.created_by_user_id))}</span>
               </td>
-              <td className="col-person">
+              <td className="col-person" title={nameOf(task.assignee_user_id)}>
                 <span className="task-person">
                   <UserAvatar userId={task.assignee_user_id} name={nameOf(task.assignee_user_id)} />
-                  <span className="task-person-name">{nameOf(task.assignee_user_id)}</span>
+                  <span className="task-person-name">{shortName(nameOf(task.assignee_user_id))}</span>
                 </span>
                 {/* Соисполнители — второй строкой: по одной колонке видно всех,
                     кто занят задачей, а не только основного исполнителя. */}

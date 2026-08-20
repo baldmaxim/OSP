@@ -36,6 +36,9 @@ const TABS = [
   { key: 'created', label: 'Я поставил' },
   { key: 'watching', label: 'Наблюдаю' },
   { key: 'all', label: 'Все' },
+  // Завершённые — своя вкладка, как и удалённые: на остальных они только
+  // засоряют список, а искать их «где-то в фильтрах» неудобно.
+  { key: 'done', label: 'Завершённые' },
   { key: 'deleted', label: 'Удалённые' },
 ]
 
@@ -85,7 +88,6 @@ function TasksPage() {
   const [objectFilter, setObjectFilter] = useState('')
   const [dueFilter, setDueFilter] = useState('')
   const [search, setSearch] = useState('')
-  const [showClosed, setShowClosed] = useState(false)
 
   // Список
   const [sort, setSort] = useState({ field: 'due_date', dir: 'asc' })
@@ -233,9 +235,11 @@ function TasksPage() {
       if (tab === 'mine' && t.assignee_user_id !== currentUserId && !myCoassignee.has(t.id)) return false
       if (tab === 'created' && t.created_by_user_id !== currentUserId) return false
       if (tab === 'watching' && !myWatching.has(t.id)) return false
+      if (tab === 'done' && !CLOSED_STATUSES.has(t.status)) return false
 
-      // Завершённые прячем по умолчанию — иначе доска зарастает историей.
-      if (!showClosed && CLOSED_STATUSES.has(t.status) && tab !== 'deleted') return false
+      // На рабочих вкладках завершённых нет — иначе доска зарастает историей.
+      // Исключения: их собственная вкладка и корзина.
+      if (CLOSED_STATUSES.has(t.status) && tab !== 'done' && tab !== 'deleted') return false
 
       if (assigneeFilter.length && !assigneeFilter.includes(t.assignee_user_id)) return false
       if (priorityFilter && t.priority !== priorityFilter) return false
@@ -245,7 +249,7 @@ function TasksPage() {
         && !(t.description || '').toLowerCase().includes(q)) return false
       return true
     })
-  }, [myTasks, tab, currentUserId, myCoassignee, myWatching, showClosed, assigneeFilter,
+  }, [myTasks, tab, currentUserId, myCoassignee, myWatching, assigneeFilter,
     priorityFilter, objectFilter, dueFilter, search])
 
   const sortedTasks = useMemo(
@@ -259,7 +263,7 @@ function TasksPage() {
   }, [sortedTasks, page, pageSize, totalPages])
 
   // Смена фильтра/вкладки не должна оставлять пользователя на несуществующей странице.
-  useEffect(() => { setPage(1) }, [tab, assigneeFilter, priorityFilter, objectFilter, dueFilter, search, showClosed])
+  useEffect(() => { setPage(1) }, [tab, assigneeFilter, priorityFilter, objectFilter, dueFilter, search])
 
   // Карточку открываем только для доступной задачи: по прямой ссылке ?task=<id>
   // на чужую задачу показываем понятное сообщение, а не пустой экран.
@@ -392,6 +396,7 @@ function TasksPage() {
       created: live.filter(t => t.created_by_user_id === currentUserId).length,
       watching: live.filter(t => myWatching.has(t.id)).length,
       all: live.length,
+      done: myTasks.filter(t => !t.deleted_at && CLOSED_STATUSES.has(t.status)).length,
       deleted: myTasks.filter(t => t.deleted_at).length,
     }
   }, [myTasks, currentUserId, myCoassignee, myWatching])
@@ -474,10 +479,6 @@ function TasksPage() {
           label="Срок" value={dueFilter} onChange={setDueFilter}
           options={DUE_FILTERS} allLabel="Любой срок"
         />
-        <label className="tasks-check">
-          <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
-          Показывать завершённые
-        </label>
         {/* Раскладка по людям — инструмент распределения работы: колонка на каждого
             сотрудника. У того, кто видит только свои задачи, это десятки пустых
             колонок, поэтому переключатель оставляем администратору. */}
@@ -496,9 +497,9 @@ function TasksPage() {
         <div className="tasks-empty">
           <p>Задач нет.</p>
           <p className="tasks-empty-hint">
-            {tab === 'mine'
-              ? 'Здесь появятся задачи, назначенные на вас.'
-              : 'Измените фильтры или поставьте первую задачу.'}
+            {tab === 'mine' ? 'Здесь появятся задачи, назначенные на вас.'
+              : tab === 'done' ? 'Сюда попадают задачи, принятые постановщиком.'
+                : 'Измените фильтры или поставьте первую задачу.'}
           </p>
         </div>
       ) : effectiveView === 'board' ? (
