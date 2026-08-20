@@ -86,8 +86,27 @@ CREATE TABLE IF NOT EXISTS task_audit_log (
   changed_by_name TEXT
 );
 
--- RLS: только подтверждённые сотрудники СУ-10 (контрагенты доступа не имеют).
+-- RLS: только подтверждённые сотрудники СУ-10 (контрагенты доступа не имеют),
+-- и каждый видит ТОЛЬКО свои задачи — где он исполнитель, постановщик,
+-- соисполнитель или наблюдатель. Все задачи компании видит администратор.
+-- Актуальный набор политик и хелперы is_task_participant() / can_see_task() —
+-- в миграции 20260821_tasks_visibility.sql.
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tasks_employee_all ON tasks
-  FOR ALL TO authenticated
-  USING (public.is_negotiation_employee()) WITH CHECK (public.is_negotiation_employee());
+CREATE POLICY tasks_select_visible ON tasks
+  FOR SELECT TO authenticated
+  USING (
+    public.is_negotiation_employee() AND (
+      public.is_admin()
+      OR assignee_user_id = auth.uid()
+      OR created_by_user_id = auth.uid()
+      OR public.is_task_participant(id)
+    )
+  );
+-- INSERT вынесен отдельно: при вставке строки ещё нет, общий WITH CHECK
+-- с предикатом видимости отбивал бы создание задачи.
+CREATE POLICY tasks_insert_employee ON tasks
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    public.is_negotiation_employee()
+    AND (public.is_admin() OR created_by_user_id = auth.uid())
+  );

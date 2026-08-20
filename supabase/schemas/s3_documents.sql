@@ -23,6 +23,10 @@ CREATE INDEX IF NOT EXISTS idx_s3_documents_created_at ON s3_documents(created_a
 
 ALTER TABLE s3_documents ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow all for authenticated users" ON s3_documents
+-- Вложения задач доступны только тем, кому видна сама задача (миграция
+-- 20260821_tasks_visibility.sql). Для остальных owner_type условие
+-- короткозамыкается — поведение прежнее.
+CREATE POLICY s3_documents_authenticated ON s3_documents
   FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+  USING (owner_type <> 'task' OR public.can_see_task(owner_id))
+  WITH CHECK (owner_type <> 'task' OR public.can_see_task(owner_id));

@@ -46,12 +46,16 @@ const VIEW_KEY = 'tasksView'
 const GROUP_KEY = 'tasksBoardGroup'
 
 function TasksPage() {
-  const { canEdit, user, userProfile, role } = useRole()
+  const { canEdit, user, userProfile, role, isAdmin } = useRole()
   const { refresh: refreshNotifications } = useNotifications()
   const isPhone = useIsPhone()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const canEditTasks = canEdit('tasks')
+  // Все задачи компании видит только администратор; остальные — только те, где
+  // они исполнитель, соисполнитель, постановщик или наблюдатель. Ограничение
+  // продублировано в RLS (миграция 20260821).
+  const seesAllTasks = isAdmin
   const currentUserId = user?.id || null
   const author = useMemo(
     () => ({ name: userProfile?.full_name || user?.email || '', role }),
@@ -62,7 +66,9 @@ function TasksPage() {
   const [objects, setObjects] = useState([])
   const [tenderOptions, setTenderOptions] = useState([])
   const [contractOptions, setContractOptions] = useState([])
-  const [myParticipation, setMyParticipation] = useState(new Set())
+  // Участие текущего пользователя, разложенное по роли: соисполнитель ≠ наблюдатель.
+  const [myCoassignee, setMyCoassignee] = useState(new Set())
+  const [myWatching, setMyWatching] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -89,6 +95,9 @@ function TasksPage() {
   // На телефоне доска нечитаема (колонки шириной в экран, перетаскивание пальцем
   // конфликтует со скроллом) — там всегда список карточками.
   const effectiveView = isPhone ? 'list' : view
+  // Раскладка по людям доступна только админу; у остальных принудительно по
+  // статусу, даже если в localStorage осталось прежнее значение.
+  const effectiveBoardGroup = seesAllTasks ? boardGroup : 'status'
 
   useEffect(() => { localStorage.setItem(VIEW_KEY, view) }, [view])
   useEffect(() => { localStorage.setItem(GROUP_KEY, boardGroup) }, [boardGroup])
@@ -112,8 +121,10 @@ function TasksPage() {
         fetchAllRows((from, to) => supabase
           .from('task_comments').select('task_id')
           .order('task_id').order('id').range(from, to)),
+        // kind нужен, чтобы отличить соисполнителя от наблюдателя: задачи, где я
+        // соисполнитель, — это «Мои», а не «Наблюдаю».
         currentUserId
-          ? supabase.from('task_participants').select('task_id').eq('user_id', currentUserId)
+          ? supabase.from('task_participants').select('task_id, kind').eq('user_id', currentUserId)
           : Promise.resolve({ data: [] }),
       ])
 
@@ -132,7 +143,14 @@ function TasksPage() {
         checklistDone: checkDone.get(t.id) || 0,
         commentsCount: commentCount.get(t.id) || 0,
       })))
-      setMyParticipation(new Set((participation.data || []).map(p => p.task_id)))
+      const coassignee = new Set()
+      const watching = new Set()
+      for (const p of (participation.data || [])) {
+        if (p.kind === 'coassignee') coassignee.add(p.task_id)
+        else if (p.kind === 'watcher') watching.add(p.task_id)
+      }
+      setMyCoassignee(coassignee)
+      setMyWatching(watching)
     } catch (err) {
       console.error('Ошибка загрузки задач:', err.message)
       alert('Не удалось загрузить задачи: ' + err.message)
@@ -179,16 +197,30 @@ function TasksPage() {
   }, [loadTasks, loadDictionaries])
 
   // ── Фильтрация ──────────────────────────────────────────────────────────────
+  // Доступна ли задача текущему пользователю. Дублирует RLS намеренно: до
+  // применения миграции 20260821 интерфейс уже ведёт себя правильно, после —
+  // фильтр просто ничего не отбрасывает.
+  const canSeeTask = useCallback((t) => seesAllTasks
+    || t.assignee_user_id === currentUserId
+    || t.created_by_user_id === currentUserId
+    || myCoassignee.has(t.id)
+    || myWatching.has(t.id),
+  [seesAllTasks, currentUserId, myCoassignee, myWatching])
+
+  // Задачи, доступные пользователю, — основа и для вкладок, и для счётчиков.
+  const myTasks = useMemo(() => tasks.filter(canSeeTask), [tasks, canSeeTask])
+
   const visibleTasks = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return tasks.filter(t => {
+    return myTasks.filter(t => {
       if (tab === 'deleted') {
         if (!t.deleted_at) return false
       } else if (t.deleted_at) return false
 
-      if (tab === 'mine' && t.assignee_user_id !== currentUserId) return false
+      // «Мои» — где я делаю работу: исполнитель или соисполнитель.
+      if (tab === 'mine' && t.assignee_user_id !== currentUserId && !myCoassignee.has(t.id)) return false
       if (tab === 'created' && t.created_by_user_id !== currentUserId) return false
-      if (tab === 'watching' && !myParticipation.has(t.id)) return false
+      if (tab === 'watching' && !myWatching.has(t.id)) return false
 
       // Завершённые прячем по умолчанию — иначе доска зарастает историей.
       if (!showClosed && CLOSED_STATUSES.has(t.status) && tab !== 'deleted') return false
@@ -201,7 +233,7 @@ function TasksPage() {
         && !(t.description || '').toLowerCase().includes(q)) return false
       return true
     })
-  }, [tasks, tab, currentUserId, myParticipation, showClosed, assigneeFilter,
+  }, [myTasks, tab, currentUserId, myCoassignee, myWatching, showClosed, assigneeFilter,
     priorityFilter, objectFilter, dueFilter, search])
 
   const sortedTasks = useMemo(
@@ -217,7 +249,10 @@ function TasksPage() {
   // Смена фильтра/вкладки не должна оставлять пользователя на несуществующей странице.
   useEffect(() => { setPage(1) }, [tab, assigneeFilter, priorityFilter, objectFilter, dueFilter, search, showClosed])
 
-  const openTask = tasks.find(t => t.id === openTaskId) || null
+  // Карточку открываем только для доступной задачи: по прямой ссылке ?task=<id>
+  // на чужую задачу показываем понятное сообщение, а не пустой экран.
+  const openTask = myTasks.find(t => t.id === openTaskId) || null
+  const openTaskDenied = !!openTaskId && !openTask && !loading
 
   // ── Мутации ────────────────────────────────────────────────────────────────
   const auditCtx = useMemo(() => ({
@@ -266,7 +301,7 @@ function TasksPage() {
 
   // Перетаскивание карточки: колонка = статус либо исполнитель.
   const handleMove = async (task, columnKey, orderedIds) => {
-    const updates = boardGroup === 'status'
+    const updates = effectiveBoardGroup === 'status'
       ? (task.status === columnKey ? {} : { status: columnKey })
       : (task.assignee_user_id === columnKey ? {} : { assignee_user_id: columnKey })
     // Оптимистично двигаем карточку — иначе она «прыгает» назад до ответа сервера.
@@ -339,19 +374,29 @@ function TasksPage() {
 
   // ── Счётчики вкладок ───────────────────────────────────────────────────────
   const tabCounts = useMemo(() => {
-    const live = tasks.filter(t => !t.deleted_at && !CLOSED_STATUSES.has(t.status))
+    const live = myTasks.filter(t => !t.deleted_at && !CLOSED_STATUSES.has(t.status))
     return {
-      mine: live.filter(t => t.assignee_user_id === currentUserId).length,
+      mine: live.filter(t => t.assignee_user_id === currentUserId || myCoassignee.has(t.id)).length,
       created: live.filter(t => t.created_by_user_id === currentUserId).length,
-      watching: live.filter(t => myParticipation.has(t.id)).length,
+      watching: live.filter(t => myWatching.has(t.id)).length,
       all: live.length,
-      deleted: tasks.filter(t => t.deleted_at).length,
+      deleted: myTasks.filter(t => t.deleted_at).length,
     }
-  }, [tasks, currentUserId, myParticipation])
+  }, [myTasks, currentUserId, myCoassignee, myWatching])
 
   const peopleOptions = useMemo(
     () => employees.map(e => ({ value: e.user_id, label: e.display_name || e.email })),
     [employees])
+  // Фильтр «Исполнитель»: у не-админа в списке только те, кто реально встречается
+  // в доступных ему задачах — иначе выпадашка из всего штата, где почти каждый
+  // выбор даёт пустой результат.
+  const assigneeOptions = useMemo(() => {
+    if (seesAllTasks) return peopleOptions
+    const present = new Set(myTasks.map(t => t.assignee_user_id).filter(Boolean))
+    return peopleOptions.filter(o => present.has(o.value))
+  }, [seesAllTasks, peopleOptions, myTasks])
+  // «Все» у не-админа — это все ЕГО задачи, а не работа компании.
+  const tabLabel = (t) => (t.key === 'all' && !seesAllTasks ? 'Все мои' : t.label)
   const objectDropdownOptions = useMemo(
     () => [{ value: '', label: 'Все объекты' }, ...objects.map(o => ({ value: o.id, label: o.name }))],
     [objects])
@@ -384,7 +429,7 @@ function TasksPage() {
             className={`tasks-tab${tab === t.key ? ' is-active' : ''}`}
             onClick={() => setTab(t.key)}
           >
-            {t.label}
+            {tabLabel(t)}
             <span className="tasks-tab-count">{tabCounts[t.key]}</span>
           </button>
         ))}
@@ -400,7 +445,7 @@ function TasksPage() {
         />
         <FilterDropdown
           label="Исполнитель" value={assigneeFilter} onChange={setAssigneeFilter}
-          options={peopleOptions} multiple searchable searchPlaceholder="Поиск сотрудника…"
+          options={assigneeOptions} multiple searchable searchPlaceholder="Поиск сотрудника…"
           allLabel="Все"
         />
         <FilterDropdown
@@ -421,7 +466,10 @@ function TasksPage() {
           <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
           Показывать завершённые
         </label>
-        {effectiveView === 'board' && (
+        {/* Раскладка по людям — инструмент распределения работы: колонка на каждого
+            сотрудника. У того, кто видит только свои задачи, это десятки пустых
+            колонок, поэтому переключатель оставляем администратору. */}
+        {effectiveView === 'board' && seesAllTasks && (
           <FilterDropdown
             label="Колонки" value={boardGroup} onChange={(v) => setBoardGroup(v || 'status')}
             options={[{ value: 'status', label: 'По статусу' }, { value: 'assignee', label: 'По исполнителю' }]}
@@ -444,7 +492,7 @@ function TasksPage() {
       ) : effectiveView === 'board' ? (
         <TaskBoard
           tasks={sortedTasks}
-          groupBy={boardGroup}
+          groupBy={effectiveBoardGroup}
           employees={employees}
           employeeMap={employeeMap}
           onOpen={openTaskCard}
@@ -507,6 +555,21 @@ function TasksPage() {
           onDelete={handleDelete}
           onRestore={handleRestore}
         />
+      )}
+
+      {/* Ссылка на задачу, которой нет или которая недоступна. */}
+      {openTaskDenied && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) closeTaskCard() }}>
+          <div className="modal task-denied-modal" role="dialog" aria-modal="true">
+            <div className="tasks-empty">
+              <p>Задача не найдена или недоступна.</p>
+              <p className="tasks-empty-hint">
+                Задачи видны только их участникам: исполнителю, соисполнителю, постановщику и наблюдателям.
+              </p>
+              <button className="btn-secondary" onClick={closeTaskCard} style={{ marginTop: '0.75rem' }}>Закрыть</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

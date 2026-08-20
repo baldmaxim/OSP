@@ -129,6 +129,9 @@
 }
 .tasks-empty-hint { font-size: 0.8125rem; }
 
+/* Окно «задача недоступна» по прямой ссылке ?task=<id>. */
+.modal.task-denied-modal { max-width: 460px; }
+
 /* ── Канбан-доска ──────────────────────────────────────────────────────────── */
 .task-board {
   display: flex;

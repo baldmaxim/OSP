@@ -282,6 +282,12 @@ function DcRequestsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
   const [formData, setFormData] = useState(EMPTY_FORM)
+  // task 434: пока идёт запись, форма заблокирована — иначе повторный клик по
+  // «Добавить» успевал создать вторую заявку до закрытия модалки.
+  // Состояние — для вида кнопок, ref — для самой защиты: два быстрых клика могут
+  // попасть в один рендер, и оба обработчика увидели бы saving === false.
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   // task 314: поиск контрагента в модалке.
   const [cpSearch, setCpSearch] = useState('')
   const [cpDropdownOpen, setCpDropdownOpen] = useState(false)
@@ -615,8 +621,14 @@ function DcRequestsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    // Защита от двойной отправки: между кликом и закрытием модалки успевает
+    // пройти несколько запросов, и второй клик создавал дубль заявки.
+    // Флаг снимаем в finally — иначе после ошибки форма осталась бы заблокирована.
+    if (savingRef.current) return
     // Пикер объекта — кастомный (не native required), поэтому проверяем вручную.
     if (!formData.object_id) { alert('Выберите объект'); return }
+    savingRef.current = true
+    setSaving(true)
     try {
       const payload = {
         object_id: formData.object_id || null,
@@ -635,21 +647,25 @@ function DcRequestsPage() {
         const { error } = await supabase.from('dc_requests').update(payload).eq('id', editing.id)
         if (error) throw error
         // История: по одной записи на каждое реально изменившееся поле («было → стало»).
+        // Пишем параллельно: последовательные await по каждому полю давали столько
+        // же обращений к серверу, сколько правок, и модалка заметно подвисала.
+        const auditWrites = []
         for (const field of Object.keys(AUDIT_FIELD_LABEL)) {
           const before = editing[field] ?? null
           const after = payload[field] ?? null
           if (before === after) continue
           if (field === 'status') {
-            await logDcEvent(editing.id, 'status_changed', {
+            auditWrites.push(logDcEvent(editing.id, 'status_changed', {
               fieldName: 'status',
               oldValue: before,
               newValue: after,
               description: `Статус: ${auditValueText('status', before)} → ${auditValueText('status', after)}`,
-            })
+            }))
           } else {
-            await logFieldChange(editing.id, field, before, after)
+            auditWrites.push(logFieldChange(editing.id, field, before, after))
           }
         }
+        await Promise.all(auditWrites)
       } else {
         // .select('id') нужен, чтобы записать в историю событие создания.
         const { data, error } = await supabase.from('dc_requests').insert([{
@@ -667,6 +683,9 @@ function DcRequestsPage() {
       fetchRequests()
     } catch (err) {
       alert('Ошибка сохранения: ' + (err.message || err))
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
   }
 
@@ -1733,6 +1752,7 @@ function DcRequestsPage() {
               <button
                 className="modal-close"
                 onClick={() => { setShowModal(false); setEditing(null) }}
+                disabled={saving}
               >×</button>
             </div>
             <form onSubmit={handleSubmit}>
@@ -1945,9 +1965,10 @@ function DcRequestsPage() {
                   type="button"
                   className="btn-secondary"
                   onClick={() => { setShowModal(false); setEditing(null) }}
+                  disabled={saving}
                 >Отмена</button>
-                <button type="submit" className="btn-primary">
-                  {editing ? 'Сохранить' : 'Добавить'}
+                <button type="submit" className="btn-primary" disabled={saving}>
+                  {saving ? 'Сохранение…' : (editing ? 'Сохранить' : 'Добавить')}
                 </button>
               </div>
             </form>
