@@ -1947,10 +1947,24 @@ function TenderDetailPage() {
     }
 
     try {
-      const participantsToAdd = Array.from(selectedParticipants).map(counterpartyId => ({
+      // Новые участники встают в конец списка. Без явного sort_order они брали
+      // DEFAULT 0 (миграция 20260731), а у существующих после бэкфилла 10, 20, 30…
+      // — и свежедобавленные оказывались первыми.
+      // Максимум берём из базы: другой инженер мог переставить участников, пока
+      // окно выбора было открыто.
+      const { data: lastRow } = await supabase
+        .from('tender_counterparties')
+        .select('sort_order')
+        .eq('tender_id', tenderId)
+        .order('sort_order', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const maxOrder = lastRow?.sort_order || 0
+      const participantsToAdd = Array.from(selectedParticipants).map((counterpartyId, i) => ({
         tender_id: tenderId,
         counterparty_id: counterpartyId,
-        status: 'request_sent'
+        status: 'request_sent',
+        sort_order: maxOrder + (i + 1) * 10,
       }))
 
       const { error } = await supabase

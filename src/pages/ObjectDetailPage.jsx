@@ -79,7 +79,11 @@ function DocFileCell({ s3doc, accent, onPreview, onDownload, compact = false }) 
 function DocRow({
   doc,
   level = 0,
-  attachments = [],
+  // attachments задаётся только для верхней строки (там список уже отфильтрован
+  // поиском); вложенные уровни берут своих детей сами через getAttachments —
+  // именно это и делает приложения к приложениям возможными.
+  attachments,
+  getAttachments,
   expandedDocs,
   toggleExpand,
   formatDate,
@@ -88,15 +92,41 @@ function DocRow({
   onDelete,
   onPreviewFile,
   onDownloadFile,
+  drag, // общий набор обработчиков перетаскивания (см. docDragProps)
   canEdit = true, // task 333: гейт edit/delete/add-attachment действий
 }) {
   const isAttachment = level > 0
-  const hasAttachments = attachments.length > 0
+  const kids = attachments || getAttachments?.(doc.id) || []
+  const hasAttachments = kids.length > 0
   const isExpanded = expandedDocs.has(doc.id)
+  // Перетаскиваются только приложения: договор генподряда в своей таблице один,
+  // двигать его не с чем.
+  const draggableRow = isAttachment && canEdit && !!drag
+  const dragOverPosition = drag?.dragOver?.id === doc.id ? drag.dragOver.position : null
 
   return (
     <>
-      <tr className={`doc-row-tr ${isAttachment ? 'doc-row-tr-attachment' : ''}`}>
+      <tr
+        className={[
+          'doc-row-tr',
+          isAttachment ? 'doc-row-tr-attachment' : '',
+          draggableRow && drag.draggedId === doc.id ? 'doc-row-dragging' : '',
+          dragOverPosition === 'before' ? 'doc-row-drop-before' : '',
+          dragOverPosition === 'after' ? 'doc-row-drop-after' : '',
+        ].filter(Boolean).join(' ')}
+        onDragOver={draggableRow ? (e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          const rect = e.currentTarget.getBoundingClientRect()
+          const isAbove = (e.clientY - rect.top) < rect.height / 2
+          drag.onDragOver?.(doc.id, isAbove ? 'before' : 'after')
+        } : undefined}
+        onDragLeave={draggableRow ? () => drag.onDragLeave?.(doc.id) : undefined}
+        onDrop={draggableRow ? (e) => {
+          e.preventDefault()
+          drag.onDrop?.(e.dataTransfer.getData('text/plain'), doc.id)
+        } : undefined}
+      >
         <td className="doc-cell-marker">
           {isAttachment ? (
             /* task 332: индент глубоко-вложенных приложений на span (margin-left),
@@ -107,12 +137,28 @@ function DocRow({
               style={level > 1 ? { marginLeft: `${(level - 1) * 14}px` } : undefined}
               aria-hidden
             >↳</span>
-          ) : hasAttachments ? (
+          ) : null}
+          {draggableRow && (
+            <span
+              className="doc-drag-handle"
+              role="button"
+              tabIndex={-1}
+              draggable
+              title="Перетащите для изменения порядка"
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', doc.id)
+                drag.onDragStart?.(doc.id)
+              }}
+              onDragEnd={() => drag.onDragEnd?.()}
+            >⋮⋮</span>
+          )}
+          {hasAttachments ? (
             <button
               type="button"
               className="doc-expand-btn"
               onClick={() => toggleExpand(doc.id)}
-              title={isExpanded ? 'Свернуть приложения' : `Развернуть приложения (${attachments.length})`}
+              title={isExpanded ? 'Свернуть приложения' : `Развернуть приложения (${kids.length})`}
               aria-label={isExpanded ? 'Свернуть' : 'Развернуть'}
             >
               {isExpanded ? '▼' : '▶'}
@@ -147,6 +193,17 @@ function DocRow({
         <td className="doc-cell-actions">
           {canEdit && (
             <>
+              {/* Приложение к приложению: у вложенных строк своя компактная «+».
+                  Сразу разворачиваем родителя, иначе новая строка появится
+                  «в никуда» — под свёрнутым узлом. */}
+              {isAttachment && (
+                <button
+                  type="button"
+                  className="doc-action-btn"
+                  onClick={() => { if (!isExpanded) toggleExpand(doc.id); onAddAttachment(doc.id) }}
+                  title="Добавить приложение к этому приложению"
+                >＋</button>
+              )}
               <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">
                 ✏️
               </button>
@@ -157,12 +214,14 @@ function DocRow({
           )}
         </td>
       </tr>
-      {/* Вложенные приложения — показываются только если родитель развёрнут */}
-      {!isAttachment && isExpanded && attachments.map(att => (
+      {/* Вложенные приложения — показываются только если родитель развёрнут.
+          Уровень не ограничен: у приложения могут быть свои приложения. */}
+      {isExpanded && kids.map(att => (
         <DocRow
           key={att.id}
           doc={att}
           level={level + 1}
+          getAttachments={getAttachments}
           expandedDocs={expandedDocs}
           toggleExpand={toggleExpand}
           formatDate={formatDate}
@@ -171,10 +230,13 @@ function DocRow({
           onDelete={onDelete}
           onPreviewFile={onPreviewFile}
           onDownloadFile={onDownloadFile}
+          drag={drag}
           canEdit={canEdit}
         />
       ))}
-      {/* Кнопка «+ Приложение» под каждым родительским документом */}
+      {/* Отдельной строкой кнопка остаётся только у документа верхнего уровня.
+          У приложений она живёт в колонке действий: иначе строки-кнопки от
+          каждого уровня выстроились бы подряд и таблицу было бы не прочитать. */}
       {!isAttachment && canEdit && (
         <tr className="doc-row-tr-add-attachment">
           <td colSpan={6}>
@@ -194,12 +256,141 @@ function DocRow({
   )
 }
 
+// Приложение в таблице ДС — рекурсивная строка: у приложения могут быть свои
+// приложения, а соседей можно переставлять перетаскиванием.
+function AgreementAttachmentRow({
+  doc,
+  level,
+  getAttachments,
+  expandedDocs,
+  toggleExpand,
+  onAddAttachment,
+  onEdit,
+  onDelete,
+  onPreviewFile,
+  onDownloadFile,
+  drag,
+  canEdit,
+}) {
+  const kids = getAttachments?.(doc.id) || []
+  const isExpanded = expandedDocs.has(doc.id)
+  const draggable = canEdit && !!drag
+  const dragOverPosition = drag?.dragOver?.id === doc.id ? drag.dragOver.position : null
+
+  return (
+    <>
+      <tr
+        className={[
+          'doc-row-tr', 'doc-row-tr-attachment',
+          draggable && drag.draggedId === doc.id ? 'doc-row-dragging' : '',
+          dragOverPosition === 'before' ? 'doc-row-drop-before' : '',
+          dragOverPosition === 'after' ? 'doc-row-drop-after' : '',
+        ].filter(Boolean).join(' ')}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          const rect = e.currentTarget.getBoundingClientRect()
+          const isAbove = (e.clientY - rect.top) < rect.height / 2
+          drag?.onDragOver?.(doc.id, isAbove ? 'before' : 'after')
+        }}
+        onDragLeave={() => drag?.onDragLeave?.(doc.id)}
+        onDrop={(e) => {
+          e.preventDefault()
+          drag?.onDrop?.(e.dataTransfer.getData('text/plain'), doc.id)
+        }}
+      >
+        <td className="doc-cell-marker">
+          <span
+            className="doc-attachment-marker"
+            style={level > 1 ? { marginLeft: `${(level - 1) * 14}px` } : undefined}
+            aria-hidden
+          >↳</span>
+          {draggable && (
+            <span
+              className="doc-drag-handle"
+              role="button"
+              tabIndex={-1}
+              draggable
+              title="Перетащите для изменения порядка"
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', doc.id)
+                drag.onDragStart?.(doc.id)
+              }}
+              onDragEnd={() => drag.onDragEnd?.()}
+            >⋮⋮</span>
+          )}
+          {kids.length > 0 && (
+            <button
+              type="button"
+              className="doc-expand-btn"
+              onClick={() => toggleExpand(doc.id)}
+              title={isExpanded ? 'Свернуть приложения' : `Развернуть приложения (${kids.length})`}
+              aria-label={isExpanded ? 'Свернуть' : 'Развернуть'}
+            >{isExpanded ? '▼' : '▶'}</button>
+          )}
+        </td>
+        <td className="doc-cell-name">
+          <div className="doc-name-line">
+            <span className="doc-name-text" title={doc.document_number || ''}>
+              {doc.document_number || <span className="muted">—</span>}
+            </span>
+          </div>
+        </td>
+        <td className="doc-cell-date"></td>
+        <td className="doc-cell-desc">
+          <div title={doc.name || ''}>{doc.name || <span className="muted">—</span>}</div>
+          {doc.notes && <div className="doc-notes-line" title={doc.notes}>{doc.notes}</div>}
+        </td>
+        <td className="doc-cell-link-compact">
+          <DocFileCell compact s3doc={doc.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
+        </td>
+        <td className="doc-cell-link-compact">
+          <DocFileCell compact s3doc={doc.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
+        </td>
+        <td className="doc-cell-actions">
+          {canEdit && (
+            <>
+              <button
+                type="button"
+                className="doc-action-btn"
+                onClick={() => { if (!isExpanded) toggleExpand(doc.id); onAddAttachment(doc.id) }}
+                title="Добавить приложение к этому приложению"
+              >＋</button>
+              <button type="button" className="doc-action-btn" onClick={() => onEdit(doc)} title="Редактировать">✏️</button>
+              <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(doc.id)} title="Удалить">🗑️</button>
+            </>
+          )}
+        </td>
+      </tr>
+      {isExpanded && kids.map(k => (
+        <AgreementAttachmentRow
+          key={k.id}
+          doc={k}
+          level={level + 1}
+          getAttachments={getAttachments}
+          expandedDocs={expandedDocs}
+          toggleExpand={toggleExpand}
+          onAddAttachment={onAddAttachment}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onPreviewFile={onPreviewFile}
+          onDownloadFile={onDownloadFile}
+          drag={drag}
+          canEdit={canEdit}
+        />
+      ))}
+    </>
+  )
+}
+
 // AgreementRow — компактный 7-колоночный ряд для таблицы «Дополнительные соглашения».
 // Отдельно от DocRow, потому что у ДС-таблицы свой layout: убран «Номер», добавлен
 // «Описание ДС», компактные файловые ячейки (только иконки).
 function AgreementRow({
   doc,
   attachments = [],
+  getAttachments,
   expandedDocs,
   toggleExpand,
   formatDate,
@@ -216,6 +407,7 @@ function AgreementRow({
   onDragLeave,
   onDragEnd,
   onDrop,
+  drag, // общий набор обработчиков для вложенных приложений
   // task 333: гейт edit/delete/add-attachment/drag-handle
   canEdit = true,
 }) {
@@ -303,52 +495,21 @@ function AgreementRow({
         </td>
       </tr>
       {isExpanded && attachments.map(att => (
-        <tr
+        <AgreementAttachmentRow
           key={att.id}
-          className="doc-row-tr doc-row-tr-attachment"
-          /* task 331: hover на строку-приложение во время drag = «after» родительского ДС.
-             Сами приложения не реордерим — это только проксирование позиции. */
-          onDragOver={(e) => {
-            e.preventDefault()
-            e.dataTransfer.dropEffect = 'move'
-            onDragOver?.(doc.id, 'after')
-          }}
-          onDrop={(e) => {
-            e.preventDefault()
-            const draggedId = e.dataTransfer.getData('text/plain')
-            onDrop?.(draggedId, doc.id)
-          }}
-        >
-          <td className="doc-cell-marker">
-            <span className="doc-attachment-marker" aria-hidden>↳</span>
-          </td>
-          <td className="doc-cell-name">
-            <div className="doc-name-line">
-              <span className="doc-name-text" title={att.document_number || ''}>
-                {att.document_number || <span className="muted">—</span>}
-              </span>
-            </div>
-          </td>
-          <td className="doc-cell-date"></td>
-          <td className="doc-cell-desc">
-            <div title={att.name || ''}>{att.name || <span className="muted">—</span>}</div>
-            {att.notes && <div className="doc-notes-line" title={att.notes}>{att.notes}</div>}
-          </td>
-          <td className="doc-cell-link-compact">
-            <DocFileCell compact s3doc={att.signed} accent="signed" onPreview={onPreviewFile} onDownload={onDownloadFile} />
-          </td>
-          <td className="doc-cell-link-compact">
-            <DocFileCell compact s3doc={att.editable} accent="editable" onPreview={onPreviewFile} onDownload={onDownloadFile} />
-          </td>
-          <td className="doc-cell-actions">
-            {canEdit && (
-              <>
-                <button type="button" className="doc-action-btn" onClick={() => onEdit(att)} title="Редактировать">✏️</button>
-                <button type="button" className="doc-action-btn doc-action-delete" onClick={() => onDelete(att.id)} title="Удалить">🗑️</button>
-              </>
-            )}
-          </td>
-        </tr>
+          doc={att}
+          level={1}
+          getAttachments={getAttachments}
+          expandedDocs={expandedDocs}
+          toggleExpand={toggleExpand}
+          onAddAttachment={onAddAttachment}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onPreviewFile={onPreviewFile}
+          onDownloadFile={onDownloadFile}
+          drag={drag}
+          canEdit={canEdit}
+        />
       ))}
       {/* Кнопка «+ Приложение» отдельной строкой под ДС — как у Договора Генподряда.
           task 331: это последняя строка блока ДС, поэтому индикатор «after» рисуется
@@ -755,14 +916,26 @@ function ObjectDetailPage() {
     }
   }
 
-  // task 329: переупорядочивание дополнительных соглашений drag-and-drop.
+  // task 329: переупорядочивание документов drag-and-drop — и дополнительных
+  // соглашений, и приложений внутри своего документа (на любом уровне вложенности).
+  // Порядок меняется ТОЛЬКО среди соседей: перетащить приложение к другому
+  // документу нельзя, для смены родителя есть форма редактирования.
   // Сохраняем order_number кратным 10 — есть запас для будущих ручных вставок
   // без необходимости перенумеровывать соседей.
-  const reorderAgreements = async (draggedId, targetId, position) => {
+  const reorderDocuments = async (draggedId, targetId, position) => {
     if (!draggedId || draggedId === targetId) return
-    // Берём актуальный отсортированный список ДС (без приложений).
+    const dragged = documents.find(d => d.id === draggedId)
+    const target = documents.find(d => d.id === targetId)
+    if (!dragged || !target) return
+    const parentId = dragged.parent_document_id || null
+    if ((target.parent_document_id || null) !== parentId) return
+
+    // Группа соседей: приложения одного родителя либо верхний уровень ДС
+    // (договор генподряда в перетаскивании не участвует — он один).
     const ordered = documents
-      .filter(d => d.document_type === 'additional_agreement' && !d.parent_document_id)
+      .filter(d => (parentId
+        ? d.parent_document_id === parentId
+        : d.document_type === 'additional_agreement' && !d.parent_document_id))
       .sort((a, b) => {
         const o = (a.order_number || 0) - (b.order_number || 0)
         if (o !== 0) return o
@@ -818,7 +991,20 @@ function ObjectDetailPage() {
     const position = agreementDragOver?.position || 'before'
     setDraggedAgreementId(null)
     setAgreementDragOver(null)
-    await reorderAgreements(draggedId, targetId, position)
+    await reorderDocuments(draggedId, targetId, position)
+  }
+
+  // Один набор обработчиков на все перетаскиваемые строки документов: и ДС, и
+  // приложения любого уровня. Куда именно упадёт строка, решает reorderDocuments
+  // по её родителю.
+  const docDragProps = {
+    draggedId: draggedAgreementId,
+    dragOver: agreementDragOver,
+    onDragStart: handleAgreementDragStart,
+    onDragOver: handleAgreementDragOver,
+    onDragLeave: handleAgreementDragLeave,
+    onDragEnd: handleAgreementDragEnd,
+    onDrop: handleAgreementDrop,
   }
 
   // Открытие/скачивание/превью S3-файла из ячейки таблицы.
@@ -1753,6 +1939,8 @@ function ObjectDetailPage() {
                           <DocRow
                             doc={visibleContract.parent}
                             attachments={visibleContract.atts}
+                            getAttachments={getAttachments}
+                            drag={docDragProps}
                             expandedDocs={expandedDocs}
                             toggleExpand={toggleExpand}
                             formatDate={formatDate}
@@ -1799,6 +1987,8 @@ function ObjectDetailPage() {
                               key={g.parent.id}
                               doc={g.parent}
                               attachments={g.atts}
+                              getAttachments={getAttachments}
+                              drag={docDragProps}
                               expandedDocs={expandedDocs}
                               toggleExpand={toggleExpand}
                               formatDate={formatDate}

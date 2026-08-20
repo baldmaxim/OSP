@@ -1,11 +1,16 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import { fetchProposalFilesForReview, setRemarksSent } from '../services/tenderProposalFiles'
 import KpReviewBadge from '../components/KpReviewBadge'
 import KpReviewModal from '../components/KpReviewModal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
+import VirtualTableBody from '../components/VirtualTableBody'
 import './KpReviewPage.css'
+
+// Порог включения виртуализации <tbody>: ниже него распорки и замеры высот
+// только мешают, выше — обычная таблица начинает подтормаживать.
+const VIRTUALIZE_FROM = 150
 
 // task 431: вкладка «Проверка КП» — очередь коммерческих предложений на проверку
 // аналитиком-экономистом. Показывает все загруженные КП с их статусом проверки;
@@ -61,6 +66,8 @@ function KpReviewPage() {
   const [search, setSearch] = useState('')
   const [reviewFile, setReviewFile] = useState(null)
   const [previewDoc, setPreviewDoc] = useState(null)
+  // Скролл-контейнер таблицы — из него виртуализация берёт положение прокрутки.
+  const tableWrapRef = useRef(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -176,7 +183,7 @@ function KpReviewPage() {
                   : 'Нет записей.'}
         </div>
       ) : (
-        <div className="kprv-table-wrap">
+        <div className="kprv-table-wrap" ref={tableWrapRef}>
           <table className="kprv-table">
             <thead>
               <tr>
@@ -191,8 +198,8 @@ function KpReviewPage() {
                 <th className="kprv-col-action"></th>
               </tr>
             </thead>
-            <tbody>
-              {visibleRows.map(r => (
+            {(() => {
+              const rowEls = visibleRows.map(r => (
                 <tr key={r.id}>
                   <td>{r.tenders?.objects?.name || '—'}</td>
                   <td>
@@ -256,8 +263,15 @@ function KpReviewPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
-            </tbody>
+              ))
+              // Очередь КП живёт постранично загруженной целиком (fetchAllRows),
+              // и на тысяче строк обычный <tbody> заметно тормозит. Виртуализуем
+              // только когда строк действительно много — на коротких списках
+              // распорки и замеры высот ни к чему.
+              return rowEls.length > VIRTUALIZE_FROM
+                ? <VirtualTableBody rows={rowEls} colSpan={9} scrollRef={tableWrapRef} rowHeight={52} />
+                : <tbody>{rowEls}</tbody>
+            })()}
           </table>
         </div>
       )}

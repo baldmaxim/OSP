@@ -7,6 +7,11 @@ import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import FilterDropdown from '../components/FilterDropdown'
+import IconTile from '../components/IconTile'
+import { IconDcRequest } from '../components/icons/NavIcons'
+import { IconHardHat } from '../components/icons/TenderHubIcons'
+import { IconObject, IconUser } from '../components/icons/ToolbarIcons'
+import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
@@ -24,14 +29,17 @@ const EMPTY_FORM = {
   ds_number: '',
   works_description: '',
   responsible_contact_id: '',
-  status: 'in_work',
+  // Новая заявка начинается со сверки с договором.
+  status: 'contract_check',
   expected_approval_date: '', // task 365
   amount_before: '', // task 370
   amount_after: '', // task 370
   material_type: '', // task 370
 }
 
+// Этапы заявки: сверка с договором → работа → готово (миграция 20260823).
 const STATUS_OPTIONS = [
+  { value: 'contract_check', label: 'Проверка по договору', className: 'status-contract-check' },
   { value: 'in_work', label: 'В работе', className: 'status-in-work' },
   { value: 'completed', label: 'Завершено', className: 'status-completed' },
 ]
@@ -50,6 +58,7 @@ const MATERIAL_CLASS = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.
 
 const TABS = [
   { key: 'all', label: 'Все заявки' },
+  { key: 'contract_check', label: 'Проверка по договору' },
   { key: 'in_work', label: 'В работе' },
   { key: 'completed', label: 'Завершено' },
   { key: 'deleted', label: 'Удаленные' },
@@ -508,7 +517,7 @@ function DcRequestsPage() {
       ds_number: req.ds_number || '',
       works_description: req.works_description || '',
       responsible_contact_id: req.responsible_contact_id || '',
-      status: req.status || 'in_work',
+      status: req.status || 'contract_check',
       expected_approval_date: req.expected_approval_date || '', // task 365
       amount_before: req.amount_before != null ? String(req.amount_before) : '', // task 370
       amount_after: req.amount_after != null ? String(req.amount_after) : '', // task 370
@@ -636,7 +645,7 @@ function DcRequestsPage() {
         ds_number: formData.ds_number.trim() || null,
         works_description: formData.works_description.trim() || null,
         responsible_contact_id: formData.responsible_contact_id || null,
-        status: formData.status || 'in_work',
+        status: formData.status || 'contract_check',
         expected_approval_date: formData.expected_approval_date || null, // task 365
         amount_before: parseAmount(formData.amount_before), // task 370
         amount_after: parseAmount(formData.amount_after), // task 370
@@ -990,6 +999,7 @@ function DcRequestsPage() {
 
   const counts = {
     all: requests.filter(r => r.deleted_at == null).length,
+    contract_check: requests.filter(r => r.deleted_at == null && r.status === 'contract_check').length,
     in_work: requests.filter(r => r.deleted_at == null && (r.status || 'in_work') === 'in_work').length,
     completed: requests.filter(r => r.deleted_at == null && r.status === 'completed').length,
     deleted: requests.filter(r => r.deleted_at != null).length,
@@ -1165,7 +1175,10 @@ function DcRequestsPage() {
   return (
     <div className="dc-requests-page contract-registry">
       <div className="registry-header">
-        <h2>Заявка на ДС</h2>
+        <h2>
+          <IconTile tone="coral" className="dcr-title-icon"><IconDcRequest /></IconTile>
+          Заявка на ДС
+        </h2>
         <div className="dcr-header-actions">
           {/* task 324: ссылка на общую таблицу с отделами (хранится в app_settings) */}
           {externalLink ? (
@@ -1211,7 +1224,7 @@ function DcRequestsPage() {
             onClick={handleExportExcel}
             title="Выгрузить текущую выборку в Excel"
           >
-            <span aria-hidden>📊</span>
+            <IconFileSpreadsheet />
             <span>Excel</span>
           </button>
           {canEditDc && (
@@ -1237,7 +1250,7 @@ function DcRequestsPage() {
         <input
           type="search"
           className="dcr-search"
-          placeholder="🔍 Поиск по объекту, контрагенту, № ДС или работам..."
+          placeholder="Поиск по объекту, контрагенту, № ДС или работам…"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -1247,7 +1260,8 @@ function DcRequestsPage() {
             multiple
             searchable
             searchPlaceholder="Поиск объекта…"
-            allLabel="🏢 Все объекты"
+            allLabel="Все объекты"
+            icon={<IconObject size={15} />}
             value={filterObjectIds}
             onChange={setFilterObjectIds}
             options={objects.map(o => ({ value: o.id, label: o.name }))}
@@ -1259,7 +1273,8 @@ function DcRequestsPage() {
             multiple
             searchable
             searchPlaceholder="Поиск контрагента…"
-            allLabel="🏗️ Все контрагенты"
+            allLabel="Все контрагенты"
+            icon={<IconHardHat size={15} />}
             value={filterCounterpartyIds}
             onChange={setFilterCounterpartyIds}
             options={counterpartyFilterOptions.map(cp => ({ value: cp.id, label: cp.name }))}
@@ -1272,7 +1287,8 @@ function DcRequestsPage() {
             multiple
             searchable
             searchPlaceholder="Поиск сотрудника…"
-            allLabel="👤 Все ответственные"
+            allLabel="Все ответственные"
+            icon={<IconUser size={15} />}
             value={filterResponsibleIds}
             onChange={setFilterResponsibleIds}
             options={responsibleFilterOptions.map(c => ({ value: c.id, label: c.full_name }))}

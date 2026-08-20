@@ -241,7 +241,14 @@ function TasksPage() {
       // Исключения: их собственная вкладка и корзина.
       if (CLOSED_STATUSES.has(t.status) && tab !== 'done' && tab !== 'deleted') return false
 
-      if (assigneeFilter.length && !assigneeFilter.includes(t.assignee_user_id)) return false
+      // Фильтр по людям ищет и соисполнителей: иначе, выбрав сотрудника, вы
+      // теряете задачи, где он работает вторым номером.
+      if (assigneeFilter.length) {
+        const co = coassigneesByTask.get(t.id) || []
+        const hit = assigneeFilter.includes(t.assignee_user_id)
+          || co.some(id => assigneeFilter.includes(id))
+        if (!hit) return false
+      }
       if (priorityFilter && t.priority !== priorityFilter) return false
       if (objectFilter && t.object_id !== objectFilter) return false
       if (!matchesDueFilter(t, dueFilter)) return false
@@ -249,7 +256,7 @@ function TasksPage() {
         && !(t.description || '').toLowerCase().includes(q)) return false
       return true
     })
-  }, [myTasks, tab, currentUserId, myCoassignee, myWatching, assigneeFilter,
+  }, [myTasks, tab, currentUserId, myCoassignee, myWatching, coassigneesByTask, assigneeFilter,
     priorityFilter, objectFilter, dueFilter, search])
 
   const sortedTasks = useMemo(
@@ -409,9 +416,14 @@ function TasksPage() {
   // выбор даёт пустой результат.
   const assigneeOptions = useMemo(() => {
     if (seesAllTasks) return peopleOptions
-    const present = new Set(myTasks.map(t => t.assignee_user_id).filter(Boolean))
+    // Соисполнители тоже в списке — фильтр их находит, значит выбрать их можно.
+    const present = new Set()
+    for (const t of myTasks) {
+      if (t.assignee_user_id) present.add(t.assignee_user_id)
+      for (const id of (coassigneesByTask.get(t.id) || [])) present.add(id)
+    }
     return peopleOptions.filter(o => present.has(o.value))
-  }, [seesAllTasks, peopleOptions, myTasks])
+  }, [seesAllTasks, peopleOptions, myTasks, coassigneesByTask])
   // «Все» у не-админа — это все ЕГО задачи, а не работа компании.
   const tabLabel = (t) => (t.key === 'all' && !seesAllTasks ? 'Все мои' : t.label)
   const objectDropdownOptions = useMemo(
@@ -462,7 +474,8 @@ function TasksPage() {
         />
         <FilterDropdown
           label="Исполнитель" value={assigneeFilter} onChange={setAssigneeFilter}
-          options={assigneeOptions} multiple searchable searchPlaceholder="Поиск сотрудника…"
+          options={assigneeOptions} multiple searchable
+          searchPlaceholder="Поиск сотрудника…"
           allLabel="Все"
         />
         <FilterDropdown

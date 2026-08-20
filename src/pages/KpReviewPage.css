@@ -67,7 +67,14 @@
 /* Таблица в рамке-подложке (инсет под отступы шапки/тулбара), как .rr-table */
 .kprv-table-wrap {
   margin: 0 1.5rem 1.5rem;
-  overflow-x: auto;
+  /* Таблица прокручивается внутри себя: это даёт виртуализации <tbody> контейнер,
+     за скроллом которого она следит, и оставляет шапку залипающей.
+     overflow-anchor выключен — иначе браузер сам правит scrollTop при смене
+     распорок и виртуализация зацикливается (см. VirtualTableBody). */
+  max-height: calc(100vh - 300px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border-color);
   border-radius: 8px;

@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   ds_number VARCHAR(100),
   works_description TEXT,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
-  status TEXT NOT NULL DEFAULT 'in_work' CHECK (status IN ('in_work', 'completed')),
+  -- Этапы: проверка по договору → в работе → завершено (миграция 20260823).
+  status TEXT NOT NULL DEFAULT 'contract_check'
+    CHECK (status IN ('contract_check', 'in_work', 'completed')),
   -- task 370: суммы ДС с НДS 22% (Было/Стало) и тип материала.
   amount_before NUMERIC(14, 2),
   amount_after  NUMERIC(14, 2),

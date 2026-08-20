@@ -6,6 +6,22 @@
   padding: 1rem;
 }
 
+/* Иконка раздела в шапке — та же плитка, что у пунктов бокового меню. */
+.dc-requests-page .registry-header h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.dcr-title-icon { width: 26px; height: 26px; }
+
+/* Новый первый этап (миграция 20260823) — тёплый янтарный: заявка ещё не в
+   работе, её сверяют с договором. Отличается от синего «В работе». */
+.status-contract-check {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
 /* Компактная шапка вместо «коробки» из ContractRegistry.css (task 315). */
 .dc-requests-page .registry-header {
   padding: 0.625rem 1rem;
