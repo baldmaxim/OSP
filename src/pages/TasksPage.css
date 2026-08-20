@@ -621,6 +621,13 @@
 .task-table tbody tr:hover { background: var(--hover-bg); }
 .task-table tbody tr:last-child { border-bottom: none; }
 .task-table tbody tr.is-overdue { background: color-mix(in srgb, var(--danger-color) 6%, transparent); }
+/* Высокий приоритет — красная полоса слева по всей строке. Полосой, а не
+   заливкой: фон уже занят зеброй и подсветкой просрочки, и три тона наложились
+   бы друг на друга. Полоса видна независимо от них. */
+.task-table tbody tr.is-high td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--danger-color);
+}
+.task-table tbody tr.is-high .task-title-cell { color: var(--danger-color); }
 .task-table td { padding: 0.6rem 0.75rem; color: var(--text-primary); vertical-align: middle; }
 
 /* Вертикальные разделители колонок: в широкой таблице глаз без них теряет
@@ -707,6 +714,11 @@
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-tertiary);
   border-radius: 16px 16px 0 0;
+}
+/* Высокий приоритет — красная полоса поверх шапки: видно ещё до того, как
+   взгляд дойдёт до бейджа «Высокий». */
+.modal.task-modal.is-high .task-modal-head {
+  box-shadow: inset 0 3px 0 0 var(--danger-color);
 }
 .task-modal-close {
   margin-left: auto;
@@ -1059,5 +1071,6 @@
   .task-modal-columns { padding: 0.75rem; }
   .task-fields,
   .task-modal-side .task-fields { grid-template-columns: 1fr; }
-  .mcard.is-overdue { border-left: 3px solid var(--danger-color); }
+  .mcard.is-overdue,
+  .mcard.is-high { border-left: 3px solid var(--danger-color); }
 }

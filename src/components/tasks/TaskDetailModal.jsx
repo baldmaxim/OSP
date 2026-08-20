@@ -176,7 +176,10 @@ function TaskDetailModal({
 
   return (
     <div className="modal-overlay task-modal-overlay" onClick={onOverlayClick}>
-      <div className="modal task-modal" role="dialog" aria-modal="true" aria-label="Карточка задачи">
+      <div
+        className={`modal task-modal${task.priority === 'high' ? ' is-high' : ''}`}
+        role="dialog" aria-modal="true" aria-label="Карточка задачи"
+      >
         <header className="task-modal-head">
           <span className={`status-badge ${TASK_STATUS_CLASS[task.status]}`}>{TASK_STATUS_LABEL[task.status]}</span>
           {task.priority !== 'normal' && (
@@ -216,41 +219,15 @@ function TaskDetailModal({
         <div className="task-modal-columns">
           {/* ── Левая колонка: работа ──────────────────────────────────────── */}
           <div className="task-modal-main">
-            {/* Действия жизненного цикла — главное, ради чего открывают карточку. */}
-            {!isDeleted && canMove && (
+            {/* Кнопки жизненного цикла («Взять в работу», «Сдать на проверку»
+                и т.д.) убраны: они дублировали поле «Статус» справа и сбивали с
+                толку — на только что созданной задаче висела кнопка, хотя статус
+                меняется списком. Единственный способ сменить статус — выпадающий
+                список в свойствах. Подсказку исполнителю оставляем: без кнопки
+                «Принять работу» иначе непонятно, чьего действия ждёт задача. */}
+            {!isDeleted && task.status === 'review' && !canEditFields && (
               <div className="task-actions">
-                {(task.status === 'new' || task.status === 'deferred') && (
-                  <button className="btn-primary" disabled={busy} onClick={() => patch({ status: 'in_progress' })}>
-                    Взять в работу
-                  </button>
-                )}
-                {task.status === 'in_progress' && (
-                  <>
-                    <button className="btn-primary" disabled={busy} onClick={() => patch({ status: 'review' })}>
-                      Сдать на проверку
-                    </button>
-                    <button className="btn-secondary" disabled={busy} onClick={() => patch({ status: 'deferred' })}>
-                      Отложить
-                    </button>
-                  </>
-                )}
-                {task.status === 'review' && (canEditFields ? (
-                  <>
-                    <button className="btn-primary" disabled={busy} onClick={() => patch({ status: 'done' })}>
-                      Принять работу
-                    </button>
-                    <button className="btn-secondary" disabled={busy} onClick={() => patch({ status: 'in_progress' })}>
-                      Вернуть в работу
-                    </button>
-                  </>
-                ) : (
-                  <span className="task-hint">Ждёт приёмки постановщиком — {nameOf(task.created_by_user_id)}</span>
-                ))}
-                {task.status === 'done' && canEditFields && (
-                  <button className="btn-secondary" disabled={busy} onClick={() => patch({ status: 'in_progress' })}>
-                    Переоткрыть
-                  </button>
-                )}
+                <span className="task-hint">Ждёт приёмки постановщиком — {nameOf(task.created_by_user_id)}</span>
               </div>
             )}
 

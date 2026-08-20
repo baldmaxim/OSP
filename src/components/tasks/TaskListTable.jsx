@@ -78,7 +78,11 @@ function TaskListTable({
     return (
       <div className="mobile-cards">
         {tasks.map(task => (
-          <div key={task.id} className={`mcard${isOverdue(task) ? ' is-overdue' : ''}`} onClick={() => onOpen(task.id)}>
+          <div
+            key={task.id}
+            className={`mcard${isOverdue(task) ? ' is-overdue' : ''}${task.priority === 'high' ? ' is-high' : ''}`}
+            onClick={() => onOpen(task.id)}
+          >
             <div className="mcard-head">
               <span className={`status-badge ${TASK_STATUS_CLASS[task.status]}`}>{TASK_STATUS_LABEL[task.status]}</span>
               {task.priority !== 'normal' && (
@@ -133,7 +137,11 @@ function TaskListTable({
         </thead>
         <tbody>
           {tasks.map((task, index) => (
-            <tr key={task.id} className={isOverdue(task) ? 'is-overdue' : ''} onClick={() => onOpen(task.id)}>
+            <tr
+              key={task.id}
+              className={`${isOverdue(task) ? 'is-overdue' : ''}${task.priority === 'high' ? ' is-high' : ''}`.trim()}
+              onClick={() => onOpen(task.id)}
+            >
               <td className="col-num">{startIndex + index + 1}</td>
               <td className="col-object"><ObjectLink task={task} /></td>
               <td className="col-tender"><TenderLink task={task} /></td>
