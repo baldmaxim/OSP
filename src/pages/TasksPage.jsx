@@ -69,6 +69,8 @@ function TasksPage() {
   // Участие текущего пользователя, разложенное по роли: соисполнитель ≠ наблюдатель.
   const [myCoassignee, setMyCoassignee] = useState(new Set())
   const [myWatching, setMyWatching] = useState(new Set())
+  // task_id → id соисполнителей: реестр показывает их под исполнителем.
+  const [coassigneesByTask, setCoassigneesByTask] = useState(new Map())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -121,11 +123,13 @@ function TasksPage() {
         fetchAllRows((from, to) => supabase
           .from('task_comments').select('task_id')
           .order('task_id').order('id').range(from, to)),
-        // kind нужен, чтобы отличить соисполнителя от наблюдателя: задачи, где я
-        // соисполнитель, — это «Мои», а не «Наблюдаю».
-        currentUserId
-          ? supabase.from('task_participants').select('task_id, kind').eq('user_id', currentUserId)
-          : Promise.resolve({ data: [] }),
+        // Участники всех доступных задач: нужны и для колонки «Исполнитель»
+        // (соисполнители второй строкой), и чтобы отличить моё соисполнение от
+        // наблюдения. RLS отдаёт строки только по видимым задачам.
+        // Тайбрейкер постраничной выборки — весь составной PK: своего id у таблицы нет.
+        fetchAllRows((from, to) => supabase
+          .from('task_participants').select('task_id, user_id, kind')
+          .order('task_id').order('user_id').order('kind').range(from, to)),
       ])
 
       const checkTotal = new Map()
@@ -145,10 +149,18 @@ function TasksPage() {
       })))
       const coassignee = new Set()
       const watching = new Set()
-      for (const p of (participation.data || [])) {
-        if (p.kind === 'coassignee') coassignee.add(p.task_id)
-        else if (p.kind === 'watcher') watching.add(p.task_id)
+      const coassigneesMap = new Map()
+      for (const p of participation) {
+        if (p.kind === 'coassignee') {
+          const list = coassigneesMap.get(p.task_id)
+          if (list) list.push(p.user_id)
+          else coassigneesMap.set(p.task_id, [p.user_id])
+          if (p.user_id === currentUserId) coassignee.add(p.task_id)
+        } else if (p.kind === 'watcher' && p.user_id === currentUserId) {
+          watching.add(p.task_id)
+        }
       }
+      setCoassigneesByTask(coassigneesMap)
       setMyCoassignee(coassignee)
       setMyWatching(watching)
     } catch (err) {
@@ -504,6 +516,7 @@ function TasksPage() {
           <TaskListTable
             tasks={pageTasks}
             startIndex={(Math.min(page, totalPages) - 1) * pageSize}
+            coassigneesByTask={coassigneesByTask}
             employeeMap={employeeMap}
             onOpen={openTaskCard}
             onStatusChange={handleStatusChange}

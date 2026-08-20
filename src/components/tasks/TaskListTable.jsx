@@ -50,13 +50,27 @@ function TenderLink({ task }) {
   )
 }
 
+// «Иванов Иван Иванович» → «Иванов И.». В строке соисполнителей их бывает
+// несколько, полные ФИО не помещаются.
+function shortName(full) {
+  const parts = String(full || '').trim().split(/\s+/)
+  if (parts.length < 2) return full || ''
+  return `${parts[0]} ${parts[1].charAt(0)}.`
+}
+
 // task 433: реестровый вид задач — для контроля сроков, когда карточек уже много.
 // startIndex — смещение текущей страницы: нумерация сквозная, а не заново с
 // единицы на каждой странице.
-function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSort, isPhone, canEdit, startIndex = 0 }) {
+// coassigneesByTask — Map<task_id, user_id[]>: соисполнители показываются второй
+// строкой под исполнителем, иначе непонятно, кто ещё занят задачей.
+function TaskListTable({
+  tasks, employeeMap, onOpen, onStatusChange, sort, onSort, isPhone, canEdit,
+  startIndex = 0, coassigneesByTask,
+}) {
   const nameOf = (userId) => (userId
     ? (employeeMap.get(userId)?.display_name || 'Пользователь удалён')
     : 'Не назначен')
+  const coassigneesOf = (taskId) => (coassigneesByTask?.get(taskId) || [])
 
   if (isPhone) {
     return (
@@ -104,14 +118,14 @@ function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSor
         <thead>
           <tr>
             <th className="col-num" title="Порядковый номер">№</th>
-            <SortTh field="priority" className="col-priority">Приоритет</SortTh>
-            <SortTh field="title" className="col-title">Задача</SortTh>
-            <th className="col-person">Исполнитель</th>
-            <th className="col-person">Постановщик</th>
-            <SortTh field="due_date" className="col-due">Срок</SortTh>
-            <th className="col-status">Статус</th>
             <th className="col-object">Объект</th>
             <th className="col-tender">№ тендера</th>
+            <SortTh field="title" className="col-title">Задача</SortTh>
+            <th className="col-person">Постановщик</th>
+            <th className="col-person">Исполнитель</th>
+            <SortTh field="priority" className="col-priority">Приоритет</SortTh>
+            <SortTh field="due_date" className="col-due">Срок</SortTh>
+            <th className="col-status">Статус</th>
             <SortTh field="updated_at" className="col-updated">Обновлено</SortTh>
           </tr>
         </thead>
@@ -119,11 +133,8 @@ function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSor
           {tasks.map((task, index) => (
             <tr key={task.id} className={isOverdue(task) ? 'is-overdue' : ''} onClick={() => onOpen(task.id)}>
               <td className="col-num">{startIndex + index + 1}</td>
-              <td className="col-priority">
-                <span className={`task-priority-badge ${TASK_PRIORITY_CLASS[task.priority]}`}>
-                  {TASK_PRIORITY_LABEL[task.priority]}
-                </span>
-              </td>
+              <td className="col-object"><ObjectLink task={task} /></td>
+              <td className="col-tender"><TenderLink task={task} /></td>
               <td className="col-title">
                 <span className="task-title-cell">{task.title}</span>
                 {task.checklistTotal > 0 && (
@@ -134,13 +145,25 @@ function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSor
                 )}
               </td>
               <td className="col-person">
+                <span className="task-person-name">{nameOf(task.created_by_user_id)}</span>
+              </td>
+              <td className="col-person">
                 <span className="task-person">
                   <UserAvatar userId={task.assignee_user_id} name={nameOf(task.assignee_user_id)} />
                   <span className="task-person-name">{nameOf(task.assignee_user_id)}</span>
                 </span>
+                {/* Соисполнители — второй строкой: по одной колонке видно всех,
+                    кто занят задачей, а не только основного исполнителя. */}
+                {coassigneesOf(task.id).length > 0 && (
+                  <div className="task-coassignees" title={coassigneesOf(task.id).map(nameOf).join(', ')}>
+                    + {coassigneesOf(task.id).map(id => shortName(nameOf(id))).join(', ')}
+                  </div>
+                )}
               </td>
-              <td className="col-person">
-                <span className="task-person-name">{nameOf(task.created_by_user_id)}</span>
+              <td className="col-priority">
+                <span className={`task-priority-badge ${TASK_PRIORITY_CLASS[task.priority]}`}>
+                  {TASK_PRIORITY_LABEL[task.priority]}
+                </span>
               </td>
               <td className="col-due">
                 <span className={`task-due ${dueClass(task.due_date, task.status)}`}>
@@ -155,13 +178,12 @@ function TaskListTable({ tasks, employeeMap, onOpen, onStatusChange, sort, onSor
                     getBadgeClass={(label) => CLASS_BY_LABEL[label] || ''}
                     onChange={(label) => onStatusChange(task, VALUE_BY_LABEL[label])}
                     ariaLabel="Статус задачи"
+                    colorOptions
                   />
                 ) : (
                   <span className={`status-badge ${TASK_STATUS_CLASS[task.status]}`}>{TASK_STATUS_LABEL[task.status]}</span>
                 )}
               </td>
-              <td className="col-object"><ObjectLink task={task} /></td>
-              <td className="col-tender"><TenderLink task={task} /></td>
               <td className="col-updated">{formatDateRu(task.updated_at)}</td>
             </tr>
           ))}

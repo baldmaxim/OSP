@@ -535,6 +535,47 @@
 .status-badge.ts-done { background: color-mix(in srgb, var(--success-color) 18%, transparent); color: var(--success-color); }
 .status-badge.ts-deferred { background: color-mix(in srgb, var(--text-tertiary) 12%, transparent); color: var(--text-tertiary); }
 
+/* ── Выбор статуса задачи ──────────────────────────────────────────────────── */
+/* Цвета статусов были описаны только для .status-badge, поэтому и закрытый
+   контрол, и список выглядели одинаково серыми. Задаём тон отдельно: у триггера
+   — заливкой, у строк списка — цветом текста, от которого точка слева берёт
+   currentColor. */
+.status-dropdown-trigger.ts-new { background: color-mix(in srgb, var(--text-tertiary) 14%, transparent); color: var(--text-secondary); border-color: color-mix(in srgb, var(--text-tertiary) 40%, transparent); }
+.status-dropdown-trigger.ts-progress { background: color-mix(in srgb, var(--info-color) 14%, transparent); color: var(--info-color); border-color: color-mix(in srgb, var(--info-color) 40%, transparent); }
+.status-dropdown-trigger.ts-review { background: color-mix(in srgb, var(--warning-color) 16%, transparent); color: var(--warning-color); border-color: color-mix(in srgb, var(--warning-color) 42%, transparent); }
+.status-dropdown-trigger.ts-done { background: color-mix(in srgb, var(--success-color) 16%, transparent); color: var(--success-color); border-color: color-mix(in srgb, var(--success-color) 42%, transparent); }
+.status-dropdown-trigger.ts-deferred { background: color-mix(in srgb, var(--text-tertiary) 10%, transparent); color: var(--text-tertiary); border-color: color-mix(in srgb, var(--text-tertiary) 34%, transparent); }
+
+.status-dropdown-option.is-colored { font-weight: 600; }
+.status-dropdown-option.is-colored.ts-new { color: var(--text-secondary); }
+.status-dropdown-option.is-colored.ts-progress { color: var(--info-color); }
+.status-dropdown-option.is-colored.ts-review { color: var(--warning-color); }
+.status-dropdown-option.is-colored.ts-done { color: var(--success-color); }
+.status-dropdown-option.is-colored.ts-deferred { color: var(--text-tertiary); }
+/* Подсветка строки в тон статуса — сильнее «серого» правила базового компонента. */
+.status-dropdown-option.is-colored:hover,
+.status-dropdown-option.is-colored.active {
+  background: color-mix(in srgb, currentColor 13%, transparent);
+}
+.status-dropdown-option.is-colored .status-dropdown-check { color: currentColor; }
+/* Цветная полоска слева — статус читается даже боковым зрением. */
+.status-dropdown-option.is-colored {
+  border-left: 3px solid currentColor;
+  padding-left: 0.5rem;
+}
+
+/* Соисполнители второй строкой под исполнителем. */
+.task-coassignees {
+  margin-top: 0.15rem;
+  margin-left: 1.85rem;   /* выравниваем по имени, а не по аватарке */
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 190px;
+}
+
 .task-column-head.ts-new .task-column-title { color: var(--text-secondary); }
 .task-column-head.ts-progress .task-column-title { color: var(--info-color); }
 .task-column-head.ts-review .task-column-title { color: var(--warning-color); }

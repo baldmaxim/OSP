@@ -2,7 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import './StatusDropdown.css'
 
-function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, ariaLabel = 'Статус' }) {
+// colorOptions — раскрашивать не только точку, но и саму строку списка (класс
+// статуса уезжает на <li>). По умолчанию выключено: на страницах договоров и
+// заявок классы статусов заданы «голыми» правилами с собственными паддингами и
+// рамками, и такая строка поехала бы вёрсткой.
+function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, ariaLabel = 'Статус', colorOptions = false }) {
   const [isOpen, setIsOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0 })
   const triggerRef = useRef(null)
@@ -90,7 +94,7 @@ function StatusDropdown({ value, options, onChange, getBadgeClass, getDisplay, a
                 key={opt}
                 role="option"
                 aria-selected={isActive}
-                className={`status-dropdown-option ${isActive ? 'active' : ''}`}
+                className={`status-dropdown-option${isActive ? ' active' : ''}${colorOptions ? ` is-colored ${getBadgeClass(opt)}` : ''}`}
                 onClick={() => {
                   if (opt !== value) onChange(opt)
                   setIsOpen(false)
