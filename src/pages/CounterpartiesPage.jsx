@@ -813,8 +813,13 @@ function CounterpartiesPage() {
   }
 
   const handleExportToExcel = () => {
-    if (counterparties.length === 0) {
-      alert('Нет данных для экспорта')
+    // Выгружаем ровно то, что видит пользователь: учтены вкладка (активные /
+    // чёрный список / удалённые), фильтр по виду работ и строка поиска.
+    // Раньше здесь стоял counterparties — весь загруженный список, и файл
+    // приезжал полным независимо от фильтров.
+    const exportList = filteredCounterparties
+    if (exportList.length === 0) {
+      alert('Нет данных для экспорта: под текущие фильтры и поиск ничего не подходит')
       return
     }
 
@@ -842,12 +847,9 @@ function CounterpartiesPage() {
       return status || ''
     }
 
-    // Сортировка: активные сверху, ЧС снизу, по имени
-    const sorted = [...counterparties].sort((a, b) => {
-      if (a.status === 'blacklist' && b.status !== 'blacklist') return 1
-      if (a.status !== 'blacklist' && b.status === 'blacklist') return -1
-      return (a.name || '').localeCompare(b.name || '', 'ru')
-    })
+    // Порядок берём как есть: filteredCounterparties уже отсортирован так же —
+    // активные сверху, чёрный список снизу, внутри по имени.
+    const sorted = exportList
 
     const rows = []
     sorted.forEach((cp, idx) => {
@@ -919,8 +921,17 @@ function CounterpartiesPage() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Контрагенты')
 
+    // Имя файла отражает выборку: иначе несколько выгрузок с разными фильтрами
+    // невозможно различить в папке «Загрузки».
     const today = new Date().toISOString().slice(0, 10)
-    XLSX.writeFile(wb, `Контрагенты_${today}.xlsx`)
+    const tabPart = activeTab === 'blacklist' ? 'Черный список'
+      : activeTab === 'deleted' ? 'Удаленные'
+        : ''
+    // Вид работ попадает в имя файла — чистим символы, недопустимые в имени.
+    const workTypePart = workTypeFilter ? workTypeFilter.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40) : ''
+    const searchPart = deferredSearchQuery.trim() ? 'поиск' : ''
+    const parts = ['Контрагенты', tabPart, workTypePart, searchPart, today].filter(Boolean)
+    XLSX.writeFile(wb, `${parts.join('_')}.xlsx`)
   }
 
   const handleProceedWithImport = () => {
@@ -1407,8 +1418,8 @@ function CounterpartiesPage() {
                 <button
                   className="btn-import"
                   onClick={handleExportToExcel}
-                  disabled={counterparties.length === 0}
-                  title="Скачать всех контрагентов в Excel"
+                  disabled={filteredCounterparties.length === 0}
+                  title={`Скачать в Excel то, что сейчас в списке (${filteredCounterparties.length})`}
                 >
                   📥 Экспорт
                 </button>
