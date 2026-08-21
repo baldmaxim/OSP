@@ -155,6 +155,23 @@ export async function setProposalReview(fileId, {
 }
 
 // task 431 (цепочка замечаний): инженер отмечает, что замечания по КП отправлены
+// Отметка «занесено в сводную таблицу» — промежуточный этап между проверкой
+// аналитиком и отправкой замечаний контрагенту. Нужен обеим веткам: и КП без
+// замечаний, и КП с замечаниями сначала попадают в сводную.
+export async function setSummaryAdded(fileId, { added, author = '' }) {
+  const payload = added
+    ? { summary_added: true, summary_added_at: new Date().toISOString(), summary_added_by: author?.trim() || null }
+    : { summary_added: false, summary_added_at: null, summary_added_by: null }
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .update(payload)
+    .eq('id', fileId)
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
+    .single()
+  if (error) throw error
+  return data
+}
+
 // контрагенту (sent=true) или снимает отметку (sent=false). sender — ФИО/e-mail.
 export async function setRemarksSent(fileId, { sent, sender = '' }) {
   const payload = sent
@@ -180,6 +197,7 @@ export async function fetchProposalFilesForReview({ statuses = null, objectIds =
       .select(`id, tender_id, counterparty_id, version_label, created_at,
                review_status, review_note, reviewed_at, reviewed_by, review_required,
                remarks_sent, remarks_sent_at, remarks_sent_by,
+               summary_added, summary_added_at, summary_added_by,
                s3:s3_documents!s3_document_id(*),
                review_note_s3:s3_documents!review_note_s3_document_id(*),
                counterparties(name),

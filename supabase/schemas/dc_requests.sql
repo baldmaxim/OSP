@@ -11,6 +11,11 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   -- Этапы: проверка по договору → в работе → завершено (миграция 20260823).
   status TEXT NOT NULL DEFAULT 'contract_check'
     CHECK (status IN ('contract_check', 'in_work', 'completed')),
+  -- Результат сверки с договором и тип ДС (миграция 20260824).
+  check_status TEXT NOT NULL DEFAULT 'not_checked'
+    CHECK (check_status IN ('not_checked', 'matches', 'not_matches')),
+  ds_type TEXT
+    CHECK (ds_type IS NULL OR ds_type IN ('rd_change', 'extra_in_contract', 'extra_out_contract')),
   -- task 370: суммы ДС с НДS 22% (Было/Стало) и тип материала.
   amount_before NUMERIC(14, 2),
   amount_after  NUMERIC(14, 2),

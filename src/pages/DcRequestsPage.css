@@ -14,6 +14,25 @@
 }
 .dcr-title-icon { width: 26px; height: 26px; }
 
+/* Признаки заявки бейджами под контрагентом (миграция 20260824): тип ДС и
+   результат сверки с договором. Отдельных колонок не заводим — таблица и так
+   плотная. */
+.dcr-tag {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.dstype-rd  { color: #1e40af; background: #dbeafe; border-color: #93c5fd; }
+.dstype-in  { color: #166534; background: #dcfce7; border-color: #86efac; }
+.dstype-out { color: #9a3412; background: #ffedd5; border-color: #fdba74; }
+.check-matches     { color: #166534; background: #dcfce7; border-color: #86efac; }
+.check-not-matches { color: #991b1b; background: #fee2e2; border-color: #fca5a5; }
+.check-not-checked { color: var(--text-tertiary); background: var(--bg-tertiary); border-color: var(--border-color); }
+
 /* Новый первый этап (миграция 20260823) — тёплый янтарный: заявка ещё не в
    работе, её сверяют с договором. Отличается от синего «В работе». */
 .status-contract-check {

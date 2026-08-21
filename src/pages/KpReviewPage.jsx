@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
-import { fetchProposalFilesForReview, setRemarksSent } from '../services/tenderProposalFiles'
+import { fetchProposalFilesForReview, setRemarksSent, setSummaryAdded } from '../services/tenderProposalFiles'
 import KpReviewBadge from '../components/KpReviewBadge'
 import KpReviewModal from '../components/KpReviewModal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
@@ -33,19 +33,23 @@ const IconFile = () => (
   </svg>
 )
 
-// Этап (стадия) КП в цепочке проверки:
+// Этап (стадия) КП в цепочке проверки. Занесение в сводную таблицу — общий
+// промежуточный шаг обеих веток (миграция 20260824):
 //   pending         — на проверке (ждёт аналитика);
-//   approved        — «нет замечаний» (цепочка 1 завершена);
-//   remarks_pending — есть замечания, инженер ещё не отправил их контрагенту;
+//   summary_pending — проверено (с замечаниями или без), но в сводную не внесено;
+//   approved        — нет замечаний и внесено в сводную (цепочка 1 завершена);
+//   remarks_pending — замечания внесены в сводную, ждут отправки контрагенту;
 //   remarks_sent    — замечания отправлены контрагенту (цепочка 2 завершена).
 function stageOf(r) {
+  if (r.review_status !== 'approved' && r.review_status !== 'has_remarks') return 'pending'
+  if (!r.summary_added) return 'summary_pending'
   if (r.review_status === 'approved') return 'approved'
-  if (r.review_status === 'has_remarks') return r.remarks_sent ? 'remarks_sent' : 'remarks_pending'
-  return 'pending'
+  return r.remarks_sent ? 'remarks_sent' : 'remarks_pending'
 }
 
 const TABS = [
   { key: 'pending', label: 'На проверке' },
+  { key: 'summary_pending', label: 'К занесению в сводную' },
   { key: 'approved', label: 'Нет замечаний' },
   { key: 'remarks_pending', label: 'Замечания: к отправке' },
   { key: 'remarks_sent', label: 'Отправлено контрагенту' },
@@ -96,8 +100,21 @@ function KpReviewPage() {
     }
   }
 
+  // Занесение в сводную отмечает тот же, кто ведёт переписку с контрагентом.
+  const handleSummary = async (r, added) => {
+    try {
+      await setSummaryAdded(r.id, { added, author: userProfile?.full_name || user?.email || '' })
+      load()
+    } catch (e) {
+      alert('Ошибка отметки о занесении в сводную: ' + (e.message || e))
+    }
+  }
+
   const counts = useMemo(() => {
-    const c = { pending: 0, approved: 0, remarks_pending: 0, remarks_sent: 0, all: rows.length }
+    const c = {
+      pending: 0, summary_pending: 0, approved: 0,
+      remarks_pending: 0, remarks_sent: 0, all: rows.length,
+    }
     for (const r of rows) { const st = stageOf(r); c[st] = (c[st] || 0) + 1 }
     return c
   }, [rows])
@@ -245,7 +262,26 @@ function KpReviewPage() {
                           onClick={() => setReviewFile(r)}
                         >{r.review_status === 'pending' ? 'Проверить' : 'Изменить'}</button>
                       )}
-                      {canSend && r.review_status === 'has_remarks' && (
+                      {/* Занесение в сводную — общий шаг обеих веток: и КП без
+                          замечаний, и КП с замечаниями сначала попадают туда. */}
+                      {canSend && (r.review_status === 'approved' || r.review_status === 'has_remarks') && (
+                        r.summary_added ? (
+                          <button
+                            type="button"
+                            className="kprv-send-btn is-undo"
+                            title={r.summary_added_by ? `Занёс: ${r.summary_added_by}` : undefined}
+                            onClick={() => handleSummary(r, false)}
+                          >Отменить занесение</button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="kprv-send-btn"
+                            onClick={() => handleSummary(r, true)}
+                          >Занесено в сводную</button>
+                        )
+                      )}
+                      {/* Отправка замечаний — только после занесения в сводную. */}
+                      {canSend && r.review_status === 'has_remarks' && r.summary_added && (
                         r.remarks_sent ? (
                           <button
                             type="button"

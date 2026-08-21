@@ -101,7 +101,18 @@ export default function KpReviewBadge({ file, canReview = false, onReview, showR
           <span className="kpb-remarks-file-name">{remarksDoc.file_name || 'Файл замечаний'}</span>
         </button>
       )}
-      {showRemarks && status === 'has_remarks' && (
+      {/* Занесение в сводную — общий шаг обеих веток (миграция 20260824), поэтому
+          показываем и у «Проверено», и у «Замечаний». */}
+      {showRemarks && (status === 'approved' || status === 'has_remarks') && (
+        <span
+          className={`kpb-sent ${file.summary_added ? 'is-sent' : 'is-todo'}`}
+          title={file.summary_added
+            ? `Занесено в сводную таблицу${file.summary_added_by ? ` · ${file.summary_added_by}` : ''}${file.summary_added_at ? ` · ${fmt(file.summary_added_at)}` : ''}`
+            : 'КП ещё не занесено в сводную таблицу'}
+        >{file.summary_added ? '✓ В сводной таблице' : 'К занесению в сводную'}</span>
+      )}
+      {/* Отправка замечаний — следующий шаг после сводной. */}
+      {showRemarks && status === 'has_remarks' && file.summary_added && (
         <span
           className={`kpb-sent ${file.remarks_sent ? 'is-sent' : 'is-todo'}`}
           title={file.remarks_sent

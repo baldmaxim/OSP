@@ -35,6 +35,8 @@ const EMPTY_FORM = {
   amount_before: '', // task 370
   amount_after: '', // task 370
   material_type: '', // task 370
+  check_status: 'not_checked',
+  ds_type: '',
 }
 
 // Этапы заявки: сверка с договором → работа → готово (миграция 20260823).
@@ -44,6 +46,25 @@ const STATUS_OPTIONS = [
   { value: 'completed', label: 'Завершено', className: 'status-completed' },
 ]
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(o => [o.value, o.label]))
+
+// Результат сверки заявки с договором (миграция 20260824). Заполняется на этапе
+// «Проверка по договору» и остаётся видимым дальше по цепочке.
+const CHECK_STATUS_OPTIONS = [
+  { value: 'not_checked', label: 'Не проверено', className: 'check-not-checked' },
+  { value: 'matches', label: 'Соответствует', className: 'check-matches' },
+  { value: 'not_matches', label: 'Не соответствует', className: 'check-not-matches' },
+]
+const CHECK_STATUS_LABEL = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.label]))
+const CHECK_STATUS_CLASS = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.className]))
+
+// Тип дополнительного соглашения (миграция 20260824).
+const DS_TYPE_OPTIONS = [
+  { value: 'rd_change', label: 'Изменение РД', className: 'dstype-rd' },
+  { value: 'extra_in_contract', label: 'Доп. работы по договору', className: 'dstype-in' },
+  { value: 'extra_out_contract', label: 'Доп. работы вне договора', className: 'dstype-out' },
+]
+const DS_TYPE_LABEL = Object.fromEntries(DS_TYPE_OPTIONS.map(o => [o.value, o.label]))
+const DS_TYPE_CLASS = Object.fromEntries(DS_TYPE_OPTIONS.map(o => [o.value, o.className]))
 
 // task 370: тип материала по ДС.
 const MATERIAL_OPTIONS = [
@@ -85,6 +106,8 @@ const AUDIT_FIELD_LABEL = {
   amount_before: 'Было подано',
   amount_after: 'Утверждено',
   material_type: 'Материал',
+  check_status: 'Статус проверки',
+  ds_type: 'Тип ДС',
 }
 
 function formatDateTime(ts) {
@@ -522,6 +545,8 @@ function DcRequestsPage() {
       amount_before: req.amount_before != null ? String(req.amount_before) : '', // task 370
       amount_after: req.amount_after != null ? String(req.amount_after) : '', // task 370
       material_type: req.material_type || '', // task 370
+      check_status: req.check_status || 'not_checked',
+      ds_type: req.ds_type || '',
     })
     setCpSearch(req.counterparties?.name || '')
     setCpDropdownOpen(false)
@@ -590,6 +615,10 @@ function DcRequestsPage() {
         return STATUS_LABEL[value] || String(value)
       case 'material_type':
         return MATERIAL_LABEL[value] || String(value)
+      case 'check_status':
+        return CHECK_STATUS_LABEL[value] || String(value)
+      case 'ds_type':
+        return DS_TYPE_LABEL[value] || String(value)
       case 'expected_approval_date':
         return formatShortDate(value) || String(value)
       case 'amount_before':
@@ -650,6 +679,8 @@ function DcRequestsPage() {
         amount_before: parseAmount(formData.amount_before), // task 370
         amount_after: parseAmount(formData.amount_after), // task 370
         material_type: formData.material_type || null, // task 370
+        check_status: formData.check_status || 'not_checked',
+        ds_type: formData.ds_type || null,
         updated_at: new Date().toISOString(),
       }
       if (editing) {
@@ -1536,6 +1567,19 @@ function DcRequestsPage() {
                             Материал: {MATERIAL_LABEL[req.material_type]}
                           </div>
                         )}
+                        {/* Тип ДС и результат сверки с договором — бейджами под
+                            контрагентом, рядом с материалом: это признаки самой
+                            заявки, отдельные колонки под них таблицу бы раздули. */}
+                        {req.ds_type && (
+                          <div className={`dcr-tag ${DS_TYPE_CLASS[req.ds_type] || ''}`}>
+                            {DS_TYPE_LABEL[req.ds_type]}
+                          </div>
+                        )}
+                        {req.check_status && req.check_status !== 'not_checked' && (
+                          <div className={`dcr-tag ${CHECK_STATUS_CLASS[req.check_status] || ''}`}>
+                            Договор: {CHECK_STATUS_LABEL[req.check_status]}
+                          </div>
+                        )}
                       </td>
                       <td style={{ textAlign: 'center' }}>{req.ds_number || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
@@ -1887,6 +1931,27 @@ function DcRequestsPage() {
                   <select name="material_type" value={formData.material_type} onChange={handleInputChange}>
                     <option value="">— Не указан —</option>
                     {MATERIAL_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Тип ДС — под материалом, как и просили. */}
+                <div className="form-group full-width">
+                  <label>Тип ДС</label>
+                  <select name="ds_type" value={formData.ds_type} onChange={handleInputChange}>
+                    <option value="">— Не указан —</option>
+                    {DS_TYPE_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Результат сверки с договором — исход этапа «Проверка по договору». */}
+                <div className="form-group full-width">
+                  <label>Статус проверки по договору</label>
+                  <select name="check_status" value={formData.check_status} onChange={handleInputChange}>
+                    {CHECK_STATUS_OPTIONS.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
