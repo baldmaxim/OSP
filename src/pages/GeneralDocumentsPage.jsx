@@ -117,6 +117,51 @@ const IconScale = () => (
   </svg>
 )
 
+// Иконки навигации и материалов — тот же outline-стиль, что у бокового меню
+// (NavIcons.jsx): viewBox 24, fill none, currentColor, толщина 1.8. Раньше здесь
+// стояли эмодзи (←, ↑, ›, 🔗, 📎) — они рисуются шрифтом ОС и в один ряд с SVG
+// не встают ни по весу линии, ни по цвету.
+const navIconProps = {
+  viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+  strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round',
+  'aria-hidden': true, focusable: 'false',
+}
+const IconArrowLeft = ({ size = 18 }) => (
+  <svg {...navIconProps} width={size} height={size}>
+    <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
+  </svg>
+)
+// Выход из папки — «вверх по дереву», а не просто стрелка вверх.
+const IconLevelUp = ({ size = 16 }) => (
+  <svg {...navIconProps} width={size} height={size}>
+    <path d="M9 14 4 9l5-5" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+  </svg>
+)
+const IconChevronRight = ({ size = 14 }) => (
+  <svg {...navIconProps} width={size} height={size}><path d="m9 18 6-6-6-6" /></svg>
+)
+const IconLink = ({ size = 14 }) => (
+  <svg {...navIconProps} width={size} height={size}>
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+)
+const IconFolderPlus = ({ size = 15 }) => (
+  <svg {...navIconProps} width={size} height={size}>
+    <path d="M20 20a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 5.9A2 2 0 0 0 7.93 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2Z" />
+    <path d="M12 11v6" /><path d="M9 14h6" />
+  </svg>
+)
+const IconPlus = ({ size = 15 }) => (
+  <svg {...navIconProps} width={size} height={size}><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+)
+const IconUpload = ({ size = 22 }) => (
+  <svg {...navIconProps} width={size} height={size}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <path d="m7 10 5-5 5 5" /><path d="M12 5v12" />
+  </svg>
+)
+
 // Подгруппы раздела «Документы». 'general' — текущий реестр «Общая информация».
 const CATEGORIES = [
   { key: 'general', label: 'Общая информация', Icon: IconFolder },
@@ -653,7 +698,7 @@ export default function GeneralDocumentsPage() {
     if (m.kind === 'link') {
       return (
         <a key={m.id} href={m.url} target="_blank" rel="noopener noreferrer" className="gd-material gd-material-link" title={m.url}>
-          <span className="gd-mat-icon" aria-hidden>🔗</span>
+          <span className="gd-mat-icon" aria-hidden><IconLink /></span>
           <span className="gd-mat-text">{m.title || 'Открыть ссылку'}</span>
         </a>
       )
@@ -678,7 +723,9 @@ export default function GeneralDocumentsPage() {
     <div className="general-documents-page">
       <div className="gd-header">
         <div className="gd-header-left">
-          <button className="gd-back" onClick={() => navigate('/general')} title="Назад к общей информации">←</button>
+          <button className="gd-back" onClick={() => navigate('/general')} title="Назад к общей информации" aria-label="Назад">
+            <IconArrowLeft />
+          </button>
           <div>
             <h2>Документы</h2>
             <p className="gd-subtitle">Общие документы, инструкции и полезные ссылки</p>
@@ -686,8 +733,12 @@ export default function GeneralDocumentsPage() {
         </div>
         {canEditDocs && (
           <div className="gdf-header-actions">
-            <button className="btn-secondary gdf-add-folder" onClick={openFolderAdd}>+ Папка</button>
-            <button className="btn-primary" onClick={openAdd}>+ Добавить документ</button>
+            <button className="btn-secondary gdf-add-folder" onClick={openFolderAdd}>
+              <IconFolderPlus /> Папка
+            </button>
+            <button className="btn-primary gd-add-doc" onClick={openAdd}>
+              <IconPlus /> Добавить документ
+            </button>
           </div>
         )}
       </div>
@@ -712,7 +763,9 @@ export default function GeneralDocumentsPage() {
       {/* Хлебные крошки: путь до текущей папки. Каждый уровень кликабелен. */}
       <nav className={`gdf-breadcrumbs${currentFolderId ? ' is-nested' : ''}`} aria-label="Путь к папке">
         {currentFolderId && (
-          <button type="button" className="gdf-crumb gdf-crumb-up" onClick={goUp} title="На уровень выше">↑</button>
+          <button type="button" className="gdf-crumb gdf-crumb-up" onClick={goUp} title="На уровень выше" aria-label="На уровень выше">
+            <IconLevelUp />
+          </button>
         )}
         <button
           type="button"
@@ -725,7 +778,7 @@ export default function GeneralDocumentsPage() {
         </button>
         {folderPath.map((f, i) => (
           <span key={f.id} className="gdf-crumb-item">
-            <span className="gdf-crumb-sep" aria-hidden>›</span>
+            <span className="gdf-crumb-sep" aria-hidden><IconChevronRight /></span>
             <button
               type="button"
               className={`gdf-crumb${i === folderPath.length - 1 ? ' is-current' : ''}`}
@@ -757,7 +810,9 @@ export default function GeneralDocumentsPage() {
               {[CATEGORY_LABEL[activeCat], ...folderPath.slice(0, -1).map(f => f.name)].join(' › ')}
             </span>
           </div>
-          <button type="button" className="gdf-folder-banner-up" onClick={goUp}>↑ Наверх</button>
+          <button type="button" className="gdf-folder-banner-up" onClick={goUp}>
+            <IconLevelUp size={15} /> Наверх
+          </button>
         </div>
       )}
 
@@ -1129,7 +1184,7 @@ export default function GeneralDocumentsPage() {
                     onDragLeave={onDropZoneDragLeave}
                     onDrop={onDropZoneDrop}
                   >
-                    <span className="gd-dropzone-icon" aria-hidden>📎</span>
+                    <span className="gd-dropzone-icon" aria-hidden><IconUpload /></span>
                     <div className="gd-dropzone-main">Перетащите файлы сюда</div>
                     <div className="gd-dropzone-sub">или выберите их на компьютере</div>
                     <button type="button" className="gd-dropzone-btn" onClick={(e) => { e.stopPropagation(); openFileDialog() }}>Выбрать файлы</button>

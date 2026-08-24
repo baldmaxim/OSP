@@ -162,9 +162,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [generatedLetter, setGeneratedLetter] = useState('')
   const [letterCopied, setLetterCopied] = useState(false)
 
-  const DEFAULT_LETTER_TEMPLATE = `Уважаемые руководители!
+  const DEFAULT_LETTER_TEMPLATE = `Тема письма: Объект {object_name} / Тендер № {tender_number} / Приглашение на участие в тендере на выполнение работ {work_description}
 
-ООО «СУ-10» уведомляет о проведении тендера на выбор подрядчика на {work_description} для объекта: «{object_name}».
+Уважаемые руководители!
+
+ООО «СУ-10» уведомляет о проведении тендера № {tender_number} на выбор подрядчика на {work_description} для объекта: «{object_name}».
 
 В связи с этим, мы приглашаем вашу компанию принять участие в тендере и предоставить свои предложения для рассмотрения.
 Срок подачи заявок на участие в тендере: {start_date}-{end_date} гг.
@@ -182,8 +184,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 Телефон для связи: {employee_phone}
 Почта: {employee_email}`
 
+  // Ключ версионный: в шаблон добавлены тема письма и № тендера, и сохранённый
+  // раньше вариант их не содержит. Без смены ключа никто из тех, кто хоть раз
+  // нажимал «Сохранить шаблон», нововведений бы не увидел.
+  const LETTER_TEMPLATE_KEY = 'letterTemplate:v2'
   const [letterTemplate, setLetterTemplate] = useState(() => {
-    return localStorage.getItem('letterTemplate') || DEFAULT_LETTER_TEMPLATE
+    return localStorage.getItem(LETTER_TEMPLATE_KEY) || DEFAULT_LETTER_TEMPLATE
   })
   const [templateSaved, setTemplateSaved] = useState(false)
   // Фильтры множественного выбора: пустой массив = фильтр не применён.
@@ -1649,6 +1655,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     const replacements = {
       '{work_description}': tenderData.work_description || '[Описание работ]',
       '{object_name}': objectName || '[Объект не указан]',
+      // Сквозной номер тендера в портале — он же в теме письма и в реестре.
+      '{tender_number}': tenderData.public_tender_number != null
+        ? String(tenderData.public_tender_number)
+        : '[номер не присвоен]',
       '{start_date}': formatDateForLetter(tenderData.start_date),
       '{end_date}': formatDateForLetter(tenderData.end_date),
       '{employee_name}': employee?.full_name || '[ФИО не указано]',
@@ -1666,7 +1676,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   const handleSaveTemplate = () => {
-    localStorage.setItem('letterTemplate', letterTemplate)
+    localStorage.setItem(LETTER_TEMPLATE_KEY, letterTemplate)
     setTemplateSaved(true)
     setTimeout(() => setTemplateSaved(false), 2000)
   }
@@ -1674,7 +1684,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const handleResetTemplate = () => {
     if (window.confirm('Вернуть шаблон по умолчанию?')) {
       setLetterTemplate(DEFAULT_LETTER_TEMPLATE)
-      localStorage.setItem('letterTemplate', DEFAULT_LETTER_TEMPLATE)
+      localStorage.setItem(LETTER_TEMPLATE_KEY, DEFAULT_LETTER_TEMPLATE)
     }
   }
 
@@ -3237,6 +3247,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             {[
               ['{work_description}', 'Описание работ'],
               ['{object_name}', 'Название объекта'],
+              ['{tender_number}', 'Номер тендера'],
               ['{start_date}', 'Дата начала'],
               ['{end_date}', 'Дата окончания'],
               ['{employee_name}', 'ФИО сотрудника'],
@@ -3623,7 +3634,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       const selectedObject = objects.find(obj => obj.id === formData.object_id)
                       const objectName = selectedObject?.name || '[Объект не указан]'
                       const selectedContact = responsibleContacts.find(c => c.id === formData.responsible_contact_id)
-                      const letter = generateRequestLetter(formData, objectName, selectedContact)
+                      // Номера в форме нет — он присваивается базой, берём из редактируемого тендера.
+                      const letter = generateRequestLetter(
+                        { ...formData, public_tender_number: editingTender?.public_tender_number },
+                        objectName,
+                        selectedContact,
+                      )
                       setGeneratedLetter(letter)
                       setShowLetterModal(true)
                     }}

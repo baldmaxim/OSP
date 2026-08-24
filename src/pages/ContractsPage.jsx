@@ -54,6 +54,55 @@ const STATUS_OPTIONS = [
 ]
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(s => [s.value, s.label]))
 
+// Реестр показывается в двух охватах: все договоры компании (справочно) и те,
+// что ведёт наш отдел (флаг contracts.handled_by_us, миграция 20260827).
+const SCOPES = [
+  { key: 'all', label: 'Все договоры', hint: 'Полный реестр компании, включая договоры, которые ведёт не наш отдел' },
+  { key: 'ours', label: 'Наши договоры', hint: 'Договоры, которые обрабатывает наш отдел' },
+]
+
+// Генподрядный коэффициент — наценка: во сколько сумма генподряда больше суммы
+// подряда. 100 млн генподряда против 93 млн подряда → 107,5%.
+function gpMarkup(contract) {
+  const dp = Number(contract?.contract_amount)
+  const dgp = Number(contract?.gp_amount)
+  if (!Number.isFinite(dp) || !Number.isFinite(dgp) || dp === 0 || !dgp) return null
+  return (dgp / dp) * 100
+}
+
+function formatPercent(value) {
+  if (value == null) return null
+  return `${value.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+}
+
+// Ячейка суммы: подряд и генподряд одной колонкой, чтобы разницу было видно без
+// перехода в карточку. Пока заполнена одна сумма — показываем её как раньше.
+function AmountCell({ contract }) {
+  const dp = formatMoney(contract.contract_amount, contract.currency)
+  const dgp = formatMoney(contract.gp_amount, contract.currency)
+  const markup = formatPercent(gpMarkup(contract))
+
+  if (!dgp) return <span className="amt-solo">{dp || '—'}</span>
+
+  return (
+    <div className="amt-pair">
+      <span className="amt-row">
+        <span className="amt-tag" title="Договор подряда — сумма, которую платим подрядчику">ДП</span>
+        <span className="amt-value">{dp || '—'}</span>
+      </span>
+      <span className="amt-row">
+        <span className="amt-tag" title="Договор генподряда — сумма по тем же работам от заказчика">ДГП</span>
+        <span className="amt-value">{dgp}</span>
+      </span>
+      {markup && (
+        <span className="amt-markup" title="Генподрядный коэффициент: сумма ДГП / сумма ДП">
+          % ГП {markup}
+        </span>
+      )}
+    </div>
+  )
+}
+
 // Вкладки взаимоисключающие по статусу: «Общий реестр» = все не удалённые;
 // «Заявки на заключение» = статус «Новая заявка» (new_request); далее — по своему
 // статусу (В работе / Приостановка / Завершено); «Удалённые» — soft-delete.
@@ -76,6 +125,8 @@ const EMPTY_FORM = {
   contract_date: '',
   object_id: '',
   contract_amount: '',
+  gp_amount: '',
+  handled_by_us: false,
   currency: 'RUB',
   vat_rate: '',
   amount_includes_vat: true,
@@ -232,6 +283,8 @@ function ContractRegistry() {
   // Раздел — единый реестр без выбора отдела: договоры ведутся и по объектам
   // основного строительства, и по объектам гарантийного обслуживания.
   const [activeTab, setActiveTab] = useState('all')
+  // Охват реестра: все договоры компании или только те, что ведёт наш отдел.
+  const [scope, setScope] = useState('all')
 
   const [contracts, setContracts] = useState([])
   const [objects, setObjects] = useState([])
@@ -986,8 +1039,14 @@ function ContractRegistry() {
     () => [{ value: '', label: 'Не назначен' }, ...dedupContacts.map(c => ({ value: c.name, label: c.name }))],
     [dedupContacts])
 
+  // Охват реестра применяется до вкладок и счётчиков — «Наши договоры» это тот же
+  // реестр, просто суженный, поэтому и статусные счётчики должны считаться в нём.
+  const scopedContracts = useMemo(
+    () => (scope === 'ours' ? contracts.filter(c => c.handled_by_us) : contracts),
+    [contracts, scope])
+
   // Реестр загружается целиком; по вкладкам фильтруем в памяти (мгновенно).
-  const tabContracts = useMemo(() => contracts.filter(c => {
+  const tabContracts = useMemo(() => scopedContracts.filter(c => {
     const deleted = !!c.deleted_at
     if (activeTab === 'deleted') return deleted
     if (deleted) return false
@@ -997,11 +1056,11 @@ function ContractRegistry() {
     // так вкладки взаимоисключающие и статус договора совпадает с его вкладкой.
     if (activeTab === 'requests') return (c.status || 'new_request') === 'new_request'
     return (c.status || 'new_request') === activeTab
-  }), [contracts, activeTab])
+  }), [scopedContracts, activeTab])
 
   // Счётчики вкладок — из уже загруженного реестра (без отдельных запросов).
   const tabCounts = useMemo(() => {
-    const active = contracts.filter(c => !c.deleted_at)
+    const active = scopedContracts.filter(c => !c.deleted_at)
     return {
       all: active.length,
       requests: active.filter(c => (c.status || 'new_request') === 'new_request').length,
@@ -1009,9 +1068,9 @@ function ContractRegistry() {
       awaiting_paper_sign: active.filter(c => c.status === 'awaiting_paper_sign').length,
       paused: active.filter(c => c.status === 'paused').length,
       completed: active.filter(c => c.status === 'completed').length,
-      deleted: contracts.filter(c => c.deleted_at).length,
+      deleted: scopedContracts.filter(c => c.deleted_at).length,
     }
-  }, [contracts])
+  }, [scopedContracts])
 
   const filteredSortedContracts = useMemo(() => {
     const q = searchText.trim().toLowerCase()
@@ -1172,6 +1231,9 @@ function ContractRegistry() {
         warranty_retention_percent: formData.warranty_retention_percent === '' ? null : formData.warranty_retention_percent,
         // Сумма необязательна — считается из ПСДЦ; пустое поле = NULL.
         contract_amount: formData.contract_amount === '' ? null : formData.contract_amount,
+        // Сумма генподряда (ДГП) — тоже необязательна; наценка считается в UI.
+        gp_amount: formData.gp_amount === '' ? null : formData.gp_amount,
+        handled_by_us: !!formData.handled_by_us,
         vat_rate: formData.vat_rate === '' ? null : formData.vat_rate,
         currency: formData.currency || 'RUB',
         amount_includes_vat: formData.amount_includes_vat !== false,
@@ -1253,6 +1315,8 @@ function ContractRegistry() {
       contract_date: contract.contract_date || '',
       object_id: contract.object_id || '',
       contract_amount: contract.contract_amount || '',
+      gp_amount: contract.gp_amount || '',
+      handled_by_us: !!contract.handled_by_us,
       currency: contract.currency || 'RUB',
       vat_rate: contract.vat_rate ?? '',
       amount_includes_vat: contract.amount_includes_vat !== false,
@@ -1489,6 +1553,27 @@ function ContractRegistry() {
         </div>
       </div>
 
+      {/* Охват реестра. Стоит НАД статусными вкладками: сначала выбираем, какой
+          реестр смотрим, и только потом — стадию внутри него. */}
+      <div className="registry-scope" role="tablist" aria-label="Охват реестра">
+        {SCOPES.map(s => (
+          <button
+            key={s.key}
+            type="button"
+            role="tab"
+            aria-selected={scope === s.key}
+            title={s.hint}
+            className={`registry-scope-btn${scope === s.key ? ' is-active' : ''}`}
+            onClick={() => setScope(s.key)}
+          >
+            {s.label}
+            <span className="registry-scope-count">
+              {(s.key === 'ours' ? contracts.filter(c => c.handled_by_us && !c.deleted_at) : contracts.filter(c => !c.deleted_at)).length}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Вкладки (task 183 + 190) */}
       <div className="status-tabs">
         {TABS.map(tab => (
@@ -1616,9 +1701,22 @@ function ContractRegistry() {
                       </span>
                     </div>
                     <div className="mcard-row">
-                      <span className="mcard-label">Сумма</span>
+                      <span className="mcard-label">Сумма ДП</span>
                       <span className="mcard-value">{formatMoney(contract.contract_amount, contract.currency) || '—'}</span>
                     </div>
+                    {/* Генподряд показываем только когда он заполнен — иначе на
+                        телефоне карточка растёт прочерками. */}
+                    {contract.gp_amount != null && contract.gp_amount !== '' && (
+                      <div className="mcard-row">
+                        <span className="mcard-label">Сумма ДГП</span>
+                        <span className="mcard-value">
+                          {formatMoney(contract.gp_amount, contract.currency) || '—'}
+                          {formatPercent(gpMarkup(contract)) && (
+                            <span className="amt-markup"> % ГП {formatPercent(gpMarkup(contract))}</span>
+                          )}
+                        </span>
+                      </div>
+                    )}
                     <div className="mcard-row">
                       <span className="mcard-label">Юрист</span>
                       <span className="mcard-value">{lawyerName}</span>
@@ -1761,7 +1859,9 @@ function ContractRegistry() {
                     )}
                   </td>
                   <td className="cell-work" title={contract.work_name || contract.tenders?.work_description || ''}>{contract.work_name || contract.tenders?.work_description || '—'}</td>
-                  <td className="cell-amount">{formatMoney(contract.contract_amount, contract.currency) || '—'}</td>
+                  <td className="cell-amount">
+                    <AmountCell contract={contract} />
+                  </td>
                   <td className="cell-status" onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
                       <span className="status-badge status-deleted">Удалён</span>
@@ -2392,11 +2492,37 @@ function ContractRegistry() {
                   </select>
                 </div>
 
+                {/* Признак «наш» договор — от него зависит, попадёт ли он в
+                    реестр «Наши договоры». */}
+                <div className="form-group full-width">
+                  <label className="inline-check">
+                    <input
+                      type="checkbox"
+                      name="handled_by_us"
+                      checked={!!formData.handled_by_us}
+                      onChange={(e) => setFormData(prev => ({ ...prev, handled_by_us: e.target.checked }))}
+                    />
+                    <span>Договор ведёт наш отдел</span>
+                  </label>
+                  <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
+                    Отмеченные договоры попадают в реестр «Наши договоры»; остальные видны только в «Все договоры».
+                  </small>
+                </div>
+
                 <div className="form-group">
-                  <label>Сумма по договору</label>
+                  <label>Сумма по договору подряда (ДП)</label>
                   <input type="number" step="0.01" name="contract_amount" value={formData.contract_amount} onChange={handleInputChange} placeholder="Подтянется из ПСДЦ" />
                   <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
                     После импорта ПСДЦ пересчитывается из строк; можно поправить вручную.
+                  </small>
+                </div>
+                <div className="form-group">
+                  <label>Сумма по договору генподряда (ДГП)</label>
+                  <input type="number" step="0.01" name="gp_amount" value={formData.gp_amount} onChange={handleInputChange} placeholder="Если есть" />
+                  <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
+                    {formatPercent(gpMarkup({ contract_amount: formData.contract_amount, gp_amount: formData.gp_amount }))
+                      ? `Генподрядный коэффициент: ${formatPercent(gpMarkup({ contract_amount: formData.contract_amount, gp_amount: formData.gp_amount }))} (ДГП / ДП)`
+                      : 'Коэффициент посчитается сам: ДГП / ДП.'}
                   </small>
                 </div>
                 <div className="form-group">

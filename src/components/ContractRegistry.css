@@ -1100,6 +1100,20 @@
 .contracts-table-compact .cell-date {
   text-align: center;
 }
+
+/* Длинные статусы («Ожидание подписания в бум. виде») в одну строку не влезали и
+   наезжали на соседнюю колонку. Разрешаем перенос внутри бейджа и держим для
+   колонки минимальную ширину, чтобы перенос шёл по словам, а не по буквам. */
+.contracts-table-compact .cell-status { min-width: 150px; }
+.contracts-table-compact .cell-status .status-badge {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.25;
+  text-align: center;
+}
+.contracts-table-compact .cell-status .fdrop-trigger { max-width: 100%; }
+.contracts-table-compact .cell-status .fdrop-value { min-width: 0; }
 .contracts-table-compact .cell-date .inline-cell-date { text-align: center; }
 
 /* Индикатор внесения в Larix — под статусом */
@@ -2340,6 +2354,95 @@
   font-weight: 500;
   color: var(--text-primary);
 }
+
+/* ===== Сумма: подряд и генподряд одной колонкой (миграция 20260827) ===== */
+.amt-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: flex-end;
+}
+/* Метка ДП/ДГП прижата влево, сумма — вправо: цифры остаются в одной колонке
+   и читаются столбиком, как в любой денежной таблице. */
+.amt-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+.amt-tag {
+  flex: 0 0 auto;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.amt-value { white-space: nowrap; }
+.amt-markup {
+  align-self: flex-end;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 12%, transparent);
+  color: var(--primary-color, #2563eb);
+  font-size: 0.65rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ===== Охват реестра: все договоры / наши договоры ===== */
+.registry-scope {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.25rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.registry-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.registry-scope-btn:hover { color: var(--text-primary); }
+.registry-scope-btn.is-active {
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+.registry-scope-count {
+  min-width: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Галочка в форме договора */
+.contract-form .inline-check,
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+.inline-check input { width: auto; margin: 0; }
 
 /* ===== Реестр договоров: панель фильтров над таблицей ===== */
 /* Панель фильтров — отдельная светлая карточка над таблицей */

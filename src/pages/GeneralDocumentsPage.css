@@ -32,13 +32,15 @@
 }
 .gd-back {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 36px;
   height: 36px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-secondary);
   color: var(--text-secondary);
-  font-size: 1.125rem;
   cursor: pointer;
   transition: border-color 0.1s, color 0.1s;
 }
@@ -81,6 +83,13 @@
 .general-documents-page .btn-secondary:disabled {
   opacity: 0.6;
   cursor: default;
+}
+/* Кнопки шапки с иконками — выравниваем глиф с текстом по оптической оси. */
+.general-documents-page .gdf-add-folder,
+.general-documents-page .gd-add-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 /* ── Панель поиска ── */
@@ -380,7 +389,9 @@
 }
 .gd-mat-icon {
   flex-shrink: 0;
-  font-size: 0.8125rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-tertiary);
 }
 .gd-mat-text {
   overflow: hidden;
@@ -679,8 +690,9 @@
   background: var(--hover-bg);
 }
 .gd-dropzone-icon {
-  font-size: 1.5rem;
-  opacity: 0.75;
+  display: inline-flex;
+  color: var(--text-tertiary);
+  opacity: 0.9;
 }
 .gd-dropzone-main {
   font-size: 0.9375rem;
@@ -876,7 +888,8 @@
   border-color: var(--border-color);
 }
 .gdf-crumb-up {
-  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
   line-height: 1;
   padding: 0.3rem 0.5rem;
   color: var(--primary-color, #0891b2);
@@ -914,6 +927,8 @@
   color: var(--primary-color, #0891b2);
 }
 .gdf-crumb-sep {
+  display: inline-flex;
+  align-items: center;
   color: var(--text-tertiary);
   user-select: none;
 }
@@ -966,6 +981,9 @@
 .gdf-folder-banner-up {
   margin-left: auto;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.35rem 0.7rem;
   border: 1px solid var(--border-color);
   border-radius: 8px;
