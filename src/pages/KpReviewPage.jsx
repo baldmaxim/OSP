@@ -33,27 +33,44 @@ const IconFile = () => (
   </svg>
 )
 
-// Этап (стадия) КП в цепочке проверки. Занесение в сводную таблицу — общий
-// промежуточный шаг обеих веток (миграция 20260824):
-//   pending         — на проверке (ждёт аналитика);
-//   summary_pending — проверено (с замечаниями или без), но в сводную не внесено;
-//   approved        — нет замечаний и внесено в сводную (цепочка 1 завершена);
-//   remarks_pending — замечания внесены в сводную, ждут отправки контрагенту;
-//   remarks_sent    — замечания отправлены контрагенту (цепочка 2 завершена).
+// Этап (стадия) КП. После вердикта аналитика путь расходится на две ветки, и
+// занесение в сводную таблицу есть в каждой — но это разные очереди работы,
+// поэтому и этапы разные (миграция 20260824):
+//
+//   pending          — на проверке, ждёт аналитика (общее начало обеих веток)
+//
+//   ветка «без замечаний»:
+//   ok_summary       — вердикт «нет замечаний», в сводную ещё не внесено
+//   ok_done          — внесено, работа по КП закончена
+//
+//   ветка «с замечаниями»:
+//   remarks_summary  — вердикт «есть замечания», в сводную ещё не внесено
+//   remarks_pending  — внесено, ждёт отправки контрагенту
+//   remarks_sent     — отправлено контрагенту, работа по КП закончена
 function stageOf(r) {
-  if (r.review_status !== 'approved' && r.review_status !== 'has_remarks') return 'pending'
-  if (!r.summary_added) return 'summary_pending'
-  if (r.review_status === 'approved') return 'approved'
-  return r.remarks_sent ? 'remarks_sent' : 'remarks_pending'
+  if (r.review_status === 'approved') return r.summary_added ? 'ok_done' : 'ok_summary'
+  if (r.review_status === 'has_remarks') {
+    if (!r.summary_added) return 'remarks_summary'
+    return r.remarks_sent ? 'remarks_sent' : 'remarks_pending'
+  }
+  return 'pending'
 }
 
+// branch группирует вкладки в дорожки: common — общие, ok/remarks — свои ветки.
 const TABS = [
-  { key: 'pending', label: 'На проверке' },
-  { key: 'summary_pending', label: 'К занесению в сводную' },
-  { key: 'approved', label: 'Нет замечаний' },
-  { key: 'remarks_pending', label: 'Замечания: к отправке' },
-  { key: 'remarks_sent', label: 'Отправлено контрагенту' },
-  { key: 'all', label: 'Все' },
+  { key: 'pending', label: 'На проверке', branch: 'common' },
+  { key: 'all', label: 'Все', branch: 'common' },
+  { key: 'ok_summary', label: 'К занесению в сводную', branch: 'ok' },
+  { key: 'ok_done', label: 'Готово', branch: 'ok' },
+  { key: 'remarks_summary', label: 'К занесению в сводную', branch: 'remarks' },
+  { key: 'remarks_pending', label: 'К отправке контрагенту', branch: 'remarks' },
+  { key: 'remarks_sent', label: 'Отправлено', branch: 'remarks' },
+]
+
+const BRANCHES = [
+  { key: 'common', label: null },
+  { key: 'ok', label: 'Без замечаний' },
+  { key: 'remarks', label: 'С замечаниями' },
 ]
 
 function KpReviewPage() {
@@ -112,8 +129,9 @@ function KpReviewPage() {
 
   const counts = useMemo(() => {
     const c = {
-      pending: 0, summary_pending: 0, approved: 0,
-      remarks_pending: 0, remarks_sent: 0, all: rows.length,
+      pending: 0, ok_summary: 0, ok_done: 0,
+      remarks_summary: 0, remarks_pending: 0, remarks_sent: 0,
+      all: rows.length,
     }
     for (const r of rows) { const st = stageOf(r); c[st] = (c[st] || 0) + 1 }
     return c
@@ -145,17 +163,25 @@ function KpReviewPage() {
           загруженные с момента запуска функции; ранее загруженные остаются в тендерах.
         </p>
 
-        {/* Схема прохождения КП по двум цепочкам — чтобы всем было понятно, что к чему */}
+        {/* Схема прохождения КП. После вердикта аналитика путь расходится на две
+            ветки, и в каждой есть своё занесение в сводную таблицу — порядок
+            шагов здесь ровно тот же, что в группах вкладок ниже. */}
         <div className="kprv-flow" aria-hidden>
-          <span className="kprv-flow-start">На&nbsp;проверке</span>
+          <span className="kprv-flow-start">На&nbsp;проверке<small>аналитик</small></span>
           <span className="kprv-flow-split">
             <span className="kprv-flow-row">
               <span className="kprv-flow-arrow">→</span>
-              <span className="kprv-flow-step is-ok">Нет замечаний</span>
+              <span className="kprv-flow-step is-ok">Нет замечаний<small>аналитик</small></span>
+              <span className="kprv-flow-arrow">→</span>
+              <span className="kprv-flow-step is-summary">В сводную таблицу<small>инженер</small></span>
+              <span className="kprv-flow-arrow">→</span>
+              <span className="kprv-flow-done">готово</span>
             </span>
             <span className="kprv-flow-row">
               <span className="kprv-flow-arrow">→</span>
               <span className="kprv-flow-step is-warn">Есть замечания<small>аналитик</small></span>
+              <span className="kprv-flow-arrow">→</span>
+              <span className="kprv-flow-step is-summary">В сводную таблицу<small>инженер</small></span>
               <span className="kprv-flow-arrow">→</span>
               <span className="kprv-flow-step is-sent">Отправлено контрагенту<small>инженер</small></span>
             </span>
@@ -164,18 +190,25 @@ function KpReviewPage() {
       </div>
 
       <div className="kprv-toolbar">
+        {/* Вкладки сгруппированы в те же дорожки, что нарисованы в схеме сверху:
+            общие, затем ветка без замечаний, затем ветка с замечаниями. */}
         <div className="kprv-tabs" role="tablist">
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={tab === t.key}
-              className={`kprv-tab${tab === t.key ? ' is-active' : ''}`}
-              onClick={() => setTab(t.key)}
-            >
-              {t.label}
-              <span className="kprv-tab-count">{counts[t.key] ?? 0}</span>
-            </button>
+          {BRANCHES.map(b => (
+            <span key={b.key} className={`kprv-tab-group kprv-tab-group--${b.key}`}>
+              {b.label && <span className="kprv-tab-group-label">{b.label}</span>}
+              {TABS.filter(t => t.branch === b.key).map(t => (
+                <button
+                  key={t.key}
+                  role="tab"
+                  aria-selected={tab === t.key}
+                  className={`kprv-tab${tab === t.key ? ' is-active' : ''}`}
+                  onClick={() => setTab(t.key)}
+                >
+                  {t.label}
+                  <span className="kprv-tab-count">{counts[t.key] ?? 0}</span>
+                </button>
+              ))}
+            </span>
           ))}
         </div>
         <input
@@ -193,11 +226,14 @@ function KpReviewPage() {
         <div className="kprv-error">Ошибка: {error}</div>
       ) : visibleRows.length === 0 ? (
         <div className="kprv-empty">
-          {tab === 'pending' ? 'Нет КП, ожидающих проверки.'
-            : tab === 'remarks_pending' ? 'Нет замечаний, ожидающих отправки контрагенту.'
-              : tab === 'remarks_sent' ? 'Нет отправленных контрагенту замечаний.'
-                : tab === 'approved' ? 'Нет КП без замечаний.'
-                  : 'Нет записей.'}
+          {{
+            pending: 'Нет КП, ожидающих проверки.',
+            ok_summary: 'Нет КП без замечаний, ожидающих занесения в сводную таблицу.',
+            ok_done: 'Нет полностью отработанных КП без замечаний.',
+            remarks_summary: 'Нет КП с замечаниями, ожидающих занесения в сводную таблицу.',
+            remarks_pending: 'Нет замечаний, ожидающих отправки контрагенту.',
+            remarks_sent: 'Нет отправленных контрагенту замечаний.',
+          }[tab] || 'Нет записей.'}
         </div>
       ) : (
         <div className="kprv-table-wrap" ref={tableWrapRef}>
