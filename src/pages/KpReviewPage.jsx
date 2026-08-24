@@ -44,9 +44,10 @@ const IconFile = () => (
 //   ok_done           — внесено, работа по КП закончена
 //
 //   ветка «с замечаниями» → подветка «для отправки подрядчику»:
-//   remarks_summary   — в сводную ещё не внесено
-//   remarks_pending   — внесено, ждёт отправки контрагенту
-//   remarks_sent      — отправлено контрагенту, работа по КП закончена
+//   remarks_work      — общая очередь на две ПАРАЛЛЕЛЬНЫЕ задачи инженера:
+//                       занести в сводную и отправить замечания подрядчику.
+//                       Порядок не важен, этап закрыт, когда сделано и то, и то
+//   remarks_sent      — обе задачи выполнены, работа по КП закончена
 //
 //   ветка «с замечаниями» → подветка «без отправки подрядчику»:
 //   nosend_summary    — в сводную ещё не внесено
@@ -60,8 +61,7 @@ function stageOf(r) {
     if (r.remarks_send_required === false) {
       return r.summary_added ? 'nosend_done' : 'nosend_summary'
     }
-    if (!r.summary_added) return 'remarks_summary'
-    return r.remarks_sent ? 'remarks_sent' : 'remarks_pending'
+    return r.summary_added && r.remarks_sent ? 'remarks_sent' : 'remarks_work'
   }
   return 'pending'
 }
@@ -69,7 +69,7 @@ function stageOf(r) {
 const STAGE_KEYS = [
   'pending',
   'ok_summary', 'ok_done',
-  'remarks_summary', 'remarks_pending', 'remarks_sent',
+  'remarks_work', 'remarks_sent',
   'nosend_summary', 'nosend_done',
 ]
 
@@ -81,9 +81,15 @@ const TAB_META = {
   pending: { label: 'На проверке', tone: 'pending', actor: 'аналитик' },
   ok_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'Без замечаний · к занесению в сводную таблицу' },
   ok_done: { label: 'Готово', tone: 'ok', terminal: true, title: 'Без замечаний · работа по КП закончена' },
-  remarks_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'С замечаниями · для отправки подрядчику · к занесению в сводную таблицу' },
-  remarks_pending: { label: 'К отправке подрядчику', tone: 'warn', actor: 'инженер', title: 'С замечаниями · внесено в сводную, ждёт отправки подрядчику' },
-  remarks_sent: { label: 'Отправлено', tone: 'sent', actor: 'инженер', terminal: true, title: 'С замечаниями · замечания отправлены подрядчику' },
+  // Один этап на две параллельные задачи инженера — порядок между ними не
+  // навязываем, важно лишь, чтобы к концу этапа обе были выполнены.
+  remarks_work: {
+    label: 'Сводная + отправка',
+    tone: 'warn',
+    actor: 'инженер · параллельно',
+    title: 'С замечаниями · параллельно: занести в сводную таблицу и отправить замечания подрядчику',
+  },
+  remarks_sent: { label: 'Отправлено', tone: 'sent', actor: 'инженер', terminal: true, title: 'С замечаниями · внесено в сводную и отправлено подрядчику' },
   nosend_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'С замечаниями · без отправки подрядчику · к занесению в сводную таблицу' },
   nosend_done: { label: 'Готово', tone: 'ok', terminal: true, title: 'С замечаниями · без отправки подрядчику · работа по КП закончена' },
   all: { label: 'Все', tone: 'all', title: 'Все КП независимо от этапа' },
@@ -294,9 +300,7 @@ function KpReviewPage() {
                 <span className="kprv-flow-row">
                   <span className="kprv-flow-branch is-send">для отправки подрядчику</span>
                   <span className="kprv-flow-arrow" aria-hidden />
-                  <FlowTab tabKey="remarks_summary" tab={tab} counts={counts} onSelect={setTab} />
-                  <span className="kprv-flow-arrow" aria-hidden />
-                  <FlowTab tabKey="remarks_pending" tab={tab} counts={counts} onSelect={setTab} />
+                  <FlowTab tabKey="remarks_work" tab={tab} counts={counts} onSelect={setTab} />
                   <span className="kprv-flow-arrow" aria-hidden />
                   <FlowTab tabKey="remarks_sent" tab={tab} counts={counts} onSelect={setTab} />
                 </span>
@@ -334,9 +338,8 @@ function KpReviewPage() {
             pending: 'Нет КП, ожидающих проверки.',
             ok_summary: 'Нет КП без замечаний, ожидающих занесения в сводную таблицу.',
             ok_done: 'Нет полностью отработанных КП без замечаний.',
-            remarks_summary: 'Нет КП с замечаниями для отправки подрядчику, ожидающих занесения в сводную таблицу.',
-            remarks_pending: 'Нет замечаний, ожидающих отправки подрядчику.',
-            remarks_sent: 'Нет отправленных подрядчику замечаний.',
+            remarks_work: 'Нет КП с замечаниями, ожидающих занесения в сводную таблицу и отправки подрядчику.',
+            remarks_sent: 'Нет КП с замечаниями, у которых сделано и занесение в сводную, и отправка подрядчику.',
             nosend_summary: 'Нет КП с замечаниями без отправки подрядчику, ожидающих занесения в сводную таблицу.',
             nosend_done: 'Нет отработанных КП с замечаниями без отправки подрядчику.',
           }[tab] || 'Нет записей.'}
@@ -412,8 +415,7 @@ function KpReviewPage() {
                           onClick={() => setReviewFile(r)}
                         >{r.review_status === 'pending' ? 'Проверить' : 'Изменить'}</button>
                       )}
-                      {/* Занесение в сводную — общий шаг обеих веток: и КП без
-                          замечаний, и КП с замечаниями сначала попадают туда. */}
+                      {/* Занесение в сводную — общий шаг всех веток. */}
                       {canSend && (r.review_status === 'approved' || r.review_status === 'has_remarks') && (
                         r.summary_added ? (
                           <button
@@ -430,14 +432,16 @@ function KpReviewPage() {
                           >Занесено в сводную</button>
                         )
                       )}
-                      {/* Отправка замечаний — только после занесения в сводную и
-                          только в подветке «для отправки подрядчику». */}
+                      {/* Отправка замечаний идёт параллельно занесению в сводную:
+                          порядок между ними не навязываем, ждать нечего. Только в
+                          подветке «для отправки подрядчику». */}
                       {canSend && r.review_status === 'has_remarks'
-                        && r.remarks_send_required !== false && r.summary_added && (
+                        && r.remarks_send_required !== false && (
                         r.remarks_sent ? (
                           <button
                             type="button"
                             className="kprv-send-btn is-undo"
+                            title={r.remarks_sent_by ? `Отправил: ${r.remarks_sent_by}` : undefined}
                             onClick={() => handleSend(r, false)}
                           >Отменить отправку</button>
                         ) : (
@@ -445,7 +449,7 @@ function KpReviewPage() {
                             type="button"
                             className="kprv-send-btn"
                             onClick={() => handleSend(r, true)}
-                          >Отправлено контрагенту</button>
+                          >Отправлено подрядчику</button>
                         )
                       )}
                     </div>

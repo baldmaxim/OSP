@@ -132,7 +132,7 @@ export function NotificationsProvider({ children }) {
         reviewSince.setDate(reviewSince.getDate() - REVIEW_LOOKBACK_DAYS)
         kpReviewQ = supabase
           .from('tender_proposal_files')
-          .select('id, tender_id, review_status, review_note, reviewed_at, remarks_sent, remarks_send_required, counterparties(name), tenders!inner(work_description, object_id, objects(name), responsible_contact:contacts!responsible_contact_id(full_name))')
+          .select('id, tender_id, review_status, review_note, reviewed_at, remarks_sent, remarks_send_required, summary_added, counterparties(name), tenders!inner(work_description, object_id, objects(name), responsible_contact:contacts!responsible_contact_id(full_name))')
           .eq('file_kind', 'commercial_proposal')
           .eq('review_required', true)
           .in('review_status', ['approved', 'has_remarks'])
@@ -221,9 +221,12 @@ export function NotificationsProvider({ children }) {
         console.warn('Проверки КП не загружены (миграция 20260802?):', kpReviewRes.error.message)
       } else {
         for (const f of kpReviewRes.data || []) {
-          // Замечания, уже отправленные контрагенту инженером, — задача закрыта,
-          // напоминание «направьте контрагенту» больше не нужно.
-          if (f.review_status === 'has_remarks' && f.remarks_sent) continue
+          // Задача по замечаниям закрыта, когда сделано всё, что требует ветка:
+          // при отправке подрядчику это две параллельные задачи (сводная +
+          // отправка), без отправки — только сводная. Тогда напоминание снимаем.
+          const sendBranch = f.remarks_send_required !== false
+          const remarksDone = sendBranch ? (f.remarks_sent && f.summary_added) : f.summary_added
+          if (f.review_status === 'has_remarks' && remarksDone) continue
           const t = f.tenders
           // Подветка «без отправки подрядчику» (миграция 20260826) — звать
           // «направьте контрагенту» там нечего, замечания остаются внутри.

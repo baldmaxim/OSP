@@ -118,14 +118,15 @@ export default function KpReviewBadge({ file, canReview = false, onReview, showR
           Без отправки подрядчику
         </span>
       )}
-      {/* Отправка замечаний — следующий шаг после сводной. */}
-      {showRemarks && status === 'has_remarks' && file.remarks_send_required !== false && file.summary_added && (
+      {/* Отправка замечаний идёт ПАРАЛЛЕЛЬНО занесению в сводную (не после него),
+          поэтому показываем сразу — обе задачи этапа видны одновременно. */}
+      {showRemarks && status === 'has_remarks' && file.remarks_send_required !== false && (
         <span
           className={`kpb-sent ${file.remarks_sent ? 'is-sent' : 'is-todo'}`}
           title={file.remarks_sent
-            ? `Отправлено контрагенту${file.remarks_sent_by ? ` · ${file.remarks_sent_by}` : ''}${file.remarks_sent_at ? ` · ${fmt(file.remarks_sent_at)}` : ''}`
-            : 'Замечания ещё не отправлены контрагенту'}
-        >{file.remarks_sent ? '✓ Отправлено контрагенту' : 'К отправке контрагенту'}</span>
+            ? `Отправлено подрядчику${file.remarks_sent_by ? ` · ${file.remarks_sent_by}` : ''}${file.remarks_sent_at ? ` · ${fmt(file.remarks_sent_at)}` : ''}`
+            : 'Замечания ещё не отправлены подрядчику'}
+        >{file.remarks_sent ? '✓ Отправлено подрядчику' : 'К отправке подрядчику'}</span>
       )}
     </span>
   )
