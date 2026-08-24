@@ -80,3 +80,5 @@ button.kpb-pill { cursor: pointer; font-family: inherit; }
 .kpb-sent.is-todo { color: #b45309; }
 [data-theme='dark'] .kpb-sent.is-sent { color: #7dd3fc; }
 [data-theme='dark'] .kpb-sent.is-todo { color: #fbbf24; }
+/* Подветка «без отправки» — не задача, а пометка о маршруте: приглушаем. */
+.kpb-sent.is-muted { color: var(--text-tertiary); font-weight: 500; }

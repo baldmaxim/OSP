@@ -24,6 +24,9 @@ export default function KpReviewModal({ file, onClose, onSaved }) {
     file.review_status === 'has_remarks' ? 'has_remarks' : 'approved'
   )
   const [note, setNote] = useState(file.review_note || '')
+  // Подветка замечаний (миграция 20260826). NULL/undefined у КП, проверенных до
+  // миграции, читаем как «отправлять» — прежний единственный маршрут.
+  const [sendRequired, setSendRequired] = useState(file.remarks_send_required !== false)
   // Файл замечаний: новый выбранный File и/или флаг снятия уже прикреплённого.
   const [remarksFile, setRemarksFile] = useState(null)
   const [removeExisting, setRemoveExisting] = useState(false)
@@ -59,6 +62,7 @@ export default function KpReviewModal({ file, onClose, onSaved }) {
         status: finalStatus,
         note,
         reviewer,
+        sendRequired,
         remarksFile,
         removeRemarksFile: removeExisting,
         tenderId: file.tender_id,
@@ -112,6 +116,34 @@ export default function KpReviewModal({ file, onClose, onSaved }) {
 
           {status === 'has_remarks' && (
             <>
+              {/* Развилка внутри замечаний: часть замечаний подрядчику не
+                  направляют — такой КП не должен висеть в очереди «к отправке». */}
+              <div className="kprm-field">
+                <span className="kprm-field-label">Что делаем с замечаниями</span>
+                <div className="kprm-options kprm-options-sub">
+                  <label className={`kprm-option${sendRequired ? ' is-active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="kprm-send"
+                      checked={sendRequired}
+                      onChange={() => setSendRequired(true)}
+                    />
+                    <span className="kprm-option-dot kprm-send" aria-hidden />
+                    <span>Для отправки подрядчику</span>
+                  </label>
+                  <label className={`kprm-option${!sendRequired ? ' is-active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="kprm-send"
+                      checked={!sendRequired}
+                      onChange={() => setSendRequired(false)}
+                    />
+                    <span className="kprm-option-dot kprm-nosend" aria-hidden />
+                    <span>Без отправки подрядчику</span>
+                  </label>
+                </div>
+              </div>
+
               <label className="kprm-field">
                 <span className="kprm-field-label">Замечания по КП</span>
                 <textarea
@@ -119,7 +151,9 @@ export default function KpReviewModal({ file, onClose, onSaved }) {
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={4}
-                  placeholder="Опишите замечания — их направят контрагенту"
+                  placeholder={sendRequired
+                    ? 'Опишите замечания — их направят подрядчику'
+                    : 'Опишите замечания — подрядчику они не уйдут'}
                   autoFocus
                 />
               </label>

@@ -111,8 +111,15 @@ export default function KpReviewBadge({ file, canReview = false, onReview, showR
             : 'КП ещё не занесено в сводную таблицу'}
         >{file.summary_added ? '✓ В сводной таблице' : 'К занесению в сводную'}</span>
       )}
+      {/* Подветка «без отправки подрядчику» (миграция 20260826): маршрут
+          заканчивается на сводной, очереди «к отправке» у такого КП нет. */}
+      {showRemarks && status === 'has_remarks' && file.remarks_send_required === false && (
+        <span className="kpb-sent is-muted" title="Замечания обрабатываются без отправки подрядчику">
+          Без отправки подрядчику
+        </span>
+      )}
       {/* Отправка замечаний — следующий шаг после сводной. */}
-      {showRemarks && status === 'has_remarks' && file.summary_added && (
+      {showRemarks && status === 'has_remarks' && file.remarks_send_required !== false && file.summary_added && (
         <span
           className={`kpb-sent ${file.remarks_sent ? 'is-sent' : 'is-todo'}`}
           title={file.remarks_sent

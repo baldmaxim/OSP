@@ -91,6 +91,12 @@
 }
 .kprm-ok { background: #16a34a; }
 .kprm-warn { background: #f59e0b; }
+.kprm-send { background: #0ea5e9; }
+.kprm-nosend { background: #94a3b8; }
+/* Вложенный выбор (подветка замечаний) — в строку и мельче основного вердикта:
+   это уточнение уже принятого решения, а не равноправная с ним развилка. */
+.kprm-options-sub { flex-direction: row; flex-wrap: wrap; gap: 0.4rem; }
+.kprm-options-sub .kprm-option { flex: 1 1 200px; padding: 0.5rem 0.65rem; font-size: 0.875rem; }
 
 .kprm-field {
   display: block;

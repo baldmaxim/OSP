@@ -98,6 +98,32 @@
 [data-theme='dark'] .kprv-table tbody tr:hover td { background: rgba(148, 163, 184, 0.10); }
 /* Дата — моноширинные цифры */
 .kprv-col-date { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-secondary); }
+/* Номер тендера — узкая колонка с моноширинными цифрами */
+.kprv-col-tnum { width: 1%; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Сортируемая шапка: кнопка во всю ячейку, чтобы клик ловился по всей площади */
+.kprv-table thead th.kprv-th-sort { padding: 0; }
+.kprv-sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.625rem 0.85rem;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.kprv-sort-btn:hover { color: var(--text-secondary); }
+.kprv-table thead th.kprv-th-sort.is-active { color: var(--text-primary); }
+/* Неактивная стрелка бледная, но видимая — подсказка, что колонка кликабельна */
+.kprv-sort-mark { display: inline-flex; line-height: 0; transition: transform 0.15s ease; }
+.kprv-sort-mark.is-off { opacity: 0.3; }
+.kprv-sort-mark.is-asc { transform: rotate(180deg); }
 /* Колонка «Кто проверил» */
 .kprv-col-reviewer { white-space: normal; }
 .kprv-reviewer-name { display: block; color: var(--text-primary); }
@@ -197,30 +223,45 @@
   gap: 0.5rem;
   padding-left: 18px;
 }
-/* 19px — половина высоты узла (min-height 38px): ствол начинается и кончается
-   ровно на осях первой и последней дорожки, а не «на глаз» в процентах. */
-.kprv-flow-split::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 19px;
-  bottom: 19px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--flow-line);
-}
 .kprv-flow-row {
   position: relative;
   display: flex;
   align-items: center;
   gap: 0.4rem;
 }
+/* Отвод от ствола к началу дорожки. */
 .kprv-flow-row::before {
   content: '';
   position: absolute;
   left: -18px;
   top: 50%;
   width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--flow-line);
+}
+/* Ствол собирается из сегментов на самих дорожках: первая тянет линию от своей
+   оси вниз, последняя — сверху до своей оси, средние проходят насквозь. Так
+   развилка не зависит от высоты дорожек — а во второй лежит вложенная развилка,
+   и она втрое выше соседки. -4px — половина зазора между дорожками (0.5rem). */
+.kprv-flow-row::after {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--flow-line);
+}
+.kprv-flow-row:first-child::after { top: 50%; }
+.kprv-flow-row:last-child::after { bottom: 50%; }
+.kprv-flow-row:only-child::after { display: none; }
+
+/* Перемычка от подписи ветки до ствола вложенной развилки. */
+.kprv-flow-stem {
+  flex: 0 0 auto;
+  width: 14px;
   height: 2px;
   border-radius: 2px;
   background: var(--flow-line);
@@ -260,8 +301,18 @@
 }
 .kprv-flow-branch.is-ok { color: #15803d; }
 .kprv-flow-branch.is-warn { color: #b45309; }
+.kprv-flow-branch.is-send { color: #0369a1; }
+.kprv-flow-branch.is-nosend { color: #64748b; }
 [data-theme='dark'] .kprv-flow-branch.is-ok { color: #6ee7b7; }
 [data-theme='dark'] .kprv-flow-branch.is-warn { color: #fbbf24; }
+[data-theme='dark'] .kprv-flow-branch.is-send { color: #7dd3fc; }
+[data-theme='dark'] .kprv-flow-branch.is-nosend { color: #cbd5e1; }
+/* Подветка — на ступень мельче основной ветки, чтобы уровни различались. */
+.kprv-flow-split .kprv-flow-split .kprv-flow-branch {
+  font-size: 0.625rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
 
 /* Узел схемы — он же вкладка. Все узлы одной высоты: разнобой ломал линию
    маршрута сильнее, чем экономил место. */

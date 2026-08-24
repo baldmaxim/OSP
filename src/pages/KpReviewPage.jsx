@@ -33,40 +33,59 @@ const IconFile = () => (
   </svg>
 )
 
-// Этап (стадия) КП. После вердикта аналитика путь расходится на две ветки, и
-// занесение в сводную таблицу есть в каждой — но это разные очереди работы,
-// поэтому и этапы разные (миграция 20260824):
+// Этап (стадия) КП. После вердикта аналитика путь расходится, и занесение в
+// сводную таблицу есть в каждой ветке — но это разные очереди работы, поэтому и
+// этапы разные (миграции 20260824, 20260826):
 //
-//   pending          — на проверке, ждёт аналитика (общее начало обеих веток)
+//   pending           — на проверке, ждёт аналитика (общее начало всех веток)
 //
 //   ветка «без замечаний»:
-//   ok_summary       — вердикт «нет замечаний», в сводную ещё не внесено
-//   ok_done          — внесено, работа по КП закончена
+//   ok_summary        — вердикт «нет замечаний», в сводную ещё не внесено
+//   ok_done           — внесено, работа по КП закончена
 //
-//   ветка «с замечаниями»:
-//   remarks_summary  — вердикт «есть замечания», в сводную ещё не внесено
-//   remarks_pending  — внесено, ждёт отправки контрагенту
-//   remarks_sent     — отправлено контрагенту, работа по КП закончена
+//   ветка «с замечаниями» → подветка «для отправки подрядчику»:
+//   remarks_summary   — в сводную ещё не внесено
+//   remarks_pending   — внесено, ждёт отправки контрагенту
+//   remarks_sent      — отправлено контрагенту, работа по КП закончена
+//
+//   ветка «с замечаниями» → подветка «без отправки подрядчику»:
+//   nosend_summary    — в сводную ещё не внесено
+//   nosend_done       — внесено, работа по КП закончена (отправки нет)
+//
+// remarks_send_required читаем строго через === false: у КП, проверенных до
+// миграции 20260826, поля нет, и они должны остаться на прежнем маршруте.
 function stageOf(r) {
   if (r.review_status === 'approved') return r.summary_added ? 'ok_done' : 'ok_summary'
   if (r.review_status === 'has_remarks') {
+    if (r.remarks_send_required === false) {
+      return r.summary_added ? 'nosend_done' : 'nosend_summary'
+    }
     if (!r.summary_added) return 'remarks_summary'
     return r.remarks_sent ? 'remarks_sent' : 'remarks_pending'
   }
   return 'pending'
 }
 
+const STAGE_KEYS = [
+  'pending',
+  'ok_summary', 'ok_done',
+  'remarks_summary', 'remarks_pending', 'remarks_sent',
+  'nosend_summary', 'nosend_done',
+]
+
 // Узлы схемы = очереди работы = вкладки, один в один. tone — цветовой тон,
 // actor — кто делает следующий шаг, title — полная подпись для всплывающей
-// подсказки (в двух ветках есть одноимённые узлы «К занесению в сводную»).
+// подсказки (в трёх ветках есть одноимённые узлы «К занесению в сводную»).
 // terminal — конечная точка ветки, помечаем галочкой.
 const TAB_META = {
   pending: { label: 'На проверке', tone: 'pending', actor: 'аналитик' },
   ok_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'Без замечаний · к занесению в сводную таблицу' },
   ok_done: { label: 'Готово', tone: 'ok', terminal: true, title: 'Без замечаний · работа по КП закончена' },
-  remarks_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'С замечаниями · к занесению в сводную таблицу' },
-  remarks_pending: { label: 'К отправке контрагенту', tone: 'warn', actor: 'инженер', title: 'С замечаниями · внесено в сводную, ждёт отправки' },
-  remarks_sent: { label: 'Отправлено', tone: 'sent', actor: 'инженер', terminal: true, title: 'С замечаниями · замечания отправлены контрагенту' },
+  remarks_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'С замечаниями · для отправки подрядчику · к занесению в сводную таблицу' },
+  remarks_pending: { label: 'К отправке подрядчику', tone: 'warn', actor: 'инженер', title: 'С замечаниями · внесено в сводную, ждёт отправки подрядчику' },
+  remarks_sent: { label: 'Отправлено', tone: 'sent', actor: 'инженер', terminal: true, title: 'С замечаниями · замечания отправлены подрядчику' },
+  nosend_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'С замечаниями · без отправки подрядчику · к занесению в сводную таблицу' },
+  nosend_done: { label: 'Готово', tone: 'ok', terminal: true, title: 'С замечаниями · без отправки подрядчику · работа по КП закончена' },
   all: { label: 'Все', tone: 'all', title: 'Все КП независимо от этапа' },
 }
 
@@ -76,6 +95,43 @@ const IconDone = () => (
     <path d="M20 6 9 17l-5-5" />
   </svg>
 )
+
+// Сортировка: активное направление — повёрнутый шеврон, неактивный столбец —
+// тот же шеврон приглушённым, чтобы было видно, что колонка кликабельна.
+const IconSort = () => (
+  <svg className="kprv-sort-icon" width="11" height="11" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+)
+
+// Значение для сортировки. null → строка уходит вниз при любом направлении:
+// «нет данных» это не «самое маленькое».
+function sortValue(r, key) {
+  if (key === 'tender_no') {
+    const n = r.tenders?.public_tender_number
+    return typeof n === 'number' ? n : null
+  }
+  const iso = key === 'reviewed_at' ? r.reviewed_at : r.created_at
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  return isNaN(t) ? null : t
+}
+
+function SortTh({ label, sortKey, sort, onSort, className = '' }) {
+  const active = sort.key === sortKey
+  return (
+    <th
+      className={`kprv-th-sort${active ? ' is-active' : ''}${className ? ` ${className}` : ''}`}
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button type="button" className="kprv-sort-btn" onClick={() => onSort(sortKey)}>
+        <span>{label}</span>
+        <span className={`kprv-sort-mark is-${active ? sort.dir : 'off'}`}><IconSort /></span>
+      </button>
+    </th>
+  )
+}
 
 // Узел схемы: обычная кнопка, поэтому доступна с клавиатуры и получает фокус.
 function FlowTab({ tabKey, tab, counts, onSelect }) {
@@ -119,6 +175,8 @@ function KpReviewPage() {
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('pending')
   const [search, setSearch] = useState('')
+  // По умолчанию — как раньше: свежие КП сверху.
+  const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
   const [reviewFile, setReviewFile] = useState(null)
   const [previewDoc, setPreviewDoc] = useState(null)
   // Скролл-контейнер таблицы — из него виртуализация берёт положение прокрутки.
@@ -161,32 +219,47 @@ function KpReviewPage() {
     }
   }
 
+  // Первый клик по новому столбцу: номер — по возрастанию, даты — от свежих.
+  const toggleSort = useCallback((key) => {
+    setSort(s => (s.key === key
+      ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: key === 'tender_no' ? 'asc' : 'desc' }))
+  }, [])
+
   const counts = useMemo(() => {
-    const c = {
-      pending: 0, ok_summary: 0, ok_done: 0,
-      remarks_summary: 0, remarks_pending: 0, remarks_sent: 0,
-      all: rows.length,
-    }
+    const c = Object.fromEntries(STAGE_KEYS.map(k => [k, 0]))
+    c.all = rows.length
     for (const r of rows) { const st = stageOf(r); c[st] = (c[st] || 0) + 1 }
     return c
   }, [rows])
 
   const visibleRows = useMemo(() => {
     const s = search.trim().toLowerCase()
-    return rows.filter(r => {
+    const filtered = rows.filter(r => {
       if (tab !== 'all' && stageOf(r) !== tab) return false
       if (!s) return true
       const hay = [
         r.counterparties?.name,
+        r.tenders?.public_tender_number,
         r.tenders?.work_description,
         r.tenders?.objects?.name,
         r.s3?.file_name,
         r.tenders?.responsible_contact?.full_name,
         r.reviewed_by,
-      ].filter(Boolean).join(' ').toLowerCase()
+      ].filter(v => v != null && v !== '').join(' ').toLowerCase()
       return hay.includes(s)
     })
-  }, [rows, tab, search])
+    const sign = sort.dir === 'asc' ? 1 : -1
+    return filtered.sort((a, b) => {
+      const va = sortValue(a, sort.key)
+      const vb = sortValue(b, sort.key)
+      if (va === null || vb === null) {
+        if (va === vb) return 0
+        return va === null ? 1 : -1
+      }
+      return (va - vb) * sign
+    })
+  }, [rows, tab, search, sort])
 
   return (
     <div className="kprv-page">
@@ -212,14 +285,29 @@ function KpReviewPage() {
               <span className="kprv-flow-arrow" aria-hidden />
               <FlowTab tabKey="ok_done" tab={tab} counts={counts} onSelect={setTab} />
             </span>
+            {/* Замечания сами по себе развилка: часть уходит подрядчику, часть
+                обрабатывается внутри и заканчивается на сводной таблице. */}
             <span className="kprv-flow-row">
               <span className="kprv-flow-branch is-warn">с замечаниями</span>
-              <span className="kprv-flow-arrow" aria-hidden />
-              <FlowTab tabKey="remarks_summary" tab={tab} counts={counts} onSelect={setTab} />
-              <span className="kprv-flow-arrow" aria-hidden />
-              <FlowTab tabKey="remarks_pending" tab={tab} counts={counts} onSelect={setTab} />
-              <span className="kprv-flow-arrow" aria-hidden />
-              <FlowTab tabKey="remarks_sent" tab={tab} counts={counts} onSelect={setTab} />
+              <span className="kprv-flow-stem" aria-hidden />
+              <span className="kprv-flow-split">
+                <span className="kprv-flow-row">
+                  <span className="kprv-flow-branch is-send">для отправки подрядчику</span>
+                  <span className="kprv-flow-arrow" aria-hidden />
+                  <FlowTab tabKey="remarks_summary" tab={tab} counts={counts} onSelect={setTab} />
+                  <span className="kprv-flow-arrow" aria-hidden />
+                  <FlowTab tabKey="remarks_pending" tab={tab} counts={counts} onSelect={setTab} />
+                  <span className="kprv-flow-arrow" aria-hidden />
+                  <FlowTab tabKey="remarks_sent" tab={tab} counts={counts} onSelect={setTab} />
+                </span>
+                <span className="kprv-flow-row">
+                  <span className="kprv-flow-branch is-nosend">без отправки подрядчику</span>
+                  <span className="kprv-flow-arrow" aria-hidden />
+                  <FlowTab tabKey="nosend_summary" tab={tab} counts={counts} onSelect={setTab} />
+                  <span className="kprv-flow-arrow" aria-hidden />
+                  <FlowTab tabKey="nosend_done" tab={tab} counts={counts} onSelect={setTab} />
+                </span>
+              </span>
             </span>
           </span>
           <FlowTab tabKey="all" tab={tab} counts={counts} onSelect={setTab} />
@@ -246,9 +334,11 @@ function KpReviewPage() {
             pending: 'Нет КП, ожидающих проверки.',
             ok_summary: 'Нет КП без замечаний, ожидающих занесения в сводную таблицу.',
             ok_done: 'Нет полностью отработанных КП без замечаний.',
-            remarks_summary: 'Нет КП с замечаниями, ожидающих занесения в сводную таблицу.',
-            remarks_pending: 'Нет замечаний, ожидающих отправки контрагенту.',
-            remarks_sent: 'Нет отправленных контрагенту замечаний.',
+            remarks_summary: 'Нет КП с замечаниями для отправки подрядчику, ожидающих занесения в сводную таблицу.',
+            remarks_pending: 'Нет замечаний, ожидающих отправки подрядчику.',
+            remarks_sent: 'Нет отправленных подрядчику замечаний.',
+            nosend_summary: 'Нет КП с замечаниями без отправки подрядчику, ожидающих занесения в сводную таблицу.',
+            nosend_done: 'Нет отработанных КП с замечаниями без отправки подрядчику.',
           }[tab] || 'Нет записей.'}
         </div>
       ) : (
@@ -257,13 +347,14 @@ function KpReviewPage() {
             <thead>
               <tr>
                 <th>Объект</th>
+                <SortTh label="№ тендера" sortKey="tender_no" sort={sort} onSort={toggleSort} className="kprv-col-tnum" />
                 <th>Тендер</th>
                 <th>Контрагент</th>
                 <th>КП</th>
-                <th>Загружен</th>
+                <SortTh label="Загружен" sortKey="created_at" sort={sort} onSort={toggleSort} />
                 <th>Ответственный</th>
                 <th>Статус проверки</th>
-                <th>Кто проверил</th>
+                <SortTh label="Кто проверил" sortKey="reviewed_at" sort={sort} onSort={toggleSort} />
                 <th className="kprv-col-action"></th>
               </tr>
             </thead>
@@ -271,6 +362,13 @@ function KpReviewPage() {
               const rowEls = visibleRows.map(r => (
                 <tr key={r.id}>
                   <td>{r.tenders?.objects?.name || '—'}</td>
+                  <td className="kprv-col-tnum">
+                    {r.tenders?.public_tender_number != null
+                      ? (r.tenders?.id
+                        ? <Link to={`/tenders/${r.tenders.id}`} className="kprv-link">№ {r.tenders.public_tender_number}</Link>
+                        : `№ ${r.tenders.public_tender_number}`)
+                      : <span className="kprv-muted">—</span>}
+                  </td>
                   <td>
                     {r.tenders?.id ? (
                       <Link to={`/tenders/${r.tenders.id}`} className="kprv-link">
@@ -332,8 +430,10 @@ function KpReviewPage() {
                           >Занесено в сводную</button>
                         )
                       )}
-                      {/* Отправка замечаний — только после занесения в сводную. */}
-                      {canSend && r.review_status === 'has_remarks' && r.summary_added && (
+                      {/* Отправка замечаний — только после занесения в сводную и
+                          только в подветке «для отправки подрядчику». */}
+                      {canSend && r.review_status === 'has_remarks'
+                        && r.remarks_send_required !== false && r.summary_added && (
                         r.remarks_sent ? (
                           <button
                             type="button"
@@ -357,7 +457,7 @@ function KpReviewPage() {
               // только когда строк действительно много — на коротких списках
               // распорки и замеры высот ни к чему.
               return rowEls.length > VIRTUALIZE_FROM
-                ? <VirtualTableBody rows={rowEls} colSpan={9} scrollRef={tableWrapRef} rowHeight={52} />
+                ? <VirtualTableBody rows={rowEls} colSpan={10} scrollRef={tableWrapRef} rowHeight={52} />
                 : <tbody>{rowEls}</tbody>
             })()}
           </table>

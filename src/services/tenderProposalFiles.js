@@ -102,6 +102,9 @@ export async function addProposalFile({
 // task 431: проставить результат проверки КП аналитиком.
 // status: 'approved' (проверено, ОК) | 'has_remarks' (есть замечания) | 'pending' (вернуть на проверку).
 // Замечания (review_note) и файл замечаний сохраняются только для has_remarks.
+// sendRequired — подветка замечаний (миграция 20260826): true — замечания идут
+//   подрядчику, false — обрабатываются без отправки. Вне has_remarks смысла не
+//   имеет и сбрасывается в значение по умолчанию.
 // Опциональный файл замечаний:
 //   remarksFile        — новый File для загрузки (заменяет текущий);
 //   removeRemarksFile  — снять текущий файл без загрузки нового;
@@ -111,6 +114,7 @@ export async function setProposalReview(fileId, {
   status,
   note = '',
   reviewer = '',
+  sendRequired = true,
   remarksFile = null,
   removeRemarksFile = false,
   tenderId = null,
@@ -128,12 +132,22 @@ export async function setProposalReview(fileId, {
     noteDocId = null
   }
 
+  const nextSendRequired = status === 'has_remarks' ? sendRequired !== false : true
   const payload = {
     review_status: status,
     review_note: status === 'has_remarks' ? (note?.trim() || null) : null,
     reviewed_at: status === 'pending' ? null : new Date().toISOString(),
     reviewed_by: status === 'pending' ? null : (reviewer?.trim() || null),
     review_note_s3_document_id: noteDocId,
+    remarks_send_required: nextSendRequired,
+  }
+  // Переключение в подветку «без отправки подрядчику» (или уход из замечаний
+  // вовсе) обнуляет отметку об отправке — иначе КП осталось бы «отправленным»
+  // на маршруте, где отправки нет.
+  if (!nextSendRequired || status !== 'has_remarks') {
+    payload.remarks_sent = false
+    payload.remarks_sent_at = null
+    payload.remarks_sent_by = null
   }
   const { data, error } = await supabase
     .from('tender_proposal_files')
@@ -196,12 +210,13 @@ export async function fetchProposalFilesForReview({ statuses = null, objectIds =
       .from('tender_proposal_files')
       .select(`id, tender_id, counterparty_id, version_label, created_at,
                review_status, review_note, reviewed_at, reviewed_by, review_required,
+               remarks_send_required,
                remarks_sent, remarks_sent_at, remarks_sent_by,
                summary_added, summary_added_at, summary_added_by,
                s3:s3_documents!s3_document_id(*),
                review_note_s3:s3_documents!review_note_s3_document_id(*),
                counterparties(name),
-               tenders!inner(id, work_description, object_id, objects(name),
+               tenders!inner(id, public_tender_number, work_description, object_id, objects(name),
                  responsible_contact:contacts!responsible_contact_id(full_name))`)
       .eq('file_kind', 'commercial_proposal')
       // Только КП, загруженные с момента запуска (легаси-бэклог в очередь не попадает).
