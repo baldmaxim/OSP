@@ -56,22 +56,40 @@ function stageOf(r) {
   return 'pending'
 }
 
-// branch группирует вкладки в дорожки: common — общие, ok/remarks — свои ветки.
-const TABS = [
-  { key: 'pending', label: 'На проверке', branch: 'common' },
-  { key: 'all', label: 'Все', branch: 'common' },
-  { key: 'ok_summary', label: 'К занесению в сводную', branch: 'ok' },
-  { key: 'ok_done', label: 'Готово', branch: 'ok' },
-  { key: 'remarks_summary', label: 'К занесению в сводную', branch: 'remarks' },
-  { key: 'remarks_pending', label: 'К отправке контрагенту', branch: 'remarks' },
-  { key: 'remarks_sent', label: 'Отправлено', branch: 'remarks' },
-]
+// Узлы схемы = очереди работы = вкладки, один в один. tone — цветовой тон,
+// actor — кто делает следующий шаг, title — полная подпись для всплывающей
+// подсказки (в двух ветках есть одноимённые узлы «К занесению в сводную»).
+const TAB_META = {
+  pending: { label: 'На проверке', tone: 'pending', actor: 'аналитик' },
+  ok_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'Без замечаний · к занесению в сводную таблицу' },
+  ok_done: { label: 'Готово', tone: 'ok', title: 'Без замечаний · работа по КП закончена' },
+  remarks_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'С замечаниями · к занесению в сводную таблицу' },
+  remarks_pending: { label: 'К отправке контрагенту', tone: 'warn', actor: 'инженер', title: 'С замечаниями · внесено в сводную, ждёт отправки' },
+  remarks_sent: { label: 'Отправлено', tone: 'sent', actor: 'инженер', title: 'С замечаниями · замечания отправлены контрагенту' },
+  all: { label: 'Все', tone: 'all', title: 'Все КП независимо от этапа' },
+}
 
-const BRANCHES = [
-  { key: 'common', label: null },
-  { key: 'ok', label: 'Без замечаний' },
-  { key: 'remarks', label: 'С замечаниями' },
-]
+// Узел схемы: обычная кнопка, поэтому доступна с клавиатуры и получает фокус.
+function FlowTab({ tabKey, tab, counts, onSelect }) {
+  const m = TAB_META[tabKey]
+  const isActive = tab === tabKey
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={isActive}
+      title={m.title || m.label}
+      className={`kprv-flow-step is-${m.tone}${isActive ? ' is-active' : ''}`}
+      onClick={() => onSelect(tabKey)}
+    >
+      <span className="kprv-flow-step-label">
+        {m.label}
+        <span className="kprv-flow-count">{counts[tabKey] ?? 0}</span>
+      </span>
+      {m.actor && <small>{m.actor}</small>}
+    </button>
+  )
+}
 
 function KpReviewPage() {
   const { isAdmin, role, scopedObjectIds, userProfile, user } = useRole()
@@ -163,54 +181,36 @@ function KpReviewPage() {
           загруженные с момента запуска функции; ранее загруженные остаются в тендерах.
         </p>
 
-        {/* Схема прохождения КП. После вердикта аналитика путь расходится на две
-            ветки, и в каждой есть своё занесение в сводную таблицу — порядок
-            шагов здесь ровно тот же, что в группах вкладок ниже. */}
-        <div className="kprv-flow" aria-hidden>
-          <span className="kprv-flow-start">На&nbsp;проверке<small>аналитик</small></span>
+        {/* Схема прохождения КП — она же навигация: каждый узел это очередь
+            работы со своим счётчиком. Отдельного ряда вкладок нет, чтобы одно и
+            то же не показывалось дважды.
+            Вердикт аналитика («нет/есть замечаний») — подпись ветки, а не узел:
+            это не очередь, кликать по нему незачем. */}
+        <div className="kprv-flow" role="tablist" aria-label="Этапы проверки КП">
+          <FlowTab tabKey="pending" tab={tab} counts={counts} onSelect={setTab} />
           <span className="kprv-flow-split">
             <span className="kprv-flow-row">
-              <span className="kprv-flow-arrow">→</span>
-              <span className="kprv-flow-step is-ok">Нет замечаний<small>аналитик</small></span>
-              <span className="kprv-flow-arrow">→</span>
-              <span className="kprv-flow-step is-summary">В сводную таблицу<small>инженер</small></span>
-              <span className="kprv-flow-arrow">→</span>
-              <span className="kprv-flow-done">готово</span>
+              <span className="kprv-flow-branch is-ok">без замечаний</span>
+              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <FlowTab tabKey="ok_summary" tab={tab} counts={counts} onSelect={setTab} />
+              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <FlowTab tabKey="ok_done" tab={tab} counts={counts} onSelect={setTab} />
             </span>
             <span className="kprv-flow-row">
-              <span className="kprv-flow-arrow">→</span>
-              <span className="kprv-flow-step is-warn">Есть замечания<small>аналитик</small></span>
-              <span className="kprv-flow-arrow">→</span>
-              <span className="kprv-flow-step is-summary">В сводную таблицу<small>инженер</small></span>
-              <span className="kprv-flow-arrow">→</span>
-              <span className="kprv-flow-step is-sent">Отправлено контрагенту<small>инженер</small></span>
+              <span className="kprv-flow-branch is-warn">с замечаниями</span>
+              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <FlowTab tabKey="remarks_summary" tab={tab} counts={counts} onSelect={setTab} />
+              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <FlowTab tabKey="remarks_pending" tab={tab} counts={counts} onSelect={setTab} />
+              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <FlowTab tabKey="remarks_sent" tab={tab} counts={counts} onSelect={setTab} />
             </span>
           </span>
+          <FlowTab tabKey="all" tab={tab} counts={counts} onSelect={setTab} />
         </div>
       </div>
 
       <div className="kprv-toolbar">
-        {/* Вкладки сгруппированы в те же дорожки, что нарисованы в схеме сверху:
-            общие, затем ветка без замечаний, затем ветка с замечаниями. */}
-        <div className="kprv-tabs" role="tablist">
-          {BRANCHES.map(b => (
-            <span key={b.key} className={`kprv-tab-group kprv-tab-group--${b.key}`}>
-              {b.label && <span className="kprv-tab-group-label">{b.label}</span>}
-              {TABS.filter(t => t.branch === b.key).map(t => (
-                <button
-                  key={t.key}
-                  role="tab"
-                  aria-selected={tab === t.key}
-                  className={`kprv-tab${tab === t.key ? ' is-active' : ''}`}
-                  onClick={() => setTab(t.key)}
-                >
-                  {t.label}
-                  <span className="kprv-tab-count">{counts[t.key] ?? 0}</span>
-                </button>
-              ))}
-            </span>
-          ))}
-        </div>
         <input
           className="kprv-search"
           type="search"
