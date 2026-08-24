@@ -59,20 +59,29 @@ function stageOf(r) {
 // Узлы схемы = очереди работы = вкладки, один в один. tone — цветовой тон,
 // actor — кто делает следующий шаг, title — полная подпись для всплывающей
 // подсказки (в двух ветках есть одноимённые узлы «К занесению в сводную»).
+// terminal — конечная точка ветки, помечаем галочкой.
 const TAB_META = {
   pending: { label: 'На проверке', tone: 'pending', actor: 'аналитик' },
   ok_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'Без замечаний · к занесению в сводную таблицу' },
-  ok_done: { label: 'Готово', tone: 'ok', title: 'Без замечаний · работа по КП закончена' },
+  ok_done: { label: 'Готово', tone: 'ok', terminal: true, title: 'Без замечаний · работа по КП закончена' },
   remarks_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'С замечаниями · к занесению в сводную таблицу' },
   remarks_pending: { label: 'К отправке контрагенту', tone: 'warn', actor: 'инженер', title: 'С замечаниями · внесено в сводную, ждёт отправки' },
-  remarks_sent: { label: 'Отправлено', tone: 'sent', actor: 'инженер', title: 'С замечаниями · замечания отправлены контрагенту' },
+  remarks_sent: { label: 'Отправлено', tone: 'sent', actor: 'инженер', terminal: true, title: 'С замечаниями · замечания отправлены контрагенту' },
   all: { label: 'Все', tone: 'all', title: 'Все КП независимо от этапа' },
 }
+
+const IconDone = () => (
+  <svg className="kprv-flow-done-icon" width="12" height="12" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+)
 
 // Узел схемы: обычная кнопка, поэтому доступна с клавиатуры и получает фокус.
 function FlowTab({ tabKey, tab, counts, onSelect }) {
   const m = TAB_META[tabKey]
   const isActive = tab === tabKey
+  const count = counts[tabKey] ?? 0
   return (
     <button
       type="button"
@@ -82,11 +91,18 @@ function FlowTab({ tabKey, tab, counts, onSelect }) {
       className={`kprv-flow-step is-${m.tone}${isActive ? ' is-active' : ''}`}
       onClick={() => onSelect(tabKey)}
     >
-      <span className="kprv-flow-step-label">
-        {m.label}
-        <span className="kprv-flow-count">{counts[tabKey] ?? 0}</span>
+      {/* Точка тона — единственный цветной элемент неактивного узла: маршрут
+          читается по цвету, но пёстрым полотном схема не становится. */}
+      <span className="kprv-flow-dot" aria-hidden />
+      <span className="kprv-flow-text">
+        <span className="kprv-flow-label">
+          {m.terminal && <IconDone />}
+          {m.label}
+        </span>
+        {m.actor && <small className="kprv-flow-actor">{m.actor}</small>}
       </span>
-      {m.actor && <small>{m.actor}</small>}
+      {/* Нули приглушены — взгляд идёт к очередям, где есть работа. */}
+      <span className={`kprv-flow-count${count ? '' : ' is-zero'}`}>{count}</span>
     </button>
   )
 }
@@ -191,18 +207,18 @@ function KpReviewPage() {
           <span className="kprv-flow-split">
             <span className="kprv-flow-row">
               <span className="kprv-flow-branch is-ok">без замечаний</span>
-              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <span className="kprv-flow-arrow" aria-hidden />
               <FlowTab tabKey="ok_summary" tab={tab} counts={counts} onSelect={setTab} />
-              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <span className="kprv-flow-arrow" aria-hidden />
               <FlowTab tabKey="ok_done" tab={tab} counts={counts} onSelect={setTab} />
             </span>
             <span className="kprv-flow-row">
               <span className="kprv-flow-branch is-warn">с замечаниями</span>
-              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <span className="kprv-flow-arrow" aria-hidden />
               <FlowTab tabKey="remarks_summary" tab={tab} counts={counts} onSelect={setTab} />
-              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <span className="kprv-flow-arrow" aria-hidden />
               <FlowTab tabKey="remarks_pending" tab={tab} counts={counts} onSelect={setTab} />
-              <span className="kprv-flow-arrow" aria-hidden>→</span>
+              <span className="kprv-flow-arrow" aria-hidden />
               <FlowTab tabKey="remarks_sent" tab={tab} counts={counts} onSelect={setTab} />
             </span>
           </span>
