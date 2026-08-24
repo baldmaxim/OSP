@@ -9,6 +9,8 @@
 //   строка → только объекты этого статуса;
 //   null   → объекты обоих отделов (в выпадающем списке помечаем бейджем ОС/ГО).
 // requireObject — обязателен ли объект в форме.
+// allowCustomObject — можно ли вписать наименование объекта вручную, минуя
+//   реестр объектов (миграция 20260825).
 // tone — ключ цветового тона плитки-иконки (см. IconTile.css).
 export const TENDER_DEPARTMENTS = [
   {
@@ -45,6 +47,9 @@ export const TENDER_DEPARTMENTS = [
     desc: 'Закупки и работы без привязки к конкретному объекту',
     objectStatus: null,
     requireObject: false,
+    // Единственное направление, где объекта в реестре может не быть вовсе —
+    // разовый подрядчик, общехозяйственная закупка, офис.
+    allowCustomObject: true,
     tone: 'slate',
   },
 ]
@@ -55,6 +60,13 @@ const BY_KEY = Object.fromEntries(TENDER_DEPARTMENTS.map(d => [d.key, d]))
 // страницу — отдаём основное строительство.
 export function departmentConfig(key) {
   return BY_KEY[key] || BY_KEY.construction
+}
+
+// Наименование объекта тендера для показа и поиска. У направления «прочее»
+// объекта в реестре может не быть — тогда берём вписанное вручную имя.
+// fallback возвращается, когда не указано ни то, ни другое.
+export function tenderObjectName(tender, fallback = '—') {
+  return tender?.objects?.name || tender?.custom_object_name || fallback
 }
 
 // Короткий бейдж отдела объекта для выпадающих списков «все объекты».

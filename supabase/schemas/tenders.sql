@@ -5,6 +5,9 @@ CREATE SEQUENCE IF NOT EXISTS tenders_public_number_seq;
 CREATE TABLE IF NOT EXISTS tenders (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   object_id UUID REFERENCES objects(id) ON DELETE SET NULL,
+  -- Наименование объекта вручную для направления «прочее» (миграция 20260825).
+  -- Используется, когда object_id пуст; в реестр objects не попадает.
+  custom_object_name TEXT,
   work_description TEXT NOT NULL,
   status VARCHAR(50) NOT NULL DEFAULT 'Заявка на тендер',
   start_date DATE,                     -- начало работ (подрядчик) — необязательно (task 270)

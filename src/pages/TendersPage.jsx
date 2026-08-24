@@ -14,7 +14,7 @@ import {
   IconObject, IconTag, IconUser, IconMail, IconColumns, IconColumnsWide,
   IconJoint, IconOther,
 } from '../components/icons/ToolbarIcons'
-import { departmentConfig, objectDeptBadge } from '../utils/tenderDepartments'
+import { departmentConfig, objectDeptBadge, tenderObjectName } from '../utils/tenderDepartments'
 import { copyToClipboard } from '../utils/clipboard'
 import { reorderSiblings } from '../utils/appendixTree'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
@@ -234,6 +234,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     summary_proposal_link: '',
     notes: '',
   })
+  // Отдельное состояние поля «Наименование объекта» в направлении «прочее»:
+  // это свободный текст, который при сохранении раскладывается либо в object_id
+  // (если совпал с объектом реестра), либо в custom_object_name.
+  const [objectNameInput, setObjectNameInput] = useState('')
 
   // Настройки направления: какие объекты доступны, обязателен ли объект, заголовок,
   // тон плитки-иконки. Единый справочник — src/utils/tenderDepartments.js.
@@ -252,6 +256,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Смешанный список объектов показываем с бейджем отдела — иначе одноимённые
   // объекты ОС и ГО в одном списке не различить.
   const showObjectDeptBadge = !isMaterialsView && dept.objectStatus === null
+  // «Прочее»: наименование объекта можно вписать руками, минуя реестр объектов.
+  const allowCustomObject = !isMaterialsView && !!dept.allowCustomObject
+  // Введённое имя, совпавшее с объектом реестра (без учёта регистра и пробелов):
+  // тогда тендер привязывается к объекту, а не хранит текст.
+  const matchedObjectByName = (() => {
+    const q = objectNameInput.trim().toLowerCase()
+    if (!q) return null
+    return objects.find(o => (o.name || '').trim().toLowerCase() === q) || null
+  })()
 
   const statusOptions = ['Заявка на тендер', 'Подготовка ВОР', 'Идет тендерная процедура', 'Подведение итогов', 'Завершен', 'Приостановка тендера']
   // Отдельный набор статусов для тендеров на материалы — не пересекается со статусами основного тендера.
@@ -936,7 +949,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       alert('Сначала назначьте ответственного по тендеру — без него нельзя сформировать письмо.')
       return
     }
-    const objectName = tender.objects?.name || '[Объект не указан]'
+    const objectName = tenderObjectName(tender, '[Объект не указан]')
     const employee = responsibleContacts.find(c => c.id === tender.responsible_contact_id)
     const letter = generateRequestLetter(tender, objectName, employee)
     setGeneratedLetter(letter)
@@ -1051,12 +1064,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     return out
   }
 
+  // Направление «прочее»: свободный текст из поля раскладываем в два поля БД.
+  // Совпал с объектом реестра — привязываем к нему; иначе сохраняем как текст,
+  // и в таблицу objects ничего не добавляется.
+  const resolveCustomObject = () => {
+    if (!allowCustomObject) return null
+    const name = objectNameInput.trim()
+    if (!name) return { object_id: null, custom_object_name: null }
+    if (matchedObjectByName) return { object_id: matchedObjectByName.id, custom_object_name: null }
+    return { object_id: null, custom_object_name: name }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
       if (editingTender) {
         // Update existing tender — отправляем все поля
-        const updatePayload = normalizePayload(formData)
+        const updatePayload = { ...normalizePayload(formData), ...(resolveCustomObject() || {}) }
         const { error } = await supabase
           .from('tenders')
           .update(updatePayload)
@@ -1143,8 +1167,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         // Это страхует от падений, если новые миграции (notes, cost_plan_*, vor_*) ещё не применены.
         // Тип тендера определяется текущим режимом страницы или явным запуском дочернего тендера на материалы.
         const newTenderType = materialsParentTender ? 'materials' : tenderType
+        const custom = resolveCustomObject()
         const insertPayload = {
-          object_id: formData.object_id || null,
+          object_id: custom ? custom.object_id : (formData.object_id || null),
+          ...(custom?.custom_object_name ? { custom_object_name: custom.custom_object_name } : {}),
           work_description: formData.work_description,
           status: formData.status || initialStatusValue,
           // task 270: даты работ необязательны — пустое значение сохраняем как NULL
@@ -1292,6 +1318,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       summary_proposal_link: tender.summary_proposal_link || '',
       notes: tender.notes || '',
     })
+    // Поле «прочего»: показываем то, что реально записано — имя объекта из
+    // реестра либо вписанное вручную.
+    setObjectNameInput(tender.objects?.name || tender.custom_object_name || '')
     setShowModal(true)
   }
 
@@ -1384,6 +1413,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       summary_proposal_link: '',
       notes: '',
     })
+    setObjectNameInput('')
     setShowModal(true)
   }
 
@@ -1776,6 +1806,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     if (q) {
       const haystack = [
         tender.objects?.name,
+        tender.custom_object_name,
         tender.objects?.address,
         tender.work_description,
       ].filter(Boolean).join(' ').toLowerCase()
@@ -2099,7 +2130,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     </span>
                   )}
                 </div>
-                <div className="mcard-title">{tender.objects?.name || '—'}</div>
+                <div className="mcard-title">{tenderObjectName(tender)}</div>
                 {tender.work_description && (
                   <div className="mcard-desc">{tender.work_description}</div>
                 )}
@@ -2180,7 +2211,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         {tender.public_tender_number ?? '—'}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        {tender.objects?.name || '-'}
+                        {tenderObjectName(tender, '-')}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         {tender.parent_tender_id ? (
@@ -2318,7 +2349,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               {canEditTenders && (
                                 <button
                                   className="btn-icon"
-                                  onClick={() => handleRestoreTender(tender.id, tender.objects?.name)}
+                                  onClick={() => handleRestoreTender(tender.id, tenderObjectName(tender, 'тендер'))}
                                   title="Восстановить"
                                 >
                                   ♻️
@@ -2327,7 +2358,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               {isAdmin && (
                                 <button
                                   className="btn-icon btn-delete"
-                                  onClick={() => handleHardDeleteTender(tender.id, tender.objects?.name)}
+                                  onClick={() => handleHardDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
                                   title="Удалить безвозвратно (только для администратора)"
                                 >
                                   🗑️
@@ -2338,7 +2369,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             isAdmin && (
                               <button
                                 className="btn-icon btn-delete"
-                                onClick={() => handleDeleteTender(tender.id, tender.objects?.name)}
+                                onClick={() => handleDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
                                 title="Переместить в Корзину (только для администратора)"
                               >
                                 🗑️
@@ -2446,7 +2477,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             {tender.objects?.name || '-'}
                           </Link>
                         ) : (
-                          <span className="row-link primary" style={{ cursor: 'default' }}>{tender.objects?.name || '-'}</span>
+                          /* Без привязки к реестру: показываем вписанное вручную
+                             наименование («прочее»), карточки объекта у него нет. */
+                          <span className="row-link primary" style={{ cursor: 'default' }}>{tenderObjectName(tender, '-')}</span>
                         )}
                         {tender.objects?.address && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', wordBreak: 'break-word' }}>
@@ -2832,7 +2865,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           {canEditTenders && (
                             <button
                               className="btn-icon"
-                              onClick={() => handleRestoreTender(tender.id, tender.objects?.name || 'тендер')}
+                              onClick={() => handleRestoreTender(tender.id, tenderObjectName(tender, 'тендер'))}
                               title="Восстановить"
                               style={{ fontSize: '0.875rem' }}
                             >
@@ -2842,7 +2875,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           {isAdmin && (
                             <button
                               className="btn-icon btn-delete"
-                              onClick={() => handleHardDeleteTender(tender.id, tender.objects?.name || 'тендер')}
+                              onClick={() => handleHardDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
                               title="Удалить безвозвратно (только для администратора)"
                             >
                               🗑️
@@ -2872,7 +2905,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             <button
                               className="btn-icon btn-delete"
                               onClick={() =>
-                                handleDeleteTender(tender.id, tender.objects?.name || 'тендер')
+                                handleDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))
                               }
                               title="В корзину (только для администратора)"
                             >
@@ -3298,36 +3331,66 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <div className="form-grid">
                 <div className="form-group full-width">
                   <label>Наименование объекта {objectRequired ? '*' : ''}</label>
-                  <select
-                    name="object_id"
-                    value={formData.object_id}
-                    onChange={handleInputChange}
-                    required={objectRequired}
-                    disabled={!!materialsParentTender}
-                  >
-                    <option value="">{objectRequired ? 'Выберите объект' : 'Без привязки к объекту'}</option>
-                    {(materialsParentTender && !objects.some(o => o.id === materialsParentTender.object_id)
-                      ? [{ id: materialsParentTender.object_id, name: materialsParentTender.objects?.name || '—' }, ...objects]
-                      : objects
-                    ).map((obj) => (
-                      <option key={obj.id} value={obj.id}>
-                        {/* В смешанном списке (совместные / прочее) объекты ОС и ГО
-                            бывают одноимёнными — помечаем отделом. */}
-                        {showObjectDeptBadge && objectDeptBadge(obj.status)
-                          ? `${obj.name} · ${objectDeptBadge(obj.status)}`
-                          : obj.name}
-                      </option>
-                    ))}
-                  </select>
-                  {materialsParentTender && (
-                    <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
-                      Объект унаследован от родительского тендера на работы
-                    </small>
-                  )}
-                  {!objectRequired && !materialsParentTender && (
-                    <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
-                      Объект можно не указывать — например, для общехозяйственных закупок
-                    </small>
+                  {allowCustomObject && !materialsParentTender ? (
+                    <>
+                      {/* Одно поле вместо списка: можно выбрать существующий объект
+                          из подсказки или вписать своё название. Совпало с реестром —
+                          привязываем к объекту, нет — сохраняем как текст в самом
+                          тендере, в раздел «Объекты» такие названия не попадают. */}
+                      <input
+                        type="text"
+                        name="object_name_input"
+                        list="tender-object-names"
+                        value={objectNameInput}
+                        onChange={(e) => setObjectNameInput(e.target.value)}
+                        placeholder="Выберите из списка или впишите своё"
+                        autoComplete="off"
+                      />
+                      <datalist id="tender-object-names">
+                        {objects.map(obj => <option key={obj.id} value={obj.name} />)}
+                      </datalist>
+                      <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                        {matchedObjectByName
+                          ? `Совпало с объектом из реестра${objectDeptBadge(matchedObjectByName.status) ? ` · ${objectDeptBadge(matchedObjectByName.status)}` : ''}`
+                          : objectNameInput.trim()
+                            ? 'Новое наименование — сохранится только в этом тендере'
+                            : 'Можно оставить пустым — например, для общехозяйственных закупок'}
+                      </small>
+                    </>
+                  ) : (
+                    <>
+                      <select
+                        name="object_id"
+                        value={formData.object_id}
+                        onChange={handleInputChange}
+                        required={objectRequired}
+                        disabled={!!materialsParentTender}
+                      >
+                        <option value="">{objectRequired ? 'Выберите объект' : 'Без привязки к объекту'}</option>
+                        {(materialsParentTender && !objects.some(o => o.id === materialsParentTender.object_id)
+                          ? [{ id: materialsParentTender.object_id, name: materialsParentTender.objects?.name || '—' }, ...objects]
+                          : objects
+                        ).map((obj) => (
+                          <option key={obj.id} value={obj.id}>
+                            {/* В смешанном списке (совместные / прочее) объекты ОС и ГО
+                                бывают одноимёнными — помечаем отделом. */}
+                            {showObjectDeptBadge && objectDeptBadge(obj.status)
+                              ? `${obj.name} · ${objectDeptBadge(obj.status)}`
+                              : obj.name}
+                          </option>
+                        ))}
+                      </select>
+                      {materialsParentTender && (
+                        <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                          Объект унаследован от родительского тендера на работы
+                        </small>
+                      )}
+                      {!objectRequired && !materialsParentTender && (
+                        <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                          Объект можно не указывать — например, для общехозяйственных закупок
+                        </small>
+                      )}
+                    </>
                   )}
                 </div>
 

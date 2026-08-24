@@ -5,6 +5,7 @@ import { supabase } from '../supabase'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
 import { normName, supplyKey } from '../utils/supplyRateHelpers'
 import { reorderSiblings } from '../utils/appendixTree'
+import { tenderObjectName } from '../utils/tenderDepartments'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
 import { describeSupabaseError, isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { useRole } from '../contexts/RoleContext'
@@ -2176,7 +2177,9 @@ function TenderDetailPage() {
           ←
         </button>
         <div className="tender-detail-title">
-          <h2>{tender.objects?.name || 'Тендер'}</h2>
+          {/* У «прочего» объекта в реестре может не быть — тогда показываем
+              наименование, вписанное вручную (миграция 20260825). */}
+          <h2>{tenderObjectName(tender, 'Тендер')}</h2>
           {tender.objects?.address && (
             <p className="tender-object-address" style={{ margin: '0.25rem 0 0', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>
               {tender.objects.address}
