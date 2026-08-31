@@ -73,6 +73,15 @@ const PencilIcon = () => (
   </svg>
 )
 
+// Текст примечания из записи истории. Примечание участника хранится объектом
+// { tc_id, cp_name, text }, примечание тендера — простой строкой.
+function noteHistoryText(value) {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'object') return value.text || ''
+  return String(value)
+}
+
 const HistoryIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M3 3v5h5" />
@@ -144,7 +153,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Примечание участника: явное редактирование (одна строка за раз) и хронология правок
   const [notesEdit, setNotesEdit] = useState(null) // { tcId, draft } | null
   const [savingNotes, setSavingNotes] = useState(false)
-  const [notesHistoryFor, setNotesHistoryFor] = useState(null) // { tenderId, tcId, cpName } | null
+  // Примечание самого тендера в раскрытии — то же поведение, что у примечания
+  // участника: явное редактирование и хронология правок.
+  const [tenderNotesEdit, setTenderNotesEdit] = useState(null) // { tenderId, draft } | null
+  // scope различает две истории: примечание участника и примечание тендера.
+  const [notesHistoryFor, setNotesHistoryFor] = useState(null) // { tenderId, scope, tcId?, title } | null
   const [notesHistoryRows, setNotesHistoryRows] = useState([])
   const [notesHistoryLoading, setNotesHistoryLoading] = useState(false)
   const [copiedEmailsTenderId, setCopiedEmailsTenderId] = useState(null)
@@ -835,32 +848,108 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     if (ok) setNotesEdit(null)
   }
 
+  // Правки примечания тендера. Пишем в тот же формат, что и сохранение через
+  // форму тендера (field_name='notes', значения строками) — тогда история одна
+  // и на неё же смотрит вкладка «История» в карточке тендера.
+  const handleSaveTenderNotes = async (tender) => {
+    const cleanNotes = sanitizeUserText(tenderNotesEdit?.draft ?? '') || ''
+    const cleanPrev = sanitizeUserText(tender.notes || '') || ''
+    // Без изменений — просто выходим из режима правки, чтобы не плодить пустые
+    // записи в истории.
+    if (cleanNotes === cleanPrev) { setTenderNotesEdit(null); return }
+
+    setSavingNotes(true)
+    try {
+      const { data, error } = await supabase
+        .from('tenders')
+        .update({ notes: cleanNotes || null })
+        .eq('id', tender.id)
+        .select('id')
+
+      if (error) {
+        console.error('Ошибка сохранения примечания тендера:', error)
+        alert(isAuthError(error)
+          ? SESSION_EXPIRED_MESSAGE
+          : 'Не удалось сохранить примечание: ' + describeSupabaseError(error))
+        return
+      }
+      if (!data || data.length === 0) {
+        console.warn('Примечание тендера: UPDATE не затронул ни одной строки', { tenderId: tender.id })
+        alert('Примечание не сохранено: тендер недоступен. Обычно это истёкшая сессия — обновите страницу (F5) и повторите.')
+        return
+      }
+
+      setTenders(prev => prev.map(t => (t.id === tender.id ? { ...t, notes: cleanNotes } : t)))
+      await logTenderEvent(tender.id, 'field_updated', {
+        fieldName: 'notes',
+        oldValue: cleanPrev || null,
+        newValue: cleanNotes || null,
+        description: 'Изменено: Примечание',
+      })
+      setTenderNotesEdit(null)
+    } catch (err) {
+      console.error('Непредвиденная ошибка при сохранении примечания тендера:', err)
+      alert('Непредвиденная ошибка при сохранении примечания: ' + (err?.message || err))
+    } finally {
+      setSavingNotes(false)
+    }
+  }
+
+  // Постранично: у активного тендера история может перевалить за 1000 записей
+  // (потолок PostgREST). Тай-брейк по id — changed_at не уникален.
+  const loadNotesHistory = async (tenderId, fieldName) => {
+    const PAGE = 1000
+    const rows = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('tender_audit_log')
+        .select('*')
+        .eq('tender_id', tenderId)
+        .eq('field_name', fieldName)
+        .order('changed_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, from + PAGE - 1)
+      if (error) throw error
+      if (data?.length) rows.push(...data)
+      if (!data || data.length < PAGE) break
+    }
+    return rows
+  }
+
   // История правок примечания конкретного участника.
   const openNotesHistory = async (tenderId, tc) => {
-    setNotesHistoryFor({ tenderId, tcId: tc.id, cpName: tc.counterparties?.name || '' })
+    setNotesHistoryFor({
+      tenderId,
+      scope: 'participant',
+      tcId: tc.id,
+      title: tc.counterparties?.name || 'Участник тендера',
+    })
     setNotesHistoryRows([])
     setNotesHistoryLoading(true)
     try {
-      // Постранично: у активного тендера история может перевалить за 1000 записей
-      // (потолок PostgREST). Тай-брейк по id — changed_at не уникален.
-      const PAGE = 1000
-      const rows = []
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from('tender_audit_log')
-          .select('*')
-          .eq('tender_id', tenderId)
-          .eq('field_name', 'participant_notes')
-          .order('changed_at', { ascending: false })
-          .order('id', { ascending: false })
-          .range(from, from + PAGE - 1)
-        if (error) throw error
-        if (data?.length) rows.push(...data)
-        if (!data || data.length < PAGE) break
-      }
+      const rows = await loadNotesHistory(tenderId, 'participant_notes')
       setNotesHistoryRows(rows.filter(r => r.new_value?.tc_id === tc.id || r.old_value?.tc_id === tc.id))
     } catch (err) {
       console.error('Ошибка загрузки истории примечания:', err.message)
+    } finally {
+      setNotesHistoryLoading(false)
+    }
+  }
+
+  // История правок примечания тендера — включая правки, сделанные через форму
+  // тендера: они пишутся тем же field_name='notes'.
+  const openTenderNotesHistory = async (tender) => {
+    setNotesHistoryFor({
+      tenderId: tender.id,
+      scope: 'tender',
+      title: `Тендер № ${tender.public_tender_number ?? '—'} · ${tenderObjectName(tender)}`,
+    })
+    setNotesHistoryRows([])
+    setNotesHistoryLoading(true)
+    try {
+      setNotesHistoryRows(await loadNotesHistory(tender.id, 'notes'))
+    } catch (err) {
+      console.error('Ошибка загрузки истории примечания тендера:', err.message)
     } finally {
       setNotesHistoryLoading(false)
     }
@@ -2929,6 +3018,82 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   {expandedTenderId === tender.id && (
                     <tr>
                       <td colSpan={mainTableColSpan} className="expanded-cp-row">
+                        {/* Примечание по тендеру — первым, до списка участников:
+                            это общий контекст, с которым читают всю таблицу. */}
+                        {!hideNotes && (
+                          <div className="tender-notes-block">
+                            <div className="tender-notes-head">
+                              <span className="tender-notes-title">Примечание по тендеру</span>
+                              <div className="tc-notes-tools">
+                                {canEditTenders && tenderNotesEdit?.tenderId !== tender.id && (
+                                  <button
+                                    type="button"
+                                    className="tc-notes-icon"
+                                    onClick={() => setTenderNotesEdit({ tenderId: tender.id, draft: tender.notes || '' })}
+                                    title="Редактировать примечание"
+                                    aria-label="Редактировать примечание"
+                                  >
+                                    <PencilIcon />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="tc-notes-icon"
+                                  onClick={() => openTenderNotesHistory(tender)}
+                                  title="История изменений примечания"
+                                  aria-label="История изменений примечания"
+                                >
+                                  <HistoryIcon />
+                                </button>
+                              </div>
+                            </div>
+                            {tenderNotesEdit?.tenderId === tender.id ? (
+                              <div className="tc-notes-edit">
+                                <textarea
+                                  className="tc-notes-textarea"
+                                  autoFocus
+                                  ref={(el) => {
+                                    if (el) {
+                                      el.style.height = 'auto'
+                                      el.style.height = Math.max(el.scrollHeight, 72) + 'px'
+                                    }
+                                  }}
+                                  value={tenderNotesEdit.draft}
+                                  onChange={(e) => {
+                                    const value = e.target.value
+                                    e.target.style.height = 'auto'
+                                    e.target.style.height = Math.max(e.target.scrollHeight, 72) + 'px'
+                                    setTenderNotesEdit(prev => (prev && prev.tenderId === tender.id ? { ...prev, draft: value } : prev))
+                                  }}
+                                  placeholder="Примечание по тендеру…"
+                                  rows={3}
+                                />
+                                <div className="tc-notes-actions">
+                                  <button
+                                    type="button"
+                                    className="tc-notes-btn tc-notes-btn-save"
+                                    onClick={() => handleSaveTenderNotes(tender)}
+                                    disabled={savingNotes}
+                                  >
+                                    {savingNotes ? 'Сохранение…' : 'Сохранить'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="tc-notes-btn tc-notes-btn-cancel"
+                                    onClick={() => setTenderNotesEdit(null)}
+                                    disabled={savingNotes}
+                                  >
+                                    Отмена
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className={`tender-notes-text${tender.notes ? '' : ' is-empty'}`}>
+                                {tender.notes || 'Примечание не заполнено'}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div className="expanded-cp-toolbar">
                           {canEditTenders && (
                             <button
@@ -4246,14 +4411,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         </div>
       )}
 
-      {/* Хронология правок примечания участника. Только чтение; закрывается крестиком/«Закрыть». */}
+      {/* Хронология правок примечания — участника или самого тендера. Только
+          чтение; закрывается крестиком/«Закрыть». */}
       {notesHistoryFor && (
         <div className="modal-overlay">
           <div className="modal tc-notes-history-modal">
             <div className="modal-header">
               <div>
-                <h3>История примечания</h3>
-                <p className="tc-notes-history-sub">{notesHistoryFor.cpName || 'Участник тендера'}</p>
+                <h3>{notesHistoryFor.scope === 'tender' ? 'История примечания по тендеру' : 'История примечания'}</h3>
+                <p className="tc-notes-history-sub">{notesHistoryFor.title}</p>
               </div>
               <button className="modal-close" onClick={() => setNotesHistoryFor(null)} aria-label="Закрыть">×</button>
             </div>
@@ -4276,8 +4442,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </div>
                   <ul className="tc-notes-history-list">
                     {notesHistoryRows.map(ev => {
-                      const before = ev.old_value?.text || ''
-                      const after = ev.new_value?.text || ''
+                      // Примечание участника лежит как { tc_id, cp_name, text },
+                      // примечание тендера — обычной строкой (тот же формат, что
+                      // пишет форма тендера). Достаём текст из обоих.
+                      const before = noteHistoryText(ev.old_value)
+                      const after = noteHistoryText(ev.new_value)
                       const parts = diffWords(before, after)
                       const author = ev.changed_by_name
                         || ROLE_LABELS_MAP[ev.changed_by_role]

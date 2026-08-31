@@ -864,6 +864,48 @@
   box-shadow: inset 3px 0 0 var(--primary-color);
 }
 
+/* Примечание по тендеру — первым блоком в раскрытии, до списка участников.
+   Тон подложки отделяет общий контекст тендера от таблицы контрагентов. */
+.tenders-page .tender-notes-block {
+  margin-bottom: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid color-mix(in srgb, var(--primary-color, #2563eb) 55%, transparent);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.tenders-page .tender-notes-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.tenders-page .tender-notes-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.tenders-page .tender-notes-text {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tenders-page .tender-notes-text.is-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+/* Поле правки здесь шире, чем в ячейке участника, — примечание тендера длиннее. */
+.tenders-page .tender-notes-block .tc-notes-textarea {
+  min-height: 72px;
+  font-size: 0.8125rem;
+}
+
 .tenders-page .expanded-cp-toolbar {
   margin-bottom: 0.5rem;
   display: flex;

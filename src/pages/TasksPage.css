@@ -276,6 +276,15 @@
   .tfm-grid--three { grid-template-columns: 1fr; }
   .tfm-foot { flex-wrap: wrap; }
   .tfm-hint, .tfm-error { flex: 1 1 100%; margin-right: 0; }
+  /* Форма разворачивается в лист на весь экран (mobile.css), поэтому прокрутка
+     нужна телу, а не всему окну — иначе шапка и кнопки уезжают вверх. */
+  .task-form-modal { max-height: 100dvh; height: 100dvh; display: flex; flex-direction: column; }
+  .task-form-modal form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .tfm-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  /* Главное действие — первым и во всю ширину: до кнопки в углу пальцем не дотянуться. */
+  .tfm-foot .btn-primary,
+  .tfm-foot .btn-secondary { flex: 1 1 100%; height: 44px; }
+  .tfm-foot .btn-primary { order: -1; }
 }
 
 /* ── Канбан-доска ──────────────────────────────────────────────────────────── */
@@ -1057,20 +1066,94 @@
 }
 
 /* ── Телефон ───────────────────────────────────────────────────────────────── */
+/* Правил для .task-board/.task-column здесь нет намеренно: на телефоне доска не
+   рендерится вовсе (TasksPage.jsx: effectiveView = isPhone ? 'list' : view). */
 @media (max-width: 640px) {
   /* Горизонтальный отступ снова от .main-content (mobile.css) — не дублируем. */
   .tasks-page { padding: 0 0 0.75rem; }
   .tasks-header h2 { font-size: 1.125rem; }
-  .tasks-search { flex: 1 1 100%; }
-  /* Колонки доски листаются по одной. */
-  .task-board { scroll-snap-type: x mandatory; }
-  .task-column { flex-basis: 85vw; scroll-snap-align: start; max-height: none; }
-  /* Разворот в лист на весь экран приходит из mobile.css (.modal). */
+  /* Единственное действие шапки — во всю ширину: кнопка в углу не для пальца. */
+  .tasks-header-actions { width: 100%; }
+  .tasks-header-actions .btn-primary { flex: 1 1 100%; height: 44px; }
+
+  /* Пять фильтров по одному в ряд заняли бы полэкрана до списка. Сетка 2×2
+     вдвое короче, поиск — на всю ширину над ней. */
+  .tasks-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+  .tasks-search { grid-column: 1 / -1; width: 100%; }
+  .tasks-toolbar .fdrop { width: 100%; }
+  .tasks-toolbar .fdrop-trigger { width: 100%; max-width: none; }
+
+  .tasks-pagination { flex-wrap: wrap; gap: 0.5rem; }
+  .tasks-pagination-controls button { min-width: 40px; height: 40px; }
+
+  /* ── Карточка задачи ─────────────────────────────────────────────────────
+     mobile.css разворачивает .modal в лист на весь экран, но его max-height
+     задан без !important и проигрывает более специфичному .modal.task-modal.
+     Поэтому высоту снимаем здесь. */
+  .modal.task-modal { max-height: 100dvh; height: 100dvh; }
   .task-modal-head, .task-modal-foot { border-radius: 0; }
+  /* Крестик держался на margin-left:auto и при переносе бейджей уезжал во
+     второй ряд. Прибиваем к правому верхнему углу и растим до тач-размера. */
+  .task-modal-head { position: relative; padding-right: 3rem; }
+  .task-modal-close {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.4rem;
+    width: 40px;
+    height: 40px;
+    margin-left: 0;
+  }
   .task-modal-title { padding: 0.75rem 0.75rem 0; }
-  .task-modal-columns { padding: 0.75rem; }
+  .task-modal-title-text,
+  .task-modal-title-input { font-size: 1.0625rem; }
+  .task-modal-columns { padding: 0.75rem; gap: 0.75rem; }
+  /* Свойства (статус, исполнитель, срок, связи) — сразу под названием. В потоке
+     они шли после описания, чек-листа и всей переписки: чтобы сменить статус,
+     приходилось пролистывать карточку целиком. */
+  .task-modal-side { order: -1; }
   .task-fields,
   .task-modal-side .task-fields { grid-template-columns: 1fr; }
-  .mcard.is-overdue,
+  /* Кнопка «Отправить» рядом с полем не оставляла места самому полю. */
+  .task-inline-add { flex-wrap: wrap; }
+  .task-inline-add .btn-primary,
+  .task-inline-add .btn-secondary { flex: 1 1 100%; height: 40px; }
+  .task-modal-foot { flex-wrap: wrap; }
+  .task-modal-meta { flex: 1 1 100%; }
+
+  /* Высокий приоритет — полоса слева; просрочку красит .mcard-overdue рамкой. */
   .mcard.is-high { border-left: 3px solid var(--danger-color); }
+  /* Соисполнители под именем исполнителя. Отступ слева в таблице выравнивал их
+     по имени под аватаркой — в карточке аватарки нет, поэтому снимаем; и даём
+     переносить, вместо обрезки многоточием на узком экране. */
+  .mcard-value .task-coassignees {
+    display: block;
+    margin-top: 0.1rem;
+    margin-left: 0;
+    white-space: normal;
+  }
+
+  /* ── Поля ввода: 16px и 40px ─────────────────────────────────────────────
+     Шрифт мельче 16px заставляет Safari на iOS менять масштаб страницы при
+     фокусе — после этого вёрстка уезжает вбок. Заодно поднимаем высоту до
+     пригодной для пальца. */
+  .tasks-search,
+  .tfm-input,
+  .task-inline-add input,
+  .task-field input[type='date'],
+  .task-modal-desc,
+  .task-modal-title-input,
+  .tasks-toolbar .fdrop-trigger,
+  .task-field-picker .fdrop-trigger { font-size: 16px; }
+  .tasks-search,
+  .task-inline-add input,
+  .task-field input[type='date'],
+  .task-field-picker .fdrop-trigger { height: 40px; }
+  .tasks-toolbar .fdrop-trigger { height: 40px; }
+  .task-field-value,
+  .task-field > .task-chip { min-height: 40px; }
 }

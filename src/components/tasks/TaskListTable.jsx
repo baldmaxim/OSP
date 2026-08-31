@@ -74,35 +74,71 @@ function TaskListTable({
     : 'Не назначен')
   const coassigneesOf = (taskId) => (coassigneesByTask?.get(taskId) || [])
 
+  // Телефон: карточки на общем языке MobileCards.css — те же классы, что в
+  // Тендерах, Договорах и Заявках на ДС, чтобы списки выглядели одинаково.
   if (isPhone) {
     return (
-      <div className="mobile-cards">
-        {tasks.map(task => (
-          <div
-            key={task.id}
-            className={`mcard${isOverdue(task) ? ' is-overdue' : ''}${task.priority === 'high' ? ' is-high' : ''}`}
-            onClick={() => onOpen(task.id)}
-          >
-            <div className="mcard-head">
-              <span className={`status-badge ${TASK_STATUS_CLASS[task.status]}`}>{TASK_STATUS_LABEL[task.status]}</span>
-              {task.priority !== 'normal' && (
-                <span className={`task-card-priority ${TASK_PRIORITY_CLASS[task.priority]}`}>
-                  {TASK_PRIORITY_LABEL[task.priority]}
-                </span>
-              )}
-            </div>
-            <div className="mcard-title">{task.title}</div>
-            <div className="mcard-rows">
-              <div className="mcard-row"><span>Исполнитель</span><b>{nameOf(task.assignee_user_id)}</b></div>
-              <div className="mcard-row">
-                <span>Срок</span>
-                <b className={`task-due ${dueClass(task.due_date, task.status)}`}>
-                  {task.due_date ? `${formatDateRu(task.due_date)} · ${dueLabel(task.due_date)}` : '—'}
-                </b>
+      <div className="mcard-list">
+        {tasks.map(task => {
+          const coassignees = coassigneesOf(task.id)
+          const overdue = isOverdue(task)
+          return (
+            <div
+              key={task.id}
+              className={`mcard is-tappable${overdue ? ' mcard-overdue' : ''}${task.priority === 'high' ? ' is-high' : ''}`}
+              onClick={() => onOpen(task.id)}
+            >
+              <div className="mcard-head">
+                <span className={`status-badge ${TASK_STATUS_CLASS[task.status]}`}>{TASK_STATUS_LABEL[task.status]}</span>
+                {task.priority !== 'normal' && (
+                  <span className={`task-priority-badge ${TASK_PRIORITY_CLASS[task.priority]}`}>
+                    {TASK_PRIORITY_LABEL[task.priority]}
+                  </span>
+                )}
+              </div>
+              <div className="mcard-title">{task.title}</div>
+              <div className="mcard-rows">
+                <div className="mcard-row">
+                  <span className="mcard-label">Исполнитель</span>
+                  <span className="mcard-value">
+                    {shortName(nameOf(task.assignee_user_id))}
+                    {coassignees.length > 0 && (
+                      <span className="task-coassignees">+ {coassignees.map(id => shortName(nameOf(id))).join(', ')}</span>
+                    )}
+                  </span>
+                </div>
+                <div className="mcard-row">
+                  <span className="mcard-label">Срок</span>
+                  <span className={`mcard-value${overdue ? ' is-overdue' : ''}`}>
+                    {task.due_date ? `${formatDateRu(task.due_date)} · ${dueLabel(task.due_date)}` : '—'}
+                  </span>
+                </div>
+                <div className="mcard-row">
+                  <span className="mcard-label">Постановщик</span>
+                  <span className="mcard-value">{shortName(nameOf(task.created_by_user_id))}</span>
+                </div>
+                {task.checklistTotal > 0 && (
+                  <div className="mcard-row">
+                    <span className="mcard-label">Чек-лист</span>
+                    <span className="mcard-value">{task.checklistDone} / {task.checklistTotal}</span>
+                  </div>
+                )}
+              </div>
+              {/* Связи чипами — в таблице это отдельные колонки, на телефоне им
+                  место в подвале карточки. */}
+              <div className="mcard-foot">
+                {task.objects?.name && <span className="mcard-chip">{task.objects.name}</span>}
+                {task.tenders?.public_tender_number != null && (
+                  <span className="mcard-chip">Тендер № {task.tenders.public_tender_number}</span>
+                )}
+                {task.contracts?.contract_number && (
+                  <span className="mcard-chip">Договор № {task.contracts.contract_number}</span>
+                )}
+                <span className="mcard-open">Открыть ›</span>
               </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     )
   }
