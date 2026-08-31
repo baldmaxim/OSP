@@ -1,11 +1,20 @@
 /* task 431: вкладка «Проверка КП» */
+/* Страница вписана в высоту .main-content и сама не прокручивается: иначе рядом
+   с внутренним скроллом таблицы появлялся второй, страничный ползунок — два
+   ползунка на одном экране. Прокрутка ровно одна — у таблицы. */
 .kprv-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   box-shadow: var(--card-shadow);
   overflow: hidden;
 }
+.kprv-header,
+.kprv-toolbar { flex: 0 0 auto; }
 .kprv-header {
   padding: 1.25rem 1.5rem 0.75rem;
   border-bottom: 1px solid var(--border-color);
@@ -48,7 +57,11 @@
      за скроллом которого она следит, и оставляет шапку залипающей.
      overflow-anchor выключен — иначе браузер сам правит scrollTop при смене
      распорок и виртуализация зацикливается (см. VirtualTableBody). */
-  max-height: calc(100vh - 300px);
+  /* Высоту берём из остатка страницы, а не из calc(100vh - 300px): фиксированный
+     вычет не совпадал с реальной высотой шапки и схемы, и таблица либо не
+     дотягивалась до низа, либо вылезала за экран вторым скроллом. */
+  flex: 1;
+  min-height: 240px;
   overflow: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;

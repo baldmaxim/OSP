@@ -959,12 +959,17 @@ function ObjectDetailPage() {
     ))
 
     try {
-      await Promise.all(ordered.map((a, idx) =>
+      // supabase-js не бросает исключение: ошибка приходит полем error. Без этой
+      // проверки частично не сохранившийся порядок оставался бы только на экране,
+      // а после F5 возвращался к старому — и выглядело бы как «не сработало».
+      const results = await Promise.all(ordered.map((a, idx) =>
         supabase
           .from('object_documents')
           .update({ order_number: (idx + 1) * 10 })
           .eq('id', a.id)
       ))
+      const failed = results.find(r => r.error)
+      if (failed) throw failed.error
     } catch (err) {
       alert('Не удалось сохранить новый порядок: ' + (err.message || err))
       fetchObjectData()
@@ -1739,17 +1744,24 @@ function ObjectDetailPage() {
 
   // Группируем документы
   const generalContract = documents.find(d => d.document_type === 'general_contract' && !d.parent_document_id)
-  const contractAttachments = documents.filter(d => d.parent_document_id === generalContract?.id)
-  // task 329 + 331: явная сортировка после optimistic update reorderAgreements —
-  // порядок массива documents не меняется, переупорядочивание считаем по order_number.
+  // task 329 + 331: сортировка нужна ЯВНО на каждом уровне. reorderDocuments
+  // обновляет order_number через map, порядок самого массива documents при этом
+  // не меняется — без сортировки перестановка становится видна только после
+  // перезагрузки страницы (данные приходят с сервера уже упорядоченными).
+  const byDocOrder = (a, b) => {
+    const o = (a.order_number || 0) - (b.order_number || 0)
+    if (o !== 0) return o
+    return (a.created_at || '').localeCompare(b.created_at || '')
+  }
+  const contractAttachments = documents
+    .filter(d => d.parent_document_id === generalContract?.id)
+    .sort(byDocOrder)
   const additionalAgreements = documents
     .filter(d => d.document_type === 'additional_agreement' && !d.parent_document_id)
-    .sort((a, b) => {
-      const o = (a.order_number || 0) - (b.order_number || 0)
-      if (o !== 0) return o
-      return (a.created_at || '').localeCompare(b.created_at || '')
-    })
-  const getAttachments = (parentId) => documents.filter(d => d.parent_document_id === parentId)
+    .sort(byDocOrder)
+  const getAttachments = (parentId) => documents
+    .filter(d => d.parent_document_id === parentId)
+    .sort(byDocOrder)
 
   // Фильтрация по поисковому запросу (task 297). Родитель показывается, если совпал
   // сам или совпало хотя бы одно из его приложений. При совпадении только приложения

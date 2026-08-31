@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRole } from '../contexts/RoleContext'
 import { setProposalReview } from '../services/tenderProposalFiles'
 import './KpReviewModal.css'
@@ -77,12 +77,32 @@ export default function KpReviewModal({ file, onClose, onSaved }) {
     }
   }
 
+  // Клик мимо окна НЕ закрывает: замечания пишут длинно, и случайный промах
+  // стирал набранный текст. Закрытие — только крестиком, «Отменой» или Escape,
+  // причём Escape с начатой правкой сначала переспрашивает.
+  const hasDraft = note.trim() !== (file.review_note || '').trim()
+    || !!remarksFile
+    || removeExisting
+    || status !== (file.review_status === 'has_remarks' ? 'has_remarks' : 'approved')
+    || sendRequired !== (file.remarks_send_required !== false)
+
+  const requestClose = useCallback(() => {
+    if (hasDraft && !window.confirm('Закрыть без сохранения? Введённые замечания будут потеряны.')) return
+    onClose()
+  }, [hasDraft, onClose])
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') requestClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [requestClose])
+
   return (
-    <div className="kprm-overlay" onClick={onClose}>
-      <div className="kprm-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+    <div className="kprm-overlay">
+      <div className="kprm-modal" role="dialog" aria-modal="true">
         <div className="kprm-header">
           <h3 className="kprm-title">Проверка КП</h3>
-          <button type="button" className="kprm-close" onClick={onClose} aria-label="Закрыть">×</button>
+          <button type="button" className="kprm-close" onClick={requestClose} aria-label="Закрыть">×</button>
         </div>
 
         <div className="kprm-body">
@@ -212,7 +232,7 @@ export default function KpReviewModal({ file, onClose, onSaved }) {
               title="Снять отметку о проверке и вернуть КП в очередь"
             >Вернуть на проверку</button>
           )}
-          <button type="button" className="kprm-btn-secondary" onClick={onClose} disabled={saving}>
+          <button type="button" className="kprm-btn-secondary" onClick={requestClose} disabled={saving}>
             Отмена
           </button>
           <button
