@@ -376,6 +376,23 @@ function KpReviewPage() {
       ) : (
         <div className="kprv-table-wrap" ref={tableWrapRef}>
           <table className="kprv-table">
+            {/* Ширины заданы явно и в долях: с table-layout:fixed браузер не
+                подбирает их по содержимому, поэтому таблица всегда ровно по
+                ширине экрана — без горизонтальной прокрутки и без колонок,
+                схлопнутых в столбик букв. Сумма ровно 100%. */}
+            <colgroup>
+              <col style={{ width: '9%' }} />{/* Объект */}
+              <col style={{ width: '5%' }} />{/* № тендера */}
+              <col style={{ width: '12%' }} />{/* Тендер */}
+              <col style={{ width: '10%' }} />{/* Контрагент */}
+              <col style={{ width: '13%' }} />{/* КП */}
+              <col style={{ width: '6%' }} />{/* Загружен */}
+              <col style={{ width: '9%' }} />{/* Ответственный по тендеру */}
+              <col style={{ width: '6%' }} />{/* План затрат */}
+              <col style={{ width: '13%' }} />{/* Статус проверки */}
+              <col style={{ width: '8%' }} />{/* Кто проверил */}
+              <col style={{ width: '9%' }} />{/* Действия */}
+            </colgroup>
             <thead>
               <tr>
                 <th>Объект</th>

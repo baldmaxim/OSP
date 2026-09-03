@@ -73,6 +73,9 @@
 }
 .kprv-table {
   width: 100%;
+  /* Ширины колонок берутся из <colgroup>, а не из содержимого: иначе самая
+     длинная строка (имя файла, замечание) растягивала таблицу за экран. */
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.8125rem;
@@ -114,24 +117,17 @@
 [data-theme='dark'] .kprv-table tbody tr:hover td { background: rgba(148, 163, 184, 0.10); }
 /* Дата — моноширинные цифры */
 .kprv-col-date { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-secondary); }
-/* Номер тендера — узкая колонка с моноширинными цифрами */
-.kprv-col-tnum { width: 1%; white-space: nowrap; font-variant-numeric: tabular-nums; }
-/* План затрат: либо ссылка, либо короткая стадия — колонке хватает минимума */
-.kprv-col-plan { width: 1%; white-space: nowrap; }
+/* Номер тендера — моноширинные цифры */
+.kprv-col-tnum { font-variant-numeric: tabular-nums; }
 .kprv-plan-warn { color: #b45309; font-weight: 600; }
 [data-theme='dark'] .kprv-plan-warn { color: #fbbf24; }
 
-/* ── Ширины колонок: таблица должна умещаться по ширине экрана ──────────────
-   Ограничиваем не содержимое, а сами колонки: текстовые поля (наименование
-   объекта, предмет тендера, название контрагента, имя файла, замечания) иначе
-   тянут таблицу вправо на всю длину самой длинной строки. */
-.kprv-col-object { width: 10%; }
-.kprv-col-tender { width: 15%; }
-.kprv-col-cp { width: 11%; }
-.kprv-col-file { width: 15%; }
-.kprv-col-resp { width: 10%; }
-.kprv-col-review { width: 18%; }
-.kprv-table tbody td { overflow-wrap: anywhere; }
+/* Длинные строки без пробелов (имена файлов, названия объектов) рвём принудительно
+   — только в этих колонках. Общее правило на все ячейки рвало бы и подписи
+   кнопок: «Проверить» вставало столбиком по букве. */
+.kprv-col-file,
+.kprv-col-object,
+.kprv-col-tender { overflow-wrap: anywhere; }
 
 /* Замечания аналитика бывают на абзац — показываем первые строки, остальное по
    наведению (полный текст остаётся в title бейджа) и в окне проверки. */
@@ -177,10 +173,10 @@
 }
 .kprv-muted { color: var(--text-tertiary); }
 
-/* Колонка действия — прижата вправо, не «висит».
-   Подписи кнопок переносятся: «Отправлено подрядчику» одной строкой держало
-   колонку шире 150px и вместе с остальными выталкивало таблицу за экран. */
-.kprv-col-action { width: 120px; text-align: right; }
+/* Колонка действий: ширина из colgroup, кнопки во всю её ширину. Подписи
+   переносятся по словам («Отправлено подрядчику» — в две строки), но слова
+   целиком: рвать их по буквам нельзя. */
+.kprv-col-action { text-align: right; }
 
 .kprv-link { color: var(--primary-color, #2563eb); text-decoration: none; font-weight: 500; }
 .kprv-link:hover { text-decoration: underline; }
@@ -229,6 +225,8 @@
 
 /* Действия — в столбик (проверка аналитика + отправка инженера) */
 .kprv-actions { display: flex; flex-direction: column; gap: 0.3rem; align-items: stretch; }
+/* Слова в подписях не разрываются — «Проверить» всегда одной строкой. */
+.kprv-actions button { overflow-wrap: normal; word-break: keep-all; hyphens: none; }
 .kprv-send-btn {
   padding: 0.3rem 0.5rem;
   border: 1px solid #0ea5e9;
