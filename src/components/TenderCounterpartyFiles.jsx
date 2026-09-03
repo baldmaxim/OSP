@@ -87,10 +87,11 @@ export default function TenderCounterpartyFiles({
   counterpartyId,
   canEdit: canEditProp,
 }) {
-  const { isEmployee, isAdmin, role } = useRole()
+  const { isEmployee, isAdmin, isSuperAdmin, role } = useRole()
   const canEdit = canEditProp !== undefined ? canEditProp : isEmployee
-  // task 431: проверять КП может экономист ОСП и админ.
-  const canReview = isAdmin || role === 'economist'
+  // task 431: проверять КП может экономист ОСП, админ и суперпользователь
+  // (доступ по e-mail, не зависит от выбранной роли — см. RoleContext).
+  const canReview = isAdmin || isSuperAdmin || role === 'economist'
 
   const [data, setData] = useState({ proposals: [], attachments: [] })
   const [loading, setLoading] = useState(true)

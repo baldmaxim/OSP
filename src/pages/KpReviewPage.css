@@ -90,7 +90,10 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  white-space: nowrap;
+  /* Заголовки переносятся: одиннадцать колонок с nowrap-подписями («Ответственный
+     по тендеру», «Статус проверки») задавали таблице ширину больше экрана и
+     включали горизонтальный скролл ещё до того, как в ячейки попадали данные. */
+  white-space: normal;
   border-bottom: 2px solid var(--border-color);
   border-right: 1px solid var(--border-color);
 }
@@ -117,6 +120,27 @@
 .kprv-col-plan { width: 1%; white-space: nowrap; }
 .kprv-plan-warn { color: #b45309; font-weight: 600; }
 [data-theme='dark'] .kprv-plan-warn { color: #fbbf24; }
+
+/* ── Ширины колонок: таблица должна умещаться по ширине экрана ──────────────
+   Ограничиваем не содержимое, а сами колонки: текстовые поля (наименование
+   объекта, предмет тендера, название контрагента, имя файла, замечания) иначе
+   тянут таблицу вправо на всю длину самой длинной строки. */
+.kprv-col-object { width: 10%; }
+.kprv-col-tender { width: 15%; }
+.kprv-col-cp { width: 11%; }
+.kprv-col-file { width: 15%; }
+.kprv-col-resp { width: 10%; }
+.kprv-col-review { width: 18%; }
+.kprv-table tbody td { overflow-wrap: anywhere; }
+
+/* Замечания аналитика бывают на абзац — показываем первые строки, остальное по
+   наведению (полный текст остаётся в title бейджа) и в окне проверки. */
+.kprv-col-review .kpb-remarks-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 /* Сортируемая шапка: кнопка во всю ячейку, чтобы клик ловился по всей площади */
 .kprv-table thead th.kprv-th-sort { padding: 0; }
@@ -153,8 +177,10 @@
 }
 .kprv-muted { color: var(--text-tertiary); }
 
-/* Колонка действия — прижата вправо, не «висит» */
-.kprv-col-action { width: 1%; white-space: nowrap; text-align: right; }
+/* Колонка действия — прижата вправо, не «висит».
+   Подписи кнопок переносятся: «Отправлено подрядчику» одной строкой держало
+   колонку шире 150px и вместе с остальными выталкивало таблицу за экран. */
+.kprv-col-action { width: 120px; text-align: right; }
 
 .kprv-link { color: var(--primary-color, #2563eb); text-decoration: none; font-weight: 500; }
 .kprv-link:hover { text-decoration: underline; }
@@ -170,7 +196,7 @@
   cursor: pointer;
   font-size: 0.8125rem;
   text-align: left;
-  max-width: 240px;
+  max-width: 100%;
 }
 .kprv-file-btn .kprv-file-name {
   overflow: hidden;
@@ -189,28 +215,30 @@
 }
 
 .kprv-review-btn {
-  padding: 0.35rem 0.75rem;
+  padding: 0.3rem 0.5rem;
   border: 1px solid var(--primary-color, #2563eb);
   border-radius: 7px;
   background: none;
   color: var(--primary-color, #2563eb);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
   cursor: pointer;
-  white-space: nowrap;
+  white-space: normal;
 }
 .kprv-review-btn:hover { background: color-mix(in srgb, var(--primary-color, #2563eb) 10%, transparent); }
 
 /* Действия — в столбик (проверка аналитика + отправка инженера) */
-.kprv-actions { display: inline-flex; flex-direction: column; gap: 0.3rem; align-items: flex-end; }
+.kprv-actions { display: flex; flex-direction: column; gap: 0.3rem; align-items: stretch; }
 .kprv-send-btn {
-  padding: 0.35rem 0.7rem;
+  padding: 0.3rem 0.5rem;
   border: 1px solid #0ea5e9;
   border-radius: 7px;
   background: none;
   color: #0369a1;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
   cursor: pointer;
-  white-space: nowrap;
+  white-space: normal;
 }
 .kprv-send-btn:hover { background: color-mix(in srgb, #0ea5e9 10%, transparent); }
 .kprv-send-btn.is-undo { border-color: var(--border-color); color: var(--text-secondary); }

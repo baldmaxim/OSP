@@ -197,11 +197,13 @@ function FlowTab({ tabKey, tab, counts, onSelect }) {
 }
 
 function KpReviewPage() {
-  const { isAdmin, role, scopedObjectIds, userProfile, user } = useRole()
+  const { isAdmin, isSuperAdmin, role, scopedObjectIds, userProfile, user } = useRole()
   // Аналитик-экономист (или админ) проставляет вердикт/замечания.
-  const canReview = isAdmin || role === 'economist'
+  // isSuperAdmin — доступ по e-mail (RoleContext): суперпользователь проверяет КП
+  // всегда, даже когда переключился на другую роль для проверки интерфейса.
+  const canReview = isAdmin || isSuperAdmin || role === 'economist'
   // Инженер (или админ) отмечает отправку замечаний контрагенту.
-  const canSend = isAdmin || role === 'engineer'
+  const canSend = isAdmin || isSuperAdmin || role === 'engineer'
 
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -392,7 +394,7 @@ function KpReviewPage() {
             {(() => {
               const rowEls = visibleRows.map(r => (
                 <tr key={r.id}>
-                  <td>{r.tenders?.objects?.name || '—'}</td>
+                  <td className="kprv-col-object">{r.tenders?.objects?.name || '—'}</td>
                   <td className="kprv-col-tnum">
                     {r.tenders?.public_tender_number != null
                       ? (r.tenders?.id
@@ -400,15 +402,15 @@ function KpReviewPage() {
                         : `№ ${r.tenders.public_tender_number}`)
                       : <span className="kprv-muted">—</span>}
                   </td>
-                  <td>
+                  <td className="kprv-col-tender">
                     {r.tenders?.id ? (
                       <Link to={`/tenders/${r.tenders.id}`} className="kprv-link">
                         {r.tenders?.work_description || 'Тендер'}
                       </Link>
                     ) : (r.tenders?.work_description || '—')}
                   </td>
-                  <td>{r.counterparties?.name || '—'}</td>
-                  <td>
+                  <td className="kprv-col-cp">{r.counterparties?.name || '—'}</td>
+                  <td className="kprv-col-file">
                     <button
                       type="button"
                       className="kprv-file-btn"
@@ -422,9 +424,9 @@ function KpReviewPage() {
                     {r.version_label && <span className="kprv-vlabel">{r.version_label}</span>}
                   </td>
                   <td className="kprv-col-date">{fmtDate(r.created_at)}</td>
-                  <td>{r.tenders?.responsible_contact?.full_name || '—'}</td>
+                  <td className="kprv-col-resp">{r.tenders?.responsible_contact?.full_name || '—'}</td>
                   <td className="kprv-col-plan"><CostPlanCell tender={r.tenders} /></td>
-                  <td>
+                  <td className="kprv-col-review">
                     <KpReviewBadge file={r} canReview={canReview} onReview={setReviewFile} showRemarks />
                   </td>
                   <td className="kprv-col-reviewer">

@@ -39,7 +39,6 @@ const EMPTY_FORM = {
   amount_before: '', // task 370
   amount_after: '', // task 370
   material_type: '', // task 370
-  check_status: 'not_checked',
   ds_type: '',
 }
 
@@ -51,15 +50,15 @@ const STATUS_OPTIONS = [
 ]
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(o => [o.value, o.label]))
 
-// Результат сверки заявки с договором (миграция 20260824). Заполняется на этапе
-// «Проверка по договору» и остаётся видимым дальше по цепочке.
-const CHECK_STATUS_OPTIONS = [
-  { value: 'not_checked', label: 'Не проверено', className: 'check-not-checked' },
-  { value: 'matches', label: 'Соответствует', className: 'check-matches' },
-  { value: 'not_matches', label: 'Не соответствует', className: 'check-not-matches' },
-]
-const CHECK_STATUS_LABEL = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.label]))
-const CHECK_STATUS_CLASS = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.className]))
+// Результат сверки заявки с договором (миграция 20260824). Из интерфейса убран:
+// этап «Проверка по договору» и так виден статусом заявки, а отдельный признак
+// исхода дублировал его. Метки оставлены — по ним читается прежняя история
+// правок, где такие записи уже накоплены. Колонка в БД не удалялась.
+const CHECK_STATUS_LABEL = {
+  not_checked: 'Не проверено',
+  matches: 'Соответствует',
+  not_matches: 'Не соответствует',
+}
 
 // Тип дополнительного соглашения (миграция 20260824).
 const DS_TYPE_OPTIONS = [
@@ -118,6 +117,12 @@ const IconCopy = () => (
 )
 const IconCheck = () => (
   <svg {...pathIconProps} strokeWidth="2.4"><path d="M20 6 9 17l-5-5" /></svg>
+)
+const IconPencil = () => (
+  <svg {...pathIconProps}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
 )
 
 const AUDIT_FIELD_LABEL = {
@@ -348,6 +353,9 @@ function DcRequestsPage() {
   const savingRef = useRef(false)
   // id заявки, чей путь только что скопирован — на пару секунд меняем иконку.
   const [copiedPathId, setCopiedPathId] = useState(null)
+  // Инлайн-правка пути к папке прямо в таблице: { id, draft } | null.
+  const [pathEdit, setPathEdit] = useState(null)
+  const [savingPath, setSavingPath] = useState(false)
   // task 314: поиск контрагента в модалке.
   const [cpSearch, setCpSearch] = useState('')
   const [cpDropdownOpen, setCpDropdownOpen] = useState(false)
@@ -574,7 +582,6 @@ function DcRequestsPage() {
       amount_before: req.amount_before != null ? String(req.amount_before) : '', // task 370
       amount_after: req.amount_after != null ? String(req.amount_after) : '', // task 370
       material_type: req.material_type || '', // task 370
-      check_status: req.check_status || 'not_checked',
       ds_type: req.ds_type || '',
     })
     setCpSearch(req.counterparties?.name || '')
@@ -718,7 +725,6 @@ function DcRequestsPage() {
         amount_before: parseAmount(formData.amount_before), // task 370
         amount_after: parseAmount(formData.amount_after), // task 370
         material_type: formData.material_type || null, // task 370
-        check_status: formData.check_status || 'not_checked',
         ds_type: formData.ds_type || null,
         updated_at: new Date().toISOString(),
       }
@@ -855,6 +861,29 @@ function DcRequestsPage() {
       await logFieldChange(id, 'material_type', prevValue, next)
     } catch (err) {
       alert('Ошибка сохранения материала: ' + (err.message || err))
+    }
+  }
+
+  // Путь к папке правится прямо в таблице: открывать форму заявки ради одной
+  // строки неудобно, а меняют её чаще, чем остальные поля.
+  const handleSaveFolderPath = async (id, value) => {
+    const next = value.trim() || null
+    const prevValue = requests.find(r => r.id === id)?.folder_path ?? null
+    if (prevValue === next) { setPathEdit(null); return }
+    setSavingPath(true)
+    try {
+      const { error } = await supabase
+        .from('dc_requests')
+        .update({ folder_path: next, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, folder_path: next } : r))
+      await logFieldChange(id, 'folder_path', prevValue, next)
+      setPathEdit(null)
+    } catch (err) {
+      alert('Ошибка сохранения пути: ' + (err.message || err))
+    } finally {
+      setSavingPath(false)
     }
   }
 
@@ -1621,11 +1650,6 @@ function DcRequestsPage() {
                             {DS_TYPE_LABEL[req.ds_type]}
                           </div>
                         )}
-                        {req.check_status && req.check_status !== 'not_checked' && (
-                          <div className={`dcr-tag ${CHECK_STATUS_CLASS[req.check_status] || ''}`}>
-                            Договор: {CHECK_STATUS_LABEL[req.check_status]}
-                          </div>
-                        )}
                       </td>
                       <td style={{ textAlign: 'center' }}>{req.ds_number || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
@@ -1742,8 +1766,38 @@ function DcRequestsPage() {
                       </td>
                       <td className="dcr-cell-docs">
                         {/* Путь к папке в хранилище — первым: с него начинают поиск
-                            документов, файлы на сайте лишь дополняют его. */}
-                        {req.folder_path && (
+                            документов, файлы на сайте лишь дополняют его.
+                            Правится прямо здесь, без захода в форму заявки. */}
+                        {pathEdit?.id === req.id ? (
+                          <div className="dcr-folder-path is-edit">
+                            <IconFolder />
+                            <input
+                              type="text"
+                              className="dcr-folder-path-input"
+                              autoFocus
+                              value={pathEdit.draft}
+                              onChange={(e) => setPathEdit(prev => (prev?.id === req.id ? { ...prev, draft: e.target.value } : prev))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') { e.preventDefault(); handleSaveFolderPath(req.id, pathEdit.draft) }
+                                if (e.key === 'Escape') setPathEdit(null)
+                              }}
+                              placeholder="\\su10-fs\ДС\ЖК Алия\ДС-14"
+                              disabled={savingPath}
+                            />
+                            <button
+                              type="button"
+                              className="dcr-folder-path-btn"
+                              onClick={() => handleSaveFolderPath(req.id, pathEdit.draft)}
+                              disabled={savingPath}
+                            >{savingPath ? '…' : 'ОК'}</button>
+                            <button
+                              type="button"
+                              className="dcr-folder-path-btn is-cancel"
+                              onClick={() => setPathEdit(null)}
+                              disabled={savingPath}
+                            >Отмена</button>
+                          </div>
+                        ) : req.folder_path ? (
                           <div className="dcr-folder-path" title={req.folder_path}>
                             <IconFolder />
                             <span className="dcr-folder-path-text">{req.folder_path}</span>
@@ -1756,8 +1810,23 @@ function DcRequestsPage() {
                             >
                               {copiedPathId === req.id ? <IconCheck /> : <IconCopy />}
                             </button>
+                            {canEditDc && !isDeletedTab && (
+                              <button
+                                type="button"
+                                className="dcr-folder-path-copy"
+                                onClick={() => setPathEdit({ id: req.id, draft: req.folder_path || '' })}
+                                title="Изменить путь"
+                                aria-label="Изменить путь к папке"
+                              ><IconPencil /></button>
+                            )}
                           </div>
-                        )}
+                        ) : canEditDc && !isDeletedTab ? (
+                          <button
+                            type="button"
+                            className="dcr-folder-path-add"
+                            onClick={() => setPathEdit({ id: req.id, draft: '' })}
+                          ><IconFolder /> Указать путь к папке</button>
+                        ) : null}
                         {/* Рабочие документы */}
                         <div className="dcr-docs">
                           {generalDocs.length > 0 && (
@@ -2005,16 +2074,6 @@ function DcRequestsPage() {
                   <select name="ds_type" value={formData.ds_type} onChange={handleInputChange}>
                     <option value="">— Не указан —</option>
                     {DS_TYPE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Результат сверки с договором — исход этапа «Проверка по договору». */}
-                <div className="form-group full-width">
-                  <label>Статус проверки по договору</label>
-                  <select name="check_status" value={formData.check_status} onChange={handleInputChange}>
-                    {CHECK_STATUS_OPTIONS.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
