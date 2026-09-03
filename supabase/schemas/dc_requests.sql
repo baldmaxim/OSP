@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS dc_requests (
     CHECK (check_status IN ('not_checked', 'matches', 'not_matches')),
   ds_type TEXT
     CHECK (ds_type IS NULL OR ds_type IN ('rd_change', 'extra_in_contract', 'extra_out_contract')),
+  -- Путь к папке с документами в файловом хранилище (миграция 20260828).
+  folder_path TEXT,
   -- task 370: суммы ДС с НДS 22% (Было/Стало) и тип материала.
   amount_before NUMERIC(14, 2),
   amount_after  NUMERIC(14, 2),

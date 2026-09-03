@@ -113,6 +113,10 @@
 .kprv-col-date { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-secondary); }
 /* Номер тендера — узкая колонка с моноширинными цифрами */
 .kprv-col-tnum { width: 1%; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* План затрат: либо ссылка, либо короткая стадия — колонке хватает минимума */
+.kprv-col-plan { width: 1%; white-space: nowrap; }
+.kprv-plan-warn { color: #b45309; font-weight: 600; }
+[data-theme='dark'] .kprv-plan-warn { color: #fbbf24; }
 
 /* Сортируемая шапка: кнопка во всю ячейку, чтобы клик ловился по всей площади */
 .kprv-table thead th.kprv-th-sort { padding: 0; }

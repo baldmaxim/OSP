@@ -13,6 +13,7 @@ import { IconHardHat } from '../components/icons/TenderHubIcons'
 import { IconObject, IconUser } from '../components/icons/ToolbarIcons'
 import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
 import { useIsPhone } from '../hooks/useMediaQuery'
+import { copyToClipboard } from '../utils/clipboard'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 import './DcRequestsPage.css'
@@ -29,7 +30,10 @@ const EMPTY_FORM = {
   ds_number: '',
   works_description: '',
   responsible_contact_id: '',
-  // Новая заявка начинается со сверки с договором.
+  // Путь к папке с документами в хранилище (миграция 20260828).
+  folder_path: '',
+  // Новая заявка всегда начинается со сверки с договором. Поля выбора статуса в
+  // форме нет: дальше по цепочке статус двигают чипом в таблице реестра.
   status: 'contract_check',
   expected_approval_date: '', // task 365
   amount_before: '', // task 370
@@ -95,12 +99,34 @@ const EVENT_LABEL = {
 }
 
 // Поля заявки, изменения которых пишем в историю (порядок = порядок в модалке).
+// Иконки строки «путь к папке» — outline-стиль бокового меню, не эмодзи.
+const pathIconProps = {
+  viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+  strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round',
+  width: 14, height: 14, 'aria-hidden': true, focusable: 'false',
+}
+const IconFolder = () => (
+  <svg {...pathIconProps}>
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  </svg>
+)
+const IconCopy = () => (
+  <svg {...pathIconProps}>
+    <rect x="9" y="9" width="12" height="12" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+)
+const IconCheck = () => (
+  <svg {...pathIconProps} strokeWidth="2.4"><path d="M20 6 9 17l-5-5" /></svg>
+)
+
 const AUDIT_FIELD_LABEL = {
   object_id: 'Объект',
   counterparty_id: 'Контрагент',
   ds_number: '№ ДС',
   works_description: 'Описание ДС',
   responsible_contact_id: 'Ответственный',
+  folder_path: 'Путь к папке',
   status: 'Статус',
   expected_approval_date: 'Срок согласования',
   amount_before: 'Было подано',
@@ -320,6 +346,8 @@ function DcRequestsPage() {
   // попасть в один рендер, и оба обработчика увидели бы saving === false.
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
+  // id заявки, чей путь только что скопирован — на пару секунд меняем иконку.
+  const [copiedPathId, setCopiedPathId] = useState(null)
   // task 314: поиск контрагента в модалке.
   const [cpSearch, setCpSearch] = useState('')
   const [cpDropdownOpen, setCpDropdownOpen] = useState(false)
@@ -540,6 +568,7 @@ function DcRequestsPage() {
       ds_number: req.ds_number || '',
       works_description: req.works_description || '',
       responsible_contact_id: req.responsible_contact_id || '',
+      folder_path: req.folder_path || '',
       status: req.status || 'contract_check',
       expected_approval_date: req.expected_approval_date || '', // task 365
       amount_before: req.amount_before != null ? String(req.amount_before) : '', // task 370
@@ -551,6 +580,16 @@ function DcRequestsPage() {
     setCpSearch(req.counterparties?.name || '')
     setCpDropdownOpen(false)
     setShowModal(true)
+  }
+
+  // Путь копируем в буфер: открыть проводник по клику браузер не позволяет
+  // (переход на file:// и UNC со страницы по https заблокирован), поэтому
+  // остаётся вставить путь в его адресную строку вручную.
+  const handleCopyFolderPath = async (reqId, path) => {
+    const ok = await copyToClipboard(path)
+    if (!ok) { alert('Не удалось скопировать путь. Выделите его и скопируйте вручную.'); return }
+    setCopiedPathId(reqId)
+    setTimeout(() => setCopiedPathId(prev => (prev === reqId ? null : prev)), 2000)
   }
 
   const handleSelectCp = (cp) => {
@@ -674,7 +713,7 @@ function DcRequestsPage() {
         ds_number: formData.ds_number.trim() || null,
         works_description: formData.works_description.trim() || null,
         responsible_contact_id: formData.responsible_contact_id || null,
-        status: formData.status || 'contract_check',
+        folder_path: formData.folder_path.trim() || null,
         expected_approval_date: formData.expected_approval_date || null, // task 365
         amount_before: parseAmount(formData.amount_before), // task 370
         amount_after: parseAmount(formData.amount_after), // task 370
@@ -684,6 +723,8 @@ function DcRequestsPage() {
         updated_at: new Date().toISOString(),
       }
       if (editing) {
+        // Статус в payload не кладём: им управляет только чип в таблице. Иначе
+        // форма, открытая до смены статуса, вернула бы прежнее значение.
         const { error } = await supabase.from('dc_requests').update(payload).eq('id', editing.id)
         if (error) throw error
         // История: по одной записи на каждое реально изменившееся поле («было → стало»).
@@ -691,6 +732,9 @@ function DcRequestsPage() {
         // же обращений к серверу, сколько правок, и модалка заметно подвисала.
         const auditWrites = []
         for (const field of Object.keys(AUDIT_FIELD_LABEL)) {
+          // Поля, которых нет в payload (статус), форма не меняет — иначе
+          // сравнение с undefined давало бы ложную запись «стало —».
+          if (!(field in payload)) continue
           const before = editing[field] ?? null
           const after = payload[field] ?? null
           if (before === after) continue
@@ -710,6 +754,8 @@ function DcRequestsPage() {
         // .select('id') нужен, чтобы записать в историю событие создания.
         const { data, error } = await supabase.from('dc_requests').insert([{
           ...payload,
+          // Новая заявка всегда идёт на сверку с договором — выбора нет.
+          status: 'contract_check',
           created_by_name: userProfile?.full_name || null,
         }]).select('id').single()
         if (error) throw error
@@ -1695,6 +1741,23 @@ function DcRequestsPage() {
                         </button>
                       </td>
                       <td className="dcr-cell-docs">
+                        {/* Путь к папке в хранилище — первым: с него начинают поиск
+                            документов, файлы на сайте лишь дополняют его. */}
+                        {req.folder_path && (
+                          <div className="dcr-folder-path" title={req.folder_path}>
+                            <IconFolder />
+                            <span className="dcr-folder-path-text">{req.folder_path}</span>
+                            <button
+                              type="button"
+                              className="dcr-folder-path-copy"
+                              onClick={() => handleCopyFolderPath(req.id, req.folder_path)}
+                              title="Скопировать путь и вставить в адресную строку проводника"
+                              aria-label="Скопировать путь к папке"
+                            >
+                              {copiedPathId === req.id ? <IconCheck /> : <IconCopy />}
+                            </button>
+                          </div>
+                        )}
                         {/* Рабочие документы */}
                         <div className="dcr-docs">
                           {generalDocs.length > 0 && (
@@ -1968,14 +2031,9 @@ function DcRequestsPage() {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label>Статус</label>
-                  <select name="status" value={formData.status} onChange={handleInputChange}>
-                    {STATUS_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Поля «Статус» здесь нет намеренно: новая заявка всегда идёт на
+                    проверку по договору, а дальше статус двигают чипом в таблице
+                    реестра — одно место управления вместо двух. */}
 
                 {/* task 370: суммы ДС (с НДС 22%) — «Было подано» / «Утверждено» */}
                 <div className="form-group">
@@ -2038,6 +2096,24 @@ function DcRequestsPage() {
                     onChange={handleInputChange}
                     placeholder="Краткое описание ДС"
                   />
+                </div>
+
+                {/* Именно type="text": у пути нет схемы, и нативная валидация
+                    type="url" отклонила бы \\server\share\... */}
+                <div className="form-group full-width">
+                  <label>Путь к папке с документами</label>
+                  <input
+                    type="text"
+                    name="folder_path"
+                    value={formData.folder_path}
+                    onChange={handleInputChange}
+                    placeholder="\\su10-fs\ДС\ЖК Алия\ДС-14"
+                  />
+                  <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
+                    Путь показывается в колонке «Документы» с кнопкой копирования: открыть
+                    проводник по клику браузер не даёт, поэтому путь копируют и вставляют
+                    в его адресную строку.
+                  </small>
                 </div>
               </div>
 

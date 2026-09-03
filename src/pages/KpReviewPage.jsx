@@ -102,6 +102,33 @@ const IconDone = () => (
   </svg>
 )
 
+// План затрат тендера: ссылка, если она есть, иначе — стадия работы над планом.
+// Метки те же, что на странице «Планы затрат», чтобы не расходились названия.
+const COST_PLAN_LABEL = {
+  not_started: 'Не начат',
+  in_progress: 'В работе',
+  completed: 'Завершён',
+  not_required: 'Не требуется',
+}
+
+function CostPlanCell({ tender }) {
+  const link = tender?.cost_plan_link
+  if (link) {
+    return (
+      <a href={link} target="_blank" rel="noopener noreferrer" className="kprv-link" title={link}>
+        Открыть
+      </a>
+    )
+  }
+  const status = tender?.cost_plan_status || 'not_started'
+  // «Завершён» без ссылки — рассогласование данных, помечаем явно: иначе
+  // выглядит как готовый план, который просто некуда открыть.
+  if (status === 'completed') {
+    return <span className="kprv-plan-warn" title="Статус «Завершён», но ссылка не указана">Нет ссылки</span>
+  }
+  return <span className="kprv-muted">{COST_PLAN_LABEL[status] || COST_PLAN_LABEL.not_started}</span>
+}
+
 // Сортировка: активное направление — повёрнутый шеврон, неактивный столбец —
 // тот же шеврон приглушённым, чтобы было видно, что колонка кликабельна.
 const IconSort = () => (
@@ -355,7 +382,8 @@ function KpReviewPage() {
                 <th>Контрагент</th>
                 <th>КП</th>
                 <SortTh label="Загружен" sortKey="created_at" sort={sort} onSort={toggleSort} />
-                <th>Ответственный</th>
+                <th>Ответственный по тендеру</th>
+                <th>План затрат</th>
                 <th>Статус проверки</th>
                 <SortTh label="Кто проверил" sortKey="reviewed_at" sort={sort} onSort={toggleSort} />
                 <th className="kprv-col-action"></th>
@@ -395,6 +423,7 @@ function KpReviewPage() {
                   </td>
                   <td className="kprv-col-date">{fmtDate(r.created_at)}</td>
                   <td>{r.tenders?.responsible_contact?.full_name || '—'}</td>
+                  <td className="kprv-col-plan"><CostPlanCell tender={r.tenders} /></td>
                   <td>
                     <KpReviewBadge file={r} canReview={canReview} onReview={setReviewFile} showRemarks />
                   </td>
@@ -461,7 +490,7 @@ function KpReviewPage() {
               // только когда строк действительно много — на коротких списках
               // распорки и замеры высот ни к чему.
               return rowEls.length > VIRTUALIZE_FROM
-                ? <VirtualTableBody rows={rowEls} colSpan={10} scrollRef={tableWrapRef} rowHeight={52} />
+                ? <VirtualTableBody rows={rowEls} colSpan={11} scrollRef={tableWrapRef} rowHeight={52} />
                 : <tbody>{rowEls}</tbody>
             })()}
           </table>
