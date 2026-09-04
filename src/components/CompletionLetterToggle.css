@@ -1,0 +1,16 @@
+/* Галочка «Письмо о завершении отправлено участникам».
+   Базовые размеры и состояния берутся у .tgpub (TgPublishToggle.css) — это тот же
+   тип отметки. Здесь только то, что отличает её от публикации в ТГ: синий тон
+   вместо зелёного, чтобы две галочки в одной строке не сливались. */
+.cletter.is-pub {
+  color: #0369a1;
+  background: color-mix(in srgb, #0ea5e9 12%, transparent);
+  border-color: color-mix(in srgb, #0ea5e9 35%, transparent);
+}
+.cletter.is-pub:hover { background: color-mix(in srgb, #0ea5e9 20%, transparent); }
+[data-theme='dark'] .cletter.is-pub { color: #7dd3fc; }
+
+.cletter.is-unpub:hover {
+  color: #0369a1;
+  border-color: color-mix(in srgb, #0ea5e9 40%, transparent);
+}

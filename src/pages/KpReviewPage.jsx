@@ -79,7 +79,7 @@ const STAGE_KEYS = [
 // terminal — конечная точка ветки, помечаем галочкой.
 const TAB_META = {
   pending: { label: 'На проверке', tone: 'pending', actor: 'аналитик' },
-  ok_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'Без замечаний · к занесению в сводную таблицу' },
+  ok_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'аналитик-экономист', title: 'Без замечаний · к занесению в сводную таблицу' },
   ok_done: { label: 'Готово', tone: 'ok', terminal: true, title: 'Без замечаний · работа по КП закончена' },
   // Один этап на две параллельные задачи инженера — порядок между ними не
   // навязываем, важно лишь, чтобы к концу этапа обе были выполнены.
@@ -90,7 +90,7 @@ const TAB_META = {
     title: 'С замечаниями · параллельно: занести в сводную таблицу и отправить замечания подрядчику',
   },
   remarks_sent: { label: 'Отправлено', tone: 'sent', actor: 'инженер', terminal: true, title: 'С замечаниями · внесено в сводную и отправлено подрядчику' },
-  nosend_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'инженер', title: 'С замечаниями · без отправки подрядчику · к занесению в сводную таблицу' },
+  nosend_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'аналитик-экономист', title: 'С замечаниями · без отправки подрядчику · к занесению в сводную таблицу' },
   nosend_done: { label: 'Готово', tone: 'ok', terminal: true, title: 'С замечаниями · без отправки подрядчику · работа по КП закончена' },
   all: { label: 'Все', tone: 'all', title: 'Все КП независимо от этапа' },
 }
@@ -101,6 +101,27 @@ const IconDone = () => (
     <path d="M20 6 9 17l-5-5" />
   </svg>
 )
+
+// Направление тендера коротким бейджем под наименованием: из какого отдела пришёл
+// КП. Берём tenders.department (миграция 20260820); у тендеров, заведённых до неё,
+// поля может не быть — тогда падаем на статус объекта, как раньше считался отдел.
+const DEPT_BADGE = {
+  construction: { short: 'ОС', title: 'Основное строительство' },
+  warranty: { short: 'ГО', title: 'Гарантийный отдел' },
+  joint: { short: 'Совм.', title: 'Совместные тендеры' },
+  other: { short: 'Проч.', title: 'Тендеры (прочее)' },
+}
+
+function TenderDeptBadge({ tender }) {
+  const key = tender?.department
+    || (tender?.objects?.status === 'warranty_service' ? 'warranty' : null)
+    || (tender?.objects?.status === 'main_construction' ? 'construction' : null)
+  const meta = DEPT_BADGE[key]
+  if (!meta) return null
+  return (
+    <span className={`kprv-dept kprv-dept-${key}`} title={meta.title}>{meta.short}</span>
+  )
+}
 
 // План затрат тендера: ссылка, если она есть, иначе — стадия работы над планом.
 // Метки те же, что на странице «Планы затрат», чтобы не расходились названия.
@@ -204,6 +225,11 @@ function KpReviewPage() {
   const canReview = isAdmin || isSuperAdmin || role === 'economist'
   // Инженер (или админ) отмечает отправку замечаний контрагенту.
   const canSend = isAdmin || isSuperAdmin || role === 'engineer'
+  // Занесение в сводную таблицу делает аналитик-экономист — в ветках «без
+  // замечаний» и «без отправки подрядчику» это вообще его единственный шаг.
+  // Инженеру доступ тоже нужен: в ветке «для отправки подрядчику» занесение и
+  // отправка идут параллельно и делаются одним человеком.
+  const canSummary = canSend || canReview
 
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -425,6 +451,9 @@ function KpReviewPage() {
                         {r.tenders?.work_description || 'Тендер'}
                       </Link>
                     ) : (r.tenders?.work_description || '—')}
+                    {/* Отдел — второй строкой под наименованием: отдельная колонка
+                        ради двух букв только сузила бы остальные. */}
+                    <div className="kprv-tender-sub"><TenderDeptBadge tender={r.tenders} /></div>
                   </td>
                   <td className="kprv-col-cp">{r.counterparties?.name || '—'}</td>
                   <td className="kprv-col-file">
@@ -464,7 +493,7 @@ function KpReviewPage() {
                         >{r.review_status === 'pending' ? 'Проверить' : 'Изменить'}</button>
                       )}
                       {/* Занесение в сводную — общий шаг всех веток. */}
-                      {canSend && (r.review_status === 'approved' || r.review_status === 'has_remarks') && (
+                      {canSummary && (r.review_status === 'approved' || r.review_status === 'has_remarks') && (
                         r.summary_added ? (
                           <button
                             type="button"

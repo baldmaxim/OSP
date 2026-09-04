@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
 import TgPublishToggle from '../components/TgPublishToggle'
+import CompletionLetterToggle from '../components/CompletionLetterToggle'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
@@ -1004,6 +1005,29 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       })
     } catch (err) {
       console.error('Ошибка отметки публикации в ТГ:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // Отметка «письмо о завершении разослано участникам» (миграция 20260830) —
+  // шаг между подведением итогов и завершением тендера.
+  const handleToggleCompletionLetter = async (tenderId, sent) => {
+    const by = userProfile?.full_name || 'Сотрудник'
+    const patch = sent
+      ? { completion_letter_sent: true, completion_letter_sent_at: new Date().toISOString(), completion_letter_sent_by: by }
+      : { completion_letter_sent: false, completion_letter_sent_at: null, completion_letter_sent_by: null }
+    try {
+      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, ...patch } : t))
+      logTenderEvent(tenderId, 'field_updated', {
+        fieldName: 'completion_letter_sent',
+        description: sent
+          ? 'Отмечена рассылка письма о завершении тендера участникам'
+          : 'Снята отметка о рассылке письма о завершении тендера',
+      })
+    } catch (err) {
+      console.error('Ошибка отметки письма о завершении:', err.message)
       alert('Ошибка: ' + err.message)
     }
   }
@@ -2236,6 +2260,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 <div>
                   <TgPublishToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleTgPublished} />
                 </div>
+                <div>
+                  <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} />
+                </div>
                 <div className="mcard-rows">
                   <div className="mcard-row">
                     <span className="mcard-label">Ответственный</span>
@@ -2614,6 +2641,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           tender={tender}
                           canEdit={canEditTenders}
                           onToggle={handleToggleTgPublished}
+                        />
+                      </div>
+                      {/* Появляется только на подведении итогов и после него —
+                          компонент решает это сам по статусу тендера. */}
+                      <div>
+                        <CompletionLetterToggle
+                          tender={tender}
+                          canEdit={canEditTenders}
+                          onToggle={handleToggleCompletionLetter}
                         />
                       </div>
                     </td>

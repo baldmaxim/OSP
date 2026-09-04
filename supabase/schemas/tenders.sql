@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS tenders (
   tg_published BOOLEAN NOT NULL DEFAULT false,
   tg_published_at TIMESTAMPTZ,
   tg_published_by TEXT,
+  -- Шаг между подведением итогов и завершением (миграция 20260830).
+  completion_letter_sent BOOLEAN NOT NULL DEFAULT false,
+  completion_letter_sent_at TIMESTAMPTZ,
+  completion_letter_sent_by TEXT,
   cost_plan_link TEXT,
   cost_plan_responsible_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
   cost_plan_status TEXT NOT NULL DEFAULT 'not_started',

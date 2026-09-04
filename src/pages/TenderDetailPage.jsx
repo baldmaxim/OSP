@@ -1766,7 +1766,8 @@ function TenderDetailPage() {
     vor_responsible_id: 'Ответственный за ВОРы и РД',
     object_id: 'Объект',
     notes: 'Примечание',
-    participant_notes: 'Примечание участника'
+    participant_notes: 'Примечание участника',
+    completion_letter_sent: 'Письмо о завершении'
   }
 
   const formatHistoryValue = (val) => {
