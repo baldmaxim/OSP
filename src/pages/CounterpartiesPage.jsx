@@ -10,6 +10,7 @@ import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import S3DocumentList from '../components/S3DocumentList'
 import { fetchCounterpartyDocSummary } from '../services/s3'
 import { useIsPhone } from '../hooks/useMediaQuery'
+import { diffWords } from '../utils/textDiff'
 import '../components/MobileCards.css'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
@@ -33,8 +34,63 @@ async function fetchAllRows(makeQuery) {
 // по кнопке «Показать ещё» — чтобы DOM оставался лёгким на больших списках.
 const RENDER_STEP = 100
 
+// ── История изменений контрагента (миграция 20260829) ───────────────────────
+// Подписи полей карточки для ленты «Изменения».
+const CP_FIELD_LABEL = {
+  name: 'Наименование',
+  inn: 'ИНН',
+  kpp: 'КПП',
+  legal_address: 'Юридический адрес',
+  actual_address: 'Фактический адрес',
+  website: 'Сайт',
+  work_type: 'Виды работ',
+  department: 'Отдел',
+  status: 'Статус',
+  notes: 'Примечание',
+}
+const CP_STATUS_TEXT = { active: 'Действующий', blacklist: 'Чёрный список' }
+
+function cpValueText(field, value) {
+  if (value === null || value === undefined || value === '') return '—'
+  if (field === 'status') return CP_STATUS_TEXT[value] || String(value)
+  return String(value)
+}
+
+// Ключ контакта для сравнения наборов. В форме контрагента контакты каждый раз
+// пересоздаются целиком (insert новых → delete старых), поэтому по самим
+// операциям судить нельзя: любое сохранение выглядело бы как полная замена.
+// Сравниваем по содержимому, а не по id.
+function contactKey(c) {
+  return [c?.full_name, c?.position, c?.phone, c?.email]
+    .map(v => String(v ?? '').trim().toLowerCase())
+    .join('|')
+}
+function contactText(c) {
+  const parts = [c?.full_name, c?.position, c?.phone, c?.email].map(v => String(v ?? '').trim()).filter(Boolean)
+  return parts.join(', ') || 'без данных'
+}
+
+const CP_EVENT_LABEL = {
+  created: 'Контрагент создан',
+  imported: 'Загружен из Excel',
+  field_updated: 'Изменено поле',
+  status_changed: 'Изменён статус',
+  contact_added: 'Добавлено контактное лицо',
+  contact_updated: 'Изменено контактное лицо',
+  contact_removed: 'Удалено контактное лицо',
+  soft_deleted: 'Перенесён в «Удалённые»',
+  restored: 'Восстановлен',
+}
+
+function fmtAuditDateTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('ru-RU') + ', ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
 function CounterpartiesPage() {
-  const { isAdmin, canEdit } = useRole()
+  const { isAdmin, canEdit, userProfile } = useRole()
   // task 333: гейт add/edit/delete и inline-editing для раздела «counterparties».
   const canEditCp = canEdit('counterparties')
   const [counterparties, setCounterparties] = useState([])
@@ -87,7 +143,10 @@ function CounterpartiesPage() {
   const [editingTempContactIndex, setEditingTempContactIndex] = useState(null)
   // Detail-модалка контрагента (по клику на строку): история тендеров + документы + редактирование.
   const [detailCp, setDetailCp] = useState(null)
-  const [detailTab, setDetailTab] = useState('documents') // 'documents' | 'history'
+  const [detailTab, setDetailTab] = useState('documents') // 'documents' | 'history' | 'changes'
+  // История изменений контрагента: { counterpartyId: [события] }, ленивая загрузка.
+  const [auditMap, setAuditMap] = useState({})
+  const [auditLoadingId, setAuditLoadingId] = useState(null)
   // Инкрементальный рендер большого списка: показываем срез, «Показать ещё» наращивает.
   const [visibleCount, setVisibleCount] = useState(RENDER_STEP)
 
@@ -404,6 +463,39 @@ function CounterpartiesPage() {
     }
   }
 
+  // ── Журнал изменений (миграция 20260829) ──────────────────────────────────
+  // Сбой записи в журнал не должен ломать саму правку: сохранение уже прошло,
+  // и откатывать его из-за истории неправильно. Поэтому только console.
+  const logCpEvent = async (counterpartyId, eventType, payload = {}) => {
+    if (!counterpartyId || !eventType) return
+    try {
+      const { error } = await supabase.from('counterparty_audit_log').insert([{
+        counterparty_id: counterpartyId,
+        event_type: eventType,
+        field_name: payload.fieldName || null,
+        old_value: payload.oldValue ?? null,
+        new_value: payload.newValue ?? null,
+        description: payload.description || null,
+        changed_by_role: localStorage.getItem('userRole') || null,
+        changed_by_name: userProfile?.full_name || null,
+      }])
+      if (error) console.error('Не удалось записать историю контрагента:', error.message)
+    } catch (err) {
+      console.error('Ошибка записи истории контрагента:', err?.message || err)
+    }
+  }
+
+  const logCpFieldChange = (counterpartyId, field, before, after) => logCpEvent(
+    counterpartyId,
+    field === 'status' ? 'status_changed' : 'field_updated',
+    {
+      fieldName: field,
+      oldValue: before ?? null,
+      newValue: after ?? null,
+      description: `${CP_FIELD_LABEL[field] || field}: ${cpValueText(field, before)} → ${cpValueText(field, after)}`,
+    },
+  )
+
   const handleCounterpartySubmit = async (e) => {
     e.preventDefault()
     try {
@@ -478,6 +570,45 @@ function CounterpartiesPage() {
         }
       }
 
+      // ── История ────────────────────────────────────────────────────────────
+      if (editingCounterparty) {
+        // Поля карточки: по записи на каждое реально изменившееся.
+        const auditWrites = []
+        for (const field of Object.keys(CP_FIELD_LABEL)) {
+          const before = editingCounterparty[field] ?? null
+          const after = dataToSave[field] ?? null
+          if ((before || null) === (after || null)) continue
+          auditWrites.push(logCpFieldChange(counterpartyId, field, before, after))
+        }
+        // Контакты: сравниваем наборы по содержимому. Прямое логирование
+        // insert/delete давало бы «удалён»+«добавлен» на каждый контакт при
+        // любом сохранении формы, даже когда их никто не трогал.
+        const oldContacts = editingCounterparty.counterparty_contacts || []
+        const oldKeys = new Set(oldContacts.map(contactKey))
+        const newKeys = new Set(tempContacts.map(contactKey))
+        for (const c of tempContacts) {
+          if (oldKeys.has(contactKey(c))) continue
+          auditWrites.push(logCpEvent(counterpartyId, 'contact_added', {
+            fieldName: 'contact',
+            newValue: contactText(c),
+            description: `Добавлено контактное лицо: ${contactText(c)}`,
+          }))
+        }
+        for (const c of oldContacts) {
+          if (newKeys.has(contactKey(c))) continue
+          auditWrites.push(logCpEvent(counterpartyId, 'contact_removed', {
+            fieldName: 'contact',
+            oldValue: contactText(c),
+            description: `Удалено контактное лицо: ${contactText(c)}`,
+          }))
+        }
+        await Promise.all(auditWrites)
+      } else {
+        await logCpEvent(counterpartyId, 'created', {
+          description: `Контрагент создан: ${dataToSave.name || 'без названия'}`,
+        })
+      }
+
       setShowCounterpartyModal(false)
       setEditingCounterparty(null)
       setCounterpartyFormData({
@@ -521,6 +652,19 @@ function CounterpartiesPage() {
           .insert([contactData])
         if (error) throw error
       }
+
+      await logCpEvent(
+        selectedCounterparty.id,
+        editingContact ? 'contact_updated' : 'contact_added',
+        {
+          fieldName: 'contact',
+          oldValue: editingContact ? contactText(editingContact) : null,
+          newValue: contactText(contactFormData),
+          description: editingContact
+            ? `Контактное лицо: ${contactText(editingContact)} → ${contactText(contactFormData)}`
+            : `Добавлено контактное лицо: ${contactText(contactFormData)}`,
+        },
+      )
 
       setShowContactModal(false)
       setEditingContact(null)
@@ -643,6 +787,7 @@ function CounterpartiesPage() {
           .update({ deleted_at: new Date().toISOString() })
           .eq('id', id)
         if (error) throw error
+        await logCpEvent(id, 'soft_deleted', { description: 'Перенесён в «Удалённые»' })
         fetchCounterparties()
       } catch (error) {
         console.error('Ошибка удаления контрагента:', error.message)
@@ -659,6 +804,7 @@ function CounterpartiesPage() {
         .update({ deleted_at: null })
         .eq('id', id)
       if (error) throw error
+      await logCpEvent(id, 'restored', { description: 'Восстановлен из «Удалённых»' })
       fetchCounterparties()
     } catch (error) {
       console.error('Ошибка восстановления контрагента:', error.message)
@@ -731,6 +877,14 @@ function CounterpartiesPage() {
       const { error } = await query
       if (error) throw error
 
+      // Безвозвратное удаление не логируем — записи уходят каскадом вместе с
+      // контрагентом, писать их некуда.
+      if (!isHardDelete) {
+        await Promise.all(selectedCounterpartyIds.map(id =>
+          logCpEvent(id, 'soft_deleted', { description: 'Перенесён в «Удалённые» (массовая операция)' })
+        ))
+      }
+
       setSelectedCounterpartyIds([])
       fetchCounterparties()
       alert(`${isHardDelete ? 'Безвозвратно удалено' : 'Перемещено в «Удалённые»'}: ${selectedCounterpartyIds.length}`)
@@ -742,6 +896,7 @@ function CounterpartiesPage() {
 
   // Функция для обновления статуса контрагента
   const handleStatusChange = async (counterpartyId, newStatus) => {
+    const prevStatus = counterparties.find(cp => cp.id === counterpartyId)?.status ?? null
     try {
       const { error } = await supabase
         .from('counterparties')
@@ -756,6 +911,9 @@ function CounterpartiesPage() {
           cp.id === counterpartyId ? { ...cp, status: newStatus } : cp
         )
       )
+      if ((prevStatus || null) !== (newStatus || null)) {
+        await logCpFieldChange(counterpartyId, 'status', prevStatus, newStatus)
+      }
     } catch (error) {
       console.error('Ошибка обновления статуса:', error.message)
       alert('Ошибка обновления статуса: ' + error.message)
@@ -765,6 +923,10 @@ function CounterpartiesPage() {
   // task 203: правка примечания прямо в таблице (сохранение по blur)
   const handleNotesChange = async (counterpartyId, rawNotes) => {
     const notes = rawNotes.trim() || null
+    const prevNotes = counterparties.find(cp => cp.id === counterpartyId)?.notes ?? null
+    // Сохранение идёт по blur — без этой проверки простой уход из поля писал бы
+    // в историю пустую правку.
+    if ((prevNotes || '') === (notes || '')) return
     try {
       const { error } = await supabase
         .from('counterparties')
@@ -774,6 +936,7 @@ function CounterpartiesPage() {
       setCounterparties(prev =>
         prev.map(cp => (cp.id === counterpartyId ? { ...cp, notes } : cp))
       )
+      await logCpFieldChange(counterpartyId, 'notes', prevNotes, notes)
     } catch (error) {
       console.error('Ошибка обновления примечания:', error.message)
       alert('Ошибка обновления примечания: ' + error.message)
@@ -1309,6 +1472,29 @@ function CounterpartiesPage() {
       setTenderHistoryMap(prev => ({ ...prev, [counterpartyId]: [] }))
     } finally {
       setTenderHistoryLoadingId(null)
+    }
+  }
+
+  // Журнал правок контрагента — ленивая загрузка при первом открытии вкладки.
+  // Постранично: у активного контрагента лента легко перевалит за 1000 записей
+  // (потолок PostgREST). Тай-брейк по id — changed_at не уникален.
+  const fetchCpAudit = async (counterpartyId) => {
+    if (auditMap[counterpartyId]) return
+    setAuditLoadingId(counterpartyId)
+    try {
+      const rows = await fetchAllRows((from, to) => supabase
+        .from('counterparty_audit_log')
+        .select('*')
+        .eq('counterparty_id', counterpartyId)
+        .order('changed_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to))
+      setAuditMap(prev => ({ ...prev, [counterpartyId]: rows }))
+    } catch (err) {
+      console.error('Ошибка загрузки истории изменений (миграция 20260829?):', err.message)
+      setAuditMap(prev => ({ ...prev, [counterpartyId]: [] }))
+    } finally {
+      setAuditLoadingId(null)
     }
   }
 
@@ -1967,9 +2153,72 @@ function CounterpartiesPage() {
               >
                 История участия{tenderHistoryMap[detailCp.id]?.length ? ` (${tenderHistoryMap[detailCp.id].length})` : ''}
               </button>
+              {/* Журнал правок — не путать с «Историей участия»: та про тендеры. */}
+              <button
+                type="button"
+                className={`cp-detail-tab ${detailTab === 'changes' ? 'active' : ''}`}
+                onClick={() => { setDetailTab('changes'); fetchCpAudit(detailCp.id) }}
+              >
+                Изменения{auditMap[detailCp.id]?.length ? ` (${auditMap[detailCp.id].length})` : ''}
+              </button>
             </div>
 
             <div className="cp-detail-body">
+              {detailTab === 'changes' && (
+                auditLoadingId === detailCp.id ? (
+                  <div className="tender-history-loading">Загрузка истории…</div>
+                ) : !auditMap[detailCp.id] || auditMap[detailCp.id].length === 0 ? (
+                  <div className="cp-audit-empty">
+                    <p>Записей нет.</p>
+                    <p className="cp-audit-hint">
+                      История ведётся с момента подключения функции — более ранние правки
+                      нигде не сохранялись и восстановлению не подлежат.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="cp-audit-legend">
+                      <span className="nd-removed">удалено</span>
+                      <span className="nd-added">добавлено</span>
+                    </div>
+                    <ul className="cp-audit-list">
+                      {auditMap[detailCp.id].map(ev => {
+                        // Примечание показываем пословным diff: «было → стало» на
+                        // абзаце текста нечитаемо, глазами правку не найти.
+                        const isNote = ev.field_name === 'notes'
+                        const before = String(ev.old_value ?? '')
+                        const after = String(ev.new_value ?? '')
+                        const label = isNote
+                          ? (!before ? 'Примечание добавлено' : !after ? 'Примечание очищено' : 'Примечание изменено')
+                          : (ev.description || CP_EVENT_LABEL[ev.event_type] || ev.event_type)
+                        const parts = isNote ? diffWords(before, after) : null
+                        return (
+                          <li key={ev.id} className="cp-audit-item">
+                            <div className="cp-audit-meta">
+                              <span className="cp-audit-when">{fmtAuditDateTime(ev.changed_at)}</span>
+                              <span className="cp-audit-who">{ev.changed_by_name || 'без имени'}</span>
+                            </div>
+                            <div className="cp-audit-what">{label}</div>
+                            {isNote && (
+                              <div className="cp-audit-diff">
+                                {parts.length === 0
+                                  ? <span className="cp-audit-hint">— пусто —</span>
+                                  : parts.map((p, idx) => (
+                                    <span
+                                      key={idx}
+                                      className={p.type === 'added' ? 'nd-added' : p.type === 'removed' ? 'nd-removed' : undefined}
+                                    >{p.text}</span>
+                                  ))}
+                              </div>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </>
+                )
+              )}
+
               {detailTab === 'history' && (
                 tenderHistoryLoadingId === detailCp.id ? (
                   <div className="tender-history-loading">Загрузка истории…</div>

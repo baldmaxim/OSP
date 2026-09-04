@@ -134,7 +134,7 @@
   .contract-tabs, .admin-tabs, .bsm-tabs-main, .bsm-tabs-sub,
   .contacts-tabs, .estimate-doc-tabs, .status-tabs,
   .tender-tabs, .estimate-subtabs, .estimate-subtabs-left, .rr-top-tabs,
-  .cost-plans-tabs, .gd-tabs, .tasks-tabs {
+  .cost-plans-tabs, .gd-tabs, .tasks-tabs, .cp-detail-tabs {
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -146,10 +146,11 @@
   .status-tabs::-webkit-scrollbar, .tender-tabs::-webkit-scrollbar,
   .estimate-subtabs::-webkit-scrollbar, .rr-top-tabs::-webkit-scrollbar,
   .cost-plans-tabs::-webkit-scrollbar, .gd-tabs::-webkit-scrollbar,
-  .tasks-tabs::-webkit-scrollbar { display: none; }
+  .tasks-tabs::-webkit-scrollbar,
+  .cp-detail-tabs::-webkit-scrollbar { display: none; }
   .contract-tab, .admin-tab, .contacts-tabs button, .status-tab,
   .tender-tabs button, .estimate-subtabs button, .rr-top-tab,
-  .cost-plans-tabs button, .gd-tab, .tasks-tab {
+  .cost-plans-tabs button, .gd-tab, .tasks-tab, .cp-detail-tab {
     white-space: nowrap;
     flex: 0 0 auto;
   }
