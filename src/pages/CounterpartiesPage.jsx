@@ -147,6 +147,9 @@ function CounterpartiesPage() {
   // История изменений контрагента: { counterpartyId: [события] }, ленивая загрузка.
   const [auditMap, setAuditMap] = useState({})
   const [auditLoadingId, setAuditLoadingId] = useState(null)
+  // Сохранение карточки контрагента: блокировка формы от повторной отправки.
+  const [cpSaving, setCpSaving] = useState(false)
+  const cpSavingRef = useRef(false)
   // Инкрементальный рендер большого списка: показываем срез, «Показать ещё» наращивает.
   const [visibleCount, setVisibleCount] = useState(RENDER_STEP)
 
@@ -498,6 +501,35 @@ function CounterpartiesPage() {
 
   const handleCounterpartySubmit = async (e) => {
     e.preventDefault()
+    // Защита от двойной отправки. Состояние — для вида кнопки, ref — для самой
+    // защиты: два быстрых клика попадают в один рендер, и оба обработчика
+    // увидели бы saving === false. Флаг снимаем в finally, иначе после ошибки
+    // форма осталась бы заблокированной навсегда.
+    if (cpSavingRef.current) return
+
+    // Дубль по названию ловим до вставки: UNIQUE на counterparties.name нет, а
+    // на медленной сети инженер успевает нажать «Добавить» дважды — так в реестре
+    // и появлялись две одинаковые компании.
+    if (!editingCounterparty) {
+      const typedName = (counterpartyFormData.name || '').trim()
+      const sameName = counterparties.find(
+        cp => (cp.name || '').trim().toLowerCase() === typedName.toLowerCase()
+      )
+      if (sameName) {
+        alert(`Контрагент «${sameName.name}» уже есть в реестре${sameName.inn ? ` (ИНН ${sameName.inn})` : ''}. Повторно добавлять не нужно.`)
+        return
+      }
+      const typedInn = (counterpartyFormData.inn || '').trim()
+      if (typedInn) {
+        const sameInn = counterparties.find(cp => (cp.inn || '').trim() === typedInn)
+        if (sameInn && !window.confirm(
+          `ИНН ${typedInn} уже указан у контрагента «${sameInn.name}». Всё равно добавить новую запись?`
+        )) return
+      }
+    }
+
+    cpSavingRef.current = true
+    setCpSaving(true)
     try {
       let counterpartyId
 
@@ -627,7 +659,14 @@ function CounterpartiesPage() {
       fetchCounterparties()
     } catch (error) {
       console.error('Ошибка сохранения контрагента:', error.message)
-      alert('Ошибка: ' + error.message)
+      // 23505 — нарушение уникальности: значит запись уже создана (в том числе
+      // первым из двух кликов), и вторая попытка не нужна.
+      alert(error.code === '23505'
+        ? 'Такой контрагент уже есть в реестре.'
+        : 'Ошибка: ' + error.message)
+    } finally {
+      cpSavingRef.current = false
+      setCpSaving(false)
     }
   }
 
@@ -2755,6 +2794,7 @@ function CounterpartiesPage() {
                 <button
                   type="button"
                   className="btn-secondary"
+                  disabled={cpSaving}
                   onClick={() => {
                     setShowCounterpartyModal(false)
                     setEditingCounterparty(null)
@@ -2762,8 +2802,8 @@ function CounterpartiesPage() {
                 >
                   Отмена
                 </button>
-                <button type="submit" className="btn-primary">
-                  {editingCounterparty ? 'Сохранить' : 'Добавить'}
+                <button type="submit" className="btn-primary" disabled={cpSaving}>
+                  {cpSaving ? 'Сохранение…' : (editingCounterparty ? 'Сохранить' : 'Добавить')}
                 </button>
               </div>
             </form>

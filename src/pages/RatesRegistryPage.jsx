@@ -128,6 +128,8 @@ function SupplyRegistrySection() {
 
   const [rows, setRows] = useState([])
   const [totalCount, setTotalCount] = useState(0)
+  // Точный подсчёт по вью мог упереться в statement_timeout — тогда оцениваем.
+  const [countFailed, setCountFailed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [exporting, setExporting] = useState(false)
@@ -149,19 +151,28 @@ function SupplyRegistrySection() {
   }, [debouncedSearch, objectIds, tenderIds, objects.length, tenders.length,
       priceMin, priceMax, dateFrom, dateTo])
 
-  // Best-effort точный count — таймаут подсчёта не роняет уже загруженные строки.
-  const countSupply = useCallback(async (from, data) => {
-    try {
-      let cq = supabase.from('supply_rates_registry').select('id', { count: 'exact', head: true })
-      cq = applyFilters(cq)
-      const { count, error } = await cq
-      if (error) throw error
-      return count || 0
-    } catch {
-      const n = data?.length || 0
-      return from + n + (n === pageSize ? pageSize : 0)
+  // Общее число строк считаем отдельным эффектом и только при смене фильтров:
+  // от номера страницы count не зависит, а по вью он дорогой — раньше полный
+  // пересчёт уходил на каждое нажатие «Вперёд».
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      try {
+        let cq = supabase.from('supply_rates_registry').select('id', { count: 'exact', head: true })
+        cq = applyFilters(cq)
+        const { count, error } = await cq
+        if (error) throw error
+        if (cancelled) return
+        setTotalCount(count || 0)
+        setCountFailed(false)
+      } catch {
+        // Таймаут подсчёта не должен ронять уже показанные строки.
+        if (!cancelled) setCountFailed(true)
+      }
     }
-  }, [applyFilters, pageSize])
+    run()
+    return () => { cancelled = true }
+  }, [applyFilters])
 
   useEffect(() => {
     let cancelled = false
@@ -208,7 +219,12 @@ function SupplyRegistrySection() {
         if (qErr) throw qErr
         if (cancelled) return
         setRows(data || [])
-        setTotalCount(await countSupply(from, data))
+        // Если точный подсчёт не прошёл — оцениваем так, чтобы «Вперёд»
+        // продолжало работать до реального конца данных.
+        if (countFailed) {
+          const n = data?.length || 0
+          setTotalCount(from + n + (n === pageSize ? pageSize : 0))
+        }
       } catch (err) {
         if (cancelled) return
         console.error('Ошибка загрузки расценок снабжения:', err.message)
@@ -221,7 +237,7 @@ function SupplyRegistrySection() {
     }
     run()
     return () => { cancelled = true }
-  }, [page, pageSize, sortBy, sortDir, applyFilters, countSupply])
+  }, [page, pageSize, sortBy, sortDir, applyFilters, countFailed])
 
   const resetFilters = () => {
     setSearch(''); setObjectIds([]); setTenderIds([])
@@ -459,6 +475,10 @@ function RatesRegistryPage() {
   const [rows, setRows] = useState([])
   const [totalCount, setTotalCount] = useState(0)
   const [counts, setCounts] = useState({ materials: 0, works: 0 })
+  // Подсчёт по дедуп-вью может упереться в statement_timeout: тогда переходим на
+  // оценку общего числа по длине последней полученной страницы.
+  const [countsFailed, setCountsFailed] = useState(false)
+  const [lastPageSize, setLastPageSize] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [exporting, setExporting] = useState(false)
@@ -483,23 +503,6 @@ function RatesRegistryPage() {
     return q
   }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, objects.length,
       counterparties.length, tenders.length, priceMin, priceMax, dateFrom, dateTo])
-
-  // Best-effort точный count (для пагинации). Если подсчёт упал (statement_timeout
-  // по дедуп-вью на большой выборке) — не роняем уже загруженные строки, а оцениваем
-  // общее число так, чтобы «Вперёд»/«Назад» продолжали работать до реального конца.
-  const countRegistry = useCallback(async (view, itemType, from, data) => {
-    try {
-      let cq = supabase.from(view).select('id', { count: 'exact', head: true })
-      if (itemType) cq = cq.eq('item_type', itemType)
-      cq = applyFilters(cq)
-      const { count, error } = await cq
-      if (error) throw error
-      return count || 0
-    } catch {
-      const n = data?.length || 0
-      return from + n + (n === pageSize ? pageSize : 0)
-    }
-  }, [applyFilters, pageSize])
 
   // Справочники фильтров — один раз (лёгкие запросы к distinct-вью реестра).
   useEffect(() => {
@@ -561,7 +564,10 @@ function RatesRegistryPage() {
         if (qErr) throw qErr
         if (cancelled) return
         setRows(data || [])
-        setTotalCount(await countRegistry('kp_rates_registry', itemType, from, data))
+        // Общее число НЕ считаем здесь: count по дедуп-вью — самый дорогой запрос
+        // страницы, а от номера страницы он не зависит. Его берём из счётчиков
+        // подвкладок ниже, и пересчитываются они только при смене фильтров.
+        setLastPageSize(data?.length || 0)
       } catch (err) {
         if (cancelled) return
         console.error('Ошибка загрузки реестра:', err.message)
@@ -574,9 +580,12 @@ function RatesRegistryPage() {
     }
     run()
     return () => { cancelled = true }
-  }, [topTab, kindTab, page, pageSize, sortBy, sortDir, applyFilters, countRegistry])
+  }, [topTab, kindTab, page, pageSize, sortBy, sortDir, applyFilters])
 
-  // Счётчики обеих подвкладок с учётом фильтров (две лёгкие head-выборки count).
+  // Счётчики обеих подвкладок с учётом фильтров. Раньше на каждую загрузку
+  // страницы приходилось ТРИ полных подсчёта по дедуп-вью (материалы, работы и
+  // отдельный count для пагинации) — на большой базе это и давало минуту.
+  // Теперь два, и только при смене фильтров, а не при листании.
   useEffect(() => {
     if (topTab !== 'kp') return
     let cancelled = false
@@ -587,14 +596,29 @@ function RatesRegistryPage() {
         )
         const [m, w] = await Promise.all([mk('material'), mk('work')])
         if (cancelled) return
+        if (m.error || w.error) throw (m.error || w.error)
         setCounts({ materials: m.count || 0, works: w.count || 0 })
+        setCountsFailed(false)
       } catch {
-        /* счётчики не критичны — игнорируем */
+        // Подсчёт мог упереться в statement_timeout — строки при этом уже
+        // показаны, поэтому просто переходим на оценку по длине страницы.
+        if (!cancelled) setCountsFailed(true)
       }
     }
     run()
     return () => { cancelled = true }
   }, [topTab, applyFilters])
+
+  // Итог для пагинации: точный счётчик активной подвкладки, а если подсчёт не
+  // прошёл — оценка, при которой «Вперёд» работает до реального конца данных.
+  useEffect(() => {
+    if (topTab !== 'kp') return
+    if (countsFailed) {
+      setTotalCount(page * pageSize + lastPageSize + (lastPageSize === pageSize ? pageSize : 0))
+      return
+    }
+    setTotalCount(kindTab === 'materials' ? counts.materials : counts.works)
+  }, [topTab, kindTab, counts, countsFailed, page, pageSize, lastPageSize])
 
   const resetFilters = () => {
     setSearch('')

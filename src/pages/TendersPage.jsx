@@ -290,6 +290,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Отдельный набор статусов для тендеров на материалы — не пересекается со статусами основного тендера.
   // «Не требуется» — финальный статус (материалы закупать не требуется), считается как завершённый.
   const materialsStatusOptions = ['Не начат', 'В работе', 'Завершён', 'Не требуется']
+  // Черновик статуса дочернего тендера на материалы в форме редактирования.
+  const [materialsStatusDraft, setMaterialsStatusDraft] = useState('Не начат')
   const currentStatusOptions = isMaterialsView ? materialsStatusOptions : statusOptions
   // Для тендеров на материалы «завершённые» — это «Завершён» и «Не требуется»
   // (а также старое значение «Не нужно» — для обратной совместимости).
@@ -1237,6 +1239,28 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           })
         }
 
+        // Статус дочернего тендера на материалы правится из этой же формы —
+        // отдельная запись в БД, поэтому и отдельный UPDATE.
+        const materialsTender = editingTender.materials_tender
+        if (materialsTender?.id && (materialsTender.status || '') !== materialsStatusDraft) {
+          const { error: mtError } = await supabase
+            .from('tenders')
+            .update({ status: materialsStatusDraft })
+            .eq('id', materialsTender.id)
+          if (mtError) {
+            console.error('Не удалось изменить статус тендера на материалы:', mtError.message)
+            alert('Тендер сохранён, но статус тендера на материалы изменить не удалось: ' + mtError.message)
+          } else {
+            // История пишется в журнал самого материального тендера — там же, где
+            // её ищут, открыв его карточку.
+            await logTenderEvent(materialsTender.id, 'status_changed', {
+              oldValue: materialsTender.status || null,
+              newValue: materialsStatusDraft,
+              description: `Статус: ${materialsTender.status || '—'} → ${materialsStatusDraft}`,
+            })
+          }
+        }
+
         // task 223a / 226 / 229: описание работ основного тендера взаимосвязано
         // с дочерним тендером на материалы — синхронизируем при любом изменении.
         const descChanged = (editingTender.work_description || '') !== (updatePayload.work_description || '')
@@ -1418,6 +1442,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   const handleEditTender = (tender) => {
     setEditingTender(tender)
+    // Статус тендера на материалы живёт в отдельной записи, поэтому и в форме
+    // держится отдельным состоянием, а не полем formData.
+    setMaterialsStatusDraft(tender.materials_tender?.status || 'Не начат')
     setFormData({
       object_id: tender.object_id || '',
       work_description: tender.work_description,
@@ -3633,6 +3660,27 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         </option>
                       ))}
                     </select>
+                  </div>
+                )}
+
+                {/* Статус дочернего тендера на материалы правится здесь же: раньше
+                    ради одной строки приходилось уходить в отдельную вкладку
+                    «Тендер на материалы». Показываем, только если он есть. */}
+                {editingTender && editingTender.materials_tender && (
+                  <div className="form-group full-width">
+                    <label>Статус тендера на материалы</label>
+                    <select
+                      value={materialsStatusDraft}
+                      onChange={(e) => setMaterialsStatusDraft(e.target.value)}
+                    >
+                      {materialsStatusOptions.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                    <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
+                      Относится к дочернему тендеру на материалы — тому, что виден в
+                      колонке «Тендер на материалы».
+                    </small>
                   </div>
                 )}
 

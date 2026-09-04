@@ -1,12 +1,12 @@
 import './TgPublishToggle.css'
-import './CompletionLetterToggle.css'
 
 // Галочка «Письмо о завершении отправлено всем участникам тендера».
 //
 // Между «Подведением итогов» и «Завершен» есть шаг, у которого нет своего статуса:
 // проигравшим подрядчикам рассылают письмо о закрытии тендера. Отдельной стадией
 // его не делаем — это признак выполненного действия, как публикация в ТГ, поэтому
-// компонент повторяет TgPublishToggle и переиспользует его стили.
+// компонент повторяет TgPublishToggle и полностью берёт его стили: отмеченное
+// состояние такое же зелёное, как «Опубликовано в ТГ».
 //
 // Показывается только там, где шаг актуален: на подведении итогов и после него.
 // На «Заявке на тендер» галочка была бы шумом.
@@ -40,7 +40,7 @@ export default function CompletionLetterToggle({ tender, canEdit = false, onTogg
 
   const sent = !!tender.completion_letter_sent
   const label = sent ? 'Письмо о завершении отправлено' : 'Письмо о завершении'
-  const cls = `tgpub cletter ${sent ? 'is-pub' : 'is-unpub'}`
+  const cls = `tgpub ${sent ? 'is-pub' : 'is-unpub'}`
 
   const title = sent
     ? `Письмо о завершении разослано участникам${tender.completion_letter_sent_by ? ` · ${tender.completion_letter_sent_by}` : ''}${tender.completion_letter_sent_at ? ` · ${fmtDate(tender.completion_letter_sent_at)}` : ''}`
