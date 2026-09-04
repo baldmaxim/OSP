@@ -1,0 +1,133 @@
+/* Вкладка «Шифр РД» внутри тендера (миграция 20260901). */
+.trd-tab { display: flex; flex-direction: column; gap: 0.85rem; }
+
+.trd-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.trd-title { margin: 0 0 0.2rem; font-size: 1rem; color: var(--text-primary); }
+.trd-hint { margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
+
+.trd-empty, .trd-error {
+  padding: 1.75rem 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+.trd-error { color: #dc2626; }
+.trd-muted { color: var(--text-tertiary); }
+
+.trd-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.trd-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.8125rem;
+}
+.trd-table thead th {
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+.trd-table tbody td {
+  padding: 0.5rem 0.75rem;
+  vertical-align: middle;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+.trd-table tbody tr:last-child td { border-bottom: 0; }
+.trd-table tbody tr:hover td { background: rgba(71, 85, 105, 0.05); }
+[data-theme='dark'] .trd-table tbody tr:hover td { background: rgba(148, 163, 184, 0.08); }
+
+.trd-col-num { width: 1%; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.trd-col-code { width: 1%; white-space: nowrap; }
+/* Шифр — моноширинный: в нём значимы разделители и цифры. */
+.trd-code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.trd-notes { color: var(--text-secondary); }
+.trd-col-meta { width: 1%; white-space: nowrap; }
+.trd-meta-date { display: block; font-size: 0.75rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.trd-meta-who { display: block; font-size: 0.6875rem; color: var(--text-tertiary); }
+
+.trd-col-actions { width: 1%; white-space: nowrap; }
+.trd-actions { display: inline-flex; gap: 0.15rem; }
+.trd-icon-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.trd-icon-btn:hover:not(:disabled) {
+  color: var(--primary-color, #2563eb);
+  border-color: var(--border-color);
+  background: var(--bg-primary);
+}
+.trd-icon-btn:disabled { opacity: 0.35; cursor: default; }
+.trd-icon-danger:hover:not(:disabled) { color: #dc2626; border-color: rgba(220, 38, 38, 0.4); }
+
+/* Форма добавления/правки — и над таблицей, и внутри строки при редактировании. */
+.trd-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--primary-color, #2563eb) 30%, var(--border-color));
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.trd-form-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.trd-field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 220px; min-width: 0; }
+.trd-field-wide { flex: 2 1 320px; }
+.trd-field-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.trd-field input {
+  height: 34px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-family: inherit;
+}
+.trd-field input:focus { outline: none; border-color: var(--primary-color, #2563eb); }
+.trd-form-actions { display: flex; gap: 0.5rem; }
+
+@media (max-width: 640px) {
+  .trd-head { flex-direction: column; align-items: stretch; }
+  .trd-head .btn-primary { width: 100%; }
+  .trd-form-row { flex-direction: column; }
+  .trd-field input { height: 40px; font-size: 16px; }
+}

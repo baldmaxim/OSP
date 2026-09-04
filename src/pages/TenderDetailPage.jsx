@@ -17,6 +17,7 @@ import PaperclipIcon from '../components/icons/PaperclipIcon'
 import AccessDenied from '../components/AccessDenied'
 import FilterDropdown from '../components/FilterDropdown'
 import TenderDocumentsTab from '../components/TenderDocumentsTab'
+import TenderRdCodesTab from '../components/TenderRdCodesTab'
 import TenderFinalDocBlock from '../components/TenderFinalDocBlock'
 import '../components/TenderDetail.css'
 
@@ -623,7 +624,9 @@ function TenderDetailPage() {
   const [draggedTc, setDraggedTc] = useState(null) // { id }
   const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'supply' | 'proposals' | 'participants' | 'documents' | 'history'
+  const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'supply' | 'proposals' | 'participants' | 'rd' | 'documents' | 'history'
+  // Счётчик шифров РД для бейджа на вкладке; сами строки грузит сама вкладка.
+  const [rdCodesCount, setRdCodesCount] = useState(0)
   // Версия документов тендера: любое изменение (во вкладке «Документы» или в блоке
   // «Итоговый документ» победителя) поднимает счётчик и синхронизирует оба места.
   const [tenderDocsVersion, setTenderDocsVersion] = useState(0)
@@ -2455,6 +2458,14 @@ function TenderDetailPage() {
           Участники
           {tenderCounterparties.length > 0 && <span className="tab-count">{tenderCounterparties.length}</span>}
         </button>
+        {/* Шифры РД — рядом с документами: это тоже про документацию тендера. */}
+        <button
+          className={`tender-tab ${activeTab === 'rd' ? 'active' : ''}`}
+          onClick={() => setActiveTab('rd')}
+        >
+          Шифр РД
+          {rdCodesCount > 0 && <span className="tab-count">{rdCodesCount}</span>}
+        </button>
         <button
           className={`tender-tab ${activeTab === 'documents' ? 'active' : ''}`}
           onClick={() => setActiveTab('documents')}
@@ -2474,6 +2485,16 @@ function TenderDetailPage() {
 
       {/* Контент вкладок */}
       <div className="tender-tab-content">
+        {/* Шифры рабочей документации по тендеру (миграция 20260901). Данные
+            грузит сама вкладка при открытии — на других вкладках лишний запрос
+            не нужен. */}
+        {activeTab === 'rd' && (
+          <TenderRdCodesTab
+            tenderId={tenderId}
+            canEdit={canEditTenders}
+            onCountChange={setRdCodesCount}
+          />
+        )}
         {/* Вкладка «Документы» тендера (согласования, ТЗ, сводки, итоговый документ) */}
         {activeTab === 'documents' && (
           <TenderDocumentsTab
