@@ -290,8 +290,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Отдельный набор статусов для тендеров на материалы — не пересекается со статусами основного тендера.
   // «Не требуется» — финальный статус (материалы закупать не требуется), считается как завершённый.
   const materialsStatusOptions = ['Не начат', 'В работе', 'Завершён', 'Не требуется']
-  // Черновик статуса дочернего тендера на материалы в форме редактирования.
+  // Черновики полей дочернего тендера на материалы в форме основного тендера.
+  // Обе вкладки («Тендеры» и «Тендеры на материалы») читают одну и ту же запись,
+  // поэтому правка отсюда видна и там — синхронизировать нечего.
   const [materialsStatusDraft, setMaterialsStatusDraft] = useState('Не начат')
+  const [materialsLinkDraft, setMaterialsLinkDraft] = useState('')
   const currentStatusOptions = isMaterialsView ? materialsStatusOptions : statusOptions
   // Для тендеров на материалы «завершённые» — это «Завершён» и «Не требуется»
   // (а также старое значение «Не нужно» — для обратной совместимости).
@@ -1239,25 +1242,44 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           })
         }
 
-        // Статус дочернего тендера на материалы правится из этой же формы —
-        // отдельная запись в БД, поэтому и отдельный UPDATE.
+        // Дочерний тендер на материалы правится из этой же формы — это отдельная
+        // запись в БД, поэтому и отдельный UPDATE. Обе вкладки читают её же, так
+        // что синхронизировать ничего не нужно: правка видна сразу в обеих.
         const materialsTender = editingTender.materials_tender
-        if (materialsTender?.id && (materialsTender.status || '') !== materialsStatusDraft) {
-          const { error: mtError } = await supabase
-            .from('tenders')
-            .update({ status: materialsStatusDraft })
-            .eq('id', materialsTender.id)
-          if (mtError) {
-            console.error('Не удалось изменить статус тендера на материалы:', mtError.message)
-            alert('Тендер сохранён, но статус тендера на материалы изменить не удалось: ' + mtError.message)
-          } else {
-            // История пишется в журнал самого материального тендера — там же, где
-            // её ищут, открыв его карточку.
-            await logTenderEvent(materialsTender.id, 'status_changed', {
-              oldValue: materialsTender.status || null,
-              newValue: materialsStatusDraft,
-              description: `Статус: ${materialsTender.status || '—'} → ${materialsStatusDraft}`,
-            })
+        if (materialsTender?.id) {
+          const nextLink = materialsLinkDraft.trim() || null
+          const statusChanged = (materialsTender.status || '') !== materialsStatusDraft
+          const linkChanged = (materialsTender.materials_proposal_link || null) !== nextLink
+          if (statusChanged || linkChanged) {
+            const mtPatch = {}
+            if (statusChanged) mtPatch.status = materialsStatusDraft
+            if (linkChanged) mtPatch.materials_proposal_link = nextLink
+            const { error: mtError } = await supabase
+              .from('tenders')
+              .update(mtPatch)
+              .eq('id', materialsTender.id)
+            if (mtError) {
+              console.error('Не удалось сохранить тендер на материалы:', mtError.message)
+              alert('Тендер сохранён, но изменения по тендеру на материалы не прошли: ' + mtError.message)
+            } else {
+              // История пишется в журнал самого материального тендера — там же,
+              // где её ищут, открыв его карточку.
+              if (statusChanged) {
+                await logTenderEvent(materialsTender.id, 'status_changed', {
+                  oldValue: materialsTender.status || null,
+                  newValue: materialsStatusDraft,
+                  description: `Статус: ${materialsTender.status || '—'} → ${materialsStatusDraft}`,
+                })
+              }
+              if (linkChanged) {
+                await logTenderEvent(materialsTender.id, 'field_updated', {
+                  fieldName: 'materials_proposal_link',
+                  oldValue: materialsTender.materials_proposal_link || null,
+                  newValue: nextLink,
+                  description: 'Изменено: Ссылка на КП по материалам',
+                })
+              }
+            }
           }
         }
 
@@ -1442,9 +1464,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   const handleEditTender = (tender) => {
     setEditingTender(tender)
-    // Статус тендера на материалы живёт в отдельной записи, поэтому и в форме
-    // держится отдельным состоянием, а не полем formData.
+    // Поля тендера на материалы живут в отдельной записи, поэтому и в форме
+    // держатся отдельным состоянием, а не полями formData.
     setMaterialsStatusDraft(tender.materials_tender?.status || 'Не начат')
+    setMaterialsLinkDraft(tender.materials_tender?.materials_proposal_link || '')
     setFormData({
       object_id: tender.object_id || '',
       work_description: tender.work_description,
@@ -3663,25 +3686,40 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </div>
                 )}
 
-                {/* Статус дочернего тендера на материалы правится здесь же: раньше
-                    ради одной строки приходилось уходить в отдельную вкладку
-                    «Тендер на материалы». Показываем, только если он есть. */}
+                {/* Дочерний тендер на материалы правится здесь же: раньше ради
+                    статуса или ссылки приходилось уходить в отдельную вкладку.
+                    Это та же запись в БД, что и на вкладке «Тендеры на материалы»,
+                    поэтому правка сразу видна в обоих местах. */}
                 {editingTender && editingTender.materials_tender && (
-                  <div className="form-group full-width">
-                    <label>Статус тендера на материалы</label>
-                    <select
-                      value={materialsStatusDraft}
-                      onChange={(e) => setMaterialsStatusDraft(e.target.value)}
-                    >
-                      {materialsStatusOptions.map((status) => (
-                        <option key={status} value={status}>{status}</option>
-                      ))}
-                    </select>
-                    <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
-                      Относится к дочернему тендеру на материалы — тому, что виден в
-                      колонке «Тендер на материалы».
-                    </small>
-                  </div>
+                  <>
+                    <div className="form-group">
+                      <label>Статус тендера на материалы</label>
+                      <select
+                        value={materialsStatusDraft}
+                        onChange={(e) => setMaterialsStatusDraft(e.target.value)}
+                      >
+                        {materialsStatusOptions.map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Ссылка на КП по материалам</label>
+                      <input
+                        type="url"
+                        value={materialsLinkDraft}
+                        onChange={(e) => setMaterialsLinkDraft(e.target.value)}
+                        placeholder="https://drive.google.com/…"
+                      />
+                    </div>
+                    <div className="form-group full-width">
+                      <small style={{ color: 'var(--text-tertiary)' }}>
+                        Оба поля относятся к дочернему тендеру на материалы — тому, что
+                        виден в колонке «Тендер на материалы» и на вкладке «Тендеры на
+                        материалы». Правка здесь меняет ту же запись.
+                      </small>
+                    </div>
+                  </>
                 )}
 
                 <div className="form-group">

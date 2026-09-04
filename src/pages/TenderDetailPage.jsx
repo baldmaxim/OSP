@@ -1767,7 +1767,8 @@ function TenderDetailPage() {
     object_id: 'Объект',
     notes: 'Примечание',
     participant_notes: 'Примечание участника',
-    completion_letter_sent: 'Письмо о завершении'
+    completion_letter_sent: 'Письмо о завершении',
+    materials_proposal_link: 'Ссылка на КП по материалам'
   }
 
   const formatHistoryValue = (val) => {
