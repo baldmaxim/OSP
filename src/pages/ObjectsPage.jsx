@@ -9,11 +9,23 @@ import '../components/GeneralInfo.css'
 // Глобальная переменная для хранения экземпляра карты
 let mapInstance = null
 
+// «Базаркин Андрей Геннадьевич» → «Базаркин А. Г.»: в карточке объекта на полные
+// ФИО нескольких человек места нет, а по фамилии с инициалами узнают сразу.
+// Полные имена остаются в title.
+function shortFio(full) {
+  const parts = String(full || '').trim().split(/\s+/)
+  if (parts.length < 2) return full || ''
+  const initials = parts.slice(1, 3).map(w => `${w.charAt(0).toUpperCase()}.`).join(' ')
+  return `${parts[0]} ${initials}`
+}
+
 function ObjectsPage() {
   const { scopedObjectIds, canEdit } = useRole()
   // task 333: гейт add/edit/delete объектов
   const canEditObjects = canEdit('objects')
   const [objects, setObjects] = useState([])
+  // Ответственные по объектам: Map<object_id, { construction_manager: [], economist: [] }>
+  const [staffByObject, setStaffByObject] = useState(() => new Map())
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [showObjectModal, setShowObjectModal] = useState(false)
@@ -220,6 +232,27 @@ function ObjectsPage() {
 
       if (error) throw error
       setObjects(data || [])
+
+      // Ответственные по объектам — одним запросом на весь список, а не по
+      // запросу на карточку. Best-effort: до применения миграции 20260831
+      // таблицы нет, и сетка объектов не должна из-за этого падать.
+      const staffRes = await supabase
+        .from('object_staff')
+        .select('object_id, staff_role, sort_order, contacts(id, full_name)')
+        .order('sort_order', { ascending: true })
+      if (staffRes.error) {
+        console.warn('Ответственные по объектам недоступны (миграция 20260831?):', staffRes.error.message)
+        setStaffByObject(new Map())
+      } else {
+        const map = new Map()
+        for (const row of staffRes.data || []) {
+          if (!row.contacts) continue
+          if (!map.has(row.object_id)) map.set(row.object_id, { construction_manager: [], economist: [] })
+          const bucket = map.get(row.object_id)[row.staff_role]
+          if (bucket) bucket.push(row.contacts)
+        }
+        setStaffByObject(map)
+      }
     } catch (error) {
       console.error('Ошибка загрузки объектов:', error.message)
     } finally {
@@ -600,6 +633,40 @@ function ObjectsPage() {
                       {object.description && (
                         <div className="object-card-description">{object.description}</div>
                       )}
+
+                      {/* Ответственные по объекту: чаще всего с карточки нужен
+                          именно контакт, а не площадь. Фамилии с инициалами —
+                          полные ФИО в карточку не помещаются. */}
+                      {(() => {
+                        const s = staffByObject.get(object.id)
+                        const cm = s?.construction_manager || []
+                        const ec = s?.economist || []
+                        if (cm.length === 0 && ec.length === 0) return null
+                        return (
+                          <div className="object-card-staff">
+                            {cm.length > 0 && (
+                              <div className="object-card-staff-row">
+                                <span className="object-card-staff-role">
+                                  {cm.length > 1 ? 'Рук. строительства' : 'Рук. строительства'}
+                                </span>
+                                <span className="object-card-staff-names" title={cm.map(p => p.full_name).join(', ')}>
+                                  {cm.map(p => shortFio(p.full_name)).join(', ')}
+                                </span>
+                              </div>
+                            )}
+                            {ec.length > 0 && (
+                              <div className="object-card-staff-row">
+                                <span className="object-card-staff-role">
+                                  {ec.length > 1 ? 'Экономисты' : 'Экономист'}
+                                </span>
+                                <span className="object-card-staff-names" title={ec.map(p => p.full_name).join(', ')}>
+                                  {ec.map(p => shortFio(p.full_name)).join(', ')}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
 
                       {(area || budget || start || end) && (
                         <div className="object-card-meta">

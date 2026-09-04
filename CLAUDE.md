@@ -299,6 +299,39 @@ supabase functions deploy ai-assist
 
 Без секрета функция отвечает 500 «ANTHROPIC_API_KEY не задан в секретах функции».
 
+## API реестра расценок (Edge Function `rates-api`)
+
+Выдача расценок смежному отделу (тендерный отдел, работающий с заказчиками) машинно, по ключу, **только на чтение**. Отдельная функция, а не прямой доступ к Supabase REST: ключ проекта открыл бы не реестр расценок, а всё, до чего дотягиваются политики, — здесь же наружу выставлены ровно два представления и одна операция.
+
+- Edge Function [supabase/functions/rates-api/index.ts](supabase/functions/rates-api/index.ts).
+- Ресурсы: `/kp` — расценки из КП подрядчиков (`kp_rates_registry`), `/supply` — расценки снабжения (`supply_rates_registry`), `/health` — проверка ключа.
+- Колонки перечислены в коде явно: `*` вынес бы наружу всё, что когда-либо добавят в представление.
+
+**Параметры** (все необязательные): `search`, `type` (material|work, только `/kp`), `object`, `tender`, `counterparty`, `date_from`, `date_to`, `price_min`, `price_max`, `limit` (1..1000, по умолчанию 500), `offset`, `format` (`json` | `csv`).
+
+**Ответ:** `{ rows, limit, offset, count, has_more }`. `count` приходит `null`, если точный подсчёт по дедуп-вью не уложился в таймаут — постраничный обход при этом идёт по `has_more`.
+
+**Ключ** — в заголовке `X-API-Key` либо в параметре `?key=` (второе ради Excel/Power Query, где заголовки задавать неудобно). Ключи лежат в секрете `RATES_API_KEYS`, несколько — через запятую, сравниваются в постоянном времени.
+
+**Деплой** (разово). Функция вызывается без пользовательского JWT, поэтому проверку токена нужно отключить:
+
+```bash
+supabase secrets set RATES_API_KEYS=<ключ1>,<ключ2>
+supabase functions deploy rates-api --no-verify-jwt
+```
+
+Пример запроса:
+
+```bash
+curl -H "X-API-Key: <ключ>" \
+  "https://<project>.supabase.co/functions/v1/rates-api/kp?type=material&limit=200"
+```
+
+Для Excel/Power Query — ссылка с ключом и `format=csv`:
+`https://<project>.supabase.co/functions/v1/rates-api/kp?key=<ключ>&format=csv`
+
+Ключ в адресе попадает в историю браузера и логи прокси — выдавайте отдельный ключ на каждого потребителя, чтобы его можно было отозвать, не трогая остальных (для отзыва достаточно убрать его из `RATES_API_KEYS` и передеплоить секреты).
+
 ## Excel Import/Export (xlsx)
 
 Used in `TenderDetailPage.jsx`, `ContractorProposalsPage.jsx`, and BSM pages:

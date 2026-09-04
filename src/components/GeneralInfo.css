@@ -1301,6 +1301,34 @@ body.modal-open {
   overflow: hidden;
 }
 
+/* Ответственные по объекту в карточке списка (object_staff, миграция 20260831).
+   Стоят перед блоком метрик, поэтому margin-top:auto оставлен именно метрикам —
+   он прижимает их к низу карточки. */
+.object-card-staff {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+}
+.object-card-staff-row {
+  display: flex;
+  gap: 0.4rem;
+  line-height: 1.35;
+}
+.object-card-staff-role {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+.object-card-staff-names {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .object-card-meta {
   display: flex;
   flex-wrap: wrap;

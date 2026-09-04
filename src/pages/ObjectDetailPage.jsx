@@ -611,11 +611,14 @@ function ObjectDetailPage() {
     total_area: '',
     budget: '',
     email: '', // task 335
-    construction_manager_contact_id: '',
-    economist_contact_id: '',
+    // Ответственных стало по нескольку (миграция 20260831) — держим массивами id.
+    construction_manager_ids: [],
+    economist_ids: [],
   })
   // Реестр сотрудников для выбора ответственных по объекту.
   const [staffContacts, setStaffContacts] = useState([])
+  // Связи «объект ↔ сотрудник» из object_staff.
+  const [staff, setStaff] = useState([])
 
   // task 372: площади объекта (с вложенными подпунктами).
   const [areas, setAreas] = useState([])
@@ -684,19 +687,29 @@ function ObjectDetailPage() {
   const fetchObjectData = useCallback(async () => {
     setLoading(true)
     try {
-      // Ответственных подтягиваем именованными связями: у objects две ссылки на
-      // contacts, и без явных имён Supabase не разберёт, какая из них какая.
-      // Если миграция 20260822 ещё не применена, связей нет и запрос падает —
-      // тогда грузим объект как раньше, просто без ответственных. Иначе вся
-      // карточка объекта была бы недоступна до накатывания миграции.
-      const STAFF_EMBED = '*, construction_manager:contacts!construction_manager_contact_id(id, full_name, position, phone, email), economist:contacts!economist_contact_id(id, full_name, position, phone, email)'
-      let objectRes = await supabase.from('objects').select(STAFF_EMBED).eq('id', objectId).single()
-      if (objectRes.error) {
-        console.warn('Ответственные по объекту недоступны, грузим без них:', objectRes.error.message)
-        objectRes = await supabase.from('objects').select('*').eq('id', objectId).single()
-      }
+      // Ответственные больше не тянутся связями objects→contacts: их несколько,
+      // и живут они в object_staff (запрос ниже). Старые одиночные колонки
+      // objects.construction_manager_contact_id / economist_contact_id остались
+      // в БД, но не читаются.
+      const objectRes = await supabase.from('objects').select('*').eq('id', objectId).single()
       if (objectRes.error) throw objectRes.error
       setObject(objectRes.data)
+
+      // Ответственные — отдельной таблицей (миграция 20260831): на объекте их
+      // может быть несколько. Запрос best-effort: до применения миграции таблицы
+      // нет, и валить из-за неё всю карточку объекта не за что.
+      const staffRes = await supabase
+        .from('object_staff')
+        .select('id, contact_id, staff_role, sort_order, contacts(id, full_name, position, phone, email)')
+        .eq('object_id', objectId)
+        .order('staff_role', { ascending: true })
+        .order('sort_order', { ascending: true })
+      if (staffRes.error) {
+        console.warn('Ответственные по объекту недоступны (миграция 20260831?):', staffRes.error.message)
+        setStaff([])
+      } else {
+        setStaff(staffRes.data || [])
+      }
 
       const { data: docsData, error: docsError } = await supabase
         .from('object_documents')
@@ -1330,11 +1343,27 @@ function ObjectDetailPage() {
     )
   }
 
+  // Список ответственных одной роли: на объекте их может быть несколько.
+  const renderStaffList = (people) => {
+    if (!people || people.length === 0) return <span className="muted">—</span>
+    return (
+      <span className="obj-staff-list">
+        {people.map(p => <span key={p.id}>{renderStaff(p)}</span>)}
+      </span>
+    )
+  }
+
   // Опции выбора сотрудника: должность в подписи помогает не перепутать однофамильцев.
   const staffOptions = staffContacts.map(c => ({
     value: c.id,
     label: c.position ? `${c.full_name} — ${c.position}` : c.full_name,
   }))
+
+  // Ответственные объекта по роли: id для формы и сами контакты для показа.
+  const staffIdsOf = (role) => staff.filter(s => s.staff_role === role).map(s => s.contact_id)
+  const staffPeopleOf = (role) => staff
+    .filter(s => s.staff_role === role && s.contacts)
+    .map(s => s.contacts)
 
   // Object info handlers
   const handleEditInfo = () => {
@@ -1346,8 +1375,8 @@ function ObjectDetailPage() {
       total_area: object.total_area || '',
       budget: object.budget || '',
       email: object.email || '', // task 335
-      construction_manager_contact_id: object.construction_manager_contact_id || '',
-      economist_contact_id: object.economist_contact_id || '',
+      construction_manager_ids: staffIdsOf('construction_manager'),
+      economist_ids: staffIdsOf('economist'),
     })
     setShowInfoModal(true)
   }
@@ -1365,12 +1394,35 @@ function ObjectDetailPage() {
           total_area: parseFloat(infoFormData.total_area) || null,
           budget: parseFloat(infoFormData.budget) || null,
           email: infoFormData.email.trim() || null, // task 335
-          // Пустая строка — не валидный UUID, Postgres на ней падает.
-          construction_manager_contact_id: infoFormData.construction_manager_contact_id || null,
-          economist_contact_id: infoFormData.economist_contact_id || null,
         })
         .eq('id', objectId)
       if (error) throw error
+
+      // Ответственные лежат в object_staff. Пишем разницей, а не «снести и
+      // вставить заново»: полная пересборка меняла бы id связей при каждом
+      // сохранении и ломала сортировку у нетронутых записей.
+      const desired = [
+        ...infoFormData.construction_manager_ids.map((id, i) => ({ contact_id: id, staff_role: 'construction_manager', sort_order: i })),
+        ...infoFormData.economist_ids.map((id, i) => ({ contact_id: id, staff_role: 'economist', sort_order: i })),
+      ]
+      const keyOf = (s) => `${s.staff_role}:${s.contact_id}`
+      const currentKeys = new Set(staff.map(keyOf))
+      const desiredKeys = new Set(desired.map(keyOf))
+
+      const toAdd = desired.filter(d => !currentKeys.has(keyOf(d)))
+      const toRemove = staff.filter(s => !desiredKeys.has(keyOf(s))).map(s => s.id)
+
+      if (toRemove.length > 0) {
+        const { error: delErr } = await supabase.from('object_staff').delete().in('id', toRemove)
+        if (delErr) throw delErr
+      }
+      if (toAdd.length > 0) {
+        const { error: insErr } = await supabase
+          .from('object_staff')
+          .insert(toAdd.map(d => ({ ...d, object_id: objectId })))
+        if (insErr) throw insErr
+      }
+
       setShowInfoModal(false)
       fetchObjectData()
     } catch (error) {
@@ -1885,14 +1937,19 @@ function ObjectDetailPage() {
                   : <span className="muted">—</span>}
               </span>
             </div>
-            {/* Ответственные по объекту — из реестра сотрудников. */}
+            {/* Ответственные по объекту — из реестра сотрудников. Их может быть
+                несколько на роль (object_staff, миграция 20260831). */}
             <div className="info-item">
-              <span className="info-label">Руководитель строительства</span>
-              <span className="info-value">{renderStaff(object.construction_manager)}</span>
+              <span className="info-label">
+                {staffPeopleOf('construction_manager').length > 1 ? 'Руководители строительства' : 'Руководитель строительства'}
+              </span>
+              <span className="info-value">{renderStaffList(staffPeopleOf('construction_manager'))}</span>
             </div>
             <div className="info-item">
-              <span className="info-label">Экономист</span>
-              <span className="info-value">{renderStaff(object.economist)}</span>
+              <span className="info-label">
+                {staffPeopleOf('economist').length > 1 ? 'Экономисты' : 'Экономист'}
+              </span>
+              <span className="info-value">{renderStaffList(staffPeopleOf('economist'))}</span>
             </div>
           </div>
         </div>
@@ -2723,31 +2780,35 @@ function ObjectDetailPage() {
                   placeholder="object@example.com"
                 />
               </div>
-              {/* Ответственные по объекту — выбираются из реестра сотрудников. */}
+              {/* Ответственные по объекту — выбираются из реестра сотрудников.
+                  Множественный выбор: на объекте бывает несколько руководителей
+                  и несколько экономистов. */}
               <div className="form-row-1">
-                <label>Руководитель строительства</label>
+                <label>Руководители строительства</label>
                 <FilterDropdown
                   className="obj-staff-picker"
                   label=""
-                  value={infoFormData.construction_manager_contact_id}
-                  onChange={(v) => setInfoFormData({ ...infoFormData, construction_manager_contact_id: v || '' })}
+                  value={infoFormData.construction_manager_ids}
+                  onChange={(v) => setInfoFormData({ ...infoFormData, construction_manager_ids: v || [] })}
                   options={staffOptions}
+                  multiple
                   searchable
                   searchPlaceholder="Поиск сотрудника…"
-                  allLabel="Не назначен"
+                  allLabel="Не назначены"
                 />
               </div>
               <div className="form-row-1">
-                <label>Экономист</label>
+                <label>Экономисты</label>
                 <FilterDropdown
                   className="obj-staff-picker"
                   label=""
-                  value={infoFormData.economist_contact_id}
-                  onChange={(v) => setInfoFormData({ ...infoFormData, economist_contact_id: v || '' })}
+                  value={infoFormData.economist_ids}
+                  onChange={(v) => setInfoFormData({ ...infoFormData, economist_ids: v || [] })}
                   options={staffOptions}
+                  multiple
                   searchable
                   searchPlaceholder="Поиск сотрудника…"
-                  allLabel="Не назначен"
+                  allLabel="Не назначены"
                 />
               </div>
               <div className="modal-footer">
