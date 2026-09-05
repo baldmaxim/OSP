@@ -376,11 +376,20 @@ function ContractRegistry() {
   }
 
   useEffect(() => {
+    // Сразу — только то, без чего не нарисовать сам реестр: договоры, объекты
+    // (фильтр) и сотрудники (инлайн-выбор юриста в строке).
     fetchContracts()
     fetchObjects()
-    fetchCounterparties()
     fetchContacts()
-    fetchTenders()
+    // Контрагенты и тендеры нужны ТОЛЬКО в форме договора и в импорте, но
+    // грузились вместе с реестром и конкурировали с ним за соединения:
+    // контрагентов больше тысячи, то есть это несколько последовательных
+    // запросов. Откладываем их на простой браузера — к моменту, когда кто-то
+    // откроет форму, они обычно уже здесь, а открытие страницы их не ждёт.
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 800))
+    const cancelIdle = window.cancelIdleCallback || clearTimeout
+    const handle = idle(() => { ensureFormRefs() })
+    return () => cancelIdle(handle)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -502,9 +511,12 @@ function ContractRegistry() {
     try {
       // Постранично: контрагентов >1000, иначе потолок PostgREST молча режет список
       // и часть (например, по алфавиту после ~«Т») не появляется в форме договора.
+      // Колонки перечислены явно: в форме нужны только название и ИНН (поиск идёт
+      // по ним же), а select('*') тянул ещё адреса, примечания и виды работ —
+      // на нескольких тысячах строк это заметный лишний объём.
       const data = await fetchAllRows((from, to) => supabase
         .from('counterparties')
-        .select('*')
+        .select('id, name, inn')
         .order('name', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to))
@@ -513,6 +525,24 @@ function ContractRegistry() {
       console.error('Ошибка загрузки контрагентов:', error.message)
     }
   }
+
+  // Справочники, нужные только формам (контрагенты, тендеры). Грузим один раз:
+  // при простое после отрисовки реестра либо при открытии формы — что раньше.
+  const formRefsRef = useRef({ started: false })
+  const [formRefsReady, setFormRefsReady] = useState(false)
+  const ensureFormRefs = useCallback(async () => {
+    if (formRefsRef.current.started) return formRefsRef.current.promise
+    formRefsRef.current.started = true
+    formRefsRef.current.promise = Promise.all([fetchCounterparties(), fetchTenders()])
+      .then(() => setFormRefsReady(true))
+      .catch(err => {
+        // Дать повторить попытку: иначе одна сетевая ошибка навсегда оставила бы
+        // форму без списков.
+        formRefsRef.current.started = false
+        console.error('Не удалось загрузить справочники формы договора:', err?.message || err)
+      })
+    return formRefsRef.current.promise
+  }, [])
 
   const fetchContacts = async () => {
     try {
@@ -1307,6 +1337,8 @@ function ContractRegistry() {
   }
 
   const handleEditContract = (contract) => {
+    // Списки контрагентов и тендеров могли ещё не подгрузиться в простое.
+    ensureFormRefs()
     setEditingContract(contract)
     setFormData({
       record_type: contract.record_type || 'dp',
@@ -1416,6 +1448,7 @@ function ContractRegistry() {
   }
 
   const handleAddNew = async () => {
+    ensureFormRefs()
     setEditingContract(null)
     const nextNumber = await computeNextContractNumber()
     const status = STATUS_OPTIONS.some(s => s.value === activeTab) ? activeTab : 'new_request'
@@ -1537,7 +1570,7 @@ function ContractRegistry() {
           </button>
           {!isDeletedTab && canEditContracts && (
             <button
-              onClick={() => setShowImportModal(true)}
+              onClick={() => { ensureFormRefs(); setShowImportModal(true) }}
               className="btn-secondary"
               style={{ padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
               title="Пакетное создание договоров (ДП) из Excel-файла"
@@ -2407,7 +2440,11 @@ function ContractRegistry() {
                     />
                     {counterpartyDropdownOpen && (
                       <div className="cp-search-dropdown">
-                        {filteredCounterparties.length === 0 ? (
+                        {/* Список грузится в фоне: если форму открыли раньше, чем он
+                            пришёл, честно говорим об этом вместо «ничего не найдено». */}
+                        {!formRefsReady && counterparties.length === 0 ? (
+                          <div className="cp-search-empty">Загрузка списка контрагентов…</div>
+                        ) : filteredCounterparties.length === 0 ? (
                           <div className="cp-search-empty">Ничего не найдено</div>
                         ) : (
                           filteredCounterparties.slice(0, 50).map(cp => {
