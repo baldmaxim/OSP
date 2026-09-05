@@ -327,12 +327,19 @@ function AmountCellInput({ value, disabled, onSave }) {
 }
 
 function DcRequestsPage() {
-  const { userProfile, canEdit, isAdmin, scopedObjectIds } = useRole()
+  const { userProfile, canEdit, isAdmin, isSuperAdmin, role, scopedObjectIds } = useRole()
   // Телефон: список заявок рендерим карточками вместо широкой таблицы
   const isPhone = useIsPhone()
   // task 333: гейт add/edit/delete и inline-editing на этой странице.
   // Сам факт показа страницы контролируется EmployeeLayout (по App.jsx).
   const canEditDc = canEdit('dc_requests')
+  // Пока заявка на сверке с договором, двигать её дальше может только юрист:
+  // это его этап, и решение «соответствует договору» принимает он. Остальные
+  // статусы переключает любой, у кого есть право на раздел.
+  const canLeaveContractCheck = isAdmin || isSuperAdmin || role === 'lawyer'
+  const canChangeStatus = (currentStatus) => (
+    canEditDc && (currentStatus !== 'contract_check' || canLeaveContractCheck)
+  )
 
   const [requests, setRequests] = useState([])
   const [objects, setObjects] = useState([])
@@ -806,6 +813,12 @@ function DcRequestsPage() {
 
   const handleStatusChange = async (id, newStatus) => {
     const oldStatus = requests.find(r => r.id === id)?.status ?? null
+    // Проверка не только на кнопке: попап мог остаться открытым с момента, когда
+    // статус был другим, да и вызвать обработчик можно не только кликом.
+    if (oldStatus === 'contract_check' && !canLeaveContractCheck) {
+      alert('Сменить статус «Проверка по договору» может только юрист ОСП, администратор или суперпользователь.')
+      return
+    }
     try {
       const { error } = await supabase
         .from('dc_requests')
@@ -1704,8 +1717,11 @@ function DcRequestsPage() {
                           <button
                             type="button"
                             className={`dcr-status-chip ${statusOpt?.className || ''}${isStatusOpen ? ' is-open' : ''}`}
-                            onClick={() => canEditDc && !isDeletedTab && setStatusPopoverFor(isStatusOpen ? null : req.id)}
-                            disabled={!canEditDc || isDeletedTab}
+                            onClick={() => canChangeStatus(currentStatus) && !isDeletedTab && setStatusPopoverFor(isStatusOpen ? null : req.id)}
+                            disabled={!canChangeStatus(currentStatus) || isDeletedTab}
+                            title={currentStatus === 'contract_check' && !canLeaveContractCheck
+                              ? 'Снять статус «Проверка по договору» может только юрист ОСП или администратор'
+                              : undefined}
                             aria-haspopup="listbox"
                             aria-expanded={isStatusOpen}
                           >

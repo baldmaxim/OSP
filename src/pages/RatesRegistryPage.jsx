@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
@@ -22,6 +22,15 @@ const fmtDate = (iso) => {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('ru-RU')
+}
+// Отметка свежести реестра. Сегодняшнее время показываем без даты — так короче
+// и сразу понятно, насколько давно был пересчёт.
+const fmtRefreshed = (iso) => {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return '—'
+  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  const isToday = d.toDateString() === new Date().toDateString()
+  return isToday ? time : `${d.toLocaleDateString('ru-RU')} ${time}`
 }
 
 // Понятное сообщение вместо «сырой» ошибки Postgres. Реестр опирается на
@@ -138,18 +147,23 @@ function SupplyRegistrySection() {
   const [objects, setObjects] = useState([])
   const [tenders, setTenders] = useState([])
 
+  // См. комментарий в KP-секции: длины справочников держим в ref, иначе их
+  // асинхронная загрузка перезапускает эффекты и данные грузятся дважды.
+  const optionCounts = useRef({ objects: 0, tenders: 0 })
+  useEffect(() => { optionCounts.current.objects = objects.length }, [objects.length])
+  useEffect(() => { optionCounts.current.tenders = tenders.length }, [tenders.length])
+
   const applyFilters = useCallback((q) => {
     const s = debouncedSearch.trim()
     if (s) q = q.ilike('item_name', `%${s}%`)
-    q = applyInFilter(q, 'object_id', objectIds, objects.length)
-    q = applyInFilter(q, 'tender_id', tenderIds, tenders.length)
+    q = applyInFilter(q, 'object_id', objectIds, optionCounts.current.objects)
+    q = applyInFilter(q, 'tender_id', tenderIds, optionCounts.current.tenders)
     if (priceMin !== '' && !isNaN(Number(priceMin))) q = q.gte('price', Number(priceMin))
     if (priceMax !== '' && !isNaN(Number(priceMax))) q = q.lte('price', Number(priceMax))
     if (dateFrom) q = q.gte('rate_date', dateFrom)
     if (dateTo) q = q.lte('rate_date', `${dateTo}T23:59:59`)
     return q
-  }, [debouncedSearch, objectIds, tenderIds, objects.length, tenders.length,
-      priceMin, priceMax, dateFrom, dateTo])
+  }, [debouncedSearch, objectIds, tenderIds, priceMin, priceMax, dateFrom, dateTo])
 
   // Общее число строк считаем отдельным эффектом и только при смене фильтров:
   // от номера страницы count не зависит, а по вью он дорогой — раньше полный
@@ -372,7 +386,7 @@ function SupplyRegistrySection() {
         </div>
       ) : loading && rows.length === 0 ? (
         <div className="rr-empty">Загрузка…</div>
-      ) : totalCount === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="rr-empty">
           {hasActiveFilters
             ? 'По заданным фильтрам ничего не найдено.'
@@ -479,6 +493,11 @@ function RatesRegistryPage() {
   // оценку общего числа по длине последней полученной страницы.
   const [countsFailed, setCountsFailed] = useState(false)
   const [lastPageSize, setLastPageSize] = useState(0)
+  // Свежесть реестра: он материализован и обновляется по расписанию/кнопке.
+  const [refreshedAt, setRefreshedAt] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
+  // Инкремент заставляет эффект страницы перечитать данные после обновления.
+  const [reloadToken, setReloadToken] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [exporting, setExporting] = useState(false)
@@ -489,23 +508,47 @@ function RatesRegistryPage() {
   const [counterparties, setCounterparties] = useState([])
   const [tenders, setTenders] = useState([])
 
+  // Размеры справочников нужны applyFilters только чтобы не слать .in() со всеми
+  // id разом. Держим их в ref, а не в зависимостях: справочники приезжают позже
+  // данных, и от их появления applyFilters пересоздавался — эффекты страницы и
+  // счётчиков перезапускались, и всё грузилось ВТОРОЙ раз при каждом открытии.
+  const optionCounts = useRef({ objects: 0, counterparties: 0, tenders: 0 })
+  useEffect(() => { optionCounts.current.objects = objects.length }, [objects.length])
+  useEffect(() => { optionCounts.current.counterparties = counterparties.length }, [counterparties.length])
+  useEffect(() => { optionCounts.current.tenders = tenders.length }, [tenders.length])
+
   // Применяет фильтры к произвольному query-builder (для страницы и для счётчиков).
   const applyFilters = useCallback((q) => {
     const s = debouncedSearch.trim()
     if (s) q = q.ilike('item_name', `%${s}%`)
-    q = applyInFilter(q, 'object_id', objectIds, objects.length)
-    q = applyInFilter(q, 'counterparty_id', counterpartyIds, counterparties.length)
-    q = applyInFilter(q, 'tender_id', tenderIds, tenders.length)
+    q = applyInFilter(q, 'object_id', objectIds, optionCounts.current.objects)
+    q = applyInFilter(q, 'counterparty_id', counterpartyIds, optionCounts.current.counterparties)
+    q = applyInFilter(q, 'tender_id', tenderIds, optionCounts.current.tenders)
     if (priceMin !== '' && !isNaN(Number(priceMin))) q = q.gte('price', Number(priceMin))
     if (priceMax !== '' && !isNaN(Number(priceMax))) q = q.lte('price', Number(priceMax))
     if (dateFrom) q = q.gte('proposal_date', dateFrom)
     if (dateTo) q = q.lte('proposal_date', dateTo)
     return q
-  }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, objects.length,
-      counterparties.length, tenders.length, priceMin, priceMax, dateFrom, dateTo])
+  }, [debouncedSearch, objectIds, counterpartyIds, tenderIds, priceMin, priceMax, dateFrom, dateTo])
 
-  // Справочники фильтров — один раз (лёгкие запросы к distinct-вью реестра).
+  // Когда реестр пересчитывался в последний раз (отметку пишет
+  // refresh_rates_registry в app_settings). Запрос лёгкий и не мешает данным.
   useEffect(() => {
+    let cancelled = false
+    supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'rates_registry_refreshed_at')
+      .maybeSingle()
+      .then(({ data }) => { if (!cancelled && data?.value) setRefreshedAt(data.value) })
+      .catch(() => { /* отметки может не быть до применения миграции */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // Справочники фильтров — один раз и только на вкладке КП: на «ДП и ДС» они не
+  // нужны, а запросы уходили всё равно.
+  useEffect(() => {
+    if (topTab !== 'kp') return
     let cancelled = false
     const loadRefs = async () => {
       try {
@@ -530,7 +573,7 @@ function RatesRegistryPage() {
     }
     loadRefs()
     return () => { cancelled = true }
-  }, [])
+  }, [topTab])
 
   // Любое изменение фильтров/сортировки/вкладки/размера страницы → на первую страницу.
   useEffect(() => {
@@ -580,7 +623,7 @@ function RatesRegistryPage() {
     }
     run()
     return () => { cancelled = true }
-  }, [topTab, kindTab, page, pageSize, sortBy, sortDir, applyFilters])
+  }, [topTab, kindTab, page, pageSize, sortBy, sortDir, applyFilters, reloadToken])
 
   // Счётчики обеих подвкладок с учётом фильтров. Раньше на каждую загрузку
   // страницы приходилось ТРИ полных подсчёта по дедуп-вью (материалы, работы и
@@ -607,7 +650,7 @@ function RatesRegistryPage() {
     }
     run()
     return () => { cancelled = true }
-  }, [topTab, applyFilters])
+  }, [topTab, applyFilters, reloadToken])
 
   // Итог для пагинации: точный счётчик активной подвкладки, а если подсчёт не
   // прошёл — оценка, при которой «Вперёд» работает до реального конца данных.
@@ -678,6 +721,26 @@ function RatesRegistryPage() {
   }
   const sortIndicator = (col) => (sortBy === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '')
 
+  // Пересчёт реестра по требованию. Функция в БД делает REFRESH CONCURRENTLY,
+  // поэтому страница у остальных пользователей в это время продолжает работать.
+  const handleRefreshRegistry = async () => {
+    setRefreshing(true)
+    try {
+      const { data, error } = await supabase.rpc('refresh_rates_registry')
+      if (error) throw error
+      setRefreshedAt(data || new Date().toISOString())
+      // Перечитываем текущую страницу: заставляем эффект отработать заново.
+      setReloadToken(t => t + 1)
+    } catch (err) {
+      console.error('Ошибка обновления реестра:', err.message)
+      alert(String(err.message || '').includes('does not exist')
+        ? 'Обновление недоступно: не применена миграция 20260902 (материализация реестра).'
+        : 'Не удалось обновить реестр: ' + err.message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
   const fromRow = totalCount === 0 ? 0 : page * pageSize + 1
   const toRow = Math.min(totalCount, (page + 1) * pageSize)
@@ -686,6 +749,21 @@ function RatesRegistryPage() {
     <div className="rates-registry">
       <div className="rr-header">
         <h2 className="rr-title">Реестр расценок</h2>
+        {/* Реестр считается заранее (материализованные представления, миграция
+            20260902) и обновляется по расписанию. Кнопка — чтобы не ждать
+            расписания после загрузки новых КП. */}
+        <div className="rr-refresh">
+          <span className="rr-refresh-stamp">
+            {refreshedAt ? `Данные на ${fmtRefreshed(refreshedAt)}` : 'Обновляется по расписанию'}
+          </span>
+          <button
+            type="button"
+            className="rr-refresh-btn"
+            onClick={handleRefreshRegistry}
+            disabled={refreshing}
+            title="Пересчитать реестр по текущим данным тендеров"
+          >{refreshing ? 'Обновление…' : '↻ Обновить'}</button>
+        </div>
         <div className="rr-counter" title="Найдено строк в выбранной вкладке (с учётом фильтров)">
           {totalCount}
         </div>
@@ -835,7 +913,9 @@ function RatesRegistryPage() {
             </div>
           ) : loading && rows.length === 0 ? (
             <div className="rr-empty">Загрузка…</div>
-          ) : totalCount === 0 ? (
+          ) : rows.length === 0 ? (
+            /* Судим по самим строкам, а не по счётчику: он может не успеть
+               посчитаться или оказаться приблизительным. */
             <div className="rr-empty">
               {hasActiveFilters
                 ? 'По заданным фильтрам ничего не найдено.'

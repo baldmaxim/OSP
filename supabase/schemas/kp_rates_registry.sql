@@ -32,6 +32,23 @@
 --   tender_estimate_items USING gin (cost_name gin_trgm_ops), tender_estimate_items(unit)
 --   tenders(object_id)
 --
--- Примечание по масштабу: представление считает DISTINCT ON на каждый запрос. Для
--- текущих объёмов (тысячи строк) это мгновенно; для миллионов потребуется материализация
--- (отдельная таблица-реестр, наполняемая при импорте КП) — отдельная задача.
+-- МАТЕРИАЛИЗОВАНО (миграция 20260902_rates_registry_materialized.sql).
+-- Предупреждение из этого файла сбылось: DISTINCT ON по kp_norm_name()/kp_norm_unit()
+-- считался на КАЖДЫЙ запрос, а одно открытие страницы давало шесть таких прогонов
+-- (данные + два count + три справочника фильтров, которые читают это же вью).
+--
+-- Теперь:
+--   kp_rates_registry_mv — MATERIALIZED VIEW с тем же самым SELECT;
+--   kp_rates_registry    — тонкое вью `select * from kp_rates_registry_mv`,
+--                          поэтому весь код работает с прежним именем;
+--   индексы на MV: UNIQUE(id) (нужен для REFRESH CONCURRENTLY), (item_type, item_name, id),
+--     (object_id), (counterparty_id), (tender_id), (price), (proposal_date),
+--     GIN (item_name gin_trgm_ops) — под поиск ilike;
+--   справочники фильтров переведены на чтение из MV.
+--
+-- Обновление: refresh_rates_registry() — REFRESH CONCURRENTLY обоих MV + отметка
+-- времени в app_settings('rates_registry_refreshed_at'). Расписание pg_cron каждые
+-- 10 минут плюс кнопка «Обновить» на странице.
+--
+-- ВАЖНО: у MV нет RLS и не работает security_invoker. Грант — только authenticated,
+-- anon отозван явно (иначе материализация вернула бы анонимам доступ к ценам).

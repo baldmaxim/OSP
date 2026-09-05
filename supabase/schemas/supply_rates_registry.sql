@@ -33,3 +33,10 @@
 --   по которым есть расценки снабжения (distinct из supply_rates_registry). Для фильтра
 --   «Объект» вкладки СУ-10; самораширяется по мере загрузки расценок.
 --   Миграция: supabase/migrations/20260613_add_supply_rates_filter_objects.sql.
+--
+-- МАТЕРИАЛИЗОВАНО (миграция 20260902_rates_registry_materialized.sql), как и реестр КП:
+--   supply_rates_registry_mv — MATERIALIZED VIEW с тем же SELECT;
+--   supply_rates_registry    — тонкое вью поверх него (имя для кода не изменилось);
+--   справочники фильтров читают из MV.
+-- Обновляется вместе с реестром КП функцией refresh_rates_registry().
+-- Грант — только authenticated; anon отозван (у MV нет RLS).

@@ -13,7 +13,39 @@
   align-items: center;
   gap: 0.875rem;
   margin-bottom: 1rem;
+  flex-wrap: wrap;
 }
+
+/* Свежесть реестра: он считается заранее (миграция 20260902), поэтому надо
+   видеть, на какой момент данные, и уметь пересчитать не дожидаясь расписания. */
+.rr-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.rr-refresh-stamp {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.rr-refresh-btn {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.rr-refresh-btn:hover:not(:disabled) {
+  color: var(--primary-color, #2563eb);
+  border-color: var(--primary-color, #2563eb);
+}
+.rr-refresh-btn:disabled { opacity: 0.6; cursor: default; }
 .rr-title {
   margin: 0;
   font-size: 1.25rem;
