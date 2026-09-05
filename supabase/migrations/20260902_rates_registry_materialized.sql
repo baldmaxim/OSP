@@ -30,6 +30,10 @@
 -- кнопка «Обновить» на странице. Первый REFRESH на большой базе идёт долго — это
 -- тот же полный прогон, но один раз, а не на каждое открытие.
 --
+-- ПРИМЕНЯЕТСЯ В ДВА ШАГА. Этот файл создаёт схему (быстро, секунды), а наполнение
+-- вынесено в конец файла отдельным блоком «ШАГ 2»: только оно тяжёлое, и только
+-- оно может оборваться по таймауту веб-редактора.
+--
 -- Миграция идемпотентна.
 
 -- Явный search_path на всю миграцию. Без него в SQL-редакторе Supabase
@@ -97,6 +101,10 @@ drop view if exists kp_rates_registry_filter_tenders cascade;
 drop view if exists kp_rates_registry cascade;
 
 drop materialized view if exists kp_rates_registry_mv cascade;
+-- WITH NO DATA: создаём пустым и наполняем ОДНИМ REFRESH в конце файла.
+-- Обычный CREATE MATERIALIZED VIEW сразу выполняет запрос, и вместе с REFRESH
+-- в конце полный прогон дедупа шёл бы дважды — на большой базе это и валило
+-- SQL-редактор по таймауту («Failed to fetch»).
 create materialized view kp_rates_registry_mv as
 with entries as (
   select
@@ -135,7 +143,8 @@ select distinct on (tender_id, counterparty_id, item_type, public.kp_norm_name(i
 from entries
 order by tender_id, counterparty_id, item_type,
          public.kp_norm_name(item_name), public.kp_norm_unit(unit),
-         proposal_date desc nulls last;
+         proposal_date desc nulls last
+with no data;
 
 -- UNIQUE обязателен для REFRESH ... CONCURRENTLY: без него обновление берёт
 -- блокировку и страница на это время встаёт. id — md5 от ключа дедупликации,
@@ -187,6 +196,7 @@ drop view if exists supply_rates_registry_filter_tenders cascade;
 drop view if exists supply_rates_registry cascade;
 
 drop materialized view if exists supply_rates_registry_mv cascade;
+-- Так же WITH NO DATA: наполняется одним REFRESH в конце.
 create materialized view supply_rates_registry_mv as
 select distinct on (sr.tender_id, public.kp_norm_name(sr.material_name), public.kp_norm_unit(sr.unit))
   md5(sr.tender_id::text || '|' || public.kp_norm_name(sr.material_name) || '|' || public.kp_norm_unit(sr.unit)) as id,
@@ -205,7 +215,8 @@ join tenders t on t.id = sr.tender_id
 left join objects o on o.id = t.object_id
 where public.kp_norm_name(sr.material_name) <> ''
 order by sr.tender_id, public.kp_norm_name(sr.material_name), public.kp_norm_unit(sr.unit),
-         coalesce(sr.updated_at, sr.created_at) desc nulls last;
+         coalesce(sr.updated_at, sr.created_at) desc nulls last
+with no data;
 
 create unique index if not exists idx_supply_rates_mv_id on supply_rates_registry_mv (id);
 create index if not exists idx_supply_rates_mv_name on supply_rates_registry_mv (item_name, id);
@@ -316,17 +327,32 @@ exception when others then
 end;
 $$;
 
--- Первое наполнение. Без CONCURRENTLY: сразу после создания представление ещё
--- не заполнено, и параллельный вариант на пустом MV работать не может.
-refresh materialized view kp_rates_registry_mv;
-refresh materialized view supply_rates_registry_mv;
-
-insert into app_settings (key, value, updated_at)
-values ('rates_registry_refreshed_at', now()::text, now())
-on conflict (key) do update
-  set value = excluded.value, updated_at = excluded.updated_at;
-
 comment on materialized view kp_rates_registry_mv is
   'Реестр расценок из КП подрядчиков (дедуп по DISTINCT ON). Обновляется refresh_rates_registry()';
 comment on materialized view supply_rates_registry_mv is
   'Реестр расценок снабжения СУ-10. Обновляется refresh_rates_registry()';
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- ШАГ 2 — ВЫПОЛНИТЬ ОТДЕЛЬНЫМ ЗАПРОСОМ
+-- ═════════════════════════════════════════════════════════════════════════════
+-- Всё выше отрабатывает за секунды: представления созданы ПУСТЫМИ (with no data).
+-- Наполнение — единственная тяжёлая операция, это тот самый полный прогон дедупа
+-- по всей базе. В веб-редакторе Supabase он может не уложиться в лимит времени
+-- HTTP-запроса и оборваться как «Failed to fetch» — поэтому он вынесен отдельно
+-- и его можно повторять сколько угодно, не трогая остальную схему.
+--
+-- До выполнения этого шага реестр на странице будет ПУСТЫМ — это ожидаемо.
+--
+-- Выполнить (можно по одному запросу за раз):
+--
+--   refresh materialized view public.kp_rates_registry_mv;
+--   refresh materialized view public.supply_rates_registry_mv;
+--   insert into public.app_settings (key, value, updated_at)
+--   values ('rates_registry_refreshed_at', now()::text, now())
+--   on conflict (key) do update
+--     set value = excluded.value, updated_at = excluded.updated_at;
+--
+-- Если и так обрывается по таймауту — тот же REFRESH запускается кнопкой
+-- «Обновить» на странице реестра: она вызывает refresh_rates_registry() через
+-- postgrest, где лимит времени свой (statement_timeout роли authenticated, 30 c
+-- по миграции 20260805).
