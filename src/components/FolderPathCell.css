@@ -1,0 +1,103 @@
+/* Путь к папке в файловом хранилище (FolderPathCell).
+   Пунктирная рамка отделяет его от ссылок и данных самой строки: это не ссылка,
+   по которой можно перейти, а текст для копирования. */
+.fpath {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.06);
+}
+.fpath > svg { flex-shrink: 0; margin-top: 1px; color: var(--text-tertiary); }
+
+/* Моноширинный: в пути значим каждый символ, слэши и цифры в пропорциональном
+   шрифте читаются хуже. Рвём по любому месту — путь длинный и без пробелов. */
+.fpath-text {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.fpath-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.fpath-icon:hover {
+  color: var(--primary-color, #2563eb);
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+
+/* Правка на месте */
+.fpath-edit { align-items: center; flex-wrap: wrap; }
+.fpath-input {
+  flex: 1 1 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 0.4rem;
+  border: 1px solid var(--primary-color, #2563eb);
+  border-radius: 5px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.6875rem;
+}
+.fpath-input:focus { outline: none; }
+.fpath-btn {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--primary-color, #2563eb);
+  border-radius: 5px;
+  background: var(--primary-color, #2563eb);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fpath-btn.is-cancel {
+  background: none;
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+.fpath-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Пустое состояние: путь ещё не указан */
+.fpath-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.fpath-add:hover {
+  color: var(--primary-color, #2563eb);
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 45%, transparent);
+}
+
+@media (max-width: 640px) {
+  .fpath-input { height: 40px; font-size: 16px; }
+}

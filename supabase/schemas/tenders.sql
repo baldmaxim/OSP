@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS tenders (
   completion_letter_sent BOOLEAN NOT NULL DEFAULT false,
   completion_letter_sent_at TIMESTAMPTZ,
   completion_letter_sent_by TEXT,
+  -- Путь к папке с документами в файловом хранилище (миграция 20260903).
+  folder_path TEXT,
   cost_plan_link TEXT,
   cost_plan_responsible_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
   cost_plan_status TEXT NOT NULL DEFAULT 'not_started',

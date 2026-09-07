@@ -5,6 +5,7 @@ import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
 import TgPublishToggle from '../components/TgPublishToggle'
 import CompletionLetterToggle from '../components/CompletionLetterToggle'
+import FolderPathCell from '../components/FolderPathCell'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
@@ -760,6 +761,31 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     } catch (err) {
       console.error('Ошибка сохранения срока КП на материалы:', err.message)
       alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // Путь к папке с документами тендера в файловом хранилище (миграция 20260903).
+  // Правится прямо в строке: открывать форму тендера ради одной строки неудобно.
+  const handleSaveFolderPath = async (tenderId, value) => {
+    const next = value.trim() || null
+    const prev = tenders.find(t => t.id === tenderId)?.folder_path ?? null
+    if ((prev || null) === next) return
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ folder_path: next })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prevList => prevList.map(t => (t.id === tenderId ? { ...t, folder_path: next } : t)))
+      logTenderEvent(tenderId, 'field_updated', {
+        fieldName: 'folder_path',
+        oldValue: prev,
+        newValue: next,
+        description: 'Изменено: Путь к папке',
+      })
+    } catch (err) {
+      console.error('Ошибка сохранения пути к папке:', err.message)
+      alert('Не удалось сохранить путь: ' + err.message)
     }
   }
 
@@ -2313,6 +2339,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 <div>
                   <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} />
                 </div>
+                <FolderPathCell
+                  value={tender.folder_path}
+                  canEdit={canEditTenders}
+                  onSave={(v) => handleSaveFolderPath(tender.id, v)}
+                />
                 <div className="mcard-rows">
                   <div className="mcard-row">
                     <span className="mcard-label">Ответственный</span>
@@ -2702,6 +2733,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           onToggle={handleToggleCompletionLetter}
                         />
                       </div>
+                      {/* Путь к папке с документами в хранилище. Открыть проводник
+                          кликом браузер не даёт, поэтому путь копируется. */}
+                      <FolderPathCell
+                        value={tender.folder_path}
+                        canEdit={canEditTenders}
+                        onSave={(v) => handleSaveFolderPath(tender.id, v)}
+                      />
                     </td>
                     {!isCompletedTab && (
                       <td>

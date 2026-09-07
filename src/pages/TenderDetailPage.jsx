@@ -1771,7 +1771,8 @@ function TenderDetailPage() {
     notes: 'Примечание',
     participant_notes: 'Примечание участника',
     completion_letter_sent: 'Письмо о завершении',
-    materials_proposal_link: 'Ссылка на КП по материалам'
+    materials_proposal_link: 'Ссылка на КП по материалам',
+    folder_path: 'Путь к папке'
   }
 
   const formatHistoryValue = (val) => {
