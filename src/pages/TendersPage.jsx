@@ -20,6 +20,8 @@ import {
   IconJoint, IconOther, IconFolderTree,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName } from '../utils/tenderDepartments'
+import { mondayOf, weekKey } from '../utils/weeks'
+import TenderCallReminder from '../components/TenderCallReminder'
 import { copyToClipboard } from '../utils/clipboard'
 import { reorderSiblings } from '../utils/appendixTree'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
@@ -41,20 +43,6 @@ const TENDER_RESPONSIBLES = [
 const ROTATION_ANCHOR_MONDAY = '2026-07-06'
 const RESPONSIBLE_OVERRIDE_KEY = 'tender_responsible_override'
 
-// Понедельник недели для даты (локальное время, 00:00).
-function mondayOf(dateInput) {
-  const d = new Date(dateInput)
-  d.setHours(0, 0, 0, 0)
-  const dow = (d.getDay() + 6) % 7 // 0=Пн … 6=Вс
-  d.setDate(d.getDate() - dow)
-  return d
-}
-// Ключ недели 'YYYY-MM-DD' (понедельник).
-function weekKey(dateInput) {
-  const m = mondayOf(dateInput)
-  const p = (x) => String(x).padStart(2, '0')
-  return `${m.getFullYear()}-${p(m.getMonth() + 1)}-${p(m.getDate())}`
-}
 // Ответственный по расписанию (без учёта ручной замены).
 function baseResponsible(dateInput) {
   const anchor = mondayOf(ROTATION_ANCHOR_MONDAY)
@@ -4506,6 +4494,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           </div>
         )
       })()}
+
+      {/* Вторничное напоминание об обзвоне объектов по тендерам, которые ждут
+          результата. Только на списках основных тендеров: у тендеров на
+          материалы своя шкала статусов, «Подведения итогов» там нет. */}
+      <TenderCallReminder
+        tenders={tenders}
+        department={department}
+        enabled={!isMaterialsView && canEditTenders}
+      />
 
       {/* Справочник: как раскладывать документы по папкам в хранилище */}
       {showStorageStructure && (
