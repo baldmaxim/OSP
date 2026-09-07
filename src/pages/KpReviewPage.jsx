@@ -6,6 +6,7 @@ import KpReviewBadge from '../components/KpReviewBadge'
 import KpReviewModal from '../components/KpReviewModal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import VirtualTableBody from '../components/VirtualTableBody'
+import FolderPathCell from '../components/FolderPathCell'
 import './KpReviewPage.css'
 
 // Порог включения виртуализации <tbody>: ниже него распорки и замеры высот
@@ -454,6 +455,10 @@ function KpReviewPage() {
                     {/* Отдел — второй строкой под наименованием: отдельная колонка
                         ради двух букв только сузила бы остальные. */}
                     <div className="kprv-tender-sub"><TenderDeptBadge tender={r.tenders} /></div>
+                    {/* Путь к папке с документами тендера — то же поле, что в
+                        реестре тендеров и планах затрат. Здесь только показ и
+                        копирование: правят его там, где ведут сам тендер. */}
+                    <FolderPathCell value={r.tenders?.folder_path} />
                   </td>
                   <td className="kprv-col-cp">{r.counterparties?.name || '—'}</td>
                   <td className="kprv-col-file">

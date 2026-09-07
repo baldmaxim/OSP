@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
+import FolderPathCell from '../components/FolderPathCell'
 import './CostPlansPage.css'
 
 const STATUS_LABELS = {
@@ -17,7 +18,9 @@ const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required
 const DONE_STATUSES = ['completed', 'not_required']
 
 function CostPlansPage() {
-  const { scopedObjectIds, userProfile } = useRole()
+  const { scopedObjectIds, userProfile, canEdit } = useRole()
+  // Путь к папке — поле самого тендера, поэтому и право на правку от тендеров.
+  const canEditTenders = canEdit('tenders')
 
   // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
   const logTenderEvent = async (tenderId, eventType, payload = {}) => {
@@ -40,6 +43,28 @@ function CostPlansPage() {
   }
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
+
+  // Путь к папке с документами тендера (tenders.folder_path, миграция 20260903).
+  // Общее поле с реестром тендеров: правка отсюда видна и там.
+  const handleSaveFolderPath = async (tenderId, value) => {
+    const next = value.trim() || null
+    const prev = tenders.find(t => t.id === tenderId)?.folder_path ?? null
+    if ((prev || null) === next) return
+    try {
+      const { error } = await supabase.from('tenders').update({ folder_path: next }).eq('id', tenderId)
+      if (error) throw error
+      setTenders(list => list.map(t => (t.id === tenderId ? { ...t, folder_path: next } : t)))
+      logTenderEvent(tenderId, 'field_updated', {
+        fieldName: 'folder_path',
+        oldValue: prev,
+        newValue: next,
+        description: 'Изменено: Путь к папке',
+      })
+    } catch (err) {
+      console.error('Ошибка сохранения пути к папке:', err.message)
+      alert('Не удалось сохранить путь: ' + err.message)
+    }
+  }
   const [activeTab, setActiveTab] = useState('all') // 'all' | 'not_started' | 'in_work' | 'completed'
   // task 234: статус-вкладки скрыты под кнопкой «Статусы планов затрат»
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
@@ -76,7 +101,7 @@ function CostPlansPage() {
           id, object_id, public_tender_number, status, tender_type, department, cost_plan_status, cost_plan_link,
           cost_plan_responsible_id, cost_plan_start_date, cost_plan_end_date,
           start_date, end_date, tender_start_date, tender_end_date,
-          work_description, cost_plan_notes, deleted_at,
+          work_description, cost_plan_notes, folder_path, deleted_at,
           objects(name, status),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name, position)
         `)
@@ -494,6 +519,13 @@ function CostPlansPage() {
                     >
                       {t.work_description || '—'}
                     </Link>
+                    {/* Путь к папке с документами тендера — то же поле, что в
+                        реестре тендеров: правка здесь видна и там. */}
+                    <FolderPathCell
+                      value={t.folder_path}
+                      canEdit={canEditTenders}
+                      onSave={(v) => handleSaveFolderPath(t.id, v)}
+                    />
                   </td>
                   <td>
                     {editingResponsibleId === t.id ? (
