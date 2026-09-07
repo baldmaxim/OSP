@@ -6,7 +6,7 @@ import StatusDropdown from '../components/StatusDropdown'
 import TgPublishToggle from '../components/TgPublishToggle'
 import CompletionLetterToggle from '../components/CompletionLetterToggle'
 import FolderPathCell from '../components/FolderPathCell'
-import RootFolderPathBar from '../components/RootFolderPathBar'
+import RootFolderPathButton from '../components/RootFolderPathButton'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
@@ -2086,6 +2086,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           {pageTitle}
         </h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {/* Путь к общей папке всего раздела тендеров — один на все направления
+              (app_settings). Путь к папке конкретного тендера — в его строке. */}
+          <RootFolderPathButton
+            settingKey="tenders_root_folder_path"
+            title="Общая папка тендеров"
+            canEdit={canEditTenders}
+            placeholder="\\192.168.2.55\SharA_Tender\ТЕНДЕРЫ"
+          />
           {!isMaterialsView && department === 'construction' && !isScopedManager && (
             <div className="tender-resp-chip-wrap">
               <button
@@ -2163,15 +2171,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           )}
         </div>
       </div>
-
-      {/* Путь к общей папке всего раздела тендеров — одна на все направления,
-          хранится в app_settings. Путь к папке конкретного тендера — в его строке. */}
-      <RootFolderPathBar
-        settingKey="tenders_root_folder_path"
-        label="Общая папка"
-        canEdit={canEditTenders}
-        placeholder="\\su10-fs\Тендеры"
-      />
 
       {/* task 212: Вкладки — «Все тендеры» + по каждому статусу + Шаблон + Удалённые */}
       <div className={`tender-tabs${isMaterialsView ? ' tender-tabs--simple' : ''}`}>

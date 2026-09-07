@@ -103,29 +103,6 @@
   border-color: color-mix(in srgb, var(--primary-color, #2563eb) 45%, transparent);
 }
 
-/* Вариант «баннер»: путь ко всей папке раздела в шапке страницы. Он один на
-   раздел и читается издалека, поэтому крупнее строкового и без верхнего отступа
-   (отступы задаёт полоса-контейнер). */
-.fpath--banner {
-  margin-top: 0;
-  flex: 1;
-  min-width: 0;
-  padding: 0.3rem 0.5rem;
-  align-items: center;
-}
-.fpath--banner .fpath-text {
-  font-size: 0.8125rem;
-  color: var(--text-primary);
-  word-break: break-word;
-}
-.fpath--banner > svg { margin-top: 0; }
-.fpath-add.fpath--banner {
-  flex: 0 0 auto;
-  padding: 0.3rem 0.6rem;
-  font-size: 0.75rem;
-}
-
 @media (max-width: 640px) {
   .fpath-input { height: 40px; font-size: 16px; }
-  .fpath--banner .fpath-text { font-size: 0.75rem; word-break: break-all; }
 }

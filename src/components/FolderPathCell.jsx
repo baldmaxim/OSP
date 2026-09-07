@@ -14,8 +14,8 @@ import './FolderPathCell.css'
 //
 // onSave(nextValue) должен вернуть промис; пустая строка означает «очистить».
 //
-// variant: 'row' — путь внутри строки реестра (мелкий, под наименованием);
-//          'banner' — путь ко всему разделу в шапке страницы (крупнее).
+// Это путь у КОНКРЕТНОЙ записи реестра. Путь к общей папке всего раздела —
+// отдельный компонент RootFolderPathButton (иконка в шапке страницы).
 
 const IconFolder = ({ size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -50,9 +50,7 @@ export default function FolderPathCell({
   onSave,
   addLabel = 'Указать путь к папке',
   placeholder = '\\\\su10-fs\\Тендеры\\ЖК Алия\\Фасады',
-  variant = 'row',
 }) {
-  const mod = variant === 'banner' ? ' fpath--banner' : ''
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -83,7 +81,7 @@ export default function FolderPathCell({
 
   if (editing) {
     return (
-      <div className={`fpath fpath-edit${mod}`}>
+      <div className="fpath fpath-edit">
         <IconFolder />
         <input
           type="text"
@@ -114,14 +112,14 @@ export default function FolderPathCell({
     return (
       <button
         type="button"
-        className={`fpath-add${mod}`}
+        className="fpath-add"
         onClick={(e) => { e.stopPropagation(); startEdit() }}
       ><IconFolder /> {addLabel}</button>
     )
   }
 
   return (
-    <div className={`fpath${mod}`} title={value}>
+    <div className="fpath" title={value}>
       <IconFolder />
       <span className="fpath-text">{value}</span>
       <button

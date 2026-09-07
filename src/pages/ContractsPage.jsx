@@ -8,7 +8,8 @@ import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
 import FolderPathCell from '../components/FolderPathCell'
-import RootFolderPathBar from '../components/RootFolderPathBar'
+import RootFolderPathButton from '../components/RootFolderPathButton'
+import { IconDocsStack } from '../components/icons/ToolbarIcons'
 import LarixEntryBlock from '../components/LarixEntryBlock'
 // Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
@@ -1564,13 +1565,21 @@ function ContractRegistry() {
           <h2>Договоры и ДС</h2>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* Путь к общей папке всего раздела (app_settings). Путь к папке
+              конкретного договора — в его строке реестра. */}
+          <RootFolderPathButton
+            settingKey="contracts_root_folder_path"
+            title="Общая папка договоров"
+            canEdit={canEditContracts}
+            placeholder="\\192.168.2.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
+          />
           <button
             onClick={handleOpenAttachmentsModal}
             className="btn-secondary"
-            style={{ padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
             title="Стандартные приложения для каждого объекта"
           >
-            📎 Приложения объектов
+            <IconDocsStack size={15} /> Приложения объектов
           </button>
           {!isDeletedTab && canEditContracts && (
             <button
@@ -1589,15 +1598,6 @@ function ContractRegistry() {
           )}
         </div>
       </div>
-
-      {/* Путь к общей папке всего раздела — одна на реестр, хранится в
-          app_settings. Путь к папке конкретного договора — в его строке. */}
-      <RootFolderPathBar
-        settingKey="contracts_root_folder_path"
-        label="Общая папка"
-        canEdit={canEditContracts}
-        placeholder="\\su10-fs\Договоры"
-      />
 
       {/* Охват реестра. Стоит НАД статусными вкладками: сначала выбираем, какой
           реестр смотрим, и только потом — стадию внутри него. */}
