@@ -4,7 +4,9 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import FolderPathCell from '../components/FolderPathCell'
 import IconTile from '../components/IconTile'
-import { IconCoins } from '../components/icons/ToolbarIcons'
+import FilterDropdown from '../components/FilterDropdown'
+import RootFolderPathButton from '../components/RootFolderPathButton'
+import { IconCoins, IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
 import CostPlanInstructionModal from '../components/CostPlanInstructionModal'
 import './CostPlansPage.css'
 
@@ -73,11 +75,12 @@ function CostPlansPage() {
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   // Инструкция по расчёту плана затрат (иконка «?» в шапке раздела).
   const [showInstruction, setShowInstruction] = useState(false)
-  const [responsibleFilter, setResponsibleFilter] = useState('')
+  // Фильтры множественные: и объектов, и ответственных обычно смотрят пачкой.
+  const [responsibleFilters, setResponsibleFilters] = useState([])
   const [searchQuery, setSearchQuery] = useState('') // task 209
   // task 211: модалка редактирования ссылки на план затрат
   const [linkModal, setLinkModal] = useState(null) // { tenderId, value }
-  const [objectFilter, setObjectFilter] = useState('') // task 178: фильтр по объектам
+  const [objectFilterIds, setObjectFilterIds] = useState([]) // task 178: фильтр по объектам
   const [allContacts, setAllContacts] = useState([])
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
   // task 179: сортировка по срокам тендерных процедур
@@ -303,8 +306,10 @@ function CostPlansPage() {
 
   // Фильтрация по ответственному, объекту и поиску
   let filtered = tenders
-  if (responsibleFilter) filtered = filtered.filter(t => (t.cost_plan_responsible?.full_name || '') === responsibleFilter)
-  if (objectFilter) filtered = filtered.filter(t => t.object_id === objectFilter)
+  if (responsibleFilters.length > 0) {
+    filtered = filtered.filter(t => responsibleFilters.includes(t.cost_plan_responsible?.full_name || ''))
+  }
+  if (objectFilterIds.length > 0) filtered = filtered.filter(t => objectFilterIds.includes(t.object_id))
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase()
     filtered = filtered.filter(t =>
@@ -333,6 +338,7 @@ function CostPlansPage() {
   // task 267: удалённые тендеры — в отдельной вкладке «Удалённые»
   const deletedRows = filtered.filter(t => t.deleted_at)
   const liveRows = filtered.filter(t => !t.deleted_at)
+  const hasActiveFilters = responsibleFilters.length > 0 || objectFilterIds.length > 0 || searchQuery.trim() !== ''
 
   // Разделение по табам (task 210: «Не начат» / «В работе» / «Завершено»)
   // task 208: «Не требуется» относится к «Завершено»
@@ -360,8 +366,17 @@ function CostPlansPage() {
             aria-label="Инструкция по расчёту плана затрат"
           >?</button>
         </h2>
-        <div className="page-header-hint">
-          Список тендеров основного строительства. Ответственного за план затрат можно назначить в карточке тендера.
+        <div className="cp-header-right">
+          {/* Общая папка раздела в сетевом хранилище — одна на все планы затрат. */}
+          <RootFolderPathButton
+            settingKey="cost_plans_root_folder_path"
+            title="Общая папка планов затрат"
+            canEdit={canEditTenders}
+            placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\Планы затрат"
+          />
+          <div className="page-header-hint">
+            Список тендеров основного строительства. Ответственного за план затрат можно назначить в карточке тендера.
+          </div>
         </div>
       </div>
 
@@ -420,49 +435,54 @@ function CostPlansPage() {
         </button>
       </div>
 
+      {/* Фильтры — те же портальные выпадашки, что в реестрах тендеров и
+          договоров: с поиском внутри и множественным выбором. Нативные <select>
+          на 300+ объектов листались тяжело и выглядели чужеродно. */}
       <div className="cost-plans-toolbar">
-        <input
-          type="search"
-          className="cost-plans-search"
-          placeholder="🔍 Поиск по № тендера, объекту, описанию, ответственному…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+        <div className="cp-search-wrap">
+          <IconSearch />
+          <input
+            type="search"
+            className="cost-plans-search"
+            placeholder="Поиск по № тендера, объекту, описанию, ответственному…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <FilterDropdown
+          label="" multiple searchable
+          searchPlaceholder="Поиск объекта…"
+          allLabel="Все объекты"
+          icon={<IconObject size={15} />}
+          value={objectFilterIds}
+          onChange={setObjectFilterIds}
+          options={objectsList.map(o => ({
+            value: o.id,
+            label: `${o.name} (${tenders.filter(t => t.object_id === o.id).length})`,
+          }))}
         />
-        <label className="toolbar-label">
-          Объект:
-          <select
-            value={objectFilter}
-            onChange={(e) => setObjectFilter(e.target.value)}
-          >
-            <option value="">Все ({tenders.length})</option>
-            {objectsList.map(o => {
-              const cnt = tenders.filter(t => t.object_id === o.id).length
-              return (
-                <option key={o.id} value={o.id}>{o.name} ({cnt})</option>
-              )
-            })}
-          </select>
-        </label>
-        <label className="toolbar-label">
-          Ответственный:
-          <select
-            value={responsibleFilter}
-            onChange={(e) => setResponsibleFilter(e.target.value)}
-          >
-            <option value="">Все ({tenders.length})</option>
-            {responsibles.map(name => {
-              const cnt = tenders.filter(t => (t.cost_plan_responsible?.full_name || '') === name).length
-              return (
-                <option key={name} value={name}>
-                  {name} ({cnt})
-                </option>
-              )
-            })}
-          </select>
-        </label>
-        {(responsibleFilter || objectFilter || searchQuery) && (
-          <button className="reset-btn" onClick={() => { setResponsibleFilter(''); setObjectFilter(''); setSearchQuery('') }}>Сбросить</button>
-        )}
+        <FilterDropdown
+          label="" multiple searchable
+          searchPlaceholder="Поиск ответственного…"
+          allLabel="Все ответственные"
+          icon={<IconUser size={15} />}
+          value={responsibleFilters}
+          onChange={setResponsibleFilters}
+          options={responsibles.map(name => ({
+            value: name,
+            label: `${name} (${tenders.filter(t => (t.cost_plan_responsible?.full_name || '') === name).length})`,
+          }))}
+        />
+        <div className="cp-toolbar-tail">
+          <span className="cp-shown">Показано: <b>{liveRows.length}</b></span>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              className="reset-btn"
+              onClick={() => { setResponsibleFilters([]); setObjectFilterIds([]); setSearchQuery('') }}
+            >Сбросить</button>
+          )}
+        </div>
       </div>
 
       <div className="table-container">

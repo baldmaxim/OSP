@@ -98,6 +98,55 @@
   color: var(--text-primary);
 }
 
+/* Подзаголовок внутри раздела: «Сверять обязательно:», «У кого запрашивать:». */
+.cpi-label {
+  margin: 0.85rem 0 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.cpi-label:first-child { margin-top: 0; }
+
+/* Путь к сетевой папке. Открыть проводник кликом нельзя — только копирование. */
+.cpi-path {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.06);
+}
+.cpi-path code {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.cpi-path button {
+  flex-shrink: 0;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+.cpi-path button:hover { color: var(--primary-color, #2563eb); }
+
+/* Таблица «кто за что отвечает» — без шапки, подписи слева. */
+.cpi-table--left th,
+.cpi-table--left td { text-align: left; white-space: normal; }
+.cpi-table--left tbody th[scope='row'] {
+  width: 40%;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 .cpi-list {
   margin: 0;
   padding-left: 1.1rem;

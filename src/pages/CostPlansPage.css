@@ -194,63 +194,91 @@
   transform: rotate(180deg);
 }
 
+/* Шапка: слева заголовок с иконкой и «?», справа — общая папка и подсказка. */
+.cp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 /* Toolbar */
 .cost-plans-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0.625rem 1.25rem;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
   font-size: 0.8125rem;
+  flex-wrap: wrap;
 }
 
-/* task 209: поиск */
-.cost-plans-toolbar .cost-plans-search {
-  flex: 1 1 260px;
-  min-width: 200px;
-  max-width: 360px;
-  padding: 0.375rem 0.625rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.cost-plans-toolbar .cost-plans-search:focus {
-  outline: none;
-  border-color: var(--primary-color);
-}
-
-.cost-plans-toolbar .toolbar-label {
+/* Поиск: иконка внутри поля, а не эмодзи в плейсхолдере. */
+.cp-search-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: var(--text-secondary);
+  flex: 1 1 280px;
+  min-width: 220px;
+  max-width: 420px;
+}
+.cp-search-wrap > svg {
+  position: absolute;
+  left: 0.6rem;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+.cost-plans-toolbar .cost-plans-search {
+  width: 100%;
+  height: 34px;
+  padding: 0 0.7rem 0 2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cost-plans-toolbar .cost-plans-search:focus {
+  outline: none;
+  border-color: var(--primary-color, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #2563eb) 15%, transparent);
 }
 
-.cost-plans-toolbar select {
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 0.8125rem;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  min-width: 220px;
+/* Выпадашки фильтров. Подсветку активного фильтра рисует сам FilterDropdown
+   (.fdrop.is-active), здесь только раскладка. */
+.cost-plans-toolbar .fdrop-trigger { height: 34px; }
+
+.cp-toolbar-tail {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
 }
+.cp-shown { font-size: 0.75rem; color: var(--text-tertiary); }
+.cp-shown b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 
 .cost-plans-toolbar .reset-btn {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   background: none;
-  border: none;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 0.75rem;
-  text-decoration: underline;
+}
+.cost-plans-toolbar .reset-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
-.cost-plans-toolbar .reset-btn:hover {
-  color: var(--text-secondary);
+@media (max-width: 640px) {
+  .cost-plans-toolbar { padding: 0.6rem 0.75rem; }
+  .cp-search-wrap { flex-basis: 100%; max-width: none; }
+  .cp-toolbar-tail { margin-left: 0; }
 }
 
 /* Table */
@@ -264,15 +292,23 @@
   font-size: 0.8125rem;
 }
 
-.cost-plans-page .data-table thead {
+/* Шапка залипает: таблица длинная, и на середине списка было непонятно, какой
+   столбец где. Прокрутка идёт у .table-container, поэтому sticky работает. */
+.cost-plans-page .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   background: var(--bg-tertiary);
 }
 
 .cost-plans-page .data-table th {
-  padding: 0.5rem 0.75rem;
+  padding: 0.55rem 0.75rem;
   text-align: left;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
   border-bottom: 1px solid var(--border-color);
   /* task 211: тонкие полупрозрачные вертикальные полоски */
   border-right: 1px solid color-mix(in srgb, var(--border-color) 45%, transparent);
@@ -290,6 +326,12 @@
 .cost-plans-page .data-table th:last-child,
 .cost-plans-page .data-table td:last-child {
   border-right: none;
+}
+
+/* Чередование строк: в таблице много узких столбцов с датами, взгляд по строке
+   без подложки соскальзывает. Ховер поверх зебры остаётся заметным. */
+.cost-plans-page .data-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--text-tertiary) 4%, transparent);
 }
 
 .cost-plans-page .data-table tbody tr:hover {

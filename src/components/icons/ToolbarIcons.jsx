@@ -86,6 +86,14 @@ export const IconOther = ({ size }) => (
   </TbSvg>
 )
 
+// Поиск — лупа (вместо эмодзи 🔍 в плейсхолдерах полей)
+export const IconSearch = ({ size }) => (
+  <TbSvg size={size}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
+  </TbSvg>
+)
+
 // Планы затрат — монеты (вместо эмодзи 💰 в шапке раздела)
 export const IconCoins = ({ size }) => (
   <TbSvg size={size}>
