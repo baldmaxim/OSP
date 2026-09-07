@@ -78,9 +78,14 @@
 }
 .fpath-btn:disabled { opacity: 0.6; cursor: default; }
 
-/* Пустое состояние: путь ещё не указан */
+/* Пустое состояние: путь ещё не указан.
+   display:flex, а не inline-flex: строчный вариант вставал в одну строку с
+   наименованием тендера, когда оно короткое, и ряд получался рваным — где-то
+   рядом с названием, где-то под ним. width:fit-content не даёт кнопке
+   растянуться на всю ширину ячейки. */
 .fpath-add {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
   align-items: center;
   gap: 0.3rem;
   margin-top: 0.35rem;
