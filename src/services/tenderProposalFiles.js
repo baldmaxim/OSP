@@ -218,7 +218,8 @@ export async function fetchProposalFilesForReview({ statuses = null, objectIds =
                counterparties(name),
                tenders!inner(id, public_tender_number, work_description, object_id, department,
                  folder_path, cost_plan_link, cost_plan_status, objects(name, status),
-                 responsible_contact:contacts!responsible_contact_id(full_name))`)
+                 responsible_contact:contacts!responsible_contact_id(full_name),
+                 cost_plan_responsible:contacts!cost_plan_responsible_id(full_name))`)
       .eq('file_kind', 'commercial_proposal')
       // Только КП, загруженные с момента запуска (легаси-бэклог в очередь не попадает).
       .eq('review_required', true)

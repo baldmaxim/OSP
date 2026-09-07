@@ -12,6 +12,7 @@ import {
   IconAnalysis,
   IconContracts,
   IconDcRequest,
+  IconDocCheck,
   IconRates,
   IconReports,
   IconAdmin,
@@ -180,6 +181,15 @@ function Sidebar() {
       Icon: IconDcRequest,
       // task 333: гейтим через canView('dc_requests'), чтобы права из админки управляли пунктом.
       visible: isEmployee && canView('dc_requests'),
+    },
+    {
+      key: 'doc-check',
+      to: '/doc-check-requests',
+      label: 'Заявки на проверку ДП/ДС',
+      tone: 'violet',
+      Icon: IconDocCheck,
+      // Проверка договоров и ДС канбаном вместо переписки по почте.
+      visible: isEmployee && canView('doc_check_requests'),
     },
     {
       key: 'rates',

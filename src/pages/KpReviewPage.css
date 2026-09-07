@@ -182,6 +182,8 @@
 .kprv-sort-mark.is-asc { transform: rotate(180deg); }
 /* Колонка «Кто проверил» */
 .kprv-col-reviewer { white-space: normal; }
+/* ФИО переносятся по словам: колонка узкая, а фамилия рвётся по буквам некрасиво. */
+.kprv-col-planresp { white-space: normal; word-break: keep-all; }
 .kprv-reviewer-name { display: block; color: var(--text-primary); }
 .kprv-reviewer-date {
   display: block;

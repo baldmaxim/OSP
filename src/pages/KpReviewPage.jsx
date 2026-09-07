@@ -408,27 +408,29 @@ function KpReviewPage() {
                 ширине экрана — без горизонтальной прокрутки и без колонок,
                 схлопнутых в столбик букв. Сумма ровно 100%. */}
             <colgroup>
-              <col style={{ width: '9%' }} />{/* Объект */}
               <col style={{ width: '5%' }} />{/* № тендера */}
-              <col style={{ width: '12%' }} />{/* Тендер */}
-              <col style={{ width: '10%' }} />{/* Контрагент */}
-              <col style={{ width: '13%' }} />{/* КП */}
+              <col style={{ width: '11%' }} />{/* Тендер */}
+              <col style={{ width: '8%' }} />{/* Объект */}
+              <col style={{ width: '9%' }} />{/* Контрагент */}
+              <col style={{ width: '11%' }} />{/* КП */}
               <col style={{ width: '6%' }} />{/* Загружен */}
-              <col style={{ width: '9%' }} />{/* Ответственный по тендеру */}
+              <col style={{ width: '8%' }} />{/* Ответственный по тендеру */}
+              <col style={{ width: '8%' }} />{/* Ответственный по ПЗ */}
               <col style={{ width: '6%' }} />{/* План затрат */}
-              <col style={{ width: '13%' }} />{/* Статус проверки */}
+              <col style={{ width: '12%' }} />{/* Статус проверки */}
               <col style={{ width: '8%' }} />{/* Кто проверил */}
-              <col style={{ width: '9%' }} />{/* Действия */}
+              <col style={{ width: '8%' }} />{/* Действия */}
             </colgroup>
             <thead>
               <tr>
-                <th>Объект</th>
                 <SortTh label="№ тендера" sortKey="tender_no" sort={sort} onSort={toggleSort} className="kprv-col-tnum" />
                 <th>Тендер</th>
+                <th>Объект</th>
                 <th>Контрагент</th>
                 <th>КП</th>
                 <SortTh label="Загружен" sortKey="created_at" sort={sort} onSort={toggleSort} />
                 <th>Ответственный по тендеру</th>
+                <th>Ответственный по ПЗ</th>
                 <th>План затрат</th>
                 <th>Статус проверки</th>
                 <SortTh label="Кто проверил" sortKey="reviewed_at" sort={sort} onSort={toggleSort} />
@@ -438,7 +440,6 @@ function KpReviewPage() {
             {(() => {
               const rowEls = visibleRows.map(r => (
                 <tr key={r.id}>
-                  <td className="kprv-col-object">{r.tenders?.objects?.name || '—'}</td>
                   <td className="kprv-col-tnum">
                     {r.tenders?.public_tender_number != null
                       ? (r.tenders?.id
@@ -460,6 +461,7 @@ function KpReviewPage() {
                         копирование: правят его там, где ведут сам тендер. */}
                     <FolderPathCell value={r.tenders?.folder_path} />
                   </td>
+                  <td className="kprv-col-object">{r.tenders?.objects?.name || '—'}</td>
                   <td className="kprv-col-cp">{r.counterparties?.name || '—'}</td>
                   <td className="kprv-col-file">
                     <button
@@ -476,6 +478,12 @@ function KpReviewPage() {
                   </td>
                   <td className="kprv-col-date">{fmtDate(r.created_at)}</td>
                   <td className="kprv-col-resp">{r.tenders?.responsible_contact?.full_name || '—'}</td>
+                  {/* Ответственный по плану затрат — то же поле тендера, что и в
+                      разделе «Планы затрат» (tenders.cost_plan_responsible_id),
+                      источник один, поэтому значения не разойдутся. */}
+                  <td className="kprv-col-planresp">
+                    {r.tenders?.cost_plan_responsible?.full_name || <span className="kprv-muted">—</span>}
+                  </td>
                   <td className="kprv-col-plan"><CostPlanCell tender={r.tenders} /></td>
                   <td className="kprv-col-review">
                     <KpReviewBadge file={r} canReview={canReview} onReview={setReviewFile} showRemarks />
@@ -543,7 +551,7 @@ function KpReviewPage() {
               // только когда строк действительно много — на коротких списках
               // распорки и замеры высот ни к чему.
               return rowEls.length > VIRTUALIZE_FROM
-                ? <VirtualTableBody rows={rowEls} colSpan={11} scrollRef={tableWrapRef} rowHeight={52} />
+                ? <VirtualTableBody rows={rowEls} colSpan={12} scrollRef={tableWrapRef} rowHeight={52} />
                 : <tbody>{rowEls}</tbody>
             })()}
           </table>

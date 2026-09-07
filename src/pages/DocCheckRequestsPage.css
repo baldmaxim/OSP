@@ -1,0 +1,430 @@
+/* Раздел «Заявки на проверку ДП/ДС»: канбан-доска + реестр. */
+
+.doc-check-page { padding: 1rem 1.25rem 2rem; }
+
+.dc-header-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+/* Переключатель «Доска / Реестр» */
+.dc-view-switch {
+  display: inline-flex;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.dc-view-btn {
+  padding: 0.4rem 0.8rem;
+  border: none;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.dc-view-btn + .dc-view-btn { border-left: 1px solid var(--border-color); }
+.dc-view-btn.is-active { background: var(--primary-color, #2563eb); color: #fff; font-weight: 600; }
+
+/* ── Панель фильтров ────────────────────────────────────────────────────── */
+.dc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.75rem 0 1rem;
+}
+.dc-search {
+  flex: 1 1 18rem;
+  min-width: 0;
+  height: 34px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.dc-reset, .dc-deleted-toggle {
+  height: 34px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dc-reset:hover, .dc-deleted-toggle:hover { background: var(--bg-secondary); color: var(--text-primary); }
+.dc-deleted-toggle.is-active { border-color: #dc2626; color: #dc2626; }
+
+.dc-empty, .dc-error {
+  padding: 1.25rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  text-align: center;
+}
+.dc-error { border-color: #dc2626; border-style: solid; color: #dc2626; text-align: left; }
+.dc-error code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.dc-muted { color: var(--text-tertiary); font-size: 0.8125rem; }
+
+/* ── Доска ──────────────────────────────────────────────────────────────── */
+/* Семь колонок в ряд на экран не влезают — прокручиваем по горизонтали, а не
+   сжимаем карточки до нечитаемого состояния. */
+.dc-board {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 0.75rem;
+}
+.dc-column {
+  flex: 0 0 17rem;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 15rem);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+/* Подсветка колонки-приёмника при перетаскивании. */
+.dc-column.is-over {
+  border-color: var(--primary-color, #2563eb);
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 7%, var(--bg-secondary));
+}
+
+.dc-column-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--border-color);
+  /* Цвет статуса — левой полосой: заливка всей шапки превращала доску в радугу. */
+  border-left: 3px solid var(--text-tertiary);
+  border-radius: 10px 10px 0 0;
+}
+.dc-column-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-column-count {
+  flex-shrink: 0;
+  min-width: 1.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* Цвета семи стадий: от «новой» к «завершено» — от серого к зелёному,
+   «ожидаем скан» намеренно янтарный: работа формально закрыта, но не совсем. */
+.dcs-new { border-left-color: #64748b; }
+.dcs-progress { border-left-color: #2563eb; }
+.dcs-edo { border-left-color: #0ea5e9; }
+.dcs-signal { border-left-color: #8b5cf6; }
+.dcs-accounting { border-left-color: #d946ef; }
+.dcs-done { border-left-color: #16a34a; }
+.dcs-scan { border-left-color: #d97706; }
+
+.dc-column-body {
+  flex: 1;
+  min-height: 4rem;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.dc-column-empty {
+  margin: 0;
+  padding: 0.75rem 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* ── Карточка ───────────────────────────────────────────────────────────── */
+.dc-card {
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-primary);
+  cursor: grab;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dc-card:hover { border-color: var(--primary-color, #2563eb); box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08); }
+.dc-card:focus-visible { outline: 2px solid var(--primary-color, #2563eb); outline-offset: 1px; }
+.dc-card.is-dragging { opacity: 0.45; cursor: grabbing; }
+
+.dc-card-head { display: flex; align-items: center; gap: 0.4rem; }
+.dc-card-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-card-cp {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+/* Тип документа — короткий цветной ярлык: ДП и ДС различаются с одного взгляда. */
+.dc-type {
+  flex-shrink: 0;
+  padding: 0.05rem 0.35rem;
+  border-radius: 5px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.dc-type--dp { background: color-mix(in srgb, #2563eb 15%, transparent); color: #1d4ed8; }
+.dc-type--ds { background: color-mix(in srgb, #d97706 18%, transparent); color: #b45309; }
+
+.dc-chip {
+  flex: 1;
+  min-width: 0;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-count {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+/* ── Реестр ─────────────────────────────────────────────────────────────── */
+.dc-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 10px; }
+.dc-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.dc-table th {
+  position: sticky;
+  top: 0;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.dc-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border-color); }
+.dc-row { cursor: pointer; }
+.dc-row:hover { background: var(--bg-secondary); }
+.dc-row-action { text-align: right; }
+.dc-restore {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.dc-restore:hover { color: var(--primary-color, #2563eb); border-color: var(--primary-color, #2563eb); }
+
+/* Чип статуса в реестре — та же палитра, что у колонок доски. */
+.dc-status-chip {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  border-left-width: 3px;
+  background: var(--bg-secondary);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  white-space: normal;
+}
+
+/* ── Форма ──────────────────────────────────────────────────────────────── */
+.dc-form-modal { width: min(34rem, calc(100vw - 2rem)); }
+.dc-form { padding: 1rem 1.25rem 1.25rem; }
+.dc-form-row { margin-bottom: 0.85rem; }
+.dc-form-row > label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.dc-form-row input[type='text'],
+.dc-form-row input[type='date'],
+.dc-form-row textarea {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: inherit;
+}
+.dc-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+.dc-type-switch { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.dc-type-opt {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.dc-type-opt.is-active {
+  border-color: var(--primary-color, #2563eb);
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 10%, transparent);
+  color: var(--primary-color, #2563eb);
+  font-weight: 600;
+}
+
+.dc-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ── Карточка заявки ────────────────────────────────────────────────────── */
+.dc-detail-modal {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  display: flex;
+  flex-direction: column;
+}
+.dc-detail-sub { margin: 0.15rem 0 0; font-size: 0.75rem; color: var(--text-secondary); }
+
+.dc-detail-tabs { display: flex; gap: 0.25rem; padding: 0 1.25rem; border-bottom: 1px solid var(--border-color); }
+.dc-detail-tab {
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.dc-detail-tab.is-active {
+  border-bottom-color: var(--primary-color, #2563eb);
+  color: var(--primary-color, #2563eb);
+  font-weight: 600;
+}
+
+.dc-detail-body { flex: 1; min-height: 0; overflow-y: auto; padding: 1rem 1.25rem; }
+
+.dc-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+.dc-detail-grid dt { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-tertiary); }
+.dc-detail-grid dd { margin: 0.15rem 0 0; font-size: 0.875rem; color: var(--text-primary); }
+
+.dc-detail-notes { margin-top: 1rem; }
+.dc-detail-notes h4, .dc-detail-status h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.dc-detail-notes p { margin: 0; font-size: 0.875rem; line-height: 1.5; white-space: pre-wrap; }
+.dc-detail-status { margin-top: 1rem; }
+
+.dc-status-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.dc-status-opt {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.dc-status-opt:hover:not(:disabled) { background: var(--bg-secondary); color: var(--text-primary); }
+.dc-status-opt.is-current {
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 10%, transparent);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.dc-status-opt:disabled { cursor: default; opacity: 0.7; }
+
+.dc-history { margin: 0; padding: 0; list-style: none; }
+.dc-history li { padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
+.dc-history li:last-child { border-bottom: none; }
+.dc-history-head { display: flex; justify-content: space-between; gap: 0.5rem; }
+.dc-history-event { font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); }
+.dc-history-date { font-size: 0.6875rem; color: var(--text-tertiary); white-space: nowrap; }
+.dc-history-text { margin-top: 0.2rem; font-size: 0.8125rem; color: var(--text-secondary); }
+.dc-history-who { margin-top: 0.15rem; font-size: 0.6875rem; color: var(--text-tertiary); }
+
+.dc-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+/* Удаление — приглушённое: действие редкое и опасное, кнопка не должна спорить
+   за внимание с «Изменить». */
+.btn-danger-soft {
+  padding: 0.45rem 0.8rem;
+  margin-right: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.btn-danger-soft:hover {
+  border-color: color-mix(in srgb, #dc2626 45%, transparent);
+  background: color-mix(in srgb, #dc2626 8%, transparent);
+  color: #dc2626;
+}
+
+@media (max-width: 640px) {
+  .doc-check-page { padding: 0.75rem 0.75rem 2rem; }
+  .dc-column { flex-basis: 85vw; max-height: none; }
+  .dc-form-grid { grid-template-columns: 1fr; }
+  .dc-search { flex-basis: 100%; }
+  .dc-form-row input[type='text'],
+  .dc-form-row input[type='date'],
+  .dc-form-row textarea { font-size: 16px; }
+}
