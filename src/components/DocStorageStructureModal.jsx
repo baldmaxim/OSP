@@ -13,9 +13,10 @@ import './DocStorageStructureModal.css'
 //     номер удерживает порядок стадий и порядок заведения объектов/подрядчиков.
 //  2. Договор и каждое ДС устроены одинаково: те же пять стадий согласования.
 
-// Пять стадий — одинаковые и у самого договора, и у каждого ДС. В дереве
-// показываются одной строкой-набором: пятнадцать одинаковых строк подряд
-// (договор + два ДС) читались как шум и прятали саму структуру.
+// Пять стадий — одинаковые и у самого договора, и у каждого ДС. В дереве папки
+// со стадиями СВЁРНУТЫ: развёрнутые, они давали пятнадцать почти одинаковых
+// строк подряд (договор + два ДС) и прятали за собой саму структуру. Расшифровка
+// стадий — один раз в легенде под деревом.
 const STAGES = [
   { name: '01_Понятийное соглашение', hint: 'Понятийное соглашение и переписка по нему' },
   { name: '02_Входящие документы', hint: 'Что прислал подрядчик: его редакция, протокол разногласий' },
@@ -36,7 +37,7 @@ const contractNode = (name, dsList, extra = {}) => ({
       name: '00_ДОГОВОР',
       kind: 'group',
       hint: 'Сам договор (ДП)',
-      stagesInline: true,
+      defaultCollapsed: true,
       children: stageChildren(),
     },
     {
@@ -47,7 +48,7 @@ const contractNode = (name, dsList, extra = {}) => ({
         ...dsList.map(ds => ({
           name: ds,
           kind: 'ds',
-          stagesInline: true,
+          defaultCollapsed: true,
           children: stageChildren(),
         })),
         { name: 'В РАБОТЕ', kind: 'special', hint: 'ДС без номера и даты; после подписания папку переименовывают' },
@@ -114,13 +115,23 @@ function toAscii(nodes, prefix = '') {
   return out
 }
 
-const collectCollapsed = (nodes, path = '', acc = new Set()) => {
+const nodeKey = (path, i, node) => `${path}/${i}-${node.name}`
+
+const collectKeys = (nodes, path = '', acc = new Set(), onlyDefaultCollapsed = true) => {
   nodes.forEach((node, i) => {
-    const key = `${path}/${i}-${node.name}`
-    if (node.defaultCollapsed) acc.add(key)
-    if (node.children) collectCollapsed(node.children, key, acc)
+    const key = nodeKey(path, i, node)
+    if (node.children?.length && (!onlyDefaultCollapsed || node.defaultCollapsed)) acc.add(key)
+    if (node.children) collectKeys(node.children, key, acc, onlyDefaultCollapsed)
   })
   return acc
+}
+
+const plural = (n, one, few, many) => {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return one
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few
+  return many
 }
 
 const IconFolderSm = () => (
@@ -134,34 +145,40 @@ function TreeNodes({ nodes, path, collapsed, onToggle }) {
   return (
     <ul className="dss-list">
       {nodes.map((node, i) => {
-        const key = `${path}/${i}-${node.name}`
-        // Стадии не сворачиваются: они показаны набором, а не ветками.
-        const expandable = !!node.children?.length && !node.stagesInline
+        const key = nodeKey(path, i, node)
+        const expandable = !!node.children?.length
         const isCollapsed = collapsed.has(key)
+        const count = node.children?.length || 0
+        // Строка целиком работает как переключатель: попадать в маленькую
+        // стрелку курсором неудобно, а других действий у строки нет.
+        const RowTag = expandable ? 'button' : 'div'
         return (
           <li key={key} className={`dss-item dss-item--${node.kind}`}>
-            <div className="dss-row">
+            <RowTag
+              className="dss-row"
+              {...(expandable
+                ? {
+                  type: 'button',
+                  onClick: () => onToggle(key),
+                  'aria-expanded': !isCollapsed,
+                  'aria-label': `${node.name}: ${isCollapsed ? 'развернуть' : 'свернуть'}`,
+                }
+                : {})}
+            >
               {expandable ? (
-                <button
-                  type="button"
-                  className={`dss-toggle${isCollapsed ? ' is-collapsed' : ''}`}
-                  onClick={() => onToggle(key)}
-                  aria-expanded={!isCollapsed}
-                  aria-label={isCollapsed ? `Развернуть ${node.name}` : `Свернуть ${node.name}`}
-                >▾</button>
+                <span className={`dss-toggle${isCollapsed ? ' is-collapsed' : ''}`} aria-hidden>▾</span>
               ) : (
                 <span className="dss-toggle is-leaf" aria-hidden />
               )}
               <IconFolderSm />
               <span className="dss-name">{node.name}</span>
+              {/* У свёрнутой ветки показываем, сколько внутри папок: иначе не
+                  видно, где ещё есть что раскрывать. */}
+              {expandable && isCollapsed && (
+                <span className="dss-count">{count} {plural(count, 'папка', 'папки', 'папок')}</span>
+              )}
               {node.hint && <span className="dss-hint">{node.hint}</span>}
-            </div>
-
-            {node.stagesInline && (
-              <div className="dss-stages" aria-label="Пять стадий согласования">
-                {STAGES.map(s => <span key={s.name} className="dss-stage">{s.name}</span>)}
-              </div>
-            )}
+            </RowTag>
 
             {expandable && !isCollapsed && (
               <TreeNodes nodes={node.children} path={key} collapsed={collapsed} onToggle={onToggle} />
@@ -174,8 +191,10 @@ function TreeNodes({ nodes, path, collapsed, onToggle }) {
 }
 
 export default function DocStorageStructureModal({ rootPath, onClose }) {
-  const [collapsed, setCollapsed] = useState(() => collectCollapsed(TREE))
+  const [collapsed, setCollapsed] = useState(() => collectKeys(TREE))
   const [copied, setCopied] = useState(false)
+  const allKeys = useMemo(() => collectKeys(TREE, '', new Set(), false), [])
+  const allExpanded = collapsed.size === 0
   const root = rootPath || DEFAULT_ROOT
 
   const asciiTree = useMemo(() => `${root}\n│\n${toAscii(TREE)}`, [root])
@@ -210,6 +229,17 @@ export default function DocStorageStructureModal({ rootPath, onClose }) {
           <div className="dss-root">
             <span className="dss-root-label">Корень</span>
             <code className="dss-root-path">{root}</code>
+          </div>
+
+          <div className="dss-tree-bar">
+            <span className="dss-tree-hint">Нажмите на папку, чтобы раскрыть вложенные</span>
+            <button
+              type="button"
+              className="dss-tree-btn"
+              onClick={() => setCollapsed(allExpanded ? new Set(allKeys) : new Set())}
+            >
+              {allExpanded ? 'Свернуть всё' : 'Развернуть всё'}
+            </button>
           </div>
 
           <TreeNodes nodes={TREE} path="" collapsed={collapsed} onToggle={toggle} />

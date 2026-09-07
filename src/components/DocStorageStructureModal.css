@@ -67,15 +67,57 @@
   border-left: 1px solid var(--border-color);
 }
 
+/* Строка-переключатель: у ветки это <button> во всю ширину, у листа — <div>.
+   Сбрасываем кнопочные умолчания, чтобы обе выглядели одинаково. */
 .dss-row {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.2rem 0.35rem;
+  width: 100%;
+  padding: 0.22rem 0.35rem;
+  border: none;
   border-radius: 6px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
   min-width: 0;
 }
-.dss-row:hover { background: var(--bg-secondary); }
+button.dss-row { cursor: pointer; }
+button.dss-row:hover { background: var(--bg-secondary); }
+button.dss-row:focus-visible { outline: 2px solid var(--primary-color, #2563eb); outline-offset: -2px; }
+
+/* Панель над деревом: подсказка + «развернуть/свернуть всё». */
+.dss-tree-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+.dss-tree-hint { font-size: 0.6875rem; color: var(--text-tertiary); }
+.dss-tree-btn {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+.dss-tree-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+/* Сколько папок внутри свёрнутой ветки. */
+.dss-count {
+  flex-shrink: 0;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
 
 .dss-toggle {
   flex-shrink: 0;
@@ -121,17 +163,12 @@
 .dss-item--contract > .dss-row .dss-name { font-weight: 700; color: var(--primary-color, #2563eb); }
 .dss-item--contract > .dss-row .dss-ico { color: var(--primary-color, #2563eb); }
 .dss-item--group > .dss-row .dss-name { font-weight: 600; }
+/* Стадии внутри договора и ДС — самый нижний уровень, намеренно бледнее. */
+.dss-item--stage > .dss-row .dss-name { color: var(--text-secondary); }
 .dss-item--special > .dss-row .dss-name { color: #b45309; }
 .dss-item--special > .dss-row .dss-ico { color: #b45309; }
 
-/* Пять стадий одной строкой-набором вместо пяти одинаковых веток у каждого ДС.
-   Раньше договор с двумя ДС давал пятнадцать почти одинаковых строк подряд. */
-.dss-stages {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin: 0.1rem 0 0.3rem 2.05rem;
-}
+/* Чип с именем стадии — используется в легенде под деревом. */
 .dss-stage {
   padding: 0.1rem 0.4rem;
   border: 1px solid var(--border-color);
