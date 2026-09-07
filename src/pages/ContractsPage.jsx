@@ -8,6 +8,7 @@ import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
 import FolderPathCell from '../components/FolderPathCell'
+import RootFolderPathBar from '../components/RootFolderPathBar'
 import LarixEntryBlock from '../components/LarixEntryBlock'
 // Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
@@ -1588,6 +1589,15 @@ function ContractRegistry() {
           )}
         </div>
       </div>
+
+      {/* Путь к общей папке всего раздела — одна на реестр, хранится в
+          app_settings. Путь к папке конкретного договора — в его строке. */}
+      <RootFolderPathBar
+        settingKey="contracts_root_folder_path"
+        label="Общая папка"
+        canEdit={canEditContracts}
+        placeholder="\\su10-fs\Договоры"
+      />
 
       {/* Охват реестра. Стоит НАД статусными вкладками: сначала выбираем, какой
           реестр смотрим, и только потом — стадию внутри него. */}

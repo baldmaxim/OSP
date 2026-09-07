@@ -13,6 +13,9 @@ import './FolderPathCell.css'
 // адресную строку проводника (Win+E → Ctrl+L → Ctrl+V).
 //
 // onSave(nextValue) должен вернуть промис; пустая строка означает «очистить».
+//
+// variant: 'row' — путь внутри строки реестра (мелкий, под наименованием);
+//          'banner' — путь ко всему разделу в шапке страницы (крупнее).
 
 const IconFolder = ({ size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -47,7 +50,9 @@ export default function FolderPathCell({
   onSave,
   addLabel = 'Указать путь к папке',
   placeholder = '\\\\su10-fs\\Тендеры\\ЖК Алия\\Фасады',
+  variant = 'row',
 }) {
+  const mod = variant === 'banner' ? ' fpath--banner' : ''
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -68,6 +73,9 @@ export default function FolderPathCell({
     try {
       await onSave(draft.trim())
       setEditing(false)
+    } catch {
+      // Сообщение показывает вызывающий код. Поле оставляем открытым: иначе
+      // при неудачном сохранении набранный путь молча пропадёт.
     } finally {
       setSaving(false)
     }
@@ -75,7 +83,7 @@ export default function FolderPathCell({
 
   if (editing) {
     return (
-      <div className="fpath fpath-edit">
+      <div className={`fpath fpath-edit${mod}`}>
         <IconFolder />
         <input
           type="text"
@@ -106,14 +114,14 @@ export default function FolderPathCell({
     return (
       <button
         type="button"
-        className="fpath-add"
+        className={`fpath-add${mod}`}
         onClick={(e) => { e.stopPropagation(); startEdit() }}
       ><IconFolder /> {addLabel}</button>
     )
   }
 
   return (
-    <div className="fpath" title={value}>
+    <div className={`fpath${mod}`} title={value}>
       <IconFolder />
       <span className="fpath-text">{value}</span>
       <button

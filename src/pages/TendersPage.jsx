@@ -6,6 +6,7 @@ import StatusDropdown from '../components/StatusDropdown'
 import TgPublishToggle from '../components/TgPublishToggle'
 import CompletionLetterToggle from '../components/CompletionLetterToggle'
 import FolderPathCell from '../components/FolderPathCell'
+import RootFolderPathBar from '../components/RootFolderPathBar'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
@@ -2162,6 +2163,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           )}
         </div>
       </div>
+
+      {/* Путь к общей папке всего раздела тендеров — одна на все направления,
+          хранится в app_settings. Путь к папке конкретного тендера — в его строке. */}
+      <RootFolderPathBar
+        settingKey="tenders_root_folder_path"
+        label="Общая папка"
+        canEdit={canEditTenders}
+        placeholder="\\su10-fs\Тендеры"
+      />
 
       {/* task 212: Вкладки — «Все тендеры» + по каждому статусу + Шаблон + Удалённые */}
       <div className={`tender-tabs${isMaterialsView ? ' tender-tabs--simple' : ''}`}>
