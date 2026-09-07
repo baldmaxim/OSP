@@ -7,6 +7,8 @@ import TgPublishToggle from '../components/TgPublishToggle'
 import CompletionLetterToggle from '../components/CompletionLetterToggle'
 import FolderPathCell from '../components/FolderPathCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
+import DocStorageStructureModal from '../components/DocStorageStructureModal'
+import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
@@ -15,7 +17,7 @@ import IconTile from '../components/IconTile'
 import { IconHardHat, IconShieldCheck, IconPackage } from '../components/icons/TenderHubIcons'
 import {
   IconObject, IconTag, IconUser, IconMail, IconColumns, IconColumnsWide,
-  IconJoint, IconOther,
+  IconJoint, IconOther, IconFolderTree,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName } from '../utils/tenderDepartments'
 import { copyToClipboard } from '../utils/clipboard'
@@ -126,6 +128,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [respMenuOpen, setRespMenuOpen] = useState(false)
   // task 393: документы «ВОРы и РД» (S3, категория 'vor')
   const [vorDocsModalTenderId, setVorDocsModalTenderId] = useState(null)
+  // Справочник «Структура хранения документов» + корень хранилища, который в
+  // нём показывается (значение поднимается из RootFolderPathButton).
+  const [showStorageStructure, setShowStorageStructure] = useState(false)
+  const [rootFolderPath, setRootFolderPath] = useState('')
   const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
   // task 397: документы «Тендерный пакет» (S3, категория 'tender_package')
   const [packageDocsModalTenderId, setPackageDocsModalTenderId] = useState(null)
@@ -2092,8 +2098,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             settingKey="tenders_root_folder_path"
             title="Общая папка тендеров"
             canEdit={canEditTenders}
-            placeholder="\\192.168.2.55\SharA_Tender\ТЕНДЕРЫ"
+            placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\4. Тендеры"
+            onValueChange={setRootFolderPath}
           />
+          <button
+            type="button"
+            onClick={() => setShowStorageStructure(true)}
+            className="btn-secondary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
+            title="Единый порядок папок в сетевом хранилище"
+          >
+            <IconFolderTree size={15} /> Структура хранения документов
+          </button>
           {!isMaterialsView && department === 'construction' && !isScopedManager && (
             <div className="tender-resp-chip-wrap">
               <button
@@ -4485,6 +4501,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           </div>
         )
       })()}
+
+      {/* Справочник: как раскладывать документы по папкам в хранилище */}
+      {showStorageStructure && (
+        <DocStorageStructureModal
+          structure={TENDERS_STRUCTURE}
+          rootPath={rootFolderPath}
+          onClose={() => setShowStorageStructure(false)}
+        />
+      )}
 
       {/* Документы «ВОРы и РД» */}
       {vorDocsModalTenderId && (

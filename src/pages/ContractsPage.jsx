@@ -10,6 +10,7 @@ import ConceptAgreementCell from '../components/ConceptAgreementCell'
 import FolderPathCell from '../components/FolderPathCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
+import { CONTRACTS_STRUCTURE } from '../utils/docStorageStructures'
 import { IconDocsStack, IconFolderTree } from '../components/icons/ToolbarIcons'
 import LarixEntryBlock from '../components/LarixEntryBlock'
 // Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
@@ -2768,6 +2769,7 @@ function ContractRegistry() {
       {/* Справочник: как раскладывать документы по папкам в хранилище */}
       {showStorageStructure && (
         <DocStorageStructureModal
+          structure={CONTRACTS_STRUCTURE}
           rootPath={rootFolderPath}
           onClose={() => setShowStorageStructure(false)}
         />

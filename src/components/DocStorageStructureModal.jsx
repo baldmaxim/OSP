@@ -2,102 +2,15 @@ import { useMemo, useState } from 'react'
 import { copyToClipboard } from '../utils/clipboard'
 import './DocStorageStructureModal.css'
 
-// Эталонная структура папок для документов по договорам в сетевом хранилище.
-// Справочник: показывает, куда класть файл, чтобы у всех получалось одинаково.
+// Справочник по структуре папок в сетевом хранилище: показывает, куда класть
+// файл, чтобы у всех получалось одинаково. Приложение папки не создаёт и не
+// читает — из браузера нет доступа к SMB-шаре, это документация.
 //
-// Схема описана данными, а не картинкой: из неё же строится текстовый вариант
-// для копирования (кнопка «Копировать схему»), и её можно править в одном месте.
-//
-// Две сквозные идеи структуры:
-//  1. Имена папок начинаются с номера — проводник сортирует по имени, поэтому
-//     номер удерживает порядок стадий и порядок заведения объектов/подрядчиков.
-//  2. Договор и каждое ДС устроены одинаково: те же пять стадий согласования.
-
-// Пять стадий — одинаковые и у самого договора, и у каждого ДС. В дереве папки
-// со стадиями СВЁРНУТЫ: развёрнутые, они давали пятнадцать почти одинаковых
-// строк подряд (договор + два ДС) и прятали за собой саму структуру. Расшифровка
-// стадий — один раз в легенде под деревом.
-const STAGES = [
-  { name: '01_Понятийное соглашение', hint: 'Понятийное соглашение и переписка по нему' },
-  { name: '02_Входящие документы', hint: 'Что прислал подрядчик: его редакция, протокол разногласий' },
-  { name: '03_Ред. формат', hint: 'Редактируемый формат: версии в работе, правки ОСП и юриста' },
-  { name: '04_На подписание', hint: 'Финальная согласованная редакция, ушедшая на подпись' },
-  { name: '05_Подписано ЭДО', hint: 'Подписанный оригинал, выгруженный из ЭДО' },
-]
-
-const stageChildren = () => STAGES.map(s => ({ name: s.name, kind: 'stage' }))
-
-const contractNode = (name, dsList, extra = {}) => ({
-  name,
-  kind: 'contract',
-  hint: 'Номер и дата — как в реестре договоров',
-  ...extra,
-  children: [
-    {
-      name: '00_ДОГОВОР',
-      kind: 'group',
-      hint: 'Сам договор (ДП)',
-      defaultCollapsed: true,
-      children: stageChildren(),
-    },
-    {
-      name: '01_ДОПОЛНИТЕЛЬНЫЕ СОГЛАШЕНИЯ',
-      kind: 'group',
-      hint: 'По папке на каждое ДС',
-      children: dsList.map(ds => ({
-        name: ds,
-        kind: 'ds',
-        defaultCollapsed: true,
-        children: stageChildren(),
-      })),
-    },
-    { name: '99_АРХИВ', kind: 'group', hint: 'Устаревшие версии и всё, что больше не используется' },
-  ],
-})
-
-const TREE = [
-  {
-    name: '01_ЖК Алия',
-    kind: 'object',
-    hint: 'Номер по порядку + название, как в реестре объектов',
-    children: [
-      {
-        name: '01_ООО «Подрядчик»',
-        kind: 'counterparty',
-        hint: 'Номер по порядку внутри объекта + название, как в карточке контрагента',
-        children: [
-          contractNode('Договор № СУ-10-001 от 01.03.2026', ['ДС №1 от 15.04.2026', 'ДС №2 от 20.06.2026']),
-          // Второй договор того же подрядчика свёрнут: показывает, что папок
-          // договоров может быть несколько, но не повторяет всю схему.
-          contractNode('Договор № СУ-10-017 от 10.08.2026', ['ДС №1 от 01.09.2026'], { defaultCollapsed: true }),
-        ],
-      },
-      {
-        name: '02_ТОО «Второй подрядчик»',
-        kind: 'counterparty',
-        hint: 'Внутри объекта — та же структура',
-        defaultCollapsed: true,
-        children: [contractNode('Договор № СУ-10-004 от 12.03.2026', ['ДС №1 от 05.05.2026'])],
-      },
-    ],
-  },
-  {
-    name: '02_ЖК Нурсая',
-    kind: 'object',
-    hint: 'Нумерация объектов сквозная и не меняется',
-    defaultCollapsed: true,
-    children: [
-      {
-        name: '01_ООО «Подрядчик»',
-        kind: 'counterparty',
-        hint: 'У каждого объекта своя нумерация подрядчиков — с 01',
-        children: [contractNode('Договор № СУ-10-021 от 02.09.2026', ['ДС №1 от 01.10.2026'])],
-      },
-    ],
-  },
-]
-
-const DEFAULT_ROOT = '\\\\192.168.2.55\\SharA_Tender\\СУБПОДРЯДЫ ДОГОВОРА И ДС'
+// Сама схема приходит пропом `structure` из
+// [docStorageStructures.js](src/utils/docStorageStructures.js) — своя на каждый
+// раздел (договоры, тендеры). Здесь только показ: дерево описано данными, из тех
+// же данных строится текст для кнопки «Копировать схему», поэтому картинка и
+// копия не расходятся.
 
 // Текстовый вид схемы — та же псевдографика, что в служебных записках. Стадии
 // в тексте разворачиваются полностью: в письме сворачивать нечего.
@@ -186,14 +99,15 @@ function TreeNodes({ nodes, path, collapsed, onToggle }) {
   )
 }
 
-export default function DocStorageStructureModal({ rootPath, onClose }) {
-  const [collapsed, setCollapsed] = useState(() => collectKeys(TREE))
+export default function DocStorageStructureModal({ structure, rootPath, onClose }) {
+  const { tree, title, subtitle, defaultRoot, legend, notes } = structure
+  const [collapsed, setCollapsed] = useState(() => collectKeys(tree))
   const [copied, setCopied] = useState(false)
-  const allKeys = useMemo(() => collectKeys(TREE, '', new Set(), false), [])
+  const allKeys = useMemo(() => collectKeys(tree, '', new Set(), false), [tree])
   const allExpanded = collapsed.size === 0
-  const root = rootPath || DEFAULT_ROOT
+  const root = rootPath || defaultRoot
 
-  const asciiTree = useMemo(() => `${root}\n│\n${toAscii(TREE)}`, [root])
+  const asciiTree = useMemo(() => `${root}\n│\n${toAscii(tree)}`, [root, tree])
 
   const toggle = (key) => setCollapsed(prev => {
     const next = new Set(prev)
@@ -213,10 +127,8 @@ export default function DocStorageStructureModal({ rootPath, onClose }) {
       <div className="modal dss-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="dss-header">
           <div>
-            <h3>Структура хранения документов</h3>
-            <p className="dss-subtitle">
-              Единый порядок папок в сетевом хранилище — одинаковый для всех объектов и подрядчиков
-            </p>
+            <h3>{title}</h3>
+            <p className="dss-subtitle">{subtitle}</p>
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Закрыть">×</button>
         </div>
@@ -238,28 +150,29 @@ export default function DocStorageStructureModal({ rootPath, onClose }) {
             </button>
           </div>
 
-          <TreeNodes nodes={TREE} path="" collapsed={collapsed} onToggle={toggle} />
+          <TreeNodes nodes={tree} path="" collapsed={collapsed} onToggle={toggle} />
 
-          <div className="dss-legend">
-            <div className="dss-legend-head">Пять стадий — внутри договора и внутри каждого ДС</div>
-            <ul className="dss-legend-list">
-              {STAGES.map(s => (
-                <li key={s.name}>
-                  <span className="dss-stage">{s.name}</span>
-                  <span className="dss-hint">{s.hint}</span>
-                </li>
+          {legend && (
+            <div className="dss-legend">
+              <div className="dss-legend-head">{legend.head}</div>
+              <ul className="dss-legend-list">
+                {legend.items.map(item => (
+                  <li key={item.name}>
+                    <span className="dss-stage">{item.name}</span>
+                    <span className="dss-hint">{item.hint}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {notes?.length > 0 && (
+            <div className="dss-notes">
+              {notes.map(note => (
+                <p key={note.title}><b>{note.title}</b> {note.text}</p>
               ))}
-            </ul>
-          </div>
-
-          <div className="dss-notes">
-            <p><b>Почему всё пронумеровано.</b> Проводник сортирует по имени. Номер в начале удерживает
-              объекты, подрядчиков и стадии в нужном порядке, а не по алфавиту.</p>
-            <p><b>Номер закрепляется навсегда.</b> Новый объект или подрядчик получает следующий свободный;
-              перенумеровывать существующие нельзя — у людей разъедутся ярлыки и ссылки на папки.</p>
-            <p><b>Договор и каждое ДС устроены одинаково.</b> Документы по дополнительному соглашению
-              лежат в его собственной папке — в тех же пяти стадиях, что и по основному договору.</p>
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="dss-footer">
