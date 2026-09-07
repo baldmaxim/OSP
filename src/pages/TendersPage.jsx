@@ -2333,17 +2333,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 {tender.work_description && (
                   <div className="mcard-desc">{tender.work_description}</div>
                 )}
+                <FolderPathCell
+                  value={tender.folder_path}
+                  canEdit={canEditTenders}
+                  onSave={(v) => handleSaveFolderPath(tender.id, v)}
+                />
                 <div>
                   <TgPublishToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleTgPublished} />
                 </div>
                 <div>
                   <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} />
                 </div>
-                <FolderPathCell
-                  value={tender.folder_path}
-                  canEdit={canEditTenders}
-                  onSave={(v) => handleSaveFolderPath(tender.id, v)}
-                />
                 <div className="mcard-rows">
                   <div className="mcard-row">
                     <span className="mcard-label">Ответственный</span>
@@ -2717,6 +2717,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       >
                         {tender.work_description}
                       </Link>
+                      {/* Путь к папке — сразу под наименованием: с него начинают
+                          поиск документов, отметки ниже относятся к ходу тендера.
+                          Открыть проводник кликом браузер не даёт, поэтому путь
+                          копируется. */}
+                      <FolderPathCell
+                        value={tender.folder_path}
+                        canEdit={canEditTenders}
+                        onSave={(v) => handleSaveFolderPath(tender.id, v)}
+                      />
                       <div>
                         <TgPublishToggle
                           tender={tender}
@@ -2733,13 +2742,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           onToggle={handleToggleCompletionLetter}
                         />
                       </div>
-                      {/* Путь к папке с документами в хранилище. Открыть проводник
-                          кликом браузер не даёт, поэтому путь копируется. */}
-                      <FolderPathCell
-                        value={tender.folder_path}
-                        canEdit={canEditTenders}
-                        onSave={(v) => handleSaveFolderPath(tender.id, v)}
-                      />
                     </td>
                     {!isCompletedTab && (
                       <td>
