@@ -93,6 +93,16 @@ export const IconFolder = ({ size }) => (
   </TbSvg>
 )
 
+// Структура хранения — дерево папок
+export const IconFolderTree = ({ size }) => (
+  <TbSvg size={size}>
+    <path d="M2 3h5l1.5 2H13a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1Z" />
+    <path d="M6 10v8M6 14h4M6 18h4" />
+    <rect x="10" y="12" width="12" height="4" rx="1" />
+    <rect x="10" y="17" width="12" height="4" rx="1" />
+  </TbSvg>
+)
+
 // Приложения объектов — стопка документов (вместо скрепки: речь о наборе
 // стандартных приложений к договору, а не о прикреплённом файле)
 export const IconDocsStack = ({ size }) => (

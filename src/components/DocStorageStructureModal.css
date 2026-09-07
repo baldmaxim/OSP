@@ -1,0 +1,136 @@
+/* Модалка «Структура хранения документов» — справочник по папкам в хранилище. */
+.dss-modal {
+  width: min(56rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.dss-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.dss-header h3 { margin: 0; font-size: 1.0625rem; }
+.dss-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.dss-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+}
+
+.dss-root {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.dss-root-label {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.dss-root-path {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* Дерево. Вертикальная направляющая — border у вложенного списка, поэтому
+   псевдографика не нужна и текст остаётся выделяемым. */
+.dss-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dss-list .dss-list {
+  margin-left: 0.45rem;
+  padding-left: 0.9rem;
+  border-left: 1px solid var(--border-color);
+}
+
+.dss-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.15rem 0;
+  flex-wrap: wrap;
+}
+
+.dss-toggle {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.dss-toggle.is-collapsed { transform: rotate(-90deg); }
+.dss-toggle.is-leaf { cursor: default; }
+
+.dss-name {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.78125rem;
+  color: var(--text-primary);
+}
+.dss-hint {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+/* Уровни различаем насыщенностью, а не цветом: список читается как дерево,
+   но не превращается в светофор. */
+.dss-item--object > .dss-row .dss-name,
+.dss-item--counterparty > .dss-row .dss-name { font-weight: 700; }
+.dss-item--contract > .dss-row .dss-name { font-weight: 700; color: var(--primary-color, #2563eb); }
+.dss-item--group > .dss-row .dss-name { font-weight: 600; }
+.dss-item--special > .dss-row .dss-name { color: #b45309; }
+
+.dss-notes {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-color);
+}
+.dss-notes p {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.dss-notes p:last-child { margin-bottom: 0; }
+
+.dss-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 640px) {
+  .dss-root { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+  .dss-hint { flex-basis: 100%; padding-left: 1.35rem; }
+}

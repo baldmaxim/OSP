@@ -43,6 +43,9 @@ export default function RootFolderPathButton({
   label = 'Путь к общей папке',
   canEdit = false,
   placeholder = '\\\\192.168.2.55\\SharA_Tender\\СУБПОДРЯДЫ ДОГОВОРА И ДС',
+  // Необязательный колбэк: сообщает странице текущий путь (нужен, например,
+  // схеме хранения документов, которая показывает корень).
+  onValueChange,
 }) {
   const [value, setValue] = useState('')
   const [loaded, setLoaded] = useState(false)
@@ -52,6 +55,10 @@ export default function RootFolderPathButton({
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
   const wrapRef = useRef(null)
+  // Через ref, чтобы колбэк не приходилось мемоизировать на стороне страницы:
+  // иначе новая функция на каждый рендер перезапускала бы загрузку настройки.
+  const onValueChangeRef = useRef(onValueChange)
+  onValueChangeRef.current = onValueChange
 
   useEffect(() => {
     let cancelled = false
@@ -63,7 +70,7 @@ export default function RootFolderPathButton({
           .eq('key', settingKey)
           .maybeSingle()
         if (error) throw error
-        if (!cancelled) setValue(data?.value || '')
+        if (!cancelled) { setValue(data?.value || ''); onValueChangeRef.current?.(data?.value || '') }
       } catch (err) {
         console.warn(`Не удалось загрузить настройку ${settingKey} (app_settings?):`, err.message)
         if (!cancelled) setValue('')
@@ -109,6 +116,7 @@ export default function RootFolderPathButton({
         .upsert({ key: settingKey, value: nextValue, updated_at: new Date().toISOString() })
       if (error) throw error
       setValue(nextValue || '')
+      onValueChangeRef.current?.(nextValue || '')
       setEditing(false)
     } catch (err) {
       // Поле оставляем открытым: иначе набранный путь молча пропадёт.

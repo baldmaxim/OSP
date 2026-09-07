@@ -9,7 +9,8 @@ import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
 import FolderPathCell from '../components/FolderPathCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
-import { IconDocsStack } from '../components/icons/ToolbarIcons'
+import DocStorageStructureModal from '../components/DocStorageStructureModal'
+import { IconDocsStack, IconFolderTree } from '../components/icons/ToolbarIcons'
 import LarixEntryBlock from '../components/LarixEntryBlock'
 // Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
@@ -307,6 +308,10 @@ function ContractRegistry() {
 
   // Приложения объектов
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false)
+  // Справочник «Структура хранения документов» + корень хранилища, который в
+  // нём показывается (значение поднимается из RootFolderPathButton).
+  const [showStorageStructure, setShowStorageStructure] = useState(false)
+  const [rootFolderPath, setRootFolderPath] = useState('')
   const [attachmentsObjectId, setAttachmentsObjectId] = useState('')
   const [objectAttachments, setObjectAttachments] = useState([])
   const [newAttachmentName, setNewAttachmentName] = useState('')
@@ -1564,7 +1569,7 @@ function ContractRegistry() {
         <div className="header-left">
           <h2>Договоры и ДС</h2>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {/* Путь к общей папке всего раздела (app_settings). Путь к папке
               конкретного договора — в его строке реестра. */}
           <RootFolderPathButton
@@ -1572,7 +1577,16 @@ function ContractRegistry() {
             title="Общая папка договоров"
             canEdit={canEditContracts}
             placeholder="\\192.168.2.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
+            onValueChange={setRootFolderPath}
           />
+          <button
+            onClick={() => setShowStorageStructure(true)}
+            className="btn-secondary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
+            title="Единый порядок папок в сетевом хранилище"
+          >
+            <IconFolderTree size={15} /> Структура хранения документов
+          </button>
           <button
             onClick={handleOpenAttachmentsModal}
             className="btn-secondary"
@@ -2749,6 +2763,14 @@ function ContractRegistry() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Справочник: как раскладывать документы по папкам в хранилище */}
+      {showStorageStructure && (
+        <DocStorageStructureModal
+          rootPath={rootFolderPath}
+          onClose={() => setShowStorageStructure(false)}
+        />
       )}
 
       {/* Модалка управления приложениями объектов (task 184 — без шаблонов) */}
