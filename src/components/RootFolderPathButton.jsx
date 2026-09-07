@@ -40,6 +40,7 @@ const IconPencil = ({ size = 14 }) => (
 export default function RootFolderPathButton({
   settingKey,
   title = 'Общая папка раздела',
+  label = 'Путь к общей папке',
   canEdit = false,
   placeholder = '\\\\192.168.2.55\\SharA_Tender\\СУБПОДРЯДЫ ДОГОВОРА И ДС',
 }) {
@@ -126,14 +127,15 @@ export default function RootFolderPathButton({
     <div className="rfpath" ref={wrapRef}>
       <button
         type="button"
-        className={`rfpath-btn${open ? ' is-open' : ''}${value ? '' : ' is-empty'}`}
+        className={`rfpath-btn${label ? ' has-label' : ''}${open ? ' is-open' : ''}${value ? '' : ' is-empty'}`}
         onClick={() => setOpen(o => !o)}
         title={value ? `${title}: ${value}` : `${title} — путь не указан`}
-        aria-label={title}
+        aria-label={label || title}
         aria-expanded={open}
         aria-haspopup="dialog"
       >
         <IconFolder size={16} />
+        {label && <span className="rfpath-btn-label">{label}</span>}
       </button>
 
       {open && (

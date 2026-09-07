@@ -16,6 +16,18 @@
   cursor: pointer;
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
+/* С подписью кнопка становится обычной кнопкой тулбара — ширина по содержимому. */
+.rfpath-btn.has-label {
+  width: auto;
+  gap: 0.4rem;
+  padding: 0 0.75rem;
+}
+.rfpath-btn-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .rfpath-btn:hover,
 .rfpath-btn.is-open {
   color: var(--primary-color, #2563eb);
