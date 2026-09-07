@@ -258,8 +258,23 @@
   white-space: normal;
 }
 .kprv-send-btn:hover { background: color-mix(in srgb, #0ea5e9 10%, transparent); }
-.kprv-send-btn.is-undo { border-color: var(--border-color); color: var(--text-secondary); }
-.kprv-send-btn.is-undo:hover { color: #dc2626; border-color: color-mix(in srgb, #dc2626 40%, transparent); background: none; }
+/* Выполненное действие («занесено», «отправлено») — зелёная отметка факта, а не
+   серая кнопка: раньше состояние «сделано» выглядело как выключенный элемент, и
+   после нажатия казалось, что ничего не произошло. Тот же язык, что у отметки
+   «Письмо о завершении тендера отправлено». Отмена никуда не делась — она
+   проявляется при наведении. */
+.kprv-send-btn.is-done {
+  border-color: #16a34a;
+  background: color-mix(in srgb, #16a34a 10%, transparent);
+  color: #15803d;
+  font-weight: 600;
+}
+.kprv-send-btn.is-done:hover {
+  border-color: color-mix(in srgb, #dc2626 45%, transparent);
+  background: color-mix(in srgb, #dc2626 8%, transparent);
+  color: #dc2626;
+}
+[data-theme='dark'] .kprv-send-btn.is-done { color: #86efac; }
 [data-theme='dark'] .kprv-send-btn { color: #7dd3fc; }
 
 /* Схема двух цепочек проверки — она же навигация по очередям работы. */

@@ -43,6 +43,11 @@ export default function RootFolderPathButton({
   label = 'Путь к общей папке',
   canEdit = false,
   placeholder = '\\\\192.168.2.55\\SharA_Tender\\СУБПОДРЯДЫ ДОГОВОРА И ДС',
+  // Ключ, из которого берётся значение, пока у `settingKey` своего нет. Нужен
+  // после разделения одной общей настройки на несколько (у тендеров путь стал
+  // отдельным на каждое направление): старый путь не пропадает с экрана, а
+  // первое же сохранение записывает его в собственный ключ вкладки.
+  fallbackKey,
   // Необязательный колбэк: сообщает странице текущий путь (нужен, например,
   // схеме хранения документов, которая показывает корень).
   onValueChange,
@@ -64,13 +69,17 @@ export default function RootFolderPathButton({
     let cancelled = false
     const load = async () => {
       try {
+        // Оба ключа одним запросом: свой ключ вкладки и запасной общий.
+        const keys = fallbackKey ? [settingKey, fallbackKey] : [settingKey]
         const { data, error } = await supabase
           .from('app_settings')
-          .select('value')
-          .eq('key', settingKey)
-          .maybeSingle()
+          .select('key, value')
+          .in('key', keys)
         if (error) throw error
-        if (!cancelled) { setValue(data?.value || ''); onValueChangeRef.current?.(data?.value || '') }
+        const own = data?.find(r => r.key === settingKey)?.value
+        const fallback = fallbackKey ? data?.find(r => r.key === fallbackKey)?.value : ''
+        const next = own || fallback || ''
+        if (!cancelled) { setValue(next); onValueChangeRef.current?.(next) }
       } catch (err) {
         console.warn(`Не удалось загрузить настройку ${settingKey} (app_settings?):`, err.message)
         if (!cancelled) setValue('')
@@ -80,7 +89,7 @@ export default function RootFolderPathButton({
     }
     load()
     return () => { cancelled = true }
-  }, [settingKey])
+  }, [settingKey, fallbackKey])
 
   // Закрытие по клику вне и по Escape.
   useEffect(() => {

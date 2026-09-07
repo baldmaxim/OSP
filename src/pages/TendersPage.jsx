@@ -273,6 +273,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Статус объектов для формы: null = объекты обоих отделов (совместные / прочее).
   const objectStatus = dept.objectStatus
   const pageTitle = isMaterialsView ? 'Тендеры на материалы' : dept.title
+  // Общая папка хранилища — своя у каждого направления: у ОС, ГО, совместных,
+  // прочего и материалов разные папки в сети. Проверяем isMaterialsView первым:
+  // на маршруте материалов `department` не передаётся и равен 'construction'.
+  const rootFolderKey = `tenders_root_folder_path:${isMaterialsView ? 'materials' : department}`
   // Иконка в шапке — своя на каждое направление, как у пунктов бокового меню.
   const HeaderIcon = isMaterialsView
     ? IconPackage
@@ -2095,8 +2099,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           {/* Путь к общей папке всего раздела тендеров — один на все направления
               (app_settings). Путь к папке конкретного тендера — в его строке. */}
           <RootFolderPathButton
-            settingKey="tenders_root_folder_path"
-            title="Общая папка тендеров"
+            settingKey={rootFolderKey}
+            fallbackKey="tenders_root_folder_path"
+            title={`Общая папка — ${pageTitle.replace(/^Тендеры\s*—\s*/, '')}`}
             canEdit={canEditTenders}
             placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\4. Тендеры"
             onValueChange={setRootFolderPath}

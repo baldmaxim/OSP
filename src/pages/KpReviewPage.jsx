@@ -502,10 +502,10 @@ function KpReviewPage() {
                         r.summary_added ? (
                           <button
                             type="button"
-                            className="kprv-send-btn is-undo"
-                            title={r.summary_added_by ? `Занёс: ${r.summary_added_by}` : undefined}
+                            className="kprv-send-btn is-done"
+                            title={`${r.summary_added_by ? `Занёс: ${r.summary_added_by}. ` : ''}Нажмите, чтобы отменить занесение`}
                             onClick={() => handleSummary(r, false)}
-                          >Отменить занесение</button>
+                          >✓ Занесено в сводную</button>
                         ) : (
                           <button
                             type="button"
@@ -522,10 +522,10 @@ function KpReviewPage() {
                         r.remarks_sent ? (
                           <button
                             type="button"
-                            className="kprv-send-btn is-undo"
-                            title={r.remarks_sent_by ? `Отправил: ${r.remarks_sent_by}` : undefined}
+                            className="kprv-send-btn is-done"
+                            title={`${r.remarks_sent_by ? `Отправил: ${r.remarks_sent_by}. ` : ''}Нажмите, чтобы отменить отправку`}
                             onClick={() => handleSend(r, false)}
-                          >Отменить отправку</button>
+                          >✓ Отправлено подрядчику</button>
                         ) : (
                           <button
                             type="button"
