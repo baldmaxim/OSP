@@ -43,6 +43,25 @@
   padding: 0.85rem 1.25rem;
 }
 
+/* Плашка предпросмотра — только для администратора, инженеры её не видят. */
+.tcr-preview-note {
+  margin-bottom: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px dashed color-mix(in srgb, #7c3aed 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #7c3aed 8%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.tcr-empty {
+  margin: 0.4rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
 .tcr-count {
   margin-bottom: 0.6rem;
   font-size: 0.8125rem;

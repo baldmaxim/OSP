@@ -17,7 +17,7 @@ import IconTile from '../components/IconTile'
 import { IconHardHat, IconShieldCheck, IconPackage } from '../components/icons/TenderHubIcons'
 import {
   IconObject, IconTag, IconUser, IconMail, IconColumns, IconColumnsWide,
-  IconJoint, IconOther, IconFolderTree,
+  IconJoint, IconOther, IconFolderTree, IconPhone,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName } from '../utils/tenderDepartments'
 import { mondayOf, weekKey } from '../utils/weeks'
@@ -119,6 +119,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Справочник «Структура хранения документов» + корень хранилища, который в
   // нём показывается (значение поднимается из RootFolderPathButton).
   const [showStorageStructure, setShowStorageStructure] = useState(false)
+  // Предпросмотр вторничного напоминания — кнопка в шапке только у администратора.
+  const [reminderPreview, setReminderPreview] = useState(false)
   const [rootFolderPath, setRootFolderPath] = useState('')
   const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
   // task 397: документы «Тендерный пакет» (S3, категория 'tender_package')
@@ -2094,6 +2096,19 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\4. Тендеры"
             onValueChange={setRootFolderPath}
           />
+          {/* Посмотреть вторничное напоминание, не дожидаясь вторника. Только
+              администратору: обычным пользователям кнопка ни к чему. */}
+          {isAdmin && !isMaterialsView && (
+            <button
+              type="button"
+              className="btn-view-toggle"
+              onClick={() => setReminderPreview(true)}
+              title="Показать вторничное напоминание об обзвоне (предпросмотр)"
+            >
+              <IconPhone size={15} />
+              <span>Напоминание</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowStorageStructure(true)}
@@ -4502,6 +4517,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         tenders={tenders}
         department={department}
         enabled={!isMaterialsView && canEditTenders}
+        forceOpen={reminderPreview}
+        onCloseForced={() => setReminderPreview(false)}
       />
 
       {/* Справочник: как раскладывать документы по папкам в хранилище */}

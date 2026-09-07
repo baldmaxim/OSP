@@ -28,7 +28,16 @@ const IconPhone = () => (
   </svg>
 )
 
-export default function TenderCallReminder({ tenders, department, enabled = true }) {
+export default function TenderCallReminder({
+  tenders,
+  department,
+  enabled = true,
+  // Предпросмотр для администратора: открыть окно в любой день, не трогая
+  // недельную отметку. Нужен, чтобы посмотреть на напоминание, не дожидаясь
+  // вторника и не сбивая расписание живым пользователям.
+  forceOpen = false,
+  onCloseForced,
+}) {
   const storageKey = `tenderCallReminder:${department || 'all'}`
   const thisWeek = weekKey(new Date())
 
@@ -47,9 +56,12 @@ export default function TenderCallReminder({ tenders, department, enabled = true
       return (a.public_tender_number || 0) - (b.public_tender_number || 0)
     }), [tenders])
 
-  if (!enabled || dismissed || !isTuesday() || pending.length === 0) return null
+  // В режиме предпросмотра показываем всегда — иначе администратор увидит окно
+  // только во вторник и только при непустом списке.
+  if (!forceOpen && (!enabled || dismissed || !isTuesday() || pending.length === 0)) return null
 
   const close = (forWeek) => {
+    if (forceOpen) { onCloseForced?.(); return }   // предпросмотр отметку не ставит
     if (forWeek) {
       try { localStorage.setItem(storageKey, thisWeek) } catch { /* приватный режим — переживём */ }
     }
@@ -72,9 +84,21 @@ export default function TenderCallReminder({ tenders, department, enabled = true
         </div>
 
         <div className="tcr-body">
+          {forceOpen && (
+            <div className="tcr-preview-note">
+              Предпросмотр. Так окно увидят инженеры во вторник; сейчас оно
+              открыто вручную и недельную отметку не ставит.
+            </div>
+          )}
           <div className="tcr-count">
             Ждут ответа: <b>{pending.length}</b>
           </div>
+          {pending.length === 0 && (
+            <p className="tcr-empty">
+              Сейчас нет тендеров в статусах «Идет тендерная процедура» и
+              «Подведение итогов» — в обычный вторник окно бы не появилось.
+            </p>
+          )}
           <ul className="tcr-list">
             {pending.map(t => (
               <li key={t.id} className="tcr-item">
@@ -97,12 +121,18 @@ export default function TenderCallReminder({ tenders, department, enabled = true
         </div>
 
         <div className="tcr-actions">
-          <button type="button" className="btn-secondary" onClick={() => close(false)}>
-            Напомнить сегодня ещё раз
-          </button>
-          <button type="button" className="btn-primary" onClick={() => close(true)}>
-            Понятно, обзвоню
-          </button>
+          {forceOpen ? (
+            <button type="button" className="btn-primary" onClick={() => close(false)}>Закрыть</button>
+          ) : (
+            <>
+              <button type="button" className="btn-secondary" onClick={() => close(false)}>
+                Напомнить сегодня ещё раз
+              </button>
+              <button type="button" className="btn-primary" onClick={() => close(true)}>
+                Понятно, обзвоню
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
