@@ -1,0 +1,152 @@
+/* Инструкция по разделу «Планы затрат». */
+.cpi-modal {
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.cpi-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem 0.8rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.cpi-head h3 { margin: 0; font-size: 1.0625rem; }
+.cpi-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.cpi-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+}
+
+.cpi-section + .cpi-section {
+  margin-top: 1.25rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border-color);
+}
+.cpi-section h4 {
+  margin: 0 0 0.6rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.cpi-rule {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+/* Таблица примера: узкая, но на телефоне всё равно прокручивается — цифры
+   важнее, чем перенос по слогам. */
+.cpi-table-wrap { overflow-x: auto; }
+.cpi-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.cpi-table th,
+.cpi-table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+  text-align: right;
+  white-space: nowrap;
+}
+.cpi-table thead th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.cpi-table tbody th[scope='row'] {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.cpi-table td { font-variant-numeric: tabular-nums; }
+.cpi-total th,
+.cpi-total td {
+  border-bottom: none;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cpi-formula {
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.06);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.cpi-formula code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.cpi-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+/* Предупреждение о частой ошибке — сложении процентов вместо умножения. */
+.cpi-warn {
+  margin: 0.75rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border-left: 3px solid #d97706;
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, #d97706 8%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.cpi-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Кнопка-иконка «?» в шапке раздела. */
+.cpi-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 0.5rem;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.cpi-open-btn:hover {
+  color: var(--primary-color, #2563eb);
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 45%, transparent);
+  background: var(--bg-secondary);
+}

@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import FolderPathCell from '../components/FolderPathCell'
+import IconTile from '../components/IconTile'
+import { IconCoins } from '../components/icons/ToolbarIcons'
+import CostPlanInstructionModal from '../components/CostPlanInstructionModal'
 import './CostPlansPage.css'
 
 const STATUS_LABELS = {
@@ -68,6 +71,8 @@ function CostPlansPage() {
   const [activeTab, setActiveTab] = useState('all') // 'all' | 'not_started' | 'in_work' | 'completed'
   // task 234: статус-вкладки скрыты под кнопкой «Статусы планов затрат»
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
+  // Инструкция по расчёту плана затрат (иконка «?» в шапке раздела).
+  const [showInstruction, setShowInstruction] = useState(false)
   const [responsibleFilter, setResponsibleFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('') // task 209
   // task 211: модалка редактирования ссылки на план затрат
@@ -343,11 +348,24 @@ function CostPlansPage() {
   return (
     <div className="cost-plans-page">
       <div className="page-header page-header-cost-plans">
-        <h2><span className="page-icon" aria-hidden>💰</span> Планы затрат</h2>
+        <h2>
+          <IconTile tone="green" className="page-icon-tile"><IconCoins /></IconTile>
+          Планы затрат
+          {/* Инструкция по расчёту: правило знают на словах, новичку негде посмотреть. */}
+          <button
+            type="button"
+            className="cpi-open-btn"
+            onClick={() => setShowInstruction(true)}
+            title="Инструкция по расчёту плана затрат"
+            aria-label="Инструкция по расчёту плана затрат"
+          >?</button>
+        </h2>
         <div className="page-header-hint">
           Список тендеров основного строительства. Ответственного за план затрат можно назначить в карточке тендера.
         </div>
       </div>
+
+      {showInstruction && <CostPlanInstructionModal onClose={() => setShowInstruction(false)} />}
 
       <div className="cost-plans-tabs">
         <button

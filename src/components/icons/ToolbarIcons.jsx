@@ -86,6 +86,17 @@ export const IconOther = ({ size }) => (
   </TbSvg>
 )
 
+// Планы затрат — монеты (вместо эмодзи 💰 в шапке раздела)
+export const IconCoins = ({ size }) => (
+  <TbSvg size={size}>
+    <ellipse cx="9" cy="6" rx="6" ry="2.5" />
+    <path d="M3 6v5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V6" />
+    <path d="M3 11v5c0 1.4 2.7 2.5 6 2.5 1 0 2-.1 2.8-.3" />
+    <ellipse cx="17" cy="15" rx="5" ry="2.2" />
+    <path d="M12 15v4c0 1.2 2.2 2.2 5 2.2s5-1 5-2.2v-4" />
+  </TbSvg>
+)
+
 // Обзвон объектов — телефонная трубка
 export const IconPhone = ({ size }) => (
   <TbSvg size={size}>

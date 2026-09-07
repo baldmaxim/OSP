@@ -4,6 +4,7 @@
 import { supabase } from '../supabase'
 import { deleteDocument, uploadFile } from './s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import { STAGE_FIELDS } from '../utils/kpReviewStages'
 
 // task 431: статусы проверки КП аналитиком-экономистом.
 export const KP_REVIEW_STATUS = {
@@ -172,6 +173,47 @@ export async function setProposalReview(fileId, {
 // Отметка «занесено в сводную таблицу» — промежуточный этап между проверкой
 // аналитиком и отправкой замечаний контрагенту. Нужен обеим веткам: и КП без
 // замечаний, и КП с замечаниями сначала попадают в сводную.
+// Ручная установка ЛЮБОГО этапа проверки (суперпользователь). Обычный путь —
+// шаги вперёд и точечные отмены; здесь же этап выставляется сразу, чтобы
+// исправить ошибку: откатить «Готово» на «На проверке», перевести КП в другую
+// подветку и т.п.
+//
+// Этап не хранится полем, он выводится из четырёх (см. stageOf в
+// utils/kpReviewStages.js), поэтому пишем согласованный набор одним UPDATE.
+//
+// review_note и review_note_s3_document_id НЕ трогаем: замечания аналитика не
+// должны пропадать оттого, что этап поправили руками.
+export async function setReviewStage(fileId, stage, { author = '' } = {}) {
+  const fields = STAGE_FIELDS[stage]
+  if (!fields) throw new Error(`Неизвестный этап проверки: ${stage}`)
+  const now = new Date().toISOString()
+  const who = author?.trim() || null
+
+  const payload = { ...fields }
+  // Отметки «кто и когда» приводим в соответствие этапу: иначе у КП, снятого с
+  // «занесено», осталась бы подпись «Занёс: …» — на этапе одно, в карточке другое.
+  if (fields.review_status === 'pending') {
+    payload.reviewed_at = null
+    payload.reviewed_by = null
+  } else {
+    payload.reviewed_at = now
+    payload.reviewed_by = who
+  }
+  payload.summary_added_at = fields.summary_added ? now : null
+  payload.summary_added_by = fields.summary_added ? who : null
+  payload.remarks_sent_at = fields.remarks_sent ? now : null
+  payload.remarks_sent_by = fields.remarks_sent ? who : null
+
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .update(payload)
+    .eq('id', fileId)
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
+    .single()
+  if (error) throw error
+  return data
+}
+
 export async function setSummaryAdded(fileId, { added, author = '' }) {
   const payload = added
     ? { summary_added: true, summary_added_at: new Date().toISOString(), summary_added_by: author?.trim() || null }

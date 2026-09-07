@@ -712,6 +712,102 @@
 .tenders-page .page-header h2 .page-icon-tile { width: 26px; height: 26px; }
 
 /* Переключатель вида таблицы (Компактный / Все столбцы) */
+/* ── Вкладка «Документы» ────────────────────────────────────────────────────
+   Материалы и инструменты раздела: шаблон письма, структура хранения,
+   предпросмотр напоминания. Плитки, а не список кнопок в шапке, — под каждую
+   помещается пояснение, и место под новые пункты уже готово. */
+.tender-docs { padding: 1.25rem 1.5rem; }
+
+.tender-docs-lead {
+  margin: 0 0 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  max-width: 60ch;
+}
+
+.tender-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.75rem;
+}
+
+.tender-doc-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: 'icon title' 'icon desc';
+  align-items: start;
+  gap: 0.15rem 0.7rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.tender-doc-card:hover {
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 45%, transparent);
+  background: var(--bg-secondary);
+  transform: translateY(-1px);
+}
+.tender-doc-card:focus-visible {
+  outline: 2px solid var(--primary-color, #2563eb);
+  outline-offset: 2px;
+}
+
+.tender-doc-icon {
+  grid-area: icon;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 10%, transparent);
+  color: var(--primary-color, #2563eb);
+}
+.tender-doc-title {
+  grid-area: title;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tender-doc-desc {
+  grid-area: desc;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
+/* Возврат из шаблона письма: кнопки в шапке больше нет, нужен явный путь назад. */
+.tender-docs-back {
+  margin-bottom: 1rem;
+  padding: 0.25rem 0.6rem 0.25rem 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.tender-docs-back:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+@media (max-width: 640px) {
+  .tender-docs { padding: 1rem; }
+  .tender-docs-grid { grid-template-columns: 1fr; }
+}
+
+/* Кнопка-иконка без подписи: шапка тендеров тесная, и у редких действий
+   («Шаблон письма», предпросмотр напоминания) подпись занимала больше места,
+   чем стоила. Смысл раскрывает title и aria-label. */
+.btn-view-toggle.is-icon-only {
+  gap: 0;
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
 .btn-view-toggle {
   display: inline-flex;
   align-items: center;

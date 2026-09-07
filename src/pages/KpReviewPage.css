@@ -184,6 +184,77 @@
 .kprv-col-reviewer { white-space: normal; }
 /* ФИО переносятся по словам: колонка узкая, а фамилия рвётся по буквам некрасиво. */
 .kprv-col-planresp { white-space: normal; word-break: keep-all; }
+
+/* Ручная установка этапа — служебный инструмент суперпользователя. Приглушён
+   намеренно: это правка ошибок, а не обычный шаг работы. */
+.kprv-stage-wrap { position: relative; }
+.kprv-stage-btn {
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 7px;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+.kprv-stage-btn:hover,
+.kprv-stage-btn.is-open {
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+  background: var(--bg-secondary);
+}
+
+.kprv-stage-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  width: 15rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-primary);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+  text-align: left;
+}
+/* У нижних строк раскрываем вверх: контейнер таблицы прокручивается внутри
+   себя и обрезал бы меню. */
+.kprv-stage-menu.is-up { top: auto; bottom: calc(100% + 4px); }
+
+.kprv-stage-hint {
+  margin-bottom: 0.4rem;
+  font-size: 0.625rem;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+.kprv-stage-group + .kprv-stage-group { margin-top: 0.35rem; }
+.kprv-stage-group-title {
+  padding: 0.15rem 0.35rem;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+.kprv-stage-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.3rem 0.35rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+.kprv-stage-item:hover { background: var(--bg-secondary); }
+.kprv-stage-item.is-current { font-weight: 600; color: var(--primary-color, #2563eb); }
+.kprv-stage-check { flex-shrink: 0; }
 .kprv-reviewer-name { display: block; color: var(--text-primary); }
 .kprv-reviewer-date {
   display: block;

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
-import { fetchProposalFilesForReview, setRemarksSent, setSummaryAdded } from '../services/tenderProposalFiles'
+import { fetchProposalFilesForReview, setRemarksSent, setSummaryAdded, setReviewStage } from '../services/tenderProposalFiles'
+import { stageOf, STAGE_KEYS, STAGE_GROUPS, TAB_META } from '../utils/kpReviewStages'
 import KpReviewBadge from '../components/KpReviewBadge'
 import KpReviewModal from '../components/KpReviewModal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
@@ -33,68 +34,6 @@ const IconFile = () => (
     <path d="M14 2v6h6" />
   </svg>
 )
-
-// Этап (стадия) КП. После вердикта аналитика путь расходится, и занесение в
-// сводную таблицу есть в каждой ветке — но это разные очереди работы, поэтому и
-// этапы разные (миграции 20260824, 20260826):
-//
-//   pending           — на проверке, ждёт аналитика (общее начало всех веток)
-//
-//   ветка «без замечаний»:
-//   ok_summary        — вердикт «нет замечаний», в сводную ещё не внесено
-//   ok_done           — внесено, работа по КП закончена
-//
-//   ветка «с замечаниями» → подветка «для отправки подрядчику»:
-//   remarks_work      — общая очередь на две ПАРАЛЛЕЛЬНЫЕ задачи инженера:
-//                       занести в сводную и отправить замечания подрядчику.
-//                       Порядок не важен, этап закрыт, когда сделано и то, и то
-//   remarks_sent      — обе задачи выполнены, работа по КП закончена
-//
-//   ветка «с замечаниями» → подветка «без отправки подрядчику»:
-//   nosend_summary    — в сводную ещё не внесено
-//   nosend_done       — внесено, работа по КП закончена (отправки нет)
-//
-// remarks_send_required читаем строго через === false: у КП, проверенных до
-// миграции 20260826, поля нет, и они должны остаться на прежнем маршруте.
-function stageOf(r) {
-  if (r.review_status === 'approved') return r.summary_added ? 'ok_done' : 'ok_summary'
-  if (r.review_status === 'has_remarks') {
-    if (r.remarks_send_required === false) {
-      return r.summary_added ? 'nosend_done' : 'nosend_summary'
-    }
-    return r.summary_added && r.remarks_sent ? 'remarks_sent' : 'remarks_work'
-  }
-  return 'pending'
-}
-
-const STAGE_KEYS = [
-  'pending',
-  'ok_summary', 'ok_done',
-  'remarks_work', 'remarks_sent',
-  'nosend_summary', 'nosend_done',
-]
-
-// Узлы схемы = очереди работы = вкладки, один в один. tone — цветовой тон,
-// actor — кто делает следующий шаг, title — полная подпись для всплывающей
-// подсказки (в трёх ветках есть одноимённые узлы «К занесению в сводную»).
-// terminal — конечная точка ветки, помечаем галочкой.
-const TAB_META = {
-  pending: { label: 'На проверке', tone: 'pending', actor: 'аналитик' },
-  ok_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'аналитик-экономист', title: 'Без замечаний · к занесению в сводную таблицу' },
-  ok_done: { label: 'Готово', tone: 'ok', terminal: true, title: 'Без замечаний · работа по КП закончена' },
-  // Один этап на две параллельные задачи инженера — порядок между ними не
-  // навязываем, важно лишь, чтобы к концу этапа обе были выполнены.
-  remarks_work: {
-    label: 'Сводная + отправка',
-    tone: 'warn',
-    actor: 'инженер · параллельно',
-    title: 'С замечаниями · параллельно: занести в сводную таблицу и отправить замечания подрядчику',
-  },
-  remarks_sent: { label: 'Отправлено', tone: 'sent', actor: 'инженер', terminal: true, title: 'С замечаниями · внесено в сводную и отправлено подрядчику' },
-  nosend_summary: { label: 'К занесению в сводную', tone: 'summary', actor: 'аналитик-экономист', title: 'С замечаниями · без отправки подрядчику · к занесению в сводную таблицу' },
-  nosend_done: { label: 'Готово', tone: 'ok', terminal: true, title: 'С замечаниями · без отправки подрядчику · работа по КП закончена' },
-  all: { label: 'Все', tone: 'all', title: 'Все КП независимо от этапа' },
-}
 
 const IconDone = () => (
   <svg className="kprv-flow-done-icon" width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -241,8 +180,29 @@ function KpReviewPage() {
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
   const [reviewFile, setReviewFile] = useState(null)
   const [previewDoc, setPreviewDoc] = useState(null)
+  // Открытое меню ручной установки этапа: { id, up } | null. `up` — раскрыть
+  // вверх: таблица прокручивается внутри себя и обрезает меню у нижних строк.
+  const [stagePopover, setStagePopover] = useState(null)
+  const stagePopoverFor = stagePopover?.id ?? null
   // Скролл-контейнер таблицы — из него виртуализация берёт положение прокрутки.
   const tableWrapRef = useRef(null)
+
+  // Закрытие меню этапа по клику вне и по Escape.
+  useEffect(() => {
+    if (!stagePopoverFor) return
+    const onMousedown = (e) => {
+      if (!e.target.closest('.kprv-stage-wrap')) setStagePopover(null)
+    }
+    const onKeydown = (e) => { if (e.key === 'Escape') setStagePopover(null) }
+    // Откладываем на тик, иначе открывающий клик тут же закроет меню.
+    const t = setTimeout(() => document.addEventListener('mousedown', onMousedown), 0)
+    document.addEventListener('keydown', onKeydown)
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('mousedown', onMousedown)
+      document.removeEventListener('keydown', onKeydown)
+    }
+  }, [stagePopoverFor])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -278,6 +238,19 @@ function KpReviewPage() {
       load()
     } catch (e) {
       alert('Ошибка отметки о занесении в сводную: ' + (e.message || e))
+    }
+  }
+
+  // Ручная установка этапа (только суперпользователь): чинит ошибки, когда КП
+  // ушло не в ту ветку или не на тот шаг.
+  const handleSetStage = async (r, stage) => {
+    setStagePopover(null)
+    if (stageOf(r) === stage) return
+    try {
+      await setReviewStage(r.id, stage, { author: userProfile?.full_name || user?.email || '' })
+      load()
+    } catch (e) {
+      alert('Не удалось поставить этап: ' + (e.message || e))
     }
   }
 
@@ -541,6 +514,58 @@ function KpReviewPage() {
                             onClick={() => handleSend(r, true)}
                           >Отправлено подрядчику</button>
                         )
+                      )}
+                      {/* Ручная установка этапа — служебный инструмент правки
+                          ошибок, поэтому только суперпользователю и приглушённо. */}
+                      {isSuperAdmin && (
+                        <div className="kprv-stage-wrap">
+                          <button
+                            type="button"
+                            className={`kprv-stage-btn${stagePopoverFor === r.id ? ' is-open' : ''}`}
+                            title="Ручная установка этапа проверки"
+                            aria-haspopup="listbox"
+                            aria-expanded={stagePopoverFor === r.id}
+                            onClick={(e) => {
+                              if (stagePopover?.id === r.id) { setStagePopover(null); return }
+                              // Меню высокое (~260px), а таблица прокручивается
+                              // внутри себя: у нижних строк раскрываем вверх.
+                              const btn = e.currentTarget.getBoundingClientRect()
+                              const wrap = tableWrapRef.current?.getBoundingClientRect()
+                              const up = !!wrap && btn.bottom + 270 > wrap.bottom
+                              setStagePopover({ id: r.id, up })
+                            }}
+                          >Этап ▾</button>
+                          {stagePopoverFor === r.id && (
+                            <div className={`kprv-stage-menu${stagePopover.up ? ' is-up' : ''}`} role="listbox">
+                              <div className="kprv-stage-hint">
+                                Поставить этап вручную. Замечания и вложенный файл
+                                при этом сохраняются.
+                              </div>
+                              {STAGE_GROUPS.map(g => (
+                                <div key={g.title} className="kprv-stage-group">
+                                  <div className="kprv-stage-group-title">{g.title}</div>
+                                  {g.keys.map(key => {
+                                    const isCurrent = stageOf(r) === key
+                                    return (
+                                      <button
+                                        key={key}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={isCurrent}
+                                        className={`kprv-stage-item${isCurrent ? ' is-current' : ''}`}
+                                        title={TAB_META[key].title || TAB_META[key].label}
+                                        onClick={() => handleSetStage(r, key)}
+                                      >
+                                        {TAB_META[key].label}
+                                        {isCurrent && <span className="kprv-stage-check" aria-hidden>✓</span>}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </td>
