@@ -30,6 +30,35 @@ const TENDER_DEPT = [
   { name: 'Топчий Анна', scope: 'ЭОМ, СС' },
 ]
 
+// Сметно-технический отдел: руководитель, ведущий инженер и подразделения по
+// направлениям. Все в подразделениях — старшие инженеры.
+const ESTIMATE_DEPT = {
+  head: { name: 'Бузаров Владимир Сергеевич', role: 'Руководитель' },
+  lead: { name: 'Юсупова Ксения Салаватовна', role: 'Ведущий инженер' },
+  units: [
+    { title: 'Монолит', people: ['Виноходова Екатерина Андреевна'] },
+    { title: 'НВФ, СПК', people: ['Голубева Варвара Юрьевна'] },
+    { title: 'Общестроительные работы', people: ['Локтионова Инна Александровна', 'Пономаренко Екатерина Юрьевна'] },
+    { title: 'Механические системы (ОВ, ВК)', people: ['Головашин Михаил Алексеевич'] },
+    { title: 'Электрические системы (ЭОМ, СС)', people: ['Таймасханов Магомед Гамзатович'] },
+  ],
+}
+
+// К кому идти, когда расчёт не сходится. Отдельно от исполнителей выше: это
+// эскалация, а не рабочая переписка по разбивке.
+const ESCALATION = [
+  {
+    name: 'Одинцов Артем Андреевич',
+    role: 'Руководитель тендерного отдела',
+    when: 'Объёмы не совпадают или позиций нет в договоре генподряда',
+  },
+  {
+    name: 'Могуев Алексей Павлович',
+    role: 'Руководитель отдела по удорожанию',
+    when: 'Туда же — отдел рассмотрит расчёт и при возможности подаст Заказчику на согласование',
+  },
+]
+
 // Инструкция по разделу «Планы затрат».
 //
 // Справочник для тех, кто считает план от сумм договора генподряда: правило
@@ -40,6 +69,10 @@ const TENDER_DEPT = [
 // формульное, поэтому это обычная разметка, а не массив данных.
 
 export default function CostPlanInstructionModal({ onClose }) {
+  // Вкладка «Сотрудники» — те же люди, что упомянуты в инструкции, одним
+  // списком: чаще всего от инструкции нужно именно «к кому идти».
+  const [tab, setTab] = useState('guide')
+
   // Escape закрывает — модалка только для чтения, задерживать в ней незачем.
   useEffect(() => {
     const onKeydown = (e) => { if (e.key === 'Escape') onClose() }
@@ -58,7 +91,82 @@ export default function CostPlanInstructionModal({ onClose }) {
           <button className="modal-close" onClick={onClose} aria-label="Закрыть">×</button>
         </div>
 
-        <div className="cpi-body">
+        <div className="cpi-tabs" role="tablist">
+          {[
+            { key: 'guide', label: 'Инструкция' },
+            { key: 'people', label: 'Сотрудники' },
+          ].map(t => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.key}
+              className={`cpi-tab${tab === t.key ? ' is-active' : ''}`}
+              onClick={() => setTab(t.key)}
+            >{t.label}</button>
+          ))}
+        </div>
+
+        {tab === 'people' && (
+          <div className="cpi-body">
+            <section className="cpi-section">
+              <h4>Тендерный отдел — разбивка по видам работ</h4>
+              <p className="cpi-rule">У них запрашивают расчёт с разбивкой по договору генподряда.</p>
+              <ul className="cpi-people">
+                {TENDER_DEPT.map(p => (
+                  <li key={p.name}>
+                    <span className="cpi-person">{p.name}</span>
+                    <span className="cpi-person-note">{p.scope}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="cpi-section">
+              <h4>Кому сообщать о расхождениях</h4>
+              <ul className="cpi-people">
+                {ESCALATION.map(p => (
+                  <li key={p.name}>
+                    <span className="cpi-person">{p.name}</span>
+                    <span className="cpi-person-role">{p.role}</span>
+                    <span className="cpi-person-note">{p.when}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="cpi-section">
+              <h4>Сметно-технический отдел</h4>
+              <ul className="cpi-people">
+                <li>
+                  <span className="cpi-person">{ESTIMATE_DEPT.head.name}</span>
+                  <span className="cpi-person-role">{ESTIMATE_DEPT.head.role}</span>
+                </li>
+                <li>
+                  <span className="cpi-person">{ESTIMATE_DEPT.lead.name}</span>
+                  <span className="cpi-person-role">{ESTIMATE_DEPT.lead.role}</span>
+                </li>
+              </ul>
+
+              <p className="cpi-label">Подразделения по направлениям</p>
+              <div className="cpi-units">
+                {ESTIMATE_DEPT.units.map(u => (
+                  <div key={u.title} className="cpi-unit">
+                    <div className="cpi-unit-title">{u.title}</div>
+                    {u.people.map(name => (
+                      <div key={name} className="cpi-unit-person">
+                        {name}
+                        <span className="cpi-person-note">Старший инженер</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+
+        <div className="cpi-body" hidden={tab !== 'guide'}>
           <section className="cpi-section">
             <h4>С чего начать</h4>
             <p className="cpi-rule">
@@ -91,6 +199,11 @@ export default function CostPlanInstructionModal({ onClose }) {
               Это поиск аналогичных позиций в договоре генподряда (с
               Заказчиком/Застройщиком) и сопоставление <b>один к одному</b>.
             </p>
+            <p className="cpi-note">
+              <b>Не получается найти позиции по тендерам?</b> Обращайтесь к
+              ответственным инженерам тендерного отдела — список по видам работ
+              выше и на вкладке «Сотрудники».
+            </p>
             <p className="cpi-label">Сверять обязательно:</p>
             <ul className="cpi-list">
               <li>
@@ -108,30 +221,30 @@ export default function CostPlanInstructionModal({ onClose }) {
               Материалы переносятся в план как есть, всю разницу забирают работы.
             </p>
 
+            {/* Материалы / работы / итого — по горизонтали: так две суммы одной
+                строки (ДГП и план) стоят рядом и сравниваются взглядом. */}
             <div className="cpi-table-wrap">
               <table className="cpi-table">
                 <thead>
                   <tr>
                     <th></th>
-                    <th>Договор генподряда</th>
-                    <th>План затрат</th>
+                    <th>Материалы</th>
+                    <th>Работы</th>
+                    <th className="cpi-total-col">Итого</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <th scope="row">Материалы</th>
+                    <th scope="row">Договор генподряда</th>
                     <td>100,00</td>
                     <td>100,00</td>
+                    <td className="cpi-total-col">200,00</td>
                   </tr>
                   <tr>
-                    <th scope="row">Работы</th>
+                    <th scope="row">План затрат</th>
                     <td>100,00</td>
                     <td>56,74</td>
-                  </tr>
-                  <tr className="cpi-total">
-                    <th scope="row">Итого</th>
-                    <td>200,00</td>
-                    <td>156,74</td>
+                    <td className="cpi-total-col">156,74</td>
                   </tr>
                 </tbody>
               </table>
@@ -156,6 +269,33 @@ export default function CostPlanInstructionModal({ onClose }) {
               Множители <b>перемножаются, а не складываются</b>: сложение процентов
               дало бы 1,26, и план затрат разошёлся бы примерно на 1,3 тыс. на
               каждый миллион.
+            </p>
+          </section>
+
+          <section className="cpi-section">
+            <h4>Если объём не совпадает или позиций нет</h4>
+            <p className="cpi-rule">
+              Молча подгонять расчёт нельзя — сообщите обоим:
+            </p>
+            <div className="cpi-table-wrap">
+              <table className="cpi-table cpi-table--left">
+                <tbody>
+                  {ESCALATION.map(p => (
+                    <tr key={p.name}>
+                      <th scope="row">
+                        {p.name}
+                        <span className="cpi-role">{p.role}</span>
+                      </th>
+                      <td>{p.when}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="cpi-note">
+              <b>Отдел по удорожанию</b> занимается дополнительными соглашениями
+              с Заказчиками: рассмотрит расчёт и при возможности подаст Заказчику
+              на согласование.
             </p>
           </section>
 

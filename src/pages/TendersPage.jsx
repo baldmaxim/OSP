@@ -17,7 +17,7 @@ import IconTile from '../components/IconTile'
 import { IconHardHat, IconShieldCheck, IconPackage } from '../components/icons/TenderHubIcons'
 import {
   IconObject, IconTag, IconUser, IconMail, IconColumns, IconColumnsWide,
-  IconJoint, IconOther, IconFolderTree, IconPhone,
+  IconJoint, IconOther, IconFolderTree, IconPhone, IconDocsStack,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName } from '../utils/tenderDepartments'
 import { mondayOf, weekKey } from '../utils/weeks'
@@ -119,6 +119,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Справочник «Структура хранения документов» + корень хранилища, который в
   // нём показывается (значение поднимается из RootFolderPathButton).
   const [showStorageStructure, setShowStorageStructure] = useState(false)
+  // «Документы раздела» — окно с материалами и инструментами. Не вкладка
+  // реестра: рядом со статусами тендеров ей не место.
+  const [showDocsMenu, setShowDocsMenu] = useState(false)
   // Предпросмотр вторничного напоминания — кнопка в шапке только у администратора.
   const [reminderPreview, setReminderPreview] = useState(false)
   const [rootFolderPath, setRootFolderPath] = useState('')
@@ -2096,8 +2099,21 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\4. Тендеры"
             onValueChange={setRootFolderPath}
           />
-          {/* Тендеры на материалы своей вкладки «Документы» не имеют, поэтому
-              структура хранения остаётся у них в шапке. */}
+          {/* Документы раздела — рядом с путём к общей папке: и то, и другое
+              про хранилище и материалы, а не про список тендеров. */}
+          {!isMaterialsView && (
+            <button
+              type="button"
+              className="btn-view-toggle"
+              onClick={() => setShowDocsMenu(true)}
+              title="Материалы и инструменты раздела: шаблон письма, структура хранения"
+            >
+              <IconDocsStack size={15} />
+              <span>Документы</span>
+            </button>
+          )}
+          {/* У тендеров на материалы окна «Документы» нет, поэтому структура
+              хранения остаётся у них отдельной кнопкой. */}
           {isMaterialsView && (
             <button
               type="button"
@@ -2220,16 +2236,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             </>
           )
         })()}
-        {/* Документы раздела: шаблон письма, напоминание об обзвоне и всё, что
-            добавится дальше. Вынесены из шапки — она была перегружена. */}
-        {!isMaterialsView && (
-          <button
-            className={`tender-tab ${activeTab === 'documents' || activeTab === 'template' ? 'active' : ''}`}
-            onClick={() => setActiveTab('documents')}
-          >
-            Документы
-          </button>
-        )}
         {/* task 194: «Удалённые» — в самой правой части */}
         <button
           className={`tender-tab tender-tab-deleted ${activeTab === 'deleted' ? 'active' : ''}`}
@@ -2242,8 +2248,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         </button>
       </div>
 
-      {/* Фильтры и таблица (скрываем на вкладке документов и шаблона) */}
-      {activeTab !== 'template' && activeTab !== 'documents' && (<>
+      {/* Фильтры и таблица (скрываем на вкладке шаблона) */}
+      {activeTab !== 'template' && (<>
       <div style={{ padding: '0.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
         <div className="tenders-search-wrap" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 240px', minWidth: '200px', maxWidth: '360px' }}>
           <input
@@ -3549,19 +3555,27 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       )}
       </>)}
 
-      {/* Вкладка «Документы» — плитки с материалами и инструментами раздела.
-          Сюда же переехали кнопки, перегружавшие шапку. */}
-      {activeTab === 'documents' && !isMaterialsView && (
-        <div className="tender-docs">
-          <p className="tender-docs-lead">
-            Материалы и инструменты раздела. Всё, что относится к работе с тендерами,
-            но не к конкретному тендеру.
-          </p>
-          <div className="tender-docs-grid">
+      {/* «Документы» — материалы и инструменты раздела. Это НЕ вкладка реестра:
+          рядом со статусами тендеров ей не место, там фильтры по списку. Открыть
+          можно кнопкой в шапке, рядом с путём к общей папке. */}
+      {showDocsMenu && !isMaterialsView && (
+        <div className="modal-overlay" onClick={() => setShowDocsMenu(false)}>
+          <div className="modal tender-docs-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="tender-docs-head">
+              <div>
+                <h3>Документы раздела</h3>
+                <p className="tender-docs-lead">
+                  Материалы и инструменты, которые относятся к работе с тендерами,
+                  но не к конкретному тендеру.
+                </p>
+              </div>
+              <button className="modal-close" onClick={() => setShowDocsMenu(false)} aria-label="Закрыть">×</button>
+            </div>
+            <div className="tender-docs-grid">
             <button
               type="button"
               className="tender-doc-card"
-              onClick={() => setActiveTab('template')}
+              onClick={() => { setShowDocsMenu(false); setActiveTab('template') }}
             >
               <span className="tender-doc-icon"><IconMail size={18} /></span>
               <span className="tender-doc-title">Шаблон письма</span>
@@ -3573,7 +3587,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <button
               type="button"
               className="tender-doc-card"
-              onClick={() => setShowStorageStructure(true)}
+              onClick={() => { setShowDocsMenu(false); setShowStorageStructure(true) }}
             >
               <span className="tender-doc-icon"><IconFolderTree size={18} /></span>
               <span className="tender-doc-title">Структура хранения документов</span>
@@ -3586,7 +3600,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <button
                 type="button"
                 className="tender-doc-card"
-                onClick={() => setReminderPreview(true)}
+                onClick={() => { setShowDocsMenu(false); setReminderPreview(true) }}
               >
                 <span className="tender-doc-icon"><IconPhone size={18} /></span>
                 <span className="tender-doc-title">Напоминание об обзвоне</span>
@@ -3595,6 +3609,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 </span>
               </button>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -3605,8 +3620,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <button
             type="button"
             className="tender-docs-back"
-            onClick={() => setActiveTab('documents')}
-          >← Документы</button>
+            onClick={() => setActiveTab('all')}
+          >← К тендерам</button>
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginBottom: '1rem' }}>
             Редактируйте шаблон письма для запроса КП. Используйте переменные в фигурных скобках — они будут заменены реальными данными при создании тендера:
           </p>

@@ -22,11 +22,108 @@
   color: var(--text-secondary);
 }
 
+.cpi-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.cpi-tab {
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.cpi-tab:hover { color: var(--text-primary); }
+.cpi-tab.is-active {
+  color: var(--primary-color, #2563eb);
+  border-bottom-color: var(--primary-color, #2563eb);
+  font-weight: 600;
+}
+
 .cpi-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 1rem 1.25rem;
+}
+
+/* Вкладка «Сотрудники»: имя крупно, роль и повод обратиться — под ним. */
+.cpi-people { margin: 0; padding: 0; list-style: none; }
+.cpi-people li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.cpi-people li:last-child { border-bottom: none; }
+.cpi-person {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cpi-person-role {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  color: var(--primary-color, #2563eb);
+}
+.cpi-person-note {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
+/* Подразделения сметного отдела — плитками, как на их оргсхеме. */
+.cpi-units {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.5rem;
+}
+.cpi-unit {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.cpi-unit-title {
+  margin-bottom: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.cpi-unit-person {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.cpi-unit-person + .cpi-unit-person { margin-top: 0.35rem; }
+
+/* Должность под ФИО в таблице эскалации. */
+.cpi-role {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.cpi-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+/* Столбец «Итого» в примере — акцент, к нему сводится расчёт. */
+.cpi-table .cpi-total-col {
+  font-weight: 700;
+  color: var(--text-primary);
+  border-left: 1px solid var(--border-color);
 }
 
 .cpi-section + .cpi-section {
@@ -75,12 +172,8 @@
   color: var(--text-secondary);
 }
 .cpi-table td { font-variant-numeric: tabular-nums; }
-.cpi-total th,
-.cpi-total td {
-  border-bottom: none;
-  font-weight: 700;
-  color: var(--text-primary);
-}
+.cpi-table tbody tr:last-child th,
+.cpi-table tbody tr:last-child td { border-bottom: none; }
 
 .cpi-formula {
   margin-top: 0.75rem;
