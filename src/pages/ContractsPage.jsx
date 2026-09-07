@@ -7,6 +7,7 @@ import FilterDropdown from '../components/FilterDropdown'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
+import FolderPathCell from '../components/FolderPathCell'
 import LarixEntryBlock from '../components/LarixEntryBlock'
 // Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
@@ -335,7 +336,9 @@ function ContractRegistry() {
   const [formData, setFormData] = useState(EMPTY_FORM)
 
   // Панель фильтров реестра (over-table, in-memory)
-  const [filterObjectId, setFilterObjectId] = useState('')
+  // Множественный выбор: договоры часто смотрят сразу по нескольким объектам
+  // одного комплекса. Пустой массив = фильтр не применён.
+  const [filterObjectIds, setFilterObjectIds] = useState([])
   const [filterLawyerId, setFilterLawyerId] = useState('')
   const [searchText, setSearchText] = useState('')
   const [onlyOverdue, setOnlyOverdue] = useState(false)
@@ -1051,9 +1054,6 @@ function ContractRegistry() {
   }, [contracts, contactNameById])
 
   // Опции для кастомных FilterDropdown (первая — «Все …»).
-  const objectDropdownOptions = useMemo(
-    () => [{ value: '', label: 'Все объекты' }, ...objectFilterOptions.map(o => ({ value: o.id, label: o.name, status: o.status }))],
-    [objectFilterOptions])
   const lawyerDropdownOptions = useMemo(
     () => [{ value: '', label: 'Все юристы' }, ...lawyerFilterOptions.map(l => ({ value: l.id, label: l.name }))],
     [lawyerFilterOptions])
@@ -1105,7 +1105,7 @@ function ContractRegistry() {
   const filteredSortedContracts = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     const list = tabContracts.filter(c => {
-      if (filterObjectId && c.object_id !== filterObjectId) return false
+      if (filterObjectIds.length > 0 && !filterObjectIds.includes(c.object_id)) return false
       if (filterLawyerId) {
         // Сопоставляем по нормализованному ФИО — чтобы фильтр по одному «представителю»
         // ловил все договоры с этим же юристом, даже если у него дублирующиеся id.
@@ -1153,9 +1153,9 @@ function ContractRegistry() {
       if (so !== 0) return so
       return (a.contract_date || '').localeCompare(b.contract_date || '')
     })
-  }, [tabContracts, filterObjectId, filterLawyerId, onlyOverdue, onlyNoLarix, searchText, sortKey, sortDir, isOverdue, normNameById])
+  }, [tabContracts, filterObjectIds, filterLawyerId, onlyOverdue, onlyNoLarix, searchText, sortKey, sortDir, isOverdue, normNameById])
 
-  const hasActiveFilters = !!(filterObjectId || filterLawyerId || searchText || onlyOverdue || onlyNoLarix)
+  const hasActiveFilters = !!(filterObjectIds.length || filterLawyerId || searchText || onlyOverdue || onlyNoLarix)
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -1163,7 +1163,7 @@ function ContractRegistry() {
   }
 
   const resetFilters = () => {
-    setFilterObjectId(''); setFilterLawyerId(''); setSearchText('')
+    setFilterObjectIds([]); setFilterLawyerId(''); setSearchText('')
     setOnlyOverdue(false); setOnlyNoLarix(false)
   }
 
@@ -1193,7 +1193,7 @@ function ContractRegistry() {
   useEffect(() => {
     setPage(1)
     setExpandedContractId(null)
-  }, [activeTab, filterObjectId, filterLawyerId, searchText, onlyOverdue, onlyNoLarix, sortKey, sortDir, pageSize])
+  }, [activeTab, filterObjectIds, filterLawyerId, searchText, onlyOverdue, onlyNoLarix, sortKey, sortDir, pageSize])
 
   // Закрываем раскрытие при перелистывании страниц.
   useEffect(() => {
@@ -1486,7 +1486,10 @@ function ContractRegistry() {
     accepted_date: 'Дата принятия в работу ДП',
     signed_date: 'Дата подписания',
     notes: 'Примечание',
+    folder_path: 'Путь к папке',
   }
+  // Путь к папке (миграция 20260904) — обычное инлайн-поле договора.
+  const handleSaveFolderPath = (contractId, value) => handleInlineField(contractId, 'folder_path', value.trim())
   const handleInlineField = async (contractId, field, rawValue) => {
     const value = rawValue === '' ? null : rawValue
     const contract = contracts.find(c => c.id === contractId)
@@ -1639,16 +1642,17 @@ function ContractRegistry() {
           <label className="rf-label">Объект</label>
           <FilterDropdown
             label=""
-            value={filterObjectId}
-            onChange={setFilterObjectId}
-            options={objectDropdownOptions}
+            multiple
+            value={filterObjectIds}
+            onChange={setFilterObjectIds}
+            options={objectFilterOptions.map(o => ({ value: o.id, label: o.name, status: o.status }))}
             searchable
             searchPlaceholder="Поиск объекта…"
             allLabel="Все объекты"
             renderOption={(o) => (
               <span className="obj-option">
                 <span className="obj-option-name">{o.label}</span>
-                {o.value !== '' && <ObjectDeptBadge status={o.status} />}
+                <ObjectDeptBadge status={o.status} />
               </span>
             )}
           />
@@ -1870,6 +1874,17 @@ function ContractRegistry() {
                         <span className="cds-id" title="Постоянный ID договора в портале">ID {contract.display_id}</span>
                       )}
                     </Link>
+                    {/* Путь к папке — перед понятийным соглашением: с него
+                        начинают поиск документов по договору. Открыть проводник
+                        кликом браузер не даёт, поэтому путь копируется. */}
+                    {!isDeletedTab && (
+                      <FolderPathCell
+                        value={contract.folder_path}
+                        canEdit={canEditContracts}
+                        onSave={(v) => handleSaveFolderPath(contract.id, v)}
+                        placeholder="\\su10-fs\Договоры\ЖК Алия\СУ-2-АЛ"
+                      />
+                    )}
                     {!isDeletedTab && (
                       <ConceptAgreementCell
                         files={conceptDocsByContract[contract.id] || []}

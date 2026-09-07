@@ -589,9 +589,20 @@
   border-radius: 999px;
   border: 1px solid transparent;
   cursor: pointer;
-  white-space: nowrap;
+  /* Перенос по словам: «Проверка по договору» в одну строку не влезало в 8%
+     ширины колонки и наезжало на «Ответственного». Слова целиком — рвать их
+     по буквам нельзя. */
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+  text-align: left;
+  line-height: 1.25;
+  max-width: 100%;
   transition: filter 0.12s ease, box-shadow 0.12s ease;
 }
+/* Шеврон не должен уезжать на отдельную строку вслед за текстом. */
+.dcr-status-wrap { max-width: 100%; }
+.dcr-status-chip > span:first-child { min-width: 0; }
 
 /* Этап «Проверка по договору» (миграция 20260823). Без своего правила чип падал
    на общую плашку .status-contract-check — она задаёт квадратный border и
