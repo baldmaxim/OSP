@@ -165,8 +165,6 @@ button.dss-row:focus-visible { outline: 2px solid var(--primary-color, #2563eb);
 .dss-item--group > .dss-row .dss-name { font-weight: 600; }
 /* Стадии внутри договора и ДС — самый нижний уровень, намеренно бледнее. */
 .dss-item--stage > .dss-row .dss-name { color: var(--text-secondary); }
-.dss-item--special > .dss-row .dss-name { color: #b45309; }
-.dss-item--special > .dss-row .dss-ico { color: #b45309; }
 
 /* Чип с именем стадии — используется в легенде под деревом. */
 .dss-stage {

@@ -133,18 +133,34 @@ export default function RootFolderPathButton({
 
   return (
     <div className="rfpath" ref={wrapRef}>
-      <button
-        type="button"
-        className={`rfpath-btn${label ? ' has-label' : ''}${open ? ' is-open' : ''}${value ? '' : ' is-empty'}`}
-        onClick={() => setOpen(o => !o)}
-        title={value ? `${title}: ${value}` : `${title} — путь не указан`}
-        aria-label={label || title}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-      >
-        <IconFolder size={16} />
-        {label && <span className="rfpath-btn-label">{label}</span>}
-      </button>
+      {/* Составной элемент: слева — раскрытие карточки, справа — копирование
+          сразу. Копирование здесь единственное частое действие (проводник из
+          браузера не открыть), ради него незачем открывать карточку. */}
+      <div className={`rfpath-group${value ? ' has-copy' : ''}`}>
+        <button
+          type="button"
+          className={`rfpath-btn${label ? ' has-label' : ''}${open ? ' is-open' : ''}${value ? '' : ' is-empty'}`}
+          onClick={() => setOpen(o => !o)}
+          title={value ? `${title}: ${value}` : `${title} — путь не указан`}
+          aria-label={label || title}
+          aria-expanded={open}
+          aria-haspopup="dialog"
+        >
+          <IconFolder size={16} />
+          {label && <span className="rfpath-btn-label">{label}</span>}
+        </button>
+        {value && (
+          <button
+            type="button"
+            className="rfpath-copy"
+            onClick={handleCopy}
+            title="Скопировать путь и вставить в адресную строку проводника"
+            aria-label="Скопировать путь к общей папке"
+          >
+            {copied ? <IconCheck size={15} /> : <IconCopy size={15} />}
+          </button>
+        )}
+      </div>
 
       {open && (
         <div className="rfpath-pop" role="dialog" aria-label={title}>

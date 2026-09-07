@@ -2,6 +2,40 @@
    с самим путём. Размер кнопки совпадает с соседними кнопками тулбара. */
 .rfpath { position: relative; display: inline-flex; }
 
+/* Составной элемент: «Путь к общей папке» + копирование одной кнопкой. Половинки
+   выглядят как один элемент, поэтому внутренние края не скругляем, а разделяем
+   линией. */
+.rfpath-group { display: inline-flex; }
+.rfpath-group.has-copy .rfpath-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.rfpath-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.rfpath-copy:hover {
+  color: var(--primary-color, #2563eb);
+  background: var(--bg-secondary);
+}
+.rfpath-copy:focus-visible {
+  outline: 2px solid var(--primary-color, #2563eb);
+  outline-offset: -2px;
+}
+
 .rfpath-btn {
   display: inline-flex;
   align-items: center;
