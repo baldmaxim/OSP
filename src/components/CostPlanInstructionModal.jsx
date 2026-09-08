@@ -128,7 +128,11 @@ export default function CostPlanInstructionModal({ onClose }) {
           </div>
         )}
 
-        <div className="cpi-body" hidden={tab !== 'guide'}>
+        {/* Именно условный рендер, а не атрибут hidden: у .cpi-body задан
+            display:grid, и он перебивает display:none из hidden — обе вкладки
+            показывались одновременно. */}
+        {tab === 'guide' && (
+        <div className="cpi-body">
           <section className="cpi-section">
             <h4>С чего начать</h4>
             <p className="cpi-rule">
@@ -277,6 +281,7 @@ export default function CostPlanInstructionModal({ onClose }) {
           </section>
           {/* Новые разделы инструкции — сюда. */}
         </div>
+        )}
 
         <div className="cpi-actions">
           <button type="button" className="btn-primary" onClick={onClose}>Закрыть</button>

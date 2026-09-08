@@ -152,11 +152,16 @@
   align-content: start;
 }
 .cpi-section {
+  display: flex;
+  flex-direction: column;
   padding: 1.1rem 1.25rem 1.25rem;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--bg-secondary);
 }
+/* Последний блок карточки не должен «висеть» — прижимаем содержимое к верху,
+   карточка тянется до высоты ряда, а не растягивает свои отступы. */
+.cpi-section > :last-child { margin-bottom: 0; }
 /* Раздел с примером расчёта шире прочих: в нём таблица и две формулы. */
 .cpi-section--wide { grid-column: span 2; }
 @media (max-width: 60rem) {
