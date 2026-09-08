@@ -16,7 +16,7 @@ export default function EstimateDeptModal({ onClose }) {
   }, [onClose])
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay sto-overlay" onClick={onClose}>
       <div className="modal sto-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="sto-head">
           <div>

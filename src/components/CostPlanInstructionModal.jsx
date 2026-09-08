@@ -67,7 +67,7 @@ export default function CostPlanInstructionModal({ onClose }) {
   }, [onClose])
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay cpi-overlay" onClick={onClose}>
       <div className="modal cpi-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="cpi-head">
           <div>
@@ -176,7 +176,7 @@ export default function CostPlanInstructionModal({ onClose }) {
             </ul>
           </section>
 
-          <section className="cpi-section">
+          <section className="cpi-section cpi-section--wide">
             <h4>Как считается план затрат</h4>
             <p className="cpi-rule">
               Итог плана затрат = <b>итог по договору генподряда ÷ 1,276</b>.

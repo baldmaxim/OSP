@@ -2,13 +2,35 @@
    Окно широкое — в нём таблицы и формулы, — но текст в нём НЕ во всю ширину:
    длинная строка читается плохо, глаз теряет начало следующей. Поэтому проза
    ограничена мерой (--cpi-measure), а таблицы и плитки занимают всю ширину. */
+/* Оверлей описан ЗДЕСЬ, а не взят из общего .modal-overlay: тот живёт в CSS
+   других разделов (GeneralInfo/Tenders/ContractRegistry), а «Планы затрат»
+   грузятся лениво и их не тянут. Пока пользователь не зашёл в «Договоры» или
+   «Тендеры», у общего класса нет стилей — окно вклеивалось в поток слева. */
+.cpi-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.5);
+}
+
 .cpi-modal {
   --cpi-measure: 68ch;
-  width: min(56rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 4rem);
+  /* Почти во весь экран: разделов много, и в узком окне они выстраивались в
+     одну длинную колонку. */
+  width: min(94rem, calc(100vw - 3rem));
+  height: calc(100vh - 3rem);
+  max-height: none;
   display: flex;
   flex-direction: column;
   padding: 0;
+  border-radius: 14px;
+  background: var(--bg-primary);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
   font-size: 0.875rem;
   line-height: 1.6;
 }
@@ -117,14 +139,31 @@
   border-left: 1px solid var(--border-color);
 }
 
-/* Разделы нумеруются автоматически: пять одинаковых по весу заголовков подряд
-   не читались как шаги, а порядок здесь важен — это порядок работы. */
-.cpi-body { counter-reset: cpi-section; }
-.cpi-section + .cpi-section {
-  margin-top: 1.75rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+/* Разделы — самостоятельные модули в сетке: на широком экране 2–3 колонки, на
+   ноутбуке 2, на телефоне 1. Одной колонкой в окне такой ширины разделы читались
+   бы узкой лентой с пустотой справа.
+   Нумерация автоматическая: пять одинаковых по весу заголовков подряд не
+   читались как шаги, а порядок здесь важен — это порядок работы. */
+.cpi-body {
+  counter-reset: cpi-section;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr));
+  gap: 1rem;
+  align-content: start;
 }
+.cpi-section {
+  padding: 1.1rem 1.25rem 1.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+/* Раздел с примером расчёта шире прочих: в нём таблица и две формулы. */
+.cpi-section--wide { grid-column: span 2; }
+@media (max-width: 60rem) {
+  .cpi-section--wide { grid-column: auto; }
+}
+/* Замыкающая заметка (не раздел) — во всю ширину сетки. */
+.cpi-body > .cpi-note { grid-column: 1 / -1; margin-top: 0; }
 .cpi-section h4 {
   display: flex;
   align-items: baseline;
@@ -302,10 +341,22 @@
 }
 
 @media (max-width: 640px) {
+  .cpi-overlay { padding: 0; }
+  .cpi-modal {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
   .cpi-head,
   .cpi-actions { padding-left: 1rem; padding-right: 1rem; }
   .cpi-tabs { padding: 0 1rem; }
-  .cpi-body { padding: 1.15rem 1rem 1.25rem; }
+  .cpi-body {
+    padding: 1rem;
+    /* На телефоне карточки только съедали бы ширину рамками. */
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .cpi-section { padding: 0.9rem 1rem 1rem; }
   .cpi-section h4 { font-size: 1rem; }
 }
 
