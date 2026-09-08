@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Inter уже стоит первым в font-family (src/index.css), но сам шрифт до
+         сих пор не загружался — интерфейс рисовался системным Segoe UI.
+         display=swap: пока шрифт едет, текст виден системным, без «мигания
+         пустотой». Если сеть закрыта и шрифт не придёт — останется прежний вид,
+         стек в index.css не меняли. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
     <title>СУ_10 | Тендер</title>
     <script src="https://api-maps.yandex.ru/2.1/?apikey=&lang=ru_RU" type="text/javascript"></script>
   </head>

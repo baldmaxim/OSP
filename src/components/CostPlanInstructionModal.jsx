@@ -30,20 +30,6 @@ const TENDER_DEPT = [
   { name: 'Топчий Анна', scope: 'ЭОМ, СС' },
 ]
 
-// Сметно-технический отдел: руководитель, ведущий инженер и подразделения по
-// направлениям. Все в подразделениях — старшие инженеры.
-const ESTIMATE_DEPT = {
-  head: { name: 'Бузаров Владимир Сергеевич', role: 'Руководитель' },
-  lead: { name: 'Юсупова Ксения Салаватовна', role: 'Ведущий инженер' },
-  units: [
-    { title: 'Монолит', people: ['Виноходова Екатерина Андреевна'] },
-    { title: 'НВФ, СПК', people: ['Голубева Варвара Юрьевна'] },
-    { title: 'Общестроительные работы', people: ['Локтионова Инна Александровна', 'Пономаренко Екатерина Юрьевна'] },
-    { title: 'Механические системы (ОВ, ВК)', people: ['Головашин Михаил Алексеевич'] },
-    { title: 'Электрические системы (ЭОМ, СС)', people: ['Таймасханов Магомед Гамзатович'] },
-  ],
-}
-
 // К кому идти, когда расчёт не сходится. Отдельно от исполнителей выше: это
 // эскалация, а не рабочая переписка по разбивке.
 const ESCALATION = [
@@ -108,7 +94,7 @@ export default function CostPlanInstructionModal({ onClose }) {
         </div>
 
         {tab === 'people' && (
-          <div className="cpi-body">
+          <div className="cpi-body cpi-body--people">
             <section className="cpi-section">
               <h4>Тендерный отдел — разбивка по видам работ</h4>
               <p className="cpi-rule">У них запрашивают расчёт с разбивкой по договору генподряда.</p>
@@ -135,34 +121,10 @@ export default function CostPlanInstructionModal({ onClose }) {
               </ul>
             </section>
 
-            <section className="cpi-section">
-              <h4>Сметно-технический отдел</h4>
-              <ul className="cpi-people">
-                <li>
-                  <span className="cpi-person">{ESTIMATE_DEPT.head.name}</span>
-                  <span className="cpi-person-role">{ESTIMATE_DEPT.head.role}</span>
-                </li>
-                <li>
-                  <span className="cpi-person">{ESTIMATE_DEPT.lead.name}</span>
-                  <span className="cpi-person-role">{ESTIMATE_DEPT.lead.role}</span>
-                </li>
-              </ul>
-
-              <p className="cpi-label">Подразделения по направлениям</p>
-              <div className="cpi-units">
-                {ESTIMATE_DEPT.units.map(u => (
-                  <div key={u.title} className="cpi-unit">
-                    <div className="cpi-unit-title">{u.title}</div>
-                    {u.people.map(name => (
-                      <div key={name} className="cpi-unit-person">
-                        {name}
-                        <span className="cpi-person-note">Старший инженер</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </section>
+            <p className="cpi-note">
+              Сотрудники сметно-технического отдела — в разделе «Тендеры →
+              Основное строительство», кнопка «Сотрудники СТО».
+            </p>
           </div>
         )}
 

@@ -8,6 +8,7 @@ import CompletionLetterToggle from '../components/CompletionLetterToggle'
 import FolderPathCell from '../components/FolderPathCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
+import EstimateDeptModal from '../components/EstimateDeptModal'
 import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
@@ -122,6 +123,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // «Документы раздела» — окно с материалами и инструментами. Не вкладка
   // реестра: рядом со статусами тендеров ей не место.
   const [showDocsMenu, setShowDocsMenu] = useState(false)
+  // Справочник сотрудников сметно-технического отдела.
+  const [showEstimateDept, setShowEstimateDept] = useState(false)
   // Предпросмотр вторничного напоминания — кнопка в шапке только у администратора.
   const [reminderPreview, setReminderPreview] = useState(false)
   const [rootFolderPath, setRootFolderPath] = useState('')
@@ -2099,6 +2102,20 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\4. Тендеры"
             onValueChange={setRootFolderPath}
           />
+          {/* Сотрудники сметно-технического отдела по направлениям работ —
+              справочник «к кому идти с вопросом по смете». Только в основном
+              строительстве: там с СТО и работают. */}
+          {!isMaterialsView && department === 'construction' && (
+            <button
+              type="button"
+              className="btn-view-toggle"
+              onClick={() => setShowEstimateDept(true)}
+              title="Сотрудники сметно-технического отдела по направлениям работ"
+            >
+              <IconUser size={15} />
+              <span>Сотрудники СТО</span>
+            </button>
+          )}
           {/* Документы раздела — рядом с путём к общей папке: и то, и другое
               про хранилище и материалы, а не про список тендеров. */}
           {!isMaterialsView && (
@@ -4581,6 +4598,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         forceOpen={reminderPreview}
         onCloseForced={() => setReminderPreview(false)}
       />
+
+      {/* Справочник сотрудников сметно-технического отдела */}
+      {showEstimateDept && <EstimateDeptModal onClose={() => setShowEstimateDept(false)} />}
 
       {/* Справочник: как раскладывать документы по папкам в хранилище */}
       {showStorageStructure && (
