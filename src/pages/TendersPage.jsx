@@ -8,7 +8,7 @@ import CompletionLetterToggle from '../components/CompletionLetterToggle'
 import FolderPathCell from '../components/FolderPathCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
-import EstimateDeptModal from '../components/EstimateDeptModal'
+import TenderDocsModal from '../components/TenderDocsModal'
 import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
@@ -17,8 +17,8 @@ import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
 import { IconHardHat, IconShieldCheck, IconPackage } from '../components/icons/TenderHubIcons'
 import {
-  IconObject, IconTag, IconUser, IconMail, IconColumns, IconColumnsWide,
-  IconJoint, IconOther, IconFolderTree, IconPhone, IconDocsStack,
+  IconObject, IconTag, IconUser, IconColumns, IconColumnsWide,
+  IconJoint, IconOther, IconFolderTree, IconDocsStack,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName } from '../utils/tenderDepartments'
 import { mondayOf, weekKey } from '../utils/weeks'
@@ -124,7 +124,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // реестра: рядом со статусами тендеров ей не место.
   const [showDocsMenu, setShowDocsMenu] = useState(false)
   // Справочник сотрудников сметно-технического отдела.
-  const [showEstimateDept, setShowEstimateDept] = useState(false)
   // Предпросмотр вторничного напоминания — кнопка в шапке только у администратора.
   const [reminderPreview, setReminderPreview] = useState(false)
   const [rootFolderPath, setRootFolderPath] = useState('')
@@ -2102,20 +2101,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\4. Тендеры"
             onValueChange={setRootFolderPath}
           />
-          {/* Сотрудники сметно-технического отдела по направлениям работ —
-              справочник «к кому идти с вопросом по смете». Только в основном
-              строительстве: там с СТО и работают. */}
-          {!isMaterialsView && department === 'construction' && (
-            <button
-              type="button"
-              className="btn-view-toggle"
-              onClick={() => setShowEstimateDept(true)}
-              title="Сотрудники сметно-технического отдела по направлениям работ"
-            >
-              <IconUser size={15} />
-              <span>Сотрудники СТО</span>
-            </button>
-          )}
+          {/* task 435: сотрудники СТО переехали внутрь окна «Документы» —
+              отдельной кнопке в шапке там было тесно. */}
           {/* Документы раздела — рядом с путём к общей папке: и то, и другое
               про хранилище и материалы, а не про список тендеров. */}
           {!isMaterialsView && (
@@ -2643,7 +2630,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <tr>
               <th
                 className="sortable-th"
-                style={{ width: '44px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+                style={{ width: '52px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
                 onClick={() => toggleSort('public_tender_number')}
                 title="Номер тендера. Кликните для сортировки"
               >
@@ -2692,7 +2679,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               sortedTenders.map((tender) => (
                 <React.Fragment key={tender.id}>
                   <tr className={isOverdue(tender) ? 'overdue-row' : ''}>
-                    <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                    {/* nowrap — подстраховка: номер не должен переноситься между цифрами */}
+                    <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap' }}>
                       {tender.public_tender_number ?? '—'}
                     </td>
                     <td>
@@ -3572,63 +3560,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       )}
       </>)}
 
-      {/* «Документы» — материалы и инструменты раздела. Это НЕ вкладка реестра:
-          рядом со статусами тендеров ей не место, там фильтры по списку. Открыть
-          можно кнопкой в шапке, рядом с путём к общей папке. */}
+      {/* task 435: «Документы раздела» — материалы, инструкция и сотрудники СТО
+          в одном окне. Это НЕ вкладка реестра: рядом со статусами тендеров ей не
+          место, там фильтры по списку. */}
       {showDocsMenu && !isMaterialsView && (
-        <div className="modal-overlay" onClick={() => setShowDocsMenu(false)}>
-          <div className="modal tender-docs-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-            <div className="tender-docs-head">
-              <div>
-                <h3>Документы раздела</h3>
-                <p className="tender-docs-lead">
-                  Материалы и инструменты, которые относятся к работе с тендерами,
-                  но не к конкретному тендеру.
-                </p>
-              </div>
-              <button className="modal-close" onClick={() => setShowDocsMenu(false)} aria-label="Закрыть">×</button>
-            </div>
-            <div className="tender-docs-grid">
-            <button
-              type="button"
-              className="tender-doc-card"
-              onClick={() => { setShowDocsMenu(false); setActiveTab('template') }}
-            >
-              <span className="tender-doc-icon"><IconMail size={18} /></span>
-              <span className="tender-doc-title">Шаблон письма</span>
-              <span className="tender-doc-desc">
-                Текст запроса КП с подстановкой номера тендера, объекта и сроков
-              </span>
-            </button>
-
-            <button
-              type="button"
-              className="tender-doc-card"
-              onClick={() => { setShowDocsMenu(false); setShowStorageStructure(true) }}
-            >
-              <span className="tender-doc-icon"><IconFolderTree size={18} /></span>
-              <span className="tender-doc-title">Структура хранения документов</span>
-              <span className="tender-doc-desc">
-                Единый порядок папок в сетевом хранилище — куда класть файлы
-              </span>
-            </button>
-
-            {isAdmin && (
-              <button
-                type="button"
-                className="tender-doc-card"
-                onClick={() => { setShowDocsMenu(false); setReminderPreview(true) }}
-              >
-                <span className="tender-doc-icon"><IconPhone size={18} /></span>
-                <span className="tender-doc-title">Напоминание об обзвоне</span>
-                <span className="tender-doc-desc">
-                  Как выглядит вторничное окно у инженеров — предпросмотр
-                </span>
-              </button>
-            )}
-            </div>
-          </div>
-        </div>
+        <TenderDocsModal
+          onClose={() => setShowDocsMenu(false)}
+          canPreviewReminder={isAdmin}
+          onOpenLetterTemplate={() => { setShowDocsMenu(false); setActiveTab('template') }}
+          onOpenStorageStructure={() => { setShowDocsMenu(false); setShowStorageStructure(true) }}
+          onOpenReminderPreview={() => { setShowDocsMenu(false); setReminderPreview(true) }}
+        />
       )}
 
       {/* Вкладка шаблона письма */}
@@ -4600,7 +4542,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       />
 
       {/* Справочник сотрудников сметно-технического отдела */}
-      {showEstimateDept && <EstimateDeptModal onClose={() => setShowEstimateDept(false)} />}
 
       {/* Справочник: как раскладывать документы по папкам в хранилище */}
       {showStorageStructure && (
