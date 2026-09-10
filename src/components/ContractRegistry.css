@@ -1045,16 +1045,18 @@
 .contracts-table-compact col.cg-object { width: 8.5%; }
 .contracts-table-compact col.cg-ds { width: 13%; }
 .contracts-table-compact col.cg-counterparty { width: 10.5%; }
-.contracts-table-compact col.cg-work { width: 15.5%; }
+.contracts-table-compact col.cg-work { width: 14%; }
+/* Только в представлении «Дополнительные соглашения» — изменяемый документ. */
+.contracts-table-compact col.cg-parent { width: 9%; }
 /* Суммы бывают миллиардные («1 960 000 000,00 ₽») — колонке нужен запас, иначе ₽ вылезает */
 .contracts-table-compact col.cg-amount { width: 9%; }
 .contracts-table-compact col.cg-status { width: 9%; }
 .contracts-table-compact col.cg-lawyer { width: 9%; }
 .contracts-table-compact col.cg-accepted { width: 7.5%; }
 .contracts-table-compact col.cg-planned { width: 7.5%; }
-/* Две иконки по 30px + зазор = 65px: колонке нужно ≥70px, иначе кнопки вылезают
+/* Три иконки по 30px + зазоры ≈ 100px: колонке нужен запас, иначе кнопки вылезают
    за ячейку и контейнер (overflow-x: auto) показывает горизонтальный ползунок. */
-.contracts-table-compact col.cg-actions { width: 7%; }
+.contracts-table-compact col.cg-actions { width: 8.5%; }
 
 .contracts-table-compact thead th {
   padding: 0.7rem 0.75rem;
@@ -3141,3 +3143,178 @@
     gap: 0.125rem;
   }
 }
+
+/* ===== Дополнительные соглашения ===== */
+
+/* Тип ДС прямо в строке реестра: два вида ветвления различаются цветом, иначе
+   «изменение ВОР» и «доп. работы» глазом не разделить. */
+.ds-type-badge {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.ds-type-badge.is-ds_vor {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+.ds-type-badge.is-ds_extra {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+[data-theme='dark'] .ds-type-badge.is-ds_vor { color: #93c5fd; }
+[data-theme='dark'] .ds-type-badge.is-ds_extra { color: #fcd34d; }
+
+/* Сколько соглашений висит на документе. */
+.ds-count-badge {
+  display: inline-block;
+  margin-top: 0.25rem;
+  margin-left: 0.3rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 0.625rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Ссылка на изменяемый документ (колонка представления ДС). */
+.parent-doc-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  text-decoration: none;
+  color: inherit;
+}
+.parent-doc-link:hover .cds-main { text-decoration: underline; }
+.parent-doc-link .cds-main { font-weight: 600; font-size: 0.75rem; }
+.parent-doc-link .cds-id,
+.parent-doc-link .cds-sub {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Актуальная сумма с учётом завершённых ДС — рядом с исходной. */
+.amt-actual .amt-tag {
+  background: rgba(5, 150, 105, 0.14);
+  color: #047857;
+}
+[data-theme='dark'] .amt-actual .amt-tag { color: #6ee7b7; }
+.amt-actual .amt-value { font-weight: 700; }
+.amt-solo.amt-original { color: var(--text-tertiary); }
+
+/* Форма ДС: поле, которое соглашение переопределяет. */
+.form-group.is-ds-changed > label::after {
+  content: ' изменяется';
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+[data-theme='dark'] .form-group.is-ds-changed > label::after { color: #93c5fd; }
+.form-group.is-ds-changed > input,
+.form-group.is-ds-changed > select,
+.form-group.is-ds-changed > textarea {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.ds-changed-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-height: 1.75rem;
+  align-items: center;
+}
+.ds-changed-chip {
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+[data-theme='dark'] .ds-changed-chip { color: #93c5fd; }
+.ds-changed-empty {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* Завершённый документ: условия заморожены (то же правило в триггере БД). */
+.ds-frozen-note {
+  margin: 0 1.25rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(217, 119, 6, 0.1);
+  color: #b45309;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+[data-theme='dark'] .ds-frozen-note { color: #fcd34d; }
+
+/* ===== Дерево соглашений в карточке договора ===== */
+.cd-ds-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.cd-ds-head h3 { margin: 0; }
+.cd-ds-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.cd-ds-actions .btn-secondary {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
+}
+.cd-ds-actions .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cd-ds-empty {
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.cd-ds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+.cd-ds-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  text-decoration: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.cd-ds-item:hover { border-color: var(--primary-color); }
+.cd-ds-item.is-current {
+  border-color: var(--primary-color);
+  box-shadow: inset 3px 0 0 var(--primary-color);
+}
+.cd-ds-item .cd-ds-id {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+.cd-ds-item .cd-ds-num { font-weight: 600; }
+.cd-ds-item .cd-ds-date,
+.cd-ds-item .cd-ds-amount { color: var(--text-secondary); }
+.cd-ds-item .cd-ds-amount { margin-left: auto; font-variant-numeric: tabular-nums; }
+.cd-ds-item .ds-type-badge { margin-top: 0; }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import XLSXStyle from 'xlsx-js-style'
+import PizZip from 'pizzip'
 import { supabase } from '../supabase'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import {
@@ -11,6 +12,7 @@ import {
   normInn,
   normMatchName,
 } from '../utils/contractsImport'
+import { DOC_TYPES, buildDocIndex } from '../utils/contractAmendments'
 import './ContractsImportModal.css'
 
 const CHUNK = 200
@@ -33,10 +35,59 @@ function cellDisplay(v) {
   return String(v)
 }
 
-// Текст причины для незагруженной строки (для отчёта).
+// Выпадающий список значений в колонке шаблона.
+//
+// SheetJS в открытой сборке НЕ умеет записывать data validation (`dataValidation`
+// встречается только в парсере XML-формата), поэтому дописываем элемент в готовый
+// xlsx: он же обычный zip, а pizzip в проекте уже есть (разбор .docx договоров).
+// Порядок элементов внутри <worksheet> задан схемой: dataValidations идут после
+// sheetData и перед hyperlinks/pageMargins/ignoredErrors — вставляем перед первым
+// из них, иначе Excel сочтёт файл повреждённым.
+const DV_ANCHORS = ['<hyperlinks', '<printOptions', '<pageMargins', '<pageSetup', '<ignoredErrors', '</worksheet>']
+const xmlAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+function addListValidation(buffer, colIndex, values, title) {
+  if (colIndex == null || !values.length) return buffer
+  try {
+    const zip = new PizZip(buffer)
+    const path = 'xl/worksheets/sheet1.xml'
+    const file = zip.file(path)
+    if (!file) return buffer
+    const xml = file.asText()
+    const at = DV_ANCHORS.map((a) => xml.indexOf(a)).filter((i) => i >= 0).sort((a, b) => a - b)[0]
+    if (at == null) return buffer
+
+    const col = XLSX.utils.encode_col(colIndex)
+    const dv =
+      '<dataValidations count="1">' +
+      `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1"` +
+      ` errorTitle="${xmlAttr(title)}" error="Выберите значение из списка" sqref="${col}2:${col}2000">` +
+      `<formula1>"${xmlAttr(values.join(','))}"</formula1>` +
+      '</dataValidation></dataValidations>'
+    zip.file(path, xml.slice(0, at) + dv + xml.slice(at))
+    return zip.generate({ type: 'arraybuffer', compression: 'DEFLATE' })
+  } catch (err) {
+    // Список — удобство, а не условие загрузки: шаблон отдаём и без него.
+    console.error('Не удалось добавить выпадающий список в шаблон:', err)
+    return buffer
+  }
+}
+
+function downloadBlob(buffer, fileName) {
+  const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+// Причины, по которым строка не загрузилась. Показываем их на экране результата:
+// в файл ошибок служебные колонки добавлять нельзя — он должен грузиться обратно.
 function skipReasons(row) {
   const r = row.result
-  if (r.kind === 'ds_skip') return [r.reason]
   if (r.kind === 'error') return [...new Set(r.errors.map((e) => e.message))]
   if (row.saveError) return [`Ошибка сохранения: ${row.saveError}`]
   // невыбранное предупреждение
@@ -55,6 +106,8 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
   const [parsed, setParsed] = useState([])        // [{ excelRow, raw, disp, result }]
   const [checked, setChecked] = useState(() => new Set())
   const [existingNumbers, setExistingNumbers] = useState(null) // Set | null (загружается)
+  // Дерево уже заведённых документов: { index, amendmentNumbers }.
+  const [docs, setDocs] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [resultInfo, setResultInfo] = useState(null) // { created, notLoaded: [...] }
 
@@ -73,31 +126,44 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
     return { cpByInn, cpByName, objByName }
   }, [counterparties, objects])
 
-  // Существующие номера договоров (для предупреждения «уже существует»).
+  // Существующие документы: нужны и для предупреждения «номер уже существует», и
+  // для ДС — найти изменяемый документ по ID, проверить правила ветки и
+  // унаследовать условия. Грузим одним запросом, дерево строим в памяти.
   useEffect(() => {
     let cancelled = false
     fetchAllRows((from, to) => supabase
       .from('contracts')
-      .select('contract_number')
-      .is('deleted_at', null)
+      .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, counterparty_id, object_id, changed_fields, contract_amount, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period')
       .range(from, to))
       .then((rows) => {
         if (cancelled) return
-        const set = new Set()
-        rows.forEach((r) => { const n = String(r.contract_number || '').trim(); if (n) set.add(n) })
-        setExistingNumbers(set)
+        const live = rows.filter((r) => !r.deleted_at)
+        const numbers = new Set()
+        const amendmentNumbers = new Set()
+        live.forEach((r) => {
+          const n = String(r.contract_number || '').trim()
+          if (!n) return
+          if (r.record_type === 'dp') numbers.add(n)
+          else amendmentNumbers.add(`${r.root_contract_id || r.id}|${n}`)
+        })
+        setDocs({ index: buildDocIndex(live), amendmentNumbers })
+        setExistingNumbers(numbers)
       })
-      .catch((err) => { if (!cancelled) { console.error('Загрузка номеров договоров:', err.message); setExistingNumbers(new Set()) } })
+      .catch((err) => {
+        if (cancelled) return
+        console.error('Загрузка документов договоров:', err.message)
+        setDocs({ index: buildDocIndex([]), amendmentNumbers: new Set() })
+        setExistingNumbers(new Set())
+      })
     return () => { cancelled = true }
   }, [])
 
   const stats = useMemo(() => {
-    const s = { total: parsed.length, ready: 0, warn: 0, error: 0, ds: 0 }
+    const s = { total: parsed.length, ready: 0, warn: 0, error: 0 }
     parsed.forEach((row) => {
       if (row.result.kind === 'ready') s.ready++
       else if (row.result.kind === 'warn') s.warn++
       else if (row.result.kind === 'error') s.error++
-      else if (row.result.kind === 'ds_skip') s.ds++
     })
     return s
   }, [parsed])
@@ -110,8 +176,8 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
     if (!file) return
     setParseError('')
     setFileName(file.name)
-    if (existingNumbers == null) {
-      setParseError('Идёт загрузка справочника номеров, повторите через мгновение.')
+    if (existingNumbers == null || docs == null) {
+      setParseError('Идёт загрузка справочников, повторите через мгновение.')
       e.target.value = ''
       return
     }
@@ -132,7 +198,14 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
       }
       const { colIndexByKey } = mapHeaderRow(headerRow)
 
-      const ctx = { ...ctxRefs, existingNumbers }
+      const ctx = {
+        ...ctxRefs,
+        existingNumbers,
+        docIndex: docs.index,
+        // Копия: по мере успешной загрузки строк файла пополняем её, чтобы
+        // дубль номера ДС внутри одного файла тоже отлавливался.
+        amendmentNumbers: new Set(docs.amendmentNumbers),
+      }
       const rows = []
       for (let r = range.s.r + 1; r <= range.e.r; r++) {
         const raw = {}
@@ -148,7 +221,16 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
           if (raw[col.key] !== '' && raw[col.key] != null) nonEmpty = true
         }
         if (!nonEmpty) continue
-        rows.push({ excelRow: r + 1, raw, disp, result: validateRow(raw, ctx) })
+        const result = validateRow(raw, ctx)
+        // Номер ДС из принятой строки резервируем сразу: две одинаковые строки в
+        // одном файле не должны обе пройти проверку уникальности.
+        const p = result.payload
+        if (p && p.record_type !== 'dp' && p.contract_number) {
+          const parent = ctx.docIndex.byId.get(p.parent_contract_id)
+          const rootId = parent?.root_contract_id || parent?.id
+          if (rootId) ctx.amendmentNumbers.add(`${rootId}|${String(p.contract_number).trim()}`)
+        }
+        rows.push({ excelRow: r + 1, raw, disp, result })
       }
 
       if (rows.length === 0) { setParseError('В файле нет строк с данными (после строки заголовков).'); e.target.value = ''; return }
@@ -176,7 +258,11 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
     ws['!cols'] = TEMPLATE_HEADERS.map((h) => ({ wch: Math.max(14, h.length + 2) }))
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Договоры')
-    XLSX.writeFile(wb, 'Шаблон_импорта_договоров.xlsx')
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+    downloadBlob(
+      addListValidation(buf, KEY_TO_CANONICAL.record_type, DOC_TYPES.map((t) => t.label), 'Тип документа'),
+      'Шаблон_импорта_договоров.xlsx',
+    )
   }
 
   async function handleConfirm() {
@@ -214,7 +300,6 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
 
       const notLoaded = [
         ...parsed.filter((r) => r.result.kind === 'error'),
-        ...parsed.filter((r) => r.result.kind === 'ds_skip'),
         ...warnRows.filter((r) => !checked.has(r.excelRow)),
         ...failed,
       ].sort((a, b) => a.excelRow - b.excelRow)
@@ -232,12 +317,13 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
   function downloadReport() {
     const rows = resultInfo?.notLoaded || []
     if (rows.length === 0) return
-    const header = [...TEMPLATE_HEADERS, 'Причина незагрузки']
+    // Ровно тот же шаблон: те же 29 колонок, тот же порядок, те же заголовки.
+    // Никаких служебных колонок, комментариев и листов — причины ошибок человек
+    // читает на странице, а файл должен открываться и грузиться обратно как есть.
+    const header = TEMPLATE_HEADERS
     const aoa = [header]
     rows.forEach((row) => {
-      const cells = IMPORT_COLUMNS.map((c) => cellDisplay(row.disp[c.key]))
-      cells.push(skipReasons(row).join('; '))
-      aoa.push(cells)
+      aoa.push(IMPORT_COLUMNS.map((c) => cellDisplay(row.disp[c.key])))
     })
     const ws = XLSXStyle.utils.aoa_to_sheet(aoa)
     ws['!cols'] = header.map((h) => ({ wch: Math.max(14, h.length + 2) }))
@@ -278,8 +364,9 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
             <div className="cim-select">
               <p className="cim-hint">
                 Загрузите файл <strong>.xlsx</strong> (один лист, первая строка — заголовки).
-                Импорт только создаёт новые договоры (ДП) и никогда не изменяет существующие.
-                Дополнительные соглашения (ДС) пока не импортируются.
+                Импорт только создаёт новые документы и никогда не изменяет существующие.
+                Для ДС в колонке «Тип» выберите подвид, а в «ID изменяемого документа» укажите
+                ID документа, который это соглашение меняет.
               </p>
               <div className="cim-select-actions">
                 <button type="button" className="btn-secondary" onClick={downloadTemplate}>Скачать шаблон</button>
@@ -302,7 +389,6 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
                 <div className="cim-stat is-ready"><span className="cim-stat-v">{stats.ready}</span><span className="cim-stat-l">Готовы</span></div>
                 <div className="cim-stat is-warn"><span className="cim-stat-v">{stats.warn}</span><span className="cim-stat-l">Требуют подтверждения</span></div>
                 <div className="cim-stat is-error"><span className="cim-stat-v">{stats.error}</span><span className="cim-stat-l">С ошибками</span></div>
-                <div className="cim-stat is-ds"><span className="cim-stat-v">{stats.ds}</span><span className="cim-stat-l">ДС (позже)</span></div>
               </div>
 
               {warnRows.length > 0 && (
@@ -347,10 +433,7 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
               )}
 
               {stats.error > 0 && (
-                <p className="cim-note cim-note-error">{stats.error} строк(и) с ошибками данных не будут загружены — их можно посмотреть в отчёте после импорта.</p>
-              )}
-              {stats.ds > 0 && (
-                <p className="cim-note">{stats.ds} строк(и) с типом ДС не импортируются (будет реализовано позже).</p>
+                <p className="cim-note cim-note-error">{stats.error} строк(и) с ошибками данных не будут загружены — причины появятся после импорта.</p>
               )}
             </div>
           )}
@@ -359,9 +442,35 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
           {step === 'result' && resultInfo && (
             <div className="cim-result">
               <div className="cim-result-big">Создано договоров: <strong>{resultInfo.created}</strong></div>
-              {resultInfo.notLoaded.length > 0
-                ? <p className="cim-note">Не загружено строк: <strong>{resultInfo.notLoaded.length}</strong>. Скачайте отчёт с причинами и подсветкой ошибочных ячеек.</p>
-                : <p className="cim-note">Все подходящие строки успешно загружены.</p>}
+              {resultInfo.notLoaded.length > 0 ? (
+                <>
+                  {/* Причины показываем здесь: в файле ошибок их быть не должно —
+                      он повторяет шаблон и должен грузиться обратно как есть. */}
+                  <p className="cim-note">Не загружено строк: <strong>{resultInfo.notLoaded.length}</strong>. Исправьте их в отчёте (ошибочные ячейки подсвечены) и загрузите файл повторно.</p>
+                  <div className="cim-warn-table-wrap">
+                    <table className="cim-warn-table">
+                      <thead>
+                        <tr>
+                          <th>Строка</th>
+                          <th>№ документа</th>
+                          <th>Причина</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultInfo.notLoaded.map((row) => (
+                          <tr key={row.excelRow}>
+                            <td>{row.excelRow}</td>
+                            <td>{cellDisplay(row.disp.contract_number) || '—'}</td>
+                            <td>{skipReasons(row).join('; ')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <p className="cim-note">Все подходящие строки успешно загружены.</p>
+              )}
             </div>
           )}
         </div>

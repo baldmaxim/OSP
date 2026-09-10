@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
@@ -17,6 +17,22 @@ import LarixEntryBlock from '../components/LarixEntryBlock'
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
 import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import {
+  DOC_TYPE,
+  DOC_TYPES,
+  DOC_TYPE_LABEL,
+  DOC_TYPE_SHORT,
+  OVERRIDABLE_FIELDS,
+  OVERRIDABLE_FIELD_LABEL,
+  buildDocIndex,
+  collectChangedFields,
+  contractActualAmount,
+  effectiveValues,
+  isAmendment,
+  isCompleted,
+  liveChildren,
+  planAmendment,
+} from '../utils/contractAmendments'
 import {
   buildAppendixTree,
   reorderSiblings,
@@ -41,11 +57,9 @@ const ObjectDeptBadge = ({ status }) => (
 // Частые ставки НДС (задача 382): зависят от системы налогообложения контрагента.
 const VAT_RATE_OPTIONS = ['', '0', '5', '7', '10', '20', '22']
 
-// Тип записи договора (задача импорта): ДП — основной договор, ДС — доп. соглашение.
-const RECORD_TYPE_OPTIONS = [
-  { value: 'dp', label: 'ДП — основной договор' },
-  { value: 'ds', label: 'ДС — доп. соглашение' },
-]
+// Тип документа: основной договор и два вида ДС. Подписи и правила — в
+// utils/contractAmendments (одна реализация на форму, реестр и импорт).
+const RECORD_TYPE_OPTIONS = DOC_TYPES.map(t => ({ value: t.value, label: t.label }))
 
 // Task 174 + 190: статусы договоров
 const STATUS_OPTIONS = [
@@ -64,6 +78,9 @@ const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(s => [s.value, s.labe
 const SCOPES = [
   { key: 'all', label: 'Все договоры', hint: 'Полный реестр компании, включая договоры, которые ведёт не наш отдел' },
   { key: 'ours', label: 'Наши договоры', hint: 'Договоры, которые обрабатывает наш отдел' },
+  // Отдельное представление: ДС в общий список договоров не подмешиваются, иначе
+  // реестр раздваивается и суммы считаются дважды.
+  { key: 'amendments', label: 'Дополнительные соглашения', hint: 'Все ДС: на изменение ВОР и на дополнительные работы' },
 ]
 
 // Генподрядный коэффициент — наценка: во сколько сумма генподряда больше суммы
@@ -82,12 +99,29 @@ function formatPercent(value) {
 
 // Ячейка суммы: подряд и генподряд одной колонкой, чтобы разницу было видно без
 // перехода в карточку. Пока заполнена одна сумма — показываем её как раньше.
-function AmountCell({ contract }) {
+function AmountCell({ contract, actual }) {
   const dp = formatMoney(contract.contract_amount, contract.currency)
   const dgp = formatMoney(contract.gp_amount, contract.currency)
   const markup = formatPercent(gpMarkup(contract))
+  // Актуальную сумму показываем, только если завершённые ДС её изменили: у
+  // договора без соглашений вторая строка была бы шумом.
+  const actualText = actual != null && Number(actual) !== Number(contract.contract_amount || 0)
+    ? formatMoney(actual, contract.currency)
+    : null
 
-  if (!dgp) return <span className="amt-solo">{dp || '—'}</span>
+  if (!dgp) {
+    return (
+      <div className="amt-pair">
+        <span className={`amt-solo${actualText ? ' amt-original' : ''}`}>{dp || '—'}</span>
+        {actualText && (
+          <span className="amt-row amt-actual" title="Сумма с учётом завершённых ДС: изменение ВОР заменяет сумму ветки, доп. работы добавляются">
+            <span className="amt-tag">Актуальная</span>
+            <span className="amt-value">{actualText}</span>
+          </span>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="amt-pair">
@@ -99,6 +133,12 @@ function AmountCell({ contract }) {
         <span className="amt-tag" title="Договор генподряда — сумма по тем же работам от заказчика">ДГП</span>
         <span className="amt-value">{dgp}</span>
       </span>
+      {actualText && (
+        <span className="amt-row amt-actual" title="Сумма с учётом завершённых ДС">
+          <span className="amt-tag">Актуальная</span>
+          <span className="amt-value">{actualText}</span>
+        </span>
+      )}
       {markup && (
         <span className="amt-markup" title="Генподрядный коэффициент: сумма ДГП / сумма ДП">
           % ГП {markup}
@@ -201,13 +241,14 @@ function formatPersonShortName(fullName) {
   return normalized
 }
 
-// Склонение «договор/договора/договоров» для счётчика пагинации.
-function pluralContracts(n) {
+// Склонение для счётчика пагинации: в реестре ДС считаем соглашения, не договоры.
+function pluralContracts(n, amendments = false) {
   const mod10 = n % 10
   const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return 'договор'
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'договора'
-  return 'договоров'
+  const one = mod10 === 1 && mod100 !== 11
+  const few = mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)
+  if (amendments) return one ? 'соглашение' : few ? 'соглашения' : 'соглашений'
+  return one ? 'договор' : few ? 'договора' : 'договоров'
 }
 
 // Нейтральные SVG-иконки действий (currentColor, единый размер 16×16).
@@ -227,6 +268,13 @@ const TrashIcon = () => (
     <path d="M3 6h18" />
     <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+  </svg>
+)
+const AddDocIcon = () => (
+  <svg {...actionIconProps}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h6" />
+    <path d="M14 2v6h6" />
+    <path d="M18 14v6M15 17h6" />
   </svg>
 )
 const RestoreIcon = () => (
@@ -276,6 +324,7 @@ function InlineDateCell({ value, onChange, disabled, overdue }) {
 
 function ContractRegistry() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { isAdmin, userProfile, canEdit, scopedObjectIds } = useRole()
   // task 333: гейт add/edit/delete для раздела «contracts»
   const canEditContracts = canEdit('contracts')
@@ -342,11 +391,18 @@ function ContractRegistry() {
   const [noteSavingId, setNoteSavingId] = useState(null)
 
   const [formData, setFormData] = useState(EMPTY_FORM)
+  // Форма ДС: документ, к которому его создают, и унаследованный снимок условий.
+  // Снимок нужен, чтобы понять, ЧТО соглашение реально меняет (changed_fields):
+  // пустое поле — это не изменение, иначе ДС молча вернул бы прежние условия.
+  const [amendmentTarget, setAmendmentTarget] = useState(null)
+  const [amendmentInherited, setAmendmentInherited] = useState(null)
 
   // Панель фильтров реестра (over-table, in-memory)
   // Множественный выбор: договоры часто смотрят сразу по нескольким объектам
   // одного комплекса. Пустой массив = фильтр не применён.
   const [filterObjectIds, setFilterObjectIds] = useState([])
+  // Тип ДС — только в представлении «Дополнительные соглашения».
+  const [filterDsType, setFilterDsType] = useState('')
   const [filterLawyerId, setFilterLawyerId] = useState('')
   const [searchText, setSearchText] = useState('')
   const [onlyOverdue, setOnlyOverdue] = useState(false)
@@ -1077,11 +1133,32 @@ function ContractRegistry() {
     () => [{ value: '', label: 'Не назначен' }, ...dedupContacts.map(c => ({ value: c.name, label: c.name }))],
     [dedupContacts])
 
+  // Дерево документов строим один раз из уже загруженного реестра: связи нужны и
+  // реестру (актуальная сумма, счётчик ДС), и форме (наследование условий).
+  // Считаем по ЖИВЫМ документам — удалённый ДС на условия не влияет.
+  const docIndex = useMemo(() => buildDocIndex(contracts.filter(c => !c.deleted_at)), [contracts])
+
+  const isAmendmentsView = scope === 'amendments'
+
+  const scopeCounts = useMemo(() => {
+    const live = contracts.filter(c => !c.deleted_at)
+    const docs = live.filter(c => (c.record_type || DOC_TYPE.CONTRACT) === DOC_TYPE.CONTRACT)
+    return {
+      all: docs.length,
+      ours: docs.filter(c => c.handled_by_us).length,
+      amendments: live.filter(isAmendment).length,
+    }
+  }, [contracts])
+
   // Охват реестра применяется до вкладок и счётчиков — «Наши договоры» это тот же
   // реестр, просто суженный, поэтому и статусные счётчики должны считаться в нём.
-  const scopedContracts = useMemo(
-    () => (scope === 'ours' ? contracts.filter(c => c.handled_by_us) : contracts),
-    [contracts, scope])
+  const scopedContracts = useMemo(() => {
+    // Договоры и ДС лежат в одной таблице, поэтому список всегда разделяем по типу:
+    // иначе ДС удвоили бы реестр договоров и его суммы.
+    if (scope === 'amendments') return contracts.filter(isAmendment)
+    const own = contracts.filter(c => (c.record_type || DOC_TYPE.CONTRACT) === DOC_TYPE.CONTRACT)
+    return scope === 'ours' ? own.filter(c => c.handled_by_us) : own
+  }, [contracts, scope])
 
   // Реестр загружается целиком; по вкладкам фильтруем в памяти (мгновенно).
   const tabContracts = useMemo(() => scopedContracts.filter(c => {
@@ -1114,6 +1191,7 @@ function ContractRegistry() {
     const q = searchText.trim().toLowerCase()
     const list = tabContracts.filter(c => {
       if (filterObjectIds.length > 0 && !filterObjectIds.includes(c.object_id)) return false
+      if (filterDsType && c.record_type !== filterDsType) return false
       if (filterLawyerId) {
         // Сопоставляем по нормализованному ФИО — чтобы фильтр по одному «представителю»
         // ловил все договоры с этим же юристом, даже если у него дублирующиеся id.
@@ -1124,12 +1202,17 @@ function ContractRegistry() {
       // «Не в Larix» — только заключённые (не «Новая заявка») и ещё не внесённые.
       if (onlyNoLarix && (c.larix_entered || (c.status || 'new_request') === 'new_request')) return false
       if (q) {
+        // У ДС ищем ещё и по основному договору: в реестре ДС его номер и ID —
+        // главный ориентир, по которому документ и разыскивают.
+        const root = c.root_contract_id ? docIndex.byId.get(c.root_contract_id) : null
         const hay = [
           ...contractParties(c).map(p => p.name),
           c.work_name,
           c.tenders?.work_description,
           c.contract_number,
           c.display_id != null ? String(c.display_id) : '',
+          root && root.id !== c.id ? root.contract_number : '',
+          root && root.id !== c.id && root.display_id != null ? String(root.display_id) : '',
           c.notes,
           c.objects?.name,
         ].filter(Boolean).join(' ').toLowerCase()
@@ -1161,9 +1244,9 @@ function ContractRegistry() {
       if (so !== 0) return so
       return (a.contract_date || '').localeCompare(b.contract_date || '')
     })
-  }, [tabContracts, filterObjectIds, filterLawyerId, onlyOverdue, onlyNoLarix, searchText, sortKey, sortDir, isOverdue, normNameById])
+  }, [tabContracts, filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, searchText, sortKey, sortDir, isOverdue, normNameById, docIndex])
 
-  const hasActiveFilters = !!(filterObjectIds.length || filterLawyerId || searchText || onlyOverdue || onlyNoLarix)
+  const hasActiveFilters = !!(filterObjectIds.length || filterDsType || filterLawyerId || searchText || onlyOverdue || onlyNoLarix)
 
   const toggleSort = (key) => {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -1171,7 +1254,7 @@ function ContractRegistry() {
   }
 
   const resetFilters = () => {
-    setFilterObjectIds([]); setFilterLawyerId(''); setSearchText('')
+    setFilterObjectIds([]); setFilterDsType(''); setFilterLawyerId(''); setSearchText('')
     setOnlyOverdue(false); setOnlyNoLarix(false)
   }
 
@@ -1201,7 +1284,7 @@ function ContractRegistry() {
   useEffect(() => {
     setPage(1)
     setExpandedContractId(null)
-  }, [activeTab, filterObjectIds, filterLawyerId, searchText, onlyOverdue, onlyNoLarix, sortKey, sortDir, pageSize])
+  }, [activeTab, scope, filterObjectIds, filterDsType, filterLawyerId, searchText, onlyOverdue, onlyNoLarix, sortKey, sortDir, pageSize])
 
   // Закрываем раскрытие при перелистывании страниц.
   useEffect(() => {
@@ -1237,13 +1320,85 @@ function ContractRegistry() {
     setFormCounterpartyIds(prev => prev.filter(x => x !== id))
   }
 
+  // Унаследованный снимок условий для нового ДС: актуальные значения ветки.
+  // У ДС на дополнительные работы сумма своя — она не наследуется, иначе новая
+  // ветка молча повторила бы стоимость договора.
+  // selfId — редактируемый документ: обход условий ветки останавливается на нём,
+  // иначе снимок «до изменения» включил бы изменения самого этого ДС.
+  const inheritedSnapshot = useCallback((type, parent, selfId = null) => {
+    if (!parent) return null
+    const eff = effectiveValues(parent, docIndex, { stopAt: selfId })
+    const snapshot = {}
+    OVERRIDABLE_FIELDS.forEach((f) => {
+      snapshot[f] = f === 'amount_includes_vat' ? eff[f] !== false : (eff[f] ?? '')
+    })
+    if (type === DOC_TYPE.EXTRA) { snapshot.contract_amount = ''; snapshot.gp_amount = '' }
+    return snapshot
+  }, [docIndex])
+
+  // «Создать ДС» из строки реестра или из карточки: тип по умолчанию — изменение
+  // ВОР, родителя подбираем по правилам (вершина ветки), объект и стороны берём
+  // из основного договора.
+  const handleAddAmendment = (target, type = DOC_TYPE.CHANGE) => {
+    ensureFormRefs()
+    const plan = planAmendment(type, target, docIndex)
+    if (!plan.ok) { alert(plan.reason); return }
+    const parent = plan.parent
+    const root = docIndex.byId.get(parent.root_contract_id) || parent
+    const snapshot = inheritedSnapshot(type, parent)
+    setEditingContract(null)
+    setAmendmentTarget(target)
+    setAmendmentInherited(snapshot)
+    setFormData({
+      ...EMPTY_FORM,
+      ...snapshot,
+      record_type: type,
+      parent_contract_id: parent.id,
+      object_id: root.object_id || '',
+      tender_id: root.tender_id || '',
+      handled_by_us: !!root.handled_by_us,
+      responsible_contact_id: root.responsible_contact_id || '',
+      status: 'new_request',
+    })
+    setFormCounterpartyIds(contractParties(root).map(p => p.id))
+    setCounterpartySearch('')
+    setFormAttachments(new Set())
+    setShowModal(true)
+  }
+
+  // Кнопка «Создать ДС» в карточке договора ведёт сюда: форма живёт в реестре,
+  // поэтому документ-цель передаётся адресом (?ds=<ID документа>).
+  useEffect(() => {
+    const targetId = searchParams.get('ds')
+    if (!targetId || contracts.length === 0) return
+    const target = docIndex.byDisplayId.get(Number(targetId))
+    const type = searchParams.get('ds_type') === DOC_TYPE.EXTRA ? DOC_TYPE.EXTRA : DOC_TYPE.CHANGE
+    setSearchParams({}, { replace: true })
+    if (target) handleAddAmendment(target, type)
+    else alert(`Документ ID ${targetId} не найден в реестре`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, contracts, docIndex])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    // Полноценный функционал ДС пока не реализован: не создаём и не превращаем
-    // договор в ДС из формы (у ДС появится собственный ID и связь с родителем позже).
-    if (formData.record_type === 'ds') {
-      alert('Создание дополнительных соглашений (ДС) будет реализовано позже. Сейчас можно создавать только основной договор (ДП).')
-      return
+    const isDsForm = formData.record_type !== DOC_TYPE.CONTRACT
+    let parentDoc = null
+    if (isDsForm) {
+      // Те же правила, что в триггере БД: проверяем до запроса, чтобы человек
+      // увидел понятную причину, а не текст исключения Postgres.
+      parentDoc = docIndex.byId.get(formData.parent_contract_id)
+      if (!parentDoc) {
+        alert('Для ДС нужно указать изменяемый документ')
+        return
+      }
+      if (!editingContract) {
+        const plan = planAmendment(formData.record_type, amendmentTarget || parentDoc, docIndex)
+        if (!plan.ok) { alert(plan.reason); return }
+        if (plan.parent.id !== parentDoc.id) {
+          alert(`Ветка уже изменена: новое соглашение создаётся к документу ID ${plan.parent.display_id}`)
+          return
+        }
+      }
     }
     // Объект выбирается кастомным пикером (не <select required>), поэтому проверяем сами.
     if (!formData.object_id) {
@@ -1258,8 +1413,14 @@ function ContractRegistry() {
         object_id: formData.object_id || null,
         tender_id: formData.tender_id || null,
         responsible_contact_id: formData.responsible_contact_id || null,
-        // parent_contract_id — задел для будущих ДС; у ДП всегда пусто.
-        parent_contract_id: formData.parent_contract_id || null,
+        // Изменяемый документ: у договора всегда пусто, у ДС обязателен.
+        parent_contract_id: isDsForm ? formData.parent_contract_id : null,
+        // Что именно ДС меняет — сравнением с унаследованным снимком (та же
+        // логика, что и в Excel-импорте). Если снимка нет (родитель недоступен),
+        // список НЕ трогаем: пустой массив стёр бы смысл уже сохранённого ДС.
+        ...(isDsForm
+          ? (amendmentInherited ? { changed_fields: collectChangedFields(amendmentInherited, formData) } : {})
+          : { changed_fields: [] }),
         // Пустые даты → NULL (иначе Postgres: invalid input syntax for type date: "").
         contract_date: formData.contract_date || null,
         work_start_date: formData.work_start_date || null,
@@ -1280,20 +1441,29 @@ function ContractRegistry() {
         contract_number: formData.contract_number.trim() || null,
       }
 
+      const docWord = isDsForm ? DOC_TYPE_LABEL[formData.record_type] : 'договор'
       let contractId = editingContract?.id
       if (editingContract) {
         const { error } = await supabase.from('contracts').update(payload).eq('id', editingContract.id)
         if (error) throw error
-        await logContractEvent(contractId, 'field_updated', { description: 'Обновлены данные договора' })
+        await logContractEvent(contractId, 'field_updated', { description: `Обновлены данные документа (${docWord})` })
       } else {
-        const { data, error } = await supabase.from('contracts').insert([payload]).select('id').single()
+        const { data, error } = await supabase.from('contracts').insert([payload]).select('id, display_id').single()
         if (error) throw error
         contractId = data?.id
+        const numberPart = payload.contract_number ? ` № ${payload.contract_number}` : ' (без номера)'
         await logContractEvent(contractId, 'created', {
-          description: payload.contract_number
-            ? `Создан договор № ${payload.contract_number}`
-            : 'Создан договор (без номера)',
+          description: isDsForm
+            ? `Создано ${docWord}${numberPart} к документу ID ${parentDoc?.display_id}`
+            : `Создан договор${numberPart}`,
         })
+        // В истории изменяемого документа тоже остаётся след — иначе связь видна
+        // только со стороны ДС.
+        if (isDsForm && parentDoc) {
+          await logContractEvent(parentDoc.id, 'field_updated', {
+            description: `Создано ${docWord}${numberPart}, ID ${data?.display_id ?? '—'}`,
+          })
+        }
       }
 
       if (contractId) {
@@ -1333,6 +1503,8 @@ function ContractRegistry() {
 
       setShowModal(false)
       setEditingContract(null)
+      setAmendmentTarget(null)
+      setAmendmentInherited(null)
       setFormData({ ...EMPTY_FORM, status: STATUS_OPTIONS.some(s => s.value === activeTab) ? activeTab : 'new_request' })
       setFormCounterpartyIds([])
       setCounterpartySearch('')
@@ -1348,19 +1520,26 @@ function ContractRegistry() {
     // Списки контрагентов и тендеров могли ещё не подгрузиться в простое.
     ensureFormRefs()
     setEditingContract(contract)
+    // Для ДС держим тот же унаследованный снимок — при сохранении по нему
+    // пересчитывается список изменяемых полей.
+    const parent = contract.parent_contract_id ? docIndex.byId.get(contract.parent_contract_id) : null
+    setAmendmentTarget(parent || null)
+    setAmendmentInherited(parent ? inheritedSnapshot(contract.record_type, parent, contract.id) : null)
     setFormData({
       record_type: contract.record_type || 'dp',
       parent_contract_id: contract.parent_contract_id || '',
       contract_number: contract.contract_number || '',
       contract_date: contract.contract_date || '',
       object_id: contract.object_id || '',
-      contract_amount: contract.contract_amount || '',
-      gp_amount: contract.gp_amount || '',
+      // Через ?? — нулевая сумма это значение, а не «не заполнено»: с `||` она
+      // превращалась в пустое поле и у ДС считалась изменением условий.
+      contract_amount: contract.contract_amount ?? '',
+      gp_amount: contract.gp_amount ?? '',
       handled_by_us: !!contract.handled_by_us,
       currency: contract.currency || 'RUB',
       vat_rate: contract.vat_rate ?? '',
       amount_includes_vat: contract.amount_includes_vat !== false,
-      warranty_retention_percent: contract.warranty_retention_percent || '',
+      warranty_retention_percent: contract.warranty_retention_percent ?? '',
       warranty_retention_period: contract.warranty_retention_period || '',
       work_start_date: contract.work_start_date || '',
       work_end_date: contract.work_end_date || '',
@@ -1458,6 +1637,8 @@ function ContractRegistry() {
   const handleAddNew = async () => {
     ensureFormRefs()
     setEditingContract(null)
+    setAmendmentTarget(null)
+    setAmendmentInherited(null)
     const nextNumber = await computeNextContractNumber()
     const status = STATUS_OPTIONS.some(s => s.value === activeTab) ? activeTab : 'new_request'
     setFormData({ ...EMPTY_FORM, contract_number: nextNumber, status })
@@ -1563,6 +1744,37 @@ function ContractRegistry() {
   }
 
   const isDeletedTab = activeTab === 'deleted'
+  // В представлении ДС появляется колонка «Изменяемый документ».
+  const tableColCount = isAmendmentsView ? 12 : 11
+
+  // ── Состояние формы документа ─────────────────────────────────────────────
+  const isDsForm = formData.record_type !== DOC_TYPE.CONTRACT
+  const formParentDoc = formData.parent_contract_id ? docIndex.byId.get(formData.parent_contract_id) : null
+  // Условия завершённого документа заморожены (то же правило в триггере БД):
+  // иначе актуальные суммы поменялись бы задним числом и без следа в истории.
+  const formFrozen = !!editingContract && isCompleted(editingContract)
+  const changedFieldsNow = useMemo(
+    () => (isDsForm && amendmentInherited ? collectChangedFields(amendmentInherited, formData) : []),
+    [isDsForm, amendmentInherited, formData])
+  const changedSet = useMemo(() => new Set(changedFieldsNow), [changedFieldsNow])
+  // Поле, которое ДС переопределяет, подсвечиваем — видно, что именно уходит в
+  // changed_fields.
+  const fieldGroupCls = (field, extra = '') =>
+    `form-group${extra ? ` ${extra}` : ''}${changedSet.has(field) ? ' is-ds-changed' : ''}`
+
+  // Смена типа в форме нового документа: родитель и наследование зависят от типа.
+  const handleTypeChange = (e) => {
+    const type = e.target.value
+    if (type === DOC_TYPE.CONTRACT) {
+      setAmendmentTarget(null)
+      setAmendmentInherited(null)
+      setFormData(prev => ({ ...prev, record_type: type, parent_contract_id: '' }))
+      return
+    }
+    const target = amendmentTarget || formParentDoc
+    if (!target) { setFormData(prev => ({ ...prev, record_type: type })); return }
+    handleAddAmendment(target, type)
+  }
 
   return (
     <div className="contract-registry contracts-page-v2">
@@ -1601,7 +1813,7 @@ function ContractRegistry() {
               onClick={() => { ensureFormRefs(); setShowImportModal(true) }}
               className="btn-secondary"
               style={{ padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
-              title="Пакетное создание договоров (ДП) из Excel-файла"
+              title="Пакетное создание договоров и ДС из Excel-файла"
             >
               Импорт Excel
             </button>
@@ -1628,9 +1840,7 @@ function ContractRegistry() {
             onClick={() => setScope(s.key)}
           >
             {s.label}
-            <span className="registry-scope-count">
-              {(s.key === 'ours' ? contracts.filter(c => c.handled_by_us && !c.deleted_at) : contracts.filter(c => !c.deleted_at)).length}
-            </span>
+            <span className="registry-scope-count">{scopeCounts[s.key]}</span>
           </button>
         ))}
       </div>
@@ -1660,7 +1870,9 @@ function ContractRegistry() {
             className="rf-search"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Поиск по ID, контрагенту, работам, № договора"
+            placeholder={isAmendmentsView
+              ? 'Поиск по ID, № ДС, основному договору, контрагенту'
+              : 'Поиск по ID, контрагенту, работам, № договора'}
           />
         </div>
         <div className="rf-field rf-field-object">
@@ -1682,6 +1894,21 @@ function ContractRegistry() {
             )}
           />
         </div>
+        {isAmendmentsView && (
+          <div className="rf-field">
+            <label className="rf-label">Тип ДС</label>
+            <FilterDropdown
+              label=""
+              value={filterDsType}
+              onChange={setFilterDsType}
+              options={[
+                { value: '', label: 'Все типы' },
+                ...DOC_TYPES.filter(t => t.value !== DOC_TYPE.CONTRACT).map(t => ({ value: t.value, label: t.label })),
+              ]}
+              allLabel="Все типы"
+            />
+          </div>
+        )}
         <div className="rf-field rf-field-lawyer">
           <label className="rf-label">Ответственный юрист</label>
           <FilterDropdown
@@ -1806,6 +2033,7 @@ function ContractRegistry() {
             <col className="cg-num" />
             <col className="cg-object" />
             <col className="cg-ds" />
+            {isAmendmentsView && <col className="cg-parent" />}
             <col className="cg-counterparty" />
             <col className="cg-work" />
             <col className="cg-amount" />
@@ -1819,9 +2047,10 @@ function ContractRegistry() {
             <tr>
               <th>№</th>
               {sortableTh('object', 'Объект')}
-              <th>Договор / № ДС</th>
+              <th>{isAmendmentsView ? 'ДС / тип' : 'Договор / № ДС'}</th>
+              {isAmendmentsView && <th>Изменяемый документ</th>}
               {sortableTh('counterparty', 'Контрагент')}
-              <th>Выполняемые работы</th>
+              <th>{isAmendmentsView ? 'Предмет ДС' : 'Выполняемые работы'}</th>
               {sortableTh('amount', 'Сумма')}
               {sortableTh('status', 'Текущий статус')}
               <th>Ответственный юрист</th>
@@ -1833,16 +2062,18 @@ function ContractRegistry() {
           <tbody>
             {filteredSortedContracts.length === 0 ? (
               <tr>
-                <td colSpan="11" className="no-data">
+                <td colSpan={tableColCount} className="no-data">
                   {hasActiveFilters
-                    ? 'Нет договоров под выбранные фильтры.'
+                    ? `Нет ${isAmendmentsView ? 'соглашений' : 'договоров'} под выбранные фильтры.`
                     : isDeletedTab
-                      ? 'Нет удалённых договоров.'
+                      ? `Нет удалённых ${isAmendmentsView ? 'соглашений' : 'договоров'}.`
                       : activeTab === 'all'
-                        ? 'Договоров пока нет.'
+                        ? isAmendmentsView
+                          ? 'Дополнительных соглашений пока нет. Создать ДС можно из строки договора или из его карточки.'
+                          : 'Договоров пока нет.'
                         : activeTab === 'requests'
                           ? 'Нет заявок на стадии заключения.'
-                          : `Нет договоров со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
+                          : `Нет ${isAmendmentsView ? 'соглашений' : 'договоров'} со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
                 </td>
               </tr>
             ) : (
@@ -1861,6 +2092,11 @@ function ContractRegistry() {
                 // Договор можно завести без номера/даты — подсвечиваем такие в реестре.
                 const missingLabel = [!dsNum && 'номер', !dsDate && 'дата договора'].filter(Boolean).join(', ')
                 const parties = contractParties(contract)
+                // Документ и его дерево: сколько живых ДС висит на документе и
+                // какая сумма получается с учётом завершённых соглашений.
+                const amendmentCount = liveChildren(contract, docIndex).length
+                const parentDoc = contract.parent_contract_id ? docIndex.byId.get(contract.parent_contract_id) : null
+                const actualAmount = amendmentCount > 0 ? contractActualAmount(contract, docIndex) : null
                 return (
                 <Fragment key={contract.id}>
                 <tr
@@ -1896,9 +2132,20 @@ function ContractRegistry() {
                         ? <span className="cds-sub">от {dsDate}</span>
                         : <span className="cds-sub cds-missing">дата не указана</span>}
                       {contract.display_id != null && (
-                        <span className="cds-id" title="Постоянный ID договора в портале">ID {contract.display_id}</span>
+                        <span className="cds-id" title="Постоянный ID документа в портале">ID {contract.display_id}</span>
                       )}
                     </Link>
+                    {isAmendment(contract) && (
+                      <span className={`ds-type-badge is-${contract.record_type}`} title={DOC_TYPE_LABEL[contract.record_type]}>
+                        {DOC_TYPE_SHORT[contract.record_type]}
+                      </span>
+                    )}
+                    {amendmentCount > 0 && (
+                      <span
+                        className="ds-count-badge"
+                        title={`Дополнительных соглашений к этому документу: ${amendmentCount}`}
+                      >ДС: {amendmentCount}</span>
+                    )}
                     {/* Путь к папке — перед понятийным соглашением: с него
                         начинают поиск документов по договору. Открыть проводник
                         кликом браузер не даёт, поэтому путь копируется. */}
@@ -1919,6 +2166,17 @@ function ContractRegistry() {
                       />
                     )}
                   </td>
+                  {isAmendmentsView && (
+                    <td className="cell-parent" onClick={(e) => e.stopPropagation()}>
+                      {parentDoc ? (
+                        <Link to={`/contracts/${parentDoc.id}`} className="parent-doc-link" title="Открыть изменяемый документ">
+                          <span className="cds-main">{parentDoc.contract_number ? `№ ${parentDoc.contract_number}` : '№ не присвоен'}</span>
+                          <span className="cds-id">ID {parentDoc.display_id}</span>
+                          <span className="cds-sub">{DOC_TYPE_SHORT[parentDoc.record_type] || 'Договор'}</span>
+                        </Link>
+                      ) : '—'}
+                    </td>
+                  )}
                   <td className="cell-counterparty">
                     {parties.length === 0 ? '—' : (
                       <ul className="cp-list">
@@ -1933,7 +2191,7 @@ function ContractRegistry() {
                   </td>
                   <td className="cell-work" title={contract.work_name || contract.tenders?.work_description || ''}>{contract.work_name || contract.tenders?.work_description || '—'}</td>
                   <td className="cell-amount">
-                    <AmountCell contract={contract} />
+                    <AmountCell contract={contract} actual={actualAmount} />
                   </td>
                   <td className="cell-status" onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
@@ -2016,6 +2274,12 @@ function ContractRegistry() {
                       ) : canEditContracts ? (
                         <>
                           <button
+                            className="btn-icon btn-add-ds"
+                            onClick={() => handleAddAmendment(contract)}
+                            title="Создать дополнительное соглашение к этому документу"
+                            aria-label="Создать ДС"
+                          ><AddDocIcon /></button>
+                          <button
                             className="btn-icon btn-edit"
                             onClick={() => handleEditContract(contract)}
                             title="Редактировать"
@@ -2034,7 +2298,7 @@ function ContractRegistry() {
                 </tr>
                 {isExpanded && (
                   <tr className="contract-expanded-row" onClick={(e) => e.stopPropagation()}>
-                    <td colSpan="11">
+                    <td colSpan={tableColCount}>
                       <div className="contract-expanded-content">
                         {/* Стороны договора (может быть несколько — трёхсторонний договор) */}
                         {parties.length > 1 && (
@@ -2359,7 +2623,7 @@ function ContractRegistry() {
       {!loading && totalCount > 0 && (
         <div className="registry-pagination">
           <span className="rp-info">
-            Показано {rangeFrom}–{rangeTo} из {totalCount} {pluralContracts(totalCount)}
+            Показано {rangeFrom}–{rangeTo} из {totalCount} {pluralContracts(totalCount, isAmendmentsView)}
           </span>
           <div className="rp-controls">
             <label className="rp-size">
@@ -2395,56 +2659,105 @@ function ContractRegistry() {
         <div className="modal-overlay">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{editingContract ? 'Редактировать договор' : 'Добавить новый договор'}</h3>
+              <h3>
+                {editingContract
+                  ? `Редактировать: ${DOC_TYPE_LABEL[formData.record_type] || 'Договор'}`
+                  : isDsForm
+                    ? `Создать: ${DOC_TYPE_LABEL[formData.record_type]}`
+                    : 'Добавить новый договор'}
+              </h3>
               <button
                 className="modal-close"
-                onClick={() => { setShowModal(false); setEditingContract(null) }}
+                onClick={() => { setShowModal(false); setEditingContract(null); setAmendmentTarget(null); setAmendmentInherited(null) }}
               >×</button>
             </div>
+
+            {formFrozen && (
+              <div className="ds-frozen-note">
+                Документ завершён: условия и идентификация заморожены. Чтобы изменить их, верните
+                документ из статуса «Завершено» — или создайте ДС на изменение ВОР.
+              </div>
+            )}
 
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
                 <div className="form-group">
                   <label>Тип *</label>
-                  <select name="record_type" value={formData.record_type} onChange={handleInputChange}>
+                  <select
+                    name="record_type"
+                    value={formData.record_type}
+                    onChange={handleTypeChange}
+                    disabled={!!editingContract}
+                  >
                     {RECORD_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  {formData.record_type === 'ds' && (
-                    <small className="form-hint">Создание ДС будет реализовано позже — сохранить можно только ДП.</small>
-                  )}
+                  {editingContract ? (
+                    <small className="form-hint">Тип документа не меняется. Нужен другой тип — создайте новый документ.</small>
+                  ) : isDsForm ? (
+                    <small className="form-hint">
+                      {formData.record_type === DOC_TYPE.CHANGE
+                        ? 'Изменяет условия документа своей ветки: сумма ветки заменяется, незаполненные условия наследуются.'
+                        : 'Новая ветка работ к договору: её стоимость прибавляется к сумме договора после завершения.'}
+                    </small>
+                  ) : null}
                 </div>
 
                 {editingContract && editingContract.display_id != null && (
                   <div className="form-group">
                     <label>ID портала</label>
                     <input type="text" value={editingContract.display_id} readOnly disabled />
-                    <small className="form-hint">Постоянный идентификатор договора. Не изменяется.</small>
+                    <small className="form-hint">Постоянный идентификатор документа. Не изменяется.</small>
                   </div>
                 )}
 
-                {formData.record_type === 'ds' && (
+                {isDsForm && (
                   <div className="form-group">
-                    <label>ID основного договора</label>
+                    <label>Изменяемый документ *</label>
                     <input
                       type="text"
-                      name="parent_contract_id"
-                      value={formData.parent_contract_id}
-                      onChange={handleInputChange}
-                      placeholder="Заготовка для будущих ДС"
+                      value={formParentDoc
+                        ? `ID ${formParentDoc.display_id} · ${formParentDoc.contract_number ? `№ ${formParentDoc.contract_number}` : 'без номера'} · ${DOC_TYPE_LABEL[formParentDoc.record_type] || 'Договор'}`
+                        : 'не выбран'}
+                      readOnly
+                      disabled
                     />
-                    <small className="form-hint">Поле-заглушка для связи ДС с основным договором.</small>
+                    <small className="form-hint">
+                      {formData.record_type === DOC_TYPE.CHANGE
+                        ? 'Подставлен последний документ ветки — новое изменение всегда крепится к нему.'
+                        : 'ДС на дополнительные работы создаётся к основному договору.'}
+                    </small>
                   </div>
                 )}
 
-                <div className="form-group">
-                  <label>№ договора</label>
-                  <input type="text" name="contract_number" value={formData.contract_number} onChange={handleInputChange} placeholder="Можно оставить пустым" />
-                  <small className="form-hint">Если номера ещё нет — оставьте поле пустым, договор подсветится в реестре.</small>
+                {isDsForm && amendmentInherited && (
+                  <div className="form-group full-width">
+                    <label>Что меняет это соглашение</label>
+                    <div className="ds-changed-list">
+                      {changedFieldsNow.length === 0
+                        ? <span className="ds-changed-empty">Пока ничего: измените нужные поля — они подсветятся.</span>
+                        : changedFieldsNow.map(f => (
+                          <span key={f} className="ds-changed-chip">{OVERRIDABLE_FIELD_LABEL[f] || f}</span>
+                        ))}
+                    </div>
+                    <small className="form-hint">
+                      Остальные условия наследуются от актуального состояния ветки. Пустое поле — это не изменение.
+                    </small>
+                  </div>
+                )}
+
+                <div className={fieldGroupCls('contract_number')}>
+                  <label>{isDsForm ? '№ ДС' : '№ договора'}</label>
+                  <input type="text" name="contract_number" value={formData.contract_number} onChange={handleInputChange} placeholder="Можно оставить пустым" disabled={formFrozen} />
+                  <small className="form-hint">
+                    {isDsForm
+                      ? 'Номер ДС уникален внутри одного договора.'
+                      : 'Если номера ещё нет — оставьте поле пустым, договор подсветится в реестре.'}
+                  </small>
                 </div>
 
                 <div className="form-group">
-                  <label>Дата договора</label>
-                  <input type="date" name="contract_date" value={formData.contract_date} onChange={handleInputChange} />
+                  <label>{isDsForm ? 'Дата ДС' : 'Дата договора'}</label>
+                  <input type="date" name="contract_date" value={formData.contract_date} onChange={handleInputChange} disabled={formFrozen} />
                 </div>
 
                 <div className="form-group full-width">
@@ -2546,13 +2859,14 @@ function ContractRegistry() {
                   </select>
                 </div>
 
-                <div className="form-group full-width">
-                  <label>Наименование работ</label>
+                <div className={fieldGroupCls('work_name', 'full-width')}>
+                  <label>{isDsForm ? 'Предмет ДС' : 'Наименование работ'}</label>
                   <textarea
                     name="work_name"
                     rows="2"
                     value={formData.work_name}
                     onChange={handleInputChange}
+                    disabled={formFrozen}
                     placeholder={formData.tender_id ? 'Подтянуто из тендера, можно отредактировать' : 'Введите наименование работ'}
                   />
                 </div>
@@ -2586,66 +2900,71 @@ function ContractRegistry() {
                   </small>
                 </div>
 
-                <div className="form-group">
-                  <label>Сумма по договору подряда (ДП)</label>
-                  <input type="number" step="0.01" name="contract_amount" value={formData.contract_amount} onChange={handleInputChange} placeholder="Подтянется из ПСДЦ" />
+                <div className={fieldGroupCls('contract_amount')}>
+                  <label>{isDsForm ? 'Сумма по ДС' : 'Сумма по договору подряда (ДП)'}</label>
+                  <input type="number" step="0.01" name="contract_amount" value={formData.contract_amount} onChange={handleInputChange} disabled={formFrozen} placeholder="Подтянется из ПСДЦ" />
                   <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
-                    После импорта ПСДЦ пересчитывается из строк; можно поправить вручную.
+                    {formData.record_type === DOC_TYPE.CHANGE
+                      ? 'Новая сумма ветки целиком — она заменяет предыдущую, а не прибавляется к ней.'
+                      : formData.record_type === DOC_TYPE.EXTRA
+                        ? 'Стоимость дополнительных работ: после завершения ДС она прибавится к сумме договора.'
+                        : 'После импорта ПСДЦ пересчитывается из строк; можно поправить вручную.'}
                   </small>
                 </div>
-                <div className="form-group">
+                <div className={fieldGroupCls('gp_amount')}>
                   <label>Сумма по договору генподряда (ДГП)</label>
-                  <input type="number" step="0.01" name="gp_amount" value={formData.gp_amount} onChange={handleInputChange} placeholder="Если есть" />
+                  <input type="number" step="0.01" name="gp_amount" value={formData.gp_amount} onChange={handleInputChange} disabled={formFrozen} placeholder="Если есть" />
                   <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
                     {formatPercent(gpMarkup({ contract_amount: formData.contract_amount, gp_amount: formData.gp_amount }))
                       ? `Генподрядный коэффициент: ${formatPercent(gpMarkup({ contract_amount: formData.contract_amount, gp_amount: formData.gp_amount }))} (ДГП / ДП)`
                       : 'Коэффициент посчитается сам: ДГП / ДП.'}
                   </small>
                 </div>
-                <div className="form-group">
+                <div className={fieldGroupCls('currency')}>
                   <label>Валюта</label>
-                  <select name="currency" value={formData.currency} onChange={handleInputChange}>
+                  <select name="currency" value={formData.currency} onChange={handleInputChange} disabled={formFrozen}>
                     {CURRENCY_OPTIONS.map(c => (
                       <option key={c.code} value={c.code}>{c.label}</option>
                     ))}
                   </select>
                 </div>
-                <div className="form-group">
+                <div className={fieldGroupCls('vat_rate')}>
                   <label>Ставка НДС (%)</label>
-                  <select name="vat_rate" value={formData.vat_rate} onChange={handleInputChange}>
+                  <select name="vat_rate" value={formData.vat_rate} onChange={handleInputChange} disabled={formFrozen}>
                     {VAT_RATE_OPTIONS.map(v => (
                       <option key={v || 'none'} value={v}>{v === '' ? '— не указана —' : `${v}%`}</option>
                     ))}
                   </select>
                 </div>
-                <div className="form-group">
+                <div className={fieldGroupCls('amount_includes_vat')}>
                   <label>Хранение суммы</label>
                   <select
                     name="amount_includes_vat"
                     value={formData.amount_includes_vat ? 'with' : 'without'}
                     onChange={(e) => setFormData(prev => ({ ...prev, amount_includes_vat: e.target.value === 'with' }))}
+                    disabled={formFrozen}
                   >
                     <option value="with">С НДС</option>
                     <option value="without">Без НДС</option>
                   </select>
                 </div>
 
-                <div className="form-group">
+                <div className={fieldGroupCls('warranty_retention_percent')}>
                   <label>Гарантийное удержание (%)</label>
-                  <input type="number" step="0.01" name="warranty_retention_percent" value={formData.warranty_retention_percent} onChange={handleInputChange} />
+                  <input type="number" step="0.01" name="warranty_retention_percent" value={formData.warranty_retention_percent} onChange={handleInputChange} disabled={formFrozen} />
                 </div>
-                <div className="form-group">
+                <div className={fieldGroupCls('warranty_retention_period')}>
                   <label>Срок гарантийных удержаний</label>
-                  <input type="text" name="warranty_retention_period" value={formData.warranty_retention_period} onChange={handleInputChange} placeholder="Например: 12 месяцев" />
+                  <input type="text" name="warranty_retention_period" value={formData.warranty_retention_period} onChange={handleInputChange} disabled={formFrozen} placeholder="Например: 12 месяцев" />
                 </div>
 
-                <div className="form-group">
+                <div className={fieldGroupCls('work_start_date')}>
                   <label>Начало работ</label>
-                  <input type="date" name="work_start_date" value={formData.work_start_date} onChange={handleInputChange} />
+                  <input type="date" name="work_start_date" value={formData.work_start_date} onChange={handleInputChange} disabled={formFrozen} />
                 </div>
-                <div className="form-group">
+                <div className={fieldGroupCls('work_end_date')}>
                   <label>Окончание работ</label>
-                  <input type="date" name="work_end_date" value={formData.work_end_date} onChange={handleInputChange} />
+                  <input type="date" name="work_end_date" value={formData.work_end_date} onChange={handleInputChange} disabled={formFrozen} />
                 </div>
 
                 <div className="form-group">
@@ -2657,9 +2976,9 @@ function ContractRegistry() {
                   <input type="date" name="signed_date" value={formData.signed_date} onChange={handleInputChange} />
                 </div>
 
-                <div className="form-group full-width">
+                <div className={fieldGroupCls('warranty_period', 'full-width')}>
                   <label>Срок гарантии на работы</label>
-                  <input type="text" name="warranty_period" value={formData.warranty_period} onChange={handleInputChange} placeholder="Например: 24 месяца" />
+                  <input type="text" name="warranty_period" value={formData.warranty_period} onChange={handleInputChange} disabled={formFrozen} placeholder="Например: 24 месяца" />
                 </div>
 
                 <div className="form-group full-width">
@@ -2682,9 +3001,9 @@ function ContractRegistry() {
                   <input type="text" name="email" value={formData.email} onChange={handleInputChange} placeholder="Необязательно" />
                 </div>
 
-                <div className="form-group">
+                <div className={fieldGroupCls('bsm')}>
                   <label>БСМ</label>
-                  <input type="text" name="bsm" value={formData.bsm} onChange={handleInputChange} placeholder="да / нет / частично / …" />
+                  <input type="text" name="bsm" value={formData.bsm} onChange={handleInputChange} disabled={formFrozen} placeholder="да / нет / частично / …" />
                 </div>
 
                 <div className="form-group full-width">

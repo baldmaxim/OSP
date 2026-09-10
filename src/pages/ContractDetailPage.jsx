@@ -1,9 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { parseEstimateSheet, formatMoney } from '../utils/estimateImport'
+import {
+  DOC_TYPE,
+  DOC_TYPE_LABEL,
+  DOC_TYPE_SHORT,
+  OVERRIDABLE_FIELD_LABEL,
+  buildDocIndex,
+  contractActualAmount,
+  flattenTree,
+  isAmendment,
+  planAmendment,
+} from '../utils/contractAmendments'
 import S3DocumentList from '../components/S3DocumentList'
 import ContractClausesTab from '../components/ContractClausesTab'
 import AccessDenied from '../components/AccessDenied'
@@ -67,6 +78,8 @@ function ContractDetailPage() {
   const [loading, setLoading] = useState(true)
   const [notesDraft, setNotesDraft] = useState('')
   const [savingNotes, setSavingNotes] = useState(false)
+  // Всё дерево документа: сам договор и его ДС. Нужно и для сумм, и для навигации.
+  const [family, setFamily] = useState([])
 
   // ПСДЦ: импорт
   const [showImportModal, setShowImportModal] = useState(false)
@@ -133,6 +146,37 @@ function ContractDetailPage() {
       console.error('Ошибка загрузки договора:', err.message)
     }
   }, [contractId])
+
+  // Дерево документа грузим одним запросом по корню: и договор, и все его ДС.
+  // Пока миграция с root_contract_id не применена, запрос падает — тогда просто
+  // не показываем блок ДС, остальная карточка работает как раньше.
+  const rootId = contract?.root_contract_id || contract?.id || null
+  const fetchFamily = useCallback(async () => {
+    if (!rootId) return
+    try {
+      const { data, error } = await supabase
+        .from('contracts')
+        .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, contract_date, contract_amount, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period, changed_fields')
+        .or(`id.eq.${rootId},root_contract_id.eq.${rootId}`)
+        .is('deleted_at', null)
+      if (error) throw error
+      setFamily(data || [])
+    } catch (err) {
+      console.warn('Дерево документа недоступно:', err.message)
+      setFamily([])
+    }
+  }, [rootId])
+
+  useEffect(() => { fetchFamily() }, [fetchFamily])
+
+  const docIndex = useMemo(() => buildDocIndex(family), [family])
+  const rootDoc = rootId ? docIndex.byId.get(rootId) : null
+  const parentDoc = contract?.parent_contract_id ? docIndex.byId.get(contract.parent_contract_id) : null
+  // Плоское дерево от корня: договор → его ДС → их изменения.
+  const familyTree = useMemo(
+    () => (rootDoc ? flattenTree(rootDoc, docIndex) : []),
+    [rootDoc, docIndex])
+  const actualAmount = rootDoc ? contractActualAmount(rootDoc, docIndex) : null
 
   const fetchPsdc = useCallback(async () => {
     const { data } = await supabase
@@ -460,12 +504,38 @@ function ContractDetailPage() {
             <h3>Основная информация</h3>
             <div className="info-rows">
               <InfoRow label="ID портала" value={contract.display_id} mono />
-              <InfoRow label="Тип" value={contract.record_type === 'ds' ? 'ДС — доп. соглашение' : 'ДП — основной договор'} />
-              <InfoRow label="№ договора" value={contract.contract_number} />
+              <InfoRow label="Тип" value={DOC_TYPE_LABEL[contract.record_type] || 'Договор'} />
+              {isAmendment(contract) && rootDoc && rootDoc.id !== contract.id && (
+                <InfoRow
+                  label="Основной договор"
+                  value={<Link to={`/contracts/${rootDoc.id}`} style={{ color: 'var(--primary-color)' }}>
+                    ID {rootDoc.display_id}{rootDoc.contract_number ? ` · № ${rootDoc.contract_number}` : ''}
+                  </Link>}
+                />
+              )}
+              {isAmendment(contract) && parentDoc && (
+                <InfoRow
+                  label="Изменяемый документ"
+                  value={<Link to={`/contracts/${parentDoc.id}`} style={{ color: 'var(--primary-color)' }}>
+                    ID {parentDoc.display_id} · {DOC_TYPE_SHORT[parentDoc.record_type] || 'Договор'}
+                  </Link>}
+                />
+              )}
+              {isAmendment(contract) && (contract.changed_fields || []).length > 0 && (
+                <InfoRow
+                  label="Изменяет условия"
+                  value={contract.changed_fields.map(f => OVERRIDABLE_FIELD_LABEL[f] || f).join(', ')}
+                />
+              )}
+              <InfoRow label={isAmendment(contract) ? '№ ДС' : '№ договора'} value={contract.contract_number} />
               <InfoRow label="Дата" value={formatDate(contract.contract_date)} />
               <InfoRow label="Объект" value={contract.objects?.name} />
-              <InfoRow label="Описание работ" value={contract.work_name || contract.tenders?.work_description} />
-              <InfoRow label="Сумма" value={money(contract.contract_amount)} />
+              <InfoRow label={isAmendment(contract) ? 'Предмет ДС' : 'Описание работ'} value={contract.work_name || contract.tenders?.work_description} />
+              <InfoRow label={familyTree.length > 0 && !isAmendment(contract) ? 'Исходная сумма' : 'Сумма'} value={money(contract.contract_amount)} />
+              {/* Актуальную показываем, только когда завершённые ДС её изменили. */}
+              {!isAmendment(contract) && actualAmount != null && Number(actualAmount) !== Number(contract.contract_amount || 0) && (
+                <InfoRow label="Актуальная сумма" value={money(actualAmount)} />
+              )}
               <InfoRow label="Валюта" value={contract.currency || 'RUB'} />
               <InfoRow label="Ставка НДС" value={vatLabel} />
               <InfoRow label="Статус" value={statusLabel} />
@@ -477,6 +547,52 @@ function ContractDetailPage() {
                 />
               )}
             </div>
+          </div>
+
+          {/* Дерево документа: договор и все его соглашения. Каждая строка —
+              ссылка на карточку, отступ показывает, что чем изменяется. */}
+          <div className="contract-section contract-section-wide">
+            <div className="cd-ds-head">
+              <h3>Дополнительные соглашения{familyTree.length > 0 ? ` (${familyTree.length})` : ''}</h3>
+              {canEditContracts && !isDeleted && (
+                <div className="cd-ds-actions">
+                  {[DOC_TYPE.CHANGE, DOC_TYPE.EXTRA].map(type => {
+                    const plan = planAmendment(type, contract, docIndex)
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        className="btn-secondary"
+                        disabled={!plan.ok}
+                        title={plan.ok ? DOC_TYPE_LABEL[type] : plan.reason}
+                        onClick={() => navigate(`/contracts?ds=${contract.display_id}&ds_type=${type}`)}
+                      >+ {DOC_TYPE_LABEL[type]}</button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            {familyTree.length === 0 ? (
+              <p className="cd-ds-empty">Соглашений нет. Условия договора действуют в исходной редакции.</p>
+            ) : (
+              <div className="cd-ds-list">
+                {familyTree.map(({ doc, depth }) => (
+                  <Link
+                    key={doc.id}
+                    to={`/contracts/${doc.id}`}
+                    className={`cd-ds-item${doc.id === contract.id ? ' is-current' : ''}`}
+                    style={{ marginLeft: `${depth * 1.25}rem` }}
+                  >
+                    <span className="cd-ds-id">ID {doc.display_id}</span>
+                    <span className={`ds-type-badge is-${doc.record_type}`}>{DOC_TYPE_SHORT[doc.record_type]}</span>
+                    <span className="cd-ds-num">{doc.contract_number ? `№ ${doc.contract_number}` : 'без номера'}</span>
+                    <span className="cd-ds-date">{doc.contract_date ? formatDate(doc.contract_date) : '—'}</span>
+                    <span className="cd-ds-amount">{money(doc.contract_amount)}</span>
+                    <span className={`cd-status ${STATUS_CLASS[doc.status] || ''}`}>{STATUS_LABEL[doc.status] || doc.status}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="contract-section">

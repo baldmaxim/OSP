@@ -1,15 +1,24 @@
-// Логика импорта договоров (ДП) из Excel: парсинг, нормализация, валидация.
-// Чистые функции без React — используются в ContractsImportModal.
-// Импорт создаёт ТОЛЬКО ДП тем же payload-ом, что и ручная форма (handleSubmit).
+// Логика импорта документов (договоров и ДС) из Excel: парсинг, нормализация,
+// валидация. Чистые функции без React — используются в ContractsImportModal.
+// Импорт собирает тот же payload, что и ручная форма, и подчиняется тем же
+// правилам иерархии (utils/contractAmendments.js) — двух реализаций нет.
 import * as XLSX from 'xlsx'
+import {
+  DOC_TYPE,
+  OVERRIDABLE_FIELDS,
+  effectiveValues,
+  planAmendment,
+} from './contractAmendments'
 
 // --- Канонические колонки шаблона (ровно 29, порядок из ТЗ) ---
 // key — внутреннее имя, header — заголовок в Excel-шаблоне.
+// Заголовки обобщены под общий шаблон договоров и ДС: колонок по-прежнему 29,
+// порядок и смысл прежние.
 export const IMPORT_COLUMNS = [
   { key: 'record_type', header: 'Тип' },
-  { key: 'parent_display_id', header: 'ID основного договора (для ДС)' },
-  { key: 'contract_number', header: '№ договора' },
-  { key: 'contract_date', header: 'Дата договора' },
+  { key: 'parent_display_id', header: 'ID изменяемого документа' },
+  { key: 'contract_number', header: '№ документа' },
+  { key: 'contract_date', header: 'Дата документа' },
   { key: 'status', header: 'Статус' },
   { key: 'counterparty_name', header: 'Наименование контрагента' },
   { key: 'counterparty_inn', header: 'ИНН контрагента' },
@@ -20,7 +29,7 @@ export const IMPORT_COLUMNS = [
   { key: 'tender', header: 'Тендер (необязательно)' },
   { key: 'work_name', header: 'Наименование работ' },
   { key: 'lawyer', header: 'Ответственный юрист' },
-  { key: 'contract_amount', header: 'Сумма по договору' },
+  { key: 'contract_amount', header: 'Сумма по документу' },
   { key: 'currency', header: 'Валюта' },
   { key: 'vat_rate', header: 'Ставка НДС' },
   { key: 'amount_includes_vat', header: 'Хранение суммы' },
@@ -29,7 +38,7 @@ export const IMPORT_COLUMNS = [
   { key: 'warranty_retention_period', header: 'Срок гарантийных удержаний' },
   { key: 'work_start_date', header: 'Начало работ' },
   { key: 'work_end_date', header: 'Окончание работ' },
-  { key: 'accepted_date', header: 'Дата принятия в работу ДП' },
+  { key: 'accepted_date', header: 'Дата принятия в работу' },
   { key: 'signed_date', header: 'Дата подписания' },
   { key: 'warranty_period', header: 'Срок гарантии на работы' },
   { key: 'document_link', header: 'Ссылка на документ' },
@@ -199,15 +208,27 @@ export function normalizeRetention(v) {
   return null
 }
 
-// --- Тип ДП/ДС --- → { value:'dp'|'ds' } | { error:true }
+// --- Тип документа --- → { value:'dp'|'ds_vor'|'ds_extra' } | { error:true }
+//
+// Три значения шаблона: «Договор», «ДС на изменение ВОР», «ДС на дополнительные
+// работы». Распознаём и вольные формулировки из старых файлов, но подвид ДС
+// обязан быть указан явно: молча считать «ДС» изменением ВОР нельзя — это
+// разные ветки и разный расчёт суммы.
 export function normalizeRecordType(v) {
   const n = nfold(v).replace(/\./g, '').replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
   if (!n) return { error: true }
-  const dsHit = n.startsWith('дс') || n.includes('доп согл') || n.includes('допсогл') || n.includes('дополнительн')
+
+  const isDs = n.startsWith('дс') || n.includes('доп согл') || n.includes('допсогл') ||
+    n.includes('дополнительное соглашение')
+  if (isDs || n.includes('дополнительн')) {
+    if (n.includes('вор') || n.includes('изменени')) return { value: DOC_TYPE.CHANGE }
+    if (n.includes('дополнительн') && n.includes('работ')) return { value: DOC_TYPE.EXTRA }
+    return { error: true, ambiguousDs: true }
+  }
+
   const dpHit = n.startsWith('дп') || n.includes('подряд') || n.includes('основной договор') ||
     n.includes('осн договор') || n === 'договор'
-  if (dsHit) return { value: 'ds' }        // ДС имеет приоритет (доп. соглашение к договору → ДС)
-  if (dpHit) return { value: 'dp' }
+  if (dpHit) return { value: DOC_TYPE.CONTRACT }
   return { error: true }
 }
 
@@ -245,29 +266,63 @@ export function validateRow(raw, ctx) {
   const errors = []
   const warnings = []
 
-  // 1) Тип
+  // 1) Тип документа
   const typeRes = normalizeRecordType(raw.record_type)
   if (typeRes.error) {
-    errors.push({ key: 'record_type', message: 'Тип: непонятное или пустое значение' })
-  } else if (typeRes.value === 'ds') {
-    // ДС не импортируем сейчас — вне зависимости от прочих полей.
-    return {
-      kind: 'ds_skip',
-      payload: null,
-      errors: [],
-      warnings: [],
-      reason: 'Импорт дополнительных соглашений будет реализован позже',
+    errors.push({
+      key: 'record_type',
+      message: typeRes.ambiguousDs
+        ? 'Тип: укажите «ДС на изменение ВОР» или «ДС на дополнительные работы»'
+        : 'Тип: непонятное или пустое значение',
+    })
+  }
+  const recordType = typeRes.value || null
+  const isDs = recordType === DOC_TYPE.CHANGE || recordType === DOC_TYPE.EXTRA
+
+  // 2) Изменяемый документ (для ДС обязателен, для договора запрещён)
+  const parentRaw = String(raw.parent_display_id == null ? '' : raw.parent_display_id).trim()
+  let parentDoc = null
+  if (recordType === DOC_TYPE.CONTRACT && parentRaw) {
+    errors.push({ key: 'parent_display_id', message: 'У договора не может быть изменяемого документа' })
+  }
+  if (isDs) {
+    if (!parentRaw) {
+      errors.push({ key: 'parent_display_id', message: 'Для ДС укажите ID изменяемого документа' })
+    } else {
+      const parentId = Number(parentRaw.replace(/[^\d]/g, ''))
+      parentDoc = Number.isFinite(parentId) ? ctx.docIndex?.byDisplayId.get(parentId) : null
+      if (!parentDoc) {
+        errors.push({ key: 'parent_display_id', message: `Документ ID ${parentRaw} не найден` })
+      } else if (parentDoc.deleted_at) {
+        errors.push({ key: 'parent_display_id', message: `Документ ID ${parentRaw} удалён` })
+      } else {
+        // Правила иерархии — те же, что в форме и в триггере БД.
+        const plan = planAmendment(recordType, parentDoc, ctx.docIndex)
+        if (!plan.ok) {
+          errors.push({ key: 'parent_display_id', message: plan.reason })
+        } else if (plan.parent.id !== parentDoc.id) {
+          errors.push({
+            key: 'parent_display_id',
+            message: `Ветка уже изменена: указывайте актуальный документ ID ${plan.parent.display_id}`,
+          })
+        }
+      }
     }
   }
 
-  // 2) Контрагент (ровно один, обязателен, не создаём)
+  // 3) Контрагент (ровно один, не создаём).
+  // Для ДС необязателен: контрагент наследуется от договора и переназначаться
+  // не должен. Если он всё же указан и не совпадает — это ошибка, а не «тихое»
+  // расхождение данных.
   const inn = normInn(raw.counterparty_inn)
   const name = String(raw.counterparty_name == null ? '' : raw.counterparty_name).trim()
   const nameKey = normMatchName(name)
   let counterpartyId = null
   if (!inn && !name) {
-    errors.push({ key: 'counterparty_name', message: 'Контрагент не указан' })
-    errors.push({ key: 'counterparty_inn', message: 'ИНН не указан' })
+    if (!isDs) {
+      errors.push({ key: 'counterparty_name', message: 'Контрагент не указан' })
+      errors.push({ key: 'counterparty_inn', message: 'ИНН не указан' })
+    }
   } else {
     const byInn = inn ? (ctx.cpByInn.get(inn) || []) : []
     const byName = nameKey ? (ctx.cpByName.get(nameKey) || []) : []
@@ -297,11 +352,12 @@ export function validateRow(raw, ctx) {
     }
   }
 
-  // 3) Объект (обязателен, только существующий; оба отдела — ОС и ГО)
+  // 4) Объект (только существующий; оба отдела — ОС и ГО).
+  // Для ДС необязателен — наследуется от договора, как и контрагент.
   const objName = String(raw.object_name == null ? '' : raw.object_name).trim()
   let objectId = null
   if (!objName) {
-    errors.push({ key: 'object_name', message: 'Объект не указан' })
+    if (!isDs) errors.push({ key: 'object_name', message: 'Объект не указан' })
   } else {
     const byObj = ctx.objByName.get(normMatchName(objName)) || []
     if (byObj.length === 0) errors.push({ key: 'object_name', message: 'Объект не найден' })
@@ -332,13 +388,33 @@ export function validateRow(raw, ctx) {
   const vatRes = normalizeVat(raw.vat_rate)
   if (vatRes.error) errors.push({ key: 'vat_rate', message: 'Ставка НДС: неизвестное значение' })
 
-  // 7) Предупреждения (не ошибки данных)
+  // 7) Идентичность договора ДС не переписывает
+  const rootDoc = parentDoc ? (ctx.docIndex?.byId.get(parentDoc.root_contract_id) || parentDoc) : null
+  if (isDs && rootDoc) {
+    if (counterpartyId && rootDoc.counterparty_id && counterpartyId !== rootDoc.counterparty_id) {
+      errors.push({ key: 'counterparty_name', message: 'ДС не может переназначить контрагента договора' })
+    }
+    if (objectId && rootDoc.object_id && objectId !== rootDoc.object_id) {
+      errors.push({ key: 'object_name', message: 'ДС не может переназначить объект договора' })
+    }
+  }
+
+  // 8) Номер документа
   const numberRaw = String(raw.contract_number == null ? '' : raw.contract_number).trim()
-  const numberExists = numberRaw && ctx.existingNumbers.has(numberRaw)
-  if (numberExists) warnings.push({ type: 'dup_number', label: 'Договор с таким № уже существует' })
-  if (!numberRaw) warnings.push({ type: 'empty_number', label: 'Номер договора пустой' })
+  if (isDs && rootDoc) {
+    // Номер ДС уникален внутри дерева договора. Сравнение консервативное —
+    // только trim: «1» и «01» остаются разными номерами.
+    const dupKey = `${rootDoc.id}|${numberRaw}`
+    if (numberRaw && ctx.amendmentNumbers?.has(dupKey)) {
+      errors.push({ key: 'contract_number', message: `ДС с номером «${numberRaw}» уже есть у договора ID ${rootDoc.display_id}` })
+    }
+  } else {
+    const numberExists = numberRaw && ctx.existingNumbers.has(numberRaw)
+    if (numberExists) warnings.push({ type: 'dup_number', label: 'Договор с таким № уже существует' })
+  }
+  if (!numberRaw) warnings.push({ type: 'empty_number', label: 'Номер документа пустой' })
   if (!dates.contract_date && !errors.some((e) => e.key === 'contract_date')) {
-    warnings.push({ type: 'empty_date', label: 'Дата договора пустая' })
+    warnings.push({ type: 'empty_date', label: 'Дата документа пустая' })
   }
 
   // Классификация
@@ -350,12 +426,12 @@ export function validateRow(raw, ctx) {
   let payload = null
   if (kind !== 'error') {
     payload = {
-      record_type: 'dp',
-      parent_contract_id: null,
+      record_type: recordType,
+      parent_contract_id: parentDoc ? parentDoc.id : null,
       contract_number: numberRaw || null,
       contract_date: dates.contract_date,
-      counterparty_id: counterpartyId,
-      object_id: objectId,
+      counterparty_id: isDs ? (rootDoc?.counterparty_id ?? null) : counterpartyId,
+      object_id: isDs ? (rootDoc?.object_id ?? null) : objectId,
       tender_id: null,                 // при импорте не привязываем
       responsible_contact_id: null,    // юриста не назначаем
       work_name: textOrNull(raw.work_name),
@@ -379,7 +455,44 @@ export function validateRow(raw, ctx) {
       bsm: textOrNull(raw.bsm),
       comments: textOrNull(raw.comments),
     }
+
+    if (isDs && parentDoc) {
+      applyAmendmentInheritance(payload, raw, parentDoc, ctx.docIndex)
+    }
   }
 
   return { kind, payload, errors, warnings, reason: null }
+}
+
+// Наследование условий для ДС: пустые ячейки берём из АКТУАЛЬНОГО состояния
+// изменяемой ветки, заполненные считаем изменением (changed_fields).
+//
+// Ключевая тонкость: пустая сумма изменяющего ДС наследует стоимость ветки, а не
+// обнуляет её. Для ДС на дополнительные работы пустая сумма — это 0,00: новая
+// ветка начинается с нуля, наследовать ей нечего.
+function applyAmendmentInheritance(payload, raw, parentDoc, docIndex) {
+  const inherited = docIndex ? effectiveValues(parentDoc, docIndex) : parentDoc
+  const isChange = payload.record_type === DOC_TYPE.CHANGE
+
+  // Что в строке файла реально заполнено — по сырым ячейкам, а не по payload:
+  // после нормализации пустая ячейка и осмысленный ноль выглядят одинаково.
+  const filled = (key) => {
+    const v = raw[key]
+    return v != null && String(v).trim() !== ''
+  }
+
+  const changed = []
+  for (const field of OVERRIDABLE_FIELDS) {
+    if (field === 'gp_amount') continue        // в шаблоне колонки нет
+    if (filled(field)) { changed.push(field); continue }
+    if (isChange) payload[field] = inherited?.[field] ?? null
+  }
+
+  if (!isChange && payload.contract_amount == null) payload.contract_amount = 0
+
+  // НДС наследуется даже у доп. работ: ставка задаётся договором.
+  if (!filled('vat_rate')) payload.vat_rate = inherited?.vat_rate ?? null
+  if (!filled('currency')) payload.currency = inherited?.currency ?? 'RUB'
+
+  payload.changed_fields = changed
 }

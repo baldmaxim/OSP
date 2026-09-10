@@ -12,11 +12,14 @@ let mapInstance = null
 // «Базаркин Андрей Геннадьевич» → «Базаркин А. Г.»: в карточке объекта на полные
 // ФИО нескольких человек места нет, а по фамилии с инициалами узнают сразу.
 // Полные имена остаются в title.
-function shortFio(full) {
+// «Маконин Дмитрий Дмитриевич» → «Маконин Дмитрий»: фамилия и имя целиком,
+// отчество опускаем. Раньше показывались одни инициалы («Маконин Д. Д.») —
+// по ним человека не узнать, а места они экономят немного. Полное ФИО
+// остаётся в подсказке при наведении.
+function nameWithFirst(full) {
   const parts = String(full || '').trim().split(/\s+/)
   if (parts.length < 2) return full || ''
-  const initials = parts.slice(1, 3).map(w => `${w.charAt(0).toUpperCase()}.`).join(' ')
-  return `${parts[0]} ${initials}`
+  return `${parts[0]} ${parts[1]}`
 }
 
 function ObjectsPage() {
@@ -635,35 +638,34 @@ function ObjectsPage() {
                       )}
 
                       {/* Ответственные по объекту: чаще всего с карточки нужен
-                          именно контакт, а не площадь. Фамилии с инициалами —
-                          полные ФИО в карточку не помещаются. */}
+                          именно контакт, а не площадь. Роль — отдельной строкой,
+                          люди — плашками с переносом: одной строкой с обрезкой
+                          третий экономист просто пропадал из виду. */}
                       {(() => {
                         const s = staffByObject.get(object.id)
                         const cm = s?.construction_manager || []
                         const ec = s?.economist || []
                         if (cm.length === 0 && ec.length === 0) return null
+                        const group = (people, one, many) => (
+                          <div className="object-card-staff-group">
+                            <span className="object-card-staff-role">
+                              {people.length > 1 ? many : one}
+                            </span>
+                            <div className="object-card-staff-names">
+                              {people.map(p => (
+                                <span
+                                  key={p.id || p.full_name}
+                                  className="object-card-person"
+                                  title={p.full_name}
+                                >{nameWithFirst(p.full_name)}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )
                         return (
                           <div className="object-card-staff">
-                            {cm.length > 0 && (
-                              <div className="object-card-staff-row">
-                                <span className="object-card-staff-role">
-                                  {cm.length > 1 ? 'Рук. строительства' : 'Рук. строительства'}
-                                </span>
-                                <span className="object-card-staff-names" title={cm.map(p => p.full_name).join(', ')}>
-                                  {cm.map(p => shortFio(p.full_name)).join(', ')}
-                                </span>
-                              </div>
-                            )}
-                            {ec.length > 0 && (
-                              <div className="object-card-staff-row">
-                                <span className="object-card-staff-role">
-                                  {ec.length > 1 ? 'Экономисты' : 'Экономист'}
-                                </span>
-                                <span className="object-card-staff-names" title={ec.map(p => p.full_name).join(', ')}>
-                                  {ec.map(p => shortFio(p.full_name)).join(', ')}
-                                </span>
-                              </div>
-                            )}
+                            {cm.length > 0 && group(cm, 'Руководитель строительства', 'Руководители строительства')}
+                            {ec.length > 0 && group(ec, 'Экономист', 'Экономисты')}
                           </div>
                         )
                       })()}
