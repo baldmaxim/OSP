@@ -54,6 +54,7 @@ const RatesRegistryPage = lazy(() => import('./pages/RatesRegistryPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const ContractDetailPage = lazy(() => import('./pages/ContractDetailPage'))
+const PsdcBatchPage = lazy(() => import('./pages/PsdcBatchPage'))
 const DcRequestsPage = lazy(() => import('./pages/DcRequestsPage'))
 const DocCheckRequestsPage = lazy(() => import('./pages/DocCheckRequestsPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
@@ -120,6 +121,7 @@ function EmployeeLayout() {
             <Route path="/summary" element={<PermissionRoute section="tenders"><SummaryPage /></PermissionRoute>} />
             <Route path="/analysis-kp" element={<PermissionRoute section="analysis_kp"><BSMPage /></PermissionRoute>} />
             <Route path="/contracts" element={<PermissionRoute section="contracts"><ContractsPage /></PermissionRoute>} />
+            <Route path="/contracts/psdc-batch" element={<PermissionRoute section="contracts"><PsdcBatchPage /></PermissionRoute>} />
             <Route path="/contracts/:contractId" element={<PermissionRoute section="contracts"><ContractDetailPage /></PermissionRoute>} />
             <Route path="/dc-requests" element={<PermissionRoute section="dc_requests"><DcRequestsPage /></PermissionRoute>} />
             <Route path="/doc-check-requests" element={<PermissionRoute section="doc_check_requests"><DocCheckRequestsPage /></PermissionRoute>} />

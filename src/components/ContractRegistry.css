@@ -3208,6 +3208,14 @@
 [data-theme='dark'] .amt-actual .amt-tag { color: #6ee7b7; }
 .amt-actual .amt-value { font-weight: 700; }
 .amt-solo.amt-original { color: var(--text-tertiary); }
+/* Сумма документа взята из применённой ПСДЦ. */
+.amt-tag.amt-psdc {
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--info-light);
+  color: var(--info-color);
+}
 
 /* Форма ДС: поле, которое соглашение переопределяет. */
 .form-group.is-ds-changed > label::after {

@@ -1,0 +1,435 @@
+/* ПСДЦ / ВОР: блок карточки документа и страница массовой загрузки. */
+
+.psdc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.psdc-panel-head,
+.psdc-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.psdc-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+}
+
+.psdc-panel-title h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.psdc-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.psdc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.psdc-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.psdc-btn-sm {
+  padding: 0.3rem 0.625rem;
+  font-size: 0.75rem;
+}
+
+.psdc-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.psdc-chip.is-empty { color: var(--text-tertiary); background: var(--bg-tertiary); border-color: var(--border-color); }
+.psdc-chip.is-validated { color: var(--info-color); background: var(--info-light); border-color: var(--info-muted); }
+.psdc-chip.is-invalid { color: var(--danger-color); background: var(--danger-light); border-color: var(--danger-muted); }
+.psdc-chip.is-applied { color: var(--success-color); background: var(--success-light); border-color: var(--success-muted); }
+
+.psdc-hint {
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.psdc-notice {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  border: 1px solid transparent;
+}
+
+.psdc-notice.is-error { color: var(--danger-color); background: var(--danger-light); border-color: var(--danger-muted); }
+.psdc-notice.is-warning { color: var(--warning-color); background: var(--warning-light); border-color: var(--warning-muted); }
+.psdc-notice.is-success { color: var(--success-color); background: var(--success-light); border-color: var(--success-muted); }
+
+.psdc-amount-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  align-items: baseline;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.psdc-amount-line strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.psdc-empty-block {
+  padding: 1rem;
+  border: 1px dashed var(--border-color-dark);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.psdc-empty-block p { margin: 0; }
+
+.psdc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-color);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.psdc-card.is-validated { border-left-color: var(--info-color); }
+.psdc-card.is-invalid { border-left-color: var(--danger-color); }
+.psdc-card.is-applied { border-left-color: var(--success-color); }
+
+.psdc-card-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.psdc-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.psdc-total {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.psdc-total span {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+
+.psdc-total strong {
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.psdc-total.is-main { border-color: var(--primary-color); }
+.psdc-total.is-main strong { color: var(--primary-color); }
+.psdc-total.is-info strong { color: var(--text-secondary); font-weight: 500; }
+
+.psdc-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary-color);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.psdc-link:hover { text-decoration: underline; }
+.psdc-link:disabled { color: var(--text-tertiary); cursor: default; text-decoration: none; }
+.psdc-link.is-danger { color: var(--danger-color); }
+
+.psdc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.psdc-panel .mono,
+.psdc-batch-page .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8125em; }
+
+/* Ошибки проверки */
+.psdc-issues { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.psdc-issues-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.psdc-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+}
+
+.psdc-count.is-error { color: var(--danger-color); background: var(--danger-light); }
+.psdc-count.is-warning { color: var(--warning-color); background: var(--warning-light); }
+
+.psdc-issues-scroll { max-height: 320px; overflow: auto; border: 1px solid var(--border-color); border-radius: 6px; }
+
+.psdc-issues-table,
+.psdc-rows-table,
+.psdc-batch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.psdc-issues-table th,
+.psdc-rows-table th,
+.psdc-batch-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.psdc-issues-table td,
+.psdc-rows-table td,
+.psdc-batch-table td {
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+  color: var(--text-primary);
+}
+
+.psdc-issues-table td:nth-child(-n+2) { white-space: nowrap; }
+.psdc-issue-file { max-width: 260px; word-break: break-word; }
+
+.psdc-sev {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+
+.psdc-sev.is-error { background: var(--danger-color); }
+.psdc-sev.is-warning { background: var(--warning-color); }
+
+/* Строки ведомости */
+.psdc-rows { display: flex; flex-direction: column; gap: 0.5rem; }
+.psdc-rows-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--border-color); border-radius: 6px; }
+.psdc-rows-table .num,
+.psdc-batch-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.psdc-rows-table .strong,
+.psdc-batch-table .strong { font-weight: 600; }
+.psdc-col-name { min-width: 260px; }
+.psdc-rows-table tr.is-section td { background: var(--bg-tertiary); font-weight: 600; }
+.psdc-rows-table tr.is-deleted td { color: var(--text-tertiary); text-decoration: line-through; }
+.psdc-rows-table tr.is-new td { background: var(--success-light); }
+.psdc-rows-table tr.is-unknown td { background: var(--danger-light); }
+.psdc-rows-table td.is-changed { background: var(--warning-light); box-shadow: inset 0 0 0 1px var(--warning-muted); }
+.psdc-rows-table td.is-info { color: var(--text-tertiary); }
+
+.psdc-diff-tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.psdc-diff-tag.is-new { color: var(--success-color); border: 1px solid var(--success-muted); }
+.psdc-diff-tag.is-deleted { color: var(--text-tertiary); border: 1px solid var(--border-color-dark); }
+
+.psdc-more { align-self: center; }
+
+.psdc-removed {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--danger-muted);
+  border-radius: 6px;
+  background: var(--danger-light);
+}
+
+.psdc-removed-title { font-weight: 600; font-size: 0.8125rem; color: var(--danger-color); margin-bottom: 0.25rem; }
+.psdc-removed ul { margin: 0; padding-left: 1rem; max-height: 200px; overflow: auto; font-size: 0.8125rem; color: var(--text-secondary); }
+.psdc-removed .num { margin-left: 0.5rem; font-variant-numeric: tabular-nums; }
+
+/* Массовая загрузка */
+.psdc-batch-page { display: flex; flex-direction: column; gap: 0.75rem; }
+.psdc-batch-page .registry-header h2 { display: flex; align-items: center; gap: 0.5rem; }
+.psdc-batch-intro { max-width: 960px; }
+
+.psdc-batch-bar,
+.psdc-batch-actions,
+.psdc-batch-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.psdc-batch-tools { justify-content: space-between; }
+
+.psdc-batch-bar select {
+  min-width: 280px;
+  max-width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+
+.psdc-filter-chips { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.psdc-filter-chips .qfilter.active { border-color: var(--primary-color); color: var(--primary-color); }
+.psdc-chip-count { margin-left: 0.25rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+.psdc-batch-search,
+.psdc-picker-input {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+}
+
+.psdc-batch-search input,
+.psdc-picker-input input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  min-width: 220px;
+  flex: 1;
+}
+
+.psdc-progress { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; color: var(--text-secondary); }
+.psdc-progress-track { height: 6px; border-radius: 3px; background: var(--bg-tertiary); overflow: hidden; }
+.psdc-progress-track div { height: 100%; background: var(--primary-color); transition: width 0.2s; }
+
+.psdc-batch-table-wrap { max-height: none; }
+.psdc-batch-table tr.is-applied td { background: var(--success-light); }
+.psdc-batch-file { min-width: 200px; max-width: 320px; word-break: break-word; font-weight: 500; }
+.psdc-batch-doc { min-width: 240px; }
+.psdc-batch-doc a { color: var(--primary-color); text-decoration: none; }
+.psdc-batch-doc a:hover { text-decoration: underline; }
+.psdc-batch-issues { min-width: 220px; max-width: 360px; font-size: 0.75rem; color: var(--danger-color); }
+.psdc-batch-row-actions { white-space: nowrap; }
+.psdc-batch-row-actions > * + * { margin-left: 0.5rem; }
+.psdc-row-links { display: flex; gap: 0.75rem; margin-top: 0.25rem; }
+
+.psdc-status { font-size: 0.8125rem; font-weight: 500; }
+.psdc-status.is-ok { color: var(--success-color); }
+.psdc-status.is-applied { color: var(--success-color); font-weight: 600; }
+.psdc-status.is-error { color: var(--danger-color); }
+.psdc-status.is-warning { color: var(--warning-color); }
+.psdc-status.is-muted { color: var(--text-tertiary); }
+
+.psdc-batch-details td { background: var(--bg-primary); }
+.psdc-batch-details-grid { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin-bottom: 0.5rem; font-variant-numeric: tabular-nums; }
+
+.psdc-picker { position: relative; min-width: 280px; }
+.psdc-picker-list {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: 280px;
+  overflow: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: var(--card-shadow-hover);
+}
+
+.psdc-picker-list button {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: none;
+  background: none;
+  text-align: left;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.psdc-picker-list button:hover { background: var(--hover-bg); }
+
+.psdc-pager { display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-size: 0.8125rem; color: var(--text-secondary); }
+
+@media (max-width: 640px) {
+  .psdc-panel { padding: 0.75rem; }
+  .psdc-batch-bar select,
+  .psdc-batch-search input,
+  .psdc-picker { min-width: 0; width: 100%; }
+  .psdc-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

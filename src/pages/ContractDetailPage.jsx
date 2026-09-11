@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
-import { parseEstimateSheet, formatMoney } from '../utils/estimateImport'
+import { formatMoney } from '../utils/estimateImport'
 import {
   DOC_TYPE,
   DOC_TYPE_LABEL,
@@ -11,13 +10,16 @@ import {
   OVERRIDABLE_FIELD_LABEL,
   buildDocIndex,
   contractActualAmount,
+  effectiveDocumentAmount,
   flattenTree,
+  hasAppliedPsdc,
   isAmendment,
   planAmendment,
 } from '../utils/contractAmendments'
 import S3DocumentList from '../components/S3DocumentList'
 import ContractClausesTab from '../components/ContractClausesTab'
 import AccessDenied from '../components/AccessDenied'
+import PsdcPanel from '../components/psdc/PsdcPanel'
 import '../components/ContractRegistry.css'
 
 // Держать в согласии со STATUS_OPTIONS в ContractsPage.jsx.
@@ -48,12 +50,18 @@ const EVENT_LABEL = {
   restored: '↩ Восстановление',
   psdc_imported: '📊 Импорт ПСДЦ',
   psdc_approved: '✅ Утверждение ПСДЦ',
+  psdc_uploaded: 'ПСДЦ: загрузка',
+  psdc_validated: 'ПСДЦ: проверка',
+  psdc_applied: 'ПСДЦ: применение',
+  psdc_upload_cancelled: 'ПСДЦ: отмена загрузки',
+  psdc_deleted: 'ПСДЦ: удаление',
+  psdc_exported: 'ПСДЦ: экспорт',
   advance_updated: '💸 График авансирования',
 }
 
 const TABS = [
   { key: 'info', label: 'Информация' },
-  { key: 'psdc', label: 'ПСДЦ' },
+  { key: 'psdc', label: 'ПСДЦ / ВОР' },
   { key: 'advances', label: 'Авансирование' },
   { key: 'clauses', label: 'Согласование' },
   { key: 'documents', label: 'Документы' },
@@ -73,25 +81,12 @@ function ContractDetailPage() {
   const [contract, setContract] = useState(null)
   const [attachments, setAttachments] = useState([])
   const [auditLog, setAuditLog] = useState([])
-  const [psdcItems, setPsdcItems] = useState([])
   const [advances, setAdvances] = useState([])
   const [loading, setLoading] = useState(true)
   const [notesDraft, setNotesDraft] = useState('')
   const [savingNotes, setSavingNotes] = useState(false)
   // Всё дерево документа: сам договор и его ДС. Нужно и для сумм, и для навигации.
   const [family, setFamily] = useState([])
-
-  // ПСДЦ: импорт
-  const [showImportModal, setShowImportModal] = useState(false)
-  const [pendingWorkbook, setPendingWorkbook] = useState(null)
-  const [sheetNames, setSheetNames] = useState([])
-  const [selectedSheet, setSelectedSheet] = useState('')
-  const [importMode, setImportMode] = useState('separate')
-  const [startRow, setStartRow] = useState('2')
-  const [endRow, setEndRow] = useState('')
-  const [vatPercent, setVatPercent] = useState('')
-  const [collapsedSections, setCollapsedSections] = useState(new Set())
-  const psdcFileRef = useRef(null)
 
   // Авансирование
   const [advForm, setAdvForm] = useState({ planned_date: '', amount: '', description: '', paid_date: '' })
@@ -156,7 +151,7 @@ function ContractDetailPage() {
     try {
       const { data, error } = await supabase
         .from('contracts')
-        .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, contract_date, contract_amount, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period, changed_fields')
+        .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, contract_date, contract_amount, psdc_total, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period, changed_fields')
         .or(`id.eq.${rootId},root_contract_id.eq.${rootId}`)
         .is('deleted_at', null)
       if (error) throw error
@@ -178,16 +173,6 @@ function ContractDetailPage() {
     [rootDoc, docIndex])
   const actualAmount = rootDoc ? contractActualAmount(rootDoc, docIndex) : null
 
-  const fetchPsdc = useCallback(async () => {
-    const { data } = await supabase
-      .from('contract_psdc_items')
-      .select('*')
-      .eq('contract_id', contractId)
-      .is('agreement_id', null)
-      .order('row_number', { ascending: true })
-    setPsdcItems(data || [])
-  }, [contractId])
-
   const fetchAdvances = useCallback(async () => {
     const { data } = await supabase
       .from('contract_advance_schedule')
@@ -199,8 +184,8 @@ function ContractDetailPage() {
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([fetchContract(), fetchPsdc(), fetchAdvances()]).finally(() => setLoading(false))
-  }, [fetchContract, fetchPsdc, fetchAdvances])
+    Promise.all([fetchContract(), fetchAdvances()]).finally(() => setLoading(false))
+  }, [fetchContract, fetchAdvances])
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '—'
@@ -237,140 +222,6 @@ function ContractDetailPage() {
       alert('Ошибка: ' + err.message)
     } finally {
       setSavingNotes(false)
-    }
-  }
-
-  // --- ПСДЦ: расчёты ---
-  const calcMaterials = (it) => (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price_materials) || 0)
-  const calcWorks = (it) => (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price_works) || 0)
-  const calcTotal = (it) => {
-    const mw = calcMaterials(it) + calcWorks(it)
-    return mw || (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0)
-  }
-  // Давальческие строки в суммы НЕ входят, но объём отображается.
-  const isSummable = (it) => !it.is_section && !it.is_davalchesky
-  const psdcTotalMaterials = psdcItems.filter(isSummable).reduce((s, i) => s + calcMaterials(i), 0)
-  const psdcTotalWorks = psdcItems.filter(isSummable).reduce((s, i) => s + calcWorks(i), 0)
-  const psdcTotal = psdcItems.filter(isSummable).reduce((s, i) => s + calcTotal(i), 0)
-  const psdcVat = psdcItems.length > 0 ? (parseFloat(psdcItems[0]?.vat_percent) || 0) : 0
-  const isCombined = psdcItems.length > 0 && psdcItems[0]?.import_mode === 'combined'
-  const isPsdcApproved = psdcItems.length > 0 && psdcItems[0]?.is_approved
-  const hasSections = psdcItems.some(i => i.is_section)
-
-  const toggleSection = (id) => {
-    setCollapsedSections(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-
-  // id раздела, под которым находится строка (для скрытия при сворачивании)
-  const sectionOf = (() => {
-    const map = {}
-    let current = null
-    for (const it of psdcItems) {
-      if (it.is_section) current = it.id
-      else map[it.id] = current
-    }
-    return map
-  })()
-
-  const sectionTotals = (sectionId, calc) => psdcItems
-    .filter(i => sectionOf[i.id] === sectionId && isSummable(i))
-    .reduce((s, i) => s + calc(i), 0)
-
-  const recomputeContractAmount = async (items) => {
-    const total = (items || []).filter(isSummable).reduce((s, i) => s + calcTotal(i), 0)
-    await supabase.from('contracts').update({ contract_amount: total || null }).eq('id', contractId)
-  }
-
-  const handlePsdcFile = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    try {
-      const data = new Uint8Array(await file.arrayBuffer())
-      const wb = XLSX.read(data, { type: 'array' })
-      setPendingWorkbook(wb)
-      setSheetNames(wb.SheetNames || [])
-      setSelectedSheet(wb.SheetNames?.[0] || '')
-      setShowImportModal(true)
-    } catch (err) {
-      alert('Ошибка чтения файла: ' + err.message)
-    }
-    if (psdcFileRef.current) psdcFileRef.current.value = ''
-  }
-
-  const handleImportPsdc = async () => {
-    if (!pendingWorkbook) return
-    setShowImportModal(false)
-    try {
-      const parsed = parseEstimateSheet(pendingWorkbook, { sheet: selectedSheet, startRow, endRow, importMode, vat: vatPercent })
-      if (parsed.length === 0) { alert('Не найдено позиций в файле'); return }
-      const rows = parsed.map(r => ({ ...r, contract_id: contractId }))
-      await supabase.from('contract_psdc_items').delete().eq('contract_id', contractId).is('agreement_id', null)
-      const { error } = await supabase.from('contract_psdc_items').insert(rows)
-      if (error) throw error
-      await recomputeContractAmount(rows)
-      await logEvent('psdc_imported', { description: `Импортирована ПСДЦ: ${rows.filter(r => !r.is_section).length} позиций` })
-      await Promise.all([fetchPsdc(), fetchContract()])
-    } catch (err) {
-      alert('Ошибка импорта: ' + err.message)
-    } finally {
-      setPendingWorkbook(null)
-    }
-  }
-
-  const handleDeletePsdcItem = async (itemId) => {
-    try {
-      const { error } = await supabase.from('contract_psdc_items').delete().eq('id', itemId)
-      if (error) throw error
-      const updated = psdcItems.filter(i => i.id !== itemId)
-      setPsdcItems(updated)
-      await recomputeContractAmount(updated)
-      fetchContract()
-    } catch (err) {
-      alert('Ошибка удаления: ' + err.message)
-    }
-  }
-
-  const handleClearPsdc = async () => {
-    if (!window.confirm('Удалить все строки ПСДЦ?')) return
-    try {
-      const { error } = await supabase.from('contract_psdc_items').delete().eq('contract_id', contractId).is('agreement_id', null)
-      if (error) throw error
-      setPsdcItems([])
-      await supabase.from('contracts').update({ contract_amount: null }).eq('id', contractId)
-      fetchContract()
-    } catch (err) {
-      alert('Ошибка: ' + err.message)
-    }
-  }
-
-  const setPsdcApproved = async (value) => {
-    if (!value && !window.confirm('Снять утверждение ПСДЦ? Станет доступно редактирование.')) return
-    try {
-      const { error } = await supabase.from('contract_psdc_items')
-        .update({ is_approved: value }).eq('contract_id', contractId).is('agreement_id', null)
-      if (error) throw error
-      setPsdcItems(prev => prev.map(i => ({ ...i, is_approved: value })))
-      if (value) await logEvent('psdc_approved', { description: 'ПСДЦ утверждена' })
-    } catch (err) {
-      alert('Ошибка: ' + err.message)
-    }
-  }
-
-  const toggleDavalchesky = async (item) => {
-    const next = !item.is_davalchesky
-    try {
-      const { error } = await supabase.from('contract_psdc_items').update({ is_davalchesky: next }).eq('id', item.id)
-      if (error) throw error
-      const updated = psdcItems.map(i => i.id === item.id ? { ...i, is_davalchesky: next } : i)
-      setPsdcItems(updated)
-      await recomputeContractAmount(updated)
-      fetchContract()
-    } catch (err) {
-      alert('Ошибка: ' + err.message)
     }
   }
 
@@ -454,6 +305,9 @@ function ContractDetailPage() {
   const vatLabel = contract.vat_rate != null
     ? `${contract.vat_rate}% (${contract.amount_includes_vat ? 'с НДС' : 'без НДС'})`
     : null
+  // Сумма документа: применённая ПСДЦ, иначе ручная (одно правило с реестром).
+  const documentAmount = effectiveDocumentAmount(contract)
+  const psdcApplied = hasAppliedPsdc(contract)
 
   return (
     <div className="contract-registry contract-detail">
@@ -475,7 +329,7 @@ function ContractDetailPage() {
             </span>
             {contract.objects?.name && <span className="cd-chip"><span className="cd-chip-l">Объект</span> {contract.objects.name}</span>}
             {parties[0]?.name && <span className="cd-chip"><span className="cd-chip-l">Контрагент</span> {parties[0].name}</span>}
-            {money(contract.contract_amount) !== '—' && <span className="cd-chip"><span className="cd-chip-l">Сумма</span> {money(contract.contract_amount)}</span>}
+            {money(documentAmount) !== '—' && <span className="cd-chip"><span className="cd-chip-l">{psdcApplied ? 'Сумма по ПСДЦ' : 'Сумма'}</span> {money(documentAmount)}</span>}
             {contract.responsible?.full_name && <span className="cd-chip"><span className="cd-chip-l">Юрист</span> {contract.responsible.full_name}</span>}
             {contract.signed_date && <span className="cd-chip"><span className="cd-chip-l">План. подписания</span> {formatDate(contract.signed_date)}</span>}
           </div>
@@ -490,7 +344,6 @@ function ContractDetailPage() {
             onClick={() => setActiveTab(t.key)}
           >
             {t.label}
-            {t.key === 'psdc' && psdcItems.filter(i => !i.is_section).length > 0 && <span className="contract-tab-badge">{psdcItems.filter(i => !i.is_section).length}</span>}
             {t.key === 'advances' && advances.length > 0 && <span className="contract-tab-badge">{advances.length}</span>}
             {t.key === 'history' && auditLog.length > 0 && <span className="contract-tab-badge">{auditLog.length}</span>}
           </button>
@@ -531,9 +384,15 @@ function ContractDetailPage() {
               <InfoRow label="Дата" value={formatDate(contract.contract_date)} />
               <InfoRow label="Объект" value={contract.objects?.name} />
               <InfoRow label={isAmendment(contract) ? 'Предмет ДС' : 'Описание работ'} value={contract.work_name || contract.tenders?.work_description} />
-              <InfoRow label={familyTree.length > 0 && !isAmendment(contract) ? 'Исходная сумма' : 'Сумма'} value={money(contract.contract_amount)} />
+              <InfoRow
+                label={familyTree.length > 0 && !isAmendment(contract) ? 'Исходная сумма' : 'Сумма'}
+                value={psdcApplied ? `${money(documentAmount)} (по ПСДЦ)` : money(documentAmount)}
+              />
+              {psdcApplied && (
+                <InfoRow label="Ручная сумма" value={contract.contract_amount != null ? `${money(contract.contract_amount)} — действует, если удалить ПСДЦ` : 'не задана'} />
+              )}
               {/* Актуальную показываем, только когда завершённые ДС её изменили. */}
-              {!isAmendment(contract) && actualAmount != null && Number(actualAmount) !== Number(contract.contract_amount || 0) && (
+              {!isAmendment(contract) && actualAmount != null && Number(actualAmount) !== Number(documentAmount || 0) && (
                 <InfoRow label="Актуальная сумма" value={money(actualAmount)} />
               )}
               <InfoRow label="Валюта" value={contract.currency || 'RUB'} />
@@ -587,7 +446,7 @@ function ContractDetailPage() {
                     <span className={`ds-type-badge is-${doc.record_type}`}>{DOC_TYPE_SHORT[doc.record_type]}</span>
                     <span className="cd-ds-num">{doc.contract_number ? `№ ${doc.contract_number}` : 'без номера'}</span>
                     <span className="cd-ds-date">{doc.contract_date ? formatDate(doc.contract_date) : '—'}</span>
-                    <span className="cd-ds-amount">{money(doc.contract_amount)}</span>
+                    <span className="cd-ds-amount">{money(effectiveDocumentAmount(doc))}</span>
                     <span className={`cd-status ${STATUS_CLASS[doc.status] || ''}`}>{STATUS_LABEL[doc.status] || doc.status}</span>
                   </Link>
                 ))}
@@ -690,165 +549,13 @@ function ContractDetailPage() {
         </div>
       )}
 
-      {/* ВКЛАДКА: ПСДЦ */}
+      {/* ВКЛАДКА: ПСДЦ / ВОР */}
       {activeTab === 'psdc' && (
-        <div className="psdc-tab">
-          <div className="psdc-header">
-            <span>
-              ПСДЦ {psdcItems.length > 0 && `(${psdcItems.filter(i => !i.is_section).length} позиций${psdcVat ? `, НДС ${psdcVat}%` : ''})`}
-            </span>
-            <div className="psdc-header-actions">
-              {psdcItems.length > 0 && canEditContracts && (
-                isPsdcApproved ? (
-                  <button className="btn-secondary" onClick={() => setPsdcApproved(false)}>Снять утверждение</button>
-                ) : (
-                  <>
-                    <button className="btn-primary" onClick={() => setPsdcApproved(true)}>Утвердить</button>
-                    <button className="btn-danger" onClick={handleClearPsdc}>Очистить</button>
-                  </>
-                )
-              )}
-              {!isPsdcApproved && canEditContracts && (
-                <label className="btn-primary psdc-import-label">
-                  Импорт из Excel
-                  <input ref={psdcFileRef} type="file" accept=".xlsx,.xls" onChange={handlePsdcFile} style={{ display: 'none' }} />
-                </label>
-              )}
-            </div>
-          </div>
-
-          {psdcItems.length > 0 ? (
-            <div className="psdc-table-wrapper">
-              <table className="psdc-table">
-                <thead>
-                  <tr>
-                    {hasSections && <th></th>}
-                    <th>Код</th>
-                    <th>№</th>
-                    <th>Наименование работ</th>
-                    <th>Ед. изм.</th>
-                    <th>Кол-во</th>
-                    {isCombined ? (
-                      <>
-                        <th>Цена за ед.</th>
-                        <th>Стоимость</th>
-                      </>
-                    ) : (
-                      <>
-                        <th>Цена мат.</th>
-                        <th>Цена работ</th>
-                        <th>Стоим. мат.</th>
-                        <th>Стоим. работ</th>
-                        <th>Итого</th>
-                      </>
-                    )}
-                    <th title="Давальческий материал — объём учитывается, в сумму не входит">Дав.</th>
-                    <th>Примечание</th>
-                    {!isPsdcApproved && canEditContracts && <th></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {psdcItems.map(item => {
-                    if (!item.is_section && collapsedSections.has(sectionOf[item.id])) return null
-                    const isCollapsed = item.is_section && collapsedSections.has(item.id)
-                    if (item.is_section) {
-                      return (
-                        <tr key={item.id} className={`psdc-section-row${isCollapsed ? ' collapsed' : ''}`}>
-                          {hasSections && (
-                            <td className="psdc-toggle-cell">
-                              <button className="psdc-toggle" onClick={() => toggleSection(item.id)}>{isCollapsed ? '+' : '−'}</button>
-                            </td>
-                          )}
-                          <td colSpan={5} className="psdc-section-name" onClick={() => toggleSection(item.id)}>{item.cost_name}</td>
-                          {isCombined ? (
-                            <>
-                              <td></td>
-                              <td className="money">{formatMoney(sectionTotals(item.id, calcTotal), currency)}</td>
-                            </>
-                          ) : (
-                            <>
-                              <td></td>
-                              <td></td>
-                              <td className="money">{formatMoney(sectionTotals(item.id, calcMaterials), currency)}</td>
-                              <td className="money">{formatMoney(sectionTotals(item.id, calcWorks), currency)}</td>
-                              <td className="money">{formatMoney(sectionTotals(item.id, calcTotal), currency)}</td>
-                            </>
-                          )}
-                          <td></td>
-                          <td></td>
-                          {!isPsdcApproved && canEditContracts && <td className="center"><button className="psdc-del" onClick={() => handleDeletePsdcItem(item.id)}>×</button></td>}
-                        </tr>
-                      )
-                    }
-                    return (
-                      <tr key={item.id} className={item.is_davalchesky ? 'psdc-davalchesky' : ''}>
-                        {hasSections && <td></td>}
-                        <td className="center">{item.code || ''}</td>
-                        <td className="center">{item.row_number}</td>
-                        <td>{item.cost_name}</td>
-                        <td className="center">{item.unit || ''}</td>
-                        <td className="money">{item.quantity || ''}</td>
-                        {isCombined ? (
-                          <>
-                            <td className="money">{formatMoney(item.unit_price, currency)}</td>
-                            <td className="money">{item.is_davalchesky ? '—' : formatMoney(item.total_price, currency)}</td>
-                          </>
-                        ) : (
-                          <>
-                            <td className="money">{formatMoney(item.unit_price_materials, currency)}</td>
-                            <td className="money">{formatMoney(item.unit_price_works, currency)}</td>
-                            <td className="money">{item.is_davalchesky ? '—' : formatMoney(calcMaterials(item), currency)}</td>
-                            <td className="money">{item.is_davalchesky ? '—' : formatMoney(calcWorks(item), currency)}</td>
-                            <td className="money">{item.is_davalchesky ? '—' : formatMoney(calcTotal(item), currency)}</td>
-                          </>
-                        )}
-                        <td className="center">
-                          <input
-                            type="checkbox"
-                            checked={!!item.is_davalchesky}
-                            onChange={() => toggleDavalchesky(item)}
-                            disabled={isPsdcApproved || !canEditContracts}
-                            title="Давальческий материал"
-                          />
-                        </td>
-                        <td>{item.notes || ''}</td>
-                        {!isPsdcApproved && canEditContracts && <td className="center"><button className="psdc-del" onClick={() => handleDeletePsdcItem(item.id)}>×</button></td>}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    {isCombined ? (
-                      <>
-                        <td colSpan={hasSections ? 7 : 6}><strong>ИТОГО (без давальческих)</strong></td>
-                        <td className="money"><strong>{formatMoney(psdcTotal, currency)}</strong></td>
-                        <td colSpan={!isPsdcApproved && canEditContracts ? 3 : 2}></td>
-                      </>
-                    ) : (
-                      <>
-                        <td colSpan={hasSections ? 8 : 7}><strong>ИТОГО (без давальческих)</strong></td>
-                        <td className="money"><strong>{formatMoney(psdcTotalMaterials, currency)}</strong></td>
-                        <td className="money"><strong>{formatMoney(psdcTotalWorks, currency)}</strong></td>
-                        <td className="money"><strong>{formatMoney(psdcTotal, currency)}</strong></td>
-                        <td colSpan={!isPsdcApproved && canEditContracts ? 3 : 2}></td>
-                      </>
-                    )}
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          ) : (
-            <div className="psdc-empty">
-              <p>ПСДЦ не загружена</p>
-              <p className="psdc-hint">
-                Импортируйте Excel с колонками:<br />
-                Раздельно: A — код, B — наименование, C — ед. изм., D — кол-во, E — мат., F — работы, G — примечание<br />
-                Совместно: A — код, B — наименование, C — ед. изм., D — кол-во, E — цена, F — примечание
-              </p>
-            </div>
-          )}
-        </div>
+        <PsdcPanel
+          documentId={contractId}
+          displayId={contract.display_id}
+          onChanged={() => { fetchContract(); fetchFamily() }}
+        />
       )}
 
       {/* ВКЛАДКА: Авансирование */}
@@ -858,9 +565,9 @@ function ContractDetailPage() {
             <span>График авансирования</span>
             <span className="advances-summary">
               Итого по графику: <strong>{formatMoney(advancesTotal, currency)}</strong>
-              {contract.contract_amount && (
-                <span className={advancesTotal > Number(contract.contract_amount) ? ' adv-over' : ''}>
-                  {' '}из суммы договора {money(contract.contract_amount)}
+              {documentAmount != null && (
+                <span className={advancesTotal > Number(documentAmount) ? ' adv-over' : ''}>
+                  {' '}из суммы договора {money(documentAmount)}
                 </span>
               )}
             </span>
@@ -966,54 +673,6 @@ function ContractDetailPage() {
         </div>
       )}
 
-      {/* Модалка импорта ПСДЦ */}
-      {showImportModal && (
-        <div className="modal-overlay">
-          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Импорт ПСДЦ</h3>
-              <button onClick={() => { setShowImportModal(false); setPendingWorkbook(null) }}>×</button>
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); handleImportPsdc() }}>
-              <div className="modal-body">
-                {sheetNames.length > 1 && (
-                  <div className="form-group">
-                    <label>Лист Excel</label>
-                    <select value={selectedSheet} onChange={(e) => setSelectedSheet(e.target.value)}>
-                      {sheetNames.map(name => <option key={name} value={name}>{name}</option>)}
-                    </select>
-                  </div>
-                )}
-                <div className="form-group">
-                  <label>Формат расценок</label>
-                  <select value={importMode} onChange={(e) => setImportMode(e.target.value)}>
-                    <option value="separate">Материалы и работы (E — мат., F — работы, G — примечание)</option>
-                    <option value="combined">Комплекты (E — цена, F — примечание)</option>
-                  </select>
-                </div>
-                <div className="form-row-3" style={{ display: 'flex', gap: '0.75rem' }}>
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label>Со строки</label>
-                    <input type="number" step="1" min="1" value={startRow} onChange={(e) => setStartRow(e.target.value)} placeholder="2" />
-                  </div>
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label>По строку</label>
-                    <input type="number" step="1" min="1" value={endRow} onChange={(e) => setEndRow(e.target.value)} placeholder="Все" />
-                  </div>
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label>% НДС</label>
-                    <input type="number" step="1" min="0" max="100" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} placeholder={contract.vat_rate != null ? String(contract.vat_rate) : '22'} />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => { setShowImportModal(false); setPendingWorkbook(null) }}>Отмена</button>
-                <button type="submit" className="btn-primary">Импортировать</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

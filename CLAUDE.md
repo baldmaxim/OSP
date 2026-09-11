@@ -145,6 +145,9 @@ const { data } = await supabase
 | `object_estimate_items` | Object estimate line items (imported from Excel) | `object_id` (CASCADE) |
 | `object_warranties` | Warranty periods per object — поддерживает начало по дате ИЛИ по событию (`start_type`, `start_event_text`), привязку к документу-акту (`start_document_id`), фиксированную дату окончания `end_date_override` и `notes` | `object_id` (CASCADE), `start_document_id` (SET NULL) |
 | `object_warranty_retentions` | Warranty retention terms (percentage + period) | `object_id` (CASCADE) |
+| `psdc` | ПСДЦ / ВОР: одна загруженная ведомость (см. раздел «ПСДЦ / ВОР») | `document_id` → `contracts` (CASCADE), `batch_id`, `previous_psdc_id` |
+| `psdc_rows` / `psdc_source_rows` / `psdc_issues` | Рассчитанные строки, сырые ячейки XLSX, ошибки/предупреждения проверки | `psdc_id` (CASCADE) |
+| `psdc_batches` | Пакет массовой загрузки ПСДЦ | — |
 
 **Key ENUMs:**
 - `objects.status`: `'main_construction'` | `'warranty_service'`
@@ -350,6 +353,24 @@ curl -H "X-API-Key: <ключ>" \
 **Требуется включить pg_cron** в Supabase → Database → Extensions. Если расширение недоступно, миграция не падает — просто не создаётся расписание, и реестр обновляется только кнопкой.
 
 Если менять SQL реестра — править нужно **тело MV** в миграции, а не вью-обёртку. После правки обязательно `REFRESH`.
+
+## ПСДЦ / ВОР (миграция 20260908)
+
+Ведомость стоимости работ документа первого этапа (договор, ДС на изменение ВОР, ДС на доп. работы). Связь — `psdc.document_id` → `contracts.id`; в самом XLSX ID документа нет и не требуется.
+
+- **Расчёт — только в базе** (`psdc_validate_internal`, NUMERIC, `round()` = Excel ROUND half-up на каждой строке). Браузер лишь читает XLSX и шлёт сырые ячейки. Не дублировать формулы на фронте.
+- Процесс: `K = ROUND(ROUND(I,5)·ROUND(J,2),2)`, `M = ROUND(ROUND(I,5)·ROUND(L,2),2)`, `N = ROUND(J+L,2)`, `O = M` при `D = ДМ`, иначе `ROUND(K+M,2)`. Секция — агрегат процессов с № `«секция.»…` (текстовый префикс, 5.10 ∈ 5): `K` без ДМ, `M` со всеми работами. Итог — только из процессов. Скрытый `U = deleted` — строка не в расчёте; других статусов нет.
+- **Жизненный цикл** `uploaded → validated|invalid → applied → deleted`, незавершённая загрузка → `cancelled`. Один `applied` на документ (уникальный индекс). Все изменения — SECURITY DEFINER RPC (`psdc_create/add_rows/validate/apply/cancel/delete`, пакет: `psdc_batch_*`), таблицы ПСДЦ клиенту только на чтение.
+- **Сумма документа**: `contracts.psdc_total` (пишут только `psdc_apply`/`psdc_delete`, триггер `contracts_psdc_total_guard`). В JS — `effectiveDocumentAmount(doc)` в [contractAmendments.js](src/utils/contractAmendments.js); `effectiveValues`/`contractActualAmount` уже учитывают ПСДЦ. Ручная `contract_amount` не перезаписывается. Если грузите договоры для расчёта сумм — добавляйте `psdc_total` в select.
+- **Статусы**: завершённое ДС (и договор, созданный после внедрения ПСДЦ) — сначала вернуть на доработку; старые завершённые договоры принимают первичную ПСДЦ. Правило — `psdc_document_lock_reason()`.
+- **Предыдущая ПСДЦ** — ближайшая применённая вверх по родителям в той же ветке (`psdc_find_previous`); по ней сохраняются ID строк из столбца T.
+- НДС — из документа (`psdc_document_vat`), подпись в файле только диагностика.
+- Фронт: [src/utils/psdcWorkbook.js](src/utils/psdcWorkbook.js) (безопасное чтение XLSX, копия с подсветкой ошибок, экспорт с формулами, шаблон), [src/services/psdc.js](src/services/psdc.js), [src/components/psdc/PsdcPanel.jsx](src/components/psdc/PsdcPanel.jsx) (вкладка «ПСДЦ / ВОР» карточки), [src/pages/PsdcBatchPage.jsx](src/pages/PsdcBatchPage.jsx) (`/contracts/psdc-batch`), [src/utils/psdcMatching.js](src/utils/psdcMatching.js) (автосопоставление имён файлов).
+- Исходные XLSX хранятся в S3 как `owner_type='general'`, `owner_id=psdc.id`, `doc_category='psdc_source'` (редеплой `s3-presign` не нужен).
+- Предел — 25 000 строк на ведомость (проверка укладывается в `statement_timeout` Supabase).
+- Старая таблица `contract_psdc_items` (float-расчёт) больше не используется интерфейсом.
+
+**Тесты** (`npm run test:psdc`): поднимают временный локальный PostgreSQL 17+ (`initdb/pg_ctl/psql` в PATH или `PG_BIN`) с настоящими миграциями 20260906 + 20260908, проверяют движок, XLSX, интеграцию с суммами и UI в Chrome/Edge через Playwright (`PSDC_BROWSER`). Замер: `npm run bench:psdc`.
 
 ## Excel Import/Export (xlsx)
 

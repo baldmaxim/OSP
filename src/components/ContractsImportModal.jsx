@@ -134,7 +134,7 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
     let cancelled = false
     fetchAllRows((from, to) => supabase
       .from('contracts')
-      .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, counterparty_id, object_id, changed_fields, contract_amount, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period')
+      .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, counterparty_id, object_id, changed_fields, contract_amount, psdc_total, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period')
       .range(from, to))
       .then((rows) => {
         if (cancelled) return
@@ -157,7 +157,7 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
         // дубли номеров, а ДС не находят изменяемый документ. Блокируем.
         const missingColumn = err.code === '42703' || /does not exist/i.test(err.message || '')
         setLoadError(missingColumn
-          ? 'В базе не применена миграция 20260906_contract_amendments (нет колонок для ДС). Импорт недоступен, пока её не применят.'
+          ? `В базе не применены миграции договоров 20260906_contract_amendments и 20260908_psdc (${err.message}). Импорт недоступен, пока их не применят.`
           : `Не удалось загрузить существующие договоры: ${err.message}`)
       })
     return () => { cancelled = true }

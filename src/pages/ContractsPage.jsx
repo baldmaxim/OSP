@@ -27,7 +27,9 @@ import {
   buildDocIndex,
   collectChangedFields,
   contractActualAmount,
+  effectiveDocumentAmount,
   effectiveValues,
+  hasAppliedPsdc,
   isAmendment,
   isCompleted,
   liveChildren,
@@ -86,7 +88,7 @@ const SCOPES = [
 // Генподрядный коэффициент — наценка: во сколько сумма генподряда больше суммы
 // подряда. 100 млн генподряда против 93 млн подряда → 107,5%.
 function gpMarkup(contract) {
-  const dp = Number(contract?.contract_amount)
+  const dp = Number(effectiveDocumentAmount(contract))
   const dgp = Number(contract?.gp_amount)
   if (!Number.isFinite(dp) || !Number.isFinite(dgp) || dp === 0 || !dgp) return null
   return (dgp / dp) * 100
@@ -100,19 +102,27 @@ function formatPercent(value) {
 // Ячейка суммы: подряд и генподряд одной колонкой, чтобы разницу было видно без
 // перехода в карточку. Пока заполнена одна сумма — показываем её как раньше.
 function AmountCell({ contract, actual }) {
-  const dp = formatMoney(contract.contract_amount, contract.currency)
+  // Сумма документа: применённая ПСДЦ, иначе ручная.
+  const amount = effectiveDocumentAmount(contract)
+  const fromPsdc = hasAppliedPsdc(contract)
+  const psdcTitle = fromPsdc
+    ? `Сумма по применённой ПСДЦ. Ручная сумма: ${formatMoney(contract.contract_amount, contract.currency) || 'не задана'}`
+    : undefined
+  const dp = formatMoney(amount, contract.currency)
   const dgp = formatMoney(contract.gp_amount, contract.currency)
   const markup = formatPercent(gpMarkup(contract))
   // Актуальную сумму показываем, только если завершённые ДС её изменили: у
   // договора без соглашений вторая строка была бы шумом.
-  const actualText = actual != null && Number(actual) !== Number(contract.contract_amount || 0)
+  const actualText = actual != null && Number(actual) !== Number(amount || 0)
     ? formatMoney(actual, contract.currency)
     : null
 
   if (!dgp) {
     return (
       <div className="amt-pair">
-        <span className={`amt-solo${actualText ? ' amt-original' : ''}`}>{dp || '—'}</span>
+        <span className={`amt-solo${actualText ? ' amt-original' : ''}`} title={psdcTitle}>
+          {dp || '—'}{fromPsdc && <span className="amt-tag amt-psdc">ПСДЦ</span>}
+        </span>
         {actualText && (
           <span className="amt-row amt-actual" title="Сумма с учётом завершённых ДС: изменение ВОР заменяет сумму ветки, доп. работы добавляются">
             <span className="amt-tag">Актуальная</span>
@@ -125,9 +135,10 @@ function AmountCell({ contract, actual }) {
 
   return (
     <div className="amt-pair">
-      <span className="amt-row">
+      <span className="amt-row" title={psdcTitle}>
         <span className="amt-tag" title="Договор подряда — сумма, которую платим подрядчику">ДП</span>
         <span className="amt-value">{dp || '—'}</span>
+        {fromPsdc && <span className="amt-tag amt-psdc">ПСДЦ</span>}
       </span>
       <span className="amt-row">
         <span className="amt-tag" title="Договор генподряда — сумма по тем же работам от заказчика">ДГП</span>
@@ -1225,7 +1236,7 @@ function ContractRegistry() {
     const getVal = (c) => {
       switch (sortKey) {
         case 'counterparty': return (contractParties(c)[0]?.name || '').toLowerCase()
-        case 'amount': return Number(c.contract_amount) || 0
+        case 'amount': return effectiveDocumentAmount(c) || 0
         case 'status': return c.status || ''
         case 'accepted': return c.accepted_date || ''
         case 'planned': return c.signed_date || ''
@@ -1819,6 +1830,16 @@ function ContractRegistry() {
             </button>
           )}
           {!isDeletedTab && canEditContracts && (
+            <Link
+              to="/contracts/psdc-batch"
+              className="btn-secondary"
+              style={{ display: 'inline-flex', alignItems: 'center', padding: '0.5rem 0.875rem', fontSize: '0.8125rem', textDecoration: 'none' }}
+              title="Загрузка существующих ПСДЦ пакетом с сопоставлением файлов и документов"
+            >
+              Массовая загрузка ПСДЦ
+            </Link>
+          )}
+          {!isDeletedTab && canEditContracts && (
             <button className="btn-primary" onClick={handleAddNew}>
               + Добавить договор
             </button>
@@ -1991,7 +2012,7 @@ function ContractRegistry() {
                     </div>
                     <div className="mcard-row">
                       <span className="mcard-label">Сумма ДП</span>
-                      <span className="mcard-value">{formatMoney(contract.contract_amount, contract.currency) || '—'}</span>
+                      <span className="mcard-value">{formatMoney(effectiveDocumentAmount(contract), contract.currency) || '—'}{hasAppliedPsdc(contract) ? ' (ПСДЦ)' : ''}</span>
                     </div>
                     {/* Генподряд показываем только когда он заполнен — иначе на
                         телефоне карточка растёт прочерками. */}
@@ -2902,13 +2923,16 @@ function ContractRegistry() {
 
                 <div className={fieldGroupCls('contract_amount')}>
                   <label>{isDsForm ? 'Сумма по ДС' : 'Сумма по договору подряда (ДП)'}</label>
-                  <input type="number" step="0.01" name="contract_amount" value={formData.contract_amount} onChange={handleInputChange} disabled={formFrozen} placeholder="Подтянется из ПСДЦ" />
+                  <input type="number" step="0.01" name="contract_amount" value={formData.contract_amount} onChange={handleInputChange} disabled={formFrozen} placeholder="Ручная сумма" />
                   <small style={{ color: 'var(--text-tertiary)', marginTop: '0.25rem' }}>
                     {formData.record_type === DOC_TYPE.CHANGE
                       ? 'Новая сумма ветки целиком — она заменяет предыдущую, а не прибавляется к ней.'
                       : formData.record_type === DOC_TYPE.EXTRA
                         ? 'Стоимость дополнительных работ: после завершения ДС она прибавится к сумме договора.'
-                        : 'После импорта ПСДЦ пересчитывается из строк; можно поправить вручную.'}
+                        : 'Ручная сумма. Если в карточке применена ПСДЦ, суммой документа служит итог ПСДЦ.'}
+                    {hasAppliedPsdc(editingContract) && (
+                      <> Сейчас применена ПСДЦ: сумма документа — {formatMoney(editingContract.psdc_total, editingContract.currency)}; ручная сумма сохраняется и снова действует после удаления ПСДЦ.</>
+                    )}
                   </small>
                 </div>
                 <div className={fieldGroupCls('gp_amount')}>

@@ -34,6 +34,20 @@ export const isAmendment = (doc) => !!doc && doc.record_type !== DOC_TYPE.CONTRA
 export const isCompleted = (doc) => doc?.status === COMPLETED_STATUS
 export const isLive = (doc) => !!doc && !doc.deleted_at
 
+// ── Сумма отдельного документа ─────────────────────────────────────────────
+//
+// Применённая ПСДЦ — источник суммы документа (contracts.psdc_total, пишет
+// только база при «Применить ВОР»). Без неё действует ручная сумма
+// contract_amount, которая при применении ПСДЦ не перезаписывается.
+export const hasAppliedPsdc = (doc) => doc?.psdc_total != null && doc.psdc_total !== ''
+
+export function effectiveDocumentAmount(doc) {
+  const raw = hasAppliedPsdc(doc) ? doc.psdc_total : doc?.contract_amount
+  if (raw == null || raw === '') return null
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : null
+}
+
 // Коммерческие условия, которые ДС вправе переопределить. Идентичность договора
 // (номер, дата заключения, контрагент, объект) в список НЕ входит: ДС не должно
 // переназначить договор другому контрагенту.
@@ -156,6 +170,7 @@ export function flattenTree(root, index) {
 export function effectiveValues(base, index, options = {}) {
   const { stopAt = null } = options
   const result = { ...base }
+  if (hasAppliedPsdc(base)) result.contract_amount = base.psdc_total
   for (const doc of branchChain(base, index)) {
     if (doc.id === base.id) continue
     if (stopAt && doc.id === stopAt) break
@@ -164,6 +179,8 @@ export function effectiveValues(base, index, options = {}) {
       if (!OVERRIDABLE_FIELDS.includes(field)) continue
       result[field] = doc[field]
     }
+    // Полная новая ПСДЦ завершённого изменения задаёт сумму ветки целиком.
+    if (hasAppliedPsdc(doc)) result.contract_amount = doc.psdc_total
   }
   return result
 }
@@ -187,10 +204,9 @@ export function contractActualAmount(contract, index) {
   return total
 }
 
-// Исходная сумма договора — то, что записано в самом договоре, без изменений.
+// Исходная сумма договора — сумма самого договора (его ПСДЦ или ручная), без ДС.
 export function contractOriginalAmount(contract) {
-  const value = Number(contract?.contract_amount)
-  return Number.isFinite(value) ? value : 0
+  return effectiveDocumentAmount(contract) ?? 0
 }
 
 // ── Правила создания (те же, что в триггерах; здесь — для подсказок в UI) ────
