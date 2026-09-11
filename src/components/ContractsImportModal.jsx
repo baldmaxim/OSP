@@ -109,6 +109,7 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
   // Дерево уже заведённых документов: { index, amendmentNumbers }.
   const [docs, setDocs] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [resultInfo, setResultInfo] = useState(null) // { created, notLoaded: [...] }
 
   // Индексы справочников для сопоставления (контрагенты без soft-deleted).
@@ -152,8 +153,12 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
       .catch((err) => {
         if (cancelled) return
         console.error('Загрузка документов договоров:', err.message)
-        setDocs({ index: buildDocIndex([]), amendmentNumbers: new Set() })
-        setExistingNumbers(new Set())
+        // Без списка существующих документов импорт вслепую опасен: не ловятся
+        // дубли номеров, а ДС не находят изменяемый документ. Блокируем.
+        const missingColumn = err.code === '42703' || /does not exist/i.test(err.message || '')
+        setLoadError(missingColumn
+          ? 'В базе не применена миграция 20260906_contract_amendments (нет колонок для ДС). Импорт недоступен, пока её не применят.'
+          : `Не удалось загрузить существующие договоры: ${err.message}`)
       })
     return () => { cancelled = true }
   }, [])
@@ -375,7 +380,8 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
                   <input type="file" accept=".xlsx" onChange={handleFile} disabled={existingNumbers == null} hidden />
                 </label>
               </div>
-              {existingNumbers == null && <p className="cim-loading">Загрузка справочников…</p>}
+              {loadError && <p className="cim-error">{loadError}</p>}
+              {existingNumbers == null && !loadError && <p className="cim-loading">Загрузка справочников…</p>}
               {parseError && <p className="cim-error">{parseError}</p>}
             </div>
           )}
@@ -433,7 +439,29 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
               )}
 
               {stats.error > 0 && (
-                <p className="cim-note cim-note-error">{stats.error} строк(и) с ошибками данных не будут загружены — причины появятся после импорта.</p>
+                <>
+                  <p className="cim-note cim-note-error">{stats.error} строк(и) с ошибками данных не будут загружены:</p>
+                  <div className="cim-warn-table-wrap">
+                    <table className="cim-warn-table">
+                      <thead>
+                        <tr>
+                          <th>Строка</th>
+                          <th>№ документа</th>
+                          <th>Причина</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parsed.filter((r) => r.result.kind === 'error').map((row) => (
+                          <tr key={row.excelRow}>
+                            <td>{row.excelRow}</td>
+                            <td>{cellDisplay(row.disp.contract_number) || '—'}</td>
+                            <td>{skipReasons(row).join('; ')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           )}

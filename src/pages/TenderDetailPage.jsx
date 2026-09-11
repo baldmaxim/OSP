@@ -2185,7 +2185,12 @@ function TenderDetailPage() {
         <div className="tender-detail-title">
           {/* У «прочего» объекта в реестре может не быть — тогда показываем
               наименование, вписанное вручную (миграция 20260825). */}
-          <h2>{tenderObjectName(tender, 'Тендер')}</h2>
+          <h2>
+            {tender.public_tender_number != null && (
+              <span className="tender-number-badge">Тендер № {tender.public_tender_number}</span>
+            )}
+            {tenderObjectName(tender, 'Тендер')}
+          </h2>
           {tender.objects?.address && (
             <p className="tender-object-address" style={{ margin: '0.25rem 0 0', color: 'var(--text-tertiary)', fontSize: '0.875rem' }}>
               {tender.objects.address}
