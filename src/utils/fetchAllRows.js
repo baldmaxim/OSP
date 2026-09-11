@@ -19,6 +19,10 @@ export async function fetchAllRows(makeQuery, page = 1000) {
   return all
 }
 
+// То же, но страницы грузятся параллельно — реализация в fetchPagesParallel.js
+// (без зависимостей, чтобы её можно было проверить тестом).
+export { fetchAllRowsParallel } from './fetchPagesParallel'
+
 // Частый случай: все активные контрагенты для выпадашки (таблица >1000 строк).
 export async function fetchAllActiveCounterparties(select = 'id, name') {
   return fetchAllRows((from, to) => supabase

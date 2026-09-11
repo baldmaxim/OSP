@@ -13,9 +13,11 @@ import './RatesRegistryPage.css'
 // поиск (.ilike по триграммному индексу), сортировка (.order). В браузер грузится
 // только текущая страница, а не весь реестр.
 
+// Один форматтер на модуль: конструктор Intl.NumberFormat дорогой, а вызывается на каждую ячейку.
+const MONEY_FMT = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
 const fmtMoney = (n) => {
   if (n == null || n === '' || isNaN(n)) return ''
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(n)
+  return MONEY_FMT.format(n)
 }
 const fmtDate = (iso) => {
   if (!iso) return '—'

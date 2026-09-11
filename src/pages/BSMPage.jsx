@@ -70,8 +70,10 @@ function detectKind(rawCode) {
   return null
 }
 
-const fmtRub = (n) => new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(round2(n)) + ' ₽'
-const fmtNum = (n) => new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(round2(n))
+// Один форматтер на модуль: конструктор Intl.NumberFormat дорогой, а вызывается на каждую ячейку.
+const NUM2_FMT = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtRub = (n) => NUM2_FMT.format(round2(n)) + ' ₽'
+const fmtNum = (n) => NUM2_FMT.format(round2(n))
 
 // Резолвинг простых формул-ссылок: «=Лист!G15», «=G15», «='Цены'!$G$15», «+G15».
 // Возвращает { value, source } — value уже прошёл cleanNumeric.

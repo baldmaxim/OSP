@@ -1,13 +1,28 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
 import { supabase } from '../supabase'
 import TenderProposalUploadModal from './TenderProposalUploadModal'
 import VirtualTableBody from './VirtualTableBody'
 import { normalizeKey, normalizeUnit } from '../utils/parseProposalExcel'
 import { supplyUnitPrice, supplyTotal } from '../utils/supplyRateHelpers'
+import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import './TenderProposalsCompare.css'
 
 // task 410: порог включения виртуализации <tbody> в детальной таблице сравнения.
 const VIRTUALIZE_FROM = 150
+
+// Общая пустая карта для значений по умолчанию: `new Map()` в параметрах давал бы
+// новую ссылку на каждый рендер и сбивал memo().
+const EMPTY_MAP = new Map()
+
+// Только колонки, которые реально нужны сравнению. `*` тянул ещё примечания
+// участника и служебные поля, а встроенный join counterparties(id, name)
+// повторял название контрагента в каждой из десятков тысяч строк.
+const PROPOSAL_COLUMNS = 'id, counterparty_id, estimate_item_id, unit_price_materials, unit_price_works, total_materials, total_works, total_cost, proposal_date, covered_elsewhere, coverage_note, created_at'
+
+// Загруженные КП по тендеру живут между переключениями вкладок: вкладка
+// размонтируется при уходе, и раньше каждый возврат заново качал все КП.
+// При возврате данные показываются сразу, а свежие подтягиваются в фоне.
+const proposalsCache = new Map() // tenderId → { rows, names: Map<cpId, name> }
 
 // task 346 + 349: вкладка «Сравнение КП» в тендере.
 // Структура:
@@ -15,9 +30,12 @@ const VIRTUALIZE_FROM = 150
 //   2) Расширенные summary-карточки: Материалы / Работы / Итого по каждому КП.
 //   3) Sub-tabs: «Исходный КП» / «Материалы» / «Работы».
 
+// Форматтер создаётся один раз: конструктор Intl.NumberFormat дорогой (~0,4 мс), а
+// fmtMoney зовётся на каждую денежную ячейку — на открытии вкладки это давало секунды.
+const MONEY_FMT = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
 const fmtMoney = (n) => {
   if (n == null || n === '' || isNaN(n)) return ''
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(n)
+  return MONEY_FMT.format(n)
 }
 
 const fmtDate = (iso) => {
@@ -60,8 +78,10 @@ function TenderProposalsCompare({
   // КП подрядчиков, выбор минимума/победителя и итоги НЕ входит.
   supplyRatesMap = new Map(),
 }) {
-  const [proposals, setProposals] = useState([])
-  const [loading, setLoading] = useState(false)
+  const cached = tenderId ? proposalsCache.get(tenderId) : null
+  const [proposals, setProposalsState] = useState(() => cached?.rows || [])
+  const [cpNames, setCpNames] = useState(() => cached?.names || new Map())
+  const [loading, setLoading] = useState(() => !cached)
   // selectedDoc = 'all' для объединённого вида, либо конкретное имя ВОРа.
   const [selectedDoc, setSelectedDoc] = useState('all')
   const [subTab, setSubTab] = useState('source') // 'source' | 'materials' | 'works'
@@ -73,36 +93,85 @@ function TenderProposalsCompare({
     if (!docNames.includes(selectedDoc)) setSelectedDoc('all')
   }, [docNames, selectedDoc])
 
-  const loadProposals = useCallback(async () => {
-    if (!tenderId) return
-    setLoading(true)
-    try {
-      // task 399: пагинация — Supabase по умолчанию отдаёт максимум 1000 строк.
-      // Для тендеров с большим числом КП-записей (ВОР по корпусам × несколько КП)
-      // лимит молча обрезал выдачу, и часть сохранённых позиций показывалась как «—».
-      const PAGE = 1000
-      const all = []
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from('tender_counterparty_proposals')
-          .select('*, counterparties(id, name)')
-          .eq('tender_id', tenderId)
-          .order('id', { ascending: true })
-          .range(from, from + PAGE - 1)
-        if (error) throw error
-        if (data?.length) all.push(...data)
-        if (!data || data.length < PAGE) break
-      }
-      setProposals(all)
-    } catch (err) {
-      console.error('Ошибка загрузки КП:', err.message)
-      setProposals([])
-    } finally {
-      setLoading(false)
-    }
+  // Обновление списка КП вместе с кэшем вкладки.
+  const setProposals = useCallback((updater) => {
+    setProposalsState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      const entry = proposalsCache.get(tenderId)
+      proposalsCache.set(tenderId, { rows: next, names: entry?.names || new Map() })
+      return next
+    })
   }, [tenderId])
 
-  useEffect(() => { loadProposals() }, [loadProposals])
+  // Названия контрагентов: сначала из участников тендера (уже загружены
+  // страницей), недостающие — одним запросом.
+  // Через ref: смена списка участников (например, статуса) не должна
+  // перезапускать загрузку всех КП тендера.
+  const tenderCounterpartiesRef = useRef(tenderCounterparties)
+  tenderCounterpartiesRef.current = tenderCounterparties
+  const resolveNames = useCallback(async (rows) => {
+    const names = new Map()
+    for (const tc of tenderCounterpartiesRef.current || []) {
+      if (tc.counterparty_id && tc.counterparties?.name) names.set(tc.counterparty_id, tc.counterparties.name)
+    }
+    const missing = [...new Set(rows.map((p) => p.counterparty_id))].filter((id) => id && !names.has(id))
+    for (let i = 0; i < missing.length; i += 100) {
+      const { data, error } = await supabase.from('counterparties').select('id, name').in('id', missing.slice(i, i + 100))
+      if (error) throw error
+      for (const cp of data || []) names.set(cp.id, cp.name)
+    }
+    return names
+  }, [])
+
+  const loadProposals = useCallback(async ({ silent = false } = {}) => {
+    if (!tenderId) return
+    if (!silent) setLoading(true)
+    try {
+      // task 399: пагинация — Supabase отдаёт максимум 1000 строк за запрос.
+      // Страницы идут параллельно, тай-брейк по id — однозначный порядок страниц.
+      const all = await fetchAllRowsParallel((from, to, withCount) => supabase
+        .from('tender_counterparty_proposals')
+        .select(PROPOSAL_COLUMNS, withCount ? { count: 'exact' } : undefined)
+        .eq('tender_id', tenderId)
+        .order('id', { ascending: true })
+        .range(from, to))
+      const names = await resolveNames(all)
+      proposalsCache.set(tenderId, { rows: all, names })
+      setCpNames(names)
+      setProposalsState(all)
+    } catch (err) {
+      console.error('Ошибка загрузки КП:', err.message)
+      if (!silent) setProposalsState([])
+    } finally {
+      if (!silent) setLoading(false)
+    }
+  }, [tenderId, resolveNames])
+
+  // При возврате на вкладку кэш показывается сразу, свежие данные — в фоне.
+  const hadCacheOnMount = useRef(!!cached)
+  useEffect(() => { loadProposals({ silent: hadCacheOnMount.current }) }, [loadProposals])
+
+  // Точечно подмешиваем изменённые строки КП вместо перезагрузки всех КП тендера.
+  const mergeProposalRows = useCallback((changed = [], removedIds = []) => {
+    if (!changed.length && !removedIds.length) return
+    const removed = new Set(removedIds)
+    const byKey = new Map(changed.map((r) => [`${r.estimate_item_id}__${r.counterparty_id}`, r]))
+    setProposals((prev) => {
+      const next = []
+      for (const p of prev) {
+        if (removed.has(p.id)) continue
+        const key = `${p.estimate_item_id}__${p.counterparty_id}`
+        if (byKey.has(key)) {
+          next.push(byKey.get(key))
+          byKey.delete(key)
+        } else {
+          next.push(p)
+        }
+      }
+      for (const r of byKey.values()) next.push(r)
+      return next
+    })
+  }, [setProposals])
 
   // Уникальные контрагенты с КП — общее число для счётчика на табе.
   const proposalsCount = useMemo(() => {
@@ -132,7 +201,7 @@ function TenderProposalsCompare({
       if (!cur) {
         map.set(p.counterparty_id, {
           id: p.counterparty_id,
-          name: p.counterparties?.name || p.counterparty_id,
+          name: cpNames.get(p.counterparty_id) || p.counterparty_id,
           latestDate: date,
           uploadedAt: uploaded,
         })
@@ -142,7 +211,7 @@ function TenderProposalsCompare({
       }
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-  }, [proposals, itemIds])
+  }, [proposals, itemIds, cpNames])
 
   // Lookup: estimate_item_id × counterparty_id → proposal.
   const proposalLookup = useMemo(() => {
@@ -400,10 +469,12 @@ function TenderProposalsCompare({
   // task 401: пометка позиции «учтено в другой позиции» (без отдельной цены).
   // Нерасценённая позиция может вообще не иметь строки в proposals — поэтому
   // ставим флаг через upsert по UNIQUE(estimate_item_id, counterparty_id).
-  const handleToggleCovered = async (itemId, cpId, checked, note) => {
+  // После записи в список подмешиваются только изменённые строки — раньше каждый
+  // клик «учтено» перекачивал все КП тендера (десятки тысяч строк).
+  const handleToggleCovered = useCallback(async (itemId, cpId, checked, note) => {
     try {
       if (checked) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('tender_counterparty_proposals')
           .upsert({
             tender_id: tenderId,
@@ -412,7 +483,9 @@ function TenderProposalsCompare({
             covered_elsewhere: true,
             coverage_note: note || null,
           }, { onConflict: 'estimate_item_id,counterparty_id' })
+          .select(PROPOSAL_COLUMNS)
         if (error) throw error
+        mergeProposalRows(data || [])
       } else {
         // Снятие флага: если строка была создана только ради пометки (без цен) —
         // удаляем её, иначе просто сбрасываем флаг, чтобы не плодить «нулевые» КП.
@@ -423,30 +496,34 @@ function TenderProposalsCompare({
           const { error } = await supabase
             .from('tender_counterparty_proposals').delete().eq('id', p.id)
           if (error) throw error
+          mergeProposalRows([], [p.id])
         } else if (p) {
-          const { error } = await supabase
+          const { data, error } = await supabase
             .from('tender_counterparty_proposals')
             .update({ covered_elsewhere: false, coverage_note: null })
             .eq('id', p.id)
+            .select(PROPOSAL_COLUMNS)
           if (error) throw error
+          mergeProposalRows(data || [])
         }
       }
-      await loadProposals()
     } catch (err) {
       alert('Ошибка: ' + err.message)
+      loadProposals({ silent: true })
     }
-  }
+  }, [tenderId, proposalLookup, mergeProposalRows, loadProposals])
 
   // task 401 (вкладки Материалы/Работы): пакетная пометка «учтено» для всех
   // нерасценённых позиций агрегированной строки у одного контрагента.
   // coverItems — [{itemId, proposalId, hasPrice, covered, note}].
-  const handleToggleCoveredBatch = async (cpId, coverItems, checked, note) => {
+  const handleToggleCoveredBatch = useCallback(async (cpId, coverItems, checked, note) => {
     try {
       if (checked) {
-        // Помечаем только позиции без цены, которые ещё не помечены.
-        const toFlag = coverItems.filter(c => !c.hasPrice && !c.covered)
+        // Помечаем только позиции без цены, которые ещё не помечены; при смене
+        // примечания обновляем его и у уже помеченных.
+        const toFlag = coverItems.filter(c => !c.hasPrice && (!c.covered || (c.note || '') !== (note || '')))
         if (toFlag.length > 0) {
-          const { error } = await supabase
+          const { data, error } = await supabase
             .from('tender_counterparty_proposals')
             .upsert(
               toFlag.map(c => ({
@@ -458,7 +535,9 @@ function TenderProposalsCompare({
               })),
               { onConflict: 'estimate_item_id,counterparty_id' }
             )
+            .select(PROPOSAL_COLUMNS)
           if (error) throw error
+          mergeProposalRows(data || [])
         }
       } else {
         // Снятие: flag-only строки (без цен) удаляем, у остальных сбрасываем флаг.
@@ -469,24 +548,29 @@ function TenderProposalsCompare({
           if (c.proposalId == null) continue
           ;(c.hasPrice ? pricedIds : flagOnlyIds).push(c.proposalId)
         }
-        if (flagOnlyIds.length > 0) {
+        // Порции по 100 id — длинный IN-список в URL роняет запрос (task 402).
+        for (let i = 0; i < flagOnlyIds.length; i += 100) {
+          const chunk = flagOnlyIds.slice(i, i + 100)
           const { error } = await supabase
-            .from('tender_counterparty_proposals').delete().in('id', flagOnlyIds)
+            .from('tender_counterparty_proposals').delete().in('id', chunk)
           if (error) throw error
+          mergeProposalRows([], chunk)
         }
-        if (pricedIds.length > 0) {
-          const { error } = await supabase
+        for (let i = 0; i < pricedIds.length; i += 100) {
+          const { data, error } = await supabase
             .from('tender_counterparty_proposals')
             .update({ covered_elsewhere: false, coverage_note: null })
-            .in('id', pricedIds)
+            .in('id', pricedIds.slice(i, i + 100))
+            .select(PROPOSAL_COLUMNS)
           if (error) throw error
+          mergeProposalRows(data || [])
         }
       }
-      await loadProposals()
     } catch (err) {
       alert('Ошибка: ' + err.message)
+      loadProposals({ silent: true })
     }
-  }
+  }, [tenderId, mergeProposalRows, loadProposals])
 
   // Счётчики для tabs (контрагенты с КП в этом ВОРе).
   // Раньше — O(docs × proposals × items) из-за вложенного .find() на каждый proposal:
@@ -912,30 +996,43 @@ function SourceTotalCell({ it, cp, p, isMin, canEdit, onToggleCovered }) {
 // ===== Подкомпонент: «Исходный КП» =====
 // Контрагенты — колонками. Для каждого 5 sub-cells:
 //   Ц.мат / Стоим.мат / Ц.раб / Стоим.раб / Итого.
-function SourceTable({
+const SourceTable = memo(function SourceTable({
   itemsOfScope, counterpartiesInScope, proposalLookup,
   minByItem, totalsByCp, minTotalCost, showDocColumn,
-  canEdit, onToggleCovered, supplyRatesMap = new Map(),
+  canEdit, onToggleCovered, supplyRatesMap = EMPTY_MAP,
 }) {
   // task 408/409: снабжение по позиции — ЦЕНА ЗА ЕД. (загруженная) + ИТОГО (объём×цена).
   // Базовый ориентир, НЕ КП подрядчика — в min/итоги/победителя не входит.
-  const supplyUnitOf = (it) => isWorkRow(it) ? null : supplyUnitPrice(supplyRatesMap, it.estimate_name, it.cost_name)
-  const supplyTotalOf = (it) => supplyTotal(supplyUnitOf(it), it.material_consumption)
-  // Нерасценён снабжением = материал с объёмом, но без цены за ед. снабжения.
-  // Подсвечиваем только когда расценки снабжения вообще загружены — иначе
-  // в тендере без снабжения подсветилась бы вся таблица.
-  const hasSupplyData = supplyRatesMap.size > 0
-  const supplyMissingOf = (it) =>
-    hasSupplyData && !isWorkRow(it) && Number(it.material_consumption) > 0 && supplyUnitOf(it) == null
-  const supplyGrandTotal = itemsOfScope.reduce((s, it) => s + (supplyTotalOf(it) || 0), 0)
-  // task 410: тело таблицы считаем массивом строк заранее — при большом числе позиций
-  // отдаём его в VirtualTableBody (в DOM попадает окно строк, а не все 5000).
+  // Считается один раз на набор позиций, а не на каждую отрисовку каждой строки.
+  const supply = useMemo(() => {
+    // Нерасценён снабжением = материал с объёмом, но без цены за ед. снабжения.
+    // Подсвечиваем только когда расценки снабжения вообще загружены — иначе
+    // в тендере без снабжения подсветилась бы вся таблица.
+    const hasSupplyData = supplyRatesMap.size > 0
+    const unit = new Array(itemsOfScope.length)
+    const total = new Array(itemsOfScope.length)
+    const missing = new Array(itemsOfScope.length)
+    let grand = 0
+    itemsOfScope.forEach((it, i) => {
+      const u = isWorkRow(it) ? null : supplyUnitPrice(supplyRatesMap, it.estimate_name, it.cost_name)
+      const t = supplyTotal(u, it.material_consumption)
+      unit[i] = u
+      total[i] = t
+      missing[i] = hasSupplyData && !isWorkRow(it) && Number(it.material_consumption) > 0 && u == null
+      grand += t || 0
+    })
+    return { unit, total, missing, grand }
+  }, [itemsOfScope, supplyRatesMap])
+  const supplyGrandTotal = supply.grand
+  // task 410: строки создаются по индексу — при большом числе позиций VirtualTableBody
+  // вызывает renderRow только для окна вокруг вьюпорта, а не для всех позиций × КП.
   const scrollRef = useRef(null)
-  const bodyRows = itemsOfScope.map((it, idx) => {
+  const renderRow = (idx) => {
+    const it = itemsOfScope[idx]
     const minPrice = minByItem.get(it.id)
-    const supplyUnit = supplyUnitOf(it)
-    const supplyCost = supplyTotalOf(it)
-    const supplyMissing = supplyMissingOf(it)
+    const supplyUnit = supply.unit[idx]
+    const supplyCost = supply.total[idx]
+    const supplyMissing = supply.missing[idx]
     return (
       <tr key={it.id} className={supplyMissing ? 'supply-row-missing' : undefined}>
         <td className="td-num">{idx + 1}</td>
@@ -974,9 +1071,9 @@ function SourceTable({
         })}
       </tr>
     )
-  })
+  }
   const totalCols = (showDocColumn ? 7 : 6) + 2 + counterpartiesInScope.length * 5
-  const virtualize = bodyRows.length > VIRTUALIZE_FROM
+  const virtualize = itemsOfScope.length > VIRTUALIZE_FROM
   return (
     <div ref={scrollRef} className={`proposals-table-wrap${virtualize ? ' proposals-virtual' : ''}`}>
       <table className="proposals-table">
@@ -1013,8 +1110,8 @@ function SourceTable({
           </tr>
         </thead>
         {virtualize
-          ? <VirtualTableBody rows={bodyRows} colSpan={totalCols} scrollRef={scrollRef} rowHeight={33} />
-          : <tbody>{bodyRows}</tbody>}
+          ? <VirtualTableBody rowCount={itemsOfScope.length} renderRow={renderRow} colSpan={totalCols} scrollRef={scrollRef} rowHeight={33} />
+          : <tbody>{itemsOfScope.map((_, idx) => renderRow(idx))}</tbody>}
         <tfoot>
           <tr className="proposals-total-row">
             <td colSpan={showDocColumn ? 7 : 6} style={{ textAlign: 'right' }}>ИТОГО, ₽:</td>
@@ -1036,7 +1133,7 @@ function SourceTable({
       </table>
     </div>
   )
-}
+})
 
 // ===== Ячейка «Стоимость» агрегированной строки с пометкой «учтено» (task 401) =====
 // Агрегированная строка объединяет несколько позиций ВОРа. Если у контрагента
@@ -1102,9 +1199,10 @@ function AggregateCoverControl({
 // task 350: в режиме «Объединённый» рендерим по группам ВОРов с подытогами,
 // потом общий ИТОГО. В режиме одного ВОРа — плоский список (одна группа,
 // заголовок группы скрывается).
-function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGroupHeaders, canEdit, onToggleCovered, supplyRatesMap = new Map() }) {
+const AggregateView = memo(function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGroupHeaders, canEdit, onToggleCovered, supplyRatesMap = EMPTY_MAP }) {
   const isMaterials = kind === 'materials'
   const totalKey = isMaterials ? 'totalMat' : 'totalWork'
+  const scrollRef = useRef(null)
 
   // task 408: колонка «Цена от снабжения» только в «Материалах» (у работ расценок
   // снабжения нет). Стоимость по строке = цена снабжения × Σ объём этой позиции.
@@ -1165,8 +1263,135 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
     ? Math.min(...allTotals.filter(v => v > 0).concat(Infinity))
     : Infinity
 
+  // Плоский список строк тела: заголовок ВОРа → позиции → подытог. Строки создаются
+  // только для окна вокруг вьюпорта: на тысячах агрегированных позиций × подрядчиков
+  // полная отрисовка занимала десятки секунд и вешала вкладку.
+  const entries = []
+  groups.forEach((group, gi) => {
+    if (showGroupHeaders) entries.push({ type: 'header', group, gi })
+    group.rows.forEach((r, ri) => entries.push({ type: 'row', group, gi, r, ri }))
+    if (showGroupHeaders) entries.push({ type: 'subtotal', group, gi, minSub: computeMinSubtotal(group) })
+  })
+  const aggCols = 4 + (showSupply ? 2 : 0) + counterpartiesInScope.length * 2
+  const virtualize = entries.length > VIRTUALIZE_FROM
+  const renderEntry = (e) => {
+    const { group } = e
+    if (e.type === 'header') {
+      return (
+        <tr key={`h:${e.gi}`} className={`proposals-group-header${showSupply && supplyGroupMissing.get(group.name) ? ' supply-group-missing' : ''}`}>
+          <td colSpan={4 + (showSupply ? 2 : 0) + counterpartiesInScope.length * 2}>
+            <span className="proposals-group-header-label">ВОР</span>
+            <span className="proposals-group-header-name">{group.name}</span>
+            <span className="proposals-group-header-count">
+              {group.rows.length} {isMaterials ? 'позиций материалов' : 'позиций работ'}
+            </span>
+            {showSupply && supplyGroupMissing.get(group.name) && (
+              <span className="proposals-group-supply-warn" title="В группе есть материалы без цены от снабжения">⚠ есть нерасценённые снабжением</span>
+            )}
+          </td>
+        </tr>
+      )
+    }
+    if (e.type === 'subtotal') {
+      const { minSub } = e
+      return (
+        <tr key={`s:${e.gi}`} className="proposals-group-subtotal">
+          <td colSpan={4} style={{ textAlign: 'right' }}>
+            Подытог по «{group.name}», ₽:
+          </td>
+          {showSupply && (
+            <>
+              <td className={`td-group-subtotal td-supply td-cp-first${supplyGroupMissing.get(group.name) ? ' supply-price-missing' : ''}`} />
+              <td className={`td-group-subtotal td-supply td-supply-total${supplyGroupMissing.get(group.name) ? ' supply-price-missing' : ''}`}>
+                {supplyGroupCost.get(group.name) > 0 ? fmtMoney(supplyGroupCost.get(group.name)) : '—'}
+              </td>
+            </>
+          )}
+          {counterpartiesInScope.map(cp => {
+            const v = group.subtotalByCp.get(cp.id) || 0
+            const isMin = v > 0 && minSub != null && v === minSub
+            // task 355: подсветка если в группе есть нерасценённые позиции.
+            let incompleteCovered = 0, incompleteTotal = 0
+            for (const r of group.rows) {
+              const d = r.cpData.get(cp.id)
+              if (!d) continue
+              incompleteTotal += d.itemsTotal
+              incompleteCovered += d.itemsCovered
+            }
+            const isIncomplete = incompleteTotal > 0 && incompleteCovered < incompleteTotal
+            return (
+              <td
+                key={cp.id}
+                colSpan={2}
+                className={`td-group-subtotal${isMin ? ' is-min' : ''}${isIncomplete ? ' is-incomplete' : ''}`}
+                title={isIncomplete
+                  ? `Расценено ${incompleteCovered} из ${incompleteTotal} позиций — подытог неполный`
+                  : undefined}
+              >
+                {v > 0 ? fmtMoney(v) : '—'}
+              </td>
+            )
+          })}
+        </tr>
+      )
+    }
+    const { r, ri } = e
+    const minCost = computeMinByRow(r)
+    const supplyUnit = showSupply ? supplyUnitOfRow(group.name, r) : null
+    const supplyCost = showSupply ? supplyCostOfRow(group.name, r) : null
+    const supplyMissing = showSupply && hasSupplyData && supplyUnit == null && Number(r.totalVol) > 0
+    return (
+      <tr key={`r:${e.gi}|${ri}`} className={supplyMissing ? 'supply-row-missing' : undefined}>
+        <td className="td-num">{ri + 1}</td>
+        <td className="td-name" title={r.name}>{r.name}</td>
+        <td className="td-unit">{r.unit || '—'}</td>
+        <td className="td-vol">{fmtMoney(r.totalVol)}</td>
+        {showSupply && (
+          <>
+            <td className={`td-price td-supply td-cp-first${supplyMissing ? ' supply-price-missing' : ''}`}>
+              {supplyUnit != null ? fmtMoney(supplyUnit) : '—'}
+            </td>
+            <td className={`td-price td-supply td-supply-total${supplyMissing ? ' supply-price-missing' : ''}`}>
+              {supplyCost != null ? fmtMoney(supplyCost) : '—'}
+            </td>
+          </>
+        )}
+        {counterpartiesInScope.map(cp => {
+          const d = r.cpData.get(cp.id)
+          const avgPrice = d && d.weightedVolSum > 0 ? d.weightedPriceSum / d.weightedVolSum : 0
+          const total = d?.totalCost || 0
+          const isMin = total > 0 && minCost != null && total === minCost
+          // task 355: подсветка нерасценённой позиции у контрагента.
+          // Если itemsTotal > itemsCovered — есть «дыра» в покрытии
+          // (одно и то же название с разными подключёнными позициями).
+          const isIncomplete = d && d.itemsTotal > d.itemsCovered
+          const hasPrice = !!d && total > 0
+          const incompleteTip = isIncomplete
+            ? `Расценено ${d.itemsCovered} из ${d.itemsTotal} позиций — итог неполный`
+            : null
+          return (
+            <React.Fragment key={cp.id}>
+              <td
+                className={`td-price td-cp-first${isIncomplete ? ' is-incomplete' : ''}`}
+                title={incompleteTip || undefined}
+              >
+                {hasPrice ? fmtMoney(avgPrice) : '—'}
+              </td>
+              <AggregateCoverControl
+                d={d} cp={cp} total={total} isMin={isMin}
+                isIncomplete={isIncomplete} hasPrice={hasPrice}
+                incompleteTip={incompleteTip}
+                canEdit={canEdit} onToggleCovered={onToggleCovered}
+              />
+            </React.Fragment>
+          )
+        })}
+      </tr>
+    )
+  }
+
   return (
-    <div className="proposals-table-wrap">
+    <div ref={scrollRef} className={`proposals-table-wrap${virtualize ? ' proposals-virtual' : ''}`}>
       <table className="proposals-table proposals-table-aggregate">
         <thead>
           <tr>
@@ -1200,123 +1425,9 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
             ))}
           </tr>
         </thead>
-        <tbody>
-          {groups.map((group, gi) => {
-            const minSub = computeMinSubtotal(group)
-            return (
-              <React.Fragment key={`g:${group.name}|${gi}`}>
-                {showGroupHeaders && (
-                  <tr className={`proposals-group-header${showSupply && supplyGroupMissing.get(group.name) ? ' supply-group-missing' : ''}`}>
-                    <td colSpan={4 + (showSupply ? 2 : 0) + counterpartiesInScope.length * 2}>
-                      <span className="proposals-group-header-label">ВОР</span>
-                      <span className="proposals-group-header-name">{group.name}</span>
-                      <span className="proposals-group-header-count">
-                        {group.rows.length} {isMaterials ? 'позиций материалов' : 'позиций работ'}
-                      </span>
-                      {showSupply && supplyGroupMissing.get(group.name) && (
-                        <span className="proposals-group-supply-warn" title="В группе есть материалы без цены от снабжения">⚠ есть нерасценённые снабжением</span>
-                      )}
-                    </td>
-                  </tr>
-                )}
-                {group.rows.map((r, ri) => {
-                  const minCost = computeMinByRow(r)
-                  const supplyUnit = showSupply ? supplyUnitOfRow(group.name, r) : null
-                  const supplyCost = showSupply ? supplyCostOfRow(group.name, r) : null
-                  const supplyMissing = showSupply && hasSupplyData && supplyUnit == null && Number(r.totalVol) > 0
-                  return (
-                    <tr key={`${group.name}|${r.name}|${r.unit}|${ri}`} className={supplyMissing ? 'supply-row-missing' : undefined}>
-                      <td className="td-num">{ri + 1}</td>
-                      <td className="td-name" title={r.name}>{r.name}</td>
-                      <td className="td-unit">{r.unit || '—'}</td>
-                      <td className="td-vol">{fmtMoney(r.totalVol)}</td>
-                      {showSupply && (
-                        <>
-                          <td className={`td-price td-supply td-cp-first${supplyMissing ? ' supply-price-missing' : ''}`}>
-                            {supplyUnit != null ? fmtMoney(supplyUnit) : '—'}
-                          </td>
-                          <td className={`td-price td-supply td-supply-total${supplyMissing ? ' supply-price-missing' : ''}`}>
-                            {supplyCost != null ? fmtMoney(supplyCost) : '—'}
-                          </td>
-                        </>
-                      )}
-                      {counterpartiesInScope.map(cp => {
-                        const d = r.cpData.get(cp.id)
-                        const avgPrice = d && d.weightedVolSum > 0 ? d.weightedPriceSum / d.weightedVolSum : 0
-                        const total = d?.totalCost || 0
-                        const isMin = total > 0 && minCost != null && total === minCost
-                        // task 355: подсветка нерасценённой позиции у контрагента.
-                        // Если itemsTotal > itemsCovered — есть «дыра» в покрытии
-                        // (одно и то же название с разными подключёнными позициями).
-                        const isIncomplete = d && d.itemsTotal > d.itemsCovered
-                        const hasPrice = !!d && total > 0
-                        const incompleteTip = isIncomplete
-                          ? `Расценено ${d.itemsCovered} из ${d.itemsTotal} позиций — итог неполный`
-                          : null
-                        return (
-                          <React.Fragment key={cp.id}>
-                            <td
-                              className={`td-price td-cp-first${isIncomplete ? ' is-incomplete' : ''}`}
-                              title={incompleteTip || undefined}
-                            >
-                              {hasPrice ? fmtMoney(avgPrice) : '—'}
-                            </td>
-                            <AggregateCoverControl
-                              d={d} cp={cp} total={total} isMin={isMin}
-                              isIncomplete={isIncomplete} hasPrice={hasPrice}
-                              incompleteTip={incompleteTip}
-                              canEdit={canEdit} onToggleCovered={onToggleCovered}
-                            />
-                          </React.Fragment>
-                        )
-                      })}
-                    </tr>
-                  )
-                })}
-                {showGroupHeaders && (
-                  <tr className="proposals-group-subtotal">
-                    <td colSpan={4} style={{ textAlign: 'right' }}>
-                      Подытог по «{group.name}», ₽:
-                    </td>
-                    {showSupply && (
-                      <>
-                        <td className={`td-group-subtotal td-supply td-cp-first${supplyGroupMissing.get(group.name) ? ' supply-price-missing' : ''}`} />
-                        <td className={`td-group-subtotal td-supply td-supply-total${supplyGroupMissing.get(group.name) ? ' supply-price-missing' : ''}`}>
-                          {supplyGroupCost.get(group.name) > 0 ? fmtMoney(supplyGroupCost.get(group.name)) : '—'}
-                        </td>
-                      </>
-                    )}
-                    {counterpartiesInScope.map(cp => {
-                      const v = group.subtotalByCp.get(cp.id) || 0
-                      const isMin = v > 0 && minSub != null && v === minSub
-                      // task 355: подсветка если в группе есть нерасценённые позиции.
-                      let incompleteCovered = 0, incompleteTotal = 0
-                      for (const r of group.rows) {
-                        const d = r.cpData.get(cp.id)
-                        if (!d) continue
-                        incompleteTotal += d.itemsTotal
-                        incompleteCovered += d.itemsCovered
-                      }
-                      const isIncomplete = incompleteTotal > 0 && incompleteCovered < incompleteTotal
-                      return (
-                        <td
-                          key={cp.id}
-                          colSpan={2}
-                          className={`td-group-subtotal${isMin ? ' is-min' : ''}${isIncomplete ? ' is-incomplete' : ''}`}
-                          title={isIncomplete
-                            ? `Расценено ${incompleteCovered} из ${incompleteTotal} позиций — подытог неполный`
-                            : undefined}
-                        >
-                          {v > 0 ? fmtMoney(v) : '—'}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )}
-              </React.Fragment>
-            )
-          })}
-        </tbody>
+        {virtualize
+          ? <VirtualTableBody rowCount={entries.length} renderRow={(i) => renderEntry(entries[i])} colSpan={aggCols} scrollRef={scrollRef} rowHeight={40} />
+          : <tbody>{entries.map(renderEntry)}</tbody>}
         <tfoot>
           <tr className="proposals-total-row">
             <td colSpan={4} style={{ textAlign: 'right' }}>
@@ -1349,6 +1460,6 @@ function AggregateView({ kind, groups, counterpartiesInScope, totalsByCp, showGr
       </small>
     </div>
   )
-}
+})
 
 export default TenderProposalsCompare

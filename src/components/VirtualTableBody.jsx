@@ -21,8 +21,12 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 // Скролл-контейнер передаётся через `scrollRef` (тот <div>, что оборачивает <table>
 // и имеет overflow-y:auto). Подписка на scroll живёт здесь, поэтому при прокрутке
 // перерисовывается только этот компонент, а не вся (тяжёлая) родительская таблица.
-export default function VirtualTableBody({ rows, colSpan, scrollRef, rowHeight = 40, overscan = 14 }) {
-  const count = rows.length
+//
+// Вместо готового массива `rows` можно передать `rowCount` + `renderRow(index)`: тогда
+// элементы создаются только для окна. Для таблиц «позиции × контрагенты» это разница
+// между сотнями тысяч JSX-ячеек на каждую перерисовку и несколькими сотнями.
+export default function VirtualTableBody({ rows, rowCount, renderRow, colSpan, scrollRef, rowHeight = 40, overscan = 14 }) {
+  const count = rows ? rows.length : (rowCount || 0)
   const tbodyRef = useRef(null)
   const heightsRef = useRef([])      // высота каждой строки: измеренная или оценочная
   const offsetsRef = useRef([0])     // префиксные суммы: offsets[i] — верх строки i
@@ -122,7 +126,9 @@ export default function VirtualTableBody({ rows, colSpan, scrollRef, rowHeight =
           <td colSpan={colSpan} style={{ height: padTop, padding: 0, border: 0 }} />
         </tr>
       )}
-      {rows.slice(start, end)}
+      {rows
+        ? rows.slice(start, end)
+        : Array.from({ length: Math.max(0, end - start) }, (_, k) => renderRow(start + k))}
       {padBottom > 0 && (
         <tr aria-hidden className="vt-spacer">
           <td colSpan={colSpan} style={{ height: padBottom, padding: 0, border: 0 }} />

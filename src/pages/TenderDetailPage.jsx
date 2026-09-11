@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo, useRef, memo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { supabase } from '../supabase'
+import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
 import { normName, supplyKey } from '../utils/supplyRateHelpers'
 import { reorderSiblings } from '../utils/appendixTree'
@@ -35,9 +36,12 @@ const PARTICIPANT_STATUS_LABEL = {
 }
 
 // task 261: числа выводим с округлением до сотых
+// Форматтер создаётся один раз: конструктор Intl.NumberFormat дорогой, а вызывается
+// на каждую числовую ячейку большой таблицы.
+const NUM_FMT = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
 const fmtNum = (v) => (v === null || v === undefined || v === '')
   ? '—'
-  : new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(v)
+  : NUM_FMT.format(v)
 
 // task 398: суммы стоимости материалов от снабжения — «1 234,50 ₽», пусто → «—»
 const MONEY_FMT = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -269,7 +273,16 @@ function pruneEmptySections(items) {
 // task 260/262: смета с многоуровневой группировкой/сворачиванием (как в Excel)
 // task 348/351: дерево документов ВОР — «Объединённый» + дочерние ВОРы.
 // Переиспользуется во вкладках «ВОР» и «Расценки снабжения».
-function DocTabsTree({ docNames, estimateItems, selected, onSelect }) {
+const DocTabsTree = memo(function DocTabsTree({ docNames, estimateItems, selected, onSelect }) {
+  // Счётчики позиций одним проходом (раньше — отдельный filter по всем позициям на каждый ВОР).
+  const countByDoc = useMemo(() => {
+    const m = new Map()
+    for (const it of estimateItems) {
+      const name = it.estimate_name || 'Основная смета'
+      m.set(name, (m.get(name) || 0) + 1)
+    }
+    return m
+  }, [estimateItems])
   if (!docNames || docNames.length === 0) return null
   return (
     <div className="estimate-doc-tabs" role="tablist" aria-label="Документы ВОР">
@@ -297,9 +310,7 @@ function DocTabsTree({ docNames, estimateItems, selected, onSelect }) {
       </button>
       <div className="estimate-doc-tabs-children">
         {docNames.map((name, i) => {
-          const count = estimateItems.filter(it =>
-            (it.estimate_name || 'Основная смета') === name
-          ).length
+          const count = countByDoc.get(name) || 0
           const isLast = i === docNames.length - 1
           return (
             <button
@@ -320,7 +331,7 @@ function DocTabsTree({ docNames, estimateItems, selected, onSelect }) {
       </div>
     </div>
   )
-}
+})
 
 const EstimateTable = memo(function EstimateTable({ items, collapsedSections, onToggleSection, onSwitchToDoc, supplyCosts, showSupply = false, hideWorkVolume = false }) {
   const scrollRef = useRef(null)
@@ -329,6 +340,8 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
   const midSpan = hideWorkVolume ? 4 : 5
   const lvlOf = makeLevelOf(items)
   const collapseStack = [] // активные свёрнутые заголовки: их уровни
+  // Фабрики строк, а не готовые <tr>: при виртуализации элементы создаются только
+  // для окна вокруг вьюпорта (на больших ВОР — десятки строк вместо тысяч).
   const rendered = []
   // task 347: иерархическая нумерация — работы 1, 2, 3…; материалы под ними
   // 1.1, 1.2, 1.3… Разделы/подразделы не считаются. Счётчики инкрементятся
@@ -352,17 +365,18 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
       const dkey = docDividerKey(it._docName)
       docHidden = collapsedSections.has(dkey)
       docHiddenKey = it._docName
-      rendered.push(
-        <tr key={`doc:${it._docName}`} className={`estimate-doc-divider-row${docHidden ? ' is-collapsed' : ''}`}>
+      const isDocHidden = docHidden
+      rendered.push(() => (
+        <tr key={`doc:${it._docName}`} className={`estimate-doc-divider-row${isDocHidden ? ' is-collapsed' : ''}`}>
           <td className="estimate-num">
             <button
               type="button"
               className="estimate-group-toggle estimate-doc-toggle"
               onClick={() => onToggleSection(dkey)}
-              title={docHidden ? 'Развернуть документ' : 'Свернуть документ'}
-              aria-expanded={!docHidden}
+              title={isDocHidden ? 'Развернуть документ' : 'Свернуть документ'}
+              aria-expanded={!isDocHidden}
             >
-              {docHidden ? '▶' : '▼'}
+              {isDocHidden ? '▶' : '▼'}
             </button>
           </td>
           <td colSpan={midSpan}>
@@ -389,7 +403,7 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
             </>
           )}
         </tr>
-      )
+      ))
       // Любые активные section-collapse сбрасываем на границе документа.
       collapseStack.length = 0
       continue
@@ -428,7 +442,7 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
     if (!hidden) {
       const indent = { paddingLeft: `${0.625 + L * 1.1}rem` }
       if (isSectionLike) {
-        rendered.push(
+        rendered.push(() => (
           <tr key={it.id || idx} className="estimate-section-row">
             <td className="estimate-num">
               {isHeader && (
@@ -453,7 +467,7 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
               </>
             )}
           </tr>
-        )
+        ))
       } else {
         // task 408/409: материал без ЦЕНЫ ЗА ЕД. от снабжения = нерасценён → жёлтая подсветка.
         // Опираемся на unitPrice (а не на итог): итог может быть null из-за отсутствия
@@ -462,7 +476,7 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
         // task 428: строка без наименования — сохранённая «пустая» строка ВОР.
         const isEmptyRow = isEmptyItem
         const rowClass = isEmptyRow ? 'estimate-empty-row' : (supplyMissing ? 'supply-row-missing' : undefined)
-        rendered.push(
+        rendered.push(() => (
           <tr key={it.id || idx} className={rowClass}>
             <td className="estimate-num">{displayNum}</td>
             <td>{it.code || '—'}</td>
@@ -483,7 +497,7 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
               </>
             )}
           </tr>
-        )
+        ))
       }
     }
     if (isHeader && collapsed && !hidden) collapseStack.push(L)
@@ -511,8 +525,8 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
           </tr>
         </thead>
         {virtualize
-          ? <VirtualTableBody rows={rendered} colSpan={totalCols} scrollRef={scrollRef} rowHeight={48} />
-          : <tbody>{rendered}</tbody>}
+          ? <VirtualTableBody rowCount={rendered.length} renderRow={(i) => rendered[i]()} colSpan={totalCols} scrollRef={scrollRef} rowHeight={48} />
+          : <tbody>{rendered.map((row) => row())}</tbody>}
         {showSupply && sc.grand > 0 && (
           <tfoot>
             <tr className="estimate-total-row">
@@ -786,22 +800,18 @@ function TenderDetailPage() {
 
   // task 259: загрузка сохранённой сметы тендера
   // task 366: paginated fetch to avoid PostgREST 1000-row default limit
+  // Страницы грузятся параллельно. Сортировка с тай-брейком по id обязательна:
+  // row_number уникален только внутри одного ВОРа, и при нескольких ВОРах порядок
+  // по нему одному неоднозначен — на границах страниц строки терялись/дублировались.
   const fetchEstimateItems = async () => {
     try {
-      const PAGE = 1000
-      let all = [], from = 0, done = false
-      while (!done) {
-        const { data, error } = await supabase
-          .from('tender_estimate_items')
-          .select('*')
-          .eq('tender_id', tenderId)
-          .order('row_number', { ascending: true })
-          .range(from, from + PAGE - 1)
-        if (error) throw error
-        all = all.concat(data || [])
-        if (!data || data.length < PAGE) done = true
-        else from += PAGE
-      }
+      const all = await fetchAllRowsParallel((from, to, withCount) => supabase
+        .from('tender_estimate_items')
+        .select('*', withCount ? { count: 'exact' } : undefined)
+        .eq('tender_id', tenderId)
+        .order('row_number', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to))
       setEstimateItems(all)
     } catch (err) {
       console.error('Ошибка загрузки сметы:', err.message)
@@ -816,19 +826,12 @@ function TenderDetailPage() {
       // ВОР (тысячи позиций) заметно больше — без пагинации загружалась только 1000,
       // из-за чего часть материалов оставалась без цены снабжения.
       // Тай-брейк по id — стабильный порядок между страницами.
-      const PAGE = 1000
-      const rows = []
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from('tender_vor_supply_rates')
-          .select('*')
-          .eq('tender_id', tenderId)
-          .order('id', { ascending: true })
-          .range(from, from + PAGE - 1)
-        if (error) throw error
-        if (data?.length) rows.push(...data)
-        if (!data || data.length < PAGE) break
-      }
+      const rows = await fetchAllRowsParallel((from, to, withCount) => supabase
+        .from('tender_vor_supply_rates')
+        .select('*', withCount ? { count: 'exact' } : undefined)
+        .eq('tender_id', tenderId)
+        .order('id', { ascending: true })
+        .range(from, to))
       setSupplyRates(rows)
       return rows
     } catch (err) {
@@ -1380,14 +1383,14 @@ function TenderDetailPage() {
   )
 
   const supplySectionKeys = useMemo(() => getHeaderKeys(supplyEstimate), [supplyEstimate])
-  const toggleSupplySection = (key) => {
+  const toggleSupplySection = useCallback((key) => {
     setSupplyCollapsed(prev => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
       return next
     })
-  }
+  }, [])
 
   // Сброс выбранного документа во вкладке снабжения, если он исчез.
   useEffect(() => {
@@ -1425,16 +1428,18 @@ function TenderDetailPage() {
   }, [docNames, selectedDocName])
 
   // task 262: ключи всех свёртываемых заголовков (учитывает группировку Excel)
-  const estimateSectionKeys = getHeaderKeys(currentEstimate)
+  const estimateSectionKeys = useMemo(() => getHeaderKeys(currentEstimate), [currentEstimate])
 
-  const toggleSection = (key) => {
+  // Стабильная ссылка: EstimateTable обёрнута в memo, а новая функция на каждый
+  // рендер страницы заставляла перестраивать всю таблицу ВОР при любом вводе.
+  const toggleSection = useCallback((key) => {
     setCollapsedSections(prev => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
       return next
     })
-  }
+  }, [])
   const collapseAllSections = () => setCollapsedSections(new Set(estimateSectionKeys))
   const expandAllSections = () => setCollapsedSections(new Set())
 

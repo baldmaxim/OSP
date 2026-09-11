@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "test:psdc": "node --test --test-concurrency=1 \"tests/psdc/*.test.mjs\"",
-    "bench:psdc": "node tests/psdc/perf.bench.mjs"
+    "bench:psdc": "node tests/psdc/perf.bench.mjs",
+    "test:tender": "node --test --test-concurrency=1 \"tests/tender/*.test.mjs\"",
+    "bench:tender": "node tests/tender/bench-ui.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.80.0",

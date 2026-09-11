@@ -11,13 +11,28 @@
 // (только реально неразличимые буквы); 4) выбросить всё, кроме латиницы/кириллицы/цифр/точки —
 // это единообразно удаляет ЛЮБОЙ символ диаметра, пробелы и пунктуацию на обеих сторонах.
 const NN_HOMOGLYPH = { а: 'a', в: 'b', е: 'e', ё: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x' }
-export const normName = (s) =>
-  String(s ?? '')
+const computeNormName = (s) =>
+  s
     .normalize('NFC')
     .toLowerCase()
     .replace(/(\d)[.,](\d)/g, '$1.$2')
     .replace(/[авеёкмнорстух]/g, (c) => NN_HOMOGLYPH[c])
     .replace(/[^a-zа-я0-9.]+/g, '')
+
+// Кэш: таблицы «Сравнение КП» и снабжения зовут нормализацию по нескольку раз на
+// каждую позицию при каждой перерисовке, а функция чистая и дорогая (NFC + 3 regex).
+const NN_CACHE = new Map()
+const NN_CACHE_LIMIT = 100000
+export const normName = (s) => {
+  const key = String(s ?? '')
+  let value = NN_CACHE.get(key)
+  if (value === undefined) {
+    value = computeNormName(key)
+    if (NN_CACHE.size >= NN_CACHE_LIMIT) NN_CACHE.clear()
+    NN_CACHE.set(key, value)
+  }
+  return value
+}
 
 // task 398: ключ расценки снабжения — (ВОР-документ ∣ наименование материала, нормализованное).
 export const supplyKey = (estimateName, name) =>
