@@ -2171,7 +2171,7 @@ function CounterpartiesPage() {
                     type="button"
                     className="btn-secondary cp-detail-edit"
                     onClick={() => { const cp = detailCp; setDetailCp(null); handleEditCounterparty(cp) }}
-                  >Редактировать контрагента</button>
+                  >{isPhone ? 'Редактировать' : 'Редактировать контрагента'}</button>
                 )}
                 <button className="modal-close" onClick={() => setDetailCp(null)} aria-label="Закрыть">×</button>
               </div>
@@ -2263,6 +2263,37 @@ function CounterpartiesPage() {
                   <div className="tender-history-loading">Загрузка истории…</div>
                 ) : !tenderHistoryMap[detailCp.id] || tenderHistoryMap[detailCp.id].length === 0 ? (
                   <div className="tender-history-empty">Контрагент пока не участвовал в тендерах.</div>
+                ) : isPhone ? (
+                  // Таблица с фиксированными колонками на телефоне не помещалась:
+                  // статус и даты (nowrap) выдавливали описание в столбец по слову.
+                  <ul className="cp-history-cards">
+                    {tenderHistoryMap[detailCp.id].map((h) => {
+                      const status = h.status || 'request_sent'
+                      const fmt = (iso) => iso
+                        ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                        : '—'
+                      return (
+                        <li key={h.tender_id}>
+                          <a href={`/tenders/${h.tender_id}`} className="cp-history-card">
+                            <div className="cp-history-card-head">
+                              <span className="cp-history-card-obj">{h.object_name || '—'}</span>
+                              <span className={`tender-history-status status-${status}`}>
+                                <span className="tender-history-status-dot" aria-hidden />
+                                {TENDER_STATUS_LABEL[status] || status}
+                              </span>
+                            </div>
+                            <div className="cp-history-card-desc">{h.work_description || '—'}</div>
+                            <div className="cp-history-card-foot">
+                              <span>{(h.tender_start_date || h.tender_end_date)
+                                ? `${fmt(h.tender_start_date)} → ${fmt(h.tender_end_date)}`
+                                : 'Сроки не указаны'}</span>
+                              <span className="cp-history-card-open">Открыть ›</span>
+                            </div>
+                          </a>
+                        </li>
+                      )
+                    })}
+                  </ul>
                 ) : (
                   <div className="tender-history-table-wrap">
                     <table className="tender-history-table">

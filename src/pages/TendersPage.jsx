@@ -1,6 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { fetchAllRowsParallel } from '../utils/fetchAllRows'
+import { saveAs } from 'file-saver'
+import { buildTendersRegistryRows, buildTendersRegistryWorkbook } from '../utils/tendersRegistryExport'
+import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
 import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
 import TgPublishToggle from '../components/TgPublishToggle'
@@ -132,6 +136,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [packageDocsModalTenderId, setPackageDocsModalTenderId] = useState(null)
   const [packageDocCounts, setPackageDocCounts] = useState({}) // tenderId → число документов
   const [loading, setLoading] = useState(true)
+  const [exportingRegistry, setExportingRegistry] = useState(false)
   const [showModal, setShowModal] = useState(false)
   // task 212: 'all' | <status> | 'template' | 'deleted'.
   // Вкладку «Шаблон письма» не восстанавливаем — это режим редактирования, а не
@@ -213,6 +218,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [objectFilter, setObjectFilter] = useState(() => Array.isArray(savedFilters.objectFilter) ? savedFilters.objectFilter : [])
   const [responsibleFilter, setResponsibleFilter] = useState(() => Array.isArray(savedFilters.responsibleFilter) ? savedFilters.responsibleFilter : [])
   const [statusFilter, setStatusFilter] = useState(() => Array.isArray(savedFilters.statusFilter) ? savedFilters.statusFilter : [])
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState(() => typeof savedFilters.searchQuery === 'string' ? savedFilters.searchQuery : '')
   // Компактный вид: скрывает столбцы «ВОРы и РД», «План затрат», «Тендер на материалы», «Сводная КП»
   // и сохраняется в localStorage отдельно для каждого представления (construction/warranty/materials).
@@ -334,45 +340,51 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   useEffect(() => {
-    // Загружаем всё параллельно
+    // Сразу — только то, что нужно для таблицы. Счётчики КП и документов идут после
+    // тендеров и только по ним (fetchTenders), а справочник контрагентов (тысячи
+    // строк) — при первом открытии окна «Добавить контрагента».
     Promise.all([
       fetchTenders(),
       fetchObjects(),
-      fetchCounterparties(),
       fetchResponsibleContacts(),
-      fetchTenderProposalCounts()
     ])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [department, tenderType])
 
-  // Сводный запрос: считаем для каждого тендера сколько контрагентов и сколько предоставили КП.
-  // Пагинация обязательна: Supabase по умолчанию отдаёт максимум 1000 строк, а выборка идёт по
-  // ВСЕЙ таблице участников. Без неё знаменатель занижался («0/8» вместо «0/10»), а у тендеров,
-  // чьи строки уходили за лимит, бейдж пропадал совсем.
-  // .order('id') обязателен: без стабильного ключа порядок = порядок кучи Postgres, а UPDATE
-  // статуса физически переносит строку в конец — счётчик «прыгал» после смены статуса.
-  const fetchTenderProposalCounts = async () => {
+  // id тендеров текущего реестра — для счётчиков, которые обновляются после действий.
+  const tenderIdsRef = useRef([])
+
+  // Сводка по тендерам: сколько контрагентов и сколько предоставили КП.
+  // Раньше читалась ВСЯ таблица участников всех направлений последовательными страницами
+  // по 1000 строк. Теперь — только участники тендеров этого реестра, порциями по 150 id
+  // (длинный IN-список в URL роняет запрос), порции параллельно.
+  // ids — пересчитать только эти тендеры (после смены статуса участника и т.п.).
+  const fetchTenderProposalCounts = async (ids = null) => {
+    const targetIds = ids || tenderIdsRef.current
+    if (!targetIds.length) {
+      if (!ids) setTenderProposalCounts({})
+      return
+    }
     try {
-      const PAGE = 1000
-      const rows = []
-      for (let from = 0; ; from += PAGE) {
+      const chunks = []
+      for (let i = 0; i < targetIds.length; i += 150) chunks.push(targetIds.slice(i, i + 150))
+      const parts = await Promise.all(chunks.map(async (chunk) => {
         const { data, error } = await supabase
           .from('tender_counterparties')
           .select('tender_id, status')
-          .order('id', { ascending: true })
-          .range(from, from + PAGE - 1)
+          .in('tender_id', chunk)
+          .limit(10000)
         if (error) throw error
-        if (data?.length) rows.push(...data)
-        if (!data || data.length < PAGE) break
+        return data || []
+      }))
+      const map = Object.fromEntries(targetIds.map(id => [id, { total: 0, proposalProvided: 0 }]))
+      for (const row of parts.flat()) {
+        const entry = map[row.tender_id]
+        if (!entry) continue
+        entry.total += 1
+        if (row.status === 'proposal_provided') entry.proposalProvided += 1
       }
-      const map = {}
-      rows.forEach(row => {
-        const t = row.tender_id
-        if (!map[t]) map[t] = { total: 0, proposalProvided: 0 }
-        map[t].total += 1
-        if (row.status === 'proposal_provided') map[t].proposalProvided += 1
-      })
-      setTenderProposalCounts(map)
+      setTenderProposalCounts(prev => (ids ? { ...prev, ...map } : map))
     } catch (err) {
       console.error('Ошибка загрузки счётчиков КП:', err.message)
     }
@@ -381,13 +393,26 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const fetchTenders = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('tenders')
-        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)')
-        .eq('tender_type', tenderType)
-        .order('start_date', { ascending: false })
-
-      if (error) throw error
+      // Направление и объекты руководителя фильтрует база, а не браузер: раньше
+      // грузились тендеры всех направлений (со всеми встроенными связями), и
+      // лишнее отбрасывалось уже после скачивания. Страницы — параллельно, с
+      // тай-брейком по id (иначе больше 1000 тендеров молча обрезались бы).
+      const data = await fetchAllRowsParallel((from, to, withCount) => {
+        let query = supabase
+          .from('tenders')
+          .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)', withCount ? { count: 'exact' } : undefined)
+          .eq('tender_type', tenderType)
+        if (!isMaterialsView) {
+          query = dept.key === 'construction'
+            ? query.or('department.eq.construction,department.is.null')
+            : query.eq('department', dept.key)
+        }
+        if (scopedObjectIds.length > 0) query = query.in('object_id', scopedObjectIds)
+        return query
+          .order('start_date', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to)
+      })
       // Reverse FK tenders!parent_tender_id возвращается массивом (UNIQUE на parent_tender_id нет).
       // Сводим к одному объекту или null, чтобы дальше обращаться как tender.materials_tender.status.
       const normalized = (data || []).map(t => ({
@@ -449,7 +474,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       }
 
       setTenders(filteredTenders)
-      fetchVorDocCounts(filteredTenders.map(t => t.id))
+      tenderIdsRef.current = filteredTenders.map(t => t.id)
+      fetchVorDocCounts(tenderIdsRef.current)
+      fetchTenderProposalCounts()
     } catch (error) {
       console.error('Ошибка загрузки тендеров:', error.message)
     } finally {
@@ -462,16 +489,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const fetchVorDocCounts = async (tenderIds) => {
     if (!tenderIds || tenderIds.length === 0) { setVorDocCounts({}); setPackageDocCounts({}); return }
     try {
-      const { data, error } = await supabase
-        .from('s3_documents')
-        .select('owner_id, doc_category')
-        .eq('owner_type', 'tender')
-        .in('doc_category', ['vor', 'tender_package'])
-        .in('owner_id', tenderIds)
-      if (error) throw error
+      // Порции по 150 id, параллельно: сотни UUID одним IN-списком в URL роняют запрос.
+      const chunks = []
+      for (let i = 0; i < tenderIds.length; i += 150) chunks.push(tenderIds.slice(i, i + 150))
+      const parts = await Promise.all(chunks.map(async (chunk) => {
+        const { data, error } = await supabase
+          .from('s3_documents')
+          .select('owner_id, doc_category')
+          .eq('owner_type', 'tender')
+          .in('doc_category', ['vor', 'tender_package'])
+          .in('owner_id', chunk)
+          .limit(10000)
+        if (error) throw error
+        return data || []
+      }))
       const vor = {}
       const pkg = {}
-      for (const row of data || []) {
+      for (const row of parts.flat()) {
         const bucket = row.doc_category === 'tender_package' ? pkg : vor
         bucket[row.owner_id] = (bucket[row.owner_id] || 0) + 1
       }
@@ -520,31 +554,38 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
+  // Справочник активных контрагентов нужен только окну «Добавить контрагента» —
+  // грузим его при первом открытии окна, а не вместе с реестром (тысячи строк).
+  const [counterpartiesState, setCounterpartiesState] = useState('idle') // idle | loading | loaded | error
   const fetchCounterparties = async () => {
+    setCounterpartiesState('loading')
     try {
       // Постранично: PostgREST молча отдаёт максимум 1000 строк, а активных контрагентов
       // уже больше — без пагинации обрезался хвост сортировки по названию (буква «Ф» и далее).
       // Тай-брейк по id обязателен: имена неуникальны, иначе страницы «плывут».
-      const PAGE = 1000
-      const rows = []
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from('counterparties')
-          .select('*')
-          .eq('status', 'active')
-          .is('deleted_at', null)   // удалённых не предлагаем к добавлению в тендер
-          .order('name', { ascending: true })
-          .order('id', { ascending: true })
-          .range(from, from + PAGE - 1)
-        if (error) throw error
-        if (data?.length) rows.push(...data)
-        if (!data || data.length < PAGE) break
-      }
+      // Только поля, которые показывает и ищет окно выбора.
+      const rows = await fetchAllRowsParallel((from, to, withCount) => supabase
+        .from('counterparties')
+        .select('id, name, work_type, inn', withCount ? { count: 'exact' } : undefined)
+        .eq('status', 'active')
+        .is('deleted_at', null)   // удалённых не предлагаем к добавлению в тендер
+        .order('name', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to))
       setCounterparties(rows)
+      setCounterpartiesState('loaded')
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error.message)
+      setCounterpartiesState('error')
     }
   }
+
+  useEffect(() => {
+    if (showAddCounterpartyModal && (counterpartiesState === 'idle' || counterpartiesState === 'error')) {
+      fetchCounterparties()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAddCounterpartyModal])
 
   const ROLE_LABELS_MAP = {
     admin: 'Администратор',
@@ -694,7 +735,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       }
 
       await fetchTenderCounterparties(selectedTenderForCounterparty)
-      fetchTenderProposalCounts()
+      fetchTenderProposalCounts([selectedTenderForCounterparty])
       setShowAddCounterpartyModal(false)
       setSelectedCounterpartyIds([])
       setCounterpartySearchQuery('')
@@ -747,7 +788,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         )
       }))
       // Перепосчитываем счётчик «КП предоставлено» для этого тендера
-      fetchTenderProposalCounts()
+      fetchTenderProposalCounts([tenderId])
     } catch (error) {
       console.error('Ошибка обновления статуса:', error.message)
       alert('Ошибка обновления статуса: ' + error.message)
@@ -1185,7 +1226,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       }
 
       await fetchTenderCounterparties(tenderId)
-      fetchTenderProposalCounts()
+      fetchTenderProposalCounts([tenderId])
     } catch (error) {
       console.error('Ошибка удаления контрагента:', error.message)
       alert('Ошибка удаления: ' + error.message)
@@ -2078,6 +2119,64 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const today = new Date().toISOString().split('T')[0]
   const isOverdue = (tender) => tender.tender_end_date && tender.tender_end_date < today && !isCompletedStatus(tender.status)
 
+  // Выгрузка ВСЕГО реестра направления (без удалённых) в текущей сортировке.
+  // Шифры РД хранятся отдельной таблицей — подтягиваем их в момент выгрузки.
+  const handleExportRegistry = async () => {
+    setExportingRegistry(true)
+    try {
+      const list = [...tenders.filter(t => !t.deleted_at)].sort((a, b) => {
+        let av, bv
+        if (sortField === 'status') {
+          av = statusOrder[a.status] ?? 999
+          bv = statusOrder[b.status] ?? 999
+        } else {
+          av = a[sortField] || ''
+          bv = b[sortField] || ''
+        }
+        if (av === bv) return 0
+        if (av === '' || av === null || av === undefined) return 1
+        if (bv === '' || bv === null || bv === undefined) return -1
+        return sortOrder === 'asc' ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1)
+      })
+      const rdTenderIds = [...new Set(list.flatMap(t => [t.id, t.parent_tender_id]).filter(Boolean))]
+      const chunks = []
+      for (let i = 0; i < rdTenderIds.length; i += 150) chunks.push(rdTenderIds.slice(i, i + 150))
+      const parts = await Promise.all(chunks.map(async (chunk) => {
+        const { data, error } = await supabase
+          .from('tender_rd_codes')
+          .select('tender_id, code, title, sort_order')
+          .in('tender_id', chunk)
+          .limit(10000)
+        if (error) throw error
+        return data || []
+      }))
+      const rdCodesByTender = new Map()
+      for (const code of parts.flat()) {
+        if (!rdCodesByTender.has(code.tender_id)) rdCodesByTender.set(code.tender_id, [])
+        rdCodesByTender.get(code.tender_id).push(code)
+      }
+      const { headers, rows } = buildTendersRegistryRows(list, {
+        rdCodesByTender,
+        proposalCounts: tenderProposalCounts,
+        docCounts: { vor: vorDocCounts, package: packageDocCounts },
+        options: { isMaterialsView, withConstructionPhases: department === 'construction', hideNotes },
+      })
+      const bytes = await buildTendersRegistryWorkbook({ headers, rows })
+      const fileTitle = pageTitle.replace(/[\\/:*?"<>|]+/g, ' ').trim()
+      saveAs(
+        new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        `Реестр — ${fileTitle} — ${new Date().toLocaleDateString('ru-RU')}.xlsx`,
+      )
+    } catch (err) {
+      console.error('Ошибка выгрузки реестра тендеров:', err)
+      alert(err?.code === '42P01'
+        ? 'Не найдена таблица шифров РД: примените миграцию 20260901_tender_rd_codes.'
+        : 'Не удалось выгрузить реестр: ' + (err?.message || err))
+    } finally {
+      setExportingRegistry(false)
+    }
+  }
+
   // Уникальные объекты из тендеров для фильтра
   const tenderObjectIds = [...new Set(tenders.map(t => t.object_id).filter(Boolean))]
   const tenderObjects = objects.filter(o => tenderObjectIds.includes(o.id))
@@ -2090,7 +2189,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           <IconTile tone={headerTone} className="page-icon-tile"><HeaderIcon size={17} /></IconTile>
           {pageTitle}
         </h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div className="tp-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           {/* Путь к общей папке всего раздела тендеров — один на все направления
               (app_settings). Путь к папке конкретного тендера — в его строке. */}
           <RootFolderPathButton
@@ -2177,7 +2276,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           )}
           {/* «Шаблон письма», «Структура хранения» и предпросмотр напоминания
               переехали на вкладку «Документы»: шапка была перегружена. */}
-          {!isMaterialsView && (
+          <button
+            type="button"
+            className="btn-view-toggle"
+            onClick={handleExportRegistry}
+            disabled={exportingRegistry || tenders.length === 0}
+            title="Выгрузить весь реестр в Excel, включая шифры РД"
+          >
+            <IconFileSpreadsheet size={15} />
+            <span>{exportingRegistry ? 'Выгрузка…' : 'Excel'}</span>
+          </button>
+          {/* На телефоне таблицы нет — переключать столбцы нечего. */}
+          {!isMaterialsView && !isPhone && (
             <button
               type="button"
               className={`btn-view-toggle ${compactView ? 'active' : ''}`}
@@ -2254,7 +2364,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
       {/* Фильтры и таблица (скрываем на вкладке шаблона) */}
       {activeTab !== 'template' && (<>
-      <div style={{ padding: '0.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+      <div
+        className={`tp-filters${isPhone && !mobileFiltersOpen ? ' is-collapsed' : ''}`}
+        style={{ padding: '0.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}
+      >
+        {isPhone && (
+          <button
+            type="button"
+            className={`tp-filters-toggle${mobileFiltersOpen ? ' is-open' : ''}`}
+            onClick={() => setMobileFiltersOpen(o => !o)}
+            aria-expanded={mobileFiltersOpen}
+          >
+            Фильтры
+            {(objectFilter.length + responsibleFilter.length + statusFilter.length) > 0 && (
+              <span className="tp-filters-count">{objectFilter.length + responsibleFilter.length + statusFilter.length}</span>
+            )}
+            <span className="tp-filters-chevron" aria-hidden>▾</span>
+          </button>
+        )}
         <div className="tenders-search-wrap" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 240px', minWidth: '200px', maxWidth: '360px' }}>
           <input
             type="search"
@@ -2350,13 +2477,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         ) : (
           <div className="mcard-list">
             {sortedTenders.map((tender) => (
-              <Link
+              <div
                 key={tender.id}
-                to={`/tenders/${tender.id}`}
-                className={`mcard is-tappable${isOverdue(tender) ? ' mcard-overdue' : ''}`}
+                className={`mcard tp-mcard${isOverdue(tender) ? ' mcard-overdue' : ''}`}
               >
+                {/* Ссылка — только информационная часть. Кнопки пути к папке и
+                    отметки вынесены из неё: внутри ссылки их тапы то уводили
+                    со страницы, то глушили переход в тендер. */}
+                <Link to={`/tenders/${tender.id}`} className="tp-mcard-main">
                 <div className="mcard-head">
-                  <span className="mcard-num">№{tender.public_tender_number ?? '—'}</span>
+                  <span className="mcard-num">Тендер №{tender.public_tender_number ?? '—'}</span>
                   {tender.status && (
                     <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ padding: '0.1875rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
                       {tender.status}
@@ -2365,19 +2495,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 </div>
                 <div className="mcard-title">{tenderObjectName(tender)}</div>
                 {tender.work_description && (
-                  <div className="mcard-desc">{tender.work_description}</div>
+                  <div className="mcard-desc tp-mcard-desc">{tender.work_description}</div>
                 )}
-                <FolderPathCell
-                  value={tender.folder_path}
-                  canEdit={canEditTenders}
-                  onSave={(v) => handleSaveFolderPath(tender.id, v)}
-                />
-                <div>
-                  <TgPublishToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleTgPublished} />
-                </div>
-                <div>
-                  <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} />
-                </div>
                 <div className="mcard-rows">
                   <div className="mcard-row">
                     <span className="mcard-label">Ответственный</span>
@@ -2389,17 +2508,31 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       {formatDateRange(tender.tender_start_date, tender.tender_end_date)}
                     </span>
                   </div>
+                  {tenderProposalCounts[tender.id]?.total > 0 && (
+                    <div className="mcard-row">
+                      <span className="mcard-label">КП</span>
+                      <span className="mcard-value">
+                        {tenderProposalCounts[tender.id].proposalProvided} из {tenderProposalCounts[tender.id].total} участников
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div className="mcard-foot">
-                  {(() => {
-                    const c = tenderProposalCounts[tender.id]
-                    return c && c.total > 0
-                      ? <span className="mcard-chip">{c.proposalProvided}/{c.total} КП</span>
-                      : <span />
-                  })()}
-                  <span className="mcard-open">Открыть ›</span>
+                </Link>
+                <div className="tp-mcard-extra">
+                  <TgPublishToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleTgPublished} />
+                  <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} />
+                  {(tender.folder_path || canEditTenders) && (
+                    <FolderPathCell
+                      value={tender.folder_path}
+                      canEdit={canEditTenders}
+                      onSave={(v) => handleSaveFolderPath(tender.id, v)}
+                    />
+                  )}
                 </div>
-              </Link>
+                <Link to={`/tenders/${tender.id}`} className="tp-mcard-open">
+                  Открыть тендер <span aria-hidden>›</span>
+                </Link>
+              </div>
             ))}
           </div>
         )
@@ -4154,7 +4287,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 </div>
 
                 {/* Таблица контрагентов */}
-                {counterparties.length === 0 ? (
+                {counterpartiesState === 'loading' || counterpartiesState === 'idle' ? (
+                  <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
+                    Загрузка контрагентов…
+                  </p>
+                ) : counterpartiesState === 'error' ? (
+                  <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
+                    Не удалось загрузить контрагентов. Закройте окно и откройте его снова.
+                  </p>
+                ) : counterparties.length === 0 ? (
                   <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '3rem' }}>
                     Нет активных контрагентов
                   </p>
