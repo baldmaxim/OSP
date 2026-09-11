@@ -42,13 +42,20 @@ const EMPTY_FORM = {
   ds_type: '',
 }
 
-// Этапы заявки: сверка с договором → работа → готово (миграция 20260823).
+// Этапы заявки: сверка с договором → итог проверки → работа → готово
+// (миграции 20260823, 20260907).
 const STATUS_OPTIONS = [
   { value: 'contract_check', label: 'Проверка по договору', className: 'status-contract-check' },
+  { value: 'check_result', label: 'Итог проверки', className: 'status-check-result' },
   { value: 'in_work', label: 'В работе', className: 'status-in-work' },
   { value: 'completed', label: 'Завершено', className: 'status-completed' },
 ]
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(o => [o.value, o.label]))
+
+// Категории файлов заявки, у которых свой блок в колонке «Документы»:
+// final — итоговые документы, check_report — отчёт по документам с этапа
+// «Итог проверки». Всё остальное — рабочие файлы.
+const SPECIAL_DOC_CATEGORIES = new Set(['final', 'check_report'])
 
 // Результат сверки заявки с договором (миграция 20260824). Из интерфейса убран:
 // этап «Проверка по договору» и так виден статусом заявки, а отдельный признак
@@ -83,6 +90,7 @@ const MATERIAL_CLASS = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.
 const TABS = [
   { key: 'all', label: 'Все заявки' },
   { key: 'contract_check', label: 'Проверка по договору' },
+  { key: 'check_result', label: 'Итог проверки' },
   { key: 'in_work', label: 'В работе' },
   { key: 'completed', label: 'Завершено' },
   { key: 'deleted', label: 'Удаленные' },
@@ -375,6 +383,7 @@ function DcRequestsPage() {
 
   const [searchQuery, setSearchQuery] = useState('')
   // Фильтры в тулбаре: множественный выбор (пустой массив = фильтр не применён).
+  const [filterStatuses, setFilterStatuses] = useState([])
   const [filterObjectIds, setFilterObjectIds] = useState([])
   const [filterCounterpartyIds, setFilterCounterpartyIds] = useState([])
   const [filterResponsibleIds, setFilterResponsibleIds] = useState([])
@@ -1097,11 +1106,14 @@ function DcRequestsPage() {
 
   const isDeletedTab = activeTab === 'deleted'
 
-  // Фильтрация: таб (soft-delete) → объект → контрагент → ответственный → поиск.
+  // Фильтрация: таб (soft-delete) → статусы → объект → контрагент → ответственный → поиск.
+  // Выгрузка в Excel берёт этот же список, поэтому при нескольких выбранных
+  // статусах в файл попадают заявки всех этих статусов.
   const filtered = requests
     .filter(r => isDeletedTab
       ? r.deleted_at != null
       : (r.deleted_at == null && (activeTab === 'all' || (r.status || 'in_work') === activeTab)))
+    .filter(r => filterStatuses.length === 0 || filterStatuses.includes(r.status || 'in_work'))
     .filter(r => filterObjectIds.length === 0 || filterObjectIds.includes(r.object_id))
     .filter(r => filterCounterpartyIds.length === 0 || filterCounterpartyIds.includes(r.counterparty_id))
     .filter(r => filterResponsibleIds.length === 0 || filterResponsibleIds.includes(r.responsible_contact_id))
@@ -1119,6 +1131,7 @@ function DcRequestsPage() {
   const counts = {
     all: requests.filter(r => r.deleted_at == null).length,
     contract_check: requests.filter(r => r.deleted_at == null && r.status === 'contract_check').length,
+    check_result: requests.filter(r => r.deleted_at == null && r.status === 'check_result').length,
     in_work: requests.filter(r => r.deleted_at == null && (r.status || 'in_work') === 'in_work').length,
     completed: requests.filter(r => r.deleted_at == null && r.status === 'completed').length,
     deleted: requests.filter(r => r.deleted_at != null).length,
@@ -1173,8 +1186,9 @@ function DcRequestsPage() {
     }
     const rows = filtered.map((req, idx) => {
       const allDocs = docsByReq.get(req.id) || []
-      const generalCount = allDocs.filter(d => d.doc_category !== 'final').length
+      const generalCount = allDocs.filter(d => !SPECIAL_DOC_CATEGORIES.has(d.doc_category)).length
       const finalCount = allDocs.filter(d => d.doc_category === 'final').length
+      const reportCount = allDocs.filter(d => d.doc_category === 'check_report').length
       const tasks = req.dc_request_tasks || []
       const done = tasks.filter(t => t.is_completed).length
       const before = req.amount_before
@@ -1185,6 +1199,7 @@ function DcRequestsPage() {
         'Объект': req.objects?.name || '',
         'Контрагент': req.counterparties?.name || '',
         'Материал': MATERIAL_LABEL[req.material_type] || '',
+        'Тип ДС': DS_TYPE_LABEL[req.ds_type] || '',
         '№ ДС': req.ds_number || '',
         'Описание ДС': req.works_description || '',
         'Было подано, ₽ (с НДС 22%)': before != null ? before : '',
@@ -1198,20 +1213,46 @@ function DcRequestsPage() {
         'Срок согласования': formatShortDate(req.expected_approval_date),
         'Задачи': tasks.length ? `${done}/${tasks.length}` : '',
         'Документы': generalCount || '',
+        'Отчёт по документам': reportCount || '',
         'Итоговые документы': finalCount || '',
+        'Путь к папке': req.folder_path || '',
         'Создал': req.created_by_name || '',
         'Создано': formatShortDate(req.created_at),
       }
     })
     const ws = XLSX.utils.json_to_sheet(rows)
     ws['!cols'] = [
-      { wch: 5 }, { wch: 24 }, { wch: 24 }, { wch: 20 }, { wch: 16 },
+      { wch: 5 }, { wch: 24 }, { wch: 24 }, { wch: 20 }, { wch: 22 }, { wch: 16 },
       { wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 14 },
       { wch: 22 }, { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 16 },
-      { wch: 22 }, { wch: 12 },
+      { wch: 16 }, { wch: 16 }, { wch: 40 }, { wch: 22 }, { wch: 12 },
     ]
+    // Второй лист — задачи и ответы по тем же заявкам: в основной строке для
+    // них только счётчик, а полный текст нужен, чтобы выгрузка была полной.
+    const taskRows = []
+    filtered.forEach((req, idx) => {
+      const tasks = [...(req.dc_request_tasks || [])]
+        .sort((a, b) => (a.order_number ?? 0) - (b.order_number ?? 0))
+      tasks.forEach((t) => {
+        taskRows.push({
+          '№ заявки': idx + 1,
+          'Объект': req.objects?.name || '',
+          '№ ДС': req.ds_number || '',
+          'Статус заявки': STATUS_LABEL[req.status || 'in_work'] || '',
+          'Задача': t.task_text || '',
+          'Ответ': t.response_text || '',
+          'Выполнено': t.is_completed ? 'Да' : 'Нет',
+          'Ответил': t.responded_by_name || '',
+        })
+      })
+    })
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Заявки на ДС')
+    if (taskRows.length > 0) {
+      const wsTasks = XLSX.utils.json_to_sheet(taskRows)
+      wsTasks['!cols'] = [{ wch: 9 }, { wch: 24 }, { wch: 14 }, { wch: 20 }, { wch: 50 }, { wch: 50 }, { wch: 10 }, { wch: 22 }]
+      XLSX.utils.book_append_sheet(wb, wsTasks, 'Задачи')
+    }
     const today = formatShortDate(new Date().toISOString()).replace(/\./g, '-')
     XLSX.writeFile(wb, `Заявки_на_ДС_${today}.xlsx`)
   }
@@ -1357,7 +1398,11 @@ function DcRequestsPage() {
           <button
             key={tab.key}
             className={`status-tab ${activeTab === tab.key ? 'active' : ''} ${tab.key === 'deleted' ? 'tab-deleted' : ''}`}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => {
+              setActiveTab(tab.key)
+              // Вкладка статуса сама задаёт статус — мультифильтр с ней конфликтует.
+              if (tab.key !== 'all') setFilterStatuses([])
+            }}
           >
             {tab.label}
             <span className="tab-count">{counts[tab.key]}</span>
@@ -1373,6 +1418,23 @@ function DcRequestsPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
+        {/* Фильтр по нескольким статусам сразу. На вкладке конкретного статуса
+            он бы только сужал до нуля, поэтому выбор статусов переводит на «Все». */}
+        {!isDeletedTab && (
+          <div className={`dcr-filter-drop${filterStatuses.length ? ' is-active' : ''}`}>
+            <FilterDropdown
+              label=""
+              multiple
+              allLabel="Все статусы"
+              value={filterStatuses}
+              onChange={(next) => {
+                setFilterStatuses(next)
+                if (next.length > 0 && activeTab !== 'all') setActiveTab('all')
+              }}
+              options={STATUS_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+            />
+          </div>
+        )}
         <div className={`dcr-filter-drop${filterObjectIds.length ? ' is-active' : ''}`}>
           <FilterDropdown
             label=""
@@ -1414,11 +1476,11 @@ function DcRequestsPage() {
             disabled={responsibleFilterOptions.length === 0}
           />
         </div>
-        {(filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0) && (
+        {(filterStatuses.length > 0 || filterObjectIds.length > 0 || filterCounterpartyIds.length > 0 || filterResponsibleIds.length > 0) && (
           <button
             type="button"
             className="dcr-filter-clear"
-            onClick={() => { setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]) }}
+            onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]) }}
             title="Сбросить фильтры"
           >×</button>
         )}
@@ -1565,8 +1627,12 @@ function DcRequestsPage() {
 
                   const docs = docsByReq.get(req.id) || []
                   // task 370: рабочие vs итоговые документы.
-                  const generalDocs = docs.filter(d => d.doc_category !== 'final')
+                  const generalDocs = docs.filter(d => !SPECIAL_DOC_CATEGORIES.has(d.doc_category))
                   const finalDocs = docs.filter(d => d.doc_category === 'final')
+                  const reportDocs = docs.filter(d => d.doc_category === 'check_report')
+                  // Блок отчёта показываем с этапа «Итог проверки» и дальше, а также
+                  // всегда, если отчёт уже приложен.
+                  const showReport = reportDocs.length > 0 || (canEditDc && currentStatus !== 'contract_check')
                   const docsOpen = expandedDocs.has(req.id)
 
                   // task 370: разница сумм («Было подано» − «Утверждено»). >0 → удешевление.
@@ -1887,6 +1953,32 @@ function DcRequestsPage() {
                             >+ Документ</button>
                           )}
                         </div>
+
+                        {/* Отчёт по документам — результат этапа «Итог проверки». */}
+                        {showReport && (
+                          <div className={`dcr-final-docs dcr-report-docs${reportDocs.length > 0 ? ' has-final' : ''}`}>
+                            <div className="dcr-final-docs-title">
+                              <IconFileSpreadsheet size={12} />
+                              Отчёт по документам
+                              {reportDocs.length > 0 && (
+                                <span className="dcr-final-docs-count">{reportDocs.length}</span>
+                              )}
+                            </div>
+                            {reportDocs.length > 0 && (
+                              <div className="dcr-doc-chips">
+                                {reportDocs.map(renderDocChip)}
+                              </div>
+                            )}
+                            {canEditDc && !isDeletedTab && (
+                              <button
+                                type="button"
+                                className="dcr-doc-add dcr-doc-add-final"
+                                onClick={() => handleDocPick(req.id, 'check_report')}
+                                title="Приложить отчёт по проверке документов"
+                              >+ Отчёт</button>
+                            )}
+                          </div>
+                        )}
 
                         {/* task 370: итоговые документы — отдельная секция,
                             подсвечивается при наличии файлов. */}
@@ -2557,7 +2649,9 @@ function DcRequestsPage() {
         >
           <div className="modal dcr-doc-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{docUpload.category === 'final' ? 'Загрузка итогового документа' : 'Загрузка документа'}</h3>
+              <h3>{docUpload.category === 'final'
+                ? 'Загрузка итогового документа'
+                : docUpload.category === 'check_report' ? 'Загрузка отчёта по документам' : 'Загрузка документа'}</h3>
               <button
                 className="modal-close"
                 onClick={() => !docUploadBusy && setDocUpload(null)}
