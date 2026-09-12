@@ -70,6 +70,24 @@ export function RoleProvider({ children }) {
   // Динамический справочник ролей из БД (таблица roles)
   const [availableRoles, setAvailableRoles] = useState([])
 
+  // ── Режим «посмотреть глазами роли» (только для администратора) ──────────
+  // Администратору нужно проверять, что видит инженер, юрист или подрядчик, не
+  // заводя себе отдельные учётки. Храним в sessionStorage: режим переживает
+  // перезагрузку страницы (иначе не посмотреть, что при входе видит роль), но
+  // не тянется в другие вкладки и не остаётся навсегда.
+  //
+  // ВАЖНО: это предпросмотр ИНТЕРФЕЙСА. Запросы по-прежнему идут под реальным
+  // пользователем, поэтому ограничения самой базы (RLS) остаются администраторскими:
+  // режим показывает меню, разделы и кнопки роли, а не её доступ к строкам БД.
+  const [preview, setPreview] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('rolePreview')
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })
+
   const fetchAvailableRoles = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -215,6 +233,31 @@ export function RoleProvider({ children }) {
     }
   }, [fetchPermissions, denyAccess])
 
+  // Организация подрядчика берётся ТОЛЬКО из базы: user_roles.counterparty_id —
+  // это та же привязка, по которой работает RLS согласования договоров
+  // (миграция 20260815). Раньше кабинет доверял выбору из списка на странице
+  // входа и подсказке localStorage, то есть любой подрядчик мог открыть чужие
+  // тендеры, выбрав другую организацию.
+  const resolveContractorCounterparty = useCallback(async (userId) => {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('is_approved, counterparty_id')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (error) throw error
+    if (!data) return { row: null, counterparty: null }
+    if (!data.counterparty_id) return { row: data, counterparty: null }
+    const { data: cp } = await supabase
+      .from('counterparties')
+      .select('id, name')
+      .eq('id', data.counterparty_id)
+      .maybeSingle()
+    return {
+      row: data,
+      counterparty: cp ? { id: cp.id, name: cp.name } : { id: data.counterparty_id, name: 'Организация' },
+    }
+  }, [])
+
   // Инициализация Supabase Auth
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -224,7 +267,25 @@ export function RoleProvider({ children }) {
         // Восстановление вида подрядчика — по подсказке из localStorage (захвачена в ref
         // до того, как persist-эффект мог её перезаписать). Подрядчик — минимальные права.
         if (initialSavedRole.current === ROLES.CONTRACTOR) {
-          setRole(ROLES.CONTRACTOR)
+          // Подсказка localStorage говорит только «это был кабинет подрядчика».
+          // Кто именно — спрашиваем у базы: значение в localStorage правится руками.
+          try {
+            const { row, counterparty } = await resolveContractorCounterparty(u.id)
+            if (row && row.is_approved && counterparty) {
+              setRole(ROLES.CONTRACTOR)
+              setContractorInfo(counterparty)
+            } else if (row && !row.counterparty_id) {
+              // Логин оказался сотрудником — восстанавливаем как сотрудника.
+              await fetchUserRole(u.id, u.email)
+            } else {
+              denyAccess(null)
+              setContractorInfo(null)
+            }
+          } catch (err) {
+            console.error('Не удалось восстановить кабинет подрядчика:', err.message)
+            denyAccess(ROLE_LOAD_ERROR)
+            setContractorInfo(null)
+          }
         } else {
           try {
             await fetchUserRole(u.id, u.email)
@@ -256,7 +317,7 @@ export function RoleProvider({ children }) {
     })
 
     return () => subscription.unsubscribe()
-  }, [fetchUserRole, denyAccess])
+  }, [fetchUserRole, denyAccess, resolveContractorCounterparty])
 
   // Persist
   useEffect(() => {
@@ -287,22 +348,16 @@ export function RoleProvider({ children }) {
     return data
   }
 
-  // Вход подрядчика
-  const loginAsContractor = async (email, password, counterpartyId, counterpartyName) => {
+  // Вход подрядчика. Организацию НЕ принимаем от клиента — берём привязку логина
+  // из user_roles.counterparty_id: иначе достаточно было выбрать в списке чужую
+  // компанию, чтобы увидеть её тендеры и сметы.
+  const loginAsContractor = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
-    // Для подрядчиков тоже проверяем подтверждение
-    const { data: roleData } = await supabase
-      .from('user_roles')
-      .select('is_approved')
-      .eq('user_id', data.user.id)
-      .single()
 
-    if (roleData && !roleData.is_approved) {
-      await supabase.auth.signOut()
-      throw new Error('PENDING_APPROVAL')
-    }
-    if (!roleData) {
+    const { row, counterparty } = await resolveContractorCounterparty(data.user.id)
+
+    if (!row) {
       // Создаём заявку
       await supabase
         .from('user_roles')
@@ -310,10 +365,20 @@ export function RoleProvider({ children }) {
       await supabase.auth.signOut()
       throw new Error('PENDING_APPROVAL')
     }
+    if (!row.is_approved) {
+      await supabase.auth.signOut()
+      throw new Error('PENDING_APPROVAL')
+    }
+    if (!counterparty) {
+      // Логин подтверждён, но не привязан к организации — кабинет показывать не от
+      // чьего имени. Привязку ставит администратор в карточке пользователя.
+      await supabase.auth.signOut()
+      throw new Error('NO_COUNTERPARTY')
+    }
 
     setUser(data.user)
     setRole(ROLES.CONTRACTOR)
-    setContractorInfo({ id: counterpartyId, name: counterpartyName })
+    setContractorInfo(counterparty)
     setPermissions({})
     try {
       const { error: loginErr } = await supabase.rpc('touch_last_login')
@@ -350,6 +415,8 @@ export function RoleProvider({ children }) {
   // Выход
   const logout = async () => {
     await supabase.auth.signOut()
+    // Предпросмотр роли — состояние сессии администратора, при выходе снимаем.
+    setPreview(null)
     setRole(null)
     setContractorInfo(null)
     setUser(null)
@@ -358,13 +425,67 @@ export function RoleProvider({ children }) {
     setUserProfile({ full_name: '', work_phone: '', work_email: '', created_at: '' })
   }
 
-  // Проверки
-  const isAdmin = role === ROLES.ADMIN
-  // Суперадмин всегда имеет доступ к админ-функциям, даже если выбрал/тестирует другую роль
-  const isSuperAdmin = !!(user?.email && SUPER_ADMINS.includes(user.email.toLowerCase()))
-  const isEmployee = role !== null && role !== ROLES.CONTRACTOR
-  const isContractor = role === ROLES.CONTRACTOR
-  const isLoggedIn = role !== null && user !== null
+  // ── Предпросмотр роли ────────────────────────────────────────────────────
+  // Реальные права (по ним решаем, можно ли вообще включать режим и кто может
+  // из него выйти) — считаются ДО подмены.
+  const realIsAdmin = role === ROLES.ADMIN
+  const realIsSuperAdmin = !!(user?.email && SUPER_ADMINS.includes(user.email.toLowerCase()))
+  const canPreviewRoles = realIsAdmin || realIsSuperAdmin
+  // Режим считается активным, только если его включил тот, кому это разрешено:
+  // подложенный в sessionStorage ключ сам по себе прав не меняет (он их только
+  // сужает, но проверка всё равно нужна — иначе режим «залипнет» у обычного
+  // сотрудника, открывшего вкладку после админа).
+  const previewActive = !!preview && canPreviewRoles
+
+  useEffect(() => {
+    try {
+      if (previewActive) sessionStorage.setItem('rolePreview', JSON.stringify(preview))
+      else sessionStorage.removeItem('rolePreview')
+    } catch { /* приватный режим браузера — не критично */ }
+  }, [preview, previewActive])
+
+  // Включить предпросмотр: грузим права выбранной роли из той же таблицы, что и
+  // при обычном входе, — иначе «как видит роль» расходилось бы с реальностью.
+  const startRolePreview = useCallback(async (previewRoleKey, options = {}) => {
+    if (!canPreviewRoles) throw new Error('Режим доступен только администратору')
+    if (!previewRoleKey) throw new Error('Не выбрана роль')
+    let perms = {}
+    if (previewRoleKey !== ROLES.CONTRACTOR && previewRoleKey !== ROLES.ADMIN) {
+      const { data, error } = await supabase
+        .from('role_permissions')
+        .select('section, can_view, can_edit')
+        .eq('role', previewRoleKey)
+      if (error) throw error
+      ;(data || []).forEach(pRow => {
+        perms[pRow.section] = { can_view: pRow.can_view, can_edit: pRow.can_edit }
+      })
+    }
+    setPreview({
+      role: previewRoleKey,
+      permissions: perms,
+      // Привязка к объектам: у руководителя строительства от неё зависит половина
+      // интерфейса, поэтому её тоже можно смоделировать.
+      objectIds: Array.isArray(options.objectIds) ? options.objectIds : [],
+      // Для подрядчика нужна организация — под неё фильтруется весь кабинет.
+      counterparty: options.counterparty || null,
+      startedAt: new Date().toISOString(),
+    })
+  }, [canPreviewRoles])
+
+  const stopRolePreview = useCallback(() => setPreview(null), [])
+
+  // Проверки. Всё, что ниже, работает с ЭФФЕКТИВНОЙ ролью: в режиме
+  // предпросмотра интерфейс должен вести себя ровно как у выбранной роли.
+  const effectiveRole = previewActive ? preview.role : role
+  const effectivePermissions = previewActive ? preview.permissions : permissions
+  const isAdmin = effectiveRole === ROLES.ADMIN
+  // Суперадмин всегда имеет доступ к админ-функциям — но не в режиме
+  // предпросмотра: иначе «Администрирование» осталось бы видно у любой роли и
+  // проверить меню было бы нельзя.
+  const isSuperAdmin = realIsSuperAdmin && !previewActive
+  const isEmployee = effectiveRole !== null && effectiveRole !== ROLES.CONTRACTOR
+  const isContractor = effectiveRole === ROLES.CONTRACTOR
+  const isLoggedIn = effectiveRole !== null && user !== null
 
   // Scope доступа по объектам:
   // []            → видит все объекты (админ или офисный сотрудник без привязки)
@@ -372,22 +493,25 @@ export function RoleProvider({ children }) {
   // Мемоизируем: массив кладётся в зависимости useEffect потребителей, а новая
   // ссылка каждый рендер вызвала бы циклы перезапросов.
   const scopedObjectIds = useMemo(
-    () => (isAdmin ? [] : (userProfile?.object_ids || [])),
-    [isAdmin, userProfile?.object_ids]
+    () => {
+      if (previewActive) return preview.role === ROLES.ADMIN ? [] : (preview.objectIds || [])
+      return isAdmin ? [] : (userProfile?.object_ids || [])
+    },
+    [previewActive, preview, isAdmin, userProfile?.object_ids]
   )
 
   // Проверка прав по разделу
   // Суперадмину доступ к разделу admin предоставляется всегда, даже если он переключился на другую роль.
   const canView = (section) => {
-    if (role === ROLES.ADMIN) return true
-    if (section === 'admin' && user?.email && SUPER_ADMINS.includes(user.email.toLowerCase())) return true
-    return permissions[section]?.can_view ?? false
+    if (effectiveRole === ROLES.ADMIN) return true
+    if (section === 'admin' && isSuperAdmin) return true
+    return effectivePermissions[section]?.can_view ?? false
   }
 
   const canEdit = (section) => {
-    if (role === ROLES.ADMIN) return true
-    if (section === 'admin' && user?.email && SUPER_ADMINS.includes(user.email.toLowerCase())) return true
-    return permissions[section]?.can_edit ?? false
+    if (effectiveRole === ROLES.ADMIN) return true
+    if (section === 'admin' && isSuperAdmin) return true
+    return effectivePermissions[section]?.can_edit ?? false
   }
 
   // Обновить права (после изменения в админке)
@@ -399,10 +523,13 @@ export function RoleProvider({ children }) {
 
   return (
     <RoleContext.Provider value={{
-      role,
+      role: effectiveRole,
       user,
-      contractorInfo,
-      permissions,
+      // В предпросмотре подрядчика кабинет фильтруется по выбранной организации.
+      contractorInfo: previewActive && preview.role === ROLES.CONTRACTOR
+        ? preview.counterparty
+        : contractorInfo,
+      permissions: effectivePermissions,
       isAdmin,
       isSuperAdmin,
       isEmployee,
@@ -425,7 +552,15 @@ export function RoleProvider({ children }) {
       availableRoles,
       roleLabels: dynamicRoleLabels,
       refreshAvailableRoles: fetchAvailableRoles,
-      scopedObjectIds
+      scopedObjectIds,
+      // Режим «посмотреть глазами роли»
+      realRole: role,
+      canPreviewRoles,
+      previewActive,
+      previewRole: previewActive ? preview.role : null,
+      previewInfo: previewActive ? preview : null,
+      startRolePreview,
+      stopRolePreview
     }}>
       {children}
     </RoleContext.Provider>

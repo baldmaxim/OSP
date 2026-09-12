@@ -144,7 +144,8 @@
   color: #92400e;
 }
 
-.tender-status.status-proposal_submitted {
+.tender-status.status-proposal_provided,
+.tender-status.status-accepted_for_work {
   background: #dcfce7;
   color: #166534;
 }
@@ -385,7 +386,8 @@
   color: #fde68a;
 }
 
-[data-theme='dark'] .tender-status.status-proposal_submitted {
+[data-theme='dark'] .tender-status.status-proposal_provided,
+[data-theme='dark'] .tender-status.status-accepted_for_work {
   background: #14532d;
   color: #bbf7d0;
 }
@@ -433,4 +435,57 @@
   .proposal-actions {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Телефон ────────────────────────────────────────────────────────────────
+   Кабинет подрядчика — не внутри layout'а сотрудника, поэтому свои отступы.
+   Раскладка «список слева / работа справа» на 360px не живёт: список тендеров
+   становится обычной лентой карточек, страница скроллится целиком. */
+@media (max-width: 640px) {
+  .contractor-page { min-height: 100dvh; }
+
+  .contractor-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+    padding: 0.75rem 1rem;
+  }
+  .contractor-header h1 { font-size: 1.0625rem; }
+  /* Кнопки шапки («Согласование договоров» + «Выйти») — в ряд на всю ширину. */
+  .contractor-header > div:last-child { display: flex; gap: 0.5rem; }
+  .contractor-header > div:last-child > * { flex: 1; text-align: center; }
+
+  .contractor-content {
+    flex-direction: column;
+    overflow: visible;            /* иначе вложенные списки получают свой скролл */
+  }
+
+  .tenders-sidebar {
+    width: 100%;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    overflow: visible;
+  }
+  .tenders-sidebar h2 { font-size: 0.9375rem; padding: 0.75rem 1rem 0.5rem; }
+  /* На планшете (900px) список был лентой с прокруткой вбок — на телефоне это
+     мешает: карточки узкие, а свайп конфликтует с прокруткой страницы. */
+  .tenders-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    overflow: visible;
+    padding: 0 0.75rem 0.75rem;
+  }
+  .tender-item { min-width: 0; width: 100%; margin-bottom: 0; }
+
+  .proposal-main { padding: 0.75rem; overflow: visible; }
+  .tender-info-header h2 { font-size: 1.0625rem; }
+  .tender-dates { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+
+  .action-card { padding: 0.9rem; }
+  .action-button, .upload-label { width: 100%; text-align: center; }
+
+  .estimate-table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .estimate-preview-table { font-size: 0.75rem; }
 }

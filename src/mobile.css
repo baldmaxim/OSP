@@ -55,7 +55,11 @@
   .users-table-wrap, .gd-table-container, .bsm-table-wrap,
   .summary-table-wrap, .public-tenders-table-wrap, .roles-table-wrap,
   .permissions-list-table-wrap, .rr-table-wrap,
-  .estimate-table-wrapper, .psdc-table-wrapper, .work-types-wrap {
+  .estimate-table-wrapper, .psdc-table-wrapper, .work-types-wrap,
+  /* Остальные обёртки таблиц проекта — чтобы ни одна таблица не распирала экран. */
+  .bsm-table-container, .cim-warn-table-wrap, .cpi-table-wrap, .doc-table-wrap,
+  .expanded-cp-table-wrap, .kprv-table-wrap, .oa-table-wrap, .trd-table-wrap,
+  .proposals-summary-matrix-wrap, .tender-history-table-wrap, .ce-appendix-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     max-width: 100%;
@@ -175,4 +179,58 @@
 
   /* Заявка на ДС: строка задачи (чекбокс + задача + ответ + кнопка) — в столбик. */
   .dcr-task-row { grid-template-columns: 1fr !important; }
+
+  /* ── Двухколоночные раскладки «список + содержимое» → в столбик ─────────
+     На экране 360-400px колонка-список в 260-340px съедала почти всё место,
+     а вторая колонка сжималась до нечитаемой. */
+  .cn-body,                       /* согласование договоров у подрядчика */
+  .task-modal-columns,            /* карточка задачи */
+  .cct-layout,                    /* протокол разногласий */
+  .contracts-overview,            /* отчёты: KPI + диаграмма */
+  .dash-grid {                    /* отчёты: дэшборд */
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Канбан-доски → горизонтальная прокрутка вместо сжатия колонок ─────
+     Колонки доски нельзя сузить до ширины телефона: карточки станут нечитаемы.
+     Даём ленту с прокруткой и фиксируем ширину колонки. */
+  /* .task-board не перечислен намеренно: на телефоне доска задач не рендерится
+     вовсе (TasksPage: effectiveView = isPhone ? 'list' : view). */
+  .kanban-board, .dc-board {
+    display: flex !important;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+  }
+  .kanban-board > *, .dc-board > * {
+    flex: 0 0 82vw;
+    max-width: 82vw;
+    scroll-snap-align: start;
+  }
+
+  /* ── Плиточные сетки → одна колонка ───────────────────────────────────── */
+  .thub-grid,                     /* направления тендеров */
+  .section-cards,                 /* хабы «Общая информация» и БСМ */
+  .proposal-actions {             /* кабинет подрядчика: шаги 1-2 */
+    grid-template-columns: 1fr !important;
+  }
+  /* Плитки-счётчики админки: пять в ряд не помещаются. */
+  .admin-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  /* Сводка по тендерам: пять KPI в ряд не помещаются даже в альбомной. */
+  .summary-kpis { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Разбор конфликтов при импорте расценок (БСМ): пять фиксированных колонок
+     шире экрана — строка в столбик, шапка не нужна. */
+  .conflict-item { grid-template-columns: 1fr !important; gap: 0.35rem !important; }
+  .conflict-header { display: none !important; }
+
+  /* ── Полосы действий и поиск ──────────────────────────────────────────── */
+  .contractor-header, .cn-header { padding-left: 1rem; padding-right: 1rem; }
+
+  /* Правые панели-«свойства» в модалках не должны иметь собственной прокрутки:
+     на телефоне это вложенный скролл внутри скролла. */
+  .task-modal-side { max-height: none !important; overflow: visible !important; }
+  /* Реестр расценок: панель фильтров — четыре колонки на гриде. */
+  .rr-filters { grid-template-columns: 1fr !important; }
 }

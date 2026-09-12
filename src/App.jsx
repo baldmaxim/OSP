@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar'
 import AccessError from './components/AccessError'
 import AccessDenied from './components/AccessDenied'
 import UpdatePrompt from './components/UpdatePrompt'
+import RolePreviewBar from './components/RolePreviewBar'
 import './App.css'
 // Глобальный мобильный слой — импортируется последним, чтобы перебивать базовые
 // правила при равной специфичности (модалки/формы/таблицы/шапки на всех страницах).
@@ -200,6 +201,10 @@ function App() {
         <BrowserRouter>
           <AuthRoutes />
         </BrowserRouter>
+        {/* Полоса режима «просмотр от имени роли» — внутри RoleProvider (читает
+            контекст), но вне роутера и layout'а сотрудника: из предпросмотра
+            подрядчика надо иметь возможность выйти. */}
+        <RolePreviewBar />
       </RoleProvider>
       {/* Попап «доступна новая версия» — на всех маршрутах, вне роутера (fixed). */}
       <UpdatePrompt />

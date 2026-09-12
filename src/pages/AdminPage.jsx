@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { useRole, SECTIONS } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
@@ -25,7 +26,11 @@ function formatDateTime(ts) {
 }
 
 function AdminPage() {
-  const { isAdmin, isSuperAdmin, availableRoles, roleLabels, refreshAvailableRoles } = useRole()
+  const navigate = useNavigate()
+  const {
+    isAdmin, isSuperAdmin, availableRoles, roleLabels, refreshAvailableRoles,
+    canPreviewRoles, previewActive, previewInfo, startRolePreview, stopRolePreview,
+  } = useRole()
   const [activeTab, setActiveTab] = useState('users')
 
   const employeeRoleKeys = availableRoles.filter(r => r.key !== 'contractor').map(r => r.key)
@@ -57,12 +62,17 @@ function AdminPage() {
   const [permFeedback, setPermFeedback] = useState(null)
 
   // --- Roles ---
+  // --- Просмотр от имени роли ---
+  const [previewForm, setPreviewForm] = useState({ role: 'engineer', objectIds: [], counterpartyId: '' })
+  const [previewError, setPreviewError] = useState('')
+  const [previewBusy, setPreviewBusy] = useState(false)
+
   const [newRoleKey, setNewRoleKey] = useState('')
   const [newRoleLabel, setNewRoleLabel] = useState('')
   const [roleFeedback, setRoleFeedback] = useState(null)
 
   useEffect(() => {
-    if (activeTab === 'users') { fetchUsers(); fetchObjectsList(); fetchCounterpartiesList() }
+    if (activeTab === 'users' || activeTab === 'preview') { fetchUsers(); fetchObjectsList(); fetchCounterpartiesList() }
     else if (activeTab === 'permissions') fetchPermissions()
   }, [activeTab])
 
@@ -323,6 +333,29 @@ function AdminPage() {
   }
 
   // ── Производные данные (статистика, опции фильтров, фильтрация) ──────────
+  // Включение режима: подрядчику обязательно нужна организация — без неё кабинет
+  // подрядчика показывать нечего.
+  const handleStartPreview = async () => {
+    setPreviewError('')
+    if (previewForm.role === 'contractor' && !previewForm.counterpartyId) {
+      setPreviewError('Для подрядчика выберите организацию: кабинет фильтруется по ней.')
+      return
+    }
+    setPreviewBusy(true)
+    try {
+      const cp = counterpartiesList.find(c => c.id === previewForm.counterpartyId)
+      await startRolePreview(previewForm.role, {
+        objectIds: previewForm.objectIds,
+        counterparty: cp ? { id: cp.id, name: cp.name } : null,
+      })
+      navigate(previewForm.role === 'contractor' ? '/contractor/proposals' : '/general')
+    } catch (err) {
+      setPreviewError(err.message || String(err))
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+
   const sectionKeys = Object.keys(SECTIONS)
   // Имена привязанных объектов пользователя (несколько). Пустой массив = офис.
   const objectNamesFor = useMemo(() => {
@@ -449,6 +482,9 @@ function AdminPage() {
           <button className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>Пользователи</button>
           <button className={`admin-tab ${activeTab === 'roles' ? 'active' : ''}`} onClick={() => setActiveTab('roles')}>Роли</button>
           <button className={`admin-tab ${activeTab === 'permissions' ? 'active' : ''}`} onClick={() => setActiveTab('permissions')}>Права доступа</button>
+          {canPreviewRoles && (
+            <button className={`admin-tab ${activeTab === 'preview' ? 'active' : ''}`} onClick={() => setActiveTab('preview')}>Просмотр от имени роли</button>
+          )}
         </div>
 
         {/* ===== Пользователи ===== */}
@@ -701,6 +737,99 @@ function AdminPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ===== Просмотр от имени роли ===== */}
+        {activeTab === 'preview' && canPreviewRoles && (
+          <div className="admin-tabpane">
+            <div className="rp-pane">
+              <p className="rp-intro">
+                Режим показывает приложение так, как его видит выбранная роль: меню, доступные
+                разделы, кнопки создания и редактирования. Заводить отдельные учётные записи для
+                проверки не нужно.
+              </p>
+              <div className="rp-warning">
+                Это предпросмотр <strong>интерфейса</strong>. Запросы в базу по-прежнему идут под
+                вашей учётной записью, поэтому ограничения самой базы остаются
+                администраторскими — роль может увидеть строки, которых под своим логином не
+                получила бы. Любые изменения тоже сохранятся от вашего имени.
+              </div>
+
+              {previewActive ? (
+                <div className="rp-active">
+                  <div className="rp-active-title">
+                    Сейчас включён просмотр: <strong>{roleLabels[previewInfo.role] || previewInfo.role}</strong>
+                  </div>
+                  <ul className="rp-active-list">
+                    {previewInfo.counterparty?.name && <li>Организация: {previewInfo.counterparty.name}</li>}
+                    <li>
+                      Объекты: {previewInfo.objectIds?.length
+                        ? objectsList.filter(o => previewInfo.objectIds.includes(o.id)).map(o => o.name).join(', ')
+                        : 'все (привязки нет)'}
+                    </li>
+                  </ul>
+                  <button type="button" className="btn-primary" onClick={stopRolePreview}>
+                    Вернуться к своей роли
+                  </button>
+                </div>
+              ) : (
+                <div className="rp-form">
+                  <div className="rp-field">
+                    <label htmlFor="rp-role">Роль</label>
+                    <select
+                      id="rp-role"
+                      value={previewForm.role}
+                      onChange={(e) => setPreviewForm(prev => ({ ...prev, role: e.target.value }))}
+                    >
+                      {availableRoles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                    </select>
+                  </div>
+
+                  {previewForm.role === 'contractor' ? (
+                    <div className="rp-field">
+                      <label htmlFor="rp-cp">Организация подрядчика *</label>
+                      <select
+                        id="rp-cp"
+                        value={previewForm.counterpartyId}
+                        onChange={(e) => setPreviewForm(prev => ({ ...prev, counterpartyId: e.target.value }))}
+                      >
+                        <option value="">— Выберите организацию —</option>
+                        {counterpartiesList.map(cp => <option key={cp.id} value={cp.id}>{cp.name}</option>)}
+                      </select>
+                      <small>Кабинет подрядчика показывает тендеры и договоры только этой организации.</small>
+                    </div>
+                  ) : (
+                    <div className="rp-field">
+                      <label>Привязка к объектам</label>
+                      <FilterDropdown
+                        label=""
+                        multiple
+                        searchable
+                        searchPlaceholder="Поиск объекта…"
+                        allLabel="Все объекты (офисный сотрудник)"
+                        value={previewForm.objectIds}
+                        onChange={(next) => setPreviewForm(prev => ({ ...prev, objectIds: next }))}
+                        options={objectsList.map(o => ({ value: o.id, label: o.name }))}
+                      />
+                      <small>
+                        Пусто — сотрудник видит все объекты. Выбор объектов моделирует
+                        руководителя строительства, привязанного к ним.
+                      </small>
+                    </div>
+                  )}
+
+                  {previewError && <div className="rp-error">{previewError}</div>}
+
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleStartPreview}
+                    disabled={previewBusy}
+                  >{previewBusy ? 'Включение…' : 'Включить просмотр'}</button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

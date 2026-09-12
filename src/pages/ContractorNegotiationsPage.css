@@ -51,3 +51,14 @@
   .cn-list { flex-direction: row; overflow-x: auto; }
   .cn-list-item { min-width: 200px; }
 }
+
+/* ── Телефон ──────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .cn-page { padding: 0.75rem; }
+  .cn-header { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+  .cn-header h2 { font-size: 1.0625rem; }
+  .cn-header-actions { flex-wrap: wrap; }
+  /* .cn-body (260px + 1fr) схлопывается в столбик глобальным слоем (mobile.css):
+     список договоров сверху, выбранный договор под ним. */
+  .cn-list { max-height: 40vh; overflow-y: auto; }
+}

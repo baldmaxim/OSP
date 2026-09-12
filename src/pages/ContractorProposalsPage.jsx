@@ -164,29 +164,21 @@ function ContractorProposalsPage() {
     setUploadSuccess(false)
 
     try {
-      const reader = new FileReader()
-      reader.onload = async (event) => {
-        try {
-          const data = new Uint8Array(event.target.result)
-          const workbook = XLSX.read(data, { type: 'array' })
-          const sheetName = workbook.SheetNames[0]
-          const worksheet = workbook.Sheets[sheetName]
-          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+      // Читаем файл await'ом, а не через FileReader с колбэком: с колбэком
+      // finally срабатывал до окончания разбора, и кнопка «Загрузить КП»
+      // разблокировалась раньше, чем данные уходили в базу.
+      const buffer = await file.arrayBuffer()
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' })
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
 
-          await parseAndSaveProposals(jsonData)
-          setUploadSuccess(true)
-          // Обновляем список — чтобы сразу показать дату загрузки КП.
-          fetchTenders()
-
-        } catch (parseError) {
-          console.error('Ошибка парсинга:', parseError)
-          alert('Ошибка чтения файла: ' + parseError.message)
-        }
-      }
-      reader.readAsArrayBuffer(file)
+      await parseAndSaveProposals(jsonData)
+      setUploadSuccess(true)
+      // Обновляем список — чтобы сразу показать дату загрузки КП.
+      await fetchTenders()
     } catch (error) {
-      console.error('Ошибка загрузки:', error)
-      alert('Ошибка: ' + error.message)
+      console.error('Ошибка загрузки КП:', error)
+      alert('Не удалось загрузить КП: ' + (error.message || error))
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -247,12 +239,16 @@ function ContractorProposalsPage() {
 
       if (error) throw error
 
-      // Обновляем статус участия
-      await supabase
+      // Статус участия. Значение — из ENUM tender_counterparty_status
+      // ('request_sent' | 'declined' | 'proposal_provided'): раньше писали
+      // 'proposal_submitted', такого значения в типе нет, поэтому UPDATE молча
+      // падал и у сотрудников участник навсегда оставался в «Запрос отправлен».
+      const { error: statusError } = await supabase
         .from('tender_counterparties')
-        .update({ status: 'proposal_submitted' })
+        .update({ status: 'proposal_provided' })
         .eq('tender_id', selectedTender.id)
         .eq('counterparty_id', contractorInfo.id)
+      if (statusError) console.error('Не удалось обновить статус участия:', statusError.message)
     }
   }
 
@@ -273,7 +269,9 @@ function ContractorProposalsPage() {
   const getStatusLabel = (status) => {
     const labels = {
       'request_sent': 'Запрос отправлен',
-      'proposal_submitted': 'КП загружено',
+      'proposal_provided': 'КП загружено',
+      'accepted_for_work': 'Принято в работу',
+      'declined': 'Отказ',
       'under_review': 'На рассмотрении',
       'winner': 'Победитель',
       'rejected': 'Отклонено'

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import BrandLogo from '../components/BrandLogo'
-import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './LoginPage.css'
 
 // variant: 'employee' — вход для сотрудников (+ регистрация); 'contractor' — вход для
@@ -21,36 +20,11 @@ function LoginPage({ variant = 'employee' }) {
   const [loading, setLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
 
-  // Подрядчик — выбор организации
-  const [counterparties, setCounterparties] = useState([])
-  const [selectedCounterparty, setSelectedCounterparty] = useState('')
-  const [loadingCounterparties, setLoadingCounterparties] = useState(false)
-
   useEffect(() => {
     if (isLoggedIn) {
       navigate(isEmployee ? '/general/objects' : '/contractor/proposals')
     }
   }, [isLoggedIn, isEmployee, navigate])
-
-  useEffect(() => {
-    if (mode === 'contractor') {
-      fetchCounterparties()
-    }
-  }, [mode])
-
-  const fetchCounterparties = async () => {
-    setLoadingCounterparties(true)
-    try {
-      // Постранично — активных контрагентов >1000 (потолок PostgREST), иначе часть
-      // не попадёт в выпадашку выбора.
-      const data = await fetchAllActiveCounterparties('id, name')
-      setCounterparties(data || [])
-    } catch (err) {
-      console.error('Ошибка загрузки контрагентов:', err)
-    } finally {
-      setLoadingCounterparties(false)
-    }
-  }
 
   const handleEmployeeLogin = async (e) => {
     e.preventDefault()
@@ -74,18 +48,16 @@ function LoginPage({ variant = 'employee' }) {
   const handleContractorLogin = async (e) => {
     e.preventDefault()
     setError('')
-    if (!selectedCounterparty) {
-      setError('Выберите организацию')
-      return
-    }
     setLoading(true)
     try {
-      const cp = counterparties.find(c => c.id === selectedCounterparty)
-      await loginAsContractor(email, password, cp.id, cp.name)
+      // Организацию не выбираем: она берётся из привязки логина в базе.
+      await loginAsContractor(email, password)
       navigate('/contractor/proposals')
     } catch (err) {
       if (err.message === 'PENDING_APPROVAL') {
         setSuccessMessage('Ваша заявка отправлена. Ожидайте подтверждения администратором.')
+      } else if (err.message === 'NO_COUNTERPARTY') {
+        setError('Логин не привязан к организации. Обратитесь к вашему менеджеру в отделе сопровождения подрядчиков — он свяжет учётную запись с компанией.')
       } else {
         setError(getErrorMessage(err))
       }
@@ -229,23 +201,8 @@ function LoginPage({ variant = 'employee' }) {
                 required
               />
             </div>
-            <div className="form-field">
-              <label>Организация</label>
-              {loadingCounterparties ? (
-                <div className="field-loading">Загрузка...</div>
-              ) : (
-                <select
-                  value={selectedCounterparty}
-                  onChange={(e) => setSelectedCounterparty(e.target.value)}
-                  required
-                >
-                  <option value="">-- Выберите организацию --</option>
-                  {counterparties.map(cp => (
-                    <option key={cp.id} value={cp.id}>{cp.name}</option>
-                  ))}
-                </select>
-              )}
-            </div>
+            {/* Организацию не выбираем: кабинет открывается для компании, к
+                которой логин привязан в системе. */}
             <button type="submit" className="login-button" disabled={loading}>
               {loading ? 'Вход...' : 'Войти как подрядчик'}
             </button>
