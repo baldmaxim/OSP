@@ -1835,3 +1835,51 @@
 .expanded-cp-table-wrap tr.tc-dragging td { opacity: 0.5; }
 .expanded-cp-table-wrap tr.tc-drop-before td { box-shadow: inset 0 2px 0 var(--primary-color); }
 .expanded-cp-table-wrap tr.tc-drop-after td { box-shadow: inset 0 -2px 0 var(--primary-color); }
+
+/* Индикатор онлайн-обновлений в шапке реестра тендеров. */
+.tp-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.tp-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.tp-live.is-on { color: #15803d; border-color: color-mix(in srgb, #16a34a 35%, transparent); }
+.tp-live.is-on .tp-live-dot { background: #16a34a; }
+[data-theme='dark'] .tp-live.is-on { color: #6ee7b7; }
+
+/* Счётчик участников: «не загрузилось» и «участников нет» больше не выглядят
+   одинаково — раньше оба состояния были просто пустым местом в колонке. */
+.tenders-page .kp-counter.kp-counter-empty,
+.tenders-page .kp-counter.kp-counter-unknown {
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+.tenders-page .kp-counter.kp-counter-unknown { border-style: dotted; }
+
+/* Повтор загрузки счётчиков, если часть порций не дошла. */
+.tp-counts-warn {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid color-mix(in srgb, #d97706 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, #d97706 10%, transparent);
+  color: #b45309;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+[data-theme='dark'] .tp-counts-warn { color: #fcd34d; }

@@ -759,3 +759,12 @@
 .rp-active-title { font-size: 0.9375rem; }
 .rp-active-list { margin: 0; padding-left: 1.1rem; color: var(--text-secondary); font-size: 0.8125rem; }
 .rp-pane .btn-primary { align-self: flex-start; }
+
+/* Организация, указанная подрядчиком при саморегистрации (только чтение). */
+.adm-drawer-requested {
+  padding: 0.45rem 0.6rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  font-size: 0.875rem;
+}

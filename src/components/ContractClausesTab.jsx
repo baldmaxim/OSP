@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { supabase } from '../supabase'
+import { useRealtimeTable } from '../hooks/useRealtimeTable'
 import { useRole } from '../contexts/RoleContext'
 import AutoGrowTextarea from './AutoGrowTextarea'
 import { uploadFile, fetchDocuments, deleteDocument } from '../services/s3'
@@ -286,6 +287,22 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
   }, [contractId, isEmployee, counterpartyId])
 
   useEffect(() => { loadTemplate(); loadDisputes() }, [loadTemplate, loadDisputes])
+
+  // Онлайн-обсуждение: юрист и подрядчик правят один и тот же протокол.
+  // Разногласия отфильтрованы по договору на стороне сервера; комментарии
+  // привязаны к разногласиям, поэтому серверного фильтра для них нет — перезагрузку
+  // всё равно делает loadDisputes, она тянет и споры, и переписку разом.
+  useRealtimeTable({
+    table: 'contract_clause_disputes',
+    filter: contractId ? `contract_id=eq.${contractId}` : null,
+    onStructuralChange: loadDisputes,
+    onUpdate: loadDisputes,
+  })
+  useRealtimeTable({
+    table: 'contract_clause_comments',
+    onStructuralChange: loadDisputes,
+    onUpdate: loadDisputes,
+  })
 
   const activeDisputes = useMemo(
     () => disputes.filter((d) => !activeCpId || d.counterparty_id === activeCpId),

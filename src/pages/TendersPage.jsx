@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
-import { fetchAllRowsParallel } from '../utils/fetchAllRows'
+import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
+import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable'
 import { saveAs } from 'file-saver'
 import { buildTendersRegistryRows, buildTendersRegistryWorkbook } from '../utils/tendersRegistryExport'
 import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
@@ -159,6 +160,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
   // Сводка по каждому тендеру: { tenderId: { total, proposalProvided } }
   const [tenderProposalCounts, setTenderProposalCounts] = useState({})
+  // Сколько тендеров осталось без счётчика участников из-за ошибки запроса —
+  // чтобы пустое место в колонке не выглядело как «участников нет».
+  const [countsFailed, setCountsFailed] = useState(0)
   // Примечание участника: явное редактирование (одна строка за раз) и хронология правок
   const [notesEdit, setNotesEdit] = useState(null) // { tcId, draft } | null
   const [savingNotes, setSavingNotes] = useState(false)
@@ -354,40 +358,86 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // id тендеров текущего реестра — для счётчиков, которые обновляются после действий.
   const tenderIdsRef = useRef([])
 
-  // Сводка по тендерам: сколько контрагентов и сколько предоставили КП.
-  // Раньше читалась ВСЯ таблица участников всех направлений последовательными страницами
-  // по 1000 строк. Теперь — только участники тендеров этого реестра, порциями по 150 id
-  // (длинный IN-список в URL роняет запрос), порции параллельно.
+  // ── Онлайн-обновления ─────────────────────────────────────────────────────
+  // Над реестром работают несколько инженеров сразу. Правку коллеги подмешиваем
+  // в уже загруженную строку (связи objects/ответственные в событии не приходят,
+  // поэтому полная замена строки их бы потеряла). Появление и удаление тендеров
+  // требует перезапроса — он отложен, чтобы серия правок не дала серию загрузок.
+  const { connected: liveTenders } = useRealtimeTable({
+    table: 'tenders',
+    onUpdate: (newRow, oldRow) => {
+      const patch = changedScalarFields(newRow, oldRow)
+      if (Object.keys(patch).length === 0) return
+      setTenders(prev => {
+        const known = prev.some(t => t.id === newRow.id)
+        // Тендер мог смениться отделом/типом и «въехать» в этот реестр — тогда
+        // нужен полноценный перезапрос со связями, а не точечная правка.
+        if (!known) return prev
+        return prev.map(t => (t.id === newRow.id ? { ...t, ...patch } : t))
+      })
+    },
+    onStructuralChange: () => { fetchTenders() },
+  })
+
+  // Статусы участников (в т.ч. «КП предоставлено» из кабинета подрядчика) —
+  // только счётчики, поэтому обновляем их, а не весь реестр.
+  useRealtimeTable({
+    table: 'tender_counterparties',
+    onUpdate: () => { fetchTenderProposalCounts() },
+    onStructuralChange: () => { fetchTenderProposalCounts() },
+  })
+
+  // Сводка по тендерам: сколько контрагентов участвует и сколько предоставило КП.
+  //
+  // Читаем участников только тендеров этого реестра, порциями id — параллельно.
+  // Три вещи, из-за которых счётчики пропадали у части строк:
+  //   • порция в 150 UUID — это ~5,5 КБ в адресе запроса, на границе лимита
+  //     строки запроса у прокси. По 60 id адрес втрое короче;
+  //   • Promise.all: падение ОДНОЙ порции отправляло в catch весь вызов, и тогда
+  //     счётчики не проставлялись вообще ни одному тендеру. Теперь порции
+  //     независимы (allSettled), а неудавшиеся честно помечаются;
+  //   • .limit(10000) молча обрезал хвост, если участников оказывалось больше.
+  //     Читаем постранично.
+  //
   // ids — пересчитать только эти тендеры (после смены статуса участника и т.п.).
+  const CHUNK_IDS = 60
+
   const fetchTenderProposalCounts = async (ids = null) => {
     const targetIds = ids || tenderIdsRef.current
     if (!targetIds.length) {
-      if (!ids) setTenderProposalCounts({})
+      if (!ids) { setTenderProposalCounts({}); setCountsFailed(0) }
       return
     }
-    try {
-      const chunks = []
-      for (let i = 0; i < targetIds.length; i += 150) chunks.push(targetIds.slice(i, i + 150))
-      const parts = await Promise.all(chunks.map(async (chunk) => {
-        const { data, error } = await supabase
-          .from('tender_counterparties')
-          .select('tender_id, status')
-          .in('tender_id', chunk)
-          .limit(10000)
-        if (error) throw error
-        return data || []
-      }))
-      const map = Object.fromEntries(targetIds.map(id => [id, { total: 0, proposalProvided: 0 }]))
-      for (const row of parts.flat()) {
+    const chunks = []
+    for (let i = 0; i < targetIds.length; i += CHUNK_IDS) chunks.push(targetIds.slice(i, i + CHUNK_IDS))
+
+    const results = await Promise.allSettled(chunks.map(chunk => fetchAllRows((from, to) => supabase
+      .from('tender_counterparties')
+      .select('tender_id, status')
+      .in('tender_id', chunk)
+      .order('id', { ascending: true })
+      .range(from, to))))
+
+    // Счётчики заводим только для тендеров из УСПЕШНЫХ порций: иначе тендер из
+    // упавшей порции показал бы уверенный «0 участников» вместо «не загрузилось».
+    const map = {}
+    let failedTenders = 0
+    results.forEach((res, i) => {
+      if (res.status !== 'fulfilled') {
+        failedTenders += chunks[i].length
+        console.error('Счётчики КП: порция не загрузилась —', res.reason?.message || res.reason)
+        return
+      }
+      chunks[i].forEach(id => { map[id] = { total: 0, proposalProvided: 0 } })
+      for (const row of res.value) {
         const entry = map[row.tender_id]
         if (!entry) continue
         entry.total += 1
         if (row.status === 'proposal_provided') entry.proposalProvided += 1
       }
-      setTenderProposalCounts(prev => (ids ? { ...prev, ...map } : map))
-    } catch (err) {
-      console.error('Ошибка загрузки счётчиков КП:', err.message)
-    }
+    })
+    setCountsFailed(failedTenders)
+    setTenderProposalCounts(prev => (ids ? { ...prev, ...map } : map))
   }
 
   const fetchTenders = async () => {
@@ -2212,6 +2262,27 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           {pageTitle}
         </h2>
         <div className="tp-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {/* Признак живого соединения: пока горит, правки коллег приезжают сами
+              и обновлять страницу не нужно. */}
+          {countsFailed > 0 && (
+            <button
+              type="button"
+              className="tp-counts-warn"
+              onClick={() => fetchTenderProposalCounts()}
+              title="Часть счётчиков участников не загрузилась. Нажмите, чтобы повторить"
+            >
+              Счётчики КП: не загрузилось {countsFailed} — повторить
+            </button>
+          )}
+          <span
+            className={`tp-live${liveTenders ? ' is-on' : ''}`}
+            title={liveTenders
+              ? 'Изменения коллег появляются здесь сразу — страницу обновлять не нужно'
+              : 'Нет связи для онлайн-обновлений: данные обновятся при действии или после перезагрузки'}
+          >
+            <span className="tp-live-dot" aria-hidden />
+            {liveTenders ? 'Онлайн' : 'Не в сети'}
+          </span>
           {/* Путь к общей папке всего раздела тендеров — один на все направления
               (app_settings). Путь к папке конкретного тендера — в его строке. */}
           <RootFolderPathButton
@@ -2850,7 +2921,25 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         </button>
                         {(() => {
                           const c = tenderProposalCounts[tender.id]
-                          if (!c || c.total === 0) return null
+                          // Три разных состояния, и раньше два последних выглядели
+                          // одинаково — пустым местом:
+                          //   нет записи  → счётчик не загрузился;
+                          //   total === 0 → участников ещё не приглашали;
+                          //   иначе       → «предоставили/всего».
+                          if (!c) {
+                            return (
+                              <span className="kp-counter kp-counter-unknown" title="Счётчик участников не загрузился. Обновите страницу или проверьте связь">
+                                — КП
+                              </span>
+                            )
+                          }
+                          if (c.total === 0) {
+                            return (
+                              <span className="kp-counter kp-counter-empty" title="Контрагенты в тендер ещё не добавлены">
+                                0 участников
+                              </span>
+                            )
+                          }
                           const all = c.proposalProvided === c.total
                           return (
                             <span

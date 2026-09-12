@@ -121,6 +121,17 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, count
             </div>
           </div>
 
+          {user?.requested_company && (
+            <div className="adm-drawer-field">
+              <span>Организация из заявки</span>
+              <div className="adm-drawer-requested">{user.requested_company}</div>
+              <small className="adm-drawer-hint">
+                Так подрядчик назвал свою компанию при регистрации. Найдите её в реестре
+                контрагентов и выберите ниже — без этого кабинет не откроется.
+              </small>
+            </div>
+          )}
+
           <div className="adm-drawer-field">
             <span>Контрагент (кабинет подрядчика)</span>
             <FilterDropdown
@@ -133,7 +144,8 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, count
               options={counterpartyOptions.map(c => ({ value: c.id, label: c.name }))}
             />
             <small className="adm-drawer-hint">
-              Если выбрать контрагента — этот логин становится кабинетом подрядчика и видит только договоры этой организации (согласование условий). Пусто = сотрудник СУ-10.
+              Если выбрать контрагента — этот логин становится кабинетом подрядчика: свои тендеры,
+              тендерный пакет, загрузка КП и свои договоры. Пусто = сотрудник СУ-10.
             </small>
           </div>
 

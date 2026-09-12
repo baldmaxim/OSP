@@ -19,10 +19,17 @@ function LoginPage({ variant = 'employee' }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
+  // Заявка подрядчика: организацию пишем текстом. Справочник контрагентов —
+  // коммерческая информация, наружу его не отдаём; связывает заявку с карточкой
+  // администратор при подтверждении.
+  const [companyName, setCompanyName] = useState('')
+  const [companyInn, setCompanyInn] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
 
   useEffect(() => {
     if (isLoggedIn) {
-      navigate(isEmployee ? '/general/objects' : '/contractor/proposals')
+      navigate(isEmployee ? '/general/objects' : '/contractor')
     }
   }, [isLoggedIn, isEmployee, navigate])
 
@@ -52,7 +59,7 @@ function LoginPage({ variant = 'employee' }) {
     try {
       // Организацию не выбираем: она берётся из привязки логина в базе.
       await loginAsContractor(email, password)
-      navigate('/contractor/proposals')
+      navigate('/contractor')
     } catch (err) {
       if (err.message === 'PENDING_APPROVAL') {
         setSuccessMessage('Ваша заявка отправлена. Ожидайте подтверждения администратором.')
@@ -98,6 +105,44 @@ function LoginPage({ variant = 'employee' }) {
         'администратор одобрит заявку.'
       )
       setMode('employee')
+      setPassword('')
+      setPasswordConfirm('')
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleContractorSignUp = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccessMessage('')
+    if (!companyName.trim()) { setError('Укажите название организации'); return }
+    if (password.length < 6) { setError('Пароль должен быть не менее 6 символов'); return }
+    if (password !== passwordConfirm) { setError('Пароли не совпадают'); return }
+    setLoading(true)
+    try {
+      const company = [companyName.trim(), companyInn.trim() && `ИНН ${companyInn.trim()}`]
+        .filter(Boolean).join(', ')
+      const data = await signUp(email, password, {
+        kind: 'contractor',
+        company,
+        full_name: contactName.trim() || null,
+        phone: contactPhone.trim() || null,
+      })
+      const alreadyRegistered =
+        data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0
+      if (alreadyRegistered) {
+        setError('Этот email уже зарегистрирован. Войдите или воспользуйтесь ссылкой подтверждения из ранее отправленного письма.')
+        return
+      }
+      setSuccessMessage(
+        `Заявка принята. На адрес ${email} отправлено письмо со ссылкой для подтверждения — ` +
+        'перейдите по ней и войдите. После этого отдел сопровождения подрядчиков свяжет вашу ' +
+        'учётную запись с организацией и откроет доступ в кабинет.'
+      )
+      setMode('contractor')
       setPassword('')
       setPasswordConfirm('')
     } catch (err) {
@@ -209,6 +254,87 @@ function LoginPage({ variant = 'employee' }) {
           </form>
         )}
 
+        {/* Заявка подрядчика на доступ в кабинет */}
+        {mode === 'contractor_register' && (
+          <form onSubmit={handleContractorSignUp} className="login-form">
+            <div className="form-field">
+              <label>Организация *</label>
+              <input
+                type="text"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="ТОО «Подрядчик»"
+                required
+                autoFocus
+              />
+            </div>
+            <div className="form-field">
+              <label>ИНН / БИН</label>
+              <input
+                type="text"
+                value={companyInn}
+                onChange={(e) => setCompanyInn(e.target.value)}
+                placeholder="Чтобы вас не спутали с тёзкой"
+              />
+            </div>
+            <div className="form-field">
+              <label>Контактное лицо</label>
+              <input
+                type="text"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                placeholder="Фамилия Имя Отчество"
+              />
+            </div>
+            <div className="form-field">
+              <label>Телефон</label>
+              <input
+                type="tel"
+                value={contactPhone}
+                onChange={(e) => setContactPhone(e.target.value)}
+                placeholder="+7 ___ ___ __ __"
+              />
+            </div>
+            <div className="form-field">
+              <label>Email *</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@example.com"
+                required
+              />
+            </div>
+            <div className="form-field">
+              <label>Пароль *</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Не менее 6 символов"
+                required
+              />
+            </div>
+            <div className="form-field">
+              <label>Повторите пароль *</label>
+              <input
+                type="password"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                placeholder="Ещё раз"
+                required
+              />
+            </div>
+            <p className="login-note">
+              Доступ откроется после проверки: мы сверим организацию со своим реестром
+              контрагентов и свяжем с ней вашу учётную запись.
+            </p>
+            <button type="submit" className="login-button" disabled={loading}>
+              {loading ? 'Отправка…' : 'Отправить заявку'}
+            </button>
+          </form>
+        )}
+
         {/* Форма регистрации */}
         {mode === 'register' && (
           <form onSubmit={handleSignUp} className="login-form">
@@ -259,9 +385,20 @@ function LoginPage({ variant = 'employee' }) {
         {/* Переключение регистрации и перекрёстные ссылки между двумя входами */}
         <div className="login-footer">
           {isContractorVariant ? (
-            <button type="button" className="login-link" onClick={() => navigate('/login')}>
-              Вход для сотрудников →
-            </button>
+            <>
+              {mode === 'contractor_register' ? (
+                <button type="button" className="login-link" onClick={() => switchMode('contractor')}>
+                  Уже есть доступ? Войти
+                </button>
+              ) : (
+                <button type="button" className="login-link" onClick={() => switchMode('contractor_register')}>
+                  Первый раз здесь? Подать заявку на доступ
+                </button>
+              )}
+              <button type="button" className="login-link login-link-muted" onClick={() => navigate('/login')}>
+                Вход для сотрудников →
+              </button>
+            </>
           ) : mode === 'register' ? (
             <button type="button" className="login-link" onClick={() => switchMode('employee')}>
               Уже есть аккаунт? Войти

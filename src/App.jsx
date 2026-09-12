@@ -24,7 +24,7 @@ function PermissionRoute({ section, anyOf, children }) {
   }
   if (roleError) return <AccessError message={roleError} />
   if (!isLoggedIn) return <Navigate to="/login" replace />
-  if (!isEmployee) return <Navigate to="/contractor/proposals" replace />
+  if (!isEmployee) return <Navigate to="/contractor" replace />
   if (anyOf && anyOf.length > 0 && !anyOf.some((s) => canView(s))) return <AccessDenied />
   if (section && !canView(section)) return <AccessDenied />
   return children
@@ -45,8 +45,10 @@ const SummaryPage = lazy(() => import('./pages/SummaryPage'))
 const ContractsPage = lazy(() => import('./pages/ContractsPage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
-const ContractorProposalsPage = lazy(() => import('./pages/ContractorProposalsPage'))
-const ContractorNegotiationsPage = lazy(() => import('./pages/ContractorNegotiationsPage'))
+// Кабинет подрядчика — одна страница с вкладками «Тендеры» и «Договоры».
+// Прежние адреса (/contractor/proposals, /contractor/negotiations) остаются
+// рабочими: по ним приходят ссылки из писем и закладки подрядчиков.
+const ContractorCabinetPage = lazy(() => import('./pages/ContractorCabinetPage'))
 const BSMPage = lazy(() => import('./pages/BSMPage'))
 const GeneralInfoPage = lazy(() => import('./pages/GeneralInfoPage'))
 const GeneralDocumentsPage = lazy(() => import('./pages/GeneralDocumentsPage'))
@@ -80,7 +82,7 @@ function EmployeeLayout() {
   if (roleError) return <AccessError message={roleError} />
 
   if (!isLoggedIn) return <Navigate to="/login" replace />
-  if (!isEmployee) return <Navigate to="/contractor/proposals" replace />
+  if (!isEmployee) return <Navigate to="/contractor" replace />
 
   return (
     <NotificationsProvider>
@@ -159,7 +161,7 @@ function AuthRoutes() {
           path="/login"
           element={
             isLoggedIn
-              ? <Navigate to={isEmployee ? "/general" : "/contractor/proposals"} replace />
+              ? <Navigate to={isEmployee ? "/general" : "/contractor"} replace />
               : <LoginPage variant="employee" />
           }
         />
@@ -168,26 +170,16 @@ function AuthRoutes() {
           path="/partner"
           element={
             isLoggedIn
-              ? <Navigate to={isEmployee ? "/general" : "/contractor/proposals"} replace />
+              ? <Navigate to={isEmployee ? "/general" : "/contractor"} replace />
               : <LoginPage variant="contractor" />
           }
         />
         <Route
-          path="/contractor/proposals"
-          element={
-            isContractor
-              ? <ContractorProposalsPage />
-              : <Navigate to="/partner" replace />
-          }
+          path="/contractor"
+          element={isContractor ? <ContractorCabinetPage /> : <Navigate to="/partner" replace />}
         />
-        <Route
-          path="/contractor/negotiations"
-          element={
-            isContractor
-              ? <ContractorNegotiationsPage />
-              : <Navigate to="/partner" replace />
-          }
-        />
+        <Route path="/contractor/proposals" element={<Navigate to="/contractor" replace />} />
+        <Route path="/contractor/negotiations" element={<Navigate to="/contractor?tab=contracts" replace />} />
         <Route path="/*" element={<EmployeeLayout />} />
       </Routes>
     </Suspense>

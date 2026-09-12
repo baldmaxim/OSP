@@ -146,6 +146,9 @@ function AdminPage() {
             ? r.object_ids
             : (r?.object_id ? [r.object_id] : []),
           counterparty_id: r?.counterparty_id || null,
+          // Организация, которую подрядчик указал при саморегистрации, — подсказка
+          // администратору, с какой карточкой контрагента связывать логин.
+          requested_company: r?.requested_company || '',
           has_role: !!r,
           created_at: au.created_at,
           last_sign_in_at: au.last_sign_in_at,

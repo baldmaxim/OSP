@@ -358,10 +358,21 @@ export function RoleProvider({ children }) {
     const { row, counterparty } = await resolveContractorCounterparty(data.user.id)
 
     if (!row) {
-      // Создаём заявку
+      // Первый вход после регистрации: превращаем данные аккаунта в заявку.
+      // Роль строго 'contractor' — политика БД другие роли при саморегистрации
+      // не принимает, а привязку к организации ставит администратор.
+      const meta = data.user.user_metadata || {}
       await supabase
         .from('user_roles')
-        .insert([{ user_id: data.user.id, email, role: 'engineer', is_approved: false }])
+        .insert([{
+          user_id: data.user.id,
+          email,
+          role: 'contractor',
+          is_approved: false,
+          full_name: meta.full_name || null,
+          work_phone: meta.phone || null,
+          requested_company: meta.company || null,
+        }])
       await supabase.auth.signOut()
       throw new Error('PENDING_APPROVAL')
     }
@@ -389,9 +400,14 @@ export function RoleProvider({ children }) {
     return data
   }
 
-  // Регистрация
-  const signUp = async (email, password) => {
-    const { data, error } = await supabase.auth.signUp({ email, password })
+  // Регистрация. `meta` уходит в user_metadata аккаунта: подтверждение почты
+  // включено, поэтому на момент регистрации сессии ещё нет и строку заявки в
+  // user_roles создать нельзя — данные подрядчика (компания, ФИО, телефон)
+  // доезжают вместе с аккаунтом и превращаются в заявку при первом входе.
+  const signUp = async (email, password, meta = null) => {
+    const { data, error } = await supabase.auth.signUp(
+      meta ? { email, password, options: { data: meta } } : { email, password }
+    )
     if (error) throw error
     return data
   }
