@@ -28,14 +28,22 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  padding: 0.6rem 0.7rem;
+  padding: 0.65rem 0.7rem;
   font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-tertiary);
+  letter-spacing: 0.03em;
+  /* Контраст выше, чем у приглушённого текста: подписи колонок должны читаться
+     как заголовки, а не как ещё один ряд данных. */
+  color: var(--text-secondary);
   background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
   vertical-align: bottom;
+  white-space: normal;
+}
+/* Вертикальные линейки между подписями: без них двухстрочные заголовки
+   («ДАТА ПРИНЯТИЯ В РАБОТУ» и «ПЛАН. ДАТА ПОДПИСАНИЯ») сливались в одно пятно. */
+.contracts-table-compact thead th + th {
+  border-left: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
 }
 
 /* Заголовок каждой колонки выровнен ТАК ЖЕ, как данные под ним. Раньше «Статус»,
@@ -56,6 +64,18 @@
   padding: 0.6rem 0.7rem;
   vertical-align: top;
   line-height: 1.45;
+}
+/* Чётные строки чуть светлее: на одиннадцати колонках глаз теряет строку при
+   переходе от «Объекта» к «Плановой дате». Оттенок минимальный — это подсказка,
+   а не полоса. */
+.contracts-table-compact tbody tr.contract-row:nth-of-type(even) > td {
+  background: color-mix(in srgb, var(--text-primary) 2.5%, transparent);
+}
+
+/* Те же линейки в данных — колонки видно как колонки, а не как поток текста.
+   Оттенок слабее, чем в шапке: сетка должна читаться, но не рябить. */
+.contracts-table-compact tbody td + td {
+  border-left: 1px solid color-mix(in srgb, var(--border-color) 35%, transparent);
 }
 .contracts-table-compact tbody tr.contract-row:hover > td {
   background: color-mix(in srgb, var(--primary-color) 4%, transparent);
@@ -156,24 +176,55 @@
 .contracts-table-compact .cell-amount .amt-row { justify-content: flex-end; gap: 0.3rem; }
 
 /* ── Статус ─────────────────────────────────────────────────────────────────
-   Бейдж и отметка Larix — одним столбиком по левому краю: при центрировании
-   подписи разной длины «плясали» относительно друг друга. */
+   Было: широкий бейдж со своей рамкой плюс отдельная плашка «Larix: нет» под
+   ним — две строки и десятая часть ширины таблицы на одно слово.
+   Стало: компактный бейдж, а Larix — точка рядом с ним. Значение читается по
+   цвету, расшифровка в подсказке; строка перестала распухать. */
 .contracts-table-compact .cell-status { text-align: left; }
+.contracts-table-compact .cell-status .fdrop-trigger {
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  gap: 0.25rem;
+  border: none;
+  background: transparent;
+}
 .contracts-table-compact .cell-status .status-badge {
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  border-radius: 6px;
   font-size: 0.6875rem;
   font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
   text-align: left;
 }
+/* Длинный статус («Ожидание подписания в бум. виде») переносим по словам, но
+   колонку под него больше не расширяем. */
+.contracts-table-compact .cell-status { min-width: 0; }
+.contracts-table-compact .cell-status .status-badge { white-space: normal; }
+
+/* Larix: точка вместо плашки. Зелёная — внесён, янтарная — нет. */
 .contracts-table-compact .larix-badge {
-  margin: 0.35rem 0 0;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  border: none;
+  background: none;
   font-size: 0.625rem;
-  opacity: 0.9;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.contracts-table-compact .larix-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
 }
 
 /* ── Даты ───────────────────────────────────────────────────────────────────
@@ -194,14 +245,32 @@
 /* ── Юрист ──────────────────────────────────────────────────────────────────
    Выпадающий список не должен выглядеть полем ввода: в покое это просто текст. */
 .contracts-table-compact .cell-lawyer .fdrop-trigger {
-  padding: 0.15rem 0.3rem;
+  /* Высота у выпадашки по умолчанию 40px — в плотной строке она выбивалась и
+     тянула за собой другой кегль и цвет. Здесь это просто строка таблицы. */
+  height: auto;
+  min-height: 0;
+  padding: 0.1rem 0.3rem;
+  gap: 0.3rem;
   border-color: transparent;
   background: transparent;
-  font-size: 0.75rem;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 .contracts-table-compact .cell-lawyer .fdrop-trigger:hover {
   border-color: var(--border-color);
   background: var(--bg-secondary);
+}
+/* Стрелка выпадашки в покое не нужна — она сообщает «поле», хотя это значение. */
+.contracts-table-compact .cell-lawyer .fdrop-arrow { opacity: 0; transition: opacity 0.12s ease; }
+.contracts-table-compact .cell-lawyer:hover .fdrop-arrow,
+.contracts-table-compact .cell-lawyer .fdrop.is-open .fdrop-arrow { opacity: 0.6; }
+.contracts-table-compact .cell-lawyer .fdrop-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Действия ───────────────────────────────────────────────────────────────
@@ -243,10 +312,10 @@
 .contracts-table-compact col.cg-num { width: 3.5%; }
 .contracts-table-compact col.cg-object { width: 9%; }
 .contracts-table-compact col.cg-ds { width: 15%; }
-.contracts-table-compact col.cg-counterparty { width: 12%; }
-.contracts-table-compact col.cg-work { width: 14.5%; }
+.contracts-table-compact col.cg-counterparty { width: 12.5%; }
+.contracts-table-compact col.cg-work { width: 16%; }
 .contracts-table-compact col.cg-amount { width: 9%; }
-.contracts-table-compact col.cg-status { width: 10%; }
+.contracts-table-compact col.cg-status { width: 7.5%; }
 .contracts-table-compact col.cg-lawyer { width: 8%; }
 .contracts-table-compact col.cg-accepted { width: 6.5%; }
 .contracts-table-compact col.cg-planned { width: 6.5%; }

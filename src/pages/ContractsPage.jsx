@@ -72,7 +72,9 @@ const STATUS_OPTIONS = [
   { value: 'in_work', label: 'В работе', className: 'status-in-work' },
   // Согласование закончено, ждём живые подписи на бумаге. Значение уложено в
   // VARCHAR(20) колонки contracts.status — миграция не нужна.
-  { value: 'awaiting_paper_sign', label: 'Ожидание подписания в бум. виде', className: 'status-awaiting-paper' },
+  // short — подпись для бейджа в таблице: полное название занимает три строки и
+  // растягивает строку реестра. Полное остаётся в выпадающем списке и подсказке.
+  { value: 'awaiting_paper_sign', label: 'Ожидание подписания в бум. виде', short: 'Ожидание подписания', className: 'status-awaiting-paper' },
   { value: 'paused', label: 'Приостановка', className: 'status-paused' },
   { value: 'completed', label: 'Завершено', className: 'status-completed' },
 ]
@@ -2237,7 +2239,11 @@ function ContractRegistry() {
                         disabled={!canEditContracts}
                         formatTrigger={(lbl) => {
                           const opt = STATUS_OPTIONS.find(o => o.label === lbl)
-                          return <span className={`status-badge ${opt?.className || ''}`}>{lbl}</span>
+                          return (
+                            <span className={`status-badge ${opt?.className || ''}`} title={lbl}>
+                              {opt?.short || lbl}
+                            </span>
+                          )
                         }}
                         renderOption={(o) => <span className={`status-badge ${o.className || ''}`}>{o.label}</span>}
                       />
@@ -2246,10 +2252,10 @@ function ContractRegistry() {
                       <span
                         className="larix-badge is-in"
                         title={`Внесён в Larix${contract.larix_number ? ` · № ${contract.larix_number}` : ''}${contract.larix_entered_by ? ` · ${contract.larix_entered_by}` : ''}`}
-                      >Larix ✓</span>
+                      >Larix</span>
                     )}
                     {!isDeletedTab && !contract.larix_entered && (contract.status || 'new_request') !== 'new_request' && (
-                      <span className="larix-badge is-out" title="Договор ещё не внесён в Larix">Larix: нет</span>
+                      <span className="larix-badge is-out" title="Договор ещё не внесён в Larix">Larix</span>
                     )}
                   </td>
                   <td className="cell-lawyer" onClick={(e) => e.stopPropagation()}>

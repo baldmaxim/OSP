@@ -3,11 +3,12 @@
 }
 
 :root {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  /* Единый UI-стек для таблиц и контролов (кириллица ок, без внешних файлов). */
-  --font-ui: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
+  /* Golos Text — шрифт, нарисованный под кириллицу и интерфейсы: ровный ритм
+     строчных, различимые «а/о/е» в мелком кегле и спокойные цифры. Inter
+     оставлен следующим в стеке: если Google Fonts недоступен, вид не поедет. */
+  font-family: 'Golos Text', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;
+  --font-ui: 'Golos Text', 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
