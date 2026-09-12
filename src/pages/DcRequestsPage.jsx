@@ -57,15 +57,22 @@ const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(o => [o.value, o.labe
 // «Итог проверки». Всё остальное — рабочие файлы.
 const SPECIAL_DOC_CATEGORIES = new Set(['final', 'check_report'])
 
-// Результат сверки заявки с договором (миграция 20260824). Из интерфейса убран:
-// этап «Проверка по договору» и так виден статусом заявки, а отдельный признак
-// исхода дублировал его. Метки оставлены — по ним читается прежняя история
-// правок, где такие записи уже накоплены. Колонка в БД не удалялась.
+// Исход сверки заявки с договором (миграции 20260824 + 20260912). Фиксируется
+// в окне «Результат проверки» вместе с заключением юриста и файлами отчёта;
+// без него заявку нельзя увести со стадии «Проверка по договору».
+const CHECK_STATUS_OPTIONS = [
+  { value: 'matches', label: 'Соответствует', short: 'Соответствует', className: 'dcr-verdict-ok' },
+  { value: 'matches_with_remarks', label: 'Соответствует с замечаниями', short: 'С замечаниями', className: 'dcr-verdict-warn' },
+  { value: 'not_matches', label: 'Не соответствует', short: 'Не соответствует', className: 'dcr-verdict-bad' },
+]
+// 'not_checked' остаётся только меткой: в истории правок такие записи уже есть.
 const CHECK_STATUS_LABEL = {
   not_checked: 'Не проверено',
-  matches: 'Соответствует',
-  not_matches: 'Не соответствует',
+  ...Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.label])),
 }
+const CHECK_STATUS_SHORT = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.short]))
+const CHECK_STATUS_CLASS = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.className]))
+const hasVerdict = (req) => !!req?.check_status && req.check_status !== 'not_checked'
 
 // Тип дополнительного соглашения (миграция 20260824).
 const DS_TYPE_OPTIONS = [
@@ -145,7 +152,8 @@ const AUDIT_FIELD_LABEL = {
   amount_before: 'Было подано',
   amount_after: 'Утверждено',
   material_type: 'Материал',
-  check_status: 'Статус проверки',
+  check_status: 'Итог проверки',
+  check_result_notes: 'Заключение по проверке',
   ds_type: 'Тип ДС',
 }
 
@@ -399,6 +407,13 @@ function DcRequestsPage() {
 
   // task 310 — статус в виде клик-попапа.
   const [statusPopoverFor, setStatusPopoverFor] = useState(null)
+
+  // Окно «Результат проверки по договору»:
+  //   { requestId, nextStatus, verdict, notes } | null
+  // nextStatus — статус, на который переключались, когда результат ещё не был
+  // зафиксирован: сохраняем исход и сразу двигаем заявку дальше.
+  const [verdictModal, setVerdictModal] = useState(null)
+  const [verdictSaving, setVerdictSaving] = useState(false)
 
   // task 310 — документы заявки.
   // docsByReq: Map<requestId, s3_documents[]>
@@ -820,12 +835,81 @@ function DcRequestsPage() {
     setDeadlinePopover({ id, rect: e.currentTarget.getBoundingClientRect() })
   }
 
+  // Открыть окно результата: на просмотр/правку или как обязательный шаг перед
+  // сменой статуса (nextStatus).
+  const openVerdictModal = (req, nextStatus = null) => {
+    setVerdictModal({
+      requestId: req.id,
+      nextStatus,
+      verdict: hasVerdict(req) ? req.check_status : '',
+      notes: req.check_result_notes || '',
+    })
+  }
+
+  // Сохранение результата проверки. Исход обязателен: без него запись не имеет
+  // смысла, а заявка не должна уходить со стадии сверки.
+  const handleSaveVerdict = async () => {
+    if (!verdictModal) return
+    const req = requests.find(r => r.id === verdictModal.requestId)
+    if (!req) { setVerdictModal(null); return }
+    if (!verdictModal.verdict) {
+      alert('Укажите исход проверки.')
+      return
+    }
+    const notes = verdictModal.notes.trim() || null
+    const prevVerdict = hasVerdict(req) ? req.check_status : 'not_checked'
+    const prevNotes = req.check_result_notes ?? null
+    const nextStatus = verdictModal.nextStatus
+    const checkedAt = new Date().toISOString()
+    const patch = {
+      check_status: verdictModal.verdict,
+      check_result_notes: notes,
+      checked_by_name: userProfile?.full_name || null,
+      checked_at: checkedAt,
+      updated_at: checkedAt,
+    }
+    if (nextStatus) patch.status = nextStatus
+    setVerdictSaving(true)
+    try {
+      const { error } = await supabase.from('dc_requests').update(patch).eq('id', req.id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === req.id ? { ...r, ...patch } : r))
+      if (prevVerdict !== verdictModal.verdict) {
+        await logFieldChange(req.id, 'check_status', prevVerdict, verdictModal.verdict)
+      }
+      if ((prevNotes || '') !== (notes || '')) {
+        await logFieldChange(req.id, 'check_result_notes', prevNotes, notes)
+      }
+      if (nextStatus && nextStatus !== (req.status ?? null)) {
+        await logDcEvent(req.id, 'status_changed', {
+          fieldName: 'status',
+          oldValue: req.status ?? null,
+          newValue: nextStatus,
+          description: `Статус: ${auditValueText('status', req.status ?? null)} → ${auditValueText('status', nextStatus)}`,
+        })
+      }
+      setVerdictModal(null)
+    } catch (err) {
+      alert('Ошибка сохранения результата проверки: ' + (err.message || err))
+    } finally {
+      setVerdictSaving(false)
+    }
+  }
+
   const handleStatusChange = async (id, newStatus) => {
-    const oldStatus = requests.find(r => r.id === id)?.status ?? null
+    const req = requests.find(r => r.id === id)
+    const oldStatus = req?.status ?? null
     // Проверка не только на кнопке: попап мог остаться открытым с момента, когда
     // статус был другим, да и вызвать обработчик можно не только кликом.
     if (oldStatus === 'contract_check' && !canLeaveContractCheck) {
       alert('Сменить статус «Проверка по договору» может только юрист ОСП, администратор или суперпользователь.')
+      return
+    }
+    // Уйти со сверки можно только с зафиксированным исходом — иначе по заявке
+    // навсегда останется непонятно, чем проверка закончилась. Вместо отказа
+    // сразу открываем окно результата и двигаем статус после сохранения.
+    if (oldStatus === 'contract_check' && newStatus !== 'contract_check' && !hasVerdict(req)) {
+      openVerdictModal(req, newStatus)
       return
     }
     try {
@@ -1209,6 +1293,10 @@ function DcRequestsPage() {
           ? Number((-(diff / Number(before)) * 100).toFixed(2))
           : '',
         'Статус': STATUS_LABEL[req.status || 'in_work'] || '',
+        'Итог проверки': hasVerdict(req) ? (CHECK_STATUS_LABEL[req.check_status] || '') : '',
+        'Заключение по проверке': req.check_result_notes || '',
+        'Проверил': req.checked_by_name || '',
+        'Дата проверки': formatShortDate(req.checked_at),
         'Ответственный': req.responsible?.full_name || '',
         'Срок согласования': formatShortDate(req.expected_approval_date),
         'Задачи': tasks.length ? `${done}/${tasks.length}` : '',
@@ -1221,10 +1309,12 @@ function DcRequestsPage() {
       }
     })
     const ws = XLSX.utils.json_to_sheet(rows)
+    // Ширины — по порядку колонок выше (№ … Создано).
     ws['!cols'] = [
       { wch: 5 }, { wch: 24 }, { wch: 24 }, { wch: 20 }, { wch: 22 }, { wch: 16 },
       { wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 14 },
-      { wch: 22 }, { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 16 },
+      { wch: 22 }, { wch: 26 }, { wch: 50 }, { wch: 22 }, { wch: 14 },
+      { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 16 },
       { wch: 16 }, { wch: 16 }, { wch: 40 }, { wch: 22 }, { wch: 12 },
     ]
     // Второй лист — задачи и ответы по тем же заявкам: в основной строке для
@@ -1537,6 +1627,28 @@ function DcRequestsPage() {
                       <span className="mcard-label">Ориент. срок</span>
                       <span className="mcard-value">{req.expected_approval_date ? formatShortDate(req.expected_approval_date) : '—'}</span>
                     </div>
+                    {/* Итог сверки с договором: на телефоне — строкой, клик открывает
+                        то же окно с заключением и файлами. */}
+                    <div className="mcard-row">
+                      <span className="mcard-label">Итог проверки</span>
+                      <span className="mcard-value">
+                        {hasVerdict(req) ? (
+                          <button
+                            type="button"
+                            className={`dcr-verdict-badge ${CHECK_STATUS_CLASS[req.check_status] || ''}`}
+                            onClick={() => openVerdictModal(req)}
+                          >
+                            <span className="dcr-verdict-badge-text">{CHECK_STATUS_SHORT[req.check_status]}</span>
+                          </button>
+                        ) : canEditDc && !req.deleted_at ? (
+                          <button
+                            type="button"
+                            className="dcr-verdict-add"
+                            onClick={() => openVerdictModal(req)}
+                          >+ Итог проверки</button>
+                        ) : '—'}
+                      </span>
+                    </div>
                   </div>
                   <div className="mcard-foot">
                     {docsCount > 0 && <span className="mcard-chip">📎 {docsCount}</span>}
@@ -1632,7 +1744,8 @@ function DcRequestsPage() {
                   const reportDocs = docs.filter(d => d.doc_category === 'check_report')
                   // Блок отчёта показываем с этапа «Итог проверки» и дальше, а также
                   // всегда, если отчёт уже приложен.
-                  const showReport = reportDocs.length > 0 || (canEditDc && currentStatus !== 'contract_check')
+                  const showReport = reportDocs.length > 0 || hasVerdict(req)
+                    || (canEditDc && currentStatus !== 'contract_check')
                   const docsOpen = expandedDocs.has(req.id)
 
                   // task 370: разница сумм («Было подано» − «Утверждено»). >0 → удешевление.
@@ -1822,6 +1935,32 @@ function DcRequestsPage() {
                             </div>
                           )}
                         </div>
+                        {/* Итог сверки с договором: чем закончилась проверка.
+                            Клик открывает окно с заключением и файлами отчёта. */}
+                        {hasVerdict(req) ? (
+                          <button
+                            type="button"
+                            className={`dcr-verdict-badge ${CHECK_STATUS_CLASS[req.check_status] || ''}`}
+                            onClick={() => openVerdictModal(req)}
+                            title={[
+                              CHECK_STATUS_LABEL[req.check_status],
+                              req.check_result_notes,
+                              [req.checked_by_name, formatDateTime(req.checked_at)].filter(Boolean).join(' · '),
+                            ].filter(Boolean).join('\n')}
+                          >
+                            <span className="dcr-verdict-badge-text">{CHECK_STATUS_SHORT[req.check_status]}</span>
+                            {req.checked_at && (
+                              <span className="dcr-verdict-badge-date">{formatShortDate(req.checked_at)}</span>
+                            )}
+                          </button>
+                        ) : canEditDc && !isDeletedTab && (canLeaveContractCheck || currentStatus !== 'contract_check') ? (
+                          <button
+                            type="button"
+                            className="dcr-verdict-add"
+                            onClick={() => openVerdictModal(req)}
+                            title="Зафиксировать итог проверки по договору"
+                          >+ Итог проверки</button>
+                        ) : null}
                       </td>
                       <td>{req.responsible?.full_name || <span className="muted-dash">—</span>}</td>
                       <td className="dcr-cell-tasks">
@@ -2302,6 +2441,128 @@ function DcRequestsPage() {
           </div>
         </div>
       )}
+
+      {/* Результат проверки по договору: исход, заключение юриста и файлы отчёта.
+          Открывается кнопкой в колонке статуса и автоматически — при попытке
+          увести заявку со стадии сверки без зафиксированного исхода. */}
+      {verdictModal && (() => {
+        const req = requests.find(r => r.id === verdictModal.requestId)
+        if (!req) return null
+        const reportDocs = (docsByReq.get(req.id) || []).filter(d => d.doc_category === 'check_report')
+        const readOnly = !canEditDc || !!req.deleted_at
+        return (
+          <div className="modal-overlay" onClick={() => !verdictSaving && setVerdictModal(null)}>
+            <div className="modal dcr-verdict-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <h3>Результат проверки по договору</h3>
+                  <p className="dcr-history-sub">
+                    {req.ds_number ? `№ ДС ${req.ds_number}` : 'Заявка без № ДС'}
+                    {req.objects?.name ? ` · ${req.objects.name}` : ''}
+                    {req.counterparties?.name ? ` · ${req.counterparties.name}` : ''}
+                  </p>
+                </div>
+                <button
+                  className="modal-close"
+                  onClick={() => setVerdictModal(null)}
+                  disabled={verdictSaving}
+                  aria-label="Закрыть"
+                >×</button>
+              </div>
+
+              <div className="dcr-verdict-body">
+                {verdictModal.nextStatus && (
+                  <div className="dcr-verdict-note">
+                    Чтобы перевести заявку в «{STATUS_LABEL[verdictModal.nextStatus]}», зафиксируйте итог сверки:
+                    иначе по заявке не останется следа, чем закончилась проверка.
+                  </div>
+                )}
+
+                <div className="dcr-verdict-field">
+                  <label className="dcr-verdict-label">Исход проверки *</label>
+                  <div className="dcr-verdict-options">
+                    {CHECK_STATUS_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`dcr-verdict-option ${opt.className}${verdictModal.verdict === opt.value ? ' is-active' : ''}`}
+                        onClick={() => setVerdictModal(prev => ({ ...prev, verdict: opt.value }))}
+                        disabled={readOnly || verdictSaving}
+                        aria-pressed={verdictModal.verdict === opt.value}
+                      >{opt.label}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="dcr-verdict-field">
+                  <label className="dcr-verdict-label" htmlFor="dcr-verdict-notes">Заключение</label>
+                  {/* Обычная управляемая textarea: AutoGrowTextarea работает на
+                      defaultValue/onInput и для формы с черновиком не подходит. */}
+                  <textarea
+                    id="dcr-verdict-notes"
+                    className="dcr-verdict-textarea"
+                    rows={4}
+                    value={verdictModal.notes}
+                    onChange={(e) => setVerdictModal(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Что проверено, какие расхождения с договором найдены, что нужно исправить"
+                    disabled={readOnly || verdictSaving}
+                  />
+                </div>
+
+                <div className="dcr-verdict-field">
+                  <label className="dcr-verdict-label">Файлы результата</label>
+                  {reportDocs.length > 0 ? (
+                    <div className="dcr-doc-chips">{reportDocs.map(renderDocChip)}</div>
+                  ) : (
+                    <p className="dcr-verdict-empty">Файлы не приложены.</p>
+                  )}
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className="dcr-doc-add dcr-doc-add-final"
+                      onClick={() => handleDocPick(req.id, 'check_report')}
+                      title="Приложить отчёт, заключение или сравнительную таблицу"
+                    >+ Файл результата</button>
+                  )}
+                  <p className="dcr-verdict-hint">
+                    Те же файлы видны в колонке «Документы» в блоке «Отчёт по документам».
+                  </p>
+                </div>
+
+                {(req.checked_by_name || req.checked_at) && (
+                  <div className="dcr-verdict-signature">
+                    Проверил: <strong>{req.checked_by_name || 'без имени'}</strong>
+                    {req.checked_at ? ` · ${formatDateTime(req.checked_at)}` : ''}
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setVerdictModal(null)}
+                  disabled={verdictSaving}
+                >{readOnly ? 'Закрыть' : 'Отмена'}</button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleSaveVerdict}
+                    disabled={verdictSaving || !verdictModal.verdict}
+                  >
+                    {verdictSaving
+                      ? 'Сохранение…'
+                      : verdictModal.nextStatus
+                        ? `Сохранить и перевести в «${STATUS_LABEL[verdictModal.nextStatus]}»`
+                        : 'Сохранить'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {previewDoc && (
         <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
