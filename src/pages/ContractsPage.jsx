@@ -2187,6 +2187,9 @@ function ContractRegistry() {
                         value={contract.folder_path}
                         canEdit={canEditContracts}
                         onSave={(v) => handleSaveFolderPath(contract.id, v)}
+                        // Короткая подпись: кнопка есть в каждой строке реестра,
+                        // полная фраза занимала ячейку целиком.
+                        addLabel="путь к папке"
                         placeholder="\\su10-fs\Договоры\ЖК Алия\СУ-2-АЛ"
                       />
                     )}
