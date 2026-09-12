@@ -42,7 +42,7 @@ import {
   indentUpdates,
   outdentUpdates,
 } from '../utils/appendixTree'
-import { useIsPhone } from '../hooks/useMediaQuery'
+import { useIsPhone, useMediaQuery } from '../hooks/useMediaQuery'
 import '../components/ContractRegistry.css'
 // Оформление реестра — отдельным файлом и ПОСЛЕ базовых стилей: при равной
 // специфичности перекрывает их (шапка, выравнивание, ширины колонок).
@@ -1767,8 +1767,19 @@ function ContractRegistry() {
   }
 
   const isDeletedTab = activeTab === 'deleted'
-  // В представлении ДС появляется колонка «Изменяемый документ».
-  const tableColCount = isAmendmentsView ? 12 : 11
+  // Рабочее окно 1366px минус боковое меню — это ~1130px под таблицу. Одиннадцать
+  // колонок туда влезают только «кашей», поэтому на узких экранах две служебные
+  // колонки не рендерим: порядковый номер строки и «Принят в работу» (дата
+  // остаётся в раскрытой строке и в карточке договора).
+  // Именно НЕ РЕНДЕРИМ, а не прячем стилями: у таблицы table-layout: fixed с
+  // <colgroup>, и скрытая через CSS ячейка оставляет колонку — шапка и данные
+  // разъезжаются.
+  const narrowView = useMediaQuery('(max-width: 1450px)')
+  const showRowNumber = !narrowView
+  const showAcceptedDate = !narrowView
+  const tableColCount = (isAmendmentsView ? 12 : 11)
+    - (showRowNumber ? 0 : 1)
+    - (showAcceptedDate ? 0 : 1)
 
   // ── Состояние формы документа ─────────────────────────────────────────────
   const isDsForm = formData.record_type !== DOC_TYPE.CONTRACT
@@ -1821,7 +1832,7 @@ function ContractRegistry() {
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
             title="Единый порядок папок в сетевом хранилище"
           >
-            <IconFolderTree size={15} /> Структура хранения документов
+            <IconFolderTree size={15} /> Структура хранения
           </button>
           <button
             onClick={handleOpenAttachmentsModal}
@@ -1829,7 +1840,7 @@ function ContractRegistry() {
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
             title="Стандартные приложения для каждого объекта"
           >
-            <IconDocsStack size={15} /> Приложения объектов
+            <IconDocsStack size={15} /> Приложения
           </button>
           {!isDeletedTab && canEditContracts && (
             <button
@@ -1846,9 +1857,9 @@ function ContractRegistry() {
               to="/contracts/psdc-batch"
               className="btn-secondary"
               style={{ display: 'inline-flex', alignItems: 'center', padding: '0.5rem 0.875rem', fontSize: '0.8125rem', textDecoration: 'none' }}
-              title="Загрузка существующих ПСДЦ пакетом с сопоставлением файлов и документов"
+              title="Массовая загрузка существующих ПСДЦ пакетом с сопоставлением файлов и документов"
             >
-              Массовая загрузка ПСДЦ
+              Загрузка ПСДЦ
             </Link>
           )}
           {!isDeletedTab && canEditContracts && (
@@ -2061,9 +2072,9 @@ function ContractRegistry() {
         )
       ) : (
       <div className="table-container">
-        <table className="contracts-table contracts-table-compact">
+        <table className={`contracts-table contracts-table-compact${narrowView ? ' is-narrow' : ''}`}>
           <colgroup>
-            <col className="cg-num" />
+            {showRowNumber && <col className="cg-num" />}
             <col className="cg-object" />
             <col className="cg-ds" />
             {isAmendmentsView && <col className="cg-parent" />}
@@ -2072,24 +2083,24 @@ function ContractRegistry() {
             <col className="cg-amount" />
             <col className="cg-status" />
             <col className="cg-lawyer" />
-            <col className="cg-accepted" />
+            {showAcceptedDate && <col className="cg-accepted" />}
             <col className="cg-planned" />
             <col className="cg-actions" />
           </colgroup>
           <thead>
             <tr>
-              <th>№</th>
+              {showRowNumber && <th>№</th>}
               {sortableTh('object', 'Объект')}
               <th>{isAmendmentsView ? 'ДС / тип' : 'Договор / № ДС'}</th>
               {isAmendmentsView && <th>Изменяемый документ</th>}
               {sortableTh('counterparty', 'Контрагент')}
-              <th>{isAmendmentsView ? 'Предмет ДС' : 'Выполняемые работы'}</th>
+              <th>{isAmendmentsView ? 'Предмет ДС' : 'Работы'}</th>
               {sortableTh('amount', 'Сумма')}
-              {sortableTh('status', 'Текущий статус')}
-              <th>Ответственный юрист</th>
-              {sortableTh('accepted', <>Дата принятия<br />в работу</>)}
-              {sortableTh('planned', <>План. дата<br />подписания</>)}
-              <th className="actions-column">Действия</th>
+              {sortableTh('status', 'Статус')}
+              <th title="Ответственный юрист">Юрист</th>
+              {showAcceptedDate && sortableTh('accepted', <>Принят<br />в работу</>)}
+              {sortableTh('planned', <>План.<br />подписания</>)}
+              <th className="actions-column" title="Действия"> </th>
             </tr>
           </thead>
           <tbody>
@@ -2137,12 +2148,18 @@ function ContractRegistry() {
                   onClick={toggleExpand}
                   title="Нажмите, чтобы раскрыть договор"
                 >
-                  <td className="cell-num">
-                    <span className={`expand-chev ${isExpanded ? 'open' : ''}`} aria-hidden>▸</span>
-                    <span className="cell-num-value">{pageStart + index + 1}</span>
-                    {appendices.length > 0 && <span className="expand-badge" title={`Приложений: ${appendices.length}`}>{appendices.length}</span>}
-                  </td>
+                  {showRowNumber && (
+                    <td className="cell-num">
+                      <span className={`expand-chev ${isExpanded ? 'open' : ''}`} aria-hidden>▸</span>
+                      <span className="cell-num-value">{pageStart + index + 1}</span>
+                      {appendices.length > 0 && <span className="expand-badge" title={`Приложений: ${appendices.length}`}>{appendices.length}</span>}
+                    </td>
+                  )}
                   <td className="cell-object">
+                    {/* Стрелка раскрытия переезжает сюда, когда колонки «№» нет. */}
+                    {!showRowNumber && (
+                      <span className={`expand-chev ${isExpanded ? 'open' : ''}`} aria-hidden>▸</span>
+                    )}
                     {contract.objects?.name || '—'}
                     {/* Бейдж только у ГО: объектов ОС большинство, метка на каждом — визуальный шум. */}
                     {isWarrantyObject(contract.objects?.status) && <ObjectDeptBadge status={contract.objects?.status} />}
@@ -2274,13 +2291,15 @@ function ContractRegistry() {
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>
-                  <td className="cell-date" onClick={(e) => e.stopPropagation()}>
-                    <InlineDateCell
-                      value={contract.accepted_date}
-                      onChange={(v) => handleInlineField(contract.id, 'accepted_date', v)}
-                      disabled={!canEditContracts || isDeletedTab}
-                    />
-                  </td>
+                  {showAcceptedDate && (
+                    <td className="cell-date" onClick={(e) => e.stopPropagation()}>
+                      <InlineDateCell
+                        value={contract.accepted_date}
+                        onChange={(v) => handleInlineField(contract.id, 'accepted_date', v)}
+                        disabled={!canEditContracts || isDeletedTab}
+                      />
+                    </td>
+                  )}
                   <td className={`cell-date date-cell ${overdue ? 'date-overdue' : ''}`} onClick={(e) => e.stopPropagation()}>
                     <InlineDateCell
                       value={contract.signed_date}

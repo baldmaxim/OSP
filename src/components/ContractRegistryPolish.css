@@ -33,6 +33,12 @@
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
   border: none;
+  /* Рабочее окно у пользователей — 1366px, минус боковое меню это ~1130px
+     содержимого. В такую ширину одиннадцать колонок влезают только «кашей»,
+     поэтому: служебные колонки на узких экранах скрываются (правила ниже), а
+     нижняя граница держится на 1120px — дальше честная горизонтальная
+     прокрутка вместо сжатия. */
+  min-width: 1120px;
 }
 
 /* ── Шапка ──────────────────────────────────────────────────────────────────
@@ -42,7 +48,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  padding: 0.85rem 0.9rem 0.6rem;
+  padding: 0.7rem 0.6rem 0.55rem;
   background: var(--bg-secondary);
   /* Базовые стили дают ячейке рамку со всех сторон — это и рисовало сетку.
      Сбрасываем полностью и оставляем одну линию под шапкой. */
@@ -73,7 +79,7 @@
    Воздух вместо линеек: 0.9rem по горизонтали разводит колонки надёжнее
    бордюра и не дробит таблицу на клетки. */
 .contracts-table-compact tbody td {
-  padding: 0.7rem 0.9rem;
+  padding: 0.6rem 0.6rem;
   vertical-align: top;
   line-height: 1.45;
   border: none;
@@ -271,7 +277,11 @@
   font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1.35;
+  /* Переносим по словам, но не даём выйти за колонку: nowrap заставлял длинный
+     чип наползать на соседнюю ячейку. */
   white-space: normal;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 .contracts-table-compact .larix-badge {
   display: inline-flex;
@@ -412,17 +422,17 @@
 
 /* ── Ширины колонок ─────────────────────────────────────────────────────────
    Сумма = 100%. Место отдано тому, что читают: объекту, договору, работам. */
-.contracts-table-compact col.cg-num { width: 3.5%; }
+.contracts-table-compact col.cg-num { width: 3%; }
 .contracts-table-compact col.cg-object { width: 9%; }
-.contracts-table-compact col.cg-ds { width: 15%; }
-.contracts-table-compact col.cg-counterparty { width: 12.5%; }
-.contracts-table-compact col.cg-work { width: 16%; }
+.contracts-table-compact col.cg-ds { width: 15.5%; }
+.contracts-table-compact col.cg-counterparty { width: 12%; }
+.contracts-table-compact col.cg-work { width: 15%; }
 .contracts-table-compact col.cg-amount { width: 9%; }
-.contracts-table-compact col.cg-status { width: 7.5%; }
-.contracts-table-compact col.cg-lawyer { width: 8.5%; }
+.contracts-table-compact col.cg-status { width: 9%; }
+.contracts-table-compact col.cg-lawyer { width: 9%; }
 .contracts-table-compact col.cg-accepted { width: 6.5%; }
 .contracts-table-compact col.cg-planned { width: 6.5%; }
-.contracts-table-compact col.cg-actions { width: 6%; }
+.contracts-table-compact col.cg-actions { width: 5.5%; }
 
 /* ── Панель фильтров и вкладки ──────────────────────────────────────────────
    Та же логика: меньше рамок, больше воздуха, одна высота у всех контролов. */
@@ -454,3 +464,70 @@
 }
 .contract-registry .registry-scope-btn,
 .contract-registry .status-tab { border-radius: 9px; font-size: 0.8125rem; }
+
+
+/* ── Шапка страницы ─────────────────────────────────────────────────────────
+   Шесть кнопок и заголовок при 100% масштабе вставали в три этажа, и полстраницы
+   уходило на панель инструментов. Кнопки компактнее, заголовок не переносится,
+   вся строка выравнивается по базовой линии. */
+.contract-registry .registry-header {
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+}
+.contract-registry .registry-header h2 {
+  font-size: 1.25rem;
+  white-space: nowrap;
+}
+.contract-registry .registry-header .btn-secondary,
+.contract-registry .registry-header .btn-primary {
+  padding: 0.45rem 0.7rem !important;
+  font-size: 0.75rem !important;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* Вкладки охвата и статусов — плотнее: три ряда управления над таблицей это
+   много, и каждый лишний пиксель здесь отнимается у данных. */
+.contract-registry .registry-scope,
+.contract-registry .status-tabs { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+.contract-registry .status-tab { padding: 0.4rem 0.7rem; }
+.contract-registry .registry-filters { padding: 0.7rem 0.75rem; }
+
+
+/* ── Узкие экраны ───────────────────────────────────────────────────────────
+   Скрывать колонки средствами CSS здесь НЕЛЬЗЯ: у таблицы table-layout: fixed
+   и ширины заданы через <colgroup>. `display: none` на ячейке убирает её
+   содержимое, но <col> остаётся — шапка и данные разъезжаются на одну колонку.
+   Поэтому лишние колонки не рендерятся вовсе (ContractsPage: narrowView), а
+   ширины ниже подстраиваются под получившийся набор. */
+/* Девять колонок вместо одиннадцати — доли пересчитаны под новый набор,
+   в сумме 100%. Иначе браузер растягивал первые колонки, а «План. подписания»
+   и «Действия» обрезались у правого края. */
+.contracts-table-compact.is-narrow col.cg-object { width: 12%; }
+.contracts-table-compact.is-narrow col.cg-ds { width: 19%; }
+.contracts-table-compact.is-narrow col.cg-counterparty { width: 13%; }
+.contracts-table-compact.is-narrow col.cg-work { width: 12%; }
+.contracts-table-compact.is-narrow col.cg-amount { width: 11.5%; }
+.contracts-table-compact.is-narrow col.cg-status { width: 9.5%; }
+.contracts-table-compact.is-narrow col.cg-lawyer { width: 8.5%; }
+.contracts-table-compact.is-narrow col.cg-planned { width: 8%; }
+.contracts-table-compact.is-narrow col.cg-actions { width: 7%; }
+/* Кнопки действий чуть компактнее: три по 28px в 79px колонки не помещаются. */
+.contracts-table-compact.is-narrow .actions-cell .btn-icon { width: 24px; height: 24px; }
+.contracts-table-compact.is-narrow .actions-cell .btn-icon svg { width: 14px; height: 14px; }
+
+/* Когда колонки «№» нет, стрелка раскрытия живёт в колонке объекта. */
+.contracts-table-compact.is-narrow .cell-object .expand-chev {
+  margin-right: 0.35rem;
+  opacity: 0.4;
+  font-size: 0.75rem;
+}
+
+/* На узком экране миллионные суммы («12 400 000,00 ₽» плюс метка ДП/ДГП) не
+   помещались в колонку и наползали на соседнюю. Кегль мельче, содержимое
+   обрезается по границе ячейки, полное значение — в подсказке строки. */
+.contracts-table-compact.is-narrow .cell-amount { overflow: hidden; }
+.contracts-table-compact.is-narrow .cell-amount .amt-value,
+.contracts-table-compact.is-narrow .cell-amount .amt-solo { font-size: 0.75rem; }
+.contracts-table-compact.is-narrow .cell-amount .amt-row { gap: 0.25rem; }
