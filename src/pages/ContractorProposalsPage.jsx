@@ -115,11 +115,23 @@ function ContractorProposalsPage() {
       'Ед. изм.', 'Объем по виду работ', 'Общий расход по материалу',
       'Цена за ед. Матер./Обор. с НДС', 'Цена за ед. СМР/ПНР с НДС',
       'ИТОГО цена за ед. с НДС', 'Стоим. Матер./Обор. с НДС', 'Стоим. СМР/ПНР с НДС',
-      'ИТОГО стоимость с НДС', 'Общая стоимость с НДС', 'Примечание участника'
+      'ИТОГО стоимость с НДС', 'Общая стоимость с НДС', 'Примечание участника',
+      // Скрытый якорь: по нему цены возвращаются ровно на свои позиции. Номер
+      // «№ п/п» для этого не годится — он уникален только внутри одного ВОРа, а
+      // в тендере их бывает несколько, и цены уезжали в чужой документ.
+      'ID (не изменять)',
     ]
 
     const dataRows = estimateItems.map((item, idx) => {
       const rowNum = idx + 2
+      // Раздел — это заголовок группы, а не позиция: формулы и якорь ему не
+      // нужны, иначе цена на разделе прибавлялась бы к стоимости его же строк.
+      if (item.is_section) {
+        return [
+          item.row_number, '', '', item.cost_name || '', '', '', '', '',
+          '', '', '', '', '', '', '', '', '',
+        ]
+      }
       return [
         item.row_number,
         item.code || '',
@@ -137,6 +149,7 @@ function ContractorProposalsPage() {
         { f: `L${rowNum}+M${rowNum}` },
         { f: `N${rowNum}` },
         '', // Примечание
+        item.id,
       ]
     })
 
@@ -145,7 +158,8 @@ function ContractorProposalsPage() {
     ws['!cols'] = [
       { wch: 8 }, { wch: 12 }, { wch: 15 }, { wch: 40 }, { wch: 25 },
       { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 22 }, { wch: 20 },
-      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 25 }
+      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 25 },
+      { wch: 38, hidden: true },   // якорь: скрыт, но переносится при копировании
     ]
 
     const wb = XLSX.utils.book_new()
@@ -188,15 +202,45 @@ function ContractorProposalsPage() {
   const parseAndSaveProposals = async (excelData) => {
     const proposalsToInsert = []
 
+    // Как позиция файла находит позицию ВОР.
+    //
+    // 1) Есть скрытый столбец-якорь (ID позиции) — сопоставляем ТОЛЬКО по нему,
+    //    без запасного варианта: строка без якоря в таком файле — это раздел или
+    //    дописанная вручную строка, и подставлять её по номеру нельзя.
+    // 2) Якоря нет (файл выгружен до его появления) — сопоставляем по «№ п/п»,
+    //    но лишь когда в тендере ОДИН ВОР. Номер уникален только внутри одного
+    //    документа; при нескольких ВОРах цены уезжали в чужой документ.
+    const byId = new Map(estimateItems.map(it => [String(it.id), it]))
+    const docNames = new Set(estimateItems.map(it => it.estimate_name || 'Основная смета'))
+    const byRowNumber = new Map()
+    for (const it of estimateItems) {
+      if (it.is_section) continue
+      const key = String(it.row_number)
+      if (!byRowNumber.has(key)) byRowNumber.set(key, it)
+    }
+    const headerCells = (excelData[0] || []).map(c => String(c ?? '').toLowerCase())
+    const anchorCol = headerCells.findIndex(h => h.includes('не изменя'))
+    const canMatchByNumber = anchorCol < 0 && docNames.size <= 1
+    let skippedAmbiguous = 0
+
     for (let i = 1; i < excelData.length; i++) {
       const row = excelData[i]
       if (!row || row.length === 0) continue
 
-      const rowNumber = parseInt(row[0])
-      if (isNaN(rowNumber)) continue
-
-      const estimateItem = estimateItems.find(item => item.row_number === rowNumber)
+      let estimateItem = null
+      if (anchorCol >= 0) {
+        const rawId = String(row[anchorCol] ?? '').trim()
+        if (!rawId) continue                       // раздел/посторонняя строка
+        estimateItem = byId.get(rawId) || null
+      } else {
+        const rowNumber = parseInt(row[0])
+        if (isNaN(rowNumber)) continue
+        if (!canMatchByNumber) { skippedAmbiguous++; continue }
+        estimateItem = byRowNumber.get(String(rowNumber)) || null
+      }
       if (!estimateItem) continue
+      // Раздел — заголовок группы: цена на нём удвоила бы стоимость его позиций.
+      if (estimateItem.is_section) continue
 
       // cleanNumeric чистит пробелы/валюту/запятые — иначе текстовая ячейка «1 200,50»
       // усечётся parseFloat'ом и исказит цену.
@@ -249,6 +293,19 @@ function ContractorProposalsPage() {
         .eq('tender_id', selectedTender.id)
         .eq('counterparty_id', contractorInfo.id)
       if (statusError) console.error('Не удалось обновить статус участия:', statusError.message)
+    }
+
+    if (skippedAmbiguous > 0) {
+      alert(
+        `Загружено позиций: ${proposalsToInsert.length}.
+` +
+        `Пропущено строк: ${skippedAmbiguous}. В тендере несколько ВОРов, а в файле нет ` +
+        'служебного столбца «ID (не изменять)» — по одному номеру позиции нельзя понять, ' +
+        'к какому ВОРу она относится. Скачайте шаблон заново на этой странице и заполните его: ' +
+        'в нём этот столбец есть, и цены встают на свои места.'
+      )
+    } else if (proposalsToInsert.length === 0) {
+      alert('В файле не нашлось ни одной позиции из ВОР этого тендера. Заполните шаблон, скачанный на этой странице.')
     }
   }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
@@ -2019,12 +2019,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     return statusClasses[status] || 'status-not-started'
   }
 
-  if (loading) {
-    return <div className="loading">Загрузка...</div>
-  }
-
   // Фильтрация тендеров по вкладке и объекту
-  const filteredByTab = tenders.filter(tender => {
+  // useMemo обязателен: компонент перерисовывается на любое состояние (открытие
+  // попапа, наведение, ввод в поиск), а фильтрация и сортировка идут по всему
+  // реестру. Без мемоизации сотни тендеров пересчитывались на каждый рендер.
+  const filteredByTab = useMemo(() => tenders.filter(tender => {
     // task 212: Фильтр по вкладке — 'all' | <конкретный статус> | 'deleted'
     if (activeTab === 'deleted') {
       if (!tender.deleted_at) return false
@@ -2059,24 +2058,29 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (!haystack.includes(q)) return false
     }
     return true
-  })
+  }), [tenders, activeTab, objectFilter, responsibleFilter, statusFilter, searchQuery])
 
   // Сортировка по выбранному полю
-  const statusOrder = Object.fromEntries(currentStatusOptions.map((s, i) => [s, i]))
-  const sortedTenders = [...filteredByTab].sort((a, b) => {
-    let av, bv
-    if (sortField === 'status') {
-      av = statusOrder[a.status] ?? 999
-      bv = statusOrder[b.status] ?? 999
-    } else {
-      av = a[sortField] || ''
-      bv = b[sortField] || ''
-    }
-    if (av === bv) return 0
-    if (av === '' || av === null || av === undefined) return 1
-    if (bv === '' || bv === null || bv === undefined) return -1
-    return sortOrder === 'asc' ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1)
-  })
+  const sortedTenders = useMemo(() => {
+    const statusOrder = Object.fromEntries(currentStatusOptions.map((s, i) => [s, i]))
+    return [...filteredByTab].sort((a, b) => {
+      let av, bv
+      if (sortField === 'status') {
+        av = statusOrder[a.status] ?? 999
+        bv = statusOrder[b.status] ?? 999
+      } else {
+        av = a[sortField] || ''
+        bv = b[sortField] || ''
+      }
+      if (av === bv) return 0
+      if (av === '' || av === null || av === undefined) return 1
+      if (bv === '' || bv === null || bv === undefined) return -1
+      return sortOrder === 'asc' ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1)
+    })
+    // currentStatusOptions — массив-константа направления, пересоздаётся каждый
+    // рендер, поэтому в зависимости идёт его длина, а не он сам.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredByTab, sortField, sortOrder, currentStatusOptions.length])
 
   const toggleSort = (field) => {
     if (sortField === field) {
@@ -2094,10 +2098,28 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   // task 212: счётчики — «Все» + по каждому статусу + «Удалённые»
-  const allTendersCount = tenders.filter(t => !t.deleted_at).length
-  const statusCounts = Object.fromEntries(
-    currentStatusOptions.map(s => [s, tenders.filter(t => !t.deleted_at && t.status === s).length])
-  )
+  // Счётчики вкладок: один проход по реестру вместо прохода на каждый статус,
+  // и только при смене данных, а не на каждый рендер.
+  const { allTendersCount, statusCounts } = useMemo(() => {
+    const counts = Object.fromEntries(currentStatusOptions.map(s => [s, 0]))
+    let live = 0
+    for (const t of tenders) {
+      if (t.deleted_at) continue
+      live += 1
+      if (counts[t.status] !== undefined) counts[t.status] += 1
+    }
+    return { allTendersCount: live, statusCounts: counts }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenders, currentStatusOptions.length])
+
+  // Ранний выход по загрузке — ПОСЛЕ всех хуков: React требует одинакового
+  // порядка вызовов на каждом рендере.
+  if (loading) {
+    return <div className="loading">Загрузка...</div>
+  }
+
+  // Порядок статусов для сортировки в выгрузке реестра (та же логика, что в таблице).
+  const statusOrder = Object.fromEntries(currentStatusOptions.map((s, i) => [s, i]))
   const deletedTendersCount = tenders.filter(t => t.deleted_at).length
 
   // task 212: «завершённая» вкладка — когда активен таб статуса, считающегося завершённым

@@ -1632,8 +1632,15 @@ function ContractRegistry() {
 
   const computeNextContractNumber = async () => {
     try {
-      const { data, error } = await supabase.from('contracts').select('contract_number')
-      if (error) throw error
+      // Постранично: обычный select отдаёт максимум 1000 строк, и после тысячного
+      // договора «следующий номер» начал бы считаться по случайной части реестра
+      // и предлагать уже занятые номера.
+      const data = await fetchAllRows((from, to) => supabase
+        .from('contracts')
+        .select('contract_number')
+        .is('deleted_at', null)
+        .order('id', { ascending: true })
+        .range(from, to))
       const max = (data || []).reduce((acc, row) => {
         const n = parseInt(String(row.contract_number || '').trim(), 10)
         return Number.isInteger(n) && n > acc ? n : acc

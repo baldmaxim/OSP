@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabase'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import * as XLSX from 'xlsx'
 import './BSMComparisonPage.css'
 
@@ -34,17 +35,18 @@ function BSMComparisonPage() {
     setIsLoading(true)
 
     // Загружаем обе таблицы параллельно
+    // Постранично: сравнение цен теряло материалы после тысячной строки —
+    // расхождение по ним просто не показывалось.
+    const page = (table) => fetchAllRows((from, to) => supabase
+      .from(table)
+      .select('*')
+      .eq('object_id', selectedObjectId)
+      .order('material_name')
+      .order('id', { ascending: true })
+      .range(from, to))
     const [contractResult, supplyResult] = await Promise.all([
-      supabase
-        .from('bsm_contract_rates')
-        .select('*')
-        .eq('object_id', selectedObjectId)
-        .order('material_name'),
-      supabase
-        .from('bsm_supply_rates')
-        .select('*')
-        .eq('object_id', selectedObjectId)
-        .order('material_name')
+      page('bsm_contract_rates').then(data => ({ data, error: null }), error => ({ data: [], error })),
+      page('bsm_supply_rates').then(data => ({ data, error: null }), error => ({ data: [], error })),
     ])
 
     if (!contractResult.error) {

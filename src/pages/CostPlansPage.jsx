@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import FolderPathCell from '../components/FolderPathCell'
 import IconTile from '../components/IconTile'
@@ -103,7 +104,9 @@ function CostPlansPage() {
   const fetchTenders = useCallback(async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      // Постранично: без .range() PostgREST молча отдал бы только первые 1000
+      // тендеров, и часть реестра просто не появилась бы на странице.
+      const data = await fetchAllRows((from, to) => supabase
         .from('tenders')
         .select(`
           id, object_id, public_tender_number, status, tender_type, department, cost_plan_status, cost_plan_link,
@@ -114,8 +117,9 @@ function CostPlansPage() {
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name, position)
         `)
         .order('start_date', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to))
 
-      if (error) throw error
       // Только основные тендеры по основному строительству — план затрат имеет смысл только там.
       // Дочерние тендеры на материалы (tender_type='materials') исключаем, чтобы не дублировать.
       // Направление — из tenders.department (миграция 20260820), а не из статуса объекта:

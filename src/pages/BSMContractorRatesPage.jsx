@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
-import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
+import { fetchAllActiveCounterparties, fetchAllRows } from '../utils/fetchAllRows'
 import './BSMRatesPage.css'
 import './BSMPage.css'
 
@@ -135,13 +135,21 @@ function BSMContractorRatesPage() {
 
   const fetchRates = useCallback(async () => {
     setIsLoading(true)
-    const { data, error } = await supabase
-      .from('bsm_contractor_rates')
-      .select('*')
-      .eq('object_id', selectedObjectId)
-      .eq('counterparty_id', selectedCounterpartyId)
-      .order('material_name')
-    if (!error && data) setRates(data)
+    // Постранично: материалов на объекте бывает больше 1000, а PostgREST
+    // молча отдаёт только первую тысячу — часть расценок просто исчезала.
+    try {
+      const data = await fetchAllRows((from, to) => supabase
+        .from('bsm_contractor_rates')
+        .select('*')
+        .eq('object_id', selectedObjectId)
+        .eq('counterparty_id', selectedCounterpartyId)
+        .order('material_name')
+        .order('id', { ascending: true })
+        .range(from, to))
+      setRates(data)
+    } catch (err) {
+      console.error('Ошибка загрузки расценок подрядчика:', err.message)
+    }
     setIsLoading(false)
   }, [selectedObjectId, selectedCounterpartyId])
 

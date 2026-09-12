@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
@@ -69,7 +70,9 @@ function VorsPage() {
   const fetchTenders = useCallback(async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      // Постранично: без .range() PostgREST молча отдал бы только первые 1000
+      // тендеров, и часть реестра просто не появилась бы на странице.
+      const data = await fetchAllRows((from, to) => supabase
         .from('tenders')
         .select(`
           id, object_id, public_tender_number, status, tender_type, department, vor_status, vor_link,
@@ -79,8 +82,9 @@ function VorsPage() {
           vor_responsible:contacts!vor_responsible_id(id, full_name, position)
         `)
         .order('start_date', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to))
 
-      if (error) throw error
       // Только основные тендеры (без дочерних на материалы) по основному строительству.
       // Направление берём из tenders.department (миграция 20260820), а не из статуса
       // объекта: у «совместных» и «прочих» объект может быть тот же самый.

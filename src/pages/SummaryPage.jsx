@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import './SummaryPage.css'
 
@@ -71,7 +72,10 @@ function SummaryPage() {
   const fetchTenders = async () => {
     try {
       setLoading(true)
-      let query = supabase
+      // Постранично и БЕЗ удалённых: раньше сводка показывала тендеры из вкладки
+      // «Удалённые» и молча обрезалась на 1000 строк.
+      const makeQuery = (from, to) => {
+        let q = supabase
         .from('tenders')
         .select(`
           id, object_id, status, start_date, end_date,
@@ -83,10 +87,13 @@ function SummaryPage() {
           vor_responsible:contacts!vor_responsible_id(id, full_name),
           winner:counterparties!winner_counterparty_id(id, name)
         `)
+        .is('deleted_at', null)
         .order('start_date', { ascending: false })
-      if (scopedObjectIds.length > 0) query = query.in('object_id', scopedObjectIds)
-      const { data, error } = await query
-      if (error) throw error
+        .order('id', { ascending: true })
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        return q.range(from, to)
+      }
+      const data = await fetchAllRows(makeQuery)
       const filtered = (data || []).filter(t => t.objects?.status === 'main_construction')
       setTenders(filtered)
     } catch (err) {

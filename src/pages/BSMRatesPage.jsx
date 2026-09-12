@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
 import './BSMRatesPage.css'
@@ -43,14 +44,19 @@ function BSMRatesPage() {
 
   const fetchRates = useCallback(async () => {
     setIsLoading(true)
-    const { data, error } = await supabase
-      .from('bsm_supply_rates')
-      .select('*')
-      .eq('object_id', selectedObjectId)
-      .order('material_name')
-
-    if (!error && data) {
+    // Постранично: материалов на объекте бывает больше 1000, а PostgREST
+    // молча отдаёт только первую тысячу — часть расценок просто исчезала.
+    try {
+      const data = await fetchAllRows((from, to) => supabase
+        .from('bsm_supply_rates')
+        .select('*')
+        .eq('object_id', selectedObjectId)
+        .order('material_name')
+        .order('id', { ascending: true })
+        .range(from, to))
       setRates(data)
+    } catch (err) {
+      console.error('Ошибка загрузки расценок снабжения:', err.message)
     }
     setIsLoading(false)
   }, [selectedObjectId])

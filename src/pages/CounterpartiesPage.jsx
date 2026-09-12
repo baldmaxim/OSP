@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useDeferredValue, useTransition, useCallback } from 'react'
 import { supabase } from '../supabase'
+import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import * as XLSX from 'xlsx'
 import { formatPhone } from '../utils/phoneFormat'
 import { generateUUID } from '../utils/uuid'
@@ -225,7 +226,10 @@ function CounterpartiesPage() {
       setLoading(true)
       // Постранично (снимаем потолок 1000). Тай-брейк по id — стабильная пагинация
       // при неуникальных именах.
-      const data = await fetchAllRows((from, to) => supabase
+      // Страницы — ПАРАЛЛЕЛЬНО: контрагентов несколько тысяч, и последовательный
+      // обход по 1000 строк складывался в несколько полных задержек сети подряд
+      // на каждом открытии раздела. Первый запрос заодно приносит общее число строк.
+      const data = await fetchAllRowsParallel((from, to, withCount) => supabase
         .from('counterparties')
         .select(`
           *,
@@ -236,7 +240,7 @@ function CounterpartiesPage() {
             phone,
             email
           )
-        `)
+        `, withCount ? { count: 'exact' } : undefined)
         .order('name', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to))
@@ -247,9 +251,9 @@ function CounterpartiesPage() {
       // Только doc_category='general' — чтобы документы СБ/Прочие (та же owner_type='counterparty',
       // категории 'sb_approval'/'other') не попадали в «карточку компании».
       try {
-        const cards = await fetchAllRows((from, to) => supabase
+        const cards = await fetchAllRowsParallel((from, to, withCount) => supabase
           .from('s3_documents')
-          .select('*')
+          .select('id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at', withCount ? { count: 'exact' } : undefined)
           .eq('owner_type', 'counterparty')
           .eq('doc_category', 'general')
           .order('created_at', { ascending: false })

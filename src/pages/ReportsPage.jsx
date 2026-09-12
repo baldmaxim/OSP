@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import { currencySymbol } from '../utils/estimateImport'
 import EngineersActivity from '../components/reports/EngineersActivity'
@@ -192,7 +193,11 @@ function ReportsPage() {
     try {
       setLoading(true)
 
-      let tendersQ = supabase
+      // Запрос собирается ВНУТРИ колбэка: fetchAllRows зовёт его на каждую
+      // страницу, а повторный .range() на одном и том же билдере supabase-js
+      // переписал бы диапазон предыдущего.
+      const tendersQuery = (from, to) => {
+        let q = supabase
         .from('tenders')
         .select(`
           id, object_id, status, end_date, created_at, responsible_contact_id, tender_type, deleted_at,
@@ -206,15 +211,22 @@ function ReportsPage() {
           vor_responsible:contacts!vor_responsible_id(id, full_name),
           winner:counterparties!winner_counterparty_id(id, name)
         `)
-      if (scopedObjectIds.length > 0) tendersQ = tendersQ.in('object_id', scopedObjectIds)
-      const { data: tendersRaw } = await tendersQ
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        return q.order('id', { ascending: true }).range(from, to)
+      }
+      // Постранично: без .range() PostgREST молча отдаёт первые 1000 строк, и
+      // отчёт считался бы по неполному набору — числа в нём просто врут.
+      const tendersRaw = await fetchAllRows(tendersQuery)
 
-      let contractsQ = supabase
-        .from('contracts')
-        .select('id, object_id, status, contract_amount, currency, counterparty_id, responsible_contact_id, deleted_at, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
-        .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят
-      if (scopedObjectIds.length > 0) contractsQ = contractsQ.in('object_id', scopedObjectIds)
-      const { data: contracts } = await contractsQ
+      const contractsQuery = (from, to) => {
+        let q = supabase
+          .from('contracts')
+          .select('id, object_id, status, contract_amount, currency, counterparty_id, responsible_contact_id, deleted_at, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
+          .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        return q.order('id', { ascending: true }).range(from, to)
+      }
+      const contracts = await fetchAllRows(contractsQuery)
 
       // Отчёт по тендерам считаем только по основным тендерам, не по дочерним на материалы.
       // Если миграция tender_type не применена, x.tender_type === undefined — учитываем как main.
@@ -390,14 +402,18 @@ function ReportsPage() {
       const contractsByCounterparty = (c || []).reduce((acc, contract) => {
         const cpId = contract.counterparty_id
         if (!cpId) return acc
-        if (!acc[cpId]) acc[cpId] = { signed: 0, signedAmount: 0, total: 0, totalAmount: 0 }
+        if (!acc[cpId]) acc[cpId] = { signed: 0, signedByCur: {}, total: 0, totalByCur: {} }
         const amount = Number(contract.contract_amount) || 0
+        const cur = contract.currency || 'RUB'
         acc[cpId].total += 1
-        acc[cpId].totalAmount += amount
+        // По валютам, а не одним числом: раньше доллары и юани складывались с
+        // рублями один к одному, и таблица победителей показывала завышенные
+        // (или заниженные) суммы со знаком ₽.
+        acc[cpId].totalByCur[cur] = (acc[cpId].totalByCur[cur] || 0) + amount
         // «Заключённый» договор = статус 'completed' (Завершено); старое 'signed' не существует.
         if (contract.status === 'completed') {
           acc[cpId].signed += 1
-          acc[cpId].signedAmount += amount
+          acc[cpId].signedByCur[cur] = (acc[cpId].signedByCur[cur] || 0) + amount
         }
         return acc
       }, {})
@@ -414,7 +430,11 @@ function ReportsPage() {
             winsConst: 0,
             winsWar: 0,
             signedContracts: 0,
-            signedAmount: 0,
+            signedByCur: {},
+            // Приблизительный итог в рублях — только для сортировки и показа
+            // общей суммы; помечается «≈», если есть валютные договоры.
+            signedAmountRub: 0,
+            hasForeign: false,
           })
         }
         const row = winnerMap.get(id)
@@ -424,14 +444,17 @@ function ReportsPage() {
         const cStats = contractsByCounterparty[id]
         if (cStats) {
           row.signedContracts = cStats.signed
-          row.signedAmount = cStats.signedAmount
+          row.signedByCur = cStats.signedByCur
+          row.signedAmountRub = totalRub(cStats.signedByCur)
+          row.hasForeign = Object.keys(cStats.signedByCur).some((c) => c !== 'RUB')
         }
       }
       const winners = {
         total: winnerTenders.length,
         unique: winnerMap.size,
-        totalAmount: Array.from(winnerMap.values()).reduce((s, r) => s + r.signedAmount, 0),
-        rows: Array.from(winnerMap.values()).sort((a, b) => b.wins - a.wins || b.signedAmount - a.signedAmount),
+        totalAmount: Array.from(winnerMap.values()).reduce((s, r) => s + r.signedAmountRub, 0),
+        anyForeign: Array.from(winnerMap.values()).some((r) => r.hasForeign),
+        rows: Array.from(winnerMap.values()).sort((a, b) => b.wins - a.wins || b.signedAmountRub - a.signedAmountRub),
       }
 
       // === ВОРы и РД ===
@@ -872,8 +895,12 @@ function ReportsPage() {
               </div>
               <div className="kpi-card kpi-card-wide">
                 <div className="kpi-label">Сумма заключённых договоров</div>
-                <div className="kpi-value">{fmtMoney(s.winners.totalAmount)}</div>
-                <div className="kpi-foot">по победителям тендеров</div>
+                <div className="kpi-value" title={s.winners.anyForeign ? RATE_NOTE : undefined}>
+                  {s.winners.anyForeign ? `≈ ${fmtMoney(s.winners.totalAmount)}` : fmtMoney(s.winners.totalAmount)}
+                </div>
+                <div className="kpi-foot">
+                  по победителям тендеров{s.winners.anyForeign ? ' · валюта пересчитана ориентировочно' : ''}
+                </div>
               </div>
             </div>
 
@@ -1345,7 +1372,17 @@ function WinnersTable({ rows, fmtMoney }) {
             <td className="num">{r.winsConst || '—'}</td>
             <td className="num">{r.winsWar || '—'}</td>
             <td className="num">{r.signedContracts || '—'}</td>
-            <td className="num">{r.signedAmount > 0 ? fmtMoney(r.signedAmount) : '—'}</td>
+            <td
+              className="num"
+              title={r.hasForeign
+                ? `${RATE_NOTE}
+` + currencyEntries(r.signedByCur).map((e) => fmtCur(e.amt, e.cur)).join(' · ')
+                : undefined}
+            >
+              {r.signedAmountRub > 0
+                ? (r.hasForeign ? `≈ ${fmtMoney(r.signedAmountRub)}` : fmtMoney(r.signedAmountRub))
+                : '—'}
+            </td>
             <td className="bar-col">
               <ProgressBar value={r.wins} total={maxWins} />
             </td>

@@ -116,12 +116,57 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) return jsonResponse({ error: 'Unauthorized' }, 401)
 
+  // 1a) Кто это: сотрудник СУ-10 или подрядчик. Привязка логина к организации —
+  // user_roles.counterparty_id (миграция 20260815).
+  //
+  // Было: функция проверяла только сам факт авторизации. Любой подтверждённый
+  // логин — включая подрядчика — мог получить ссылку на ЛЮБОЙ объект бакета по
+  // его ключу и даже удалить его. Ключи при этом не секрет: они лежат в
+  // s3_documents, которую читает каждый авторизованный пользователь.
+  const { data: roleRow } = await supabase
+    .from('user_roles')
+    .select('counterparty_id, is_approved')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!roleRow || roleRow.is_approved === false) {
+    return jsonResponse({ error: 'Forbidden' }, 403)
+  }
+  const isContractor = !!roleRow.counterparty_id
+
+  // Файл должен быть заведён в s3_documents, и читаем мы его ПОД ТЕМ ЖЕ токеном —
+  // значит действуют те же политики доступа, что и к таблице. Это убирает выдачу
+  // ссылки по «угаданному» ключу и удаление произвольного объекта бакета.
+  // Для подрядчика дополнительно проверяем принадлежность договора его организации
+  // (is_my_contract — SECURITY DEFINER из миграции 20260815).
+  const assertKeyAllowed = async (s3_key: string) => {
+    const { data, error } = await supabase
+      .from('s3_documents')
+      .select('id, owner_type, owner_id')
+      .eq('s3_key', s3_key)
+      .maybeSingle()
+    if (error) throw error
+    if (!data) return false
+    if (!isContractor) return true
+    if (data.owner_type !== 'contract') return false
+    const { data: mine, error: rpcError } = await supabase
+      .rpc('is_my_contract', { contract_uuid: data.owner_id })
+    if (rpcError) throw rpcError
+    return mine === true
+  }
+
   // 2) Парсинг тела.
   let body: { action?: string; [key: string]: unknown }
   try {
     body = await req.json()
   } catch {
     return jsonResponse({ error: 'Invalid JSON' }, 400)
+  }
+
+  // Подрядчику доступно только скачивание, и только файлов ЕГО договоров: в
+  // кабинете согласования он открывает .docx шаблона своего договора. Загрузка и
+  // удаление файлов — работа сотрудника.
+  if (isContractor && body.action !== 'download') {
+    return jsonResponse({ error: 'Действие доступно только сотрудникам' }, 403)
   }
 
   // 3) S3-клиент.
@@ -158,6 +203,7 @@ Deno.serve(async (req) => {
       case 'download': {
         const s3_key = String(body.s3_key || '')
         if (!s3_key) return jsonResponse({ error: 'Missing s3_key' }, 400)
+        if (!await assertKeyAllowed(s3_key)) return jsonResponse({ error: 'Файл не найден' }, 404)
         // При скачивании (не превью) отдаём файл под ОРИГИНАЛЬНЫМ именем через
         // Content-Disposition: браузер сохраняет его как file_name, а не как S3-ключ
         // с uuid-префиксом. filename= — ASCII-fallback, filename*= — UTF-8 (кириллица).
@@ -180,6 +226,7 @@ Deno.serve(async (req) => {
       case 'delete': {
         const s3_key = String(body.s3_key || '')
         if (!s3_key) return jsonResponse({ error: 'Missing s3_key' }, 400)
+        if (!await assertKeyAllowed(s3_key)) return jsonResponse({ error: 'Файл не найден' }, 404)
         await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: s3_key }))
         return jsonResponse({ ok: true })
       }
