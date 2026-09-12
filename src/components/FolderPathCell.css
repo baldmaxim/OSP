@@ -22,6 +22,17 @@
   font-size: 0.6875rem;
   line-height: 1.35;
   color: var(--text-secondary);
+  /* Одна строка: полный путь рвал ячейку реестра на 6-8 строк. Целиком —
+     в подсказке и по клику (.is-expanded). */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  text-align: left;
+}
+.fpath.is-expanded .fpath-text {
+  white-space: normal;
+  overflow: visible;
   word-break: break-all;
 }
 

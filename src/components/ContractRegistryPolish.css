@@ -1,0 +1,286 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   ОФОРМЛЕНИЕ РЕЕСТРА «ДОГОВОРЫ И ДС»
+
+   Отдельный файл, а не правки по всему ContractRegistry.css: там же живут стили
+   карточки договора, приложений и согласования, и точечные изменения в них было
+   бы не отличить от оформления таблицы. Импортируется ПОСЛЕ ContractRegistry.css
+   (ContractsPage.jsx), поэтому при равной специфичности перекрывает его.
+
+   Что чинилось:
+   • строки были разной высоты и «рваными»: путь к папке ломался на 6-8 строк, а
+     короткие ячейки (объект, юрист) висели по центру напротив высокого соседа;
+   • цифры (суммы, даты, ID) не выстраивались в столбик — знаки разной ширины;
+   • незаполненный договор заливал всю ячейку розовым;
+   • бейджи (статус, Larix, тип ДС, отдел) были разного роста, радиуса и веса.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Шрифт и цифры ──────────────────────────────────────────────────────────
+   Inter уже подключён (index.html). Включаем табличные цифры: в колонках сумм,
+   дат и ID знаки получают одинаковую ширину и выстраиваются по разрядам. */
+.contracts-table-compact {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ── Шапка ──────────────────────────────────────────────────────────────────
+   Липкая: реестр длинный, без неё при прокрутке теряется, какая колонка какая. */
+.contracts-table-compact thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: bottom;
+}
+
+/* Заголовок каждой колонки выровнен ТАК ЖЕ, как данные под ним. Раньше «Статус»,
+   даты и «Действия» были по центру, а их содержимое — по левому/правому краю:
+   из-за этого колонки читались как смещённые друг относительно друга. */
+.contracts-table-compact thead th:nth-child(1) { text-align: center; }   /* № */
+.contracts-table-compact thead th:nth-child(6) { text-align: right; }    /* Сумма */
+.contracts-table-compact thead th:nth-child(7),                          /* Статус */
+.contracts-table-compact thead th:nth-child(9),                          /* Дата принятия */
+.contracts-table-compact thead th:nth-child(10) { text-align: left; }    /* План. дата */
+.contracts-table-compact thead th:nth-child(11) { text-align: right; }   /* Действия */
+
+/* ── Строки ─────────────────────────────────────────────────────────────────
+   Верхнее выравнивание: в строке соседствуют ячейки в одну строку (объект) и в
+   пять (договор с путём). При middle короткие ячейки «плавали» посередине —
+   именно от этого таблица выглядела неровной. */
+.contracts-table-compact tbody td {
+  padding: 0.6rem 0.7rem;
+  vertical-align: top;
+  line-height: 1.45;
+}
+.contracts-table-compact tbody tr.contract-row:hover > td {
+  background: color-mix(in srgb, var(--primary-color) 4%, transparent);
+}
+/* Раскрытая строка — спокойная подсветка, без заливки половины таблицы. */
+.contracts-table-compact tbody tr.contract-row.is-expanded > td {
+  background: color-mix(in srgb, var(--primary-color) 6%, transparent);
+}
+
+/* Ячейки со своим `vertical-align: middle` (действия, статус, даты, юрист) —
+   перечислены поимённо: у них специфичность выше, чем у общего правила tbody td,
+   и без этого они продолжали «висеть» по центру высокой строки. */
+.contracts-table-compact .cell-num,
+.contracts-table-compact .cell-status,
+.contracts-table-compact .cell-amount,
+.contracts-table-compact .cell-lawyer,
+.contracts-table-compact .cell-date,
+.contracts-table-compact .actions-cell {
+  vertical-align: top;
+}
+/* Узкие колонки чуть опускаем, чтобы совпасть с первой строкой текста соседей. */
+.contracts-table-compact .cell-num,
+.contracts-table-compact .actions-cell { padding-top: 0.65rem; }
+.contracts-table-compact .cell-lawyer,
+.contracts-table-compact .cell-date { padding-top: 0.45rem; }
+/* Компенсируем внутренние отступы выпадашки и кнопки-даты, иначе их текст
+   оказывается на 3-4px ниже соседних ячеек. */
+.contracts-table-compact .cell-lawyer .fdrop-trigger,
+.contracts-table-compact .cell-date .inline-date-btn { padding-top: 0; padding-bottom: 0; }
+
+/* ── Незаполненный договор ──────────────────────────────────────────────────
+   Было: розовая заливка всей ячейки плюс толстая полоса. Стало: тонкая метка у
+   левого края — сигнал остаётся, а таблица не пестрит. */
+.contracts-table-compact td.cell-contract-num.is-incomplete,
+[data-theme='dark'] .contracts-table-compact td.cell-contract-num.is-incomplete {
+  background: transparent;
+  box-shadow: inset 2px 0 0 rgba(185, 28, 28, 0.45);
+}
+
+/* ── Ячейка «Договор / № ДС» ────────────────────────────────────────────────
+   Номер — первой строкой, дата и ID — второй, приглушённо и в одну линию.
+   Раньше они шли тремя отдельными строками и растягивали ячейку. */
+.contracts-table-compact .contract-ds-link {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.4rem;
+  padding: 0.1rem 0;
+  border-radius: 6px;
+}
+.contracts-table-compact .contract-ds-link .cds-main {
+  flex: 1 1 100%;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: break-word;
+}
+.contracts-table-compact .contract-ds-link:hover .cds-main { text-decoration: underline; }
+.contracts-table-compact .contract-ds-link .cds-sub,
+.contracts-table-compact .contract-ds-link .cds-id { font-size: 0.6875rem; }
+
+/* Бейджи типа ДС и счётчика соглашений — одной линией под номером. */
+.contracts-table-compact .ds-type-badge,
+.contracts-table-compact .ds-count-badge { margin-top: 0.3rem; }
+
+/* Путь к папке: одна строка (хвост пути), разворачивается кликом по тексту. */
+.contracts-table-compact .fpath {
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.35rem;
+  background: transparent;
+}
+
+/* ── Объект, контрагент, работы ─────────────────────────────────────────────
+   Переносим по словам, а не по буквам: break-all/anywhere рвал слова посреди и
+   заодно занижал минимальную ширину колонки. */
+.contracts-table-compact .cell-object,
+.contracts-table-compact .cell-counterparty,
+.contracts-table-compact .cell-work {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.contracts-table-compact .cell-object { font-weight: 600; }
+.contracts-table-compact .cell-counterparty { font-weight: 500; }
+.contracts-table-compact .cell-counterparty .cp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.contracts-table-compact .cell-work { color: var(--text-secondary); font-size: 0.75rem; }
+
+/* ── Сумма ──────────────────────────────────────────────────────────────────
+   Вправо и в колонку: так разряды сравниваются глазом, без чтения цифр. */
+.contracts-table-compact .cell-amount { text-align: right; }
+.contracts-table-compact .cell-amount .amt-pair { align-items: flex-end; }
+.contracts-table-compact .cell-amount .amt-row { justify-content: flex-end; gap: 0.3rem; }
+
+/* ── Статус ─────────────────────────────────────────────────────────────────
+   Бейдж и отметка Larix — одним столбиком по левому краю: при центрировании
+   подписи разной длины «плясали» относительно друг друга. */
+.contracts-table-compact .cell-status { text-align: left; }
+.contracts-table-compact .cell-status .status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-align: left;
+}
+.contracts-table-compact .larix-badge {
+  margin: 0.35rem 0 0;
+  font-weight: 600;
+  font-size: 0.625rem;
+  opacity: 0.9;
+}
+
+/* ── Даты ───────────────────────────────────────────────────────────────────
+   По левому краю, как остальные данные: центрирование в соседних колонках
+   создавало «лесенку» из-за разной ширины подписей. */
+.contracts-table-compact .cell-date { text-align: left; }
+.contracts-table-compact .cell-date .inline-date { text-align: left; }
+.contracts-table-compact .cell-date .inline-date-text { font-variant-numeric: tabular-nums; }
+.contracts-table-compact .overdue-note {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #b91c1c;
+}
+[data-theme='dark'] .contracts-table-compact .overdue-note { color: #fca5a5; }
+
+/* ── Юрист ──────────────────────────────────────────────────────────────────
+   Выпадающий список не должен выглядеть полем ввода: в покое это просто текст. */
+.contracts-table-compact .cell-lawyer .fdrop-trigger {
+  padding: 0.15rem 0.3rem;
+  border-color: transparent;
+  background: transparent;
+  font-size: 0.75rem;
+}
+.contracts-table-compact .cell-lawyer .fdrop-trigger:hover {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+
+/* ── Действия ───────────────────────────────────────────────────────────────
+   Одинаковые кнопки 28×28 в ряд; рамка появляется только при наведении. */
+.contracts-table-compact .actions-inner {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.15rem;
+}
+.contracts-table-compact .actions-cell .btn-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+.contracts-table-compact .actions-cell .btn-icon:hover {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.contracts-table-compact .actions-cell .btn-delete:hover {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.35);
+}
+.contracts-table-compact .actions-cell .btn-add-ds:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+/* ── Ширины колонок ─────────────────────────────────────────────────────────
+   Путь к папке стал однострочным, поэтому «Договор / № ДС» больше не нужна
+   такой широкой — место отдано описанию работ и контрагенту. Сумма = 100%. */
+.contracts-table-compact col.cg-num { width: 3.5%; }
+.contracts-table-compact col.cg-object { width: 9%; }
+.contracts-table-compact col.cg-ds { width: 15%; }
+.contracts-table-compact col.cg-counterparty { width: 12%; }
+.contracts-table-compact col.cg-work { width: 14.5%; }
+.contracts-table-compact col.cg-amount { width: 9%; }
+.contracts-table-compact col.cg-status { width: 10%; }
+.contracts-table-compact col.cg-lawyer { width: 8%; }
+.contracts-table-compact col.cg-accepted { width: 6.5%; }
+.contracts-table-compact col.cg-planned { width: 6.5%; }
+.contracts-table-compact col.cg-actions { width: 6.5%; }
+
+/* ── Панель фильтров и вкладки ──────────────────────────────────────────────
+   Поля разной высоты и подписи в разном регистре смотрелись случайным набором. */
+.contract-registry .registry-filters {
+  align-items: end;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+}
+.contract-registry .rf-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.contract-registry .rf-search,
+.contract-registry .registry-filters .fdrop-trigger {
+  min-height: 34px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+}
+.contract-registry .qfilter {
+  min-height: 34px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Переключатель реестров и статусные вкладки — одна высота и один радиус. */
+.contract-registry .registry-scope-btn,
+.contract-registry .status-tab {
+  border-radius: 8px;
+  font-size: 0.8125rem;
+}

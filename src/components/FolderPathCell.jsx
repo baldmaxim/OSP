@@ -55,6 +55,8 @@ export default function FolderPathCell({
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Путь показан хвостом; по клику разворачивается целиком.
+  const [expanded, setExpanded] = useState(false)
 
   const startEdit = () => { setDraft(value || ''); setEditing(true) }
 
@@ -118,10 +120,28 @@ export default function FolderPathCell({
     )
   }
 
+  // Полный UNC-путь в ячейку реестра не помещается и раньше ломался на 6-8 строк,
+  // раздувая всю строку таблицы. Показываем хвост — две последние папки, по ним
+  // запись и опознают; целиком путь виден в подсказке, а копируется он всегда
+  // полностью. Развернуть можно кликом по самому тексту.
+  const segments = value.split('\\').filter(Boolean)
+  const short = segments.length > 2
+    ? '…\\' + segments.slice(-2).join('\\')
+    : value
+
   return (
-    <div className="fpath" title={value}>
+    <div className={`fpath${expanded ? ' is-expanded' : ''}`} title={value}>
       <IconFolder />
-      <span className="fpath-text">{value}</span>
+      <span
+        className="fpath-text"
+        role="button"
+        tabIndex={0}
+        onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(v => !v) }
+        }}
+        title={expanded ? 'Свернуть путь' : 'Показать путь целиком'}
+      >{expanded ? value : short}</span>
       <button
         type="button"
         className="fpath-icon"

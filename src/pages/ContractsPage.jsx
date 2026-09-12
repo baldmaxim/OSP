@@ -44,6 +44,9 @@ import {
 } from '../utils/appendixTree'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/ContractRegistry.css'
+// Оформление реестра — отдельным файлом и ПОСЛЕ базовых стилей: при равной
+// специфичности перекрывает их (шапка, выравнивание, ширины колонок).
+import '../components/ContractRegistryPolish.css'
 import '../components/MobileCards.css'
 
 // Реестр общий для двух отделов, поэтому у объекта показываем, к какому он относится:
