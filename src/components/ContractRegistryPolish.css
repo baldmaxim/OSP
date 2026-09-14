@@ -545,3 +545,39 @@
 .contracts-table-compact.is-narrow .cell-amount .amt-value,
 .contracts-table-compact.is-narrow .cell-amount .amt-solo { font-size: 0.75rem; }
 .contracts-table-compact.is-narrow .cell-amount .amt-row { gap: 0.25rem; }
+
+
+/* ── Плотность ──────────────────────────────────────────────────────────────
+   На 1920×1080 при 100% реестр выглядел «увеличенным»: Golos Text крупнее Inter
+   того же кегля (высокие строчные), а строки с отступами по 0.6rem и тремя-
+   четырьмя подписями в ячейке вырастали до 110-120px. Здесь всё на ступень
+   мельче и плотнее; правило стоит последним и перекрывает размеры выше. */
+.contracts-table-compact { font-size: 0.75rem; }
+.contracts-table-compact thead th { padding: 0.55rem 0.5rem 0.45rem; font-size: 0.5625rem; }
+.contracts-table-compact tbody td { padding: 0.45rem 0.5rem; line-height: 1.35; }
+.contracts-table-compact .cell-num { padding-top: 0.5rem; font-size: 0.6875rem; }
+.contracts-table-compact .cell-object,
+.contracts-table-compact .cell-counterparty { font-size: 0.75rem; }
+.contracts-table-compact .contract-ds-link .cds-main { font-size: 0.75rem; }
+.contracts-table-compact .contract-ds-link .cds-sub,
+.contracts-table-compact .contract-ds-link .cds-id { font-size: 0.625rem; }
+.contracts-table-compact .fpath { margin-top: 0.15rem; }
+.contracts-table-compact .fpath-text { font-size: 0.625rem; }
+.contracts-table-compact .fpath-add,
+.contracts-table-compact .ca-add { margin-top: 0.15rem; font-size: 0.625rem; }
+.contracts-table-compact .cell-counterparty .cp-list { gap: 0.2rem; }
+.contracts-table-compact .cell-work { font-size: 0.6875rem; }
+.contracts-table-compact .cell-amount,
+.contracts-table-compact .cell-amount .amt-value,
+.contracts-table-compact .cell-amount .amt-solo { font-size: 0.75rem; }
+.contracts-table-compact .cell-amount .amt-tag { font-size: 0.5625rem; }
+.contracts-table-compact .cell-status .status-badge { font-size: 0.625rem; padding: 0.15rem 0.4rem; }
+.contracts-table-compact .larix-badge { font-size: 0.5625rem; }
+.contracts-table-compact .cell-lawyer .fdrop-trigger { font-size: 0.75rem; }
+.contracts-table-compact .cell-date { padding-top: 0.45rem; }
+.contracts-table-compact .cell-date .inline-date-text { font-size: 0.75rem; }
+.contracts-table-compact .overdue-note { font-size: 0.5625rem; }
+.contracts-table-compact .actions-cell .btn-icon { width: 24px; height: 24px; border-radius: 6px; }
+.contracts-table-compact .actions-cell .btn-icon svg { width: 14px; height: 14px; }
+.contracts-table-compact.is-narrow .cell-amount .amt-value,
+.contracts-table-compact.is-narrow .cell-amount .amt-solo { font-size: 0.6875rem; }
