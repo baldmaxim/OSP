@@ -35,6 +35,7 @@ import { diffWords } from '../utils/textDiff'
 import { describeSupabaseError, isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import '../components/Tenders.css'
+import '../components/TendersRegistryPolish.css'
 import '../components/MobileCards.css'
 
 // task 419+: еженедельно ротируемый «Ответственный по тендерам».
@@ -2631,7 +2632,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         )
       ) : (
       <div className="table-container">
-        <table className={`data-table ${compactView ? 'data-table--compact' : ''}`}>
+        <table className={`data-table tenders-registry ${compactView ? 'data-table--compact' : ''}`}>
           {isMaterialsView ? (
             <>
               <thead>
@@ -2981,7 +2982,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             title="Открыть в Яндекс.Картах"
                             className="yandex-map-link"
                           >
-                            <span aria-hidden>🗺️</span>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                              <circle cx="12" cy="10" r="3" />
+                            </svg>
                             <span>Месторасположение</span>
                           </a>
                         )}
@@ -2990,8 +2994,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     <td>
                       <Link
                         to={`/tenders/${tender.id}`}
-                        className="row-link primary"
-                        title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
+                        className="row-link primary tender-desc-link"
+                        title={`${tender.work_description || ''}\n\nОткрыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)`}
                         style={{ color: 'var(--primary-color)', textDecoration: 'underline' }}
                       >
                         {tender.work_description}
@@ -3005,20 +3009,22 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         canEdit={canEditTenders}
                         onSave={(v) => handleSaveFolderPath(tender.id, v)}
                       />
-                      <div>
+                      {/* Отметки хода тендера — в одну строку, а не столбиком:
+                          три плашки друг под другом делали строку в 240px. */}
+                      <div className="tender-flags">
                         <TgPublishToggle
                           tender={tender}
                           canEdit={canEditTenders}
                           onToggle={handleToggleTgPublished}
+                          short
                         />
-                      </div>
-                      {/* Появляется только на подведении итогов и после него —
-                          компонент решает это сам по статусу тендера. */}
-                      <div>
+                        {/* Появляется только на подведении итогов и после него —
+                            компонент решает это сам по статусу тендера. */}
                         <CompletionLetterToggle
                           tender={tender}
                           canEdit={canEditTenders}
                           onToggle={handleToggleCompletionLetter}
+                          short
                         />
                       </div>
                     </td>

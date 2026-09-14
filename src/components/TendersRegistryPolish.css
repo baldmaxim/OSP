@@ -1,0 +1,120 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   ПЛОТНОСТЬ РЕЕСТРА ТЕНДЕРОВ
+
+   На 1920×1080 при 100% строка тендера занимала до 240px: описание работ в семь
+   строк, под ним три плашки столбиком («Указать путь», «Публикация в ТГ»,
+   «Письмо о завершении»), у объекта — адрес и кнопка «Месторасположение».
+   На экран помещалось четыре тендера.
+
+   Здесь — та же логика, что в реестре договоров (ContractRegistryPolish.css):
+   всё на ступень мельче, описание ограничено тремя строками (полный текст в
+   подсказке и в карточке), отметки хода тендера — одной строкой мелких чипов.
+   Импортируется в TendersPage ПОСЛЕ Tenders.css; класс .tenders-registry стоит
+   только на основной таблице, вложенные таблицы раскрытой строки не задеты.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.tenders-page .data-table.tenders-registry {
+  font-size: 0.75rem;
+}
+.tenders-page .tenders-registry > thead > tr > th {
+  padding: 0.5rem 0.55rem;
+  font-size: 0.6875rem;
+  line-height: 1.25;
+}
+.tenders-page .tenders-registry > tbody > tr > td {
+  padding: 0.5rem 0.55rem;
+  line-height: 1.35;
+  vertical-align: top;
+}
+
+/* Объект: название, адрес мельче, «Месторасположение» — тихая ссылка, а не
+   кнопка в рамке. */
+.tenders-page .tenders-registry .row-link.primary { font-size: 0.75rem; }
+.tenders-page .tenders-registry > tbody > tr > td > div > div[style] { font-size: 0.6875rem !important; }
+.tenders-page .tenders-registry .yandex-map-link {
+  gap: 0.25rem;
+  margin-top: 0.1rem;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+}
+.tenders-page .tenders-registry .yandex-map-link:hover {
+  background: none;
+  color: var(--primary-color);
+}
+
+/* Описание работ — три строки. Кламп на самой ссылке (она блочная), а не на
+   <td>: display:-webkit-box на ячейке выбивает её из table-cell. */
+.tenders-page .tenders-registry .tender-desc-link {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* Путь к папке и отметки — мелкими подписями без рамок. */
+.tenders-page .tenders-registry .fpath,
+.tenders-page .tenders-registry .fpath-add {
+  margin-top: 0.25rem;
+  padding: 0.05rem 0;
+  border: none;
+  background: none;
+  font-size: 0.625rem;
+}
+.tenders-page .tenders-registry .fpath-text { font-size: 0.625rem; }
+.tenders-page .tenders-registry .fpath-icon { width: 18px; height: 18px; }
+.tenders-page .tenders-registry .fpath-add > svg,
+.tenders-page .tenders-registry .fpath > svg { width: 11px; height: 11px; }
+
+.tenders-page .tenders-registry .tender-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+.tenders-page .tenders-registry .tgpub {
+  margin-top: 0;
+  gap: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 5px;
+  font-size: 0.625rem;
+  font-weight: 500;
+}
+.tenders-page .tenders-registry .tgpub svg { width: 11px; height: 11px; }
+
+/* Счётчик КП и стрелка раскрытия. */
+.tenders-page .tenders-registry .expand-toggle { width: 20px; height: 20px; }
+.tenders-page .tenders-registry .kp-counter { padding: 0 0.35rem; font-size: 0.625rem; }
+
+/* Статус, срок, ответственный. */
+.tenders-page .tenders-registry .status-dropdown-trigger {
+  padding: 0.2rem 0.35rem 0.2rem 0.4rem;
+  font-size: 0.625rem;
+}
+.tenders-page .tenders-registry .tender-period-cell { font-size: 0.75rem; }
+.tenders-page .tenders-registry .responsible-display {
+  padding: 0.1rem 0.25rem;
+  font-size: 0.75rem;
+}
+
+/* Этапы (ВОР, пакет, план затрат, материалы, сводная КП). */
+.tenders-page .tenders-registry .phase-cell { gap: 0.1rem; }
+.tenders-page .tenders-registry .phase-done,
+.tenders-page .tenders-registry .phase-warn,
+.tenders-page .tenders-registry .phase-pending,
+.tenders-page .tenders-registry .phase-progress {
+  padding: 0 0.35rem;
+  font-size: 0.625rem;
+}
+.tenders-page .tenders-registry .link { font-size: 0.75rem; }
+
+/* Действия: иконки-эмодзи заданы инлайн 0.875rem — перекрываем. */
+.tenders-page .tenders-registry .actions-cell .btn-icon {
+  padding: 0.15rem 0.2rem;
+  font-size: 0.75rem !important;
+}

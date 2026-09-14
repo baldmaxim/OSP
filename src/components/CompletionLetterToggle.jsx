@@ -35,11 +35,14 @@ export function isCompletionLetterRelevant(status) {
   return RELEVANT_STATUSES.includes(status)
 }
 
-export default function CompletionLetterToggle({ tender, canEdit = false, onToggle }) {
+// short — короткая подпись для плотного реестра; полный смысл остаётся в подсказке.
+export default function CompletionLetterToggle({ tender, canEdit = false, onToggle, short = false }) {
   if (!isCompletionLetterRelevant(tender?.status)) return null
 
   const sent = !!tender.completion_letter_sent
-  const label = sent ? 'Письмо о завершении отправлено' : 'Письмо о завершении'
+  const label = short
+    ? 'Письмо'
+    : (sent ? 'Письмо о завершении отправлено' : 'Письмо о завершении')
   const cls = `tgpub ${sent ? 'is-pub' : 'is-unpub'}`
 
   const title = sent

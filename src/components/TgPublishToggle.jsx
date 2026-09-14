@@ -20,9 +20,12 @@ const IconBox = ({ checked }) => (
   </svg>
 )
 
-export default function TgPublishToggle({ tender, canEdit = false, onToggle }) {
+// short — короткая подпись для плотного реестра; полный смысл остаётся в подсказке.
+export default function TgPublishToggle({ tender, canEdit = false, onToggle, short = false }) {
   const published = !!tender.tg_published
-  const label = published ? 'Опубликовано в ТГ' : 'Публикация в ТГ'
+  const label = short
+    ? 'ТГ'
+    : (published ? 'Опубликовано в ТГ' : 'Публикация в ТГ')
   const cls = `tgpub ${published ? 'is-pub' : 'is-unpub'}`
 
   const title = published
