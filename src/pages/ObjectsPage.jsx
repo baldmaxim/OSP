@@ -4,6 +4,9 @@ import { supabase } from '../supabase'
 import { useRole } from '../contexts/RoleContext'
 import { generateUUID } from '../utils/uuid'
 import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
+import { loadObjectsExportData } from '../services/objectsExport'
+import { buildObjectsExportSheets, buildObjectsWorkbook } from '../utils/objectsExport'
 import '../components/GeneralInfo.css'
 
 // Глобальная переменная для хранения экземпляра карты
@@ -31,6 +34,7 @@ function ObjectsPage() {
   const [staffByObject, setStaffByObject] = useState(() => new Map())
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [showObjectModal, setShowObjectModal] = useState(false)
   const [showMapModal, setShowMapModal] = useState(false)
   const [mapLoading, setMapLoading] = useState(false)
@@ -404,6 +408,32 @@ function ObjectsPage() {
     setShowObjectModal(true)
   }
 
+  // Выгрузка всей информации по объектам: одна книга, лист на раздел карточки.
+  // Выгружаются все объекты, доступные пользователю (обоих статусов), а не только
+  // открытая вкладка — статус есть отдельной колонкой, отфильтровать можно в Excel.
+  const handleExportExcel = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const { data, warnings } = await loadObjectsExportData(scopedObjectIds)
+      const sheets = buildObjectsExportSheets(data)
+      const buffer = await buildObjectsWorkbook(sheets)
+      const stamp = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')
+      saveAs(
+        new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        `Объекты — полная информация ${stamp}.xlsx`,
+      )
+      if (warnings.length > 0) {
+        alert('Файл выгружен, но часть разделов недоступна и в нём пуста:\n\n' + warnings.join('\n'))
+      }
+    } catch (error) {
+      console.error('Ошибка выгрузки объектов:', error)
+      alert('Не удалось выгрузить объекты: ' + (error.message || error))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const handleImportClick = () => {
     fileInputRef.current?.click()
   }
@@ -528,6 +558,14 @@ function ObjectsPage() {
               disabled={objects.length === 0}
             >
               🗺️ Объекты на карте
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={handleExportExcel}
+              disabled={exporting || objects.length === 0}
+              title="Все объекты со всеми разделами карточки: документы, гарантия, удержания, площади, смета"
+            >
+              {exporting ? 'Выгрузка…' : '📤 Выгрузить в Excel'}
             </button>
             <input
               ref={fileInputRef}
