@@ -42,7 +42,7 @@ import {
   indentUpdates,
   outdentUpdates,
 } from '../utils/appendixTree'
-import { useIsPhone, useMediaQuery } from '../hooks/useMediaQuery'
+import { useIsPhone, useElementWidth } from '../hooks/useMediaQuery'
 import '../components/ContractRegistry.css'
 // Оформление реестра — отдельным файлом и ПОСЛЕ базовых стилей: при равной
 // специфичности перекрывает их (шапка, выравнивание, ширины колонок).
@@ -1767,14 +1767,20 @@ function ContractRegistry() {
   }
 
   const isDeletedTab = activeTab === 'deleted'
-  // Рабочее окно 1366px минус боковое меню — это ~1130px под таблицу. Одиннадцать
-  // колонок туда влезают только «кашей», поэтому на узких экранах две служебные
-  // колонки не рендерим: порядковый номер строки и «Принят в работу» (дата
-  // остаётся в раскрытой строке и в карточке договора).
-  // Именно НЕ РЕНДЕРИМ, а не прячем стилями: у таблицы table-layout: fixed с
-  // <colgroup>, и скрытая через CSS ячейка оставляет колонку — шапка и данные
-  // разъезжаются.
-  const narrowView = useMediaQuery('(max-width: 1450px)')
+  // Набор колонок подбираем по ФАКТИЧЕСКОЙ ширине места под таблицу, а не по
+  // ширине окна: на 2К-мониторе Windows масштабирует изображение (125-150%), у
+  // браузера свой зум, слева меню —медиа-запрос по окну во всём этом промахивается.
+  //
+  // Одиннадцать колонок читаемы примерно от 1240px. Ниже убираем две служебные:
+  // порядковый номер строки и «Принят в работу» (дата остаётся в раскрытой
+  // строке и в карточке договора). Именно НЕ РЕНДЕРИМ, а не прячем стилями: у
+  // таблицы table-layout: fixed с <colgroup>, и скрытая через CSS ячейка
+  // оставляет колонку — шапка и данные разъезжаются на одну позицию.
+  const tableAreaRef = useRef(null)
+  const tableAreaWidth = useElementWidth(tableAreaRef)
+  // null — ещё не измерили (первый кадр): показываем полный набор, чтобы на
+  // широком экране не мигало.
+  const narrowView = tableAreaWidth != null && tableAreaWidth < 1240
   const showRowNumber = !narrowView
   const showAcceptedDate = !narrowView
   const tableColCount = (isAmendmentsView ? 12 : 11)
@@ -2071,7 +2077,7 @@ function ContractRegistry() {
           </div>
         )
       ) : (
-      <div className="table-container">
+      <div className="table-container" ref={tableAreaRef}>
         <table className={`contracts-table contracts-table-compact${narrowView ? ' is-narrow' : ''}`}>
           <colgroup>
             {showRowNumber && <col className="cg-num" />}
@@ -2242,7 +2248,7 @@ function ContractRegistry() {
                       </ul>
                     )}
                   </td>
-                  <td className="cell-work" title={contract.work_name || contract.tenders?.work_description || ''}>{contract.work_name || contract.tenders?.work_description || '—'}</td>
+                  <td className="cell-work" title={contract.work_name || contract.tenders?.work_description || ''}><span className="work-text">{contract.work_name || contract.tenders?.work_description || '—'}</span></td>
                   <td className="cell-amount">
                     <AmountCell contract={contract} actual={actualAmount} />
                   </td>

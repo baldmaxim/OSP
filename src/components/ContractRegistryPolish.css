@@ -237,6 +237,16 @@
   font-size: 0.75rem;
   overflow-wrap: break-word;
   word-break: normal;
+  /* Описание работ бывает на полсотни слов. Без ограничения оно одно задаёт
+     высоту всей строки (на узкой колонке — десять строк, 160px). Показываем
+     четыре строки, полный текст остаётся в подсказке и в карточке. */
+}
+.contracts-table-compact .cell-work .work-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
 }
 
 /* ── Сумма ──────────────────────────────────────────────────────────────────
@@ -344,7 +354,7 @@
    Иконка календаря в двух колонках на каждой строке — под восемьдесят иконок
    на экран. Оставляем цифры; иконка проявляется при наведении, когда дату и
    можно менять. */
-.contracts-table-compact .cell-date { text-align: left; padding-top: 0.6rem; }
+.contracts-table-compact .cell-date { text-align: left; padding: 0.6rem 0.35rem; }
 .contracts-table-compact .cell-date .inline-date { text-align: left; }
 .contracts-table-compact .cell-date .inline-date-btn {
   padding: 0.1rem 0.25rem;
@@ -424,14 +434,14 @@
    Сумма = 100%. Место отдано тому, что читают: объекту, договору, работам. */
 .contracts-table-compact col.cg-num { width: 3%; }
 .contracts-table-compact col.cg-object { width: 9%; }
-.contracts-table-compact col.cg-ds { width: 15.5%; }
-.contracts-table-compact col.cg-counterparty { width: 12%; }
-.contracts-table-compact col.cg-work { width: 15%; }
-.contracts-table-compact col.cg-amount { width: 9%; }
+.contracts-table-compact col.cg-ds { width: 15%; }
+.contracts-table-compact col.cg-counterparty { width: 11.5%; }
+.contracts-table-compact col.cg-work { width: 12.5%; }
+.contracts-table-compact col.cg-amount { width: 10.5%; }
 .contracts-table-compact col.cg-status { width: 9%; }
 .contracts-table-compact col.cg-lawyer { width: 9%; }
-.contracts-table-compact col.cg-accepted { width: 6.5%; }
-.contracts-table-compact col.cg-planned { width: 6.5%; }
+.contracts-table-compact col.cg-accepted { width: 7.5%; }
+.contracts-table-compact col.cg-planned { width: 7.5%; }
 .contracts-table-compact col.cg-actions { width: 5.5%; }
 
 /* ── Панель фильтров и вкладки ──────────────────────────────────────────────
@@ -505,17 +515,21 @@
    в сумме 100%. Иначе браузер растягивал первые колонки, а «План. подписания»
    и «Действия» обрезались у правого края. */
 .contracts-table-compact.is-narrow col.cg-object { width: 12%; }
-.contracts-table-compact.is-narrow col.cg-ds { width: 19%; }
-.contracts-table-compact.is-narrow col.cg-counterparty { width: 13%; }
+.contracts-table-compact.is-narrow col.cg-ds { width: 15.5%; }
+.contracts-table-compact.is-narrow col.cg-counterparty { width: 12.5%; }
 .contracts-table-compact.is-narrow col.cg-work { width: 12%; }
-.contracts-table-compact.is-narrow col.cg-amount { width: 11.5%; }
+.contracts-table-compact.is-narrow col.cg-amount { width: 13%; }
 .contracts-table-compact.is-narrow col.cg-status { width: 9.5%; }
 .contracts-table-compact.is-narrow col.cg-lawyer { width: 8.5%; }
-.contracts-table-compact.is-narrow col.cg-planned { width: 8%; }
-.contracts-table-compact.is-narrow col.cg-actions { width: 7%; }
+.contracts-table-compact.is-narrow col.cg-planned { width: 9%; }
+.contracts-table-compact.is-narrow col.cg-actions { width: 8%; }
 /* Кнопки действий чуть компактнее: три по 28px в 79px колонки не помещаются. */
 .contracts-table-compact.is-narrow .actions-cell .btn-icon { width: 24px; height: 24px; }
 .contracts-table-compact.is-narrow .actions-cell .btn-icon svg { width: 14px; height: 14px; }
+
+/* Узкому набору из девяти колонок хватает меньшей минимальной ширины —
+   горизонтальная прокрутка включается только на совсем узком месте. */
+.contracts-table-compact.is-narrow { min-width: 980px; }
 
 /* Когда колонки «№» нет, стрелка раскрытия живёт в колонке объекта. */
 .contracts-table-compact.is-narrow .cell-object .expand-chev {

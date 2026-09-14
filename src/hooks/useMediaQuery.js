@@ -33,3 +33,30 @@ export function useMediaQuery(query) {
 export function useIsPhone() {
   return useMediaQuery('(max-width: 640px)')
 }
+
+// Фактическая ширина элемента в CSS-пикселях (ResizeObserver).
+//
+// Зачем, если есть media-query: ширина ОКНА и ширина места под таблицу — разные
+// величины. На 2К-мониторе Windows масштабирует изображение (125-150%), браузер
+// может иметь свой зум, слева стоит меню, а у раздела свои отступы. Порог вида
+// «@media (max-width: 1450px)» во всём этом промахивается. Меряем то, что есть
+// на самом деле, — тогда раскладка подстраивается под любой экран и масштаб.
+export function useElementWidth(ref) {
+  const [width, setWidth] = useState(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        // contentRect — ширина без рамок и паддингов: ровно то, что достаётся
+        // содержимому.
+        setWidth(Math.round(entry.contentRect.width))
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+
+  return width
+}
