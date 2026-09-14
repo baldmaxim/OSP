@@ -29,6 +29,19 @@ const IconCheck = ({ size = 14 }) => (
     <path d="M20 6 9 17l-5-5" />
   </svg>
 )
+const IconExternal = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M15 3h6v6" />
+    <path d="M10 14 21 3" />
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+  </svg>
+)
+
+// Ссылка открывается в новой вкладке — пропускаем только http(s): значение
+// вводит человек, и javascript:… в href выполнился бы по клику.
+const isWebUrl = (v) => /^https?:\/\/\S+$/i.test(String(v || '').trim())
+
 const IconPencil = ({ size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -51,6 +64,12 @@ export default function RootFolderPathButton({
   // Необязательный колбэк: сообщает странице текущий путь (нужен, например,
   // схеме хранения документов, которая показывает корень).
   onValueChange,
+  // Необязательно: ключ app_settings со ссылкой на ту же общую папку в Google
+  // Drive. Если задан — в карточке под сетевым путём появляется второй блок.
+  // В отличие от UNC-пути, веб-ссылку браузер открыть может, поэтому здесь
+  // основное действие — «Открыть».
+  driveLinkKey,
+  driveLinkTitle = 'Общая папка в Google Drive',
 }) {
   const [value, setValue] = useState('')
   const [loaded, setLoaded] = useState(false)
@@ -59,6 +78,11 @@ export default function RootFolderPathButton({
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [driveLink, setDriveLink] = useState('')
+  const [editingDrive, setEditingDrive] = useState(false)
+  const [driveDraft, setDriveDraft] = useState('')
+  const [savingDrive, setSavingDrive] = useState(false)
+  const [driveCopied, setDriveCopied] = useState(false)
   const wrapRef = useRef(null)
   // Через ref, чтобы колбэк не приходилось мемоизировать на стороне страницы:
   // иначе новая функция на каждый рендер перезапускала бы загрузку настройки.
@@ -69,8 +93,8 @@ export default function RootFolderPathButton({
     let cancelled = false
     const load = async () => {
       try {
-        // Оба ключа одним запросом: свой ключ вкладки и запасной общий.
-        const keys = fallbackKey ? [settingKey, fallbackKey] : [settingKey]
+        // Все ключи одним запросом: свой ключ вкладки, запасной общий и ссылка на Drive.
+        const keys = [settingKey, fallbackKey, driveLinkKey].filter(Boolean)
         const { data, error } = await supabase
           .from('app_settings')
           .select('key, value')
@@ -79,7 +103,11 @@ export default function RootFolderPathButton({
         const own = data?.find(r => r.key === settingKey)?.value
         const fallback = fallbackKey ? data?.find(r => r.key === fallbackKey)?.value : ''
         const next = own || fallback || ''
-        if (!cancelled) { setValue(next); onValueChangeRef.current?.(next) }
+        if (!cancelled) {
+          setValue(next)
+          onValueChangeRef.current?.(next)
+          setDriveLink(driveLinkKey ? (data?.find(r => r.key === driveLinkKey)?.value || '') : '')
+        }
       } catch (err) {
         console.warn(`Не удалось загрузить настройку ${settingKey} (app_settings?):`, err.message)
         if (!cancelled) setValue('')
@@ -89,22 +117,22 @@ export default function RootFolderPathButton({
     }
     load()
     return () => { cancelled = true }
-  }, [settingKey, fallbackKey])
+  }, [settingKey, fallbackKey, driveLinkKey])
 
   // Закрытие по клику вне и по Escape.
   useEffect(() => {
     if (!open) return
     const onMousedown = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setEditing(false) }
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setEditing(false); setEditingDrive(false) }
     }
-    const onKeydown = (e) => { if (e.key === 'Escape' && !editing) { setOpen(false) } }
+    const onKeydown = (e) => { if (e.key === 'Escape' && !editing && !editingDrive) { setOpen(false) } }
     document.addEventListener('mousedown', onMousedown)
     document.addEventListener('keydown', onKeydown)
     return () => {
       document.removeEventListener('mousedown', onMousedown)
       document.removeEventListener('keydown', onKeydown)
     }
-  }, [open, editing])
+  }, [open, editing, editingDrive])
 
   const handleCopy = async () => {
     const ok = await copyToClipboard(value)
@@ -135,10 +163,39 @@ export default function RootFolderPathButton({
     }
   }, [draft, value, settingKey])
 
+  const handleCopyDrive = async () => {
+    const ok = await copyToClipboard(driveLink)
+    if (!ok) { alert('Не удалось скопировать ссылку. Выделите её и скопируйте вручную.'); return }
+    setDriveCopied(true)
+    setTimeout(() => setDriveCopied(false), 2000)
+  }
+
+  const saveDrive = async () => {
+    const nextValue = driveDraft.trim() || null
+    if ((nextValue || '') === (driveLink || '')) { setEditingDrive(false); return }
+    if (nextValue && !isWebUrl(nextValue)) {
+      alert('Укажите ссылку целиком, начиная с https:// (скопируйте её из адресной строки Google Drive).')
+      return
+    }
+    setSavingDrive(true)
+    try {
+      const { error } = await supabase
+        .from('app_settings')
+        .upsert({ key: driveLinkKey, value: nextValue, updated_at: new Date().toISOString() })
+      if (error) throw error
+      setDriveLink(nextValue || '')
+      setEditingDrive(false)
+    } catch (err) {
+      alert('Не удалось сохранить ссылку на Google Drive: ' + (err.message || err))
+    } finally {
+      setSavingDrive(false)
+    }
+  }
+
   // Пока настройка не пришла — кнопки нет: иначе на секунду мигает «путь не указан».
   if (!loaded) return null
-  // Путь не задан, а прав задать его нет — показывать нечего.
-  if (!value && !canEdit) return null
+  // Ни пути, ни ссылки, а прав задать их нет — показывать нечего.
+  if (!value && !driveLink && !canEdit) return null
 
   return (
     <div className="rfpath" ref={wrapRef}>
@@ -221,12 +278,87 @@ export default function RootFolderPathButton({
           ) : (
             <>
               <div className="rfpath-hint">Путь к общей папке ещё не указан.</div>
-              <div className="rfpath-actions">
-                <button type="button" className="rfpath-act is-primary" onClick={startEdit}>
-                  <IconPencil /> Указать путь
-                </button>
-              </div>
+              {canEdit && (
+                <div className="rfpath-actions">
+                  <button type="button" className="rfpath-act is-primary" onClick={startEdit}>
+                    <IconPencil /> Указать путь
+                  </button>
+                </div>
+              )}
             </>
+          )}
+
+          {driveLinkKey && (driveLink || canEdit) && (
+            <div className="rfpath-drive">
+              <div className="rfpath-pop-head">{driveLinkTitle}</div>
+              {editingDrive ? (
+                <>
+                  <input
+                    type="url"
+                    className="rfpath-input"
+                    autoFocus
+                    value={driveDraft}
+                    onChange={(e) => setDriveDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); saveDrive() }
+                      if (e.key === 'Escape') { e.stopPropagation(); setEditingDrive(false) }
+                    }}
+                    placeholder="https://drive.google.com/drive/folders/…"
+                    disabled={savingDrive}
+                  />
+                  <div className="rfpath-actions">
+                    <button type="button" className="rfpath-act is-primary" onClick={saveDrive} disabled={savingDrive}>
+                      {savingDrive ? 'Сохранение…' : 'Сохранить'}
+                    </button>
+                    <button type="button" className="rfpath-act" onClick={() => setEditingDrive(false)} disabled={savingDrive}>
+                      Отмена
+                    </button>
+                  </div>
+                </>
+              ) : driveLink ? (
+                <>
+                  <a
+                    className="rfpath-link"
+                    href={isWebUrl(driveLink) ? driveLink : undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={driveLink}
+                  >
+                    {driveLink}
+                  </a>
+                  <div className="rfpath-actions">
+                    {isWebUrl(driveLink) && (
+                      <a
+                        className="rfpath-act is-primary"
+                        href={driveLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <IconExternal /> Открыть
+                      </a>
+                    )}
+                    <button type="button" className="rfpath-act" onClick={handleCopyDrive}>
+                      {driveCopied ? <IconCheck /> : <IconCopy />}
+                      {driveCopied ? 'Скопировано' : 'Копировать'}
+                    </button>
+                    {canEdit && (
+                      <button type="button" className="rfpath-act" onClick={() => { setDriveDraft(driveLink); setEditingDrive(true) }}>
+                        <IconPencil /> Изменить
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="rfpath-hint">Ссылка на Google Drive ещё не указана.</div>
+                  <div className="rfpath-actions">
+                    <button type="button" className="rfpath-act is-primary" onClick={() => { setDriveDraft(''); setEditingDrive(true) }}>
+                      <IconPencil /> Указать ссылку
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       )}

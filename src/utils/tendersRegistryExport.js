@@ -70,7 +70,7 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
     'Начало тендерных процедур', 'Окончание тендерных процедур', 'Срок истёк', 'Ответственный по тендеру',
     'Участников', 'КП предоставлено', 'Победитель', 'Тендерный пакет', 'Документов тендерного пакета']
   if (withConstructionPhases) {
-    headers.push('ВОР и РД: статус', 'ВОР и РД: ответственный', 'ВОР: ссылка', 'Документов ВОР и РД',
+    headers.push('Проверка РД', 'ВОР и РД: статус', 'ВОР и РД: ответственный', 'ВОР: ссылка', 'Документов ВОР и РД',
       'План затрат: статус', 'План затрат: ответственный', 'План затрат: ссылка', 'Тендер на материалы')
   }
   headers.push('Сводная КП', 'Путь к папке', 'Публикация в ТГ', 'Письмо о завершении тендера',
@@ -99,6 +99,7 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
     ]
     if (withConstructionPhases) {
       row.push(
+        t.rd_checked ? `Да${t.rd_checked_at ? `, ${fmtDate(t.rd_checked_at)}` : ''}${t.rd_checked_by ? `, ${t.rd_checked_by}` : ''}` : '',
         PHASE_LABEL[t.vor_status || 'not_started'] || t.vor_status,
         t.vor_responsible?.full_name || '',
         t.vor_link || '',

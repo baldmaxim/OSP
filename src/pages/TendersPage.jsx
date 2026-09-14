@@ -10,6 +10,7 @@ import { useRole } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
 import TgPublishToggle from '../components/TgPublishToggle'
 import CompletionLetterToggle from '../components/CompletionLetterToggle'
+import RdCheckToggle from '../components/RdCheckToggle'
 import FolderPathCell from '../components/FolderPathCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
@@ -1135,6 +1136,29 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     } catch (err) {
       console.error('Ошибка отметки публикации в ТГ:', err.message)
       alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // Отметка «Проверка РД» под тендерным пакетом (миграция 20260917).
+  const handleToggleRdChecked = async (tenderId, checked) => {
+    const by = userProfile?.full_name || 'Сотрудник'
+    const patch = checked
+      ? { rd_checked: true, rd_checked_at: new Date().toISOString(), rd_checked_by: by }
+      : { rd_checked: false, rd_checked_at: null, rd_checked_by: null }
+    try {
+      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, ...patch } : t))
+      logTenderEvent(tenderId, 'field_updated', {
+        fieldName: 'rd_checked',
+        description: checked ? 'Отмечена проверка РД' : 'Снята отметка о проверке РД',
+      })
+    } catch (err) {
+      console.error('Ошибка отметки проверки РД:', err.message)
+      // 42703 — колонки ещё нет: миграция не применена.
+      alert(err.code === '42703' || /rd_checked/.test(err.message || '')
+        ? 'Не удалось сохранить отметку: не применена миграция 20260917_add_rd_checked_to_tenders.'
+        : 'Ошибка: ' + err.message)
     }
   }
 
@@ -2293,6 +2317,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             canEdit={canEditTenders}
             placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\4. Тендеры"
             onValueChange={setRootFolderPath}
+            // Ссылка на общую папку в Google Drive — пока только у основного строительства.
+            driveLinkKey={!isMaterialsView && department === 'construction' ? 'tenders_drive_folder_link:construction' : undefined}
           />
           {/* task 435: сотрудники СТО переехали внутрь окна «Документы» —
               отдельной кнопке в шапке там было тесно. */}
@@ -2615,6 +2641,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 <div className="tp-mcard-extra">
                   <TgPublishToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleTgPublished} />
                   <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} />
+                  {department === 'construction' && (
+                    <RdCheckToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleRdChecked} />
+                  )}
                   {(tender.folder_path || canEditTenders) && (
                     <FolderPathCell
                       value={tender.folder_path}
@@ -3249,6 +3278,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           </button>
                         )}
                         </div>
+                        {/* Проверка РД — только основное строительство. */}
+                        {department === 'construction' && (
+                          <div className="tender-rd-check">
+                            <RdCheckToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleRdChecked} />
+                          </div>
+                        )}
                       </td>
                     {/* План затрат */}
                     {!compactView && department === 'construction' && !isCompletedTab && (

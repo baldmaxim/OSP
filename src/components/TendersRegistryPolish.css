@@ -86,6 +86,8 @@
   font-weight: 500;
 }
 .tenders-page .tenders-registry .tgpub svg { width: 11px; height: 11px; }
+/* «Проверка РД» под тендерным пакетом. */
+.tenders-page .tenders-registry .tender-rd-check { margin-top: 0.3rem; }
 
 /* Счётчик КП и стрелка раскрытия. */
 .tenders-page .tenders-registry .expand-toggle { width: 20px; height: 20px; }

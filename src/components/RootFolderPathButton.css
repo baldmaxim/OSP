@@ -159,6 +159,30 @@
   color: var(--text-tertiary);
 }
 
+/* Второй блок карточки — ссылка на ту же папку в Google Drive. Отделён линией:
+   это другое хранилище, а не продолжение сетевого пути. */
+.rfpath-drive {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+.rfpath-link {
+  display: block;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.06);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--primary-color, #2563eb);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rfpath-link:hover { text-decoration: underline; }
+a.rfpath-act { text-decoration: none; }
+
 @media (max-width: 640px) {
   .rfpath-pop { right: auto; left: 0; }
   .rfpath-input { height: 40px; font-size: 16px; }
