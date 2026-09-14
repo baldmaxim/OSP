@@ -12,6 +12,7 @@ import S3DocumentList from '../components/S3DocumentList'
 import { fetchCounterpartyDocSummary } from '../services/s3'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import { diffWords } from '../utils/textDiff'
+import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils/counterpartyGroups'
 import '../components/MobileCards.css'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
@@ -401,31 +402,23 @@ function CounterpartiesPage() {
     }
   }
 
-  // Получить связанных контрагентов для данного id
+  // Связи — ГРУППАМИ, а не парами (utils/counterpartyGroups.js): если A связан
+  // с B, а B с C, то у каждого из троих видны двое остальных. Раньше показывались
+  // только прямые пары, и у второстепенного юрлица пропадала часть группы.
+  const relationGroups = useMemo(() => buildRelationGroups(relations), [relations])
+
+  // Получить связанных контрагентов для данного id (вся группа, кроме него самого)
   const getRelatedCounterparties = (counterpartyId) => {
-    const relatedIds = new Set()
-    relations.forEach(r => {
-      if (r.counterparty_id === counterpartyId) relatedIds.add(r.related_counterparty_id)
-      if (r.related_counterparty_id === counterpartyId) relatedIds.add(r.counterparty_id)
-    })
+    const relatedIds = new Set(groupMatesOf(relationGroups, counterpartyId))
     return counterparties.filter(c => relatedIds.has(c.id))
   }
 
-  // Кол-во связей по каждому контрагенту (для бейджа на кнопке) — с дедупликацией пар.
+  // Кол-во связей по каждому контрагенту (для бейджа на кнопке) — размер группы без него.
   const relationCountById = useMemo(() => {
-    const sets = new Map()
-    const add = (a, b) => {
-      if (!sets.has(a)) sets.set(a, new Set())
-      sets.get(a).add(b)
-    }
-    for (const r of relations) {
-      add(r.counterparty_id, r.related_counterparty_id)
-      add(r.related_counterparty_id, r.counterparty_id)
-    }
     const counts = new Map()
-    for (const [id, s] of sets) counts.set(id, s.size)
+    for (const [id, members] of relationGroups) counts.set(id, members.size - 1)
     return counts
-  }, [relations])
+  }, [relationGroups])
 
   const openRelations = (counterpartyId) => {
     setRelationTargetId(counterpartyId)
@@ -434,8 +427,17 @@ function CounterpartiesPage() {
   }
 
   const handleAddRelation = async (counterpartyId, relatedId) => {
+    // У добавляемого уже может быть своя группа — тогда группы сольются в одну.
+    // Это меняет связи у всех её участников, поэтому спрашиваем явно.
+    const otherMates = groupMatesOf(relationGroups, relatedId)
+    if (otherMates.length > 0) {
+      const nameById = new Map(counterparties.map(c => [c.id, c.name]))
+      const addedName = nameById.get(relatedId) || 'Контрагент'
+      const list = otherMates.map(id => `• ${nameById.get(id) || id}`).join('\n')
+      if (!window.confirm(`${addedName} уже связан с:\n${list}\n\nГруппы объединятся — все эти контрагенты станут связаны между собой. Продолжить?`)) return
+    }
     try {
-      // Сохраняем в одном направлении (запрос в обе стороны делаем при чтении)
+      // Пара сохраняется в одном направлении; группа собирается при чтении.
       const { error } = await supabase
         .from('counterparty_relations')
         .insert([{ counterparty_id: counterpartyId, related_counterparty_id: relatedId }])
@@ -455,14 +457,29 @@ function CounterpartiesPage() {
     }
   }
 
+  // Убрать контрагента из группы. Прямой пары с открытым контрагентом может и
+  // не быть (связь через третьего), поэтому удаляются все пары исключаемого, а
+  // если группа держалась на нём, оставшиеся части сшиваются с открытым
+  // контрагентом — см. planRemoveFromGroup.
   const handleRemoveRelation = async (targetId, otherId) => {
+    const members = relationGroups.get(otherId)
+    const otherName = counterparties.find(c => c.id === otherId)?.name || 'Контрагент'
+    if (members && members.size > 2
+      && !window.confirm(`${otherName} будет исключён из группы связанных контрагентов — связь пропадёт у всех участников группы (${members.size - 1}). Продолжить?`)) {
+      return
+    }
     try {
-      // Связь хранится в одном направлении, но могла быть заведена в любом — удаляем обе.
-      const { error } = await supabase
-        .from('counterparty_relations')
-        .delete()
-        .or(`and(counterparty_id.eq.${targetId},related_counterparty_id.eq.${otherId}),and(counterparty_id.eq.${otherId},related_counterparty_id.eq.${targetId})`)
-      if (error) throw error
+      const { deleteIds, insertPairs } = planRemoveFromGroup(relations, otherId, targetId)
+      // Сначала сшиваем остаток группы, потом удаляем: при сбое удаления группа
+      // останется целой, а не развалится на части.
+      if (insertPairs.length > 0) {
+        const { error: insError } = await supabase.from('counterparty_relations').insert(insertPairs)
+        if (insError && insError.code !== '23505') throw insError
+      }
+      if (deleteIds.length > 0) {
+        const { error } = await supabase.from('counterparty_relations').delete().in('id', deleteIds)
+        if (error) throw error
+      }
       await fetchRelations()
     } catch (error) {
       console.error('Ошибка удаления связи:', error.message)
@@ -3078,6 +3095,11 @@ function CounterpartiesPage() {
                   <div className="relation-section-title">
                     Текущие связи{currentRelated.length > 0 ? ` (${currentRelated.length})` : ''}
                   </div>
+                  {currentRelated.length > 1 && (
+                    <div className="relation-group-hint">
+                      Связь общая для группы: все перечисленные контрагенты связаны и между собой.
+                    </div>
+                  )}
                   {currentRelated.length === 0 ? (
                     <div className="relation-empty">Связей пока нет</div>
                   ) : (
@@ -3090,8 +3112,8 @@ function CounterpartiesPage() {
                               type="button"
                               className="relation-chip-remove"
                               onClick={() => handleRemoveRelation(relationTargetId, r.id)}
-                              title="Убрать связь"
-                              aria-label="Убрать связь"
+                              title="Исключить из группы связанных"
+                              aria-label="Исключить из группы связанных"
                             >&times;</button>
                           )}
                         </span>

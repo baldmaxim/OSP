@@ -2150,3 +2150,10 @@
   .cp-detail-body { padding: 0.75rem 0.75rem 1rem; }
   .cp-audit-meta { flex-wrap: wrap; gap: 0.25rem 0.75rem; }
 }
+
+/* Пояснение под «Текущие связи»: связь транзитивна, группа общая. */
+.relation-group-hint {
+  margin: -0.25rem 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
