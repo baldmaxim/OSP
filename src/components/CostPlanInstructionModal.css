@@ -17,8 +17,13 @@
   background: rgba(0, 0, 0, 0.5);
 }
 
-.cpi-modal {
+/* .modal.cpi-modal, а не просто .cpi-modal: общий класс .modal описан в CSS
+   нескольких разделов (max-width 600/700/800px, width:100%). Какой из них
+   победит, зависело от того, какие разделы пользователь открывал раньше, — и
+   окно сжималось до ~500px, а сетка разделов уезжала вбок с прокруткой. */
+.modal.cpi-modal {
   --cpi-measure: 68ch;
+  max-width: none;
   /* Почти во весь экран: разделов много, и в узком окне они выстраивались в
      одну длинную колонку. */
   width: min(94rem, calc(100vw - 3rem));
@@ -147,13 +152,15 @@
 .cpi-body {
   counter-reset: cpi-section;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr));
+  /* min(…, 100%): в окне уже 26rem колонка не должна распирать сетку. */
+  grid-template-columns: repeat(auto-fit, minmax(min(26rem, 100%), 1fr));
   gap: 1rem;
   align-content: start;
 }
 .cpi-section {
   display: flex;
   flex-direction: column;
+  min-width: 0;          /* иначе широкая таблица внутри распирает колонку сетки */
   padding: 1.1rem 1.25rem 1.25rem;
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -163,7 +170,9 @@
    карточка тянется до высоты ряда, а не растягивает свои отступы. */
 .cpi-section > :last-child { margin-bottom: 0; }
 /* Раздел с примером расчёта шире прочих: в нём таблица и две формулы. */
-.cpi-section--wide { grid-column: span 2; }
+/* 1 / -1, а не span 2: когда колонка одна, span 2 создавал неявную вторую
+   колонку и выталкивал содержимое за правый край. */
+.cpi-section--wide { grid-column: 1 / -1; }
 @media (max-width: 60rem) {
   .cpi-section--wide { grid-column: auto; }
 }
