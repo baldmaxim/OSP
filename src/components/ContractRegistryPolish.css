@@ -581,3 +581,17 @@
 .contracts-table-compact .actions-cell .btn-icon svg { width: 14px; height: 14px; }
 .contracts-table-compact.is-narrow .cell-amount .amt-value,
 .contracts-table-compact.is-narrow .cell-amount .amt-solo { font-size: 0.6875rem; }
+
+/* ── Вертикальные разделители ───────────────────────────────────────────────
+   По просьбе пользователя: при плотной таблице одного воздуха между колонками
+   мало — глаз уезжает в соседний столбец. Тонкие линии между колонками, в шапке
+   чуть заметнее. Правая граница у последней колонки не нужна — там рамка
+   контейнера. */
+.contracts-table-compact thead th:not(:last-child) {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+}
+.contracts-table-compact tbody td:not(:last-child) {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+/* Раскрытая строка (приложения/ДС) — одна ячейка на всю ширину, без линий. */
+.contracts-table-compact tbody td[colspan] { border-right: none; }
