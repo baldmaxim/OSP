@@ -450,6 +450,20 @@
   background: #2a4038;
 }
 
+/* «Ожидание КП» — фиолетовый: отличается и от «В работе» (синий), и от
+   «Завершён» (зелёный) — план уже посчитан, но ещё не закрыт. */
+.plan-status-select.status-awaiting_kp {
+  color: #5b21b6;
+  border-color: #c4b5fd;
+  background: #ede9fe;
+}
+
+[data-theme='dark'] .plan-status-select.status-awaiting_kp {
+  color: #ddd6fe;
+  border-color: #7c3aed;
+  background: #3b2a5c;
+}
+
 /* task 208: «Не требуется» — нейтральный серый */
 .plan-status-select.status-not_required {
   color: #64748b;

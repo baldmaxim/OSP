@@ -2281,7 +2281,7 @@ function ContractRegistry() {
                       >Larix</span>
                     )}
                     {!isDeletedTab && !contract.larix_entered && (contract.status || 'new_request') !== 'new_request' && (
-                      <span className="larix-badge is-out" title="Договор ещё не внесён в Larix">Larix</span>
+                      <span className="larix-badge is-out" title="Договор ещё не внесён в Larix">не в Larix</span>
                     )}
                   </td>
                   <td className="cell-lawyer" onClick={(e) => e.stopPropagation()}>

@@ -1119,6 +1119,26 @@
   line-height: 1.4;
 }
 
+/* План затрат «Ожидание КП» — фиолетовый, как на странице «Планы затрат». */
+.phase-awaiting {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: #ede9fe;
+  color: #5b21b6;
+  border: 1px solid #c4b5fd;
+  border-radius: 10px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+[data-theme='dark'] .phase-awaiting {
+  background: #3b2a5c;
+  color: #ddd6fe;
+  border-color: #7c3aed;
+}
+
 .phase-progress {
   display: inline-flex;
   align-items: center;

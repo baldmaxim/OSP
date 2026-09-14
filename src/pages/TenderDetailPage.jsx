@@ -2176,6 +2176,7 @@ function TenderDetailPage() {
     const s = tender.cost_plan_status || 'not_started'
     if (s === 'not_required') return '— Не требуется'
     if (s === 'completed') return tender.cost_plan_link ? '✓ Готово' : '⚠ Завершён без ссылки'
+    if (s === 'awaiting_kp') return 'Ожидание КП'
     if (s === 'in_progress') return 'В работе'
     return 'Не начат'
   })()

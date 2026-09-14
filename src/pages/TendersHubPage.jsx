@@ -67,6 +67,7 @@ function subsectionCounters(to, counts) {
       return [
         { label: 'не начат', value: counts.costPlanNotStarted, tone: 'muted' },
         { label: 'в работе', value: counts.costPlanInProgress, tone: 'blue' },
+        { label: 'ожидание КП', value: counts.costPlanAwaitingKp, tone: 'warn' },
       ]
     case '/kp-review':
       return [{ label: 'на проверке', value: counts.kpPending, tone: 'warn' }]

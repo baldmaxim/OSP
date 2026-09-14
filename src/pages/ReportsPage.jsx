@@ -385,6 +385,7 @@ function ReportsPage() {
         total: cpRows.length,
         notStarted: cpRows.filter(x => !x.cost_plan_status || x.cost_plan_status === 'not_started').length,
         inProgress: cpRows.filter(x => x.cost_plan_status === 'in_progress').length,
+        awaitingKp: cpRows.filter(x => x.cost_plan_status === 'awaiting_kp').length,
         completed: cpRows.filter(isCpDone).length,
         overdue: cpRows.filter(x => !isCpDone(x) && x.cost_plan_end_date && x.cost_plan_end_date < today).length,
         unassigned: cpRows.filter(x => !x.cost_plan_responsible_id).length,
@@ -978,6 +979,11 @@ function ReportsPage() {
                 <div className="kpi-label">В работе</div>
                 <div className="kpi-value accent-warn">{s.cp.inProgress}</div>
                 <div className="kpi-foot">{pct(s.cp.inProgress, s.cp.total)}%</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">Ожидание КП</div>
+                <div className="kpi-value">{s.cp.awaitingKp ?? 0}</div>
+                <div className="kpi-foot">{pct(s.cp.awaitingKp ?? 0, s.cp.total)}%</div>
               </div>
               <div className="kpi-card kpi-card--success">
                 <div className="kpi-label">Завершено</div>

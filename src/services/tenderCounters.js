@@ -68,6 +68,7 @@ export async function fetchTenderHubCounters(objectIds = []) {
     vorInProgress,
     costPlanNotStarted,
     costPlanInProgress,
+    costPlanAwaitingKp,
     materialsNotStarted,
     materialsInProgress,
   ] = await Promise.all([
@@ -81,6 +82,7 @@ export async function fetchTenderHubCounters(objectIds = []) {
     runCount('ВОРы: в работе', construction().eq('vor_status', 'in_progress')),
     runCount('планы затрат: не начат', construction().or('cost_plan_status.is.null,cost_plan_status.eq.not_started')),
     runCount('планы затрат: в работе', construction().eq('cost_plan_status', 'in_progress')),
+    runCount('планы затрат: ожидание КП', construction().eq('cost_plan_status', 'awaiting_kp')),
     runCount('материалы: не начат', materials().eq('status', STATUS_NOT_STARTED)),
     runCount('материалы: в работе', materials().eq('status', STATUS_IN_PROGRESS)),
   ])
@@ -95,6 +97,7 @@ export async function fetchTenderHubCounters(objectIds = []) {
     vorInProgress,
     costPlanNotStarted,
     costPlanInProgress,
+    costPlanAwaitingKp,
     materialsNotStarted,
     materialsInProgress,
   }

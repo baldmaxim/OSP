@@ -14,11 +14,13 @@ import './CostPlansPage.css'
 const STATUS_LABELS = {
   not_started: 'Не начат',
   in_progress: 'В работе',
+  // План посчитан, но ждём КП подрядчиков, чтобы его закрыть.
+  awaiting_kp: 'Ожидание КП',
   completed: 'Завершён',
   not_required: 'Не требуется',
 }
 
-const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required']
+const STATUS_OPTIONS = ['not_started', 'in_progress', 'awaiting_kp', 'completed', 'not_required']
 
 // Статусы, при которых план затрат считается «закрытым» (вкладка «Завершено»)
 const DONE_STATUSES = ['completed', 'not_required']
@@ -71,7 +73,7 @@ function CostPlansPage() {
       alert('Не удалось сохранить путь: ' + err.message)
     }
   }
-  const [activeTab, setActiveTab] = useState('all') // 'all' | 'not_started' | 'in_work' | 'completed'
+  const [activeTab, setActiveTab] = useState('all') // 'all' | 'not_started' | 'in_work' | 'awaiting_kp' | 'completed'
   // task 234: статус-вкладки скрыты под кнопкой «Статусы планов затрат»
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   // Инструкция по расчёту плана затрат (иконка «?» в шапке раздела).
@@ -348,11 +350,13 @@ function CostPlansPage() {
   // task 208: «Не требуется» относится к «Завершено»
   const notStarted = liveRows.filter(t => (t.cost_plan_status || 'not_started') === 'not_started')
   const inWork = liveRows.filter(t => t.cost_plan_status === 'in_progress')
+  const awaitingKp = liveRows.filter(t => t.cost_plan_status === 'awaiting_kp')
   const completed = liveRows.filter(t => DONE_STATUSES.includes(t.cost_plan_status))
   const visible = activeTab === 'deleted' ? deletedRows
     : activeTab === 'all' ? liveRows
     : activeTab === 'completed' ? completed
     : activeTab === 'in_work' ? inWork
+    : activeTab === 'awaiting_kp' ? awaitingKp
     : notStarted
 
   return (
@@ -396,7 +400,7 @@ function CostPlansPage() {
         </button>
         <button
           type="button"
-          className={`tab cost-plans-status-toggle ${['not_started', 'in_work', 'completed'].includes(activeTab) ? 'active' : ''}`}
+          className={`tab cost-plans-status-toggle ${['not_started', 'in_work', 'awaiting_kp', 'completed'].includes(activeTab) ? 'active' : ''}`}
           onClick={() => setStatusMenuOpen(o => !o)}
           aria-expanded={statusMenuOpen}
           title="Развернуть/свернуть статусы планов затрат"
@@ -419,6 +423,13 @@ function CostPlansPage() {
             >
               В работе
               <span className="tab-count">{inWork.length}</span>
+            </button>
+            <button
+              className={`tab ${activeTab === 'awaiting_kp' ? 'active' : ''}`}
+              onClick={() => setActiveTab('awaiting_kp')}
+            >
+              Ожидание КП
+              <span className="tab-count">{awaitingKp.length}</span>
             </button>
             <button
               className={`tab ${activeTab === 'completed' ? 'active' : ''}`}
@@ -540,6 +551,8 @@ function CostPlansPage() {
                           ? 'Завершённых планов затрат нет'
                           : activeTab === 'in_work'
                             ? 'Нет планов затрат в работе'
+                            : activeTab === 'awaiting_kp'
+                              ? 'Нет планов затрат в ожидании КП'
                             : 'Нет планов затрат со статусом «Не начат»'}
                 </td>
               </tr>

@@ -7,6 +7,7 @@
 const PHASE_LABEL = {
   not_started: 'Не начат',
   in_progress: 'В работе',
+  awaiting_kp: 'Ожидание КП',
   completed: 'Готово',
   not_required: 'Не требуется',
 }

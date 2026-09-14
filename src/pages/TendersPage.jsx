@@ -3264,6 +3264,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                 ? <span className="phase-done" title="План затрат готов">✓ Готово</span>
                                 : <span className="phase-warn" title="Статус «Завершён», но ссылка не указана">⚠ Нет ссылки</span>
                             }
+                            if (s === 'awaiting_kp') {
+                              return <span className="phase-awaiting" title="План затрат ждёт КП подрядчиков">Ожидание КП</span>
+                            }
                             if (s === 'in_progress') {
                               return <span className="phase-progress" title="В работе">В работе</span>
                             }

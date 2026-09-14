@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   CONSTRAINT check_dates CHECK (end_date >= start_date),
-  CONSTRAINT valid_cost_plan_status CHECK (cost_plan_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
+  CONSTRAINT valid_cost_plan_status CHECK (cost_plan_status IN ('not_started', 'in_progress', 'awaiting_kp', 'completed', 'not_required')),
   CONSTRAINT valid_vor_status CHECK (vor_status IN ('not_started', 'in_progress', 'completed')),
   CONSTRAINT valid_materials_status CHECK (materials_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
   CONSTRAINT valid_tender_department CHECK (department IN ('construction', 'warranty', 'joint', 'other')),
@@ -120,7 +120,7 @@ COMMENT ON COLUMN tenders.winner_counterparty_id IS 'Контрагент-поб
 COMMENT ON COLUMN tenders.responsible_contact_id IS 'Ответственный сотрудник за тендер (из таблицы contacts)';
 COMMENT ON COLUMN tenders.cost_plan_link IS 'Ссылка на план затрат (Google/Yandex Drive)';
 COMMENT ON COLUMN tenders.cost_plan_responsible_id IS 'Ответственный сотрудник за план затрат (из таблицы contacts)';
-COMMENT ON COLUMN tenders.cost_plan_status IS 'Статус плана затрат: not_started | in_progress | completed | not_required';
+COMMENT ON COLUMN tenders.cost_plan_status IS 'Статус плана затрат: not_started | in_progress | awaiting_kp | completed | not_required';
 COMMENT ON COLUMN tenders.vor_link IS 'Ссылка на ВОР (Google/Yandex Drive)';
 COMMENT ON COLUMN tenders.vor_responsible_id IS 'Ответственный сотрудник за ВОР (из contacts)';
 COMMENT ON COLUMN tenders.vor_status IS 'Статус ВОР: not_started | in_progress | completed';

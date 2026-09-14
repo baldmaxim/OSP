@@ -107,7 +107,8 @@
 .tenders-page .tenders-registry .phase-done,
 .tenders-page .tenders-registry .phase-warn,
 .tenders-page .tenders-registry .phase-pending,
-.tenders-page .tenders-registry .phase-progress {
+.tenders-page .tenders-registry .phase-progress,
+.tenders-page .tenders-registry .phase-awaiting {
   padding: 0 0.35rem;
   font-size: 0.625rem;
 }

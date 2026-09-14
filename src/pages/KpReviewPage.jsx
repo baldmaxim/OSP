@@ -68,6 +68,7 @@ function TenderDeptBadge({ tender }) {
 const COST_PLAN_LABEL = {
   not_started: 'Не начат',
   in_progress: 'В работе',
+  awaiting_kp: 'Ожидание КП',
   completed: 'Завершён',
   not_required: 'Не требуется',
 }

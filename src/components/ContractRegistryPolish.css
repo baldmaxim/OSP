@@ -595,3 +595,49 @@
 }
 /* Раскрытая строка (приложения/ДС) — одна ячейка на всю ширину, без линий. */
 .contracts-table-compact tbody td[colspan] { border-right: none; }
+
+/* ── Статус: предсказуемая раскладка ────────────────────────────────────────
+   Было: выпадашка статуса (.fdrop, inline-flex) и отметка Larix (inline-flex)
+   стояли в ОДНОЙ строке. Где помещались — вставали рядом, где нет — Larix
+   переносился вниз; при 100% масштабе строки получались вразнобой, а стрелка
+   выпадашки висела отдельной точкой между чипами.
+   Теперь всегда две строки: чип статуса, под ним «не в Larix». Селекторы
+   с td и .is-out — специфичность выше базовых правил ContractRegistry.css и
+   FilterDropdown.css (.fdrop.status-fdrop.is-active …), без !important. */
+.contracts-table-compact td.cell-status { text-align: left; }
+.contracts-table-compact td.cell-status .fdrop.status-fdrop {
+  display: flex;
+  max-width: 100%;
+}
+.contracts-table-compact td.cell-status .fdrop.status-fdrop .fdrop-trigger,
+.contracts-table-compact td.cell-status .fdrop.status-fdrop.is-active .fdrop-trigger {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  justify-content: flex-start;
+}
+.contracts-table-compact td.cell-status .fdrop-value { min-width: 0; }
+.contracts-table-compact td.cell-status .status-badge {
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+/* Стрелка — только при наведении на строку, как у юриста. */
+.contracts-table-compact td.cell-status .fdrop-arrow { flex: 0 0 auto; opacity: 0; transition: opacity 0.12s ease; }
+.contracts-table-compact tr.contract-row:hover td.cell-status .fdrop-arrow,
+.contracts-table-compact td.cell-status .fdrop.is-open .fdrop-arrow { opacity: 0.5; }
+
+.contracts-table-compact td.cell-status .larix-badge.is-out {
+  display: flex;
+  width: fit-content;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
