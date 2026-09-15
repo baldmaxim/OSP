@@ -685,3 +685,59 @@
   color: var(--primary-color);
   background: color-mix(in srgb, var(--primary-color) 8%, transparent);
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   ОФОРМЛЕНИЕ «КАК В ТЕНДЕРАХ»
+   По просьбе пользователя таблица приведена к виду реестра тендеров
+   (Tenders.css + TendersRegistryPolish.css): сплошная сетка тонких линий,
+   серая шапка с обычными (не заглавными) подписями, объект — акцентным цветом,
+   подсветка строки фоном. Блок последний и перекрывает «тихую таблицу» выше;
+   размеры шрифтов и доли колонок остаются прежними.
+   ════════════════════════════════════════════════════════════════════════════ */
+.contract-registry .table-container {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.contracts-table-compact {
+  border-collapse: collapse;
+}
+
+/* Шапка: серый фон, подписи обычным регистром, как «Наименование объекта». */
+.contracts-table-compact thead th,
+.contracts-table-compact thead th:not(:last-child) {
+  padding: 0.5rem 0.55rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-secondary);
+  line-height: 1.25;
+  vertical-align: middle;
+}
+
+/* Ячейки: сплошная сетка, как в реестре тендеров. */
+.contracts-table-compact tbody td,
+.contracts-table-compact tbody td:not(:last-child) {
+  padding: 0.5rem 0.55rem;
+  border: 1px solid var(--border-color);
+  line-height: 1.35;
+}
+/* Крайние линии сливаются с рамкой контейнера. */
+.contracts-table-compact thead th:first-child,
+.contracts-table-compact tbody td:first-child { border-left: none; }
+.contracts-table-compact thead th:last-child,
+.contracts-table-compact tbody td:last-child { border-right: none; }
+.contracts-table-compact thead tr:first-child th { border-top: none; }
+
+/* Подсветка строки — тем же фоном, что в тендерах. */
+.contracts-table-compact tbody tr.contract-row:hover > td {
+  background: var(--bg-tertiary);
+}
+
+/* Объект — акцентным цветом и полужирным, как название объекта в тендерах. */
+.contracts-table-compact .cell-object {
+  color: var(--primary-color);
+  font-weight: 600;
+}
