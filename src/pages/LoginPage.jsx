@@ -155,6 +155,7 @@ function LoginPage({ variant = 'employee' }) {
   const getErrorMessage = (err) => {
     const msg = err.message || ''
     if (msg === 'PENDING_APPROVAL') return 'Ваша заявка отправлена. Ожидайте подтверждения администратором.'
+    if (msg === 'ACCOUNT_BLOCKED') return 'Доступ к системе заблокирован. Обратитесь к администратору.'
     if (msg.includes('Invalid login credentials')) return 'Неверный email или пароль'
     if (msg.includes('Email not confirmed')) return 'Email не подтверждён'
     if (msg.includes('User already registered')) return 'Пользователь уже зарегистрирован'

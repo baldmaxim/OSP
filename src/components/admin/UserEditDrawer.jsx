@@ -38,7 +38,7 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, count
   const set = (patch) => setForm(f => ({ ...f, ...patch }))
 
   const statusOptions = current === 'pending'
-    ? [{ v: 'pending', l: 'Приглашён (ожидает подтверждения)' }, { v: 'active', l: 'Активен' }]
+    ? [{ v: 'pending', l: 'Приглашён (ожидает подтверждения)' }, { v: 'active', l: 'Активен' }, { v: 'blocked', l: 'Заблокирован' }]
     : [{ v: 'active', l: 'Активен' }, { v: 'blocked', l: 'Заблокирован' }]
 
   const submit = async (e) => {
@@ -54,8 +54,8 @@ export default function UserEditDrawer({ user, roleOptions, objectOptions, count
         role: form.role,
         object_ids: form.object_ids || [],
         counterparty_id: form.counterparty_id || null,
-        // Активен → подтверждён; иначе доступ снят (pending/blocked).
-        is_approved: form.status === 'active',
+        // Статус целиком (active/pending/blocked) — поля user_roles собирает statusPatch.
+        status: form.status,
       })
     } catch (err) {
       setError(err.message || 'Не удалось сохранить изменения')

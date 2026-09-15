@@ -4,7 +4,7 @@ import { supabase } from '../supabase'
 import { useRole, SECTIONS } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
 import RoleBadge from '../components/admin/RoleBadge'
-import StatusBadge, { userStatus } from '../components/admin/StatusBadge'
+import StatusBadge, { userStatus, statusPatch, isBlockColumnMissing, BLOCK_MIGRATION_HINT } from '../components/admin/StatusBadge'
 import UserAvatar from '../components/admin/UserAvatar'
 import UserActionsMenu from '../components/admin/UserActionsMenu'
 import UserEditDrawer from '../components/admin/UserEditDrawer'
@@ -30,6 +30,7 @@ function AdminPage() {
   const {
     isAdmin, isSuperAdmin, availableRoles, roleLabels, refreshAvailableRoles,
     canPreviewRoles, previewActive, previewInfo, startRolePreview, stopRolePreview,
+    userProfile,
   } = useRole()
   const [activeTab, setActiveTab] = useState('users')
 
@@ -137,6 +138,9 @@ function AdminPage() {
           email: au.email,
           role: r?.role || null,
           is_approved: r?.is_approved ?? false,
+          // undefined — колонки нет (миграция 20260920 не применена): статус тогда
+          // считается по прежнему правилу, см. userStatus.
+          is_blocked: r ? r.is_blocked : false,
           full_name: r?.full_name || '',
           work_phone: r?.work_phone || '',
           work_email: r?.work_email || '',
@@ -178,20 +182,23 @@ function AdminPage() {
   }
 
   // ── Мутации пользователя ────────────────────────────────────────────────
-  const setApproved = async (u, approved) => {
+  // Перевод пользователя в статус: 'active' | 'blocked' (| 'pending').
+  const setUserStatus = async (u, status) => {
+    const patch = statusPatch(status, userProfile?.full_name || null)
     try {
       if (!u.has_role) {
         const { error } = await supabase.from('user_roles')
-          .insert([{ user_id: u.user_id, email: u.email, role: u.role || 'engineer', is_approved: approved }])
+          .insert([{ user_id: u.user_id, email: u.email, role: u.role || 'engineer', ...patch }])
         if (error) throw error
       } else {
-        const { error } = await supabase.from('user_roles').update({ is_approved: approved }).eq('id', u.id)
+        const { error } = await supabase.from('user_roles').update(patch).eq('user_id', u.user_id)
         if (error) throw error
       }
       await fetchUsers()
-      notify('ok', approved ? 'Пользователь разблокирован' : 'Пользователь заблокирован')
+      notify('ok', status === 'blocked' ? 'Пользователь заблокирован'
+        : userStatus(u) === 'blocked' ? 'Пользователь разблокирован' : 'Доступ подтверждён')
     } catch (err) {
-      notify('err', 'Ошибка: ' + err.message)
+      notify('err', isBlockColumnMissing(err) ? BLOCK_MIGRATION_HINT : 'Ошибка: ' + err.message)
     }
   }
 
@@ -227,7 +234,12 @@ function AdminPage() {
       // Держим старую одиночную колонку в синхроне (первый объект) — на случай отката.
       object_id: objectIds[0] || null,
       counterparty_id: form.counterparty_id || null,
-      is_approved: form.is_approved,
+      ...statusPatch(form.status, userProfile?.full_name || null),
+    }
+    // Статус не меняли — не перезаписываем, кто и когда заблокировал.
+    if (form.status === userStatus(u)) {
+      delete payload.blocked_at
+      delete payload.blocked_by_name
     }
     // Запись с мягкой деградацией: если колонки object_ids ещё нет (миграция
     // 20260730 не применена, код ошибки 42703), повторяем без неё — чтобы правка
@@ -236,6 +248,13 @@ function AdminPage() {
       ? supabase.from('user_roles').update(p).eq('user_id', u.user_id)
       : supabase.from('user_roles').insert([{ user_id: u.user_id, email: u.email, ...p }])
     let { error } = await run(payload)
+    if (isBlockColumnMissing(error)) {
+      // Без колонок блокировки сохраняем остальное; «заблокировать» так не выйдет.
+      const { is_blocked: _b, blocked_at: _ba, blocked_by_name: _bb, ...rest } = payload
+      void _b; void _ba; void _bb
+      ;({ error } = await run(rest))
+      if (!error && form.status === 'blocked') throw new Error(BLOCK_MIGRATION_HINT)
+    }
     if (error && error.code === '42703') {
       const { object_ids: _drop, ...rest } = payload
       void _drop
@@ -249,6 +268,7 @@ function AdminPage() {
   }
 
   // ── Массовые операции (по выбранным строкам) ────────────────────────────
+  // patch — целевой статус ('active' | 'blocked'), поля собирает statusPatch.
   const bulkUpdate = async (patch, successText) => {
     const ids = [...selected]
     if (ids.length === 0) return
@@ -256,14 +276,14 @@ function AdminPage() {
       // Обновляем только тех, у кого есть запись в user_roles (по user_id).
       const CHUNK = 100
       for (let i = 0; i < ids.length; i += CHUNK) {
-        const { error } = await supabase.from('user_roles').update(patch).in('user_id', ids.slice(i, i + CHUNK))
+        const { error } = await supabase.from('user_roles').update(statusPatch(patch, userProfile?.full_name || null)).in('user_id', ids.slice(i, i + CHUNK))
         if (error) throw error
       }
       await fetchUsers()
       setSelected(new Set())
       notify('ok', successText)
     } catch (err) {
-      notify('err', 'Ошибка массовой операции: ' + err.message)
+      notify('err', isBlockColumnMissing(err) ? BLOCK_MIGRATION_HINT : 'Ошибка массовой операции: ' + err.message)
     }
   }
 
@@ -525,8 +545,8 @@ function AdminPage() {
                   <option value="__office__">Офис (все объекты)</option>
                   {objectsList.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
-                <button type="button" className="btn-soft" onClick={() => bulkUpdate({ is_approved: false }, 'Пользователи заблокированы')}>Заблокировать</button>
-                <button type="button" className="btn-soft" onClick={() => bulkUpdate({ is_approved: true }, 'Пользователи разблокированы')}>Разблокировать</button>
+                <button type="button" className="btn-soft" onClick={() => bulkUpdate('blocked', 'Пользователи заблокированы')}>Заблокировать</button>
+                <button type="button" className="btn-soft" onClick={() => bulkUpdate('active', 'Пользователи разблокированы')}>Разблокировать</button>
                 <button type="button" className="bulk-clear" onClick={() => setSelected(new Set())}>Снять выделение</button>
               </div>
             )}
@@ -607,7 +627,7 @@ function AdminPage() {
                               <UserActionsMenu
                                 status={st}
                                 onEdit={() => setEditUser(u)}
-                                onToggleBlock={() => setApproved(u, st !== 'active')}
+                                onSetStatus={(next) => setUserStatus(u, next)}
                                 onDelete={() => handleDeleteUser(u)}
                               />
                             </div>

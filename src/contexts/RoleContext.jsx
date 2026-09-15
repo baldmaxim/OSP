@@ -195,6 +195,10 @@ export function RoleProvider({ children }) {
           setRole(ROLES.ADMIN)
           return
         }
+        if (data.is_blocked) {
+          await supabase.auth.signOut()
+          throw new Error('ACCOUNT_BLOCKED')
+        }
         if (!data.is_approved) {
           await supabase.auth.signOut()
           throw new Error('PENDING_APPROVAL')
@@ -226,7 +230,7 @@ export function RoleProvider({ children }) {
         throw new Error('PENDING_APPROVAL')
       }
     } catch (err) {
-      if (err.message === 'PENDING_APPROVAL') throw err
+      if (err.message === 'PENDING_APPROVAL' || err.message === 'ACCOUNT_BLOCKED') throw err
       // security fix (fail-closed): ошибка/недоступность БД/RLS → НЕ admin, а отказ.
       console.error('Ошибка загрузки роли:', err.message)
       denyAccess(ROLE_LOAD_ERROR)
@@ -241,7 +245,8 @@ export function RoleProvider({ children }) {
   const resolveContractorCounterparty = useCallback(async (userId) => {
     const { data, error } = await supabase
       .from('user_roles')
-      .select('is_approved, counterparty_id')
+      // '*' а не список: is_blocked есть только после миграции 20260920.
+      .select('*')
       .eq('user_id', userId)
       .maybeSingle()
     if (error) throw error
@@ -290,7 +295,7 @@ export function RoleProvider({ children }) {
           try {
             await fetchUserRole(u.id, u.email)
           } catch (err) {
-            if (err.message === 'PENDING_APPROVAL') {
+            if (err.message === 'PENDING_APPROVAL' || err.message === 'ACCOUNT_BLOCKED') {
               setUser(null)
               denyAccess(null)
             }
@@ -375,6 +380,10 @@ export function RoleProvider({ children }) {
         }])
       await supabase.auth.signOut()
       throw new Error('PENDING_APPROVAL')
+    }
+    if (row.is_blocked) {
+      await supabase.auth.signOut()
+      throw new Error('ACCOUNT_BLOCKED')
     }
     if (!row.is_approved) {
       await supabase.auth.signOut()
