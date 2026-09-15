@@ -890,7 +890,17 @@ function DcRequestsPage() {
       }
       setVerdictModal(null)
     } catch (err) {
-      alert('Ошибка сохранения результата проверки: ' + (err.message || err))
+      // PGRST204 / «column … in the schema cache» — в базе нет колонок результата
+      // проверки (миграция 20260912), 23514 — ограничение статусов без этапа
+      // «Итог проверки» (миграция 20260907). Говорим, что применить, а не сырой текст.
+      const msg = String(err?.message || err)
+      if (err?.code === 'PGRST204' || /check_result_notes|checked_by_name|checked_at/.test(msg)) {
+        alert('Не удалось сохранить результат проверки: в базе не применена миграция 20260912_dc_request_check_verdict. Обратитесь к администратору.')
+      } else if (err?.code === '23514' && /status/.test(msg)) {
+        alert('Не удалось перевести заявку на этап: в базе не применена миграция 20260907_dc_request_check_result. Обратитесь к администратору.')
+      } else {
+        alert('Ошибка сохранения результата проверки: ' + msg)
+      }
     } finally {
       setVerdictSaving(false)
     }

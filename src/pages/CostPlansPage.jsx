@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect, useDeferredValue, memo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { fetchAllRows } from '../utils/fetchAllRows'
@@ -85,6 +85,9 @@ function CostPlansPage() {
   const [linkModal, setLinkModal] = useState(null) // { tenderId, value }
   const [objectFilterIds, setObjectFilterIds] = useState([]) // task 178: фильтр по объектам
   const [allContacts, setAllContacts] = useState([])
+  // Справочник сотрудников нужен только для назначения ответственного — грузим
+  // его при первом открытии выбора, а не вместе со страницей.
+  const [contactsRequested, setContactsRequested] = useState(false)
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
   // task 179: сортировка по срокам тендерных процедур
   const [sortKey, setSortKey] = useState('') // '' | 'tender_start_date' | 'tender_end_date'
@@ -118,6 +121,11 @@ function CostPlansPage() {
           objects(name, status),
           cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name, position)
         `)
+        // Отбор на сервере: раньше тянулись все тендеры всех направлений и типов
+        // (с джойнами объектов и сотрудников), а лишнее отбрасывалось в браузере.
+        // Пустые department/tender_type — старые записи, они считаются основным
+        // строительством и основным тендером, как и в фильтре ниже.
+        .or('and(or(department.is.null,department.eq.construction),or(tender_type.is.null,tender_type.eq.main))')
         .order('start_date', { ascending: false })
         .order('id', { ascending: true })
         .range(from, to))
@@ -145,8 +153,14 @@ function CostPlansPage() {
 
   useEffect(() => {
     fetchTenders()
-    fetchAllContacts()
   }, [fetchTenders])
+
+  useEffect(() => {
+    if (editingResponsibleId && !contactsRequested) {
+      setContactsRequested(true)
+      fetchAllContacts()
+    }
+  }, [editingResponsibleId, contactsRequested])
 
   const handleChangeStatus = async (tenderId, newStatus) => {
     if (newStatus === 'completed') {
@@ -268,6 +282,128 @@ function CostPlansPage() {
   const sortIndicator = (key) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
 
 
+  // Производные данные — в useMemo. Раньше всё это (включая счётчики фильтров
+  // перебором «объект × все тендеры») пересчитывалось на КАЖДУЮ перерисовку:
+  // раскрыть статусы, набрать символ в поиске, сменить статус.
+
+  // task 216: уникальные ответственные для фильтра — по ФИО (без дублей разных
+  // контактов с одинаковым именем, привязанных к разным объектам)
+  const { responsibles, responsibleCounts, objectsList, objectCounts } = useMemo(() => {
+    const nameSet = new Set()
+    const names = []
+    const rCounts = new Map()
+    const objMap = new Map()
+    const oCounts = new Map()
+    for (const t of tenders) {
+      const name = t.cost_plan_responsible?.full_name || ''
+      rCounts.set(name, (rCounts.get(name) || 0) + 1)
+      if (name && !nameSet.has(name.toLowerCase())) {
+        nameSet.add(name.toLowerCase())
+        names.push(name)
+      }
+      // task 178: уникальные объекты для фильтра
+      if (t.object_id) {
+        oCounts.set(t.object_id, (oCounts.get(t.object_id) || 0) + 1)
+        if (!objMap.has(t.object_id)) objMap.set(t.object_id, { id: t.object_id, name: t.objects?.name || '—' })
+      }
+    }
+    names.sort((a, b) => a.localeCompare(b, 'ru'))
+    const objs = Array.from(objMap.values()).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
+    return { responsibles: names, responsibleCounts: rCounts, objectsList: objs, objectCounts: oCounts }
+  }, [tenders])
+
+  const objectOptions = useMemo(() => objectsList.map(o => ({
+    value: o.id,
+    label: `${o.name} (${objectCounts.get(o.id) || 0})`,
+  })), [objectsList, objectCounts])
+  const responsibleOptions = useMemo(() => responsibles.map(name => ({
+    value: name,
+    label: `${name} (${responsibleCounts.get(name) || 0})`,
+  })), [responsibles, responsibleCounts])
+
+  // task 216: контакты для назначения ответственного — без дублей по ФИО
+  const uniqueContacts = useMemo(() => {
+    const seen = new Set()
+    return allContacts.filter(c => {
+      const key = (c.full_name || '').toLowerCase()
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [allContacts])
+
+  // Поиск откладываем: ввод в поле остаётся мгновенным, таблица догоняет.
+  const deferredSearch = useDeferredValue(searchQuery)
+
+  const { deletedRows, liveRows, notStarted, inWork, awaitingKp, completed } = useMemo(() => {
+    // Фильтрация по ответственному, объекту и поиску
+    let rows = tenders
+    if (responsibleFilters.length > 0) {
+      rows = rows.filter(t => responsibleFilters.includes(t.cost_plan_responsible?.full_name || ''))
+    }
+    if (objectFilterIds.length > 0) rows = rows.filter(t => objectFilterIds.includes(t.object_id))
+    const q = deferredSearch.trim().toLowerCase()
+    if (q) {
+      rows = rows.filter(t =>
+        String(t.public_tender_number ?? '').includes(q) ||
+        (t.work_description || '').toLowerCase().includes(q) ||
+        (t.objects?.name || '').toLowerCase().includes(q) ||
+        (t.cost_plan_responsible?.full_name || '').toLowerCase().includes(q) ||
+        (t.cost_plan_notes || '').toLowerCase().includes(q)
+      )
+    }
+    // task 179: сортировка по выбранной колонке (даты тендерных процедур)
+    if (sortKey) {
+      rows = [...rows].sort((a, b) => {
+        const av = a[sortKey] || ''
+        const bv = b[sortKey] || ''
+        if (av === bv) return 0
+        // пустые значения уходят в конец независимо от направления
+        if (!av) return 1
+        if (!bv) return -1
+        const cmp = av < bv ? -1 : 1
+        return sortDir === 'asc' ? cmp : -cmp
+      })
+    }
+    // task 267: удалённые тендеры — в отдельной вкладке «Удалённые»
+    const live = rows.filter(t => !t.deleted_at)
+    // Разделение по табам (task 210); task 208: «Не требуется» относится к «Завершено»
+    return {
+      deletedRows: rows.filter(t => t.deleted_at),
+      liveRows: live,
+      notStarted: live.filter(t => (t.cost_plan_status || 'not_started') === 'not_started'),
+      inWork: live.filter(t => t.cost_plan_status === 'in_progress'),
+      awaitingKp: live.filter(t => t.cost_plan_status === 'awaiting_kp'),
+      completed: live.filter(t => DONE_STATUSES.includes(t.cost_plan_status)),
+    }
+  }, [tenders, responsibleFilters, objectFilterIds, deferredSearch, sortKey, sortDir])
+
+  const hasActiveFilters = responsibleFilters.length > 0 || objectFilterIds.length > 0 || searchQuery.trim() !== ''
+  const visible = activeTab === 'deleted' ? deletedRows
+    : activeTab === 'all' ? liveRows
+    : activeTab === 'completed' ? completed
+    : activeTab === 'in_work' ? inWork
+    : activeTab === 'awaiting_kp' ? awaitingKp
+    : notStarted
+
+  // Действия строки — стабильные ссылки: иначе каждая перерисовка страницы давала
+  // бы новые функции, и мемоизированные строки (CostPlanRow) перерисовывались бы
+  // все 300 разом. Обёртки создаются один раз и зовут актуальный обработчик.
+  const handlersRef = useRef({})
+  handlersRef.current = {
+    handleSaveFolderPath, handleChangeResponsible, handleChangeCostPlanDate,
+    openLinkModal, handleChangeStatus, handleChangeCostPlanNotes,
+  }
+  const rowActions = useMemo(() => ({
+    saveFolderPath: (...a) => handlersRef.current.handleSaveFolderPath(...a),
+    changeResponsible: (...a) => handlersRef.current.handleChangeResponsible(...a),
+    changeDate: (...a) => handlersRef.current.handleChangeCostPlanDate(...a),
+    openLink: (...a) => handlersRef.current.openLinkModal(...a),
+    changeStatus: (...a) => handlersRef.current.handleChangeStatus(...a),
+    changeNotes: (...a) => handlersRef.current.handleChangeCostPlanNotes(...a),
+    editResponsible: (id) => setEditingResponsibleId(id),
+  }), [])
+
   if (loading) {
     return (
       <div className="cost-plans-page">
@@ -276,88 +412,6 @@ function CostPlansPage() {
       </div>
     )
   }
-
-  // task 216: уникальные ответственные для фильтра — по ФИО (без дублей разных
-  // контактов с одинаковым именем, привязанных к разным объектам)
-  const responsibleNameSet = new Set()
-  const responsibles = []
-  for (const t of tenders) {
-    const name = t.cost_plan_responsible?.full_name
-    if (name && !responsibleNameSet.has(name.toLowerCase())) {
-      responsibleNameSet.add(name.toLowerCase())
-      responsibles.push(name)
-    }
-  }
-  responsibles.sort((a, b) => a.localeCompare(b, 'ru'))
-
-  // task 216: контакты для назначения ответственного — без дублей по ФИО
-  const seenContactNames = new Set()
-  const uniqueContacts = allContacts.filter(c => {
-    const key = (c.full_name || '').toLowerCase()
-    if (!key || seenContactNames.has(key)) return false
-    seenContactNames.add(key)
-    return true
-  })
-
-  // task 178: уникальные объекты для фильтра
-  const objectMap = new Map()
-  for (const t of tenders) {
-    const o = t.objects
-    if (t.object_id && !objectMap.has(t.object_id)) {
-      objectMap.set(t.object_id, { id: t.object_id, name: o?.name || '—' })
-    }
-  }
-  const objectsList = Array.from(objectMap.values())
-    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
-
-  // Фильтрация по ответственному, объекту и поиску
-  let filtered = tenders
-  if (responsibleFilters.length > 0) {
-    filtered = filtered.filter(t => responsibleFilters.includes(t.cost_plan_responsible?.full_name || ''))
-  }
-  if (objectFilterIds.length > 0) filtered = filtered.filter(t => objectFilterIds.includes(t.object_id))
-  if (searchQuery.trim()) {
-    const q = searchQuery.trim().toLowerCase()
-    filtered = filtered.filter(t =>
-      String(t.public_tender_number ?? '').includes(q) ||
-      (t.work_description || '').toLowerCase().includes(q) ||
-      (t.objects?.name || '').toLowerCase().includes(q) ||
-      (t.cost_plan_responsible?.full_name || '').toLowerCase().includes(q) ||
-      (t.cost_plan_notes || '').toLowerCase().includes(q)
-    )
-  }
-
-  // task 179: сортировка по выбранной колонке (даты тендерных процедур)
-  if (sortKey) {
-    filtered = [...filtered].sort((a, b) => {
-      const av = a[sortKey] || ''
-      const bv = b[sortKey] || ''
-      if (av === bv) return 0
-      // пустые значения уходят в конец независимо от направления
-      if (!av) return 1
-      if (!bv) return -1
-      const cmp = av < bv ? -1 : 1
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-  }
-
-  // task 267: удалённые тендеры — в отдельной вкладке «Удалённые»
-  const deletedRows = filtered.filter(t => t.deleted_at)
-  const liveRows = filtered.filter(t => !t.deleted_at)
-  const hasActiveFilters = responsibleFilters.length > 0 || objectFilterIds.length > 0 || searchQuery.trim() !== ''
-
-  // Разделение по табам (task 210: «Не начат» / «В работе» / «Завершено»)
-  // task 208: «Не требуется» относится к «Завершено»
-  const notStarted = liveRows.filter(t => (t.cost_plan_status || 'not_started') === 'not_started')
-  const inWork = liveRows.filter(t => t.cost_plan_status === 'in_progress')
-  const awaitingKp = liveRows.filter(t => t.cost_plan_status === 'awaiting_kp')
-  const completed = liveRows.filter(t => DONE_STATUSES.includes(t.cost_plan_status))
-  const visible = activeTab === 'deleted' ? deletedRows
-    : activeTab === 'all' ? liveRows
-    : activeTab === 'completed' ? completed
-    : activeTab === 'in_work' ? inWork
-    : activeTab === 'awaiting_kp' ? awaitingKp
-    : notStarted
 
   return (
     <div className="cost-plans-page">
@@ -471,10 +525,7 @@ function CostPlansPage() {
           icon={<IconObject size={15} />}
           value={objectFilterIds}
           onChange={setObjectFilterIds}
-          options={objectsList.map(o => ({
-            value: o.id,
-            label: `${o.name} (${tenders.filter(t => t.object_id === o.id).length})`,
-          }))}
+          options={objectOptions}
         />
         <FilterDropdown
           label="" multiple searchable
@@ -483,10 +534,7 @@ function CostPlansPage() {
           icon={<IconUser size={15} />}
           value={responsibleFilters}
           onChange={setResponsibleFilters}
-          options={responsibles.map(name => ({
-            value: name,
-            label: `${name} (${tenders.filter(t => (t.cost_plan_responsible?.full_name || '') === name).length})`,
-          }))}
+          options={responsibleOptions}
         />
         <div className="cp-toolbar-tail">
           <span className="cp-shown">Показано: <b>{liveRows.length}</b></span>
@@ -558,161 +606,14 @@ function CostPlansPage() {
               </tr>
             ) : (
               visible.map((t) => (
-                <tr key={t.id}>
-                  <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-                    {t.public_tender_number ?? '—'}
-                  </td>
-                  <td style={{ width: '150px', maxWidth: '150px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                    {t.objects?.name || '—'}
-                  </td>
-                  <td className="muted-text">
-                    <Link
-                      to={`/tenders/${t.id}`}
-                      className="row-link primary"
-                      title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
-                      style={{ whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word', display: 'inline-block' }}
-                    >
-                      {t.work_description || '—'}
-                    </Link>
-                    {/* Путь к папке с документами тендера — то же поле, что в
-                        реестре тендеров: правка здесь видна и там. */}
-                    <FolderPathCell
-                      value={t.folder_path}
-                      canEdit={canEditTenders}
-                      onSave={(v) => handleSaveFolderPath(t.id, v)}
-                    />
-                  </td>
-                  <td>
-                    {editingResponsibleId === t.id ? (
-                      <select
-                        autoFocus
-                        className="inline-responsible-select"
-                        value={t.cost_plan_responsible_id || ''}
-                        onChange={(e) => {
-                          handleChangeResponsible(t.id, e.target.value)
-                          setEditingResponsibleId(null)
-                        }}
-                        onBlur={() => setEditingResponsibleId(null)}
-                      >
-                        <option value="">— не назначен —</option>
-                        {uniqueContacts.map(c => (
-                          <option key={c.id} value={c.id}>{c.full_name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <button
-                        className="responsible-display"
-                        onClick={() => setEditingResponsibleId(t.id)}
-                        title="Назначить ответственного"
-                      >
-                        {t.cost_plan_responsible?.full_name || (
-                          <span className="responsible-empty">— не назначен —</span>
-                        )}
-                      </button>
-                    )}
-                    {t.cost_plan_responsible?.position && (
-                      <div className="muted-tiny">{t.cost_plan_responsible.position}</div>
-                    )}
-                  </td>
-                  <td className="muted-text" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                    {t.tender_start_date
-                      ? new Date(t.tender_start_date).toLocaleDateString('ru-RU')
-                      : <span className="muted-tiny">—</span>}
-                  </td>
-                  <td className="muted-text" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                    {t.tender_end_date
-                      ? new Date(t.tender_end_date).toLocaleDateString('ru-RU')
-                      : <span className="muted-tiny">—</span>}
-                  </td>
-                  <td>
-                    <div className="inline-date-range">
-                      <input
-                        type="date"
-                        className="inline-date-input"
-                        value={t.cost_plan_start_date || ''}
-                        onChange={(e) => handleChangeCostPlanDate(t.id, 'cost_plan_start_date', e.target.value)}
-                        title="Начало"
-                      />
-                      <span className="dash">—</span>
-                      <input
-                        type="date"
-                        className="inline-date-input"
-                        value={t.cost_plan_end_date || ''}
-                        onChange={(e) => handleChangeCostPlanDate(t.id, 'cost_plan_end_date', e.target.value)}
-                        title="Окончание"
-                      />
-                    </div>
-                  </td>
-                  <td>
-                    {t.cost_plan_link ? (
-                      <div className="cost-plan-link-cell">
-                        <a
-                          href={t.cost_plan_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="link"
-                        >
-                          Открыть
-                        </a>
-                        <button
-                          className="link-edit-btn"
-                          onClick={() => openLinkModal(t.id, t.cost_plan_link)}
-                          title="Изменить ссылку"
-                          aria-label="Изменить ссылку"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 20h9" />
-                            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                          </svg>
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        className="link-add-btn"
-                        onClick={() => openLinkModal(t.id, '')}
-                        title="Добавить ссылку на план затрат"
-                      >
-                        + ссылка
-                      </button>
-                    )}
-                  </td>
-                  <td>
-                    <select
-                      className={`plan-status-select status-${t.cost_plan_status}`}
-                      value={t.cost_plan_status || 'not_started'}
-                      onChange={(e) => handleChangeStatus(t.id, e.target.value)}
-                    >
-                      {STATUS_OPTIONS.map(s => (
-                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <textarea
-                      className="cost-plan-notes"
-                      defaultValue={t.cost_plan_notes || ''}
-                      placeholder="Примечание…"
-                      rows={1}
-                      onInput={(e) => {
-                        // auto-grow: подстраиваем высоту под содержимое
-                        e.target.style.height = 'auto'
-                        e.target.style.height = e.target.scrollHeight + 'px'
-                      }}
-                      onBlur={(e) => {
-                        const v = e.target.value
-                        if ((t.cost_plan_notes || '') !== (v.trim() || '')) {
-                          handleChangeCostPlanNotes(t.id, v)
-                        }
-                      }}
-                      ref={(el) => {
-                        if (!el) return
-                        // первая инициализация — растягиваем под существующее содержимое
-                        el.style.height = 'auto'
-                        el.style.height = el.scrollHeight + 'px'
-                      }}
-                    />
-                  </td>
-                </tr>
+                <CostPlanRow
+                  key={t.id}
+                  t={t}
+                  canEditTenders={canEditTenders}
+                  isEditingResponsible={editingResponsibleId === t.id}
+                  contacts={editingResponsibleId === t.id ? uniqueContacts : NO_CONTACTS}
+                  actions={rowActions}
+                />
               ))
             )}
           </tbody>
@@ -772,3 +673,181 @@ function CostPlansPage() {
 }
 
 export default CostPlansPage
+
+
+const NO_CONTACTS = []
+
+// Строка таблицы. memo: при раскрытии статусов, вводе в поиск или смене статуса
+// одной строки остальные ~300 строк не перерисовываются. Все пропсы стабильны:
+// t меняется только у изменённого тендера, actions создаётся один раз.
+const CostPlanRow = memo(function CostPlanRow({ t, canEditTenders, isEditingResponsible, contacts, actions }) {
+  return (
+    <tr>
+      <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+        {t.public_tender_number ?? '—'}
+      </td>
+      <td style={{ width: '150px', maxWidth: '150px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+        {t.objects?.name || '—'}
+      </td>
+      <td className="muted-text">
+        <Link
+          to={`/tenders/${t.id}`}
+          className="row-link primary"
+          title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
+          style={{ whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word', display: 'inline-block' }}
+        >
+          {t.work_description || '—'}
+        </Link>
+        {/* Путь к папке с документами тендера — то же поле, что в
+            реестре тендеров: правка здесь видна и там. */}
+        <FolderPathCell
+          value={t.folder_path}
+          canEdit={canEditTenders}
+          onSave={(v) => actions.saveFolderPath(t.id, v)}
+        />
+      </td>
+      <td>
+        {isEditingResponsible ? (
+          <select
+            autoFocus
+            className="inline-responsible-select"
+            value={t.cost_plan_responsible_id || ''}
+            onChange={(e) => {
+              actions.changeResponsible(t.id, e.target.value)
+              actions.editResponsible(null)
+            }}
+            onBlur={() => actions.editResponsible(null)}
+          >
+            <option value="">— не назначен —</option>
+            {contacts.length === 0 && <option value="" disabled>Загрузка сотрудников…</option>}
+            {contacts.map(c => (
+              <option key={c.id} value={c.id}>{c.full_name}</option>
+            ))}
+          </select>
+        ) : (
+          <button
+            className="responsible-display"
+            onClick={() => actions.editResponsible(t.id)}
+            title="Назначить ответственного"
+          >
+            {t.cost_plan_responsible?.full_name || (
+              <span className="responsible-empty">— не назначен —</span>
+            )}
+          </button>
+        )}
+        {t.cost_plan_responsible?.position && (
+          <div className="muted-tiny">{t.cost_plan_responsible.position}</div>
+        )}
+      </td>
+      <td className="muted-text" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+        {t.tender_start_date
+          ? new Date(t.tender_start_date).toLocaleDateString('ru-RU')
+          : <span className="muted-tiny">—</span>}
+      </td>
+      <td className="muted-text" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+        {t.tender_end_date
+          ? new Date(t.tender_end_date).toLocaleDateString('ru-RU')
+          : <span className="muted-tiny">—</span>}
+      </td>
+      <td>
+        <div className="inline-date-range">
+          <input
+            type="date"
+            className="inline-date-input"
+            value={t.cost_plan_start_date || ''}
+            onChange={(e) => actions.changeDate(t.id, 'cost_plan_start_date', e.target.value)}
+            title="Начало"
+          />
+          <span className="dash">—</span>
+          <input
+            type="date"
+            className="inline-date-input"
+            value={t.cost_plan_end_date || ''}
+            onChange={(e) => actions.changeDate(t.id, 'cost_plan_end_date', e.target.value)}
+            title="Окончание"
+          />
+        </div>
+      </td>
+      <td>
+        {t.cost_plan_link ? (
+          <div className="cost-plan-link-cell">
+            <a
+              href={t.cost_plan_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="link"
+            >
+              Открыть
+            </a>
+            <button
+              className="link-edit-btn"
+              onClick={() => actions.openLink(t.id, t.cost_plan_link)}
+              title="Изменить ссылку"
+              aria-label="Изменить ссылку"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <button
+            className="link-add-btn"
+            onClick={() => actions.openLink(t.id, '')}
+            title="Добавить ссылку на план затрат"
+          >
+            + ссылка
+          </button>
+        )}
+      </td>
+      <td>
+        <select
+          className={`plan-status-select status-${t.cost_plan_status}`}
+          value={t.cost_plan_status || 'not_started'}
+          onChange={(e) => actions.changeStatus(t.id, e.target.value)}
+        >
+          {STATUS_OPTIONS.map(s => (
+            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+          ))}
+        </select>
+      </td>
+      <td>
+        <NotesCell tender={t} onSave={actions.changeNotes} />
+      </td>
+    </tr>
+  )
+})
+
+// Примечание с автоподгонкой высоты.
+//
+// Раньше высота подгонялась в ref-колбэке, заданном прямо в разметке: такой
+// колбэк React вызывает на КАЖДУЮ перерисовку, а он пишет style.height и сразу
+// читает scrollHeight — браузер пересчитывает раскладку всей таблицы. На ~300
+// строках это 300 принудительных пересчётов на любое действие на странице.
+// Теперь подгонка — один раз при появлении и при смене текста.
+const NotesCell = memo(function NotesCell({ tender, onSave }) {
+  const ref = useRef(null)
+  const fit = (el) => {
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }
+  useLayoutEffect(() => {
+    // Пустое поле подгонять незачем: высота одной строки задана rows={1}.
+    if (ref.current && tender.cost_plan_notes) fit(ref.current)
+  }, [tender.cost_plan_notes])
+  return (
+    <textarea
+      ref={ref}
+      className="cost-plan-notes"
+      defaultValue={tender.cost_plan_notes || ''}
+      placeholder="Примечание…"
+      rows={1}
+      onInput={(e) => fit(e.target)}
+      onBlur={(e) => {
+        const v = e.target.value
+        if ((tender.cost_plan_notes || '') !== (v.trim() || '')) onSave(tender.id, v)
+      }}
+    />
+  )
+})
