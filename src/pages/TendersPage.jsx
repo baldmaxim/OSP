@@ -3030,7 +3030,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         )}
                       </div>
                     </td>
-                    <td>
+                    <td className="tender-desc-cell">
                       <Link
                         to={`/tenders/${tender.id}`}
                         className="row-link primary tender-desc-link"

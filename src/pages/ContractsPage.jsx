@@ -12,7 +12,7 @@ import SignalLinkCell from '../components/SignalLinkCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
 import { CONTRACTS_STRUCTURE } from '../utils/docStorageStructures'
-import { IconDocsStack, IconFolderTree } from '../components/icons/ToolbarIcons'
+import { IconDocsStack, IconFolderTree, IconColumns, IconColumnsWide } from '../components/icons/ToolbarIcons'
 import LarixEntryBlock from '../components/LarixEntryBlock'
 // Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
@@ -1788,11 +1788,24 @@ function ContractRegistry() {
   // null — ещё не измерили (первый кадр): показываем полный набор, чтобы на
   // широком экране не мигало.
   const narrowView = tableAreaWidth != null && tableAreaWidth < 1240
+  // Кнопка «Скрыть столбцы» в шапке: убирает «Юрист», «Принят в работу» и
+  // «План. подписания» — место отдаётся договору, контрагенту и работам.
+  // Выбор запоминается в браузере.
+  const [hideTailColumns, setHideTailColumns] = useState(() => {
+    try { return localStorage.getItem('contracts-hide-tail-columns') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('contracts-hide-tail-columns', hideTailColumns ? '1' : '0') } catch { /* noop */ }
+  }, [hideTailColumns])
   const showRowNumber = !narrowView
-  const showAcceptedDate = !narrowView
+  const showLawyer = !hideTailColumns
+  const showAcceptedDate = !narrowView && !hideTailColumns
+  const showPlannedDate = !hideTailColumns
   const tableColCount = (isAmendmentsView ? 12 : 11)
     - (showRowNumber ? 0 : 1)
+    - (showLawyer ? 0 : 1)
     - (showAcceptedDate ? 0 : 1)
+    - (showPlannedDate ? 0 : 1)
 
   // ── Состояние формы документа ─────────────────────────────────────────────
   const isDsForm = formData.record_type !== DOC_TYPE.CONTRACT
@@ -1839,6 +1852,20 @@ function ContractRegistry() {
             placeholder="\\192.168.2.55\SharA_Tender\СУБПОДРЯДЫ ДОГОВОРА И ДС"
             onValueChange={setRootFolderPath}
           />
+          {/* Скрыть «Юрист», «Принят в работу», «План. подписания». */}
+          <button
+            type="button"
+            onClick={() => setHideTailColumns(v => !v)}
+            className={`btn-secondary${hideTailColumns ? ' is-toggled' : ''}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.875rem', fontSize: '0.8125rem' }}
+            aria-pressed={hideTailColumns}
+            title={hideTailColumns
+              ? 'Показать столбцы «Юрист», «Принят в работу», «План. подписания»'
+              : 'Скрыть столбцы «Юрист», «Принят в работу», «План. подписания»'}
+          >
+            {hideTailColumns ? <IconColumnsWide size={15} /> : <IconColumns size={15} />}
+            {hideTailColumns ? 'Все столбцы' : 'Скрыть столбцы'}
+          </button>
           <button
             onClick={() => setShowStorageStructure(true)}
             className="btn-secondary"
@@ -2085,7 +2112,7 @@ function ContractRegistry() {
         )
       ) : (
       <div className="table-container" ref={tableAreaRef}>
-        <table className={`contracts-table contracts-table-compact${narrowView ? ' is-narrow' : ''}`}>
+        <table className={`contracts-table contracts-table-compact${narrowView ? ' is-narrow' : ''}${hideTailColumns ? ' is-slim' : ''}`}>
           <colgroup>
             {showRowNumber && <col className="cg-num" />}
             <col className="cg-object" />
@@ -2095,9 +2122,9 @@ function ContractRegistry() {
             <col className="cg-work" />
             <col className="cg-amount" />
             <col className="cg-status" />
-            <col className="cg-lawyer" />
+            {showLawyer && <col className="cg-lawyer" />}
             {showAcceptedDate && <col className="cg-accepted" />}
-            <col className="cg-planned" />
+            {showPlannedDate && <col className="cg-planned" />}
             <col className="cg-actions" />
           </colgroup>
           <thead>
@@ -2110,9 +2137,9 @@ function ContractRegistry() {
               <th>{isAmendmentsView ? 'Предмет ДС' : 'Работы'}</th>
               {sortableTh('amount', 'Сумма')}
               {sortableTh('status', 'Статус')}
-              <th title="Ответственный юрист">Юрист</th>
+              {showLawyer && <th title="Ответственный юрист">Юрист</th>}
               {showAcceptedDate && sortableTh('accepted', <>Принят<br />в работу</>)}
-              {sortableTh('planned', <>План.<br />подписания</>)}
+              {showPlannedDate && sortableTh('planned', <>План.<br />подписания</>)}
               <th className="actions-column" title="Действия"> </th>
             </tr>
           </thead>
@@ -2300,6 +2327,7 @@ function ContractRegistry() {
                       <span className="larix-badge is-out" title="Договор ещё не внесён в Larix">не в Larix</span>
                     )}
                   </td>
+                  {showLawyer && (
                   <td className="cell-lawyer" onClick={(e) => e.stopPropagation()}>
                     <FilterDropdown
                       label=""
@@ -2313,6 +2341,7 @@ function ContractRegistry() {
                       disabled={!canEditContracts || isDeletedTab}
                     />
                   </td>
+                  )}
                   {showAcceptedDate && (
                     <td className="cell-date" onClick={(e) => e.stopPropagation()}>
                       <InlineDateCell
@@ -2322,6 +2351,7 @@ function ContractRegistry() {
                       />
                     </td>
                   )}
+                  {showPlannedDate && (
                   <td className={`cell-date date-cell ${overdue ? 'date-overdue' : ''}`} onClick={(e) => e.stopPropagation()}>
                     <InlineDateCell
                       value={contract.signed_date}
@@ -2331,6 +2361,7 @@ function ContractRegistry() {
                     />
                     {overdue && <span className="overdue-note">Просрочено</span>}
                   </td>
+                  )}
                   <td className="actions-cell" onClick={(e) => e.stopPropagation()}>
                     <div className="actions-inner">
                       {isDeletedTab ? (

@@ -47,8 +47,19 @@
 
 /* Описание работ — три строки. Кламп на самой ссылке (она блочная), а не на
    <td>: display:-webkit-box на ячейке выбивает её из table-cell. */
+/* Ширина колонки задаётся явно. Ссылка в режиме -webkit-box (кламп) для
+   автоматической раскладки таблицы «весит» как вся фраза в одну строку, и без
+   ширины колонка растягивалась под самое длинное описание — таблица переставала
+   помещаться. В компактном виде колонок меньше, там описание забирает остаток. */
+.tenders-page .tenders-registry:not(.data-table--compact) > tbody > tr > td.tender-desc-cell {
+  width: 230px;
+  min-width: 180px;
+  max-width: 230px;
+}
 .tenders-page .tenders-registry .tender-desc-link {
   display: -webkit-box;
+  max-width: 100%;
+  overflow-wrap: break-word;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   line-clamp: 3;

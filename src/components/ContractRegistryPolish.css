@@ -653,3 +653,35 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* ── «Скрыть столбцы» (is-slim) ─────────────────────────────────────────────
+   Без «Юриста», «Принят в работу» и «План. подписания». Доли пересчитаны под
+   оставшийся набор (сумма 100%), иначе освободившееся место делилось бы как
+   попало. Правила идут последними и перекрывают is-narrow при равной
+   специфичности. */
+.contracts-table-compact.is-slim { min-width: 900px; }
+.contracts-table-compact.is-slim col.cg-num { width: 3%; }
+.contracts-table-compact.is-slim col.cg-object { width: 10%; }
+.contracts-table-compact.is-slim col.cg-ds { width: 20%; }
+.contracts-table-compact.is-slim col.cg-counterparty { width: 15%; }
+.contracts-table-compact.is-slim col.cg-work { width: 22%; }
+.contracts-table-compact.is-slim col.cg-amount { width: 12%; }
+.contracts-table-compact.is-slim col.cg-status { width: 12%; }
+.contracts-table-compact.is-slim col.cg-actions { width: 6%; }
+
+/* Узкое место + скрытые столбцы: номера строки тоже нет. */
+.contracts-table-compact.is-narrow.is-slim { min-width: 820px; }
+.contracts-table-compact.is-narrow.is-slim col.cg-object { width: 12%; }
+.contracts-table-compact.is-narrow.is-slim col.cg-ds { width: 21%; }
+.contracts-table-compact.is-narrow.is-slim col.cg-counterparty { width: 16%; }
+.contracts-table-compact.is-narrow.is-slim col.cg-work { width: 20%; }
+.contracts-table-compact.is-narrow.is-slim col.cg-amount { width: 13%; }
+.contracts-table-compact.is-narrow.is-slim col.cg-status { width: 11%; }
+.contracts-table-compact.is-narrow.is-slim col.cg-actions { width: 7%; }
+
+/* Кнопка-переключатель в шапке: включённое состояние заметно. */
+.contract-registry .registry-header .btn-secondary.is-toggled {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+}
