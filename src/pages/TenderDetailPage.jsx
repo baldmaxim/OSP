@@ -19,6 +19,8 @@ import AccessDenied from '../components/AccessDenied'
 import FilterDropdown from '../components/FilterDropdown'
 import TenderDocumentsTab from '../components/TenderDocumentsTab'
 import TenderRdCodesTab from '../components/TenderRdCodesTab'
+import TenderVorRdPanel from '../components/TenderVorRdPanel'
+import { countVorRdDocs } from '../services/tenderVorRd'
 import TenderFinalDocBlock from '../components/TenderFinalDocBlock'
 import '../components/TenderDetail.css'
 
@@ -638,7 +640,7 @@ function TenderDetailPage() {
   const [draggedTc, setDraggedTc] = useState(null) // { id }
   const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'supply' | 'proposals' | 'participants' | 'rd' | 'documents' | 'history'
+  const [activeTab, setActiveTab] = useState('estimate') // 'estimate' | 'supply' | 'proposals' | 'participants' | 'vor_rd' | 'rd' | 'documents' | 'history'
   // Счётчик шифров РД для бейджа на вкладке; сами строки грузит сама вкладка.
   const [rdCodesCount, setRdCodesCount] = useState(0)
   // Версия документов тендера: любое изменение (во вкладке «Документы» или в блоке
@@ -727,7 +729,6 @@ function TenderDetailPage() {
 
   // task 396/397: документы тендера внутри карточки (S3, owner_type='tender')
   // категория 'vor' — «ВОРы и РД», 'tender_package' — «Тендерный пакет»
-  const [vorDocsModalOpen, setVorDocsModalOpen] = useState(false)
   const [vorDocCount, setVorDocCount] = useState(0)
   const [packageDocsModalOpen, setPackageDocsModalOpen] = useState(false)
   const [packageDocCount, setPackageDocCount] = useState(0)
@@ -746,7 +747,15 @@ function TenderDetailPage() {
       console.error('Ошибка загрузки счётчика документов тендера:', err.message)
     }
   }
-  const refreshVorDocCount = () => refreshDocCount('vor', setVorDocCount)
+  // «ВОРы и РД» считаем по всем категориям раздела: РД (PDF), ВОР и файлы,
+  // загруженные до разделения (миграция 20260918).
+  const refreshVorDocCount = async () => {
+    try {
+      setVorDocCount(await countVorRdDocs(tenderId))
+    } catch (err) {
+      console.error('Ошибка загрузки счётчика ВОРов и РД:', err.message)
+    }
+  }
   const refreshPackageDocCount = () => refreshDocCount('tender_package', setPackageDocCount)
 
   // task 410: лёгкие счётчики для бейджей «Расценки снабжения» и «История».
@@ -2331,7 +2340,7 @@ function TenderDetailPage() {
                   )}
                   <button
                     type="button"
-                    onClick={() => setVorDocsModalOpen(true)}
+                    onClick={() => setActiveTab('vor_rd')}
                     style={{
                       alignSelf: 'flex-start',
                       background: 'none',
@@ -2470,6 +2479,14 @@ function TenderDetailPage() {
           Участники
           {tenderCounterparties.length > 0 && <span className="tab-count">{tenderCounterparties.length}</span>}
         </button>
+        {/* ВОРы и РД: рабочая документация (PDF) с шифрами и ведомости объёмов работ. */}
+        <button
+          className={`tender-tab ${activeTab === 'vor_rd' ? 'active' : ''}`}
+          onClick={() => setActiveTab('vor_rd')}
+        >
+          ВОРы и РД
+          {vorDocCount > 0 && <span className="tab-count">{vorDocCount}</span>}
+        </button>
         {/* Шифры РД — рядом с документами: это тоже про документацию тендера. */}
         <button
           className={`tender-tab ${activeTab === 'rd' ? 'active' : ''}`}
@@ -2500,6 +2517,13 @@ function TenderDetailPage() {
         {/* Шифры рабочей документации по тендеру (миграция 20260901). Данные
             грузит сама вкладка при открытии — на других вкладках лишний запрос
             не нужен. */}
+        {activeTab === 'vor_rd' && (
+          <TenderVorRdPanel
+            tenderId={tenderId}
+            canEdit={canEditTenders}
+            onChange={refreshVorDocCount}
+          />
+        )}
         {activeTab === 'rd' && (
           <TenderRdCodesTab
             tenderId={tenderId}
@@ -3617,15 +3641,6 @@ function TenderDetailPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* task 396: документы «ВОРы и РД» */}
-      {vorDocsModalOpen && (
-        <VorDocsModal
-          tenderId={tenderId}
-          onClose={() => setVorDocsModalOpen(false)}
-          onChange={refreshVorDocCount}
-        />
       )}
 
       {/* task 397: документы «Тендерный пакет» */}

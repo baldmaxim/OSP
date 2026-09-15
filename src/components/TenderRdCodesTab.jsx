@@ -29,6 +29,9 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
   const [editing, setEditing] = useState(null) // { id } | 'new' | null
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  // Сколько PDF рабочей документации привязано к каждому шифру (вкладка «ВОРы и РД»,
+  // миграция 20260918). null — таблицы связей ещё нет: колонку не показываем.
+  const [docCounts, setDocCounts] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -43,6 +46,22 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
       if (err) throw err
       setRows(data || [])
       onCountChange?.(data?.length || 0)
+      // Best-effort: без таблицы связей вкладка шифров работает как раньше.
+      if (data?.length) {
+        const { data: links, error: linksErr } = await supabase
+          .from('tender_rd_document_codes')
+          .select('rd_code_id')
+          .in('rd_code_id', data.map(r => r.id))
+        if (linksErr) {
+          setDocCounts(null)
+        } else {
+          const m = {}
+          for (const l of links || []) m[l.rd_code_id] = (m[l.rd_code_id] || 0) + 1
+          setDocCounts(m)
+        }
+      } else {
+        setDocCounts({})
+      }
     } catch (err) {
       console.error('Ошибка загрузки шифров РД:', err.message)
       // 42P01 — таблицы нет: миграция ещё не применена. Говорим об этом прямо,
@@ -107,7 +126,11 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
   }
 
   const remove = async (row) => {
-    if (!window.confirm(`Удалить шифр «${row.code}»?`)) return
+    const linked = docCounts?.[row.id] || 0
+    const question = linked > 0
+      ? `К шифру «${row.code}» привязано PDF рабочей документации: ${linked}. Файлы останутся во вкладке «ВОРы и РД», но потеряют этот шифр. Удалить шифр?`
+      : `Удалить шифр «${row.code}»?`
+    if (!window.confirm(question)) return
     try {
       const { error: err } = await supabase.from('tender_rd_codes').delete().eq('id', row.id)
       if (err) throw err
@@ -171,6 +194,7 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
                 <th className="trd-col-code">Шифр</th>
                 <th>Наименование раздела</th>
                 <th>Примечание</th>
+                {docCounts && <th className="trd-col-docs" title="PDF рабочей документации во вкладке «ВОРы и РД»">Файлы РД</th>}
                 <th className="trd-col-meta">Добавлено</th>
                 {canEdit && <th className="trd-col-actions"></th>}
               </tr>
@@ -179,7 +203,7 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
               {rows.map((row, i) => (
                 editing?.id === row.id ? (
                   <tr key={row.id}>
-                    <td colSpan={canEdit ? 6 : 5}>
+                    <td colSpan={(canEdit ? 6 : 5) + (docCounts ? 1 : 0)}>
                       <RdForm form={form} setForm={setForm} onSave={save} onCancel={cancel} saving={saving} />
                     </td>
                   </tr>
@@ -189,6 +213,11 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
                     <td className="trd-col-code"><span className="trd-code">{row.code}</span></td>
                     <td>{row.title || <span className="trd-muted">—</span>}</td>
                     <td className="trd-notes">{row.notes || <span className="trd-muted">—</span>}</td>
+                    {docCounts && (
+                      <td className="trd-col-docs">
+                        {docCounts[row.id] ? <span className="trd-docs-count">{docCounts[row.id]}</span> : <span className="trd-muted">—</span>}
+                      </td>
+                    )}
                     <td className="trd-col-meta">
                       <span className="trd-meta-date">{formatDateTime(row.created_at)}</span>
                       {row.created_by_name && <span className="trd-meta-who">{row.created_by_name}</span>}

@@ -191,7 +191,7 @@ CREATE POLICY portal_contractor_select ON public.s3_documents
   FOR SELECT TO authenticated
   USING (
     (owner_type = 'tender'
-      AND doc_category IN ('tender_package', 'vor')
+      AND doc_category IN ('tender_package', 'vor', 'rd', 'vor_statement')
       AND public.is_my_tender(owner_id))
     OR (owner_type = 'contract' AND public.is_my_contract(owner_id))
   );

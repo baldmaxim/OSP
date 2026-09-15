@@ -33,6 +33,8 @@ const PARTICIPATION_CLASS = {
 
 const DOC_SECTION_LABEL = {
   tender_package: 'Тендерный пакет',
+  rd: 'Рабочая документация',
+  vor_statement: 'Ведомость объёмов работ',
   vor: 'ВОР и рабочая документация',
 }
 
@@ -182,7 +184,7 @@ function ContractorCabinetPage() {
           .select('id, owner_id, doc_category, file_name, s3_key, mime_type, size_bytes, created_at')
           .eq('owner_type', 'tender')
           .eq('owner_id', activeTenderId)
-          .in('doc_category', ['tender_package', 'vor'])
+          .in('doc_category', ['tender_package', 'rd', 'vor_statement', 'vor'])
           .order('created_at', { ascending: false }),
         supabase
           .from('tender_counterparty_proposals')

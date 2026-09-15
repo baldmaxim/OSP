@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
-import VorDocsModal from '../components/VorDocsModal'
+import VorRdModal from '../components/VorRdModal'
+import { countVorRdDocs, fetchVorRdDocCounts } from '../services/tenderVorRd'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import IconTile from '../components/IconTile'
 import FilterDropdown from '../components/FilterDropdown'
@@ -23,7 +24,8 @@ const STATUS_LABELS = {
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
 
 function VorsPage() {
-  const { scopedObjectIds, userProfile } = useRole()
+  const { scopedObjectIds, userProfile, canEdit } = useRole()
+  const canEditTenders = canEdit('tenders')
 
   // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
   const logTenderEvent = async (tenderId, eventType, payload = {}) => {
@@ -113,38 +115,21 @@ function VorsPage() {
     }
   }, [scopedObjectIds])
 
-  // task 393: счётчики ВОР-документов одним запросом (для бейджа и статус-гейта)
+  // Счётчики документов раздела (РД, ВОР и ранее загруженные) — для бейджа и
+  // статус-гейта «Завершён». Порциями: сотни UUID одним IN-списком роняют запрос.
   const fetchVorDocCounts = async (tenderIds) => {
-    if (!tenderIds || tenderIds.length === 0) { setVorDocCounts({}); return }
     try {
-      const { data, error } = await supabase
-        .from('s3_documents')
-        .select('owner_id')
-        .eq('owner_type', 'tender')
-        .eq('doc_category', 'vor')
-        .in('owner_id', tenderIds)
-      if (error) throw error
-      const counts = {}
-      for (const row of data || []) {
-        counts[row.owner_id] = (counts[row.owner_id] || 0) + 1
-      }
-      setVorDocCounts(counts)
+      setVorDocCounts(await fetchVorRdDocCounts(tenderIds))
     } catch (err) {
       console.error('Ошибка загрузки счётчиков документов ВОР:', err.message)
     }
   }
 
-  // Пересчитать число документов для одного тендера (после загрузки/удаления в модалке)
+  // Пересчитать число документов для одного тендера (после изменений в окне)
   const refreshVorDocCount = async (tenderId) => {
     try {
-      const { count, error } = await supabase
-        .from('s3_documents')
-        .select('id', { count: 'exact', head: true })
-        .eq('owner_type', 'tender')
-        .eq('doc_category', 'vor')
-        .eq('owner_id', tenderId)
-      if (error) throw error
-      setVorDocCounts(prev => ({ ...prev, [tenderId]: count || 0 }))
+      const count = await countVorRdDocs(tenderId)
+      setVorDocCounts(prev => ({ ...prev, [tenderId]: count }))
     } catch (err) {
       console.error('Ошибка обновления счётчика документов ВОР:', err.message)
     }
@@ -599,10 +584,10 @@ function VorsPage() {
                         type="button"
                         className={`vor-docs-btn${vorDocCounts[t.id] ? ' has-docs' : ''}`}
                         onClick={() => setVorDocsModalTenderId(t.id)}
-                        title="Документы ВОР и РД"
+                        title="Рабочая документация (PDF с шифрами) и ведомости объёмов работ"
                       >
                         <PaperclipIcon size={12} />
-                        <span>Документы</span>
+                        <span>РД и ВОР</span>
                         {vorDocCounts[t.id] > 0 && <span className="vor-docs-count">{vorDocCounts[t.id]}</span>}
                       </button>
                     </div>
@@ -625,13 +610,21 @@ function VorsPage() {
         </table>
       </div>
 
-      {vorDocsModalTenderId && (
-        <VorDocsModal
-          tenderId={vorDocsModalTenderId}
-          onClose={() => setVorDocsModalTenderId(null)}
-          onChange={() => refreshVorDocCount(vorDocsModalTenderId)}
-        />
-      )}
+      {vorDocsModalTenderId && (() => {
+        const t = tenders.find(x => x.id === vorDocsModalTenderId)
+        const title = t
+          ? `ВОРы и РД — № ${t.public_tender_number ?? '—'}${t.objects?.name ? `, ${t.objects.name}` : ''}`
+          : 'ВОРы и РД'
+        return (
+          <VorRdModal
+            tenderId={vorDocsModalTenderId}
+            title={title}
+            canEdit={canEditTenders}
+            onClose={() => setVorDocsModalTenderId(null)}
+            onChange={() => refreshVorDocCount(vorDocsModalTenderId)}
+          />
+        )
+      })()}
     </div>
   )
 }

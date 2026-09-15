@@ -131,3 +131,17 @@
   .trd-form-row { flex-direction: column; }
   .trd-field input { height: 40px; font-size: 16px; }
 }
+
+/* Число PDF рабочей документации, привязанных к шифру (вкладка «ВОРы и РД»). */
+.trd-col-docs { width: 90px; text-align: center; }
+.trd-docs-count {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  color: var(--primary-color);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

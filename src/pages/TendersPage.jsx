@@ -18,6 +18,8 @@ import TenderDocsModal from '../components/TenderDocsModal'
 import { TENDERS_STRUCTURE } from '../utils/docStorageStructures'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
+import VorRdModal from '../components/VorRdModal'
+import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
@@ -549,7 +551,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           .from('s3_documents')
           .select('owner_id, doc_category')
           .eq('owner_type', 'tender')
-          .in('doc_category', ['vor', 'tender_package'])
+          .in('doc_category', [...VOR_RD_CATEGORIES, 'tender_package'])
           .in('owner_id', chunk)
           .limit(10000)
         if (error) throw error
@@ -583,7 +585,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       console.error('Ошибка обновления счётчика документов тендера:', err.message)
     }
   }
-  const refreshVorDocCount = (tenderId) => refreshDocCount(tenderId, 'vor', setVorDocCounts)
+  // «ВОРы и РД» — все категории раздела (РД, ВОР, загруженные ранее).
+  const refreshVorDocCount = async (tenderId) => {
+    try {
+      const count = await countVorRdDocs(tenderId)
+      setVorDocCounts(prev => ({ ...prev, [tenderId]: count }))
+    } catch (err) {
+      console.error('Ошибка обновления счётчика ВОРов и РД:', err.message)
+    }
+  }
   const refreshPackageDocCount = (tenderId) => refreshDocCount(tenderId, 'tender_package', setPackageDocCounts)
 
   const fetchObjects = async () => {
@@ -4848,10 +4858,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         />
       )}
 
-      {/* Документы «ВОРы и РД» */}
+      {/* «ВОРы и РД»: РД в PDF с шифрами и ведомости объёмов работ */}
       {vorDocsModalTenderId && (
-        <VorDocsModal
+        <VorRdModal
           tenderId={vorDocsModalTenderId}
+          canEdit={canEditTenders}
           onClose={() => setVorDocsModalTenderId(null)}
           onChange={() => refreshVorDocCount(vorDocsModalTenderId)}
         />
