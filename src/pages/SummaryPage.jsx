@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
+import { vorResponsibleName, withStoColumns } from '../services/stoEmployees'
 import './SummaryPage.css'
 
 const STAGE_LABELS = {
@@ -20,8 +21,8 @@ function getCurrentStage(t, today) {
   if (t.vor_status !== 'completed') {
     return {
       key: 'vor',
-      responsible: t.vor_responsible?.full_name || 'Сметный отдел',
-      responsibleNote: t.vor_responsible ? null : 'не назначен',
+      responsible: vorResponsibleName(t) || 'Сметный отдел',
+      responsibleNote: vorResponsibleName(t) ? null : 'не назначен',
       start: t.vor_start_date,
       end: t.vor_end_date,
       overdue: !!(t.vor_end_date && t.vor_end_date < today),
@@ -74,14 +75,14 @@ function SummaryPage() {
       setLoading(true)
       // Постранично и БЕЗ удалённых: раньше сводка показывала тендеры из вкладки
       // «Удалённые» и молча обрезалась на 1000 строк.
-      const makeQuery = (from, to) => {
+      const makeQuery = (stoCols) => (from, to) => {
         let q = supabase
         .from('tenders')
         .select(`
           id, object_id, status, start_date, end_date,
           vor_status, vor_start_date, vor_end_date,
           tender_start_date, tender_end_date,
-          work_description,
+          work_description${stoCols},
           objects(name, status),
           responsible_contact:contacts!responsible_contact_id(id, full_name),
           vor_responsible:contacts!vor_responsible_id(id, full_name),
@@ -93,7 +94,8 @@ function SummaryPage() {
         if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
         return q.range(from, to)
       }
-      const data = await fetchAllRows(makeQuery)
+      // Колонки СТО (миграция 20260922) — если их ещё нет, сводка грузится без них.
+      const data = await withStoColumns((stoCols) => fetchAllRows(makeQuery(stoCols)))
       const filtered = (data || []).filter(t => t.objects?.status === 'main_construction')
       setTenders(filtered)
     } catch (err) {

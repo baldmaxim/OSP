@@ -21,6 +21,7 @@ import TenderDocumentsTab from '../components/TenderDocumentsTab'
 import TenderRdCodesTab from '../components/TenderRdCodesTab'
 import TenderVorRdPanel from '../components/TenderVorRdPanel'
 import { countVorRdDocs } from '../services/tenderVorRd'
+import { vorResponsibleName } from '../services/stoEmployees'
 import TenderFinalDocBlock from '../components/TenderFinalDocBlock'
 import '../components/TenderDetail.css'
 
@@ -1781,6 +1782,7 @@ function TenderDetailPage() {
     responsible_contact_id: 'Ответственный по тендеру',
     cost_plan_responsible_id: 'Ответственный за план затрат',
     vor_responsible_id: 'Ответственный за ВОРы и РД',
+    vor_sto_user_id: 'Ответственный СТО',
     object_id: 'Объект',
     notes: 'Примечание',
     participant_notes: 'Примечание участника',
@@ -2310,13 +2312,13 @@ function TenderDetailPage() {
               </span>
             </div>
           )}
-          {!isMainConstruction && (tender.vor_start_date || tender.vor_end_date || tender.vor_responsible) && (
+          {!isMainConstruction && (tender.vor_start_date || tender.vor_end_date || vorResponsibleName(tender)) && (
             <div className="info-item">
               <span className="info-label">Срок подготовки ВОР</span>
               <span className="info-value">
                 {formatDateRangeOrDash(tender.vor_start_date, tender.vor_end_date)}
-                {tender.vor_responsible?.full_name && (
-                  <span className="info-sub"> · {tender.vor_responsible.full_name}</span>
+                {vorResponsibleName(tender) && (
+                  <span className="info-sub"> · {vorResponsibleName(tender)}</span>
                 )}
               </span>
             </div>
@@ -2329,10 +2331,10 @@ function TenderDetailPage() {
                 <span className="info-label">ВОРы и РД</span>
                 <span className="info-value info-stack">
                   <span>{vorPhaseText}</span>
-                  {((tender.vor_start_date || tender.vor_end_date) || tender.vor_responsible?.full_name) && (
+                  {((tender.vor_start_date || tender.vor_end_date) || vorResponsibleName(tender)) && (
                     <span className="info-sub">
                       {formatDateRangeOrDash(tender.vor_start_date, tender.vor_end_date)}
-                      {tender.vor_responsible?.full_name && ` · ${tender.vor_responsible.full_name}`}
+                      {vorResponsibleName(tender) && ` · ${vorResponsibleName(tender)}`}
                     </span>
                   )}
                   {tender.vor_link && (

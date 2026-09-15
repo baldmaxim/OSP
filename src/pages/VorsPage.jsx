@@ -5,6 +5,7 @@ import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import VorRdModal from '../components/VorRdModal'
 import { countVorRdDocs, fetchVorRdDocCounts } from '../services/tenderVorRd'
+import { fetchStoEmployees, vorResponsibleOf, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import IconTile from '../components/IconTile'
 import FilterDropdown from '../components/FilterDropdown'
@@ -60,7 +61,11 @@ function VorsPage() {
   const [responsibleFilters, setResponsibleFilters] = useState([])
   const [objectFilterIds, setObjectFilterIds] = useState([]) // task 239: фильтр по объектам
   const [searchQuery, setSearchQuery] = useState('') // task 239: поиск
-  const [allContacts, setAllContacts] = useState([])
+  // Сотрудники СТО из реестра «Администрирование» — варианты «Ответственного СТО».
+  const [stoEmployees, setStoEmployees] = useState([])
+  const [stoError, setStoError] = useState(null)
+  // false — в базе ещё нет колонок vor_sto_* (миграция 20260922 не применена).
+  const [stoSupported, setStoSupported] = useState(true)
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
   // task 432: сортировка по номеру тендера (клик по заголовку колонки «№ тендера»)
   const [sortKey, setSortKey] = useState('') // '' | 'public_tender_number'
@@ -69,16 +74,13 @@ function VorsPage() {
   const [vorDocsModalTenderId, setVorDocsModalTenderId] = useState(null)
   const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
 
-  const fetchAllContacts = async () => {
+  const loadStoEmployees = async () => {
     try {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('id, full_name, position')
-        .order('full_name', { ascending: true })
-      if (error) throw error
-      setAllContacts(data || [])
+      setStoEmployees(await fetchStoEmployees())
+      setStoError(null)
     } catch (err) {
-      console.error('Ошибка загрузки сотрудников:', err.message)
+      console.error('Ошибка загрузки сотрудников СТО:', err.message)
+      setStoError(err.message)
     }
   }
 
@@ -87,18 +89,29 @@ function VorsPage() {
       setLoading(true)
       // Постранично: без .range() PostgREST молча отдал бы только первые 1000
       // тендеров, и часть реестра просто не появилась бы на странице.
-      const data = await fetchAllRows((from, to) => supabase
+      const load = (stoCols) => fetchAllRows((from, to) => supabase
         .from('tenders')
         .select(`
           id, object_id, public_tender_number, status, tender_type, department, vor_status, vor_link,
           vor_responsible_id, vor_start_date, vor_end_date,
-          start_date, end_date, work_description, deleted_at,
+          start_date, end_date, work_description, deleted_at${stoCols},
           objects(name, status),
-          vor_responsible:contacts!vor_responsible_id(id, full_name, position)
+          vor_responsible:contacts!vor_responsible_id(id, full_name, position),
+          responsible_contact:contacts!responsible_contact_id(id, full_name)
         `)
         .order('start_date', { ascending: false })
         .order('id', { ascending: true })
         .range(from, to))
+      // Колонок СТО до миграции 20260922 нет — страница работает и без них.
+      let data
+      try {
+        data = await load(', vor_sto_user_id, vor_sto_name')
+        setStoSupported(true)
+      } catch (err) {
+        if (!isMissingStoColumnError(err)) throw err
+        data = await load('')
+        setStoSupported(false)
+      }
 
       // Только основные тендеры (без дочерних на материалы) по основному строительству.
       // Направление берём из tenders.department (миграция 20260820), а не из статуса
@@ -142,8 +155,12 @@ function VorsPage() {
 
   useEffect(() => {
     fetchTenders()
-    fetchAllContacts()
   }, [fetchTenders])
+
+  // Список СТО нужен только для назначения — грузим при первом открытии выбора.
+  useEffect(() => {
+    if (editingResponsibleId && stoEmployees.length === 0 && !stoError) loadStoEmployees()
+  }, [editingResponsibleId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChangeStatus = async (tenderId, newStatus) => {
     if (newStatus === 'completed') {
@@ -167,36 +184,33 @@ function VorsPage() {
     }
   }
 
-  const handleChangeResponsible = async (tenderId, newContactId) => {
-    const value = newContactId || null
+  // Ответственный СТО — только пользователь реестра с ролью СТО (миграция 20260922).
+  const handleChangeResponsible = async (tenderId, userId) => {
+    if (!stoSupported) { alert(STO_MIGRATION_HINT); return }
+    const value = userId || null
     const tender = tenders.find(t => t.id === tenderId)
-    const oldName = tender?.vor_responsible?.full_name || null
-    const c = value ? allContacts.find(x => x.id === value) : null
-    const newName = c?.full_name || null
+    const oldName = vorResponsibleOf(tender).name || null
+    const emp = value ? stoEmployees.find(x => x.user_id === value) : null
+    if (value && !emp) { alert('Выберите сотрудника сметно-технического отдела из списка.'); return }
+    const newName = emp?.display_name || null
+    const patch = { vor_sto_user_id: value, vor_sto_name: newName }
     try {
-      const { error } = await supabase
-        .from('tenders')
-        .update({ vor_responsible_id: value })
-        .eq('id', tenderId)
+      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
       if (error) throw error
-      setTenders(prev => prev.map(t =>
-        t.id === tenderId
-          ? { ...t, vor_responsible_id: value, vor_responsible: c ? { id: c.id, full_name: c.full_name, position: c.position } : null }
-          : t
-      ))
+      setTenders(prev => prev.map(t => (t.id === tenderId ? { ...t, ...patch } : t)))
       if (oldName !== newName) {
         logTenderEvent(tenderId, 'field_updated', {
-          fieldName: 'vor_responsible_id',
+          fieldName: 'vor_sto_user_id',
           oldValue: oldName,
           newValue: newName,
           description: newName
-            ? (oldName ? `Сменён ответственный за ВОРы и РД: ${oldName} → ${newName}` : `Назначен ответственный за ВОРы и РД: ${newName}`)
-            : `Снят ответственный за ВОРы и РД (был: ${oldName})`,
+            ? (oldName ? `Сменён ответственный СТО: ${oldName} → ${newName}` : `Назначен ответственный СТО: ${newName}`)
+            : `Снят ответственный СТО (был: ${oldName})`,
         })
       }
     } catch (err) {
-      console.error('Ошибка назначения ответственного:', err.message)
-      alert('Ошибка: ' + err.message)
+      console.error('Ошибка назначения ответственного СТО:', err.message)
+      alert(isMissingStoColumnError(err) ? STO_MIGRATION_HINT : 'Ошибка: ' + err.message)
     }
   }
 
@@ -252,13 +266,20 @@ function VorsPage() {
     )
   }
 
+  // Ключ ответственного для фильтра: СТО из реестра — по user_id, прежний
+  // контакт — по id контакта, нет никого — UNASSIGNED.
+  const responsibleKeyOf = (t) => (t.vor_sto_user_id ? `sto:${t.vor_sto_user_id}`
+    : t.vor_responsible?.id ? `contact:${t.vor_responsible.id}` : UNASSIGNED)
   const responsibleMap = new Map()
   for (const t of tenders) {
-    const r = t.vor_responsible
-    if (r?.id && !responsibleMap.has(r.id)) responsibleMap.set(r.id, r)
+    const key = responsibleKeyOf(t)
+    if (key === UNASSIGNED) continue
+    const entry = responsibleMap.get(key) || { key, name: vorResponsibleOf(t).name, count: 0 }
+    entry.count += 1
+    responsibleMap.set(key, entry)
   }
   const responsibles = Array.from(responsibleMap.values())
-    .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '', 'ru'))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'))
 
   // task 239: уникальные объекты для фильтра
   const objectMap = new Map()
@@ -273,7 +294,7 @@ function VorsPage() {
   // task 239: фильтрация по ответственному, объекту и поиску
   let filtered = tenders
   if (responsibleFilters.length > 0) {
-    filtered = filtered.filter(t => responsibleFilters.includes(t.vor_responsible?.id || UNASSIGNED))
+    filtered = filtered.filter(t => responsibleFilters.includes(responsibleKeyOf(t)))
   }
   if (objectFilterIds.length > 0) filtered = filtered.filter(t => objectFilterIds.includes(t.object_id))
   if (searchQuery.trim()) {
@@ -282,7 +303,8 @@ function VorsPage() {
       String(t.public_tender_number ?? '').includes(q) ||
       (t.objects?.name || '').toLowerCase().includes(q) ||
       (t.work_description || '').toLowerCase().includes(q) ||
-      (t.vor_responsible?.full_name || '').toLowerCase().includes(q)
+      (vorResponsibleOf(t).name || '').toLowerCase().includes(q) ||
+      (t.responsible_contact?.full_name || '').toLowerCase().includes(q)
     )
   }
 
@@ -304,7 +326,7 @@ function VorsPage() {
   const deletedRows = filtered.filter(t => t.deleted_at)
   const liveRows = filtered.filter(t => !t.deleted_at)
   const hasActiveFilters = responsibleFilters.length > 0 || objectFilterIds.length > 0 || searchQuery.trim() !== ''
-  const unassignedCount = tenders.filter(t => !t.vor_responsible?.id).length
+  const unassignedCount = tenders.filter(t => responsibleKeyOf(t) === UNASSIGNED).length
 
   // task 241: разбивка по статусам ВОР (не начат / в работе / завершён)
   const notStarted = liveRows.filter(t => (t.vor_status || 'not_started') === 'not_started')
@@ -325,7 +347,7 @@ function VorsPage() {
         </h2>
         <div className="cp-header-right">
           <div className="page-header-hint">
-            Список тендеров основного строительства. Ответственного за ВОРы и РД можно назначить в карточке тендера.
+            Список тендеров основного строительства. Ответственный СТО выбирается из сотрудников сметно-технического отдела.
           </div>
         </div>
       </div>
@@ -411,16 +433,16 @@ function VorsPage() {
         />
         <FilterDropdown
           label="" multiple searchable
-          searchPlaceholder="Поиск ответственного…"
-          allLabel="Все ответственные"
+          searchPlaceholder="Поиск ответственного СТО…"
+          allLabel="Все ответственные СТО"
           icon={<IconUser size={15} />}
           value={responsibleFilters}
           onChange={setResponsibleFilters}
           options={[
             { value: UNASSIGNED, label: `Не назначен (${unassignedCount})` },
             ...responsibles.map(r => ({
-              value: r.id,
-              label: `${r.full_name} (${tenders.filter(t => t.vor_responsible?.id === r.id).length})`,
+              value: r.key,
+              label: `${r.name} (${r.count})`,
             })),
           ]}
         />
@@ -450,7 +472,8 @@ function VorsPage() {
               </th>
               <th style={{ width: '160px' }}>Объект</th>
               <th>Описание работ</th>
-              <th style={{ width: '170px' }}>Ответственный</th>
+              <th style={{ width: '170px' }}>Ответственный СТО</th>
+              <th style={{ width: '150px' }}>Ответственный<br />по тендеру</th>
               <th style={{ width: '170px' }}>Срок подготовки ВОР</th>
               <th style={{ width: '240px' }}>ВОРы и РД</th>
               <th style={{ width: '150px' }}>Статус</th>
@@ -459,7 +482,7 @@ function VorsPage() {
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={7} className="no-data">
+                <td colSpan={8} className="no-data">
                   {tenders.length === 0
                     ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
                     : activeTab === 'deleted'
@@ -513,37 +536,54 @@ function VorsPage() {
                     )}
                   </td>
                   <td>
-                    {canEditVors && editingResponsibleId === t.id ? (
-                      <select
-                        autoFocus
-                        className="inline-responsible-select"
-                        value={t.vor_responsible_id || ''}
-                        onChange={(e) => {
-                          handleChangeResponsible(t.id, e.target.value)
-                          setEditingResponsibleId(null)
-                        }}
-                        onBlur={() => setEditingResponsibleId(null)}
-                      >
-                        <option value="">— не назначен —</option>
-                        {allContacts.map(c => (
-                          <option key={c.id} value={c.id}>{c.full_name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <button
-                        className="responsible-display"
-                        onClick={() => canEditVors && setEditingResponsibleId(t.id)}
-                        title={canEditVors ? 'Назначить ответственного' : undefined}
-                        disabled={!canEditVors}
-                      >
-                        {t.vor_responsible?.full_name || (
-                          <span className="responsible-empty">— не назначен —</span>
-                        )}
-                      </button>
-                    )}
-                    {t.vor_responsible?.position && (
-                      <div className="muted-tiny">{t.vor_responsible.position}</div>
-                    )}
+                    {(() => {
+                      const resp = vorResponsibleOf(t)
+                      if (canEditVors && editingResponsibleId === t.id) {
+                        return (
+                          <select
+                            autoFocus
+                            className="inline-responsible-select"
+                            value={t.vor_sto_user_id || ''}
+                            onChange={(e) => {
+                              handleChangeResponsible(t.id, e.target.value)
+                              setEditingResponsibleId(null)
+                            }}
+                            onBlur={() => setEditingResponsibleId(null)}
+                          >
+                            <option value="">— не назначен —</option>
+                            {stoError && <option value="" disabled>{stoError}</option>}
+                            {!stoError && stoEmployees.length === 0 && (
+                              <option value="" disabled>Нет сотрудников с ролью СТО</option>
+                            )}
+                            {stoEmployees.map(emp => (
+                              <option key={emp.user_id} value={emp.user_id}>{emp.display_name}</option>
+                            ))}
+                          </select>
+                        )
+                      }
+                      return (
+                        <>
+                          <button
+                            className="responsible-display"
+                            onClick={() => canEditVors && setEditingResponsibleId(t.id)}
+                            title={canEditVors ? 'Назначить ответственного СТО' : undefined}
+                            disabled={!canEditVors}
+                          >
+                            {resp.name || <span className="responsible-empty">— не назначен —</span>}
+                          </button>
+                          {/* Прежний ответственный из справочника «Сотрудники» — пока
+                              СТО из реестра не назначен. */}
+                          {resp.name && !resp.fromRegistry && (
+                            <div className="muted-tiny" title="Назначен до перехода на выбор из реестра СТО — переназначьте">
+                              не из реестра СТО
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </td>
+                  <td className="muted-text">
+                    {t.responsible_contact?.full_name || <span className="muted-tiny">—</span>}
                   </td>
                   <td>
                     <div className="inline-date-range vor-date-range">

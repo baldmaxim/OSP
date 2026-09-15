@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
+import { vorResponsibleName, withStoColumns } from '../services/stoEmployees'
 import { currencySymbol } from '../utils/estimateImport'
 import EngineersActivity from '../components/reports/EngineersActivity'
 import './ReportsPage.css'
@@ -196,13 +197,13 @@ function ReportsPage() {
       // Запрос собирается ВНУТРИ колбэка: fetchAllRows зовёт его на каждую
       // страницу, а повторный .range() на одном и том же билдере supabase-js
       // переписал бы диапазон предыдущего.
-      const tendersQuery = (from, to) => {
+      const tendersQuery = (stoCols) => (from, to) => {
         let q = supabase
         .from('tenders')
         .select(`
           id, object_id, status, end_date, created_at, responsible_contact_id, tender_type, deleted_at,
           cost_plan_status, cost_plan_responsible_id, cost_plan_end_date,
-          vor_status, vor_responsible_id, vor_end_date,
+          vor_status, vor_responsible_id, vor_end_date${stoCols},
           materials_proposal_deadline,
           winner_counterparty_id,
           objects(id, name, status),
@@ -216,7 +217,8 @@ function ReportsPage() {
       }
       // Постранично: без .range() PostgREST молча отдаёт первые 1000 строк, и
       // отчёт считался бы по неполному набору — числа в нём просто врут.
-      const tendersRaw = await fetchAllRows(tendersQuery)
+      // Колонки СТО (миграция 20260922) — если их ещё нет, отчёт строится без них.
+      const tendersRaw = await withStoColumns((stoCols) => fetchAllRows(tendersQuery(stoCols)))
 
       const contractsQuery = (from, to) => {
         let q = supabase
@@ -467,11 +469,12 @@ function ReportsPage() {
         inProgress: vorRows.filter(x => x.vor_status === 'in_progress').length,
         completed: vorRows.filter(isVorDone).length,
         overdue: vorRows.filter(x => !isVorDone(x) && x.vor_end_date && x.vor_end_date < today).length,
-        unassigned: vorRows.filter(x => !x.vor_responsible_id).length,
+        // Ответственный СТО из реестра, иначе прежний контакт (миграция 20260922).
+        unassigned: vorRows.filter(x => !x.vor_sto_user_id && !x.vor_responsible_id).length,
         byResp: groupByResponsibleGeneric(
           vorRows,
-          (x) => x.vor_responsible_id,
-          (x) => x.vor_responsible?.full_name,
+          (x) => x.vor_sto_user_id || x.vor_responsible_id,
+          (x) => vorResponsibleName(x),
           isVorDone
         ),
       }

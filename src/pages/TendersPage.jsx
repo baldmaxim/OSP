@@ -20,6 +20,7 @@ import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
 import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
+import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
@@ -143,6 +144,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [loading, setLoading] = useState(true)
   const [exportingRegistry, setExportingRegistry] = useState(false)
   const [showModal, setShowModal] = useState(false)
+  // «Ответственный СТО» в форме тендера — отдельным состоянием, не в formData:
+  // formData целиком уходит в UPDATE, а колонок vor_sto_* до миграции 20260922 нет.
+  const [vorStoDraft, setVorStoDraft] = useState('')
+  const [stoEmployees, setStoEmployees] = useState([])
+  const [stoLoadError, setStoLoadError] = useState(null)
   // task 212: 'all' | <status> | 'template' | 'deleted'.
   // Вкладку «Шаблон письма» не восстанавливаем — это режим редактирования, а не
   // выборка тендеров; в остальных случаях возвращаем сохранённую вкладку.
@@ -1370,6 +1376,25 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
         if (error) throw error
 
+        // Ответственный СТО — отдельным запросом: при непримёненной миграции
+        // основная правка тендера сохраняется, а про СТО выводится подсказка.
+        if ((editingTender.vor_sto_user_id || '') !== vorStoDraft) {
+          const emp = vorStoDraft ? stoEmployees.find(x => x.user_id === vorStoDraft) : null
+          const stoPatch = { vor_sto_user_id: vorStoDraft || null, vor_sto_name: emp?.display_name || null }
+          const { error: stoError } = await supabase.from('tenders').update(stoPatch).eq('id', editingTender.id)
+          if (stoError) {
+            alert(isMissingStoColumnError(stoError) ? STO_MIGRATION_HINT : 'Ответственный СТО не сохранён: ' + stoError.message)
+          } else {
+            const oldName = vorResponsibleName(editingTender) || null
+            await logTenderEvent(editingTender.id, 'field_updated', {
+              fieldName: 'vor_sto_user_id',
+              oldValue: oldName,
+              newValue: stoPatch.vor_sto_name,
+              description: stoPatch.vor_sto_name ? `Назначен ответственный СТО: ${stoPatch.vor_sto_name}` : 'Снят ответственный СТО',
+            })
+          }
+        }
+
         // Логируем изменения каждого поля
         const trackFields = [
           'work_description', 'start_date', 'end_date',
@@ -1622,6 +1647,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   const handleEditTender = (tender) => {
     setEditingTender(tender)
+    setVorStoDraft(tender.vor_sto_user_id || '')
+    if (stoEmployees.length === 0) {
+      fetchStoEmployees()
+        .then((list) => { setStoEmployees(list); setStoLoadError(null) })
+        .catch((err) => setStoLoadError(err.message))
+    }
     // Поля тендера на материалы живут в отдельной записи, поэтому и в форме
     // держатся отдельным состоянием, а не полями formData.
     setMaterialsStatusDraft(tender.materials_tender?.status || 'Не начат')
@@ -1936,6 +1967,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     cost_plan_responsible_id: 'Ответственный за план затрат',
     vor_link: 'ВОРы и РД',
     vor_responsible_id: 'Ответственный за ВОРы и РД',
+    vor_sto_user_id: 'Ответственный СТО',
     summary_proposal_link: 'Сводная КП',
     notes: 'Примечание'
   }
@@ -3216,9 +3248,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             </span>
                           </button>
                         </div>
-                        {tender.vor_responsible?.full_name && (
+                        {vorResponsibleName(tender) && (
                           <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
-                            {tender.vor_responsible.full_name}
+                            {vorResponsibleName(tender)}
                           </div>
                         )}
                       </td>
@@ -4253,17 +4285,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     </div>
 
                     <div className="form-group full-width">
-                      <label>Ответственный за ВОРы и РД</label>
+                      <label>Ответственный СТО (ВОРы и РД)</label>
+                      {/* Только сотрудники сметно-технического отдела из реестра
+                          «Администрирование» (миграция 20260922). */}
                       <select
-                        name="vor_responsible_id"
-                        value={formData.vor_responsible_id}
-                        onChange={handleInputChange}
+                        value={vorStoDraft}
+                        onChange={(e) => setVorStoDraft(e.target.value)}
                       >
-                        <option value="">— не назначен —</option>
-                        {responsibleContacts.map((contact) => (
-                          <option key={contact.id} value={contact.id}>
-                            {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
-                          </option>
+                        <option value="">
+                          {!vorStoDraft && editingTender?.vor_responsible?.full_name
+                            ? `— не назначен (было: ${editingTender.vor_responsible.full_name}) —`
+                            : '— не назначен —'}
+                        </option>
+                        {stoLoadError && <option value="" disabled>{stoLoadError}</option>}
+                        {!stoLoadError && stoEmployees.length === 0 && (
+                          <option value="" disabled>Нет сотрудников с ролью СТО</option>
+                        )}
+                        {stoEmployees.map((emp) => (
+                          <option key={emp.user_id} value={emp.user_id}>{emp.display_name}</option>
                         ))}
                       </select>
                     </div>
