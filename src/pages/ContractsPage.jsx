@@ -8,6 +8,7 @@ import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
 import FolderPathCell from '../components/FolderPathCell'
+import SignalLinkCell from '../components/SignalLinkCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
 import { CONTRACTS_STRUCTURE } from '../utils/docStorageStructures'
@@ -1699,9 +1700,12 @@ function ContractRegistry() {
     signed_date: 'Дата подписания',
     notes: 'Примечание',
     folder_path: 'Путь к папке',
+    signal_link: 'Путь к Signal',
   }
   // Путь к папке (миграция 20260904) — обычное инлайн-поле договора.
   const handleSaveFolderPath = (contractId, value) => handleInlineField(contractId, 'folder_path', value.trim())
+  // Путь к Signal (миграция 20260919) — ссылка на документы в общем хранилище.
+  const handleSaveSignalLink = (contractId, value) => handleInlineField(contractId, 'signal_link', value.trim())
   const handleInlineField = async (contractId, field, rawValue) => {
     const value = rawValue === '' ? null : rawValue
     const contract = contracts.find(c => c.id === contractId)
@@ -1718,7 +1722,10 @@ function ContractRegistry() {
       })
     } catch (error) {
       console.error('Ошибка сохранения:', error.message)
-      alert('Ошибка: ' + error.message)
+      // Колонки ещё нет в базе — называем миграцию, а не сырой текст PostgREST.
+      alert(field === 'signal_link' && (error.code === 'PGRST204' || /signal_link/.test(error.message || ''))
+        ? 'Не удалось сохранить путь к Signal: в базе не применена миграция 20260919_contract_signal_link.'
+        : 'Ошибка: ' + error.message)
     }
   }
 
@@ -2214,6 +2221,15 @@ function ContractRegistry() {
                         // полная фраза занимала ячейку целиком.
                         addLabel="путь к папке"
                         placeholder="\\su10-fs\Договоры\ЖК Алия\СУ-2-АЛ"
+                      />
+                    )}
+                    {/* Путь к Signal — сразу после пути к папке: ссылка на те же
+                        документы в общем хранилище, открывается кликом. */}
+                    {!isDeletedTab && (
+                      <SignalLinkCell
+                        value={contract.signal_link}
+                        canEdit={canEditContracts}
+                        onSave={(v) => handleSaveSignalLink(contract.id, v)}
                       />
                     )}
                     {!isDeletedTab && (

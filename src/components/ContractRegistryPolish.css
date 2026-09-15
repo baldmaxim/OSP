@@ -641,3 +641,15 @@
   line-height: 1.2;
   white-space: nowrap;
 }
+
+/* Путь к Signal — под путём к папке, тем же тихим стилем. Ссылка открывается
+   кликом, акцентный цвет — только при наведении. */
+.contracts-table-compact .fpath-signal .fpath-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.contracts-table-compact .fpath-signal .fpath-link:hover {
+  color: var(--primary-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
