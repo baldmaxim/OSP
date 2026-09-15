@@ -9,6 +9,7 @@ import {
   IconGeneral,
   IconTasks,
   IconTenders,
+  IconVors,
   IconAnalysis,
   IconContracts,
   IconDcRequest,
@@ -156,6 +157,16 @@ function Sidebar() {
       Icon: IconTenders,
       visible: canView('tenders'),
       forceActive: isInTendersSection,
+    },
+    {
+      // Роль без доступа к тендерам, но с «ВОРами и РД» (сметно-технический
+      // отдел): вместо «Тендеров» — сразу рабочий раздел.
+      key: 'vors',
+      to: '/vors',
+      label: 'ВОРы и РД',
+      tone: 'amber',
+      Icon: IconVors,
+      visible: !canView('tenders') && canView('vors'),
     },
     {
       key: 'analysis',

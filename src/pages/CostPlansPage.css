@@ -784,3 +784,21 @@
 }
 
 .vors-table .plan-status-select { width: 100%; }
+
+/* Описание работ кнопкой (роль без доступа к тендерам открывает ВОРы и РД). */
+.vors-table .vor-desc-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.cost-plans-page .responsible-display:disabled,
+.cost-plans-page .inline-date-input:disabled,
+.cost-plans-page .plan-status-select:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.cost-plans-page .responsible-display:disabled:hover { border-color: transparent; background: none; }

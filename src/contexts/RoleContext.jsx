@@ -38,6 +38,9 @@ export const SECTIONS = {
   // task 433: задачи сотрудникам (канбан-доска + реестр).
   tasks: 'Задачи',
   tenders: 'Тендеры',
+  // ВОРы и РД — отдельный раздел (миграция 20260921): сметно-технический отдел
+  // работает только здесь, без доступа к самим тендерам.
+  vors: 'ВОРы и РД',
   contracts: 'Договоры',
   // task 333: реестр заявок на ДС — отдельный раздел с настраиваемыми правами.
   dc_requests: 'Заявка на ДС',
@@ -418,7 +421,13 @@ export function RoleProvider({ children }) {
       meta ? { email, password, options: { data: meta } } : { email, password }
     )
     if (error) throw error
-    return data
+    // Если в Supabase выключено подтверждение почты, signUp сразу отдаёт сессию.
+    // Входить так нельзя — доступ открывает администратор (is_approved), а заявка
+    // в user_roles создаётся при первом входе. Поэтому сессию закрываем, а экран
+    // регистрации по флагу показывает, отправлялось ли письмо.
+    const needsEmailConfirmation = !data?.session
+    if (data?.session) await supabase.auth.signOut()
+    return { ...data, needsEmailConfirmation }
   }
 
   // Обновить профиль

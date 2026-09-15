@@ -7,7 +7,8 @@ import { useNavigate } from 'react-router-dom'
 export default function AccessDenied({
   title = 'Нет прав для просмотра раздела',
   message = 'У вас нет прав для просмотра этого раздела. Обратитесь к администратору, если доступ нужен.',
-  backTo = '/general',
+  // «/» — стартовая страница по правам роли (HomeRedirect); у части ролей «Общей информации» нет.
+  backTo = '/',
 }) {
   const navigate = useNavigate()
   return (

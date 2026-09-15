@@ -24,8 +24,13 @@ const STATUS_LABELS = {
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
 
 function VorsPage() {
-  const { scopedObjectIds, userProfile, canEdit } = useRole()
-  const canEditTenders = canEdit('tenders')
+  const { scopedObjectIds, userProfile, canEdit, canView } = useRole()
+  // Править ВОРы может тот, у кого есть правка «Тендеров» или «ВОРов и РД».
+  const canEditVors = canEdit('tenders') || canEdit('vors')
+  // Без доступа к тендерам (сметно-технический отдел) карточку тендера не
+  // открываем: клик по описанию показывает только ВОРы и РД.
+  const canOpenTender = canView('tenders')
+  const canOpenObject = canView('objects')
 
   // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
   const logTenderEvent = async (tenderId, eventType, payload = {}) => {
@@ -475,7 +480,7 @@ function VorsPage() {
                     {t.public_tender_number ?? '—'}
                   </td>
                   <td>
-                    {t.object_id ? (
+                    {t.object_id && canOpenObject ? (
                       <Link
                         to={`/general/objects/${t.object_id}`}
                         className="row-link primary"
@@ -488,16 +493,27 @@ function VorsPage() {
                     )}
                   </td>
                   <td>
-                    <Link
-                      to={`/tenders/${t.id}`}
-                      className="vor-desc-link"
-                      title="Открыть тендер (Ctrl+клик — в новой вкладке)"
-                    >
-                      {t.work_description || '—'}
-                    </Link>
+                    {canOpenTender ? (
+                      <Link
+                        to={`/tenders/${t.id}`}
+                        className="vor-desc-link"
+                        title="Открыть тендер (Ctrl+клик — в новой вкладке)"
+                      >
+                        {t.work_description || '—'}
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        className="vor-desc-link vor-desc-btn"
+                        onClick={() => setVorDocsModalTenderId(t.id)}
+                        title="Открыть ВОРы и РД по тендеру"
+                      >
+                        {t.work_description || '—'}
+                      </button>
+                    )}
                   </td>
                   <td>
-                    {editingResponsibleId === t.id ? (
+                    {canEditVors && editingResponsibleId === t.id ? (
                       <select
                         autoFocus
                         className="inline-responsible-select"
@@ -516,8 +532,9 @@ function VorsPage() {
                     ) : (
                       <button
                         className="responsible-display"
-                        onClick={() => setEditingResponsibleId(t.id)}
-                        title="Назначить ответственного"
+                        onClick={() => canEditVors && setEditingResponsibleId(t.id)}
+                        title={canEditVors ? 'Назначить ответственного' : undefined}
+                        disabled={!canEditVors}
                       >
                         {t.vor_responsible?.full_name || (
                           <span className="responsible-empty">— не назначен —</span>
@@ -534,6 +551,7 @@ function VorsPage() {
                         type="date"
                         className="inline-date-input"
                         value={t.vor_start_date || ''}
+                        disabled={!canEditVors}
                         onChange={(e) => handleChangeVorDate(t.id, 'vor_start_date', e.target.value)}
                         title="Начало"
                       />
@@ -542,6 +560,7 @@ function VorsPage() {
                         type="date"
                         className="inline-date-input"
                         value={t.vor_end_date || ''}
+                        disabled={!canEditVors}
                         onChange={(e) => handleChangeVorDate(t.id, 'vor_end_date', e.target.value)}
                         title="Окончание"
                       />
@@ -559,7 +578,7 @@ function VorsPage() {
                           >
                             Открыть
                           </a>
-                          <button
+                          {canEditVors && <button
                             className="link-edit-btn"
                             onClick={() => handleChangeVorLink(t.id, t.vor_link)}
                             title="Изменить ссылку"
@@ -569,9 +588,9 @@ function VorsPage() {
                               <path d="M12 20h9" />
                               <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
                             </svg>
-                          </button>
+                          </button>}
                         </div>
-                      ) : (
+                      ) : canEditVors ? (
                         <button
                           className="link-add-btn"
                           onClick={() => handleChangeVorLink(t.id, '')}
@@ -579,7 +598,7 @@ function VorsPage() {
                         >
                           + ссылка
                         </button>
-                      )}
+                      ) : null}
                       <button
                         type="button"
                         className={`vor-docs-btn${vorDocCounts[t.id] ? ' has-docs' : ''}`}
@@ -596,6 +615,7 @@ function VorsPage() {
                     <select
                       className={`plan-status-select status-${t.vor_status}`}
                       value={t.vor_status || 'not_started'}
+                      disabled={!canEditVors}
                       onChange={(e) => handleChangeStatus(t.id, e.target.value)}
                     >
                       {STATUS_OPTIONS.map(s => (
@@ -619,7 +639,7 @@ function VorsPage() {
           <VorRdModal
             tenderId={vorDocsModalTenderId}
             title={title}
-            canEdit={canEditTenders}
+            canEdit={canEditVors}
             onClose={() => setVorDocsModalTenderId(null)}
             onChange={() => refreshVorDocCount(vorDocsModalTenderId)}
           />

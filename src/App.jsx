@@ -30,6 +30,24 @@ function PermissionRoute({ section, anyOf, children }) {
   return children
 }
 
+// Стартовая страница — первый раздел, который роли доступен. Раньше всегда
+// «Общая информация»: у роли без неё (например, сметно-технический отдел, у
+// которого открыты только ВОРы и РД) вход заканчивался экраном «нет прав».
+// Если тендеры закрыты, а ВОРы и РД открыты — это рабочий раздел, ведём туда.
+function HomeRedirect() {
+  const { canView } = useRole()
+  const general = ['objects', 'contacts', 'counterparties', 'general_documents'].some((s) => canView(s))
+  let to = '/general'
+  if (!canView('tenders') && canView('vors')) to = '/vors'
+  else if (general) to = '/general'
+  else if (canView('tenders')) to = '/tenders'
+  else if (canView('tasks')) to = '/tasks'
+  else if (canView('contracts')) to = '/contracts'
+  else if (canView('dc_requests')) to = '/dc-requests'
+  else if (canView('reports')) to = '/reports'
+  return <Navigate to={to} replace />
+}
+
 // Lazy load всех страниц — загружаются только при переходе
 const ObjectsPage = lazy(() => import('./pages/ObjectsPage'))
 const ObjectDetailPage = lazy(() => import('./pages/ObjectDetailPage'))
@@ -91,7 +109,7 @@ function EmployeeLayout() {
       <main className="main-content">
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<Navigate to="/general" replace />} />
+            <Route path="/" element={<HomeRedirect />} />
             {/* /notifications — доступен любому сотруднику; содержимое зависит от canView
                 разделов (тендеры/договоры) внутри провайдера уведомлений. */}
             <Route path="/notifications" element={<PermissionRoute><NotificationsPage /></PermissionRoute>} />
@@ -119,7 +137,8 @@ function EmployeeLayout() {
             <Route path="/tenders/materials" element={<PermissionRoute section="tenders"><TendersPage key="tenders-materials" tenderType="materials" /></PermissionRoute>} />
             <Route path="/tenders/:tenderId" element={<PermissionRoute section="tenders"><TenderDetailPage /></PermissionRoute>} />
             <Route path="/cost-plans" element={<PermissionRoute section="tenders"><CostPlansPage /></PermissionRoute>} />
-            <Route path="/vors" element={<PermissionRoute section="tenders"><VorsPage /></PermissionRoute>} />
+            {/* ВОРы и РД — свой раздел прав; кому открыты тендеры, открыта и эта страница. */}
+            <Route path="/vors" element={<PermissionRoute anyOf={['tenders', 'vors']}><VorsPage /></PermissionRoute>} />
             <Route path="/kp-review" element={<PermissionRoute section="tenders"><KpReviewPage /></PermissionRoute>} />
             <Route path="/summary" element={<PermissionRoute section="tenders"><SummaryPage /></PermissionRoute>} />
             <Route path="/analysis-kp" element={<PermissionRoute section="analysis_kp"><BSMPage /></PermissionRoute>} />
@@ -135,7 +154,7 @@ function EmployeeLayout() {
             <Route path="/reports" element={<PermissionRoute section="reports"><ReportsPage /></PermissionRoute>} />
             <Route path="/admin" element={<PermissionRoute section="admin"><AdminPage /></PermissionRoute>} />
             <Route path="/profile" element={<PermissionRoute><ProfilePage /></PermissionRoute>} />
-            <Route path="*" element={<Navigate to="/general" replace />} />
+            <Route path="*" element={<HomeRedirect />} />
           </Routes>
         </Suspense>
       </main>
