@@ -75,6 +75,13 @@
 }
 
 .cost-plans-page .page-header {
+  /* Раскладку задаём явно: общий .page-header описан в CSS других разделов и
+     подключается, только если пользователь их уже открывал — без него подсказка
+     справа падала под заголовок. */
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
   padding: 0.875rem 1.25rem;
   border-bottom: 1px solid var(--border-color);
 }
@@ -701,3 +708,79 @@
 }
 
 .cp-modal-btn-primary:hover { filter: brightness(1.08); }
+
+/* ── «ВОРы и РД» (VorsPage) ─────────────────────────────────────────────────
+   Страница живёт на стилях «Планов затрат»; здесь только её собственные ячейки.
+   Описание работ — обычным тёмным текстом: синие подчёркнутые описания во всю
+   строку (плюс синий объект рядом) превращали таблицу в сплошную ссылку. */
+.vors-table td { vertical-align: middle; }
+.vors-table .row-link { text-decoration: none; }
+.vors-table .vor-desc-link {
+  color: var(--text-primary);
+  font-weight: 500;
+  line-height: 1.4;
+  text-decoration: none;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.vors-table .vor-desc-link:hover {
+  color: var(--primary-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Сроки: два поля одной строкой. Ширина полей меньше общей (130px), иначе в
+   колонке они вставали друг под друга. */
+.vors-table .vor-date-range { flex-wrap: nowrap; }
+.vors-table .vor-date-range .inline-date-input {
+  width: 118px;
+  padding: 0.2rem 0.3rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1500px) {
+  .vors-table .vor-date-range { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+  .vors-table .vor-date-range .dash { display: none; }
+}
+
+/* Ссылка и документы — одна строка. */
+.vors-table .vor-links-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.vors-table .vor-docs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.vors-table .vor-docs-btn:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.vors-table .vor-docs-btn.has-docs { color: var(--text-secondary); }
+.vors-table .vor-docs-count {
+  min-width: 16px;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  color: var(--primary-color);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.vors-table .plan-status-select { width: 100%; }

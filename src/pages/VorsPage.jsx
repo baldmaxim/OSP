@@ -5,7 +5,14 @@ import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import VorDocsModal from '../components/VorDocsModal'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
+import IconTile from '../components/IconTile'
+import FilterDropdown from '../components/FilterDropdown'
+import { IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
+import { IconDocument } from '../components/icons/TenderHubIcons'
 import './CostPlansPage.css'
+
+// Значение фильтра «Ответственный» для тендеров без ответственного.
+const UNASSIGNED = '__unassigned__'
 
 const STATUS_LABELS = {
   not_started: 'Не начат',
@@ -42,8 +49,9 @@ function VorsPage() {
   const [activeTab, setActiveTab] = useState('all') // 'all' | 'not_started' | 'in_progress' | 'completed'
   // task 241: статус-вкладки скрыты под кнопкой «ВОРы и РД по статусам»
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
-  const [responsibleFilter, setResponsibleFilter] = useState('')
-  const [objectFilter, setObjectFilter] = useState('') // task 239: фильтр по объектам
+  // Фильтры — множественный выбор, как в «Планах затрат» (FilterDropdown).
+  const [responsibleFilters, setResponsibleFilters] = useState([])
+  const [objectFilterIds, setObjectFilterIds] = useState([]) // task 239: фильтр по объектам
   const [searchQuery, setSearchQuery] = useState('') // task 239: поиск
   const [allContacts, setAllContacts] = useState([])
   const [editingResponsibleId, setEditingResponsibleId] = useState(null)
@@ -274,12 +282,10 @@ function VorsPage() {
 
   // task 239: фильтрация по ответственному, объекту и поиску
   let filtered = tenders
-  if (responsibleFilter === '__unassigned__') {
-    filtered = filtered.filter(t => !t.vor_responsible?.id)
-  } else if (responsibleFilter) {
-    filtered = filtered.filter(t => t.vor_responsible?.id === responsibleFilter)
+  if (responsibleFilters.length > 0) {
+    filtered = filtered.filter(t => responsibleFilters.includes(t.vor_responsible?.id || UNASSIGNED))
   }
-  if (objectFilter) filtered = filtered.filter(t => t.object_id === objectFilter)
+  if (objectFilterIds.length > 0) filtered = filtered.filter(t => objectFilterIds.includes(t.object_id))
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase()
     filtered = filtered.filter(t =>
@@ -307,6 +313,8 @@ function VorsPage() {
   // task 267: удалённые тендеры — в отдельной вкладке «Удалённые»
   const deletedRows = filtered.filter(t => t.deleted_at)
   const liveRows = filtered.filter(t => !t.deleted_at)
+  const hasActiveFilters = responsibleFilters.length > 0 || objectFilterIds.length > 0 || searchQuery.trim() !== ''
+  const unassignedCount = tenders.filter(t => !t.vor_responsible?.id).length
 
   // task 241: разбивка по статусам ВОР (не начат / в работе / завершён)
   const notStarted = liveRows.filter(t => (t.vor_status || 'not_started') === 'not_started')
@@ -321,9 +329,14 @@ function VorsPage() {
   return (
     <div className="cost-plans-page">
       <div className="page-header page-header-vors">
-        <h2><span className="page-icon" aria-hidden>📐</span> ВОРы и РД</h2>
-        <div className="page-header-hint">
-          Список тендеров основного строительства. Ответственного за ВОРы и РД можно назначить в карточке тендера.
+        <h2>
+          <IconTile tone="amber" className="page-icon-tile"><IconDocument size={16} /></IconTile>
+          ВОРы и РД
+        </h2>
+        <div className="cp-header-right">
+          <div className="page-header-hint">
+            Список тендеров основного строительства. Ответственного за ВОРы и РД можно назначить в карточке тендера.
+          </div>
         </div>
       </div>
 
@@ -380,61 +393,61 @@ function VorsPage() {
         </button>
       </div>
 
+      {/* Фильтры — те же выпадашки, что в «Планах затрат» и реестрах: с поиском
+          внутри и множественным выбором. Нативные <select> на 300+ объектов
+          выглядели чужеродно и листались тяжело. */}
       <div className="cost-plans-toolbar">
-        <input
-          type="search"
-          className="cost-plans-search"
-          placeholder="🔍 Поиск по № тендера, объекту, описанию, ответственному…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+        <div className="cp-search-wrap">
+          <IconSearch />
+          <input
+            type="search"
+            className="cost-plans-search"
+            placeholder="Поиск по № тендера, объекту, описанию, ответственному…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <FilterDropdown
+          label="" multiple searchable
+          searchPlaceholder="Поиск объекта…"
+          allLabel="Все объекты"
+          icon={<IconObject size={15} />}
+          value={objectFilterIds}
+          onChange={setObjectFilterIds}
+          options={objectsList.map(o => ({
+            value: o.id,
+            label: `${o.name} (${tenders.filter(t => t.object_id === o.id).length})`,
+          }))}
         />
-        <label className="toolbar-label">
-          Объект:
-          <select
-            value={objectFilter}
-            onChange={(e) => setObjectFilter(e.target.value)}
-          >
-            <option value="">Все ({tenders.length})</option>
-            {objectsList.map(o => {
-              const cnt = tenders.filter(t => t.object_id === o.id).length
-              return (
-                <option key={o.id} value={o.id}>{o.name} ({cnt})</option>
-              )
-            })}
-          </select>
-        </label>
-        <label className="toolbar-label">
-          Ответственный:
-          <select
-            value={responsibleFilter}
-            onChange={(e) => setResponsibleFilter(e.target.value)}
-          >
-            <option value="">Все ({tenders.length})</option>
-            <option value="__unassigned__">
-              Не назначен ({tenders.filter(t => !t.vor_responsible?.id).length})
-            </option>
-            {responsibles.map(r => {
-              const cnt = tenders.filter(t => t.vor_responsible?.id === r.id).length
-              return (
-                <option key={r.id} value={r.id}>
-                  {r.full_name} ({cnt})
-                </option>
-              )
-            })}
-          </select>
-        </label>
-        {(responsibleFilter || objectFilter || searchQuery) && (
-          <button
-            className="reset-btn"
-            onClick={() => { setResponsibleFilter(''); setObjectFilter(''); setSearchQuery('') }}
-          >
-            Сбросить
-          </button>
-        )}
+        <FilterDropdown
+          label="" multiple searchable
+          searchPlaceholder="Поиск ответственного…"
+          allLabel="Все ответственные"
+          icon={<IconUser size={15} />}
+          value={responsibleFilters}
+          onChange={setResponsibleFilters}
+          options={[
+            { value: UNASSIGNED, label: `Не назначен (${unassignedCount})` },
+            ...responsibles.map(r => ({
+              value: r.id,
+              label: `${r.full_name} (${tenders.filter(t => t.vor_responsible?.id === r.id).length})`,
+            })),
+          ]}
+        />
+        <div className="cp-toolbar-tail">
+          <span className="cp-shown">Показано: <b>{activeTab === 'deleted' ? deletedRows.length : visible.length}</b></span>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              className="reset-btn"
+              onClick={() => { setResponsibleFilters([]); setObjectFilterIds([]); setSearchQuery('') }}
+            >Сбросить</button>
+          )}
+        </div>
       </div>
 
       <div className="table-container">
-        <table className="data-table">
+        <table className="data-table vors-table">
           <thead>
             <tr>
               <th
@@ -445,12 +458,12 @@ function VorsPage() {
               >
                 №<br />тендера{sortIndicator('public_tender_number')}
               </th>
-              <th>Объект</th>
+              <th style={{ width: '160px' }}>Объект</th>
               <th>Описание работ</th>
-              <th>Ответственный</th>
-              <th>Срок подготовки ВОР</th>
-              <th>ВОРы и РД</th>
-              <th style={{ width: '180px' }}>Статус</th>
+              <th style={{ width: '170px' }}>Ответственный</th>
+              <th style={{ width: '170px' }}>Срок подготовки ВОР</th>
+              <th style={{ width: '240px' }}>ВОРы и РД</th>
+              <th style={{ width: '150px' }}>Статус</th>
             </tr>
           </thead>
           <tbody>
@@ -489,12 +502,11 @@ function VorsPage() {
                       <span>{t.objects?.name || '—'}</span>
                     )}
                   </td>
-                  <td className="muted-text">
+                  <td>
                     <Link
                       to={`/tenders/${t.id}`}
-                      className="row-link primary"
+                      className="vor-desc-link"
                       title="Открыть тендер (Ctrl+клик — в новой вкладке)"
-                      style={{ color: 'var(--primary-color)', textDecoration: 'underline' }}
                     >
                       {t.work_description || '—'}
                     </Link>
@@ -532,7 +544,7 @@ function VorsPage() {
                     )}
                   </td>
                   <td>
-                    <div className="inline-date-range">
+                    <div className="inline-date-range vor-date-range">
                       <input
                         type="date"
                         className="inline-date-input"
@@ -551,9 +563,9 @@ function VorsPage() {
                     </div>
                   </td>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap' }}>
+                    <div className="vor-links-cell">
                       {t.vor_link ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <div className="cost-plan-link-cell">
                           <a
                             href={t.vor_link}
                             target="_blank"
@@ -563,48 +575,35 @@ function VorsPage() {
                             Открыть
                           </a>
                           <button
-                            className="btn-icon btn-edit"
+                            className="link-edit-btn"
                             onClick={() => handleChangeVorLink(t.id, t.vor_link)}
                             title="Изменить ссылку"
-                            style={{ fontSize: '0.75rem' }}
+                            aria-label="Изменить ссылку"
                           >
-                            ✏️
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                            </svg>
                           </button>
                         </div>
                       ) : (
                         <button
+                          className="link-add-btn"
                           onClick={() => handleChangeVorLink(t.id, '')}
-                          style={{
-                            background: 'none',
-                            border: '1px dashed var(--border-color)',
-                            borderRadius: '4px',
-                            padding: '0.1875rem 0.5rem',
-                            color: 'var(--text-tertiary)',
-                            cursor: 'pointer',
-                            fontSize: '0.75rem'
-                          }}
                           title="Добавить ссылку на ВОРы и РД"
                         >
                           + ссылка
                         </button>
                       )}
                       <button
+                        type="button"
+                        className={`vor-docs-btn${vorDocCounts[t.id] ? ' has-docs' : ''}`}
                         onClick={() => setVorDocsModalTenderId(t.id)}
-                        style={{
-                          background: 'none',
-                          border: '1px dashed var(--border-color)',
-                          borderRadius: '4px',
-                          padding: '0.1875rem 0.5rem',
-                          color: 'var(--text-tertiary)',
-                          cursor: 'pointer',
-                          fontSize: '0.75rem'
-                        }}
                         title="Документы ВОР и РД"
                       >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                          <PaperclipIcon size={13} />
-                          Документы{vorDocCounts[t.id] ? ` (${vorDocCounts[t.id]})` : ''}
-                        </span>
+                        <PaperclipIcon size={12} />
+                        <span>Документы</span>
+                        {vorDocCounts[t.id] > 0 && <span className="vor-docs-count">{vorDocCounts[t.id]}</span>}
                       </button>
                     </div>
                   </td>
