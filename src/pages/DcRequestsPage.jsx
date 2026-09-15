@@ -74,13 +74,18 @@ const CHECK_STATUS_SHORT = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.v
 const CHECK_STATUS_CLASS = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.className]))
 const hasVerdict = (req) => !!req?.check_status && req.check_status !== 'not_checked'
 
-// Тип дополнительного соглашения (миграция 20260824).
+// Тип дополнительного соглашения (миграции 20260824, 20260923).
 const DS_TYPE_OPTIONS = [
-  { value: 'rd_change', label: 'Изменение РД', className: 'dstype-rd' },
-  { value: 'extra_in_contract', label: 'Доп. работы по договору', className: 'dstype-in' },
+  { value: 'psdc_change', label: 'Изменение ПСДЦ', className: 'dstype-rd' },
+  { value: 'extra_in_contract', label: 'Доп. работы по текущему договору', className: 'dstype-in' },
   { value: 'extra_out_contract', label: 'Доп. работы вне договора', className: 'dstype-out' },
+  { value: 'tender_ds', label: 'ДС по тендеру', className: 'dstype-tender' },
 ]
-const DS_TYPE_LABEL = Object.fromEntries(DS_TYPE_OPTIONS.map(o => [o.value, o.label]))
+const DS_TYPE_LABEL = {
+  // До миграции 20260923 в базе может оставаться прежнее значение.
+  rd_change: 'Изменение РД',
+  ...Object.fromEntries(DS_TYPE_OPTIONS.map(o => [o.value, o.label])),
+}
 const DS_TYPE_CLASS = Object.fromEntries(DS_TYPE_OPTIONS.map(o => [o.value, o.className]))
 
 // task 370: тип материала по ДС.
@@ -980,6 +985,28 @@ function DcRequestsPage() {
     }
   }
 
+  // Тип ДС — инлайн-селектором под материалом, как и материал.
+  const handleSaveDsType = async (id, value) => {
+    const next = value || null
+    const prevValue = requests.find(r => r.id === id)?.ds_type ?? null
+    if (prevValue === next) return
+    try {
+      const { error } = await supabase
+        .from('dc_requests')
+        .update({ ds_type: next, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, ds_type: next } : r))
+      await logFieldChange(id, 'ds_type', prevValue, next)
+    } catch (err) {
+      const msg = String(err?.message || err)
+      // 23514 — старое ограничение без новых типов, PGRST204/42703 — нет колонки.
+      alert((err?.code === '23514' || err?.code === 'PGRST204' || err?.code === '42703' || /ds_type/.test(msg))
+        ? 'Не удалось сохранить тип ДС: в базе не применена миграция 20260923_dc_requests_ds_type_values.'
+        : 'Ошибка сохранения типа ДС: ' + msg)
+    }
+  }
+
   // Путь к папке правится прямо в таблице: открывать форму заявки ради одной
   // строки неудобно, а меняют её чаще, чем остальные поля.
   const handleSaveFolderPath = async (id, value) => {
@@ -1609,12 +1636,18 @@ function DcRequestsPage() {
                     <span className={`status-badge ${statusOpt?.className || ''}`}>{STATUS_LABEL[currentStatus]}</span>
                   </div>
                   <div className="mcard-title">{req.objects?.name || '—'}</div>
-                  {req.works_description && <div className="mcard-desc">{req.works_description}</div>}
+                  {req.works_description && <div className="mcard-desc"><CollapsibleText text={req.works_description} lines={4} /></div>}
                   <div className="mcard-rows">
                     <div className="mcard-row">
                       <span className="mcard-label">Контрагент</span>
                       <span className="mcard-value">{req.counterparties?.name || '—'}</span>
                     </div>
+                    {req.ds_type && (
+                      <div className="mcard-row">
+                        <span className="mcard-label">Тип ДС</span>
+                        <span className="mcard-value">{DS_TYPE_LABEL[req.ds_type] || req.ds_type}</span>
+                      </div>
+                    )}
                     {req.material_type && (
                       <div className="mcard-row">
                         <span className="mcard-label">Материал</span>
@@ -1847,17 +1880,38 @@ function DcRequestsPage() {
                             Материал: {MATERIAL_LABEL[req.material_type]}
                           </div>
                         )}
-                        {/* Тип ДС и результат сверки с договором — бейджами под
-                            контрагентом, рядом с материалом: это признаки самой
-                            заявки, отдельные колонки под них таблицу бы раздули. */}
-                        {req.ds_type && (
+                        {/* Тип ДС — под материалом, тем же инлайн-селектором: признак
+                            самой заявки, отдельная колонка раздула бы таблицу. */}
+                        {canEditDc ? (
+                          <div className="dcr-material-edit">
+                            <span className="dcr-material-edit-label">Тип ДС:</span>
+                            <select
+                              className={`dcr-material-select dcr-dstype-select ${DS_TYPE_CLASS[req.ds_type] || (req.ds_type ? '' : 'is-empty')}`}
+                              value={req.ds_type || ''}
+                              onChange={(e) => handleSaveDsType(req.id, e.target.value)}
+                              title="Тип ДС"
+                            >
+                              <option value="">— не указан —</option>
+                              {req.ds_type && !DS_TYPE_OPTIONS.some(o => o.value === req.ds_type) && (
+                                <option value={req.ds_type} disabled>{DS_TYPE_LABEL[req.ds_type] || req.ds_type}</option>
+                              )}
+                              {DS_TYPE_OPTIONS.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : req.ds_type && (
                           <div className={`dcr-tag ${DS_TYPE_CLASS[req.ds_type] || ''}`}>
-                            {DS_TYPE_LABEL[req.ds_type]}
+                            Тип ДС: {DS_TYPE_LABEL[req.ds_type] || req.ds_type}
                           </div>
                         )}
                       </td>
                       <td style={{ textAlign: 'center' }}>{req.ds_number || <span className="muted-dash">—</span>}</td>
-                      <td className="dcr-cell-works">{req.works_description || <span className="muted-dash">—</span>}</td>
+                      <td className="dcr-cell-works">
+                        {req.works_description
+                          ? <CollapsibleText text={req.works_description} />
+                          : <span className="muted-dash">—</span>}
+                      </td>
                       {/* task 370: сумма ДС («Было подано» / «Утверждено») с инлайн-редактированием + разница */}
                       <td className="dcr-cell-amount">
                         <div className="dcr-amount">
@@ -1984,7 +2038,8 @@ function DcRequestsPage() {
                             totalTasks > 0 && completedTasks === totalTasks ? 'dcr-tasks-pill-done' : '',
                           ].filter(Boolean).join(' ')}
                           onClick={() => setTasksModalFor(req.id)}
-                          title={totalTasks === 0 ? 'Добавить задачи' : 'Открыть задачи'}
+                          title={totalTasks === 0 ? (canEditDc ? 'Добавить задачу' : 'Задач нет') : `Задачи: выполнено ${completedTasks} из ${totalTasks}`}
+                          aria-label={totalTasks === 0 ? (canEditDc ? 'Добавить задачу' : 'Задач нет') : `Задачи: ${completedTasks} из ${totalTasks}`}
                         >
                           <span className="dcr-tasks-pill-icon" aria-hidden>📋</span>
                           {totalTasks > 0 ? (
@@ -1992,8 +2047,10 @@ function DcRequestsPage() {
                               {completedTasks}<span className="dcr-tasks-pill-sep">/</span>{totalTasks}
                             </span>
                           ) : (
+                            // Колонка узкая (6%): «+ Добавить» в неё не помещалось и
+                            // наезжало на «Документы». Текст — в подсказке.
                             <span className="dcr-tasks-pill-empty-label">
-                              {canEditDc ? '+ Добавить' : 'Нет задач'}
+                              {canEditDc ? '+' : '—'}
                             </span>
                           )}
                         </button>
@@ -2972,3 +3029,49 @@ function DcRequestsPage() {
 }
 
 export default DcRequestsPage
+
+
+// Длинное описание сворачивается до нескольких строк; «Показать полностью» —
+// только если текст действительно не помещается (меряем по высоте, с учётом
+// переносов при текущей ширине колонки).
+function CollapsibleText({ text, lines = 6 }) {
+  const ref = useRef(null)
+  const [expanded, setExpanded] = useState(false)
+  const [overflowing, setOverflowing] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => {
+      if (expanded) return
+      setOverflowing(el.scrollHeight > el.clientHeight + 1)
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [text, expanded, lines])
+
+  return (
+    <div className="dcr-collapsible">
+      <div
+        ref={ref}
+        className={`dcr-collapsible-text${expanded ? '' : ' is-collapsed'}${!expanded && overflowing ? ' has-fade' : ''}`}
+        style={expanded ? undefined : { maxHeight: `calc(${lines} * 1.45em)` }}
+      >
+        {text}
+      </div>
+      {(overflowing || expanded) && (
+        <button
+          type="button"
+          className="dcr-collapsible-toggle"
+          onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
+          aria-expanded={expanded}
+        >
+          {expanded ? 'Свернуть ▴' : 'Показать полностью ▾'}
+        </button>
+      )}
+    </div>
+  )
+}
