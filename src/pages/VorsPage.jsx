@@ -24,6 +24,13 @@ const STATUS_LABELS = {
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
 
+// «Иванов Иван Иванович» → «ИИ»: две первые буквы фамилии и имени.
+function initialsOf(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '—'
+  return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase()
+}
+
 function VorsPage() {
   const { scopedObjectIds, userProfile, canEdit, canView } = useRole()
   // Править ВОРы может тот, у кого есть правка «Тендеров» или «ВОРов и РД».
@@ -66,7 +73,6 @@ function VorsPage() {
   const [stoError, setStoError] = useState(null)
   // false — в базе ещё нет колонок vor_sto_* (миграция 20260922 не применена).
   const [stoSupported, setStoSupported] = useState(true)
-  const [editingResponsibleId, setEditingResponsibleId] = useState(null)
   // task 432: сортировка по номеру тендера (клик по заголовку колонки «№ тендера»)
   const [sortKey, setSortKey] = useState('') // '' | 'public_tender_number'
   const [sortDir, setSortDir] = useState('asc') // 'asc' | 'desc'
@@ -157,10 +163,8 @@ function VorsPage() {
     fetchTenders()
   }, [fetchTenders])
 
-  // Список СТО нужен только для назначения — грузим при первом открытии выбора.
-  useEffect(() => {
-    if (editingResponsibleId && stoEmployees.length === 0 && !stoError) loadStoEmployees()
-  }, [editingResponsibleId]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Список небольшой (сотрудники СТО) — грузим сразу: выпадашка есть в каждой строке.
+  useEffect(() => { loadStoEmployees() }, [])
 
   const handleChangeStatus = async (tenderId, newStatus) => {
     if (newStatus === 'completed') {
@@ -538,39 +542,41 @@ function VorsPage() {
                   <td>
                     {(() => {
                       const resp = vorResponsibleOf(t)
-                      if (canEditVors && editingResponsibleId === t.id) {
-                        return (
-                          <select
-                            autoFocus
-                            className="inline-responsible-select"
-                            value={t.vor_sto_user_id || ''}
-                            onChange={(e) => {
-                              handleChangeResponsible(t.id, e.target.value)
-                              setEditingResponsibleId(null)
-                            }}
-                            onBlur={() => setEditingResponsibleId(null)}
-                          >
-                            <option value="">— не назначен —</option>
-                            {stoError && <option value="" disabled>{stoError}</option>}
-                            {!stoError && stoEmployees.length === 0 && (
-                              <option value="" disabled>Нет сотрудников с ролью СТО</option>
-                            )}
-                            {stoEmployees.map(emp => (
-                              <option key={emp.user_id} value={emp.user_id}>{emp.display_name}</option>
-                            ))}
-                          </select>
-                        )
-                      }
                       return (
                         <>
-                          <button
-                            className="responsible-display"
-                            onClick={() => canEditVors && setEditingResponsibleId(t.id)}
-                            title={canEditVors ? 'Назначить ответственного СТО' : undefined}
+                          {/* Тот же портальный выпадающий список с поиском, что в
+                              фильтрах страницы: нативный <select> в строке таблицы
+                              выглядел чужеродно и не искал по фамилии. */}
+                          <FilterDropdown
+                            className="vor-resp-fdrop"
+                            label="" searchable
+                            searchPlaceholder="Поиск сотрудника СТО…"
+                            allLabel="— не назначен —"
+                            value={t.vor_sto_user_id || ''}
+                            onChange={(v) => handleChangeResponsible(t.id, v)}
                             disabled={!canEditVors}
-                          >
-                            {resp.name || <span className="responsible-empty">— не назначен —</span>}
-                          </button>
+                            options={[
+                              { value: '', label: '— не назначен —' },
+                              ...stoEmployees.map(emp => ({ value: emp.user_id, label: emp.display_name })),
+                            ]}
+                            formatTrigger={() => (
+                              resp.name
+                                ? <span className="vor-resp-person">
+                                    <span className="vor-resp-avatar" aria-hidden>{initialsOf(resp.name)}</span>
+                                    <span className="vor-resp-name">{resp.name}</span>
+                                  </span>
+                                : <span className="vor-resp-empty">— не назначен —</span>
+                            )}
+                            renderOption={(o) => (
+                              o.value
+                                ? <span className="vor-resp-person">
+                                    <span className="vor-resp-avatar" aria-hidden>{initialsOf(o.label)}</span>
+                                    <span className="vor-resp-name">{o.label}</span>
+                                  </span>
+                                : <span className="vor-resp-empty">— не назначен —</span>
+                            )}
+                          />
+                          {stoError && <div className="muted-tiny vor-resp-warn">{stoError}</div>}
                           {/* Прежний ответственный из справочника «Сотрудники» — пока
                               СТО из реестра не назначен. */}
                           {resp.name && !resp.fromRegistry && (

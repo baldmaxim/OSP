@@ -6,7 +6,7 @@ import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable
 import { saveAs } from 'file-saver'
 import { buildTendersRegistryRows, buildTendersRegistryWorkbook } from '../utils/tendersRegistryExport'
 import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
-import { useRole } from '../contexts/RoleContext'
+import { useRole, ROLES } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
 import TgPublishToggle from '../components/TgPublishToggle'
 import CompletionLetterToggle from '../components/CompletionLetterToggle'
@@ -96,9 +96,13 @@ const HistoryIcon = () => (
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
-  const { scopedObjectIds, userProfile, isAdmin, canEdit } = useRole()
+  const { scopedObjectIds, userProfile, isAdmin, canEdit, role } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
   const canEditTenders = canEdit('tenders')
+  // Галочку «Публикация в ТГ» ставит и экономист ОСП — даже без права править
+  // тендеры: публикацию в Telegram-канале ведёт он. role — эффективная роль
+  // (с учётом «Просмотра от имени роли» у администратора).
+  const canToggleTgPublished = canEditTenders || role === ROLES.ECONOMIST
   // Телефон: список рендерим карточками вместо широкой таблицы
   const isPhone = useIsPhone()
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания,
@@ -2681,7 +2685,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 </div>
                 </Link>
                 <div className="tp-mcard-extra">
-                  <TgPublishToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleTgPublished} />
+                  <TgPublishToggle tender={tender} canEdit={canToggleTgPublished} onToggle={handleToggleTgPublished} />
                   <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} />
                   {department === 'construction' && (
                     <RdCheckToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleRdChecked} />
@@ -3085,7 +3089,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       <div className="tender-flags">
                         <TgPublishToggle
                           tender={tender}
-                          canEdit={canEditTenders}
+                          canEdit={canToggleTgPublished}
                           onToggle={handleToggleTgPublished}
                           short
                         />

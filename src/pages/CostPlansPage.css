@@ -802,3 +802,65 @@
   opacity: 1;
 }
 .cost-plans-page .responsible-display:disabled:hover { border-color: transparent; background: none; }
+
+/* ── «Ответственный СТО»: выпадающий список в строке ────────────────────────
+   Это значение строки, а не поле ввода: рамки и фон появляются при наведении,
+   стрелка — тоже. Панель списка рисует сам FilterDropdown (портал). */
+.vors-table .vor-resp-fdrop { display: flex; width: 100%; }
+.vors-table .vor-resp-fdrop .fdrop-trigger {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  padding: 0.2rem 0.3rem;
+  gap: 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  font-size: 0.8125rem;
+}
+.vors-table .vor-resp-fdrop:not(.is-disabled) .fdrop-trigger:hover,
+.vors-table .vor-resp-fdrop.is-open .fdrop-trigger {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.vors-table .vor-resp-fdrop.is-disabled .fdrop-trigger { cursor: default; opacity: 1; }
+.vors-table .vor-resp-fdrop .fdrop-value { min-width: 0; overflow: hidden; }
+.vors-table .vor-resp-fdrop .fdrop-arrow { opacity: 0; transition: opacity 0.12s ease; }
+.vors-table tbody tr:hover .vor-resp-fdrop .fdrop-arrow,
+.vors-table .vor-resp-fdrop.is-open .fdrop-arrow { opacity: 0.5; }
+.vors-table .vor-resp-fdrop.is-disabled .fdrop-arrow { display: none; }
+
+.vor-resp-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+/* Инициалы вместо фото: узнаваемо и не требует загрузки аватарок. */
+.vor-resp-avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  color: var(--primary-color);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.vor-resp-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.vor-resp-empty { color: var(--text-tertiary); font-style: italic; }
+.vor-resp-warn { color: #b45309; }
+
+/* Опции в панели — крупнее строки таблицы, с воздухом. */
+.fdrop-panel .vor-resp-person { font-size: 0.8125rem; }
