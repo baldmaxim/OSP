@@ -1,0 +1,116 @@
+/* Срок «с … по …» в строке таблицы (DateRangeCell). */
+.drc { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; min-width: 0; }
+
+.drc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.drc-btn > svg { flex: 0 0 auto; color: var(--text-tertiary); }
+.drc-btn:hover:not(.is-readonly) { border-color: var(--primary-color); }
+.drc-btn:hover:not(.is-readonly) > svg { color: var(--primary-color); }
+.drc-text { overflow: hidden; text-overflow: ellipsis; }
+
+/* Пусто — тихая пунктирная подсказка. */
+.drc-btn.is-empty {
+  border-style: dashed;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+/* Срок близко (0–3 дня) — янтарный, просрочен — красный. */
+.drc-btn.is-soon {
+  border-color: color-mix(in srgb, #f59e0b 55%, transparent);
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  color: #92400e;
+}
+.drc-btn.is-soon > svg { color: #d97706; }
+.drc-btn.is-overdue {
+  border-color: color-mix(in srgb, #dc2626 55%, transparent);
+  background: color-mix(in srgb, #dc2626 10%, transparent);
+  color: #b91c1c;
+  font-weight: 600;
+}
+.drc-btn.is-overdue > svg { color: #dc2626; }
+[data-theme='dark'] .drc-btn.is-soon { color: #fcd34d; }
+[data-theme='dark'] .drc-btn.is-overdue { color: #fca5a5; }
+
+/* Без права правки — просто текст. */
+.drc-btn.is-readonly { cursor: default; border-color: transparent; background: none; padding-left: 0; }
+.drc-btn.is-readonly.is-overdue,
+.drc-btn.is-readonly.is-soon { padding-left: 0.55rem; }
+
+.drc-hint {
+  padding-left: 0.6rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #b45309;
+}
+.drc-hint.is-overdue { color: #dc2626; }
+
+/* ── Окошко выбора ── */
+.drc-pop {
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-primary);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
+}
+.drc-field { display: flex; flex-direction: column; gap: 0.2rem; }
+.drc-field > span {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.drc-field input {
+  height: 34px;
+  padding: 0 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.drc-field input:focus { outline: none; border-color: var(--primary-color); }
+.drc-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.6rem; margin-top: 0.1rem; }
+.drc-link {
+  margin-right: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.drc-link:hover { color: #dc2626; }
+.drc-done {
+  padding: 0.35rem 0.85rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary-color);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}

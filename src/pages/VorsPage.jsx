@@ -7,6 +7,7 @@ import VorRdModal from '../components/VorRdModal'
 import { countVorRdDocs, fetchVorRdDocCounts } from '../services/tenderVorRd'
 import { fetchStoEmployees, vorResponsibleOf, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
+import DateRangeCell from '../components/DateRangeCell'
 import IconTile from '../components/IconTile'
 import FilterDropdown from '../components/FilterDropdown'
 import { IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
@@ -592,25 +593,17 @@ function VorsPage() {
                     {t.responsible_contact?.full_name || <span className="muted-tiny">—</span>}
                   </td>
                   <td>
-                    <div className="inline-date-range vor-date-range">
-                      <input
-                        type="date"
-                        className="inline-date-input"
-                        value={t.vor_start_date || ''}
-                        disabled={!canEditVors}
-                        onChange={(e) => handleChangeVorDate(t.id, 'vor_start_date', e.target.value)}
-                        title="Начало"
-                      />
-                      <span className="dash">—</span>
-                      <input
-                        type="date"
-                        className="inline-date-input"
-                        value={t.vor_end_date || ''}
-                        disabled={!canEditVors}
-                        onChange={(e) => handleChangeVorDate(t.id, 'vor_end_date', e.target.value)}
-                        title="Окончание"
-                      />
-                    </div>
+                    {/* Срок — читаемым текстом; правка в окошке. Просрочен, если
+                        окончание прошло, а ВОР ещё не завершён. */}
+                    <DateRangeCell
+                      start={t.vor_start_date}
+                      end={t.vor_end_date}
+                      disabled={!canEditVors}
+                      overdue={!!t.vor_end_date && t.vor_status !== 'completed'
+                        && t.vor_end_date < new Date().toISOString().slice(0, 10)}
+                      showCountdown={t.vor_status !== 'completed'}
+                      onChange={(field, value) => handleChangeVorDate(t.id, field === 'start' ? 'vor_start_date' : 'vor_end_date', value)}
+                    />
                   </td>
                   <td>
                     <div className="vor-links-cell">
