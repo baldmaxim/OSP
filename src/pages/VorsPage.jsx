@@ -48,6 +48,13 @@ function isMissingDivisionColumnError(err) {
 // Статусы, при которых срок подготовки ВОР больше не отслеживается.
 const VOR_CLOSED = ['completed', 'not_required']
 
+// «Костомаров Дмитрий Викторович» → «Костомаров Д. В.»: столбец узкий, полное ФИО — в подсказке.
+function shortPersonName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length < 2) return parts[0] || ''
+  return `${parts[0]} ${parts.slice(1, 3).map(x => x[0].toUpperCase() + '.').join(' ')}`
+}
+
 // «Иванов Иван Иванович» → «ИИ»: две первые буквы фамилии и имени.
 function initialsOf(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
@@ -581,14 +588,14 @@ function VorsPage() {
               >
                 №<br />тендера{sortIndicator('public_tender_number')}
               </th>
-              <th style={{ width: '160px' }}>Объект</th>
+              <th style={{ width: '150px' }}>Объект</th>
               <th>Описание работ</th>
-              <th style={{ width: '170px' }}>Подразделение</th>
-              <th style={{ width: '170px' }}>Ответственный СТО</th>
-              <th style={{ width: '150px' }}>Ответственный<br />по тендеру</th>
-              <th style={{ width: '170px' }}>Срок подготовки ВОР</th>
-              <th style={{ width: '240px' }}>ВОРы и РД</th>
-              <th style={{ width: '150px' }}>Статус</th>
+              <th style={{ width: '125px' }}>Подразделение</th>
+              <th style={{ width: '150px' }}>Ответственный СТО</th>
+              <th style={{ width: '135px' }}>Ответственный<br />по тендеру</th>
+              <th style={{ width: '165px' }}>Срок подготовки ВОР</th>
+              <th style={{ width: '195px' }}>ВОРы и РД</th>
+              <th style={{ width: '130px' }}>Статус</th>
             </tr>
           </thead>
           <tbody>
@@ -687,9 +694,9 @@ function VorsPage() {
                             ]}
                             formatTrigger={() => (
                               resp.name
-                                ? <span className="vor-resp-person">
+                                ? <span className="vor-resp-person" title={resp.name}>
                                     <span className="vor-resp-avatar" aria-hidden>{initialsOf(resp.name)}</span>
-                                    <span className="vor-resp-name">{resp.name}</span>
+                                    <span className="vor-resp-name">{shortPersonName(resp.name)}</span>
                                   </span>
                                 : <span className="vor-resp-empty">— не назначен —</span>
                             )}

@@ -869,16 +869,18 @@
 .vors-table .vor-div-chip {
   display: inline-block;
   max-width: 100%;
-  padding: 0.1rem 0.5rem;
-  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  border-radius: 8px;
+  line-height: 1.25;
   background: color-mix(in srgb, var(--primary-color) 10%, transparent);
   color: var(--text-primary);
   font-size: 0.75rem;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* «Общестроительные работы» — в две строки, а не обрезкой */
+  white-space: normal;
+  overflow-wrap: normal;
 }
+.vors-table .fdrop.vor-div-fdrop .fdrop-value { white-space: normal; }
 
 /* ВОРы и РД: дежурный по тендерам в шапке (как чип в «Тендерах», только чтение) */
 .vor-duty-chip {
@@ -908,3 +910,15 @@
 @media (max-width: 640px) {
   .vor-duty-label { display: none; }
 }
+
+/* Стрелка выпадашек в строке «ВОРов» — поверх, а не в потоке: она видна только
+   при наведении, а место под неё раздувало узкие столбцы. */
+.vors-table .fdrop.vor-resp-fdrop .fdrop-trigger { position: relative; padding-right: 0.3rem; }
+.vors-table .fdrop.vor-resp-fdrop .fdrop-arrow {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.vors-table .fdrop.vor-div-fdrop .vor-div-chip { padding: 0.15rem 0.4rem; }
+.vors-table .fdrop.vor-div-fdrop .fdrop-value { text-align: left; }
