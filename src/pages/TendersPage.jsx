@@ -2172,16 +2172,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
     // Фильтр по статусу (несколько статусов = ИЛИ)
     if (statusFilter.length > 0 && !statusFilter.includes(tender.status)) return false
-    // Текстовый поиск по наименованию объекта, адресу и описанию работ
+    // Текстовый поиск по № тендера, наименованию объекта, адресу и описанию работ.
     const q = searchQuery.trim().toLowerCase()
     if (q) {
+      // «763», «№763», «№ 763», «тендер 763» — поиск по номеру: номер начинается
+      // с набранных цифр. Параллельно ищем и по тексту — цифры бывают и в
+      // описании («К4 и К5»), и в адресе.
+      const numQuery = q.replace(/^(тендер\s*)?№?\s*/, '')
+      const byNumber = /^\d+$/.test(numQuery)
+        && String(tender.public_tender_number ?? '').startsWith(numQuery)
       const haystack = [
+        tender.public_tender_number != null ? `№${tender.public_tender_number} № ${tender.public_tender_number}` : '',
         tender.objects?.name,
         tender.custom_object_name,
         tender.objects?.address,
         tender.work_description,
       ].filter(Boolean).join(' ').toLowerCase()
-      if (!haystack.includes(q)) return false
+      if (!byNumber && !haystack.includes(q)) return false
     }
     return true
   }), [tenders, activeTab, objectFilter, responsibleFilter, statusFilter, searchQuery])
@@ -2558,7 +2565,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Поиск по объекту, адресу, описанию работ…"
+            placeholder="Поиск по № тендера, объекту, адресу, описанию работ…"
             style={{
               width: '100%',
               padding: '0.375rem 0.625rem',

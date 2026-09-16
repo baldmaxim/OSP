@@ -205,8 +205,12 @@ function KpReviewPage() {
     }
   }, [stagePopoverFor])
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  // silent — обновление после действия в строке (отметка, этап, проверка).
+  // Раньше каждое действие включало «Загрузка…»: таблица размонтировалась,
+  // и прокрутка улетала в самый верх. Теперь таблица остаётся на месте, а
+  // строки подменяются, когда придут свежие данные.
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     setError(null)
     try {
       const data = await fetchProposalFilesForReview({
@@ -214,8 +218,14 @@ function KpReviewPage() {
       })
       setRows(data)
     } catch (e) {
-      setError(e.message || 'Не удалось загрузить КП на проверку')
-      setRows([])
+      if (silent) {
+        // Действие уже сохранено, не удалось только перечитать список: таблицу
+        // не прячем за экраном ошибки (иначе снова сброс прокрутки).
+        console.error('Не удалось обновить список КП:', e.message)
+      } else {
+        setError(e.message || 'Не удалось загрузить КП на проверку')
+        setRows([])
+      }
     } finally {
       setLoading(false)
     }
@@ -226,7 +236,7 @@ function KpReviewPage() {
   const handleSend = async (r, sent) => {
     try {
       await setRemarksSent(r.id, { sent, sender: userProfile?.full_name || user?.email || '' })
-      load()
+      load({ silent: true })
     } catch (e) {
       alert('Ошибка отметки отправки: ' + (e.message || e))
     }
@@ -236,7 +246,7 @@ function KpReviewPage() {
   const handleSummary = async (r, added) => {
     try {
       await setSummaryAdded(r.id, { added, author: userProfile?.full_name || user?.email || '' })
-      load()
+      load({ silent: true })
     } catch (e) {
       alert('Ошибка отметки о занесении в сводную: ' + (e.message || e))
     }
@@ -249,7 +259,7 @@ function KpReviewPage() {
     if (stageOf(r) === stage) return
     try {
       await setReviewStage(r.id, stage, { author: userProfile?.full_name || user?.email || '' })
-      load()
+      load({ silent: true })
     } catch (e) {
       alert('Не удалось поставить этап: ' + (e.message || e))
     }
@@ -588,7 +598,7 @@ function KpReviewPage() {
         <KpReviewModal
           file={reviewFile}
           onClose={() => setReviewFile(null)}
-          onSaved={load}
+          onSaved={() => load({ silent: true })}
         />
       )}
       {previewDoc && (
