@@ -10,9 +10,10 @@ import PaperclipIcon from '../components/icons/PaperclipIcon'
 import DateRangeCell from '../components/DateRangeCell'
 import IconTile from '../components/IconTile'
 import FilterDropdown from '../components/FilterDropdown'
-import { IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
+import { IconObject, IconUser, IconSearch, IconTag } from '../components/icons/ToolbarIcons'
 import { IconDocument } from '../components/icons/TenderHubIcons'
 import { isConstructionTender } from '../utils/tenderDepartments'
+import { DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import './CostPlansPage.css'
 
 // Значение фильтра «Ответственный» для тендеров без ответственного.
@@ -27,6 +28,22 @@ const STATUS_LABELS = {
 }
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required']
+
+// Подразделение, готовящее ВОР (tenders.vor_division, миграция 20260927).
+const VOR_DIVISIONS = [
+  { value: 'monolith', label: 'Монолит' },
+  { value: 'nvf_spk', label: 'НВФ, СПК' },
+  { value: 'general', label: 'Общестроительные работы' },
+  { value: 'hvac_water', label: 'ОВ, ВК' },
+  { value: 'electrical', label: 'ЭОМ, СС' },
+]
+const VOR_DIVISION_LABEL = Object.fromEntries(VOR_DIVISIONS.map(d => [d.value, d.label]))
+const NO_DIVISION = '__none__'
+const DIVISION_MIGRATION_HINT = 'Подразделение недоступно: в базе не применена миграция 20260927_tender_vor_division.'
+
+function isMissingDivisionColumnError(err) {
+  return (err?.code === '42703' || err?.code === 'PGRST204') && /vor_division/.test(String(err?.message || ''))
+}
 
 // Статусы, при которых срок подготовки ВОР больше не отслеживается.
 const VOR_CLOSED = ['completed', 'not_required']
@@ -74,6 +91,10 @@ function VorsPage() {
   // Фильтры — множественный выбор, как в «Планах затрат» (FilterDropdown).
   const [responsibleFilters, setResponsibleFilters] = useState([])
   const [objectFilterIds, setObjectFilterIds] = useState([]) // task 239: фильтр по объектам
+  const [divisionFilter, setDivisionFilter] = useState([]) // подразделения; NO_DIVISION — не указано
+  const [divisionSupported, setDivisionSupported] = useState(true)
+  // Ручная замена дежурного по тендерам (app_settings); сам дежурный — по расписанию.
+  const [dutyOverride, setDutyOverride] = useState(null)
   const [searchQuery, setSearchQuery] = useState('') // task 239: поиск
   // Сотрудники СТО из реестра «Администрирование» — варианты «Ответственного СТО».
   const [stoEmployees, setStoEmployees] = useState([])
@@ -102,12 +123,12 @@ function VorsPage() {
       setLoading(true)
       // Постранично: без .range() PostgREST молча отдал бы только первые 1000
       // тендеров, и часть реестра просто не появилась бы на странице.
-      const load = (stoCols) => fetchAllRows((from, to) => supabase
+      const load = (extraCols) => fetchAllRows((from, to) => supabase
         .from('tenders')
         .select(`
           id, object_id, public_tender_number, status, tender_type, department, vor_status, vor_link,
           vor_responsible_id, vor_start_date, vor_end_date,
-          start_date, end_date, work_description, deleted_at${stoCols},
+          start_date, end_date, work_description, deleted_at${extraCols},
           objects(name, status),
           vor_responsible:contacts!vor_responsible_id(id, full_name, position),
           responsible_contact:contacts!responsible_contact_id(id, full_name)
@@ -117,16 +138,23 @@ function VorsPage() {
         .order('start_date', { ascending: false })
         .order('id', { ascending: true })
         .range(from, to))
-      // Колонок СТО до миграции 20260922 нет — страница работает и без них.
+      // Колонок СТО (миграция 20260922) и подразделения (20260927) может ещё не
+      // быть — убираем недостающие по одной, страница работает и без них.
+      let sto = true
+      let division = true
       let data
-      try {
-        data = await load(', vor_sto_user_id, vor_sto_name')
-        setStoSupported(true)
-      } catch (err) {
-        if (!isMissingStoColumnError(err)) throw err
-        data = await load('')
-        setStoSupported(false)
+      for (;;) {
+        try {
+          data = await load((sto ? ', vor_sto_user_id, vor_sto_name' : '') + (division ? ', vor_division' : ''))
+          break
+        } catch (err) {
+          if (sto && isMissingStoColumnError(err)) { sto = false; continue }
+          if (division && isMissingDivisionColumnError(err)) { division = false; continue }
+          throw err
+        }
       }
+      setStoSupported(sto)
+      setDivisionSupported(division)
 
       // Только основные тендеры (без дочерних на материалы) по основному строительству.
       // Направление берём из tenders.department (миграция 20260820), а не из статуса
@@ -176,6 +204,39 @@ function VorsPage() {
 
   // Список небольшой (сотрудники СТО) — грузим сразу: выпадашка есть в каждой строке.
   useEffect(() => { loadStoEmployees() }, [])
+
+  useEffect(() => {
+    let alive = true
+    supabase.from('app_settings').select('value').eq('key', DUTY_OVERRIDE_KEY).maybeSingle()
+      .then(({ data }) => { if (alive) setDutyOverride(parseDutyOverride(data?.value)) })
+    return () => { alive = false }
+  }, [])
+
+  const handleChangeDivision = async (tenderId, value) => {
+    if (!divisionSupported) { alert(DIVISION_MIGRATION_HINT); return }
+    const next = value || null
+    const tender = tenders.find(t => t.id === tenderId)
+    const oldValue = tender?.vor_division || null
+    if (oldValue === next) return
+    try {
+      const { error } = await supabase.from('tenders').update({ vor_division: next }).eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => (t.id === tenderId ? { ...t, vor_division: next } : t)))
+      const oldLabel = VOR_DIVISION_LABEL[oldValue] || null
+      const newLabel = VOR_DIVISION_LABEL[next] || null
+      logTenderEvent(tenderId, 'field_updated', {
+        fieldName: 'vor_division',
+        oldValue: oldLabel,
+        newValue: newLabel,
+        description: newLabel
+          ? (oldLabel ? `Сменено подразделение ВОР: ${oldLabel} → ${newLabel}` : `Указано подразделение ВОР: ${newLabel}`)
+          : `Снято подразделение ВОР (было: ${oldLabel})`,
+      })
+    } catch (err) {
+      console.error('Ошибка изменения подразделения ВОР:', err.message)
+      alert(isMissingDivisionColumnError(err) ? DIVISION_MIGRATION_HINT : 'Ошибка: ' + err.message)
+    }
+  }
 
   const handleChangeStatus = async (tenderId, newStatus) => {
     if (newStatus === 'completed') {
@@ -314,12 +375,14 @@ function VorsPage() {
     filtered = filtered.filter(t => responsibleFilters.includes(responsibleKeyOf(t)))
   }
   if (objectFilterIds.length > 0) filtered = filtered.filter(t => objectFilterIds.includes(t.object_id))
+  if (divisionFilter.length > 0) filtered = filtered.filter(t => divisionFilter.includes(t.vor_division || NO_DIVISION))
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase()
     filtered = filtered.filter(t =>
       String(t.public_tender_number ?? '').includes(q) ||
       (t.objects?.name || '').toLowerCase().includes(q) ||
       (t.work_description || '').toLowerCase().includes(q) ||
+      (VOR_DIVISION_LABEL[t.vor_division] || '').toLowerCase().includes(q) ||
       (vorResponsibleOf(t).name || '').toLowerCase().includes(q) ||
       (t.responsible_contact?.full_name || '').toLowerCase().includes(q)
     )
@@ -342,7 +405,8 @@ function VorsPage() {
   // task 267: удалённые тендеры — в отдельной вкладке «Удалённые»
   const deletedRows = filtered.filter(t => t.deleted_at)
   const liveRows = filtered.filter(t => !t.deleted_at)
-  const hasActiveFilters = responsibleFilters.length > 0 || objectFilterIds.length > 0 || searchQuery.trim() !== ''
+  const hasActiveFilters = responsibleFilters.length > 0 || objectFilterIds.length > 0 || divisionFilter.length > 0 || searchQuery.trim() !== ''
+  const duty = currentDuty(dutyOverride)
   const unassignedCount = tenders.filter(t => responsibleKeyOf(t) === UNASSIGNED).length
 
   // task 241: разбивка по статусам ВОР (не начат / в работе / завершён)
@@ -365,6 +429,13 @@ function VorsPage() {
           ВОРы и РД
         </h2>
         <div className="cp-header-right">
+          {/* Тот же дежурный, что в шапке «Тендеров»; меняется там (админ). */}
+          <div className="vor-duty-chip" title={`Дежурный по тендерам на этой неделе: ${duty.name}${duty.overridden ? ' (ручная замена)' : ''}`}>
+            <IconUser size={15} />
+            <span className="vor-duty-label">Дежурный по тендерам:</span>
+            <span className="vor-duty-name">{duty.name}</span>
+            {duty.overridden && <span className="vor-duty-dot" aria-hidden />}
+          </div>
           <div className="page-header-hint">
             Список тендеров основного строительства. Ответственный СТО выбирается из сотрудников сметно-технического отдела.
           </div>
@@ -458,6 +529,20 @@ function VorsPage() {
           }))}
         />
         <FilterDropdown
+          label="" multiple
+          allLabel="Все подразделения"
+          icon={<IconTag size={15} />}
+          value={divisionFilter}
+          onChange={setDivisionFilter}
+          options={[
+            ...VOR_DIVISIONS.map(d => ({
+              value: d.value,
+              label: `${d.label} (${tenders.filter(t => t.vor_division === d.value).length})`,
+            })),
+            { value: NO_DIVISION, label: `Не указано (${tenders.filter(t => !t.vor_division).length})` },
+          ]}
+        />
+        <FilterDropdown
           label="" multiple searchable
           searchPlaceholder="Поиск ответственного СТО…"
           allLabel="Все ответственные СТО"
@@ -478,7 +563,7 @@ function VorsPage() {
             <button
               type="button"
               className="reset-btn"
-              onClick={() => { setResponsibleFilters([]); setObjectFilterIds([]); setSearchQuery('') }}
+              onClick={() => { setResponsibleFilters([]); setObjectFilterIds([]); setDivisionFilter([]); setSearchQuery('') }}
             >Сбросить</button>
           )}
         </div>
@@ -498,6 +583,7 @@ function VorsPage() {
               </th>
               <th style={{ width: '160px' }}>Объект</th>
               <th>Описание работ</th>
+              <th style={{ width: '170px' }}>Подразделение</th>
               <th style={{ width: '170px' }}>Ответственный СТО</th>
               <th style={{ width: '150px' }}>Ответственный<br />по тендеру</th>
               <th style={{ width: '170px' }}>Срок подготовки ВОР</th>
@@ -508,7 +594,7 @@ function VorsPage() {
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={8} className="no-data">
+                <td colSpan={9} className="no-data">
                   {tenders.length === 0
                     ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
                     : activeTab === 'deleted'
@@ -562,6 +648,22 @@ function VorsPage() {
                         {t.work_description || '—'}
                       </button>
                     )}
+                  </td>
+                  <td>
+                    <FilterDropdown
+                      className="vor-resp-fdrop vor-div-fdrop"
+                      label=""
+                      allLabel="— не указано —"
+                      value={t.vor_division || ''}
+                      onChange={(v) => handleChangeDivision(t.id, v)}
+                      disabled={!canEditVors}
+                      options={[{ value: '', label: '— не указано —' }, ...VOR_DIVISIONS]}
+                      formatTrigger={() => (
+                        t.vor_division
+                          ? <span className="vor-div-chip">{VOR_DIVISION_LABEL[t.vor_division] || t.vor_division}</span>
+                          : <span className="vor-resp-empty">— не указано —</span>
+                      )}
+                    />
                   </td>
                   <td>
                     {(() => {

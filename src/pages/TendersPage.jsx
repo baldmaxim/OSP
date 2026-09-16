@@ -34,7 +34,8 @@ import {
   IconJoint, IconOther, IconFolderTree, IconDocsStack,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName, isConstructionTender } from '../utils/tenderDepartments'
-import { mondayOf, weekKey } from '../utils/weeks'
+import { weekKey } from '../utils/weeks'
+import { TENDER_DUTY_NAMES, DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import TenderCallReminder from '../components/TenderCallReminder'
 import { copyToClipboard } from '../utils/clipboard'
 import { reorderSiblings } from '../utils/appendixTree'
@@ -46,25 +47,10 @@ import '../components/Tenders.css'
 import '../components/TendersRegistryPolish.css'
 import '../components/MobileCards.css'
 
-// task 419+: еженедельно ротируемый «Ответственный по тендерам».
-// Ротация считается детерминированно на фронте (без cron): якорь + число недель % N.
-// Ручная замена админом хранится в app_settings под ключом ниже (см. TendersPage).
-const TENDER_RESPONSIBLES = [
-  'Крюкова Юлия Денисовна',
-  'Архипов Антон Михайлович',
-  'Савостенко Владислав Андреевич',
-]
-// Понедельник недели, когда ответственна Крюкова (index 0). 2026-07-06 — текущая неделя.
-const ROTATION_ANCHOR_MONDAY = '2026-07-06'
-const RESPONSIBLE_OVERRIDE_KEY = 'tender_responsible_override'
-
-// Ответственный по расписанию (без учёта ручной замены).
-function baseResponsible(dateInput) {
-  const anchor = mondayOf(ROTATION_ANCHOR_MONDAY)
-  const weeks = Math.round((mondayOf(dateInput) - anchor) / (7 * 24 * 60 * 60 * 1000))
-  const n = TENDER_RESPONSIBLES.length
-  return TENDER_RESPONSIBLES[((weeks % n) + n) % n]
-}
+// «Дежурный по тендерам»: ротация и ручная замена — src/utils/tenderDuty.js
+// (показывается и в «ВОРах и РД»).
+const TENDER_RESPONSIBLES = TENDER_DUTY_NAMES
+const RESPONSIBLE_OVERRIDE_KEY = DUTY_OVERRIDE_KEY
 
 // Дата и время правки для истории примечаний: «24.07.2026, 14:05».
 function formatDateTime(ts) {
@@ -2128,11 +2114,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         .eq('key', RESPONSIBLE_OVERRIDE_KEY)
         .maybeSingle()
       if (!alive) return
-      try {
-        setResponsibleOverride(data?.value ? JSON.parse(data.value) : null)
-      } catch {
-        setResponsibleOverride(null)
-      }
+      setResponsibleOverride(parseDutyOverride(data?.value))
     })()
     return () => { alive = false }
   }, [])
@@ -2151,8 +2133,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }, [respMenuOpen])
 
   const currentWeek = weekKey(new Date())
-  const overrideActive = !!(responsibleOverride && responsibleOverride.week === currentWeek && responsibleOverride.name)
-  const currentResponsible = overrideActive ? responsibleOverride.name : baseResponsible(new Date())
+  const { name: currentResponsible, overridden: overrideActive } = currentDuty(responsibleOverride)
 
   const persistResponsibleOverride = async (value) => {
     const { error } = await supabase

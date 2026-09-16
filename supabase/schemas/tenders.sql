@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   vor_link TEXT,
   vor_responsible_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
   vor_status TEXT NOT NULL DEFAULT 'not_started',
+  vor_division TEXT,
   summary_proposal_link TEXT,
   notes TEXT,
   cost_plan_notes TEXT,                -- примечание для страницы «Планы затрат»
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   CONSTRAINT check_dates CHECK (end_date >= start_date),
   CONSTRAINT valid_cost_plan_status CHECK (cost_plan_status IN ('not_started', 'in_progress', 'awaiting_kp', 'completed', 'not_required')),
   CONSTRAINT valid_vor_status CHECK (vor_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
+  CONSTRAINT valid_vor_division CHECK (vor_division IS NULL OR vor_division IN ('monolith', 'nvf_spk', 'general', 'hvac_water', 'electrical')),
   CONSTRAINT valid_materials_status CHECK (materials_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
   CONSTRAINT valid_tender_department CHECK (department IN ('construction', 'warranty', 'joint', 'other')),
   CONSTRAINT valid_tender_type CHECK (tender_type IN ('main', 'materials')),
