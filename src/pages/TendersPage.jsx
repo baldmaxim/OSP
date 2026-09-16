@@ -248,6 +248,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [objectFilter, setObjectFilter] = useState(() => Array.isArray(savedFilters.objectFilter) ? savedFilters.objectFilter : [])
   const [responsibleFilter, setResponsibleFilter] = useState(() => Array.isArray(savedFilters.responsibleFilter) ? savedFilters.responsibleFilter : [])
   const [statusFilter, setStatusFilter] = useState(() => Array.isArray(savedFilters.statusFilter) ? savedFilters.statusFilter : [])
+  // Тендеры на материалы: фильтр по приоритету ('high' | 'medium' | 'low' | '__none__').
+  const [priorityFilter, setPriorityFilter] = useState(() => Array.isArray(savedFilters.priorityFilter) ? savedFilters.priorityFilter : [])
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState(() => typeof savedFilters.searchQuery === 'string' ? savedFilters.searchQuery : '')
   // Компактный вид: скрывает столбцы «ВОРы и РД», «План затрат», «Тендер на материалы», «Сводная КП»
@@ -270,10 +272,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   useEffect(() => {
     try {
       localStorage.setItem(filtersStorageKey, JSON.stringify({
-        activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, sortField, sortOrder,
+        activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, priorityFilter, sortField, sortOrder,
       }))
     } catch { /* noop */ }
-  }, [filtersStorageKey, activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, sortField, sortOrder])
+  }, [filtersStorageKey, activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, priorityFilter, sortField, sortOrder])
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
@@ -2228,14 +2230,21 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     if (objectFilter.length > 0 && !objectFilter.includes(tender.object_id)) return false
     // Фильтр по ответственному. '__unassigned__' — отдельная опция «Не назначен».
     if (responsibleFilter.length > 0) {
-      const isUnassigned = !tender.responsible_contact_id
-      const matches = isUnassigned
+      // В тендерах на материалы ответственный — сотрудник снабжения из реестра
+      // (materials_resp_user_id); прежний контакт учитывается, пока не переназначен.
+      const key = isMaterialsView && tender.materials_resp_user_id
+        ? `supply:${tender.materials_resp_user_id}`
+        : tender.responsible_contact_id
+      const matches = !key
         ? responsibleFilter.includes('__unassigned__')
-        : responsibleFilter.includes(tender.responsible_contact_id)
+        : responsibleFilter.includes(key)
       if (!matches) return false
     }
     // Фильтр по статусу (несколько статусов = ИЛИ)
     if (statusFilter.length > 0 && !statusFilter.includes(tender.status)) return false
+    // Фильтр по приоритету — только у тендеров на материалы.
+    if (isMaterialsView && priorityFilter.length > 0
+      && !priorityFilter.includes(tender.materials_priority || '__none__')) return false
     // Текстовый поиск по № тендера, наименованию объекта, адресу и описанию работ.
     const q = searchQuery.trim().toLowerCase()
     if (q) {
@@ -2255,7 +2264,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (!byNumber && !haystack.includes(q)) return false
     }
     return true
-  }), [tenders, activeTab, objectFilter, responsibleFilter, statusFilter, searchQuery])
+  }), [tenders, activeTab, objectFilter, responsibleFilter, statusFilter, priorityFilter, isMaterialsView, searchQuery])
+
+  // Приоритет сортируется по весу, а не по алфавиту: «high» > «medium» > «low».
+  // Не указанный уходит в конец при любом направлении (пустое значение).
+  const PRIORITY_RANK = { high: 3, medium: 2, low: 1 }
 
   // Сортировка по выбранному полю
   const sortedTenders = useMemo(() => {
@@ -2265,6 +2278,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (sortField === 'status') {
         av = statusOrder[a.status] ?? 999
         bv = statusOrder[b.status] ?? 999
+      } else if (sortField === 'materials_priority') {
+        av = PRIORITY_RANK[a.materials_priority] || ''
+        bv = PRIORITY_RANK[b.materials_priority] || ''
       } else {
         av = a[sortField] || ''
         bv = b[sortField] || ''
@@ -2352,6 +2368,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         if (sortField === 'status') {
           av = statusOrder[a.status] ?? 999
           bv = statusOrder[b.status] ?? 999
+        } else if (sortField === 'materials_priority') {
+          av = PRIORITY_RANK[a.materials_priority] || ''
+          bv = PRIORITY_RANK[b.materials_priority] || ''
         } else {
           av = a[sortField] || ''
           bv = b[sortField] || ''
@@ -2622,8 +2641,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             aria-expanded={mobileFiltersOpen}
           >
             Фильтры
-            {(objectFilter.length + responsibleFilter.length + statusFilter.length) > 0 && (
-              <span className="tp-filters-count">{objectFilter.length + responsibleFilter.length + statusFilter.length}</span>
+            {(objectFilter.length + responsibleFilter.length + statusFilter.length + priorityFilter.length) > 0 && (
+              <span className="tp-filters-count">{objectFilter.length + responsibleFilter.length + statusFilter.length + priorityFilter.length}</span>
             )}
             <span className="tp-filters-chevron" aria-hidden>▾</span>
           </button>
@@ -2685,6 +2704,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         </div>
         )}
 
+        {isMaterialsView && (
+        <div className="tender-filter-item">
+          <span className="tender-filter-label">Приоритет:</span>
+          <FilterDropdown
+            label=""
+            multiple
+            allLabel="Все приоритеты"
+            icon={<IconTag size={15} />}
+            value={priorityFilter}
+            onChange={setPriorityFilter}
+            options={[
+              ...MATERIALS_PRIORITY_OPTIONS.slice().reverse(),
+              { value: '__none__', label: 'Не указан' },
+            ]}
+          />
+        </div>
+        )}
+
         <div className="tender-filter-item">
           <span className="tender-filter-label">Ответственный:</span>
           <FilterDropdown
@@ -2698,16 +2735,27 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             onChange={setResponsibleFilter}
             options={[
               { value: '__unassigned__', label: '— Не назначен —' },
+              // Тендеры на материалы: сотрудники снабжения, назначенные из реестра.
+              ...(isMaterialsView
+                ? [...new Map(tenders
+                    .filter(t => !t.deleted_at && t.materials_resp_user_id)
+                    .map(t => [t.materials_resp_user_id, t.materials_resp_name || 'Сотрудник снабжения'])
+                  ).entries()]
+                    .sort((a, b) => a[1].localeCompare(b[1], 'ru'))
+                    .map(([id, name]) => ({ value: `supply:${id}`, label: name }))
+                : []),
               ...responsibleContacts
-                .filter(c => tenders.some(t => !t.deleted_at && t.responsible_contact_id === c.id))
+                .filter(c => tenders.some(t => !t.deleted_at
+                  && t.responsible_contact_id === c.id
+                  && !(isMaterialsView && t.materials_resp_user_id)))
                 .map(c => ({ value: c.id, label: c.full_name })),
             ]}
           />
         </div>
 
-        {(objectFilter.length > 0 || responsibleFilter.length > 0 || statusFilter.length > 0 || searchQuery) && (
+        {(objectFilter.length > 0 || responsibleFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || searchQuery) && (
           <button
-            onClick={() => { setObjectFilter([]); setResponsibleFilter([]); setStatusFilter([]); setSearchQuery('') }}
+            onClick={() => { setObjectFilter([]); setResponsibleFilter([]); setStatusFilter([]); setPriorityFilter([]); setSearchQuery('') }}
             style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
           >
             Сбросить все
@@ -2804,7 +2852,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </th>
                   <th style={{ width: '130px', textAlign: 'center' }}>Объект</th>
                   <th style={{ width: '170px', textAlign: 'center' }}>Описание работ</th>
-                  <th style={{ width: '120px' }}>Приоритет</th>
+                  <th
+                    className="sortable-th"
+                    onClick={() => toggleSort('materials_priority')}
+                    title="Сортировать по приоритету: сначала высокий"
+                    style={{ width: '120px', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    Приоритет{sortIndicator('materials_priority')}
+                  </th>
                   <th style={{ width: '170px' }}>Ответственный</th>
                   <th
                     className="sortable-th"
