@@ -96,9 +96,14 @@ const HistoryIcon = () => (
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
-  const { scopedObjectIds, userProfile, isAdmin, canEdit, role } = useRole()
+  const { scopedObjectIds, userProfile, isAdmin, canEdit, canView, role } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
-  const canEditTenders = canEdit('tenders')
+  // Тендеры на материалы — отдельный раздел прав (снабжение, миграция 20260924):
+  // правка этого списка разрешается и правом tenders_materials.
+  const canEditTenders = canEdit('tenders') || (tenderType === 'materials' && canEdit('tenders_materials'))
+  // Карточка тендера закрыта тому, у кого нет доступа к самим тендерам: у
+  // снабжения открыт только список материалов.
+  const canOpenTenderCard = canView('tenders')
   // Галочку «Публикация в ТГ» ставит и экономист ОСП — даже без права править
   // тендеры: публикацию в Telegram-канале ведёт он. role — эффективная роль
   // (с учётом «Просмотра от имени роли» у администратора).
@@ -2650,7 +2655,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 {/* Ссылка — только информационная часть. Кнопки пути к папке и
                     отметки вынесены из неё: внутри ссылки их тапы то уводили
                     со страницы, то глушили переход в тендер. */}
-                <Link to={`/tenders/${tender.id}`} className="tp-mcard-main">
+                <Link to={canOpenTenderCard ? `/tenders/${tender.id}` : '#'} className="tp-mcard-main" onClick={(e) => { if (!canOpenTenderCard) e.preventDefault() }}>
                 <div className="mcard-head">
                   <span className="mcard-num">Тендер №{tender.public_tender_number ?? '—'}</span>
                   {tender.status && (
@@ -2698,9 +2703,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     />
                   )}
                 </div>
-                <Link to={`/tenders/${tender.id}`} className="tp-mcard-open">
-                  Открыть тендер <span aria-hidden>›</span>
-                </Link>
+                {canOpenTenderCard && (
+                  <Link to={`/tenders/${tender.id}`} className="tp-mcard-open">
+                    Открыть тендер <span aria-hidden>›</span>
+                  </Link>
+                )}
               </div>
             ))}
           </div>
@@ -2757,7 +2764,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         {tenderObjectName(tender, '-')}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        {tender.parent_tender_id ? (
+                        {tender.parent_tender_id && canOpenTenderCard ? (
                           <Link
                             to={`/tenders/${tender.parent_tender_id}`}
                             className="row-link primary"
@@ -3067,14 +3074,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </div>
                     </td>
                     <td className="tender-desc-cell">
-                      <Link
-                        to={`/tenders/${tender.id}`}
-                        className="row-link primary tender-desc-link"
-                        title={`${tender.work_description || ''}\n\nОткрыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)`}
-                        style={{ color: 'var(--primary-color)', textDecoration: 'underline' }}
-                      >
-                        {tender.work_description}
-                      </Link>
+                      {canOpenTenderCard ? (
+                        <Link
+                          to={`/tenders/${tender.id}`}
+                          className="row-link primary tender-desc-link"
+                          title={`${tender.work_description || ''}\n\nОткрыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)`}
+                          style={{ color: 'var(--primary-color)', textDecoration: 'underline' }}
+                        >
+                          {tender.work_description}
+                        </Link>
+                      ) : (
+                        <span className="tender-desc-link">{tender.work_description}</span>
+                      )}
                       {/* Путь к папке — сразу под наименованием: с него начинают
                           поиск документов, отметки ниже относятся к ходу тендера.
                           Открыть проводник кликом браузер не даёт, поэтому путь

@@ -10,6 +10,7 @@ import {
   IconTasks,
   IconTenders,
   IconVors,
+  IconMaterials,
   IconAnalysis,
   IconContracts,
   IconDcRequest,
@@ -157,6 +158,16 @@ function Sidebar() {
       Icon: IconTenders,
       visible: canView('tenders'),
       forceActive: isInTendersSection,
+    },
+    {
+      // Роль без доступа к тендерам, но с тендерами на материалы (снабжение):
+      // вместо «Тендеров» — сразу их список.
+      key: 'tenders-materials',
+      to: '/tenders/materials',
+      label: 'Тендеры на материалы',
+      tone: 'sand',
+      Icon: IconMaterials,
+      visible: !canView('tenders') && canView('tenders_materials'),
     },
     {
       // Роль без доступа к тендерам, но с «ВОРами и РД» (сметно-технический

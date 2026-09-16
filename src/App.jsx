@@ -39,6 +39,7 @@ function HomeRedirect() {
   const general = ['objects', 'contacts', 'counterparties', 'general_documents'].some((s) => canView(s))
   let to = '/general'
   if (!canView('tenders') && canView('vors')) to = '/vors'
+  else if (!canView('tenders') && canView('tenders_materials')) to = '/tenders/materials'
   else if (general) to = '/general'
   else if (canView('tenders')) to = '/tenders'
   else if (canView('tasks')) to = '/tasks'
@@ -134,7 +135,9 @@ function EmployeeLayout() {
             <Route path="/tenders/warranty" element={<PermissionRoute section="tenders"><TendersPage key="tenders-warranty" department="warranty" tenderType="main" /></PermissionRoute>} />
             <Route path="/tenders/joint" element={<PermissionRoute section="tenders"><TendersPage key="tenders-joint" department="joint" tenderType="main" /></PermissionRoute>} />
             <Route path="/tenders/other" element={<PermissionRoute section="tenders"><TendersPage key="tenders-other" department="other" tenderType="main" /></PermissionRoute>} />
-            <Route path="/tenders/materials" element={<PermissionRoute section="tenders"><TendersPage key="tenders-materials" tenderType="materials" /></PermissionRoute>} />
+            {/* Тендеры на материалы — свой раздел прав (снабжение); кому открыты
+                тендеры, открыт и этот список. */}
+            <Route path="/tenders/materials" element={<PermissionRoute anyOf={['tenders', 'tenders_materials']}><TendersPage key="tenders-materials" tenderType="materials" /></PermissionRoute>} />
             <Route path="/tenders/:tenderId" element={<PermissionRoute section="tenders"><TenderDetailPage /></PermissionRoute>} />
             <Route path="/cost-plans" element={<PermissionRoute section="tenders"><CostPlansPage /></PermissionRoute>} />
             {/* ВОРы и РД — свой раздел прав; кому открыты тендеры, открыта и эта страница. */}
