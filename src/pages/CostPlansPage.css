@@ -806,8 +806,8 @@
 /* ── «Ответственный СТО»: выпадающий список в строке ────────────────────────
    Это значение строки, а не поле ввода: рамки и фон появляются при наведении,
    стрелка — тоже. Панель списка рисует сам FilterDropdown (портал). */
-.vors-table .vor-resp-fdrop { display: flex; width: 100%; }
-.vors-table .vor-resp-fdrop .fdrop-trigger {
+.vors-table .fdrop.vor-resp-fdrop { display: flex; width: 100%; }
+.vors-table .fdrop.vor-resp-fdrop .fdrop-trigger {
   width: 100%;
   min-width: 0;
   height: auto;
@@ -819,17 +819,17 @@
   background: none;
   font-size: 0.8125rem;
 }
-.vors-table .vor-resp-fdrop:not(.is-disabled) .fdrop-trigger:hover,
-.vors-table .vor-resp-fdrop.is-open .fdrop-trigger {
+.vors-table .fdrop.vor-resp-fdrop:not(.is-disabled) .fdrop-trigger:hover,
+.vors-table .fdrop.vor-resp-fdrop.is-open .fdrop-trigger {
   border-color: var(--border-color);
   background: var(--bg-secondary);
 }
-.vors-table .vor-resp-fdrop.is-disabled .fdrop-trigger { cursor: default; opacity: 1; }
-.vors-table .vor-resp-fdrop .fdrop-value { min-width: 0; overflow: hidden; }
-.vors-table .vor-resp-fdrop .fdrop-arrow { opacity: 0; transition: opacity 0.12s ease; }
-.vors-table tbody tr:hover .vor-resp-fdrop .fdrop-arrow,
-.vors-table .vor-resp-fdrop.is-open .fdrop-arrow { opacity: 0.5; }
-.vors-table .vor-resp-fdrop.is-disabled .fdrop-arrow { display: none; }
+.vors-table .fdrop.vor-resp-fdrop.is-disabled .fdrop-trigger { cursor: default; opacity: 1; }
+.vors-table .fdrop.vor-resp-fdrop .fdrop-value { min-width: 0; overflow: hidden; }
+.vors-table .fdrop.vor-resp-fdrop .fdrop-arrow { opacity: 0; transition: opacity 0.12s ease; }
+.vors-table tbody tr:hover .fdrop.vor-resp-fdrop .fdrop-arrow,
+.vors-table .fdrop.vor-resp-fdrop.is-open .fdrop-arrow { opacity: 0.5; }
+.vors-table .fdrop.vor-resp-fdrop.is-disabled .fdrop-arrow { display: none; }
 
 .vor-resp-person {
   display: inline-flex;

@@ -43,8 +43,8 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
   const { isMaterialsView = false, withConstructionPhases = true, hideNotes = false, today = new Date().toISOString().slice(0, 10) } = options
 
   if (isMaterialsView) {
-    const headers = ['№ тендера', 'Основной тендер №', 'Объект', 'Описание работ', 'Шифр РД', 'Статус',
-      'Ответственный', 'Срок предоставления КП на материалы', 'Ссылка на КП на материалы', 'Путь к папке']
+    const headers = ['№ тендера', 'Основной тендер №', 'Объект', 'Описание работ', 'Приоритет', 'Шифр РД', 'Статус',
+      'Ответственный', 'Срок предоставления КП на материалы', 'Срок истёк', 'Ссылка на КП на материалы', 'Путь к папке']
     if (!hideNotes) headers.push('Примечание')
     const rows = tenders.map((t) => {
       const row = [
@@ -52,11 +52,14 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
         t.parent_tender?.public_tender_number ?? '',
         objectNameOf(t),
         t.work_description || '',
+        ({ low: 'Низкий', medium: 'Средний', high: 'Высокий' })[t.materials_priority] || '',
         // Шифры РД ведутся у основного тендера — тендер на материалы берёт их оттуда.
         rdCodesText(rdCodesByTender.get(t.parent_tender_id) || rdCodesByTender.get(t.id) || []),
         t.status || '',
-        t.responsible_contact?.full_name || '',
+        t.materials_resp_name || t.responsible_contact?.full_name || '',
         fmtDate(t.materials_proposal_deadline),
+        t.materials_proposal_deadline && String(t.materials_proposal_deadline).slice(0, 10) < today
+          && !['Завершен', 'Завершён', 'Не требуется'].includes(t.status) ? 'Да' : '',
         t.materials_proposal_link || '',
         t.folder_path || '',
       ]

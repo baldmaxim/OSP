@@ -21,6 +21,10 @@ import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
 import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
 import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
+import {
+  fetchSupplyEmployees, materialsResponsibleOf, isMissingMaterialsColumnError, SUPPLY_MIGRATION_HINT,
+  MATERIALS_PRIORITY_OPTIONS, MATERIALS_PRIORITY_LABEL, personInitials,
+} from '../services/supplyEmployees'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
@@ -158,6 +162,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [vorStoDraft, setVorStoDraft] = useState('')
   const [stoEmployees, setStoEmployees] = useState([])
   const [stoLoadError, setStoLoadError] = useState(null)
+  // Тендеры на материалы: ответственный — только сотрудник снабжения (миграция 20260925).
+  const [supplyEmployees, setSupplyEmployees] = useState([])
+  const [supplyLoadError, setSupplyLoadError] = useState(null)
   // task 212: 'all' | <status> | 'template' | 'deleted'.
   // Вкладку «Шаблон письма» не восстанавливаем — это режим редактирования, а не
   // выборка тендеров; в остальных случаях возвращаем сохранённую вкладку.
@@ -869,6 +876,63 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     } catch (error) {
       console.error('Ошибка обновления статуса:', error.message)
       alert('Ошибка обновления статуса: ' + error.message)
+    }
+  }
+
+  useEffect(() => {
+    if (!isMaterialsView) return
+    fetchSupplyEmployees()
+      .then((list) => { setSupplyEmployees(list); setSupplyLoadError(null) })
+      .catch((err) => setSupplyLoadError(err.message))
+  }, [isMaterialsView])
+
+  // Приоритет тендера на материалы: low | medium | high.
+  const handleUpdateMaterialsPriority = async (tenderId, value) => {
+    const next = value || null
+    const tender = tenders.find(t => t.id === tenderId)
+    const prev = tender?.materials_priority || null
+    if (prev === next) return
+    try {
+      const { error } = await supabase.from('tenders').update({ materials_priority: next }).eq('id', tenderId)
+      if (error) throw error
+      setTenders(list => list.map(t => (t.id === tenderId ? { ...t, materials_priority: next } : t)))
+      logTenderEvent(tenderId, 'field_updated', {
+        fieldName: 'materials_priority',
+        oldValue: MATERIALS_PRIORITY_LABEL[prev] || null,
+        newValue: MATERIALS_PRIORITY_LABEL[next] || null,
+        description: `Приоритет: ${MATERIALS_PRIORITY_LABEL[prev] || 'не указан'} → ${MATERIALS_PRIORITY_LABEL[next] || 'не указан'}`,
+      })
+    } catch (err) {
+      console.error('Ошибка сохранения приоритета:', err.message)
+      alert(isMissingMaterialsColumnError(err) ? SUPPLY_MIGRATION_HINT : 'Ошибка: ' + err.message)
+    }
+  }
+
+  // Ответственный за тендер на материалы — сотрудник снабжения из реестра.
+  const handleUpdateMaterialsResponsible = async (tenderId, userId) => {
+    const value = userId || null
+    const tender = tenders.find(t => t.id === tenderId)
+    const oldName = materialsResponsibleOf(tender).name || null
+    const emp = value ? supplyEmployees.find(x => x.user_id === value) : null
+    if (value && !emp) { alert('Выберите сотрудника снабжения из списка.'); return }
+    const patch = { materials_resp_user_id: value, materials_resp_name: emp?.display_name || null }
+    try {
+      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
+      if (error) throw error
+      setTenders(list => list.map(t => (t.id === tenderId ? { ...t, ...patch } : t)))
+      if (oldName !== patch.materials_resp_name) {
+        logTenderEvent(tenderId, 'field_updated', {
+          fieldName: 'materials_resp_user_id',
+          oldValue: oldName,
+          newValue: patch.materials_resp_name,
+          description: patch.materials_resp_name
+            ? `Назначен ответственный снабжения: ${patch.materials_resp_name}`
+            : 'Снят ответственный снабжения',
+        })
+      }
+    } catch (err) {
+      console.error('Ошибка назначения ответственного снабжения:', err.message)
+      alert(isMissingMaterialsColumnError(err) ? SUPPLY_MIGRATION_HINT : 'Ошибка: ' + err.message)
     }
   }
 
@@ -2273,6 +2337,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Проверка просроченности
   const today = new Date().toISOString().split('T')[0]
   const isOverdue = (tender) => tender.tender_end_date && tender.tender_end_date < today && !isCompletedStatus(tender.status)
+  // Тендер на материалы просрочен, когда прошёл срок предоставления КП, а тендер
+  // ещё не завершён.
+  const isMaterialsOverdue = (tender) => !!tender.materials_proposal_deadline
+    && tender.materials_proposal_deadline < today && !isCompletedStatus(tender.status)
 
   // Выгрузка ВСЕГО реестра направления (без удалённых) в текущей сортировке.
   // Шифры РД хранятся отдельной таблицей — подтягиваем их в момент выгрузки.
@@ -2736,7 +2804,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </th>
                   <th style={{ width: '130px', textAlign: 'center' }}>Объект</th>
                   <th style={{ width: '170px', textAlign: 'center' }}>Описание работ</th>
-                  <th style={{ width: '160px' }}>Ответственный</th>
+                  <th style={{ width: '120px' }}>Приоритет</th>
+                  <th style={{ width: '170px' }}>Ответственный</th>
                   <th
                     className="sortable-th"
                     onClick={() => toggleSort('materials_proposal_deadline')}
@@ -2753,7 +2822,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <tbody>
                 {sortedTenders.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="no-data">
+                    <td colSpan={9} className="no-data">
                       {activeTab === 'deleted'
                         ? 'В корзине нет тендеров на материалы'
                         : activeTab === 'all'
@@ -2763,7 +2832,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </tr>
                 ) : (
                   sortedTenders.map((tender) => (
-                    <tr key={tender.id} className={isOverdue(tender) ? 'overdue-row' : ''}>
+                    <tr
+                      key={tender.id}
+                      className={[
+                        isOverdue(tender) || isMaterialsOverdue(tender) ? 'overdue-row' : '',
+                        tender.materials_priority === 'high' ? 'mat-prio-high-row' : '',
+                      ].filter(Boolean).join(' ')}
+                    >
                       <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
                         {tender.public_tender_number ?? '—'}
                       </td>
@@ -2784,41 +2859,77 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           <span style={{ fontSize: '0.75rem' }}>{tender.work_description}</span>
                         )}
                       </td>
+                      {/* Приоритет: низкий / средний / высокий. Высокий подсвечивается
+                          и чипом, и полосой слева у всей строки. */}
                       <td>
-                        {editingResponsibleTenderId === tender.id ? (
-                          <select
-                            autoFocus
-                            className="inline-responsible-select"
-                            value={tender.responsible_contact_id || ''}
-                            onChange={(e) => { handleUpdateTenderResponsible(tender.id, e.target.value); setEditingResponsibleTenderId(null) }}
-                            onBlur={() => setEditingResponsibleTenderId(null)}
-                          >
-                            <option value="">— не назначен —</option>
-                            {responsibleContacts.map(c => (
-                              <option key={c.id} value={c.id}>{c.full_name}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          canEditTenders ? (
-                            <button
-                              className="responsible-display"
-                              onClick={() => setEditingResponsibleTenderId(tender.id)}
-                              title="Назначить ответственного"
-                            >
-                              {tender.responsible_contact?.full_name || (
-                                <span className="responsible-empty">— не назначен —</span>
-                              )}
-                            </button>
-                          ) : (
-                            <span className="responsible-display" style={{ cursor: 'default' }}>
-                              {tender.responsible_contact?.full_name || (
-                                <span className="responsible-empty">— не назначен —</span>
-                              )}
-                            </span>
-                          )
-                        )}
+                        <FilterDropdown
+                          className={`mat-prio-fdrop prio-${tender.materials_priority || 'none'}`}
+                          label=""
+                          allLabel="— не указан —"
+                          value={tender.materials_priority || ''}
+                          onChange={(v) => handleUpdateMaterialsPriority(tender.id, v)}
+                          disabled={!canEditTenders}
+                          options={[{ value: '', label: '— не указан —' }, ...MATERIALS_PRIORITY_OPTIONS]}
+                          formatTrigger={() => (
+                            tender.materials_priority
+                              ? <span className={`mat-prio-chip prio-${tender.materials_priority}`}>{MATERIALS_PRIORITY_LABEL[tender.materials_priority]}</span>
+                              : <span className="mat-muted">— не указан —</span>
+                          )}
+                          renderOption={(o) => (
+                            o.value
+                              ? <span className={`mat-prio-chip prio-${o.value}`}>{o.label}</span>
+                              : <span className="mat-muted">— не указан —</span>
+                          )}
+                        />
                       </td>
-                      <td style={{ textAlign: 'center' }}>
+                      {/* Ответственный — только сотрудник снабжения из реестра. */}
+                      <td>
+                        {(() => {
+                          const resp = materialsResponsibleOf(tender)
+                          return (
+                            <>
+                              <FilterDropdown
+                                className="mat-resp-fdrop"
+                                label="" searchable
+                                searchPlaceholder="Поиск сотрудника снабжения…"
+                                allLabel="— не назначен —"
+                                value={tender.materials_resp_user_id || ''}
+                                onChange={(v) => handleUpdateMaterialsResponsible(tender.id, v)}
+                                disabled={!canEditTenders}
+                                options={[
+                                  { value: '', label: '— не назначен —' },
+                                  ...supplyEmployees.map(emp => ({ value: emp.user_id, label: emp.display_name })),
+                                ]}
+                                formatTrigger={() => (
+                                  resp.name
+                                    ? <span className="mat-person">
+                                        <span className="mat-avatar" aria-hidden>{personInitials(resp.name)}</span>
+                                        <span className="mat-person-name">{resp.name}</span>
+                                      </span>
+                                    : <span className="mat-muted">— не назначен —</span>
+                                )}
+                                renderOption={(o) => (
+                                  o.value
+                                    ? <span className="mat-person">
+                                        <span className="mat-avatar" aria-hidden>{personInitials(o.label)}</span>
+                                        <span className="mat-person-name">{o.label}</span>
+                                      </span>
+                                    : <span className="mat-muted">— не назначен —</span>
+                                )}
+                              />
+                              {supplyLoadError && canEditTenders && (
+                                <div className="mat-note is-warn">{supplyLoadError}</div>
+                              )}
+                              {resp.name && !resp.fromRegistry && (
+                                <div className="mat-note" title="Назначен до перехода на выбор из сотрудников снабжения — переназначьте">
+                                  не из реестра снабжения
+                                </div>
+                              )}
+                            </>
+                          )
+                        })()}
+                      </td>
+                      <td style={{ textAlign: 'center' }} className={isMaterialsOverdue(tender) ? 'mat-deadline-overdue' : undefined}>
                         <input
                           type="date"
                           value={tender.materials_proposal_deadline || ''}
@@ -2829,7 +2940,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             width: '100%',
                             padding: '0.25rem 0.375rem',
                             fontSize: '0.75rem',
-                            border: '1px solid var(--border-color)',
+                            border: isMaterialsOverdue(tender) ? '1px solid #dc2626' : '1px solid var(--border-color)',
                             borderRadius: '4px',
                             background: 'var(--bg-secondary)',
                             color: 'var(--text-primary)',
@@ -2837,6 +2948,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             boxSizing: 'border-box',
                           }}
                         />
+                        {isMaterialsOverdue(tender) && <div className="mat-overdue-note">Срок истёк</div>}
                       </td>
                       <td>
                         {tender.materials_proposal_link ? (
