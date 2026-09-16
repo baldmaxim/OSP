@@ -10,7 +10,18 @@ import './DateRangeCell.css'
 //
 // onChange(field, value) — field: 'start' | 'end', value: 'YYYY-MM-DD' | ''.
 // overdue — подсветить как просроченный (решает вызывающий код: он знает статус).
+//
+// Пока окошко открыто, даты живут в черновике и наружу не уходят: поле даты
+// шлёт change на каждую цифру года («0002», «0020»…), сохранение и перерисовка
+// с таким значением сбивали набор. Запись — по «Готово» или клику мимо окна,
+// только полных дат; Esc — отмена.
 
+
+// Полная дата с правдоподобным годом (не промежуточное «0002-09-21»).
+function isCompleteDate(v) {
+  const m = /^(\d{4})-\d{2}-\d{2}$/.exec(v || '')
+  return !!m && +m[1] >= 1900 && +m[1] <= 2199
+}
 
 function parts(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''))
@@ -51,6 +62,8 @@ const IconCalendar = () => (
 export default function DateRangeCell({ start, end, onChange, disabled = false, overdue = false, showCountdown = true }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState(null)
+  const [draft, setDraft] = useState({ start: '', end: '' })
+  const [error, setError] = useState('')
   const btnRef = useRef(null)
   const popRef = useRef(null)
 
@@ -68,13 +81,43 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
 
   useLayoutEffect(() => { if (open) place() }, [open])
 
+  // Актуальные значения для обработчиков документа (эффект подписан один раз на открытие).
+  const latest = useRef({})
+  latest.current = { draft, start, end, onChange }
+
+  const openPop = () => {
+    setDraft({ start: start || '', end: end || '' })
+    setError('')
+    setOpen(true)
+  }
+
+  // Закрыть окошко; commit=true — записать изменившиеся полные (или очищенные) даты.
+  const close = (commit) => {
+    const { draft: d, start: s0, end: e0, onChange: cb } = latest.current
+    if (commit && isCompleteDate(d.start) && isCompleteDate(d.end) && d.start > d.end) {
+      setError('Начало позже окончания')
+      return
+    }
+    setOpen(false)
+    if (!commit) return
+    const apply = (field, next, prev) => {
+      if ((next || '') === (prev || '')) return
+      if (next && !isCompleteDate(next)) return
+      cb(field, next)
+    }
+    apply('start', d.start, s0)
+    apply('end', d.end, e0)
+  }
+  const closeRef = useRef(close)
+  closeRef.current = close
+
   useEffect(() => {
     if (!open) return
     const onDown = (e) => {
       if (popRef.current?.contains(e.target) || btnRef.current?.contains(e.target)) return
-      setOpen(false)
+      closeRef.current(true)
     }
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e) => { if (e.key === 'Escape') closeRef.current(false) }
     const onMove = () => place()
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
@@ -110,7 +153,7 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
         ref={btnRef}
         type="button"
         className={cls}
-        onClick={() => { if (!disabled) setOpen(o => !o) }}
+        onClick={() => { if (disabled) return; if (open) close(true); else openPop() }}
         aria-haspopup="dialog"
         aria-expanded={open}
         title={disabled ? undefined : 'Изменить срок'}
@@ -133,29 +176,30 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
             <span>Начало</span>
             <input
               type="date"
-              value={start || ''}
-              max={end || undefined}
-              onChange={(e) => onChange('start', e.target.value)}
+              value={draft.start}
+              max={isCompleteDate(draft.end) ? draft.end : undefined}
+              onChange={(e) => { const v = e.target.value; setError(''); setDraft(d => ({ ...d, start: v })) }}
             />
           </label>
           <label className="drc-field">
             <span>Окончание</span>
             <input
               type="date"
-              value={end || ''}
-              min={start || undefined}
-              onChange={(e) => onChange('end', e.target.value)}
+              value={draft.end}
+              min={isCompleteDate(draft.start) ? draft.start : undefined}
+              onChange={(e) => { const v = e.target.value; setError(''); setDraft(d => ({ ...d, end: v })) }}
             />
           </label>
+          {error && <div className="drc-error" role="alert">{error}</div>}
           <div className="drc-actions">
-            {(start || end) && (
+            {(draft.start || draft.end) && (
               <button
                 type="button"
                 className="drc-link"
-                onClick={() => { if (start) onChange('start', ''); if (end) onChange('end', ''); setOpen(false) }}
+                onClick={() => setDraft({ start: '', end: '' })}
               >Очистить</button>
             )}
-            <button type="button" className="drc-done" onClick={() => setOpen(false)}>Готово</button>
+            <button type="button" className="drc-done" onClick={() => close(true)}>Готово</button>
           </div>
         </div>,
         document.body,
