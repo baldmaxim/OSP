@@ -12,6 +12,7 @@ import IconTile from '../components/IconTile'
 import FilterDropdown from '../components/FilterDropdown'
 import { IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
 import { IconDocument } from '../components/icons/TenderHubIcons'
+import { isConstructionTender } from '../utils/tenderDepartments'
 import './CostPlansPage.css'
 
 // Значение фильтра «Ответственный» для тендеров без ответственного.
@@ -21,9 +22,14 @@ const STATUS_LABELS = {
   not_started: 'Не начат',
   in_progress: 'В работе',
   completed: 'Завершён',
+  // ВОР для тендера не готовится (миграция 20260926).
+  not_required: 'Не требуется',
 }
 
-const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed']
+const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required']
+
+// Статусы, при которых срок подготовки ВОР больше не отслеживается.
+const VOR_CLOSED = ['completed', 'not_required']
 
 // «Иванов Иван Иванович» → «ИИ»: две первые буквы фамилии и имени.
 function initialsOf(name) {
@@ -106,6 +112,8 @@ function VorsPage() {
           vor_responsible:contacts!vor_responsible_id(id, full_name, position),
           responsible_contact:contacts!responsible_contact_id(id, full_name)
         `)
+        // Отбор направления на сервере; окончательная проверка — isConstructionTender ниже.
+        .or('department.is.null,department.eq.construction')
         .order('start_date', { ascending: false })
         .order('id', { ascending: true })
         .range(from, to))
@@ -123,8 +131,10 @@ function VorsPage() {
       // Только основные тендеры (без дочерних на материалы) по основному строительству.
       // Направление берём из tenders.department (миграция 20260820), а не из статуса
       // объекта: у «совместных» и «прочих» объект может быть тот же самый.
+      // Без тендеров гарантийного отдела и «прочего»: см. isConstructionTender
+      // (объект в гарантии или тендер без объекта из реестра — не наш раздел).
       let filtered = (data || []).filter(t =>
-        (t.department || 'construction') === 'construction'
+        isConstructionTender(t)
         && (!t.tender_type || t.tender_type === 'main')
       )
       if (scopedObjectIds.length > 0) {
@@ -185,7 +195,9 @@ function VorsPage() {
       setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, vor_status: newStatus } : t))
     } catch (err) {
       console.error('Ошибка изменения статуса ВОР:', err.message)
-      alert('Ошибка: ' + err.message)
+      alert(newStatus === 'not_required' && (err.code === '23514' || /vor_status/.test(err.message || ''))
+        ? 'Не удалось поставить «Не требуется»: в базе не применена миграция 20260926_vor_status_not_required.'
+        : 'Ошибка: ' + err.message)
     }
   }
 
@@ -337,9 +349,11 @@ function VorsPage() {
   const notStarted = liveRows.filter(t => (t.vor_status || 'not_started') === 'not_started')
   const inProgress = liveRows.filter(t => t.vor_status === 'in_progress')
   const completed = liveRows.filter(t => t.vor_status === 'completed')
+  const notRequired = liveRows.filter(t => t.vor_status === 'not_required')
   const visible = activeTab === 'deleted' ? deletedRows
     : activeTab === 'all' ? liveRows
     : activeTab === 'completed' ? completed
+    : activeTab === 'not_required' ? notRequired
     : activeTab === 'in_progress' ? inProgress
     : notStarted
 
@@ -367,7 +381,7 @@ function VorsPage() {
         </button>
         <button
           type="button"
-          className={`tab cost-plans-status-toggle ${['not_started', 'in_progress', 'completed'].includes(activeTab) ? 'active' : ''} ${statusMenuOpen ? 'open' : ''}`}
+          className={`tab cost-plans-status-toggle ${['not_started', 'in_progress', 'completed', 'not_required'].includes(activeTab) ? 'active' : ''} ${statusMenuOpen ? 'open' : ''}`}
           onClick={() => setStatusMenuOpen(o => !o)}
           aria-expanded={statusMenuOpen}
           title="Развернуть/свернуть ВОРы и РД по статусам"
@@ -397,6 +411,13 @@ function VorsPage() {
             >
               Завершено
               <span className="tab-count completed">{completed.length}</span>
+            </button>
+            <button
+              className={`tab ${activeTab === 'not_required' ? 'active' : ''}`}
+              onClick={() => setActiveTab('not_required')}
+            >
+              Не требуется
+              <span className="tab-count">{notRequired.length}</span>
             </button>
           </>
         )}
@@ -494,6 +515,8 @@ function VorsPage() {
                       ? 'Удалённых ВОРов нет'
                       : activeTab === 'completed'
                         ? 'Завершённых ВОРов нет'
+                        : activeTab === 'not_required'
+                          ? 'Нет тендеров, для которых ВОР не требуется'
                         : activeTab === 'in_progress'
                           ? 'Нет ВОРов в работе'
                           : activeTab === 'not_started'
@@ -599,9 +622,9 @@ function VorsPage() {
                       start={t.vor_start_date}
                       end={t.vor_end_date}
                       disabled={!canEditVors}
-                      overdue={!!t.vor_end_date && t.vor_status !== 'completed'
+                      overdue={!!t.vor_end_date && !VOR_CLOSED.includes(t.vor_status)
                         && t.vor_end_date < new Date().toISOString().slice(0, 10)}
-                      showCountdown={t.vor_status !== 'completed'}
+                      showCountdown={!VOR_CLOSED.includes(t.vor_status)}
                       onChange={(field, value) => handleChangeVorDate(t.id, field === 'start' ? 'vor_start_date' : 'vor_end_date', value)}
                     />
                   </td>

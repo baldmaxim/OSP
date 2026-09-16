@@ -53,7 +53,8 @@ function kpPendingQuery(objectIds) {
 // Все счётчики хаба одним вызовом.
 export async function fetchTenderHubCounters(objectIds = []) {
   const construction = () => tendersQuery({ tenderType: 'main', objectIds, department: 'construction' })
-  const materials = () => tendersQuery({ tenderType: 'materials', objectIds })
+  // Тендеры на материалы — только основное строительство (как на странице).
+  const materials = () => tendersQuery({ tenderType: 'materials', objectIds, department: 'construction' })
   const warranty = () => tendersQuery({ tenderType: 'main', objectIds, department: 'warranty' })
   const joint = () => tendersQuery({ tenderType: 'main', objectIds, department: 'joint' })
   const other = () => tendersQuery({ tenderType: 'main', objectIds, department: 'other' })

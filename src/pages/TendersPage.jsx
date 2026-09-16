@@ -33,7 +33,7 @@ import {
   IconObject, IconTag, IconUser, IconColumns, IconColumnsWide,
   IconJoint, IconOther, IconFolderTree, IconDocsStack,
 } from '../components/icons/ToolbarIcons'
-import { departmentConfig, objectDeptBadge, tenderObjectName } from '../utils/tenderDepartments'
+import { departmentConfig, objectDeptBadge, tenderObjectName, isConstructionTender } from '../utils/tenderDepartments'
 import { mondayOf, weekKey } from '../utils/weeks'
 import TenderCallReminder from '../components/TenderCallReminder'
 import { copyToClipboard } from '../utils/clipboard'
@@ -480,11 +480,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           .from('tenders')
           .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)', withCount ? { count: 'exact' } : undefined)
           .eq('tender_type', tenderType)
-        if (!isMaterialsView) {
-          query = dept.key === 'construction'
-            ? query.or('department.eq.construction,department.is.null')
-            : query.eq('department', dept.key)
-        }
+        // Тендеры на материалы ведутся только по основному строительству —
+        // отбор направления и для них (окончательно — isConstructionTender ниже).
+        query = isMaterialsView || dept.key === 'construction'
+          ? query.or('department.eq.construction,department.is.null')
+          : query.eq('department', dept.key)
         if (scopedObjectIds.length > 0) query = query.in('object_id', scopedObjectIds)
         return query
           .order('start_date', { ascending: false })
@@ -503,8 +503,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       // (миграция 20260820). Раньше направление вычислялось из статуса объекта —
       // так «совместные» и «прочие» не выразить, объекта у них может не быть вовсе.
       // Тендеры на материалы показываем все, без деления по направлениям.
+      // Тендеры на материалы — только основное строительство: без дочерних у
+      // тендеров гарантийного отдела и «прочего» (isConstructionTender).
       let filteredTenders = isMaterialsView
-        ? normalized
+        ? normalized.filter(isConstructionTender)
         : normalized.filter(tender => (tender.department || 'construction') === dept.key)
       if (scopedObjectIds.length > 0) {
         filteredTenders = filteredTenders.filter(t => scopedObjectIds.includes(t.object_id))
@@ -3397,6 +3399,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           {(() => {
                             const s = tender.vor_status || 'not_started'
                             const hasDocs = (vorDocCounts[tender.id] || 0) > 0
+                            if (s === 'not_required') {
+                              return <span className="phase-done" title="ВОР не требуется">— Не требуется</span>
+                            }
                             if (s === 'completed') {
                               return (tender.vor_link || hasDocs)
                                 ? <span className="phase-done" title="ВОР готов">✓ Готово</span>

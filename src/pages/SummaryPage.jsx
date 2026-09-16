@@ -18,7 +18,8 @@ const STAGE_LABELS = {
 const STAGE_ORDER_KEYS = ['vor', 'tender', 'work']
 
 function getCurrentStage(t, today) {
-  if (t.vor_status !== 'completed') {
+  // «Не требуется» — этап ВОР пропускается, как завершённый.
+  if (t.vor_status !== 'completed' && t.vor_status !== 'not_required') {
     return {
       key: 'vor',
       responsible: vorResponsibleName(t) || 'Сметный отдел',

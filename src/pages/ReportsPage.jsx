@@ -462,7 +462,8 @@ function ReportsPage() {
 
       // === ВОРы и РД ===
       const vorRows = tConst
-      const isVorDone = (x) => x.vor_status === 'completed'
+      // «Не требуется» закрывает этап так же, как «Завершён» (не просрочен, не в очереди).
+      const isVorDone = (x) => x.vor_status === 'completed' || x.vor_status === 'not_required'
       const vor = {
         total: vorRows.length,
         notStarted: vorRows.filter(x => !x.vor_status || x.vor_status === 'not_started').length,

@@ -2179,6 +2179,7 @@ function TenderDetailPage() {
 
   const vorPhaseText = (() => {
     const s = tender.vor_status || 'not_started'
+    if (s === 'not_required') return '— Не требуется'
     if (s === 'completed') return tender.vor_link ? '✓ Готово' : '⚠ Завершён без ссылки'
     if (s === 'in_progress') return 'В работе'
     return 'Не начат'

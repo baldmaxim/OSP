@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   CONSTRAINT check_dates CHECK (end_date >= start_date),
   CONSTRAINT valid_cost_plan_status CHECK (cost_plan_status IN ('not_started', 'in_progress', 'awaiting_kp', 'completed', 'not_required')),
-  CONSTRAINT valid_vor_status CHECK (vor_status IN ('not_started', 'in_progress', 'completed')),
+  CONSTRAINT valid_vor_status CHECK (vor_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
   CONSTRAINT valid_materials_status CHECK (materials_status IN ('not_started', 'in_progress', 'completed', 'not_required')),
   CONSTRAINT valid_tender_department CHECK (department IN ('construction', 'warranty', 'joint', 'other')),
   CONSTRAINT valid_tender_type CHECK (tender_type IN ('main', 'materials')),
@@ -126,7 +126,7 @@ COMMENT ON COLUMN tenders.cost_plan_responsible_id IS 'Ответственны�
 COMMENT ON COLUMN tenders.cost_plan_status IS 'Статус плана затрат: not_started | in_progress | awaiting_kp | completed | not_required';
 COMMENT ON COLUMN tenders.vor_link IS 'Ссылка на ВОР (Google/Yandex Drive)';
 COMMENT ON COLUMN tenders.vor_responsible_id IS 'Ответственный сотрудник за ВОР (из contacts)';
-COMMENT ON COLUMN tenders.vor_status IS 'Статус ВОР: not_started | in_progress | completed';
+COMMENT ON COLUMN tenders.vor_status IS 'Статус ВОР: not_started | in_progress | completed | not_required (не требуется)';
 COMMENT ON COLUMN tenders.summary_proposal_link IS 'Ссылка на сводную таблицу КП (Google/Yandex Drive)';
 COMMENT ON COLUMN tenders.notes IS 'Примечание по тендеру (свободный текст, ведётся ответственным)';
 COMMENT ON COLUMN tenders.department IS 'Направление: construction | warranty | joint (совместные) | other (прочее). См. миграцию 20260820_tender_departments.sql — там же триггер синхронизации со статусом объекта';

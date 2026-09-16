@@ -58,6 +58,24 @@ const BY_KEY = Object.fromEntries(TENDER_DEPARTMENTS.map(d => [d.key, d]))
 
 // Неизвестный ключ (старая ссылка, опечатка в маршруте) не должен ронять
 // страницу — отдаём основное строительство.
+// Тендер основного строительства — для разделов «ВОРы и РД» и «Тендеры на
+// материалы», которые ведутся только по основному строительству.
+//
+// Одного tenders.department мало: он не меняется, если объект передали в
+// гарантию после создания тендера, а тендеры без объекта из реестра — это
+// «прочее» (у основного строительства объект обязателен). Поэтому:
+//   • направление construction (пустое — старые записи, тоже construction);
+//   • объект из реестра есть;
+//   • объект не в гарантийном обслуживании.
+// Требует, чтобы в выборке был objects(status).
+export function isConstructionTender(t) {
+  if (!t) return false
+  if ((t.department || 'construction') !== 'construction') return false
+  if (!t.object_id) return false
+  if (t.objects?.status === 'warranty_service') return false
+  return true
+}
+
 export function departmentConfig(key) {
   return BY_KEY[key] || BY_KEY.construction
 }
