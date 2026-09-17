@@ -14,6 +14,7 @@ import { IconObject, IconUser, IconSearch, IconTag } from '../components/icons/T
 import { IconDocument } from '../components/icons/TenderHubIcons'
 import { isConstructionTender } from '../utils/tenderDepartments'
 import { shortPersonName } from '../utils/personName'
+import { vorStartDate } from '../utils/vorDates'
 import { DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import './CostPlansPage.css'
 
@@ -128,7 +129,7 @@ function VorsPage() {
         .from('tenders')
         .select(`
           id, object_id, public_tender_number, status, tender_type, department, vor_status, vor_link,
-          vor_responsible_id, vor_start_date, vor_end_date,
+          vor_responsible_id, vor_start_date, vor_end_date, created_at,
           start_date, end_date, work_description, deleted_at${extraCols},
           objects(name, status),
           vor_responsible:contacts!vor_responsible_id(id, full_name, position),
@@ -722,13 +723,15 @@ function VorsPage() {
                     {/* Срок — читаемым текстом; правка в окошке. Просрочен, если
                         окончание прошло, а ВОР ещё не завершён. */}
                     <DateRangeCell
-                      start={t.vor_start_date}
+                      start={vorStartDate(t)}
+                      lockStart
+                      lockStartHint="дата создания тендера"
                       end={t.vor_end_date}
                       disabled={!canEditVors}
                       overdue={!!t.vor_end_date && !VOR_CLOSED.includes(t.vor_status)
                         && t.vor_end_date < new Date().toISOString().slice(0, 10)}
                       showCountdown={!VOR_CLOSED.includes(t.vor_status)}
-                      onChange={(field, value) => handleChangeVorDate(t.id, field === 'start' ? 'vor_start_date' : 'vor_end_date', value)}
+                      onChange={(field, value) => { if (field === 'end') handleChangeVorDate(t.id, 'vor_end_date', value) }}
                     />
                   </td>
                   <td>

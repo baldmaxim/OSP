@@ -24,6 +24,7 @@ import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIG
 import { shortPersonName } from '../utils/personName'
 import { formatDateRange as formatShortDateRange } from '../utils/dateRange'
 import DateRangeCell from '../components/DateRangeCell'
+import { vorStartDate } from '../utils/vorDates'
 import {
   fetchSupplyEmployees, materialsResponsibleOf, isMissingMaterialsColumnError, SUPPLY_MIGRATION_HINT,
   MATERIALS_PRIORITY_OPTIONS, MATERIALS_PRIORITY_LABEL, personInitials,
@@ -3611,7 +3612,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           </button>
                         </div>
                         {/* Срок подготовки ВОР; просроченный (ВОР не закрыт) — красным. */}
-                        {(tender.vor_start_date || tender.vor_end_date) && (() => {
+                        {tender.vor_end_date && (() => {
                           const closed = ['completed', 'not_required'].includes(tender.vor_status)
                           const overdue = !closed && !!tender.vor_end_date
                             && tender.vor_end_date < new Date().toISOString().slice(0, 10)
@@ -3620,7 +3621,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               className={`vor-phase-dates${overdue ? ' is-overdue' : ''}`}
                               title={overdue ? 'Срок подготовки ВОР истёк' : 'Срок подготовки ВОР'}
                             >
-                              {formatShortDateRange(tender.vor_start_date, tender.vor_end_date)}
+                              {formatShortDateRange(vorStartDate(tender), tender.vor_end_date)}
                             </div>
                           )
                         })()}
@@ -4582,13 +4583,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   <>
                     <div className="form-group">
                       <label>Подготовка ВОР: начало</label>
+                      {/* Начало подготовки ВОР — дата создания тендера, не вводится. */}
                       <input
                         type="date"
-                        name="vor_start_date"
-                        value={formData.vor_start_date}
-                        onChange={handleInputChange}
-                        min="2020-01-01"
-                        max="9999-12-31"
+                        value={vorStartDate(editingTender) || ''}
+                        disabled
+                        title="Дата создания тендера"
                       />
                     </div>
 
@@ -4599,7 +4599,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         name="vor_end_date"
                         value={formData.vor_end_date}
                         onChange={handleInputChange}
-                        min={formData.vor_start_date || '2020-01-01'}
+                        min={vorStartDate(editingTender) || '2020-01-01'}
                         max="9999-12-31"
                       />
                     </div>

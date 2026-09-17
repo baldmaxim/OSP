@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import { vorResponsibleName, withStoColumns } from '../services/stoEmployees'
+import { vorStartDate } from '../utils/vorDates'
 import './SummaryPage.css'
 
 const STAGE_LABELS = {
@@ -24,7 +25,7 @@ function getCurrentStage(t, today) {
       key: 'vor',
       responsible: vorResponsibleName(t) || 'Сметный отдел',
       responsibleNote: vorResponsibleName(t) ? null : 'не назначен',
-      start: t.vor_start_date,
+      start: t.vor_end_date ? vorStartDate(t) : null,
       end: t.vor_end_date,
       overdue: !!(t.vor_end_date && t.vor_end_date < today),
     }
@@ -81,7 +82,7 @@ function SummaryPage() {
         .from('tenders')
         .select(`
           id, object_id, status, start_date, end_date,
-          vor_status, vor_start_date, vor_end_date,
+          vor_status, vor_start_date, vor_end_date, created_at,
           tender_start_date, tender_end_date,
           work_description${stoCols},
           objects(name, status),

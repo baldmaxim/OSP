@@ -10,6 +10,8 @@ import './DateRangeCell.css'
 // внутри своего контейнера и обрезала бы его у нижних строк.
 //
 // onChange(field, value) — field: 'start' | 'end', value: 'YYYY-MM-DD' | ''.
+// lockStart — начало задано извне (например, датой создания тендера): в окошке
+// его не поменять, пока нет окончания — ячейка считается пустой.
 // overdue — подсветить как просроченный (решает вызывающий код: он знает статус).
 //
 // Пока окошко открыто, даты живут в черновике и наружу не уходят: поле даты
@@ -49,7 +51,7 @@ const IconCalendar = () => (
   </svg>
 )
 
-export default function DateRangeCell({ start, end, onChange, disabled = false, overdue = false, showCountdown = true }) {
+export default function DateRangeCell({ start, end, onChange, disabled = false, overdue = false, showCountdown = true, lockStart = false, lockStartHint = '' }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState(null)
   const [draft, setDraft] = useState({ start: '', end: '' })
@@ -73,7 +75,7 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
 
   // Актуальные значения для обработчиков документа (эффект подписан один раз на открытие).
   const latest = useRef({})
-  latest.current = { draft, start, end, onChange }
+  latest.current = { draft, start, end, onChange, lockStart }
 
   const openPop = () => {
     setDraft({ start: start || '', end: end || '' })
@@ -85,7 +87,7 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
   const close = (commit) => {
     const { draft: d, start: s0, end: e0, onChange: cb } = latest.current
     if (commit && isCompleteDate(d.start) && isCompleteDate(d.end) && d.start > d.end) {
-      setError('Начало позже окончания')
+      setError(lockStart ? 'Окончание раньше даты начала' : 'Начало позже окончания')
       return
     }
     setOpen(false)
@@ -95,7 +97,7 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
       if (next && !isCompleteDate(next)) return
       cb(field, next)
     }
-    apply('start', d.start, s0)
+    if (!latest.current.lockStart) apply('start', d.start, s0)
     apply('end', d.end, e0)
   }
   const closeRef = useRef(close)
@@ -121,7 +123,7 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
     }
   }, [open])
 
-  const text = formatDateRange(start, end)
+  const text = lockStart && !end ? '' : formatDateRange(start, end)
   const left = end ? daysUntil(end) : null
   const hint = !showCountdown || left == null ? null
     : overdue ? `просрочено на ${Math.abs(left)} дн.`
@@ -163,10 +165,12 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
           style={{ position: 'fixed', left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width }}
         >
           <label className="drc-field">
-            <span>Начало</span>
+            <span>Начало{lockStart && lockStartHint ? ` · ${lockStartHint}` : ''}</span>
             <input
               type="date"
               value={draft.start}
+              disabled={lockStart}
+              title={lockStart ? (lockStartHint || 'Начало задаётся автоматически') : undefined}
               max={isCompleteDate(draft.end) ? draft.end : undefined}
               onChange={(e) => { const v = e.target.value; setError(''); setDraft(d => ({ ...d, start: v })) }}
             />
@@ -182,11 +186,11 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
           </label>
           {error && <div className="drc-error" role="alert">{error}</div>}
           <div className="drc-actions">
-            {(draft.start || draft.end) && (
+            {(lockStart ? draft.end : (draft.start || draft.end)) && (
               <button
                 type="button"
                 className="drc-link"
-                onClick={() => setDraft({ start: '', end: '' })}
+                onClick={() => setDraft(d => ({ start: lockStart ? d.start : '', end: '' }))}
               >Очистить</button>
             )}
             <button type="button" className="drc-done" onClick={() => close(true)}>Готово</button>

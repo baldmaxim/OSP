@@ -115,3 +115,4 @@
   cursor: pointer;
 }
 .drc-error { font-size: 0.75rem; font-weight: 600; color: #dc2626; }
+.drc-field input:disabled { opacity: 0.75; cursor: not-allowed; }

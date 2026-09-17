@@ -15,6 +15,7 @@ import TenderProposalsCompare from '../components/TenderProposalsCompare'
 import VorDocsModal from '../components/VorDocsModal'
 import VirtualTableBody from '../components/VirtualTableBody'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
+import { vorStartDate } from '../utils/vorDates'
 import AccessDenied from '../components/AccessDenied'
 import FilterDropdown from '../components/FilterDropdown'
 import TenderDocumentsTab from '../components/TenderDocumentsTab'
@@ -2352,11 +2353,11 @@ function TenderDetailPage() {
               </span>
             </div>
           )}
-          {!isMainConstruction && (tender.vor_start_date || tender.vor_end_date || vorResponsibleName(tender)) && (
+          {!isMainConstruction && (tender.vor_end_date || vorResponsibleName(tender)) && (
             <div className="info-item">
               <span className="info-label">Срок подготовки ВОР</span>
               <span className="info-value">
-                {formatDateRangeOrDash(tender.vor_start_date, tender.vor_end_date)}
+                {formatDateRangeOrDash(tender.vor_end_date ? vorStartDate(tender) : null, tender.vor_end_date)}
                 {vorResponsibleName(tender) && (
                   <span className="info-sub"> · {vorResponsibleName(tender)}</span>
                 )}
@@ -2371,9 +2372,9 @@ function TenderDetailPage() {
                 <span className="info-label">ВОРы и РД</span>
                 <span className="info-value info-stack">
                   <span>{vorPhaseText}</span>
-                  {((tender.vor_start_date || tender.vor_end_date) || vorResponsibleName(tender)) && (
+                  {(tender.vor_end_date || vorResponsibleName(tender)) && (
                     <span className="info-sub">
-                      {formatDateRangeOrDash(tender.vor_start_date, tender.vor_end_date)}
+                      {formatDateRangeOrDash(tender.vor_end_date ? vorStartDate(tender) : null, tender.vor_end_date)}
                       {vorResponsibleName(tender) && ` · ${vorResponsibleName(tender)}`}
                     </span>
                   )}
