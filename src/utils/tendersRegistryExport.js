@@ -43,13 +43,14 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
   const { isMaterialsView = false, withConstructionPhases = true, hideNotes = false, today = new Date().toISOString().slice(0, 10) } = options
 
   if (isMaterialsView) {
-    const headers = ['№ тендера', 'Основной тендер №', 'Объект', 'Описание работ', 'Приоритет', 'Шифр РД', 'Статус',
+    // № — номер основного тендера (как в интерфейсе); у самой записи на материалы
+    // свой номер из общей последовательности, людям он не нужен.
+    const headers = ['№ тендера', 'Объект', 'Описание работ', 'Приоритет', 'Шифр РД', 'Статус',
       'Ответственный', 'Срок предоставления КП на материалы', 'Срок истёк', 'Ссылка на КП на материалы', 'Путь к папке']
     if (!hideNotes) headers.push('Примечание')
     const rows = tenders.map((t) => {
       const row = [
-        t.public_tender_number ?? '',
-        t.parent_tender?.public_tender_number ?? '',
+        t.parent_tender?.public_tender_number ?? t.public_tender_number ?? '',
         objectNameOf(t),
         t.work_description || '',
         ({ low: 'Низкий', medium: 'Средний', high: 'Высокий' })[t.materials_priority] || '',

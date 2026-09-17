@@ -52,6 +52,14 @@ import '../components/MobileCards.css'
 const TENDER_RESPONSIBLES = TENDER_DUTY_NAMES
 const RESPONSIBLE_OVERRIDE_KEY = DUTY_OVERRIDE_KEY
 
+// Номер, под которым тендер знают люди. Тендер на материалы — отдельная запись
+// со своим номером из общей последовательности (обычно основной + 1, но номера
+// «съедают» и параллельные, и неудачные вставки), поэтому показываем номер
+// основного тендера: в «Тендерах» и «Тендерах на материалы» он один и тот же.
+function tenderNumberOf(t) {
+  return t?.parent_tender?.public_tender_number ?? t?.public_tender_number ?? null
+}
+
 // Дата и время правки для истории примечаний: «24.07.2026, 14:05».
 function formatDateTime(ts) {
   if (!ts) return ''
@@ -2235,10 +2243,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       // с набранных цифр. Параллельно ищем и по тексту — цифры бывают и в
       // описании («К4 и К5»), и в адресе.
       const numQuery = q.replace(/^(тендер\s*)?№?\s*/, '')
+      const shownNumber = tenderNumberOf(tender)
       const byNumber = /^\d+$/.test(numQuery)
-        && String(tender.public_tender_number ?? '').startsWith(numQuery)
+        && String(shownNumber ?? '').startsWith(numQuery)
       const haystack = [
-        tender.public_tender_number != null ? `№${tender.public_tender_number} № ${tender.public_tender_number}` : '',
+        shownNumber != null ? `№${shownNumber} № ${shownNumber}` : '',
         tender.objects?.name,
         tender.custom_object_name,
         tender.objects?.address,
@@ -2264,6 +2273,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       } else if (sortField === 'materials_priority') {
         av = PRIORITY_RANK[a.materials_priority] || ''
         bv = PRIORITY_RANK[b.materials_priority] || ''
+      } else if (sortField === 'public_tender_number') {
+        av = tenderNumberOf(a) ?? ''
+        bv = tenderNumberOf(b) ?? ''
       } else {
         av = a[sortField] || ''
         bv = b[sortField] || ''
@@ -2354,6 +2366,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         } else if (sortField === 'materials_priority') {
           av = PRIORITY_RANK[a.materials_priority] || ''
           bv = PRIORITY_RANK[b.materials_priority] || ''
+        } else if (sortField === 'public_tender_number') {
+          av = tenderNumberOf(a) ?? ''
+          bv = tenderNumberOf(b) ?? ''
         } else {
           av = a[sortField] || ''
           bv = b[sortField] || ''
@@ -2763,7 +2778,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     со страницы, то глушили переход в тендер. */}
                 <Link to={canOpenTenderCard ? `/tenders/${tender.id}` : '#'} className="tp-mcard-main" onClick={(e) => { if (!canOpenTenderCard) e.preventDefault() }}>
                 <div className="mcard-head">
-                  <span className="mcard-num">Тендер №{tender.public_tender_number ?? '—'}</span>
+                  <span className="mcard-num">Тендер №{tenderNumberOf(tender) ?? '—'}</span>
                   {tender.status && (
                     <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ padding: '0.1875rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
                       {tender.status}
@@ -2878,7 +2893,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       ].filter(Boolean).join(' ')}
                     >
                       <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-                        {tender.public_tender_number ?? '—'}
+                        {tenderNumberOf(tender) ?? '—'}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         {tenderObjectName(tender, '-')}
