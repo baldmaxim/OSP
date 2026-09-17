@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable'
@@ -23,6 +23,7 @@ import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
 import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
 import { shortPersonName } from '../utils/personName'
 import { formatDateRange as formatShortDateRange } from '../utils/dateRange'
+import DateRangeCell from '../components/DateRangeCell'
 import {
   fetchSupplyEmployees, materialsResponsibleOf, isMissingMaterialsColumnError, SUPPLY_MIGRATION_HINT,
   MATERIALS_PRIORITY_OPTIONS, MATERIALS_PRIORITY_LABEL, personInitials,
@@ -93,6 +94,9 @@ const HistoryIcon = () => (
     <path d="M12 7v5l3 2" />
   </svg>
 )
+
+// Поля тендера для реестра и формы редактирования.
+const TENDER_LIST_SELECT = '*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)'
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
@@ -474,7 +478,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       const data = await fetchAllRowsParallel((from, to, withCount) => {
         let query = supabase
           .from('tenders')
-          .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), responsible_contact:contacts!responsible_contact_id(id, full_name), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, summary_proposal_link, cost_plan_status, cost_plan_link, materials_proposal_deadline, materials_proposal_link)', withCount ? { count: 'exact' } : undefined)
+          .select(TENDER_LIST_SELECT, withCount ? { count: 'exact' } : undefined)
           .eq('tender_type', tenderType)
         // Тендеры на материалы ведутся только по основному строительству —
         // отбор направления и для них (окончательно — isConstructionTender ниже).
@@ -949,6 +953,27 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     } catch (err) {
       console.error('Ошибка сохранения срока КП на материалы:', err.message)
       alert('Ошибка: ' + err.message)
+    }
+  }
+
+  // Начало срока предоставления КП на материалы (миграция 20260928). Окончание —
+  // прежнее поле materials_proposal_deadline, оно не меняется.
+  const handleUpdateMaterialsStart = async (tenderId, value) => {
+    try {
+      const { error } = await supabase
+        .from('tenders')
+        .update({ materials_proposal_start_date: value || null })
+        .eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t =>
+        t.id === tenderId ? { ...t, materials_proposal_start_date: value || null } : t
+      ))
+    } catch (err) {
+      console.error('Ошибка сохранения начала срока КП на материалы:', err.message)
+      const missing = ['42703', 'PGRST204'].includes(err.code) && /materials_proposal_start_date/.test(err.message || '')
+      alert(missing
+        ? 'Дата «с» недоступна: в базе не применена миграция 20260928_materials_proposal_start_date.'
+        : 'Ошибка: ' + err.message)
     }
   }
 
@@ -1717,6 +1742,50 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       alert('Ошибка: ' + error.message)
     }
   }
+
+  // ── Редактирование из карточки тендера: /tenders/<раздел>?edit=<id> ──
+  // Форма со всеми полями живёт здесь; карточка присылает сюда, а после
+  // сохранения или отмены возвращаем пользователя обратно в карточку.
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const editFromCardId = searchParams.get('edit')
+  const returnToCardRef = useRef(null)
+
+  useEffect(() => {
+    if (!editFromCardId || loading) return
+    let alive = true
+    ;(async () => {
+      let target = tenders.find(t => t.id === editFromCardId)
+      if (!target) {
+        // Тендера может не быть в списке раздела (удалён, другое направление) —
+        // берём его напрямую, форма от этого не зависит.
+        const { data, error } = await supabase.from('tenders').select(TENDER_LIST_SELECT).eq('id', editFromCardId).maybeSingle()
+        if (!alive) return
+        if (error || !data) {
+          alert('Не удалось открыть тендер для редактирования' + (error ? ': ' + error.message : ''))
+          navigate(`/tenders/${editFromCardId}`, { replace: true })
+          return
+        }
+        target = {
+          ...data,
+          materials_tender: Array.isArray(data.materials_tender) ? (data.materials_tender[0] || null) : (data.materials_tender || null),
+        }
+      }
+      returnToCardRef.current = editFromCardId
+      // Убираем параметр, чтобы обновление страницы не открывало форму повторно.
+      setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('edit'); return next }, { replace: true })
+      handleEditTender(target)
+    })()
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editFromCardId, loading])
+
+  useEffect(() => {
+    if (showModal || !returnToCardRef.current) return
+    const id = returnToCardRef.current
+    returnToCardRef.current = null
+    navigate(`/tenders/${id}`)
+  }, [showModal, navigate])
 
   const handleEditTender = (tender) => {
     setEditingTender(tender)
@@ -2865,7 +2934,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     className="sortable-th"
                     onClick={() => toggleSort('materials_proposal_deadline')}
                     title="Сортировать по сроку"
-                    style={{ width: '110px', textAlign: 'center' }}
+                    style={{ width: '165px', textAlign: 'center' }}
                   >
                     Срок предоставления<br />КП на материалы{sortIndicator('materials_proposal_deadline')}
                   </th>
@@ -2984,26 +3053,19 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           )
                         })()}
                       </td>
-                      <td style={{ textAlign: 'center' }} className={isMaterialsOverdue(tender) ? 'mat-deadline-overdue' : undefined}>
-                        <input
-                          type="date"
-                          value={tender.materials_proposal_deadline || ''}
-                          onChange={(e) => handleUpdateMaterialsDeadline(tender.id, e.target.value)}
+                      <td className={isMaterialsOverdue(tender) ? 'mat-deadline-overdue' : undefined}>
+                        {/* Период «с … по …»: «по» — прежний срок (materials_proposal_deadline),
+                            по нему считаются просрочка и сортировка; «с» — новое поле. */}
+                        <DateRangeCell
+                          start={tender.materials_proposal_start_date}
+                          end={tender.materials_proposal_deadline}
                           disabled={!canEditTenders}
-                          readOnly={!canEditTenders}
-                          style={{
-                            width: '100%',
-                            padding: '0.25rem 0.375rem',
-                            fontSize: '0.75rem',
-                            border: isMaterialsOverdue(tender) ? '1px solid #dc2626' : '1px solid var(--border-color)',
-                            borderRadius: '4px',
-                            background: 'var(--bg-secondary)',
-                            color: 'var(--text-primary)',
-                            fontFamily: 'inherit',
-                            boxSizing: 'border-box',
-                          }}
+                          overdue={isMaterialsOverdue(tender)}
+                          showCountdown={!isCompletedStatus(tender.status)}
+                          onChange={(field, value) => (field === 'start'
+                            ? handleUpdateMaterialsStart(tender.id, value)
+                            : handleUpdateMaterialsDeadline(tender.id, value))}
                         />
-                        {isMaterialsOverdue(tender) && <div className="mat-overdue-note">Срок истёк</div>}
                       </td>
                       <td>
                         {tender.materials_proposal_link ? (

@@ -3992,3 +3992,23 @@
   text-decoration: none;
 }
 .tender-responsible-phone:hover { color: var(--primary-color); text-decoration: underline; }
+
+/* Кнопка «Редактировать» в шапке карточки тендера */
+.tender-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 32px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.tender-edit-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }

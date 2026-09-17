@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS tenders (
   department TEXT NOT NULL DEFAULT 'construction',
   tender_type TEXT NOT NULL DEFAULT 'main',
   parent_tender_id UUID REFERENCES tenders(id) ON DELETE SET NULL,
+  materials_proposal_start_date DATE,
   materials_proposal_deadline DATE,
   materials_proposal_link TEXT,
   materials_status TEXT NOT NULL DEFAULT 'not_started',
@@ -135,6 +136,7 @@ COMMENT ON COLUMN tenders.department IS 'Направление: construction | 
 COMMENT ON COLUMN tenders.tender_type IS 'Тип тендера: main (основной — работы) | materials (тендер на закупку материалов)';
 COMMENT ON COLUMN tenders.parent_tender_id IS 'Ссылка на родительский основной тендер (только для tender_type = materials)';
 COMMENT ON COLUMN tenders.materials_proposal_deadline IS 'Срок предоставления КП на материалы (для tender_type = materials)';
+COMMENT ON COLUMN tenders.materials_proposal_start_date IS 'Начало срока предоставления КП на материалы (окончание — materials_proposal_deadline)';
 COMMENT ON COLUMN tenders.materials_proposal_link IS 'Ссылка на КП на материалы (для tender_type = materials)';
 COMMENT ON COLUMN tenders.public_tender_number IS 'Сквозной публичный номер тендера, присваивается при создании';
 COMMENT ON COLUMN tenders.created_at IS 'Дата и время создания записи';

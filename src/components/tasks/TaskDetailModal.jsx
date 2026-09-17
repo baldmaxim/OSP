@@ -35,6 +35,28 @@ import {
 // исполнитель нажимает «Взять в работу» / «Сдать на проверку», постановщик —
 // «Принять» / «Вернуть в работу». Это модель Битрикса: работу принимает тот,
 // кто её поставил.
+// Срок задачи. Поле даты шлёт change на каждую цифру года («0002», «0020»…):
+// сохранение с перерисовкой сбивало набор. Держим черновик и сохраняем по уходу
+// из поля или Enter — только полную дату (или пустую).
+function DueDateInput({ value, onCommit }) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => { setDraft(value) }, [value])
+  const commit = () => {
+    if (draft === value) return
+    if (draft && !/^(19|20|21)\d{2}-\d{2}-\d{2}$/.test(draft)) { setDraft(value); return }
+    onCommit(draft)
+  }
+  return (
+    <input
+      type="date"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
+    />
+  )
+}
+
 function TaskDetailModal({
   task, employees, employeeMap, objectOptions, tenderOptions, contractOptions,
   canEdit, currentUserId, author, onClose, onChanged, onDelete, onRestore,
@@ -403,10 +425,9 @@ function TaskDetailModal({
               <div className="task-field">
                 <span className="task-field-label">Срок</span>
                 {canEditFields && !isDeleted ? (
-                  <input
-                    type="date"
+                  <DueDateInput
                     value={task.due_date || ''}
-                    onChange={(e) => patch({ due_date: e.target.value || null })}
+                    onCommit={(v) => patch({ due_date: v || null })}
                   />
                 ) : (
                   <span className="task-field-value">

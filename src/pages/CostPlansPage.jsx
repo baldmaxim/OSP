@@ -9,6 +9,7 @@ import FilterDropdown from '../components/FilterDropdown'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import { IconCoins, IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
 import CostPlanInstructionModal from '../components/CostPlanInstructionModal'
+import DateRangeCell from '../components/DateRangeCell'
 import './CostPlansPage.css'
 
 const STATUS_LABELS = {
@@ -750,23 +751,17 @@ const CostPlanRow = memo(function CostPlanRow({ t, canEditTenders, isEditingResp
           : <span className="muted-tiny">—</span>}
       </td>
       <td>
-        <div className="inline-date-range">
-          <input
-            type="date"
-            className="inline-date-input"
-            value={t.cost_plan_start_date || ''}
-            onChange={(e) => actions.changeDate(t.id, 'cost_plan_start_date', e.target.value)}
-            title="Начало"
-          />
-          <span className="dash">—</span>
-          <input
-            type="date"
-            className="inline-date-input"
-            value={t.cost_plan_end_date || ''}
-            onChange={(e) => actions.changeDate(t.id, 'cost_plan_end_date', e.target.value)}
-            title="Окончание"
-          />
-        </div>
+        {/* Окошко с черновиком: нативное поле даты сохраняло каждую цифру года
+            («0002», «0020»…), и набор сбивался. */}
+        <DateRangeCell
+          start={t.cost_plan_start_date}
+          end={t.cost_plan_end_date}
+          overdue={!!t.cost_plan_end_date
+            && !['completed', 'not_required'].includes(t.cost_plan_status)
+            && t.cost_plan_end_date < new Date().toISOString().slice(0, 10)}
+          showCountdown={!['completed', 'not_required'].includes(t.cost_plan_status)}
+          onChange={(field, value) => actions.changeDate(t.id, field === 'start' ? 'cost_plan_start_date' : 'cost_plan_end_date', value)}
+        />
       </td>
       <td>
         {t.cost_plan_link ? (
