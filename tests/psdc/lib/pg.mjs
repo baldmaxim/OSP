@@ -134,8 +134,11 @@ export function setupDatabase() {
     db.applyFile(path.join(HERE, '..', 'fixtures', 'bootstrap.sql'))
     db.applyFile(path.join(ROOT, 'supabase', 'migrations', '20260906_contract_amendments.sql'))
     db.applyFile(path.join(ROOT, 'supabase', 'migrations', '20260908_psdc.sql'))
+    // ПСДЦ у завершённых документов разрешена, колонки Larix и импорта.
+    db.applyFile(path.join(ROOT, 'supabase', 'migrations', '20260929_contracts_fixes.sql'))
     // Повторный прогон миграций не должен падать (миграции идемпотентны).
     db.applyFile(path.join(ROOT, 'supabase', 'migrations', '20260908_psdc.sql'))
+    db.applyFile(path.join(ROOT, 'supabase', 'migrations', '20260929_contracts_fixes.sql'))
   } catch (e) {
     db.stop()
     throw e

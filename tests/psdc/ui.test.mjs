@@ -173,13 +173,14 @@ describe('ПСДЦ: интерфейс', { skip, timeout: 240000 }, () => {
     assert.deepEqual(errors, [])
   })
 
-  it('карточка: без права редактирования действия скрыты, завершённое ДС заблокировано', async () => {
+  it('карточка: без права редактирования действия скрыты, завершённое ДС доступно для ПСДЦ', async () => {
     const base0 = createDocument(db, { record_type: 'dp', status: 'completed' })
     const ds = createDocument(db, { record_type: 'ds_vor', parent_contract_id: base0.id, status: 'completed' })
     const { page, errors } = await newPage()
     await page.goto(`${base}?doc=${ds.id}&uid=${lawyer}`)
-    await page.getByText(/завершено\. Чтобы изменить ПСДЦ, верните его на доработку/).waitFor()
-    assert.equal(await page.getByRole('button', { name: 'Импорт ВОР' }).isDisabled(), true)
+    await page.getByText('ПСДЦ не загружена').waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Импорт ВОР' }).isDisabled(), false)
+    assert.equal(await page.getByText(/верните его на доработку/).count(), 0)
 
     const { page: viewPage } = await newPage()
     await viewPage.goto(`${base}?doc=${ds.id}&uid=${viewer}&edit=0`)

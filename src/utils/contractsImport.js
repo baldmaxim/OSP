@@ -10,10 +10,10 @@ import {
   planAmendment,
 } from './contractAmendments'
 
-// --- Канонические колонки шаблона (ровно 29, порядок из ТЗ) ---
+// --- Канонические колонки шаблона ---
 // key — внутреннее имя, header — заголовок в Excel-шаблоне.
-// Заголовки обобщены под общий шаблон договоров и ДС: колонок по-прежнему 29,
-// порядок и смысл прежние.
+// Колонки сопоставляются по заголовкам, поэтому старые файлы (29 колонок, без
+// ДГП, путей и Larix) грузятся как раньше: отсутствующие колонки просто пусты.
 export const IMPORT_COLUMNS = [
   { key: 'record_type', header: 'Тип' },
   { key: 'parent_display_id', header: 'ID изменяемого документа' },
@@ -29,7 +29,9 @@ export const IMPORT_COLUMNS = [
   { key: 'tender', header: 'Тендер (необязательно)' },
   { key: 'work_name', header: 'Наименование работ' },
   { key: 'lawyer', header: 'Ответственный юрист' },
+  { key: 'handled_by_us', header: 'Ведёт наш отдел' },
   { key: 'contract_amount', header: 'Сумма по документу' },
+  { key: 'gp_amount', header: 'Сумма генподряда (ДГП)' },
   { key: 'currency', header: 'Валюта' },
   { key: 'vat_rate', header: 'Ставка НДС' },
   { key: 'amount_includes_vat', header: 'Хранение суммы' },
@@ -42,6 +44,10 @@ export const IMPORT_COLUMNS = [
   { key: 'signed_date', header: 'Дата подписания' },
   { key: 'warranty_period', header: 'Срок гарантии на работы' },
   { key: 'document_link', header: 'Ссылка на документ' },
+  { key: 'folder_path', header: 'Путь к папке' },
+  { key: 'signal_link', header: 'Путь к Signal' },
+  { key: 'larix_entered', header: 'Внесён в Larix' },
+  { key: 'larix_number', header: '№ в Larix' },
   { key: 'notes', header: 'Примечание' },
   { key: 'comments', header: 'Комментарии' },
 ]
@@ -87,14 +93,14 @@ export function mapHeaderRow(headerRow = []) {
   const fileNorms = headerRow.map((h) => normHeader(h))
   const byHeader = {}
   let matched = 0
-  IMPORT_COLUMNS.forEach((col, canonicalIdx) => {
+  IMPORT_COLUMNS.forEach((col) => {
     const target = normHeader(col.header)
     const j = fileNorms.findIndex((h) => h && h === target)
     if (j >= 0) {
       byHeader[col.key] = j
       matched++
     } else {
-      byHeader[col.key] = canonicalIdx // fallback: позиция по шаблону
+      byHeader[col.key] = null // колонки нет в файле — значение пустое
     }
   })
   // Если по заголовкам почти ничего не совпало — считаем, что порядок стандартный.
@@ -248,6 +254,16 @@ export function normalizeStatus(v) {
   return { error: true }
 }
 
+// --- Да / Нет --- → true | false | null (пусто)
+export function parseYesNo(v) {
+  if (v === true || v === false) return v
+  const s = nfold(v).replace(/\./g, '')
+  if (!s) return null
+  if (['да', 'yes', 'y', '1', '+', 'true', 'истина', 'внесен', 'внесён', 'ведет', 'ведёт'].includes(s)) return true
+  if (['нет', 'no', 'n', '0', '-', '—', 'false', 'ложь', 'не внесен', 'не внесён'].includes(s)) return false
+  return undefined
+}
+
 // --- Ссылка на документ --- (http/https или произвольный текст-ссылка; не ограничиваем GDrive)
 export function parseDocumentLink(v) {
   const s = v == null ? '' : String(v).trim()
@@ -314,6 +330,10 @@ export function validateRow(raw, ctx) {
   // Для ДС необязателен: контрагент наследуется от договора и переназначаться
   // не должен. Если он всё же указан и не совпадает — это ошибка, а не «тихое»
   // расхождение данных.
+  //
+  // ИНН главнее названия: найден один контрагент по ИНН — берём его, даже если
+  // название в файле записано иначе (или совпадает с другой компанией).
+  // Контрагенты из «Удалённых» к договору не привязываются.
   const inn = normInn(raw.counterparty_inn)
   const name = String(raw.counterparty_name == null ? '' : raw.counterparty_name).trim()
   const nameKey = normMatchName(name)
@@ -327,27 +347,28 @@ export function validateRow(raw, ctx) {
     const byInn = inn ? (ctx.cpByInn.get(inn) || []) : []
     const byName = nameKey ? (ctx.cpByName.get(nameKey) || []) : []
     if (inn) {
-      if (byInn.length === 0) {
-        errors.push({ key: 'counterparty_inn', message: 'Контрагент по ИНН не найден' })
-      } else if (byInn.length > 1) {
-        errors.push({ key: 'counterparty_inn', message: 'Найдено несколько контрагентов с таким ИНН' })
-      } else {
+      if (byInn.length === 1) {
         counterpartyId = byInn[0]
-        // ИНН и название указывают на разных контрагентов → ошибка.
-        if (byName.length === 1 && byName[0] !== counterpartyId) {
-          counterpartyId = null
-          errors.push({ key: 'counterparty_name', message: 'ИНН и название указывают на разных контрагентов' })
-          errors.push({ key: 'counterparty_inn', message: 'ИНН и название указывают на разных контрагентов' })
-        }
+      } else if (byInn.length > 1) {
+        // Несколько действующих с одним ИНН (филиалы, дубли) — уточняем названием.
+        const both = byInn.filter((id) => byName.includes(id))
+        if (both.length === 1) counterpartyId = both[0]
+        else errors.push({ key: 'counterparty_inn', message: 'Найдено несколько контрагентов с таким ИНН' })
+      } else if (ctx.cpDeletedByInn?.has(inn)) {
+        errors.push({ key: 'counterparty_inn', message: 'Контрагент с таким ИНН находится в «Удалённых» — восстановите его или укажите другого' })
+      } else {
+        errors.push({ key: 'counterparty_inn', message: 'Контрагент по ИНН не найден' })
       }
     } else {
       // ИНН пуст — ищем по названию.
-      if (byName.length === 0) {
-        errors.push({ key: 'counterparty_name', message: 'Контрагент по названию не найден' })
-      } else if (byName.length > 1) {
-        errors.push({ key: 'counterparty_name', message: 'Найдено несколько контрагентов с таким названием' })
-      } else {
+      if (byName.length === 1) {
         counterpartyId = byName[0]
+      } else if (byName.length > 1) {
+        errors.push({ key: 'counterparty_name', message: 'Найдено несколько контрагентов с таким названием — укажите ИНН' })
+      } else if (ctx.cpDeletedByName?.has(nameKey)) {
+        errors.push({ key: 'counterparty_name', message: 'Контрагент с таким названием находится в «Удалённых» — восстановите его или укажите другого' })
+      } else {
+        errors.push({ key: 'counterparty_name', message: 'Контрагент по названию не найден' })
       }
     }
   }
@@ -378,6 +399,28 @@ export function validateRow(raw, ctx) {
     const r = parseDate(raw[key])
     if (r.error) errors.push({ key, message: `${label}: неверная дата` })
     dates[key] = r.value || null
+  }
+
+  // 4б) Ответственный юрист — сотрудник из справочника по ФИО.
+  const lawyerName = String(raw.lawyer == null ? '' : raw.lawyer).trim()
+  let lawyerId = null
+  if (lawyerName) {
+    const byLawyer = ctx.contactByName?.get(normMatchName(lawyerName)) || []
+    if (byLawyer.length === 1) lawyerId = byLawyer[0]
+    else if (byLawyer.length > 1) errors.push({ key: 'lawyer', message: 'Найдено несколько сотрудников с таким ФИО' })
+    else errors.push({ key: 'lawyer', message: 'Ответственный юрист не найден в сотрудниках' })
+  }
+
+  // 4в) «Ведёт наш отдел», Larix
+  const handledRes = parseYesNo(raw.handled_by_us)
+  if (handledRes === undefined) errors.push({ key: 'handled_by_us', message: 'Ведёт наш отдел: укажите «Да» или «Нет»' })
+  const larixRes = parseYesNo(raw.larix_entered)
+  if (larixRes === undefined) errors.push({ key: 'larix_entered', message: 'Внесён в Larix: укажите «Да» или «Нет»' })
+  const larixNumber = textOrNull(raw.larix_number)
+  // Номер из Larix без отметки — значит, договор туда внесён.
+  const larixEntered = larixRes === true || (larixRes == null && !!larixNumber)
+  if (larixRes === false && larixNumber) {
+    errors.push({ key: 'larix_entered', message: 'Указан № в Larix, но «Внесён в Larix» — «Нет»' })
   }
 
   // 5) Статус
@@ -433,7 +476,7 @@ export function validateRow(raw, ctx) {
       counterparty_id: isDs ? (rootDoc?.counterparty_id ?? null) : counterpartyId,
       object_id: isDs ? (rootDoc?.object_id ?? null) : objectId,
       tender_id: null,                 // при импорте не привязываем
-      responsible_contact_id: null,    // юриста не назначаем
+      responsible_contact_id: lawyerId,
       work_name: textOrNull(raw.work_name),
       contract_amount: parseAmount(raw.contract_amount),
       currency: normalizeCurrency(raw.currency),
@@ -454,6 +497,22 @@ export function validateRow(raw, ctx) {
       email: textOrNull(raw.email),
       bsm: textOrNull(raw.bsm),
       comments: textOrNull(raw.comments),
+    }
+
+    // Необязательные поля — только когда заполнены: так строка без них грузится
+    // и в базу, где соответствующие миграции ещё не применены.
+    const gpAmount = parseAmount(raw.gp_amount)
+    if (gpAmount != null) payload.gp_amount = gpAmount
+    if (handledRes === true) payload.handled_by_us = true
+    const folderPath = textOrNull(raw.folder_path)
+    if (folderPath) payload.folder_path = folderPath
+    const signalLink = parseDocumentLink(raw.signal_link)
+    if (signalLink) payload.signal_link = signalLink
+    if (larixEntered) {
+      payload.larix_entered = true
+      payload.larix_number = larixNumber
+      payload.larix_entered_at = new Date().toISOString()
+      payload.larix_entered_by = ctx.authorName || 'Импорт из Excel'
     }
 
     if (isDs && parentDoc) {
@@ -483,7 +542,6 @@ function applyAmendmentInheritance(payload, raw, parentDoc, docIndex) {
 
   const changed = []
   for (const field of OVERRIDABLE_FIELDS) {
-    if (field === 'gp_amount') continue        // в шаблоне колонки нет
     if (filled(field)) { changed.push(field); continue }
     if (isChange) payload[field] = inherited?.[field] ?? null
   }

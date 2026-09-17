@@ -48,9 +48,10 @@ export function effectiveDocumentAmount(doc) {
   return Number.isFinite(value) ? value : null
 }
 
-// Коммерческие условия, которые ДС вправе переопределить. Идентичность договора
-// (номер, дата заключения, контрагент, объект) в список НЕ входит: ДС не должно
-// переназначить договор другому контрагенту.
+// Условия, которые ДС вправе переопределить. Закреплены и в список НЕ входят:
+// № договора, ID портала, объект, дата и контрагент — ДС не должно переназначить
+// договор. Служебные поля самого документа (статус, юрист, Larix, ссылки, пути,
+// примечание) тоже не наследуются: у каждого ДС они свои.
 export const OVERRIDABLE_FIELDS = [
   'contract_amount',
   'gp_amount',
@@ -64,6 +65,10 @@ export const OVERRIDABLE_FIELDS = [
   'warranty_retention_percent',
   'warranty_retention_period',
   'warranty_period',
+  'gen_director_name',
+  'phone',
+  'email',
+  'comments',
 ]
 
 export const OVERRIDABLE_FIELD_LABEL = {
@@ -79,6 +84,10 @@ export const OVERRIDABLE_FIELD_LABEL = {
   warranty_retention_percent: 'Гарантийное удержание',
   warranty_retention_period: 'Срок гарантийных удержаний',
   warranty_period: 'Срок гарантии на работы',
+  gen_director_name: 'ФИО ген.директора',
+  phone: 'Телефон',
+  email: 'Email',
+  comments: 'Комментарии',
 }
 
 // ── Дерево документов ───────────────────────────────────────────────────────
@@ -183,6 +192,37 @@ export function effectiveValues(base, index, options = {}) {
     if (hasAppliedPsdc(doc)) result.contract_amount = doc.psdc_total
   }
   return result
+}
+
+// Действующая редакция условий документа для ПОКАЗА (карточка, реестр).
+//
+// Договор (и ветка доп. работ) показывает условия с учётом завершённых ДС на
+// изменение ВОР своей ветки: иначе после завершения ДС карточка продолжала бы
+// показывать исходную редакцию. ДС на доп. работы в условия договора не
+// вмешиваются — это отдельные ветки, их сумма считается отдельно.
+// Сумма (contract_amount / psdc_total) здесь не подменяется — для неё есть
+// branchAmount / contractActualAmount, иначе сломалась бы логика ПСДЦ.
+//
+// Сама ДС на изменение ВОР показывается как есть: это её собственная редакция.
+// → { view, sources: { field: документ-источник }, applied: [завершённые ДС] }
+export function currentTerms(doc, index) {
+  if (!doc || !index || doc.record_type === DOC_TYPE.CHANGE) {
+    return { view: doc, sources: {}, applied: [] }
+  }
+  const view = { ...doc }
+  const sources = {}
+  const applied = []
+  for (const change of branchChain(doc, index)) {
+    if (change.id === doc.id) continue
+    if (!isCompleted(change)) break
+    applied.push(change)
+    for (const field of change.changed_fields || []) {
+      if (field === 'contract_amount' || !OVERRIDABLE_FIELDS.includes(field)) continue
+      view[field] = change[field]
+      sources[field] = change
+    }
+  }
+  return { view, sources, applied }
 }
 
 // Стоимость ветки = сумма её последнего завершённого состояния. Изменяющее ДС

@@ -3326,3 +3326,19 @@
 .cd-ds-item .cd-ds-amount { color: var(--text-secondary); }
 .cd-ds-item .cd-ds-amount { margin-left: auto; font-variant-numeric: tabular-nums; }
 .cd-ds-item .ds-type-badge { margin-top: 0; }
+
+/* Карточка договора: условие изменено завершённым ДС на изменение ВОР */
+.cd-term-src {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  color: var(--primary-color);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+.cd-term-src:hover { text-decoration: underline; }

@@ -28,6 +28,7 @@ import {
   buildDocIndex,
   collectChangedFields,
   contractActualAmount,
+  currentTerms,
   effectiveDocumentAmount,
   effectiveValues,
   hasAppliedPsdc,
@@ -600,7 +601,7 @@ function ContractRegistry() {
       // на нескольких тысячах строк это заметный лишний объём.
       const data = await fetchAllRows((from, to) => supabase
         .from('counterparties')
-        .select('id, name, inn')
+        .select('id, name, inn, deleted_at')
         .order('name', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to))
@@ -1053,9 +1054,11 @@ function ContractRegistry() {
   const availableContacts = contacts
 
   const filteredCounterparties = useMemo(() => {
+    // Контрагентов из «Удалённых» к договору не привязываем.
+    const live = counterparties.filter(cp => !cp.deleted_at)
     const q = counterpartySearch.trim().toLowerCase()
-    if (!q) return counterparties
-    return counterparties.filter(cp =>
+    if (!q) return live
+    return live.filter(cp =>
       (cp.name || '').toLowerCase().includes(q) ||
       (cp.inn || '').toLowerCase().includes(q)
     )
@@ -1752,7 +1755,9 @@ function ContractRegistry() {
       })
     } catch (error) {
       console.error('Ошибка Larix:', error.message)
-      alert('Ошибка: ' + error.message)
+      alert((error.code === 'PGRST204' || error.code === '42703') && /larix_/.test(error.message || '')
+        ? 'Отметка Larix недоступна: в базе нет колонок Larix. Примените миграцию 20260929_contracts_fixes (она же добавляет их, если миграция 20260805 не была применена).'
+        : 'Ошибка: ' + error.message)
     }
   }
 
@@ -2042,7 +2047,8 @@ function ContractRegistry() {
               const cardParties = contractParties(contract)
               const partiesText = cardParties.map(p => p.name).join(', ') || '—'
               const lawyerName = contactNameById[contract.responsible_contact_id] || contract.responsible?.full_name || '—'
-              const workName = contract.work_name || contract.tenders?.work_description || ''
+              const shown = liveChildren(contract, docIndex).length > 0 ? currentTerms(contract, docIndex).view : contract
+              const workName = shown.work_name || contract.tenders?.work_description || ''
               return (
                 <Link
                   key={contract.id}
@@ -2079,13 +2085,13 @@ function ContractRegistry() {
                     </div>
                     {/* Генподряд показываем только когда он заполнен — иначе на
                         телефоне карточка растёт прочерками. */}
-                    {contract.gp_amount != null && contract.gp_amount !== '' && (
+                    {shown.gp_amount != null && shown.gp_amount !== '' && (
                       <div className="mcard-row">
                         <span className="mcard-label">Сумма ДГП</span>
                         <span className="mcard-value">
-                          {formatMoney(contract.gp_amount, contract.currency) || '—'}
-                          {formatPercent(gpMarkup(contract)) && (
-                            <span className="amt-markup"> % ГП {formatPercent(gpMarkup(contract))}</span>
+                          {formatMoney(shown.gp_amount, shown.currency) || '—'}
+                          {formatPercent(gpMarkup(shown)) && (
+                            <span className="amt-markup"> % ГП {formatPercent(gpMarkup(shown))}</span>
                           )}
                         </span>
                       </div>
@@ -2181,6 +2187,8 @@ function ContractRegistry() {
                 const amendmentCount = liveChildren(contract, docIndex).length
                 const parentDoc = contract.parent_contract_id ? docIndex.byId.get(contract.parent_contract_id) : null
                 const actualAmount = amendmentCount > 0 ? contractActualAmount(contract, docIndex) : null
+                // Условия с учётом завершённых ДС на изменение ВОР (сумма — отдельно, выше).
+                const shown = amendmentCount > 0 ? currentTerms(contract, docIndex).view : contract
                 return (
                 <Fragment key={contract.id}>
                 <tr
@@ -2291,9 +2299,9 @@ function ContractRegistry() {
                       </ul>
                     )}
                   </td>
-                  <td className="cell-work" title={contract.work_name || contract.tenders?.work_description || ''}><span className="work-text">{contract.work_name || contract.tenders?.work_description || '—'}</span></td>
+                  <td className="cell-work" title={shown.work_name || contract.tenders?.work_description || ''}><span className="work-text">{shown.work_name || contract.tenders?.work_description || '—'}</span></td>
                   <td className="cell-amount">
-                    <AmountCell contract={contract} actual={actualAmount} />
+                    <AmountCell contract={shown} actual={actualAmount} />
                   </td>
                   <td className="cell-status" onClick={(e) => e.stopPropagation()}>
                     {isDeletedTab ? (
@@ -2436,21 +2444,21 @@ function ContractRegistry() {
                             {contract.display_id != null && (
                               <div className="ce-detail"><span className="ce-detail-l">ID портала</span><span className="ce-detail-v">{contract.display_id}</span></div>
                             )}
-                            <div className="ce-detail"><span className="ce-detail-l">Тип</span><span className="ce-detail-v">{contract.record_type === 'ds' ? 'ДС' : 'ДП'}</span></div>
-                            {contract.gen_director_name && (
-                              <div className="ce-detail"><span className="ce-detail-l">Ген.директор</span><span className="ce-detail-v">{contract.gen_director_name}</span></div>
+                            <div className="ce-detail"><span className="ce-detail-l">Тип</span><span className="ce-detail-v">{DOC_TYPE_SHORT[contract.record_type] || 'Договор'}</span></div>
+                            {shown.gen_director_name && (
+                              <div className="ce-detail"><span className="ce-detail-l">Ген.директор</span><span className="ce-detail-v">{shown.gen_director_name}</span></div>
                             )}
-                            {contract.phone && (
-                              <div className="ce-detail"><span className="ce-detail-l">Телефон</span><span className="ce-detail-v">{contract.phone}</span></div>
+                            {shown.phone && (
+                              <div className="ce-detail"><span className="ce-detail-l">Телефон</span><span className="ce-detail-v">{shown.phone}</span></div>
                             )}
-                            {contract.email && (
-                              <div className="ce-detail"><span className="ce-detail-l">Email</span><span className="ce-detail-v">{contract.email}</span></div>
+                            {shown.email && (
+                              <div className="ce-detail"><span className="ce-detail-l">Email</span><span className="ce-detail-v">{shown.email}</span></div>
                             )}
-                            {contract.bsm && (
-                              <div className="ce-detail"><span className="ce-detail-l">БСМ</span><span className="ce-detail-v">{contract.bsm}</span></div>
+                            {shown.bsm && (
+                              <div className="ce-detail"><span className="ce-detail-l">БСМ</span><span className="ce-detail-v">{shown.bsm}</span></div>
                             )}
-                            {contract.comments && (
-                              <div className="ce-detail ce-detail-wide"><span className="ce-detail-l">Комментарии</span><span className="ce-detail-v">{contract.comments}</span></div>
+                            {shown.comments && (
+                              <div className="ce-detail ce-detail-wide"><span className="ce-detail-l">Комментарии</span><span className="ce-detail-v">{shown.comments}</span></div>
                             )}
                           </div>
                         </section>
@@ -2761,6 +2769,8 @@ function ContractRegistry() {
           <ContractsImportModal
             counterparties={counterparties}
             objects={objects}
+            contacts={contacts}
+            refsReady={formRefsReady}
             onClose={() => setShowImportModal(false)}
             onImported={() => { setShowImportModal(false); fetchContracts() }}
           />
@@ -3097,7 +3107,7 @@ function ContractRegistry() {
                 </div>
 
                 <div className="form-group full-width">
-                  <label>Ссылка на документ (Google Drive)</label>
+                  <label>Ссылка на документ</label>
                   <input type="url" name="document_link" value={formData.document_link} onChange={handleInputChange} placeholder="https://docs.google.com/document/d/..." />
                 </div>
 

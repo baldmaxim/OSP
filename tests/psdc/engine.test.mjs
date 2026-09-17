@@ -440,7 +440,7 @@ describe('ПСДЦ: база данных', { skip }, () => {
   })
 
   // ── 70/71/120/121: статусы ───────────────────────────────────────────────
-  it('завершённое ДС: ПСДЦ не меняется до возврата на доработку', () => {
+  it('завершённое ДС принимает новую ПСДЦ без возврата на доработку (20260929)', () => {
     const base = newContract({ status: 'completed' })
     const ds = createDocument(db, { record_type: 'ds_vor', parent_contract_id: base.id, status: 'in_work', contract_amount: 100 })
     const rows = [section(2, '1', 'С'), process(3, '1.1', 'a', { volume: 1, materialPrice: 105 })]
@@ -449,19 +449,15 @@ describe('ПСДЦ: база данных', { skip }, () => {
     assert.equal(docTotal(ds.id), '105.00|100.00', 'карточка ДС показывает сумму ПСДЦ до завершения')
 
     db.exec(`UPDATE contracts SET status = 'completed' WHERE id = '${ds.id}';`)
-    const meta = sqlJson({ source_filename: 'x.xlsx', header: HEADER })
-    assert.match(tryRpc(db, lawyer, 'psdc_create', q(ds.id), 'NULL', meta).error, /завершено/)
-    assert.match(tryRpc(db, lawyer, 'psdc_delete', q(a.id)).error, /завершено/)
-
-    db.exec(`UPDATE contracts SET status = 'in_work' WHERE id = '${ds.id}';`)
+    assert.equal(rpc(db, lawyer, 'psdc_document_state', q(ds.id)).lock_reason, null)
     rpc(db, lawyer, 'psdc_delete', q(a.id))
     const b = stage(db, lawyer, { documentId: ds.id, rows: [section(2, '1', 'С'), process(3, '1.1', 'a', { volume: 1, materialPrice: 110 })] })
     rpc(db, lawyer, 'psdc_apply', q(b.id))
-    db.exec(`UPDATE contracts SET status = 'completed' WHERE id = '${ds.id}';`)
     assert.equal(docTotal(ds.id), '110.00|100.00')
+    assert.equal(db.exec(`SELECT status FROM contracts WHERE id = '${ds.id}';`).trim(), 'completed', 'статус не меняется')
   })
 
-  it('старый завершённый договор без ПСДЦ принимает первичную ПСДЦ; новый завершённый — нет', () => {
+  it('завершённый договор принимает ПСДЦ — и старый, и новый', () => {
     const old = newContract({ status: 'completed', contract_amount: 777, created_at: '2020-01-01T00:00:00Z' })
     const rows = [section(2, '1', 'С'), process(3, '1.1', 'a', { volume: 1, materialPrice: 800 })]
     const a = stage(db, lawyer, { documentId: old.id, rows })
@@ -469,9 +465,10 @@ describe('ПСДЦ: база данных', { skip }, () => {
     assert.equal(docTotal(old.id), '800.00|777.00')
     assert.equal(db.exec(`SELECT status || '|' || record_type FROM contracts WHERE id = '${old.id}';`).trim(), 'completed|dp')
 
-    const fresh = newContract({ status: 'completed' })
-    const meta = sqlJson({ source_filename: 'x.xlsx', header: HEADER })
-    assert.match(tryRpc(db, lawyer, 'psdc_create', q(fresh.id), 'NULL', meta).error, /завершён/)
+    const fresh = newContract({ status: 'completed', contract_amount: 5 })
+    const b = stage(db, lawyer, { documentId: fresh.id, rows })
+    rpc(db, lawyer, 'psdc_apply', q(b.id))
+    assert.equal(docTotal(fresh.id), '800.00|5.00')
   })
 
   // ── 103: права ───────────────────────────────────────────────────────────
@@ -601,7 +598,7 @@ describe('ПСДЦ: база данных', { skip }, () => {
     assert.equal(item(files.conflictA).conflict, true)
     assert.equal(item(files.conflictB).conflict, true)
     assert.equal(item(files.existing).document_has_applied, true)
-    assert.match(item(files.completed).lock_reason, /завершено/)
+    assert.equal(item(files.completed).lock_reason, null, 'завершённое ДС не заблокировано')
     assert.equal(item(files.good2).match_method, 'table')
     assert.equal(item(files.good2).state, 'validated')
 
@@ -614,7 +611,7 @@ describe('ПСДЦ: база данных', { skip }, () => {
     assert.equal(res.conflictA.ok, false)
     assert.equal(res.conflictB.ok, false)
     assert.equal(res.existing.ok, false)
-    assert.equal(res.completed.ok, false)
+    assert.equal(res.completed.ok, true)
     assert.equal(docTotal(good1.id), '100.00|1.00')
     assert.equal(docTotal(good2.id), '200.00|2.00')
     assert.equal(docTotal(conflictDoc.id), 'null|1000.00')

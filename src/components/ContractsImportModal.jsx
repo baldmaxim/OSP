@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx'
 import XLSXStyle from 'xlsx-js-style'
 import PizZip from 'pizzip'
 import { supabase } from '../supabase'
+import { useRole } from '../contexts/RoleContext'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import {
   IMPORT_COLUMNS,
@@ -46,8 +47,9 @@ function cellDisplay(v) {
 const DV_ANCHORS = ['<hyperlinks', '<printOptions', '<pageMargins', '<pageSetup', '<ignoredErrors', '</worksheet>']
 const xmlAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-function addListValidation(buffer, colIndex, values, title) {
-  if (colIndex == null || !values.length) return buffer
+function addListValidations(buffer, lists) {
+  const valid = lists.filter((l) => l.colIndex != null && l.values.length)
+  if (!valid.length) return buffer
   try {
     const zip = new PizZip(buffer)
     const path = 'xl/worksheets/sheet1.xml'
@@ -57,13 +59,16 @@ function addListValidation(buffer, colIndex, values, title) {
     const at = DV_ANCHORS.map((a) => xml.indexOf(a)).filter((i) => i >= 0).sort((a, b) => a - b)[0]
     if (at == null) return buffer
 
-    const col = XLSX.utils.encode_col(colIndex)
     const dv =
-      '<dataValidations count="1">' +
-      `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1"` +
-      ` errorTitle="${xmlAttr(title)}" error="Выберите значение из списка" sqref="${col}2:${col}2000">` +
-      `<formula1>"${xmlAttr(values.join(','))}"</formula1>` +
-      '</dataValidation></dataValidations>'
+      `<dataValidations count="${valid.length}">` +
+      valid.map(({ colIndex, values, title }) => {
+        const col = XLSX.utils.encode_col(colIndex)
+        return `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1"` +
+          ` errorTitle="${xmlAttr(title)}" error="Выберите значение из списка" sqref="${col}2:${col}2000">` +
+          `<formula1>"${xmlAttr(values.join(','))}"</formula1>` +
+          '</dataValidation>'
+      }).join('') +
+      '</dataValidations>'
     zip.file(path, xml.slice(0, at) + dv + xml.slice(at))
     return zip.generate({ type: 'arraybuffer', compression: 'DEFLATE' })
   } catch (err) {
@@ -99,7 +104,8 @@ function skipReasons(row) {
   })
 }
 
-function ContractsImportModal({ counterparties = [], objects = [], onClose, onImported }) {
+function ContractsImportModal({ counterparties = [], objects = [], contacts = [], refsReady = true, onClose, onImported }) {
+  const { userProfile } = useRole()
   const [step, setStep] = useState('select')     // select | preview | result
   const [fileName, setFileName] = useState('')
   const [parseError, setParseError] = useState('')
@@ -112,20 +118,29 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
   const [loadError, setLoadError] = useState('')
   const [resultInfo, setResultInfo] = useState(null) // { created, notLoaded: [...] }
 
-  // Индексы справочников для сопоставления (контрагенты без soft-deleted).
+  // Индексы справочников для сопоставления. Контрагенты из «Удалённых» к
+  // договору не привязываются — их держим отдельно, только чтобы объяснить ошибку.
   const ctxRefs = useMemo(() => {
     const cpByInn = new Map()
     const cpByName = new Map()
+    const cpDeletedByInn = new Set()
+    const cpDeletedByName = new Set()
     const objByName = new Map()
+    const contactByName = new Map()
     const pushMap = (m, k, id) => { if (!k) return; const a = m.get(k) || []; if (!a.includes(id)) a.push(id); m.set(k, a) }
     counterparties.forEach((cp) => {
-      if (cp.deleted_at) return
+      if (cp.deleted_at) {
+        if (normInn(cp.inn)) cpDeletedByInn.add(normInn(cp.inn))
+        if (normMatchName(cp.name)) cpDeletedByName.add(normMatchName(cp.name))
+        return
+      }
       pushMap(cpByInn, normInn(cp.inn), cp.id)
       pushMap(cpByName, normMatchName(cp.name), cp.id)
     })
     objects.forEach((o) => pushMap(objByName, normMatchName(o.name), o.id))
-    return { cpByInn, cpByName, objByName }
-  }, [counterparties, objects])
+    contacts.forEach((c) => pushMap(contactByName, normMatchName(c.full_name), c.id))
+    return { cpByInn, cpByName, cpDeletedByInn, cpDeletedByName, objByName, contactByName }
+  }, [counterparties, objects, contacts])
 
   // Существующие документы: нужны и для предупреждения «номер уже существует», и
   // для ДС — найти изменяемый документ по ID, проверить правила ветки и
@@ -181,7 +196,7 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
     if (!file) return
     setParseError('')
     setFileName(file.name)
-    if (existingNumbers == null || docs == null) {
+    if (existingNumbers == null || docs == null || !refsReady) {
       setParseError('Идёт загрузка справочников, повторите через мгновение.')
       e.target.value = ''
       return
@@ -205,6 +220,7 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
 
       const ctx = {
         ...ctxRefs,
+        authorName: userProfile?.full_name || null,
         existingNumbers,
         docIndex: docs.index,
         // Копия: по мере успешной загрузки строк файла пополняем её, чтобы
@@ -218,9 +234,10 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
         let nonEmpty = false
         for (const col of IMPORT_COLUMNS) {
           const c = colIndexByKey[col.key]
-          const cell = ws[XLSX.utils.encode_cell({ r, c })]
+          // Колонки нет в файле (старый шаблон) — значение пустое.
+          const cell = c == null ? null : ws[XLSX.utils.encode_cell({ r, c })]
           let val = cell ? cell.v : ''
-          if (col.key === 'document_link' && cell && cell.l && cell.l.Target) val = cell.l.Target
+          if ((col.key === 'document_link' || col.key === 'signal_link') && cell && cell.l && cell.l.Target) val = cell.l.Target
           raw[col.key] = val == null ? '' : val
           disp[col.key] = cell ? (cell.w != null ? cell.w : val) : ''
           if (raw[col.key] !== '' && raw[col.key] != null) nonEmpty = true
@@ -265,7 +282,11 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
     XLSX.utils.book_append_sheet(wb, ws, 'Договоры')
     const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
     downloadBlob(
-      addListValidation(buf, KEY_TO_CANONICAL.record_type, DOC_TYPES.map((t) => t.label), 'Тип документа'),
+      addListValidations(buf, [
+        { colIndex: KEY_TO_CANONICAL.record_type, values: DOC_TYPES.map((t) => t.label), title: 'Тип документа' },
+        { colIndex: KEY_TO_CANONICAL.handled_by_us, values: ['Да', 'Нет'], title: 'Ведёт наш отдел' },
+        { colIndex: KEY_TO_CANONICAL.larix_entered, values: ['Да', 'Нет'], title: 'Внесён в Larix' },
+      ]),
       'Шаблон_импорта_договоров.xlsx',
     )
   }
@@ -322,7 +343,7 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
   function downloadReport() {
     const rows = resultInfo?.notLoaded || []
     if (rows.length === 0) return
-    // Ровно тот же шаблон: те же 29 колонок, тот же порядок, те же заголовки.
+    // Ровно тот же шаблон: те же колонки, тот же порядок, те же заголовки.
     // Никаких служебных колонок, комментариев и листов — причины ошибок человек
     // читает на странице, а файл должен открываться и грузиться обратно как есть.
     const header = TEMPLATE_HEADERS
@@ -373,15 +394,20 @@ function ContractsImportModal({ counterparties = [], objects = [], onClose, onIm
                 Для ДС в колонке «Тип» выберите подвид, а в «ID изменяемого документа» укажите
                 ID документа, который это соглашение меняет.
               </p>
+              <p className="cim-hint">
+                Контрагент ищется по ИНН (название — только если ИНН пуст); контрагенты из
+                «Удалённых» не привязываются. Юрист — по ФИО из сотрудников. «Ведёт наш отдел»
+                и «Внесён в Larix» — «Да» / «Нет»; если заполнен «№ в Larix», отметка ставится сама.
+              </p>
               <div className="cim-select-actions">
                 <button type="button" className="btn-secondary" onClick={downloadTemplate}>Скачать шаблон</button>
-                <label className={`btn-primary cim-file-label${existingNumbers == null ? ' is-disabled' : ''}`}>
+                <label className={`btn-primary cim-file-label${existingNumbers == null || !refsReady ? ' is-disabled' : ''}`}>
                   Выбрать файл .xlsx
-                  <input type="file" accept=".xlsx" onChange={handleFile} disabled={existingNumbers == null} hidden />
+                  <input type="file" accept=".xlsx" onChange={handleFile} disabled={existingNumbers == null || !refsReady} hidden />
                 </label>
               </div>
               {loadError && <p className="cim-error">{loadError}</p>}
-              {existingNumbers == null && !loadError && <p className="cim-loading">Загрузка справочников…</p>}
+              {(existingNumbers == null || !refsReady) && !loadError && <p className="cim-loading">Загрузка справочников…</p>}
               {parseError && <p className="cim-error">{parseError}</p>}
             </div>
           )}

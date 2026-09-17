@@ -8,8 +8,10 @@ import {
   DOC_TYPE_LABEL,
   DOC_TYPE_SHORT,
   OVERRIDABLE_FIELD_LABEL,
+  branchAmount,
   buildDocIndex,
   contractActualAmount,
+  currentTerms,
   effectiveDocumentAmount,
   flattenTree,
   hasAppliedPsdc,
@@ -151,7 +153,7 @@ function ContractDetailPage() {
     try {
       const { data, error } = await supabase
         .from('contracts')
-        .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, contract_date, contract_amount, psdc_total, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period, changed_fields')
+        .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, contract_date, contract_amount, psdc_total, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period, gen_director_name, phone, email, comments, changed_fields')
         .or(`id.eq.${rootId},root_contract_id.eq.${rootId}`)
         .is('deleted_at', null)
       if (error) throw error
@@ -172,6 +174,13 @@ function ContractDetailPage() {
     () => (rootDoc ? flattenTree(rootDoc, docIndex) : []),
     [rootDoc, docIndex])
   const actualAmount = rootDoc ? contractActualAmount(rootDoc, docIndex) : null
+  // Действующая редакция условий: договор с учётом завершённых ДС на изменение
+  // ВОР. Закреплённые поля (№, ID, объект, дата, контрагент) ДС не трогают.
+  const selfDoc = contract ? docIndex.byId.get(contract.id) : null
+  const terms = useMemo(
+    () => (selfDoc ? currentTerms(selfDoc, docIndex) : { view: null, sources: {}, applied: [] }),
+    [selfDoc, docIndex])
+  const branchCurrentAmount = selfDoc && terms.applied.length > 0 ? branchAmount(selfDoc, docIndex) : null
 
   const fetchAdvances = useCallback(async () => {
     const { data } = await supabase
@@ -198,7 +207,25 @@ function ContractDetailPage() {
     return d.toLocaleDateString('ru-RU') + ', ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
   }
 
-  const currency = contract?.currency || 'RUB'
+  // Условия для показа: поля записи, поверх — изменённые завершёнными ДС.
+  const shown = contract
+    ? { ...contract, ...Object.fromEntries(Object.keys(terms.sources).map(f => [f, terms.view[f]])) }
+    : null
+  // Пометка «изменено ДС ID …» рядом со значением.
+  const withSource = (field, value) => {
+    const src = terms.sources[field]
+    if (!src) return value
+    return (
+      <>
+        {value || '—'}
+        <Link to={`/contracts/${src.id}`} className="cd-term-src" title={`Условие изменено дополнительным соглашением ID ${src.display_id}`}>
+          изм. ДС ID {src.display_id}
+        </Link>
+      </>
+    )
+  }
+
+  const currency = shown?.currency || 'RUB'
   const money = (amount) => formatMoney(amount, currency) || '—'
 
   // --- Примечание (task 185) ---
@@ -302,8 +329,8 @@ function ContractDetailPage() {
     : (contract.counterparties ? [contract.counterparties] : [])
   const statusLabel = STATUS_LABEL[contract.status] || contract.status
   const isDeleted = !!contract.deleted_at
-  const vatLabel = contract.vat_rate != null
-    ? `${contract.vat_rate}% (${contract.amount_includes_vat ? 'с НДС' : 'без НДС'})`
+  const vatLabel = shown.vat_rate != null
+    ? `${shown.vat_rate}% (${shown.amount_includes_vat ? 'с НДС' : 'без НДС'})`
     : null
   // Сумма документа: применённая ПСДЦ, иначе ручная (одно правило с реестром).
   const documentAmount = effectiveDocumentAmount(contract)
@@ -329,7 +356,9 @@ function ContractDetailPage() {
             </span>
             {contract.objects?.name && <span className="cd-chip"><span className="cd-chip-l">Объект</span> {contract.objects.name}</span>}
             {parties[0]?.name && <span className="cd-chip"><span className="cd-chip-l">Контрагент</span> {parties[0].name}</span>}
-            {money(documentAmount) !== '—' && <span className="cd-chip"><span className="cd-chip-l">{psdcApplied ? 'Сумма по ПСДЦ' : 'Сумма'}</span> {money(documentAmount)}</span>}
+            {branchCurrentAmount != null
+              ? <span className="cd-chip" title="С учётом завершённых ДС на изменение ВОР"><span className="cd-chip-l">Действующая сумма</span> {money(branchCurrentAmount)}</span>
+              : money(documentAmount) !== '—' && <span className="cd-chip"><span className="cd-chip-l">{psdcApplied ? 'Сумма по ПСДЦ' : 'Сумма'}</span> {money(documentAmount)}</span>}
             {contract.responsible?.full_name && <span className="cd-chip"><span className="cd-chip-l">Юрист</span> {contract.responsible.full_name}</span>}
             {contract.signed_date && <span className="cd-chip"><span className="cd-chip-l">План. подписания</span> {formatDate(contract.signed_date)}</span>}
           </div>
@@ -380,10 +409,24 @@ function ContractDetailPage() {
                   value={contract.changed_fields.map(f => OVERRIDABLE_FIELD_LABEL[f] || f).join(', ')}
                 />
               )}
+              {terms.applied.length > 0 && (
+                <InfoRow
+                  label="Действующая редакция"
+                  value={<span className="cd-terms-applied">
+                    с учётом ДС{' '}
+                    {terms.applied.map((d, i) => (
+                      <span key={d.id}>
+                        {i > 0 && ', '}
+                        <Link to={`/contracts/${d.id}`} style={{ color: 'var(--primary-color)' }}>ID {d.display_id}</Link>
+                      </span>
+                    ))}
+                  </span>}
+                />
+              )}
               <InfoRow label={isAmendment(contract) ? '№ ДС' : '№ договора'} value={contract.contract_number} />
               <InfoRow label="Дата" value={formatDate(contract.contract_date)} />
               <InfoRow label="Объект" value={contract.objects?.name} />
-              <InfoRow label={isAmendment(contract) ? 'Предмет ДС' : 'Описание работ'} value={contract.work_name || contract.tenders?.work_description} />
+              <InfoRow label={isAmendment(contract) ? 'Предмет ДС' : 'Описание работ'} value={withSource('work_name', shown.work_name || contract.tenders?.work_description)} />
               <InfoRow
                 label={familyTree.length > 0 && !isAmendment(contract) ? 'Исходная сумма' : 'Сумма'}
                 value={psdcApplied ? `${money(documentAmount)} (по ПСДЦ)` : money(documentAmount)}
@@ -391,18 +434,23 @@ function ContractDetailPage() {
               {psdcApplied && (
                 <InfoRow label="Ручная сумма" value={contract.contract_amount != null ? `${money(contract.contract_amount)} — действует, если удалить ПСДЦ` : 'не задана'} />
               )}
+              {branchCurrentAmount != null && Number(branchCurrentAmount) !== Number(documentAmount || 0) && (
+                <InfoRow label="Действующая сумма" value={`${money(branchCurrentAmount)} — с учётом изменений ВОР`} />
+              )}
               {/* Актуальную показываем, только когда завершённые ДС её изменили. */}
               {!isAmendment(contract) && actualAmount != null && Number(actualAmount) !== Number(documentAmount || 0) && (
                 <InfoRow label="Актуальная сумма" value={money(actualAmount)} />
               )}
-              <InfoRow label="Валюта" value={contract.currency || 'RUB'} />
-              <InfoRow label="Ставка НДС" value={vatLabel} />
+              <InfoRow label="Валюта" value={withSource('currency', shown.currency || 'RUB')} />
+              <InfoRow label="Ставка НДС" value={terms.sources.vat_rate || terms.sources.amount_includes_vat
+                ? withSource(terms.sources.vat_rate ? 'vat_rate' : 'amount_includes_vat', vatLabel)
+                : vatLabel} />
               <InfoRow label="Статус" value={statusLabel} />
               <InfoRow label="Ответственный" value={contract.responsible?.full_name} />
               {contract.document_link && (
                 <InfoRow
                   label="Документ"
-                  value={<a href={contract.document_link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)' }}>Открыть на Google Drive</a>}
+                  value={<a href={contract.document_link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)' }}>Открыть</a>}
                 />
               )}
             </div>
@@ -480,29 +528,29 @@ function ContractDetailPage() {
           <div className="contract-section">
             <h3>Сроки работ</h3>
             <div className="info-rows">
-              <InfoRow label="Начало работ" value={formatDate(contract.work_start_date)} />
-              <InfoRow label="Окончание работ" value={formatDate(contract.work_end_date)} />
+              <InfoRow label="Начало работ" value={withSource('work_start_date', formatDate(shown.work_start_date))} />
+              <InfoRow label="Окончание работ" value={withSource('work_end_date', formatDate(shown.work_end_date))} />
             </div>
           </div>
 
           <div className="contract-section">
             <h3>Гарантийные условия</h3>
             <div className="info-rows">
-              <InfoRow label="Срок гарантии" value={contract.warranty_period} />
-              <InfoRow label="Гарантийное удержание" value={contract.warranty_retention_percent ? `${contract.warranty_retention_percent}%` : null} />
-              <InfoRow label="Срок удержания" value={contract.warranty_retention_period} />
+              <InfoRow label="Срок гарантии" value={withSource('warranty_period', shown.warranty_period)} />
+              <InfoRow label="Гарантийное удержание" value={withSource('warranty_retention_percent', shown.warranty_retention_percent ? `${shown.warranty_retention_percent}%` : null)} />
+              <InfoRow label="Срок удержания" value={withSource('warranty_retention_period', shown.warranty_retention_period)} />
             </div>
           </div>
 
-          {(contract.gen_director_name || contract.phone || contract.email || contract.bsm || contract.comments) && (
+          {(shown.gen_director_name || shown.phone || shown.email || shown.bsm || shown.comments) && (
             <div className="contract-section">
               <h3>Дополнительно</h3>
               <div className="info-rows">
-                {contract.gen_director_name && <InfoRow label="ФИО ген.директора" value={contract.gen_director_name} />}
-                {contract.phone && <InfoRow label="Телефон" value={contract.phone} />}
-                {contract.email && <InfoRow label="Email" value={contract.email} />}
-                {contract.bsm && <InfoRow label="БСМ" value={contract.bsm} />}
-                {contract.comments && <InfoRow label="Комментарии" value={contract.comments} />}
+                {shown.gen_director_name && <InfoRow label="ФИО ген.директора" value={withSource('gen_director_name', shown.gen_director_name)} />}
+                {shown.phone && <InfoRow label="Телефон" value={withSource('phone', shown.phone)} />}
+                {shown.email && <InfoRow label="Email" value={withSource('email', shown.email)} />}
+                {shown.bsm && <InfoRow label="БСМ" value={withSource('bsm', shown.bsm)} />}
+                {shown.comments && <InfoRow label="Комментарии" value={withSource('comments', shown.comments)} />}
               </div>
             </div>
           )}
