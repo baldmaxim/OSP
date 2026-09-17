@@ -3980,3 +3980,15 @@
 [data-theme='dark'] .estimate-table tbody tr.estimate-empty-row td {
   background: rgba(148, 163, 184, 0.10);
 }
+
+/* Ответственный по тендеру — строкой под «Выполняемыми работами» */
+.tender-responsible-line { margin-top: 0.15rem; }
+.tender-responsible-name { font-weight: 600; color: var(--text-primary); }
+.tender-responsible-empty { color: var(--text-tertiary); font-style: italic; }
+.tender-responsible-phone {
+  margin-left: 0.5rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+.tender-responsible-phone:hover { color: var(--primary-color); text-decoration: underline; }

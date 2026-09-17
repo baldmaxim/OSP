@@ -1628,7 +1628,7 @@ function TenderDetailPage() {
     try {
       const { data: tenderData, error: tenderError } = await supabase
         .from('tenders')
-        .select('*, objects(name, status, address, map_link), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, materials_proposal_deadline, materials_proposal_link, responsible_contact:contacts!responsible_contact_id(id, full_name))')
+        .select('*, objects(name, status, address, map_link), responsible_contact:contacts!responsible_contact_id(id, full_name, position, phone), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, materials_proposal_deadline, materials_proposal_link, responsible_contact:contacts!responsible_contact_id(id, full_name))')
         .eq('id', tenderId)
         .single()
 
@@ -2233,6 +2233,24 @@ function TenderDetailPage() {
               <span className="tender-work-label">Выполняемые работы:</span> {tender.work_description}
             </p>
           )}
+          {/* Ответственный по тендеру. У тендера на материалы — сотрудник снабжения
+              из реестра (materials_resp_name), пока он не назначен — прежний контакт. */}
+          {(() => {
+            const name = (tender.tender_type === 'materials' && tender.materials_resp_name)
+              || tender.responsible_contact?.full_name
+            const contact = !(tender.tender_type === 'materials' && tender.materials_resp_name) ? tender.responsible_contact : null
+            return (
+              <p className="tender-work-description tender-responsible-line">
+                <span className="tender-work-label">Ответственный по тендеру:</span>{' '}
+                {name
+                  ? <span className="tender-responsible-name" title={contact?.position || undefined}>{name}</span>
+                  : <span className="tender-responsible-empty">не назначен</span>}
+                {contact?.phone && (
+                  <a className="tender-responsible-phone" href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`}>{contact.phone}</a>
+                )}
+              </p>
+            )
+          })()}
         </div>
         <div className="tender-header-right">
           {tender.created_at && (
