@@ -940,40 +940,6 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
-  // Сроки тендерных процедур в «Тендерах на материалы» — это сроки основного
-  // тендера (основное строительство): показываем их и правим там же, в основном
-  // тендере, чтобы оба раздела видели одно и то же.
-  const handleUpdateParentProcedureDate = async (materialsTender, field, value) => {
-    const parent = materialsTender.parent_tender
-    if (!parent?.id) {
-      alert('У тендера на материалы не найден основной тендер — срок указывается в основном тендере.')
-      return
-    }
-    const next = value || null
-    const prev = parent[field] ?? null
-    if ((prev || null) === next) return
-    try {
-      const { data, error } = await supabase.from('tenders').update({ [field]: next }).eq('id', parent.id).select('id')
-      if (error) throw error
-      if (!data || data.length === 0) {
-        alert('Срок не сохранён: нет прав на изменение основного тендера.')
-        return
-      }
-      setTenders(list => list.map(t => (t.parent_tender?.id === parent.id
-        ? { ...t, parent_tender: { ...t.parent_tender, [field]: next } }
-        : t)))
-      logTenderEvent(parent.id, 'field_updated', {
-        fieldName: field,
-        oldValue: prev,
-        newValue: next,
-        description: `Изменено из «Тендеров на материалы»: ${field === 'tender_start_date' ? 'Начало тендерных процедур' : 'Окончание тендерных процедур'}`,
-      })
-    } catch (err) {
-      console.error('Ошибка сохранения сроков тендерных процедур:', err.message)
-      alert('Ошибка: ' + err.message)
-    }
-  }
-
   const handleUpdateMaterialsDeadline = async (tenderId, value) => {
     try {
       const { error } = await supabase
@@ -2908,7 +2874,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   <div className="mcard-row">
                     <span className="mcard-label">Срок процедур</span>
                     <span className={`mcard-value${isOverdue(tender) ? ' is-overdue' : ''}`}>
-                      {formatDateRange(tender.tender_start_date, tender.tender_end_date)}
+                      {tender.parent_tender
+                        ? formatDateRange(tender.parent_tender.tender_start_date, tender.parent_tender.tender_end_date)
+                        : formatDateRange(tender.tender_start_date, tender.tender_end_date)}
                     </span>
                   </div>
                   {tenderProposalCounts[tender.id]?.total > 0 && (
@@ -3111,20 +3079,18 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             </span>
                           : <span className="mat-muted">—</span>}
                       </td>
-                      {/* Сроки тендерных процедур — основного тендера (основное строительство);
-                          правка отсюда записывается в основной тендер. */}
-                      <td className="mat-proc-dates">
+                      {/* Сроки тендерных процедур — из основного тендера (основное строительство).
+                          Здесь только просмотр: меняются исключительно в основном тендере. */}
+                      <td className="mat-proc-dates" title="Срок из тендера основного строительства — меняется там">
                         <DateRangeCell
                           start={tender.parent_tender?.tender_start_date}
                           end={tender.parent_tender?.tender_end_date}
-                          disabled={!canEditTenders || !tender.parent_tender?.id}
+                          disabled
                           overdue={!!tender.parent_tender?.tender_end_date
                             && tender.parent_tender.tender_end_date < today
                             && !isCompletedStatus(tender.status)}
                           showCountdown={!isCompletedStatus(tender.status)}
-                          onChange={(field, value) => handleUpdateParentProcedureDate(
-                            tender, field === 'start' ? 'tender_start_date' : 'tender_end_date', value,
-                          )}
+                          onChange={() => {}}
                         />
                       </td>
                       <td className={isMaterialsOverdue(tender) ? 'mat-deadline-overdue' : undefined}>
@@ -4582,6 +4548,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   />
                 </div>
 
+                {/* Сроки тендерных процедур задаются только у тендеров основного
+                    строительства; тендер на материалы показывает их из основного. */}
+                {!(isMaterialsView || materialsParentTender || editingTender?.tender_type === 'materials') && (
+                <>
                 <div className="form-group">
                   <label>Тендерная процедура: начало</label>
                   <input
@@ -4605,6 +4575,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     max="9999-12-31"
                   />
                 </div>
+                </>
+                )}
 
                 {editingTender && (
                   <>
