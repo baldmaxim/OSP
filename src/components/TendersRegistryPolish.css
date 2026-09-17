@@ -270,3 +270,6 @@
 .mat-notes-tools { flex: 0 0 auto; display: inline-flex; gap: 0.15rem; opacity: 0.55; transition: opacity 0.12s ease; }
 tr:hover .mat-notes-tools { opacity: 1; }
 .mat-notes-cell .tc-notes-textarea { min-height: 72px; font-size: 0.75rem; }
+
+/* Тендеры на материалы: сроки тендерных процедур основного тендера */
+.mat-proc-dates .drc { align-items: center; }

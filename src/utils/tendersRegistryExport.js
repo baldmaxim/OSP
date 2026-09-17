@@ -59,7 +59,7 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
         t.status || '',
         t.materials_resp_name || t.responsible_contact?.full_name || '',
         t.parent_tender?.responsible_contact?.full_name || '',
-        [fmtDate(t.tender_start_date), fmtDate(t.tender_end_date)].filter(Boolean).join(' — '),
+        [fmtDate(t.parent_tender?.tender_start_date), fmtDate(t.parent_tender?.tender_end_date)].filter(Boolean).join(' — '),
         fmtDate(t.materials_proposal_start_date),
         fmtDate(t.materials_proposal_deadline),
         t.materials_proposal_deadline && String(t.materials_proposal_deadline).slice(0, 10) < today
