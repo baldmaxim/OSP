@@ -940,6 +940,27 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
+  // Сроки тендерных процедур прямо из строки (тендеры на материалы).
+  const handleUpdateProcedureDate = async (tenderId, field, value) => {
+    const next = value || null
+    const prev = tenders.find(t => t.id === tenderId)?.[field] ?? null
+    if ((prev || null) === next) return
+    try {
+      const { error } = await supabase.from('tenders').update({ [field]: next }).eq('id', tenderId)
+      if (error) throw error
+      setTenders(list => list.map(t => (t.id === tenderId ? { ...t, [field]: next } : t)))
+      logTenderEvent(tenderId, 'field_updated', {
+        fieldName: field,
+        oldValue: prev,
+        newValue: next,
+        description: `Изменено: ${field === 'tender_start_date' ? 'Начало тендерных процедур' : 'Окончание тендерных процедур'}`,
+      })
+    } catch (err) {
+      console.error('Ошибка сохранения сроков тендерных процедур:', err.message)
+      alert('Ошибка: ' + err.message)
+    }
+  }
+
   const handleUpdateMaterialsDeadline = async (tenderId, value) => {
     try {
       const { error } = await supabase
@@ -1187,7 +1208,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     setNotesHistoryFor({
       tenderId: tender.id,
       scope: 'tender',
-      title: `Тендер № ${tender.public_tender_number ?? '—'} · ${tenderObjectName(tender)}`,
+      title: `Тендер № ${tenderNumberOf(tender) ?? "—"} · ${tenderObjectName(tender)}`,
     })
     setNotesHistoryRows([])
     setNotesHistoryLoading(true)
@@ -2933,6 +2954,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   <th style={{ width: '140px' }}>Ответственный<br />по тендеру</th>
                   <th
                     className="sortable-th"
+                    onClick={() => toggleSort('tender_start_date')}
+                    title="Сортировать по срокам тендерных процедур"
+                    style={{ width: '165px', textAlign: 'center' }}
+                  >
+                    Срок проведения<br />тендерных процедур{sortIndicator('tender_start_date')}
+                  </th>
+                  <th
+                    className="sortable-th"
                     onClick={() => toggleSort('materials_proposal_deadline')}
                     title="Сортировать по сроку"
                     style={{ width: '165px', textAlign: 'center' }}
@@ -2941,13 +2970,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   </th>
                   <th style={{ width: '140px' }}>Ссылка на КП</th>
                   <th style={{ width: '140px' }}>Статус</th>
+                  {!hideNotes && <th style={{ minWidth: '180px' }}>Примечание</th>}
                   <th className="actions-column" style={{ width: '90px' }}>Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedTenders.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="no-data">
+                    <td colSpan={hideNotes ? 11 : 12} className="no-data">
                       {activeTab === 'deleted'
                         ? 'В корзине нет тендеров на материалы'
                         : activeTab === 'all'
@@ -3062,6 +3092,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             </span>
                           : <span className="mat-muted">—</span>}
                       </td>
+                      <td>
+                        <DateRangeCell
+                          start={tender.tender_start_date}
+                          end={tender.tender_end_date}
+                          disabled={!canEditTenders}
+                          overdue={!!isOverdue(tender)}
+                          showCountdown={!isCompletedStatus(tender.status)}
+                          onChange={(field, value) => handleUpdateProcedureDate(tender.id, field === 'start' ? 'tender_start_date' : 'tender_end_date', value)}
+                        />
+                      </td>
                       <td className={isMaterialsOverdue(tender) ? 'mat-deadline-overdue' : undefined}>
                         {/* Период «с … по …»: «по» — прежний срок (materials_proposal_deadline),
                             по нему считаются просрочка и сортировка; «с» — новое поле. */}
@@ -3135,6 +3175,74 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           />
                         )}
                       </td>
+                      {!hideNotes && (
+                        <td className="mat-notes-cell">
+                          {tenderNotesEdit?.tenderId === tender.id ? (
+                            <div className="tc-notes-edit">
+                              <textarea
+                                className="tc-notes-textarea"
+                                autoFocus
+                                value={tenderNotesEdit.draft}
+                                onChange={(e) => {
+                                  const value = e.target.value
+                                  setTenderNotesEdit(prev => (prev && prev.tenderId === tender.id ? { ...prev, draft: value } : prev))
+                                }}
+                                onKeyDown={(e) => { if (e.key === 'Escape') setTenderNotesEdit(null) }}
+                                placeholder="Примечание по тендеру…"
+                                rows={3}
+                              />
+                              <div className="tc-notes-actions">
+                                <button
+                                  type="button"
+                                  className="tc-notes-btn tc-notes-btn-save"
+                                  onClick={() => handleSaveTenderNotes(tender)}
+                                  disabled={savingNotes}
+                                >
+                                  {savingNotes ? 'Сохранение…' : 'Сохранить'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="tc-notes-btn tc-notes-btn-cancel"
+                                  onClick={() => setTenderNotesEdit(null)}
+                                  disabled={savingNotes}
+                                >
+                                  Отмена
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mat-notes-view">
+                              {tender.notes
+                                ? <span className="mat-notes-text" title={tender.notes}>{tender.notes}</span>
+                                : <span className="mat-muted">—</span>}
+                              <span className="mat-notes-tools">
+                                {canEditTenders && (
+                                  <button
+                                    type="button"
+                                    className="tc-notes-icon"
+                                    onClick={() => setTenderNotesEdit({ tenderId: tender.id, draft: tender.notes || '' })}
+                                    title={tender.notes ? 'Редактировать примечание' : 'Добавить примечание'}
+                                    aria-label="Редактировать примечание"
+                                  >
+                                    <PencilIcon />
+                                  </button>
+                                )}
+                                {tender.notes && (
+                                  <button
+                                    type="button"
+                                    className="tc-notes-icon"
+                                    onClick={() => openTenderNotesHistory(tender)}
+                                    title="История изменений примечания"
+                                    aria-label="История изменений примечания"
+                                  >
+                                    <HistoryIcon />
+                                  </button>
+                                )}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                      )}
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
                           {/* task 246 (исправление): в тендер на материалы нельзя «заходить внутрь» —

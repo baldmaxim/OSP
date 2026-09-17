@@ -250,3 +250,23 @@
 
 /* Тендеры на материалы: ответственный по основному тендеру */
 .mat-main-resp { font-size: 0.75rem; color: var(--text-primary); white-space: nowrap; }
+
+/* Тендеры на материалы: примечание в строке */
+.mat-notes-view { display: flex; align-items: flex-start; gap: 0.35rem; min-width: 0; }
+.mat-notes-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.mat-notes-view > .mat-muted { flex: 1 1 auto; }
+.mat-notes-tools { flex: 0 0 auto; display: inline-flex; gap: 0.15rem; opacity: 0.55; transition: opacity 0.12s ease; }
+tr:hover .mat-notes-tools { opacity: 1; }
+.mat-notes-cell .tc-notes-textarea { min-height: 72px; font-size: 0.75rem; }

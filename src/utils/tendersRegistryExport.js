@@ -46,7 +46,7 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
     // № — номер основного тендера (как в интерфейсе); у самой записи на материалы
     // свой номер из общей последовательности, людям он не нужен.
     const headers = ['№ тендера', 'Объект', 'Описание работ', 'Приоритет', 'Шифр РД', 'Статус',
-      'Ответственный (снабжение)', 'Ответственный по тендеру', 'Начало предоставления КП', 'Срок предоставления КП на материалы', 'Срок истёк', 'Ссылка на КП на материалы', 'Путь к папке']
+      'Ответственный (снабжение)', 'Ответственный по тендеру', 'Срок проведения тендерных процедур', 'Начало предоставления КП', 'Срок предоставления КП на материалы', 'Срок истёк', 'Ссылка на КП на материалы', 'Путь к папке']
     if (!hideNotes) headers.push('Примечание')
     const rows = tenders.map((t) => {
       const row = [
@@ -59,6 +59,7 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
         t.status || '',
         t.materials_resp_name || t.responsible_contact?.full_name || '',
         t.parent_tender?.responsible_contact?.full_name || '',
+        [fmtDate(t.tender_start_date), fmtDate(t.tender_end_date)].filter(Boolean).join(' — '),
         fmtDate(t.materials_proposal_start_date),
         fmtDate(t.materials_proposal_deadline),
         t.materials_proposal_deadline && String(t.materials_proposal_deadline).slice(0, 10) < today
