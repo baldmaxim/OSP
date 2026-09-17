@@ -145,10 +145,23 @@ function ReportsPage() {
   // isSuperAdmin — доступ по e-mail из SUPER_ADMINS (RoleContext). Отчёт «Работа
   // инженеров» показывает персональную активность сотрудников, поэтому виден только
   // владельцу системы, а не всем администраторам.
-  const { scopedObjectIds, isSuperAdmin } = useRole()
+  const { scopedObjectIds, isSuperAdmin, canView } = useRole()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
-  const [activeTab, setActiveTab] = useState('tenders')
+  // Какие отчёты видны роли. С правом «Отчёты: все вкладки» (reports_full, миграция
+  // 20260930 выдала его всем ролям, у которых отчёты уже были) — все, как раньше.
+  // Без него — только отчёты рабочих разделов: у «Сметный отдел_Руководители»
+  // в отчётах остаются одни «ВОРы и РД».
+  const fullReports = canView('reports_full')
+  const allowedTabs = fullReports
+    ? ['tenders', 'winners', 'materials', 'cost_plans', 'vors', 'contracts', ...(isSuperAdmin ? ['activity'] : [])]
+    : [
+        ...(canView('vors') || canView('tenders') ? ['vors'] : []),
+        ...(canView('tenders_materials') ? ['materials'] : []),
+      ]
+  const [activeTabState, setActiveTab] = useState(() => allowedTabs[0] || 'tenders')
+  // Выбранная вкладка, которой роли не положено (права сменились), подменяется первой доступной.
+  const activeTab = allowedTabs.includes(activeTabState) ? activeTabState : allowedTabs[0]
   // null = обзор, 'construction' | 'warranty' = детализация по выбранному отделу
   const [tDeptView, setTDeptView] = useState(null)
   // task: сырые основные тендеры + момент загрузки (для фильтрации без повторных запросов)
@@ -569,6 +582,15 @@ function ReportsPage() {
   }
   if (!stats) return null
   const s = stats
+  // Права есть на «Отчёты», но ни на одну вкладку — объясняем, а не рисуем пустую страницу.
+  if (allowedTabs.length === 0) {
+    return (
+      <div className="reports-page">
+        <div className="reports-header"><h2>Отчёты</h2></div>
+        <div className="reports-loading">Для вашей роли нет доступных отчётов. Обратитесь к администратору.</div>
+      </div>
+    )
+  }
 
   const pct = (a, b) => b > 0 ? Math.round((a / b) * 100) : 0
   const fmtMoney = (n) => {
@@ -602,7 +624,7 @@ function ReportsPage() {
     // Счётчик не показываем: данные вкладки грузятся отдельно, по выбранному дню.
     // Вкладка только для владельца системы — это персональная активность сотрудников.
     ...(isSuperAdmin ? [{ key: 'activity', label: 'Работа инженеров', icon: '📞', count: null }] : []),
-  ]
+  ].filter(tab => allowedTabs.includes(tab.key))
   const updatedLabel = loadedAt
     ? `Обновлено: сегодня, ${loadedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
     : null
@@ -612,7 +634,7 @@ function ReportsPage() {
       <div className="reports-header">
         <div>
           <h2>Отчёты</h2>
-          <div className="reports-subtitle">Аналитика по тендерам</div>
+          <div className="reports-subtitle">{fullReports ? 'Аналитика по тендерам' : 'Аналитика по вашим разделам'}</div>
         </div>
         <div className="report-toolbar">
           {updatedLabel && <span className="reports-updated">{updatedLabel}</span>}
