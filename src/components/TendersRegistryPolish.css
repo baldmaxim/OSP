@@ -247,3 +247,6 @@
 }
 .vor-phase-dates.is-overdue { color: #dc2626; font-weight: 600; }
 [data-theme='dark'] .vor-phase-dates.is-overdue { color: #fca5a5; }
+
+/* Тендеры на материалы: ответственный по основному тендеру */
+.mat-main-resp { font-size: 0.75rem; color: var(--text-primary); white-space: nowrap; }

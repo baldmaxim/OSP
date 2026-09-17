@@ -519,7 +519,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         if (parentIds.length > 0) {
           const { data: parents, error: parentsError } = await supabase
             .from('tenders')
-            .select('id, public_tender_number, work_description, objects(name)')
+            .select('id, public_tender_number, work_description, objects(name), responsible_contact:contacts!responsible_contact_id(id, full_name)')
             .in('id', parentIds)
           if (parentsError) {
             console.error('Не удалось загрузить родительские тендеры:', parentsError.message)
@@ -2929,7 +2929,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   >
                     Приоритет{sortIndicator('materials_priority')}
                   </th>
-                  <th style={{ width: '170px' }}>Ответственный</th>
+                  <th style={{ width: '170px' }}>Ответственный<br />снабжение</th>
+                  <th style={{ width: '140px' }}>Ответственный<br />по тендеру</th>
                   <th
                     className="sortable-th"
                     onClick={() => toggleSort('materials_proposal_deadline')}
@@ -2946,7 +2947,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               <tbody>
                 {sortedTenders.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="no-data">
+                    <td colSpan={10} className="no-data">
                       {activeTab === 'deleted'
                         ? 'В корзине нет тендеров на материалы'
                         : activeTab === 'all'
@@ -3052,6 +3053,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             </>
                           )
                         })()}
+                      </td>
+                      {/* Ответственный по основному тендеру (основное строительство). */}
+                      <td className="mat-main-resp">
+                        {tender.parent_tender?.responsible_contact?.full_name
+                          ? <span title={tender.parent_tender.responsible_contact.full_name}>
+                              {shortPersonName(tender.parent_tender.responsible_contact.full_name)}
+                            </span>
+                          : <span className="mat-muted">—</span>}
                       </td>
                       <td className={isMaterialsOverdue(tender) ? 'mat-deadline-overdue' : undefined}>
                         {/* Период «с … по …»: «по» — прежний срок (materials_proposal_deadline),

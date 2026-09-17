@@ -46,7 +46,7 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
     // № — номер основного тендера (как в интерфейсе); у самой записи на материалы
     // свой номер из общей последовательности, людям он не нужен.
     const headers = ['№ тендера', 'Объект', 'Описание работ', 'Приоритет', 'Шифр РД', 'Статус',
-      'Ответственный', 'Начало предоставления КП', 'Срок предоставления КП на материалы', 'Срок истёк', 'Ссылка на КП на материалы', 'Путь к папке']
+      'Ответственный (снабжение)', 'Ответственный по тендеру', 'Начало предоставления КП', 'Срок предоставления КП на материалы', 'Срок истёк', 'Ссылка на КП на материалы', 'Путь к папке']
     if (!hideNotes) headers.push('Примечание')
     const rows = tenders.map((t) => {
       const row = [
@@ -58,6 +58,7 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
         rdCodesText(rdCodesByTender.get(t.parent_tender_id) || rdCodesByTender.get(t.id) || []),
         t.status || '',
         t.materials_resp_name || t.responsible_contact?.full_name || '',
+        t.parent_tender?.responsible_contact?.full_name || '',
         fmtDate(t.materials_proposal_start_date),
         fmtDate(t.materials_proposal_deadline),
         t.materials_proposal_deadline && String(t.materials_proposal_deadline).slice(0, 10) < today
@@ -131,7 +132,7 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
 
 const COL_WIDTH = {
   '№ тендера': 10, 'Основной тендер №': 12, 'Объект': 28, 'Адрес объекта': 30, 'Описание работ': 44, 'Шифр РД': 34,
-  'Статус': 22, 'Ответственный по тендеру': 26, 'Ответственный': 26, 'Победитель': 30, 'Примечание': 40,
+  'Статус': 22, 'Ответственный по тендеру': 26, 'Ответственный': 26, 'Ответственный (снабжение)': 26, 'Победитель': 30, 'Примечание': 40,
   'Путь к папке': 40,
 }
 
