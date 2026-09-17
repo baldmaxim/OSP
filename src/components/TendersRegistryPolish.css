@@ -236,3 +236,14 @@
 
 .fdrop-panel .mat-person,
 .fdrop-panel .mat-prio-chip { font-size: 0.8125rem; }
+
+/* Столбец «ВОРы и РД»: срок подготовки ВОР под статусом */
+.vor-phase-dates {
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.vor-phase-dates.is-overdue { color: #dc2626; font-weight: 600; }
+[data-theme='dark'] .vor-phase-dates.is-overdue { color: #fca5a5; }

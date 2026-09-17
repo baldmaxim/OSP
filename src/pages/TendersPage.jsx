@@ -21,6 +21,8 @@ import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
 import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
 import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
+import { shortPersonName } from '../utils/personName'
+import { formatDateRange as formatShortDateRange } from '../utils/dateRange'
 import {
   fetchSupplyEmployees, materialsResponsibleOf, isMissingMaterialsColumnError, SUPPLY_MIGRATION_HINT,
   MATERIALS_PRIORITY_OPTIONS, MATERIALS_PRIORITY_LABEL, personInitials,
@@ -3438,9 +3440,26 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             </span>
                           </button>
                         </div>
+                        {/* Срок подготовки ВОР; просроченный (ВОР не закрыт) — красным. */}
+                        {(tender.vor_start_date || tender.vor_end_date) && (() => {
+                          const closed = ['completed', 'not_required'].includes(tender.vor_status)
+                          const overdue = !closed && !!tender.vor_end_date
+                            && tender.vor_end_date < new Date().toISOString().slice(0, 10)
+                          return (
+                            <div
+                              className={`vor-phase-dates${overdue ? ' is-overdue' : ''}`}
+                              title={overdue ? 'Срок подготовки ВОР истёк' : 'Срок подготовки ВОР'}
+                            >
+                              {formatShortDateRange(tender.vor_start_date, tender.vor_end_date)}
+                            </div>
+                          )
+                        })()}
                         {vorResponsibleName(tender) && (
-                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
-                            {vorResponsibleName(tender)}
+                          <div
+                            style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}
+                            title={vorResponsibleName(tender)}
+                          >
+                            {shortPersonName(vorResponsibleName(tender))}
                           </div>
                         )}
                       </td>

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { formatDateRange } from '../utils/dateRange'
 import './DateRangeCell.css'
 
 // Срок «с … по …» в строке таблицы: читаемым текстом вместо двух системных полей
@@ -28,18 +29,7 @@ function parts(iso) {
   return m ? { y: m[1], m: m[2], d: m[3] } : null
 }
 
-// «10.09 — 23.09.2026»; год у начала — только если годы разные.
-export function formatDateRange(start, end) {
-  const s = parts(start)
-  const e = parts(end)
-  if (s && e) {
-    const left = s.y === e.y ? `${s.d}.${s.m}` : `${s.d}.${s.m}.${s.y}`
-    return `${left} — ${e.d}.${e.m}.${e.y}`
-  }
-  if (s) return `с ${s.d}.${s.m}.${s.y}`
-  if (e) return `до ${e.d}.${e.m}.${e.y}`
-  return ''
-}
+export { formatDateRange }
 
 // Сколько дней до окончания (отрицательное — просрочено), по календарным дням.
 function daysUntil(iso) {
