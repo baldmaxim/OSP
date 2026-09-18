@@ -192,6 +192,9 @@ function AdminPage() {
           has_role: !!r,
           created_at: au.created_at,
           last_sign_in_at: au.last_sign_in_at,
+          // null — почта не подтверждена; undefined — функция старая (до 20261002),
+          // статус неизвестен и не показывается.
+          email_confirmed_at: au.email_confirmed_at,
           last_login_at: r?.last_login_at || null,
         }
       })
@@ -236,6 +239,23 @@ function AdminPage() {
         : userStatus(u) === 'blocked' ? 'Пользователь разблокирован' : 'Доступ подтверждён')
     } catch (err) {
       notify('err', isBlockColumnMissing(err) ? BLOCK_MIGRATION_HINT : 'Ошибка: ' + err.message)
+    }
+  }
+
+  // Ссылка из письма не сработала (устарела, отменена новым письмом, её «прокликал»
+  // почтовый фильтр) — администратор подтверждает почту сам.
+  const handleConfirmEmail = async (u) => {
+    if (!window.confirm(`Подтвердить почту ${u.email || ''} без ссылки из письма?`)) return
+    try {
+      const { error } = await supabase.rpc('admin_confirm_user_email', { target_user_id: u.user_id })
+      if (error) {
+        const missing = error.code === 'PGRST202' || /admin_confirm_user_email/.test(error.message || '')
+        throw new Error(missing ? 'в базе не применена миграция 20261002_admin_email_confirmation' : error.message)
+      }
+      await fetchUsers({ silent: true })
+      notify('ok', 'Почта подтверждена — пользователь может войти')
+    } catch (err) {
+      notify('err', 'Ошибка: ' + err.message)
     }
   }
 
@@ -649,6 +669,12 @@ function AdminPage() {
                                 <span className="user-cell-name">{u.full_name || <span className="muted">Без имени</span>}</span>
                                 <span className="user-cell-contact">{u.email || '—'}</span>
                                 {u.work_phone && <span className="user-cell-contact">{u.work_phone}</span>}
+                                {u.email_confirmed_at === null && (
+                                  <span className="user-cell-unconfirmed" title="Пользователь не перешёл по ссылке из письма (или ссылка не сработала). Подтвердить можно в меню «Ещё».">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
+                                    e-mail не подтверждён
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -665,6 +691,7 @@ function AdminPage() {
                                 status={st}
                                 onEdit={() => setEditUser(u)}
                                 onSetStatus={(next) => setUserStatus(u, next)}
+                                onConfirmEmail={u.email_confirmed_at === null ? () => handleConfirmEmail(u) : null}
                                 onDelete={() => handleDeleteUser(u)}
                               />
                             </div>

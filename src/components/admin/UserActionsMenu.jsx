@@ -5,7 +5,8 @@ import { useState, useRef, useEffect } from 'react'
 // onSetStatus(next) — 'active' | 'blocked'. Приглашённого можно и подтвердить, и
 // заблокировать сразу — раньше был только один пункт, и заблокировать того, кто
 // ни разу не входил, было нельзя.
-export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete }) {
+// onConfirmEmail — только у тех, кто не подтвердил почту (иначе null).
+export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete, onConfirmEmail = null }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 
@@ -48,6 +49,12 @@ export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete 
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Редактировать
           </button>
+          {onConfirmEmail && (
+            <button type="button" role="menuitem" className="adm-menu-item" onClick={() => run(onConfirmEmail)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
+              Подтвердить e-mail
+            </button>
+          )}
           {status === 'pending' && (
             <button type="button" role="menuitem" className="adm-menu-item" onClick={() => run(() => onSetStatus('active'))}>
               <IconCheck /> Подтвердить доступ

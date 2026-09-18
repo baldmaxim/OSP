@@ -175,3 +175,19 @@
 
 /* Приём заявок подрядчиков остановлен — пояснение вместо ссылки. */
 .login-signup-paused { text-align: center; margin: 0 0 0.5rem; }
+
+/* Повторное письмо подтверждения почты */
+.login-resend { display: flex; justify-content: center; margin: -0.25rem 0 1rem; }
+.login-resend-btn {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--primary-color, #0891b2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--primary-color, #0891b2);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.login-resend-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--primary-color, #0891b2) 10%, transparent); }
+.login-resend-btn:disabled { opacity: 0.6; cursor: default; }

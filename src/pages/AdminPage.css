@@ -768,3 +768,15 @@
   background: var(--bg-tertiary);
   font-size: 0.875rem;
 }
+
+/* Почта не подтверждена (ссылка из письма не сработала) */
+.user-cell-unconfirmed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #b45309;
+}
+[data-theme='dark'] .user-cell-unconfirmed { color: #fcd34d; }

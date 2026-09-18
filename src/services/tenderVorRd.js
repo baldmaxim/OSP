@@ -31,24 +31,58 @@ export function isMissingTableError(err, table) {
     || (msg.includes(table) && (msg.includes('does not exist') || msg.includes('schema cache')))
 }
 
+// Сколько ждём каждый запрос окна. Повисший запрос (например, таблица занята
+// незавершённой транзакцией миграции) иначе держал «Загрузка…» до обрыва
+// соединения и заканчивался невнятным «TypeError: Failed to fetch».
+const LOAD_TIMEOUT_MS = 15000
+
+// Поля файла, которые читают панель, превью и удаление.
+const DOC_COLUMNS = 'id, owner_type, owner_id, doc_category, file_name, s3_key, mime_type, size_bytes, created_at, uploaded_by_name'
+
+// Ошибка сети / таймаута, а не ответа базы: postgrest-js отдаёт её сообщением
+// «TypeError: Failed to fetch», «TimeoutError: …», «AbortError: …».
+export function isNetworkError(err) {
+  const text = `${err?.name || ''} ${err?.message || ''}`
+  return /Failed to fetch|NetworkError|Load failed|TimeoutError|AbortError|aborted|timed out/i.test(text)
+}
+
+// Текст для человека: что именно не загрузилось и почему.
+export function describeLoadError(err, what) {
+  if (isNetworkError(err)) {
+    return `Нет ответа от сервера при загрузке: ${what}. Повторите через минуту — если не поможет, сообщите администратору.`
+  }
+  return `Не удалось загрузить ${what}: ${err?.message || err}`
+}
+
 export async function loadVorRd(tenderId) {
+  const withTimeout = (builder) => builder.abortSignal(AbortSignal.timeout(LOAD_TIMEOUT_MS))
+  // Части окна независимы: зависшие шифры не должны прятать уже загруженные
+  // файлы. Запросы supabase не бросают исключений (ошибка — в .error), поэтому
+  // Promise.all дожидается обоих, а разбираем каждую часть отдельно.
   const [docsRes, codesRes] = await Promise.all([
-    supabase
+    withTimeout(supabase
       .from('s3_documents')
-      .select('*')
+      .select(DOC_COLUMNS)
       .eq('owner_type', 'tender')
       .eq('owner_id', tenderId)
       .in('doc_category', VOR_RD_CATEGORIES)
-      .order('created_at', { ascending: false }),
-    supabase
+      .order('created_at', { ascending: false })),
+    withTimeout(supabase
       .from('tender_rd_codes')
       .select('id, code, title, sort_order, created_at')
       .eq('tender_id', tenderId)
       .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: true }),
+      .order('created_at', { ascending: true })),
   ])
-  if (docsRes.error) throw docsRes.error
-  if (codesRes.error) throw codesRes.error
+  // Без файлов показывать нечего — это ошибка всего окна.
+  if (docsRes.error) {
+    const e = new Error(describeLoadError(docsRes.error, 'файлы'))
+    e.cause = docsRes.error
+    throw e
+  }
+  // Таблицы шифров нет — раздел не настроен (миграция 20260901): как раньше, ошибка окна.
+  if (codesRes.error && isMissingTableError(codesRes.error, 'tender_rd_codes')) throw codesRes.error
+  const codesError = codesRes.error ? describeLoadError(codesRes.error, 'шифры РД') : null
 
   const docs = docsRes.data || []
   const rdDocs = docs.filter(d => d.doc_category === RD_CATEGORY)
@@ -58,14 +92,15 @@ export async function loadVorRd(tenderId) {
   // не роняет раздел — возвращаем флаг, панель предупредит.
   let links = []
   let linksMissing = false
+  let linksError = null
   if (rdDocs.length > 0) {
-    const { data, error } = await supabase
+    const { data, error } = await withTimeout(supabase
       .from('tender_rd_document_codes')
       .select('document_id, rd_code_id')
-      .in('document_id', rdDocs.map(d => d.id))
+      .in('document_id', rdDocs.map(d => d.id)))
     if (error) {
       if (isMissingTableError(error, 'tender_rd_document_codes')) linksMissing = true
-      else throw error
+      else linksError = describeLoadError(error, 'шифры у файлов РД')
     } else {
       links = data || []
     }
@@ -83,6 +118,9 @@ export async function loadVorRd(tenderId) {
     vorDocs: docs.filter(d => d.doc_category === VOR_STATEMENT_CATEGORY),
     legacyDocs: docs.filter(d => d.doc_category === LEGACY_VOR_CATEGORY),
     linksMissing,
+    // Частичные сбои: файлы видны, но без шифров — правка шифров закрыта.
+    codesError,
+    linksError,
   }
 }
 

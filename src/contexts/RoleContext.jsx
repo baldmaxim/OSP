@@ -422,10 +422,17 @@ export function RoleProvider({ children }) {
   // включено, поэтому на момент регистрации сессии ещё нет и строку заявки в
   // user_roles создать нельзя — данные подрядчика (компания, ФИО, телефон)
   // доезжают вместе с аккаунтом и превращаются в заявку при первом входе.
+  // Куда вернёт ссылка из письма: на страницу входа того же сайта, где
+  // регистрировались, — там показывается, подтвердилась ли почта. Адрес должен
+  // быть в Supabase → Auth → URL Configuration → Redirect URLs, иначе Supabase
+  // вернёт на Site URL (подтверждение от этого не ломается).
+  const confirmRedirectUrl = (contractor) =>
+    `${window.location.origin}${contractor ? '/partner' : '/login'}`
+
   const signUp = async (email, password, meta = null) => {
-    const { data, error } = await supabase.auth.signUp(
-      meta ? { email, password, options: { data: meta } } : { email, password }
-    )
+    const options = { emailRedirectTo: confirmRedirectUrl(meta?.kind === 'contractor') }
+    if (meta) options.data = meta
+    const { data, error } = await supabase.auth.signUp({ email, password, options })
     if (error) throw error
     // Если в Supabase выключено подтверждение почты, signUp сразу отдаёт сессию.
     // Входить так нельзя — доступ открывает администратор (is_approved), а заявка
@@ -434,6 +441,17 @@ export function RoleProvider({ children }) {
     const needsEmailConfirmation = !data?.session
     if (data?.session) await supabase.auth.signOut()
     return { ...data, needsEmailConfirmation }
+  }
+
+  // Повторное письмо подтверждения: ссылка из прежнего письма устарела (срок
+  // жизни ограничен) или отменена следующей попыткой регистрации.
+  const resendConfirmation = async (email, { contractor = false } = {}) => {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: confirmRedirectUrl(contractor) },
+    })
+    if (error) throw error
   }
 
   // Обновить профиль
@@ -580,6 +598,7 @@ export function RoleProvider({ children }) {
       loginWithPassword,
       loginAsContractor,
       signUp,
+      resendConfirmation,
       logout,
       canView,
       canEdit,

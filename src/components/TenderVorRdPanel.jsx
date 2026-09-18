@@ -54,7 +54,7 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
   const { userProfile } = useRole()
   const byName = userProfile?.full_name || null
 
-  const [data, setData] = useState({ codes: [], rdDocs: [], vorDocs: [], legacyDocs: [], linksMissing: false })
+  const [data, setData] = useState({ codes: [], rdDocs: [], vorDocs: [], legacyDocs: [], linksMissing: false, codesError: null, linksError: null })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [codeFilter, setCodeFilter] = useState('') // '' = все, '__none__' = без шифра
@@ -83,6 +83,13 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
   }, [tenderId])
 
   useEffect(() => { setLoading(true); reload() }, [reload])
+
+  // Шифры не загрузились (сеть/таймаут) — файлы показываем, но загрузку РД и правку
+  // шифров закрываем: без списка шифров их не выбрать, а сохранение перезаписало бы
+  // набор, которого мы не видели.
+  const codesUnavailable = !!(data.codesError || data.linksError)
+  const canEditCodes = canEdit && !data.linksMissing && !codesUnavailable
+  const retry = () => { setLoading(true); reload() }
 
   const codeById = useMemo(() => new Map(data.codes.map(c => [c.id, c])), [data.codes])
 
@@ -125,7 +132,16 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
   }
 
   if (loading) return <div className="tvr-empty">Загрузка…</div>
-  if (error) return <div className="tvr-error">{error}</div>
+  if (error) {
+    return (
+      <div className="tvr-error">
+        {error}
+        <div style={{ marginTop: '0.5rem' }}>
+          <button type="button" className="s3-doc-btn-primary" onClick={retry}>Повторить</button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="tvr-panel">
@@ -136,7 +152,7 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
             <h3 className="tvr-title"><span className="tvr-step">1</span>Рабочая документация</h3>
             <p className="tvr-hint">PDF-файлы РД. У каждого файла указываются шифры — из списка «Шифр РД» этого тендера.</p>
           </div>
-          {canEdit && !adding && (
+          {canEdit && !adding && !codesUnavailable && (
             <button type="button" className="s3-doc-btn-primary" onClick={() => setAdding(true)}>
               + Добавить РД
             </button>
@@ -146,6 +162,12 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
         {data.linksMissing && (
           <div className="tvr-warn">
             Шифры у файлов не отображаются: не применена миграция 20260918_tender_rd_documents.
+          </div>
+        )}
+        {codesUnavailable && (
+          <div className="tvr-warn">
+            {data.codesError || data.linksError} Файлы ниже доступны; загрузка РД и правка шифров — после повторной загрузки.{' '}
+            <button type="button" className="tvr-link-btn" onClick={retry}>Повторить</button>
           </div>
         )}
 
@@ -233,7 +255,7 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
                               <span key={id} className="tvr-code" title={c.title || c.code}>{c.code}</span>
                             ) : null
                           })}
-                          {canEdit && !data.linksMissing && (
+                          {canEditCodes && (
                             <button type="button" className="tvr-link-btn" onClick={() => setEditingDocId(doc.id)} title="Изменить шифры">
                               <TagIcon /> изменить
                             </button>

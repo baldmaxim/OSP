@@ -1,3 +1,6 @@
+// Первым: запоминает параметры ссылки из письма Supabase до того, как клиент
+// Supabase (он создаётся при импорте App) их прочитает и сотрёт из адреса.
+import './utils/authRedirect'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
