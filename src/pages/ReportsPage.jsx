@@ -4,6 +4,8 @@ import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import { vorResponsibleName, withStoColumns } from '../services/stoEmployees'
 import { currencySymbol } from '../utils/estimateImport'
+import { isConstructionTender } from '../utils/tenderDepartments'
+import { isMissingVorRequestsTable } from '../services/vorRequests'
 import EngineersActivity from '../components/reports/EngineersActivity'
 import './ReportsPage.css'
 
@@ -172,6 +174,8 @@ function ReportsPage() {
   const [fResp, setFResp] = useState('all')
   const [fObject, setFObject] = useState('all')
   const [fPeriod, setFPeriod] = useState(6)
+  // Отчёт «ВОРы и РД»: основное строительство или совместные тендеры — как на странице ВОРов.
+  const [vorScope, setVorScope] = useState('construction')
 
   useEffect(() => {
     fetchStats()
@@ -214,7 +218,7 @@ function ReportsPage() {
         let q = supabase
         .from('tenders')
         .select(`
-          id, object_id, status, end_date, created_at, responsible_contact_id, tender_type, deleted_at,
+          id, object_id, status, end_date, created_at, responsible_contact_id, tender_type, deleted_at, department,
           cost_plan_status, cost_plan_responsible_id, cost_plan_end_date,
           vor_status, vor_responsible_id, vor_end_date${stoCols},
           materials_proposal_deadline,
@@ -232,6 +236,21 @@ function ReportsPage() {
       // отчёт считался бы по неполному набору — числа в нём просто врут.
       // Колонки СТО (миграция 20260922) — если их ещё нет, отчёт строится без них.
       const tendersRaw = await withStoColumns((stoCols) => fetchAllRows(tendersQuery(stoCols)))
+
+      // Заявки на ВОР без тендера (миграция 20261003) — считаются в отчёте «ВОРы и РД»
+      // вместе с тендерами. Нет таблицы — отчёт строится без них.
+      let vorRequests = []
+      {
+        let q = supabase
+          .from('vor_requests')
+          .select('id, department, object_id, vor_status, vor_end_date, vor_sto_user_id, vor_sto_name')
+          .is('deleted_at', null)
+          .limit(5000)
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        const { data: reqData, error: reqError } = await q
+        if (reqError && !isMissingVorRequestsTable(reqError)) console.error('Заявки на ВОР для отчёта:', reqError.message)
+        vorRequests = reqData || []
+      }
 
       const contractsQuery = (from, to) => {
         let q = supabase
@@ -474,11 +493,13 @@ function ReportsPage() {
       }
 
       // === ВОРы и РД ===
-      const vorRows = tConst
+      // По направлениям, как на странице «ВОРы и РД»: основное строительство и
+      // совместные тендеры; к тендерам добавляются заявки на ВОР без тендера.
       // «Не требуется» закрывает этап так же, как «Завершён» (не просрочен, не в очереди).
       const isVorDone = (x) => x.vor_status === 'completed' || x.vor_status === 'not_required'
-      const vor = {
+      const vorStats = (vorRows) => ({
         total: vorRows.length,
+        requests: vorRows.filter(x => x._request).length,
         notStarted: vorRows.filter(x => !x.vor_status || x.vor_status === 'not_started').length,
         inProgress: vorRows.filter(x => x.vor_status === 'in_progress').length,
         completed: vorRows.filter(isVorDone).length,
@@ -491,6 +512,11 @@ function ReportsPage() {
           (x) => vorResponsibleName(x),
           isVorDone
         ),
+      })
+      const requestsOf = (dept) => vorRequests.filter(r => r.department === dept).map(r => ({ ...r, _request: true }))
+      const vor = {
+        construction: vorStats([...t.filter(isConstructionTender), ...requestsOf('construction')]),
+        joint: vorStats([...t.filter(x => x.department === 'joint'), ...requestsOf('joint')]),
       }
 
       // Динамика тендеров по месяцам создания (реальные created_at). Последние 6 месяцев.
@@ -619,7 +645,7 @@ function ReportsPage() {
     { key: 'winners', label: 'Победители', icon: '🏆', count: s.winners.unique },
     { key: 'materials', label: 'Материалы', icon: '📦', count: s.mat.total },
     { key: 'cost_plans', label: 'Планы затрат', icon: '💰', count: s.cp.total },
-    { key: 'vors', label: 'ВОРы и РД', icon: '📐', count: s.vor.total },
+    { key: 'vors', label: 'ВОРы и РД', icon: '📐', count: s.vor.construction.total + s.vor.joint.total },
     { key: 'contracts', label: 'Договоры', icon: '📝', count: s.cTotal },
     // Счётчик не показываем: данные вкладки грузятся отдельно, по выбранному дню.
     // Вкладка только для владельца системы — это персональная активность сотрудников.
@@ -1037,32 +1063,50 @@ function ReportsPage() {
           </>
         )}
 
-        {activeTab === 'vors' && (
+        {activeTab === 'vors' && (() => {
+          const v = s.vor[vorScope]
+          const scopeLabel = vorScope === 'joint' ? 'совместные тендеры' : 'основное строительство'
+          return (
           <>
+            {/* Направление — как переключатель на странице «ВОРы и РД» */}
+            <div className="reports-filters">
+              {[['construction', 'Основное строительство'], ['joint', 'Совместные тендеры']].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`rf-chip rf-chip-btn ${vorScope === key ? 'is-active' : ''}`}
+                  onClick={() => setVorScope(key)}
+                  aria-pressed={vorScope === key}
+                >
+                  {label}
+                  <span className="rf-chip-count">{s.vor[key].total}</span>
+                </button>
+              ))}
+            </div>
             <div className="kpi-grid">
               <div className="kpi-card">
-                <div className="kpi-label">Всего тендеров</div>
-                <div className="kpi-value">{s.vor.total}</div>
-                <div className="kpi-foot">только основное строительство</div>
+                <div className="kpi-label">Всего ВОРов</div>
+                <div className="kpi-value">{v.total}</div>
+                <div className="kpi-foot">{scopeLabel}{v.requests > 0 ? `, из них заявок без тендера: ${v.requests}` : ''}</div>
               </div>
               <div className="kpi-card">
                 <div className="kpi-label">Не начато</div>
-                <div className="kpi-value">{s.vor.notStarted}</div>
-                <div className="kpi-foot">{pct(s.vor.notStarted, s.vor.total)}%</div>
+                <div className="kpi-value">{v.notStarted}</div>
+                <div className="kpi-foot">{pct(v.notStarted, v.total)}%</div>
               </div>
               <div className="kpi-card">
                 <div className="kpi-label">В работе</div>
-                <div className="kpi-value accent-warn">{s.vor.inProgress}</div>
-                <div className="kpi-foot">{pct(s.vor.inProgress, s.vor.total)}%</div>
+                <div className="kpi-value accent-warn">{v.inProgress}</div>
+                <div className="kpi-foot">{pct(v.inProgress, v.total)}%</div>
               </div>
               <div className="kpi-card kpi-card--success">
                 <div className="kpi-label">Завершено</div>
-                <div className="kpi-value accent-success">{s.vor.completed}</div>
-                <div className="kpi-foot">{pct(s.vor.completed, s.vor.total)}% готовности</div>
+                <div className="kpi-value accent-success">{v.completed}</div>
+                <div className="kpi-foot">{pct(v.completed, v.total)}% готовности</div>
               </div>
-              <div className={`kpi-card ${s.vor.overdue > 0 ? 'kpi-card--danger' : ''}`}>
+              <div className={`kpi-card ${v.overdue > 0 ? 'kpi-card--danger' : ''}`}>
                 <div className="kpi-label">Просрочено</div>
-                <div className={`kpi-value ${s.vor.overdue > 0 ? 'accent-danger' : ''}`}>{s.vor.overdue}</div>
+                <div className={`kpi-value ${v.overdue > 0 ? 'accent-danger' : ''}`}>{v.overdue}</div>
                 <div className="kpi-foot">срок ВОР прошёл</div>
               </div>
             </div>
@@ -1070,16 +1114,17 @@ function ReportsPage() {
             <section className="report-section">
               <header className="section-head">
                 <h3>По ответственным за ВОР</h3>
-                <span className="section-meta">{s.vor.byResp.length}</span>
+                <span className="section-meta">{v.byResp.length}</span>
               </header>
-              {s.vor.byResp.length === 0 ? (
-                <div className="section-empty">Тендеров основного строительства пока нет</div>
+              {v.byResp.length === 0 ? (
+                <div className="section-empty">{vorScope === 'joint' ? 'Совместных тендеров и заявок пока нет' : 'Тендеров основного строительства пока нет'}</div>
               ) : (
-                <ResponsibleTable rows={s.vor.byResp} />
+                <ResponsibleTable rows={v.byResp} />
               )}
             </section>
           </>
-        )}
+          )
+        })()}
 
         {activeTab === 'contracts' && (
           <>

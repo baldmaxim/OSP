@@ -922,3 +922,60 @@
 }
 .vors-table .fdrop.vor-div-fdrop .vor-div-chip { padding: 0.15rem 0.4rem; }
 .vors-table .fdrop.vor-div-fdrop .fdrop-value { text-align: left; }
+
+/* ВОРы и РД: переключатель направлений в шапке */
+.vor-scope-switch {
+  display: inline-flex;
+  padding: 3px;
+  margin-left: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  gap: 2px;
+}
+.vor-scope-btn {
+  padding: 0.3rem 0.8rem;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vor-scope-btn:hover:not(.is-active) { color: var(--text-primary); }
+.vor-scope-btn.is-active {
+  background: var(--bg-primary);
+  color: var(--primary-color);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+/* ВОРы и РД: заявки без тендера */
+.vor-request-add {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--primary-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--primary-color);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vor-request-add:hover { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
+.vor-request-badge {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, #8b5cf6 12%, transparent);
+  color: #6d28d9;
+  font-size: 0.6875rem;
+  line-height: 1.25;
+}
+[data-theme='dark'] .vor-request-badge { color: #c4b5fd; }
+@media (max-width: 900px) {
+  .vor-scope-switch { margin-left: 0; }
+}

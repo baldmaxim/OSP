@@ -3,6 +3,33 @@ import { supabase } from '../supabase'
 
 // security fix: понятное сообщение при невозможности загрузить права (fail-closed).
 const ROLE_LOAD_ERROR = 'Не удалось загрузить права доступа. Обновите страницу или обратитесь к администратору.'
+// Роль не прочиталась из-за связи, а не из-за прав: так и говорим, чтобы
+// администратор не думал, что у него отобрали доступ.
+const NETWORK_ROLE_ERROR = 'Не удалось связаться с сервером, поэтому права доступа не загрузились. Проверьте подключение и нажмите «Повторить».'
+
+// Временный сбой: обрыв связи, таймаут, истёкший токен после сна ноутбука.
+// Раньше одна такая ошибка при открытии страницы выдавала администратору экран
+// «Нет доступа» до перезагрузки.
+function isTransientError(err) {
+  const text = `${err?.code || ''} ${err?.name || ''} ${err?.message || ''}`
+  return /Failed to fetch|NetworkError|Load failed|timed? ?out|AbortError|PGRST301|JWT expired|upstream|503|502|504/i.test(text)
+}
+
+// Запрос к базе с повторами на временных сбоях. build() должен вернуть новый
+// запрос (результат { data, error }); при истёкшем токене сначала обновляем сессию.
+async function queryWithRetry(build) {
+  const delays = [0, 700, 1500, 3000]
+  let result = null
+  for (const delay of delays) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+    result = await build()
+    if (!result.error || !isTransientError(result.error)) return result
+    if (/PGRST301|JWT expired/i.test(`${result.error.code} ${result.error.message}`)) {
+      try { await supabase.auth.refreshSession() } catch { /* следующая попытка покажет */ }
+    }
+  }
+  return result
+}
 
 const RoleContext = createContext()
 
@@ -133,10 +160,10 @@ export function RoleProvider({ children }) {
       return true
     }
     try {
-      const { data, error } = await supabase
+      const { data, error } = await queryWithRetry(() => supabase
         .from('role_permissions')
         .select('section, can_view, can_edit')
-        .eq('role', userRole)
+        .eq('role', userRole))
 
       if (error) throw error
 
@@ -180,11 +207,11 @@ export function RoleProvider({ children }) {
       // select('*') — устойчиво к порядку миграций: колонка object_ids появляется
       // только после миграции 20260730; если её ещё нет, просто отсутствует в data,
       // а resolveObjectIds() откатывается на одиночный object_id. Так вход не ломается.
-      const { data, error } = await supabase
+      const { data, error } = await queryWithRetry(() => supabase
         .from('user_roles')
         .select('*')
         .eq('user_id', userId)
-        .single()
+        .single())
 
       if (error && error.code !== 'PGRST116') throw error // PGRST116 = not found
 
@@ -242,7 +269,7 @@ export function RoleProvider({ children }) {
       if (err.message === 'PENDING_APPROVAL' || err.message === 'ACCOUNT_BLOCKED') throw err
       // security fix (fail-closed): ошибка/недоступность БД/RLS → НЕ admin, а отказ.
       console.error('Ошибка загрузки роли:', err.message)
-      denyAccess(ROLE_LOAD_ERROR)
+      denyAccess(isTransientError(err) ? NETWORK_ROLE_ERROR : ROLE_LOAD_ERROR)
     }
   }, [fetchPermissions, denyAccess])
 

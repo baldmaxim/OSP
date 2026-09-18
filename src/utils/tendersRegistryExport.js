@@ -38,9 +38,11 @@ export function rdCodesText(codes = []) {
     .join('\n')
 }
 
-// options: { isMaterialsView, withConstructionPhases, hideNotes, today }
+// options: { isMaterialsView, withConstructionPhases, withVorPhase, hideNotes, today }
+// withVorPhase — только колонки «ВОРы и РД» (совместные тендеры: плана затрат и
+// тендера на материалы у них нет).
 export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(), proposalCounts = {}, docCounts = {}, options = {} } = {}) {
-  const { isMaterialsView = false, withConstructionPhases = true, hideNotes = false, today = new Date().toISOString().slice(0, 10) } = options
+  const { isMaterialsView = false, withConstructionPhases = true, withVorPhase = false, hideNotes = false, today = new Date().toISOString().slice(0, 10) } = options
 
   if (isMaterialsView) {
     // № — номер основного тендера (как в интерфейсе); у самой записи на материалы
@@ -79,6 +81,8 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
   if (withConstructionPhases) {
     headers.push('Проверка РД', 'ВОР и РД: статус', 'ВОР и РД: ответственный СТО', 'ВОР: ссылка', 'Документов ВОР и РД',
       'План затрат: статус', 'План затрат: ответственный', 'План затрат: ссылка', 'Тендер на материалы')
+  } else if (withVorPhase) {
+    headers.push('ВОР и РД: статус', 'ВОР и РД: ответственный СТО', 'ВОР: срок', 'ВОР: ссылка', 'Документов ВОР и РД')
   }
   headers.push('Сводная КП', 'Путь к папке', 'Публикация в ТГ', 'Письмо о завершении тендера',
     'Дата начала работ', 'Дата окончания работ')
@@ -115,6 +119,14 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
         t.cost_plan_responsible?.full_name || '',
         t.cost_plan_link || '',
         t.materials_tender ? (t.materials_tender.status || 'Не начат') : '',
+      )
+    } else if (withVorPhase) {
+      row.push(
+        PHASE_LABEL[t.vor_status || 'not_started'] || t.vor_status,
+        t.vor_sto_name || t.vor_responsible?.full_name || '',
+        fmtDate(t.vor_end_date),
+        t.vor_link || '',
+        docCounts.vor?.[t.id] || 0,
       )
     }
     row.push(

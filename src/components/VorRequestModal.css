@@ -1,0 +1,60 @@
+/* Заявка на ВОР без тендера (VorRequestModal) */
+.vrq-modal { width: min(720px, calc(100vw - 32px)); }
+.vrq-body { display: block !important; padding: 1rem !important; background: var(--bg-primary); overflow-y: auto; }
+.vrq-form, .vrq-view { display: flex; flex-direction: column; gap: 0.75rem; }
+.vrq-hint { margin: 0; font-size: 0.75rem; line-height: 1.45; color: var(--text-tertiary); }
+.vrq-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; }
+.vrq-field { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.vrq-field > span {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.vrq-field textarea,
+.vrq-field select,
+.vrq-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+.vrq-field textarea { resize: vertical; }
+.vrq-field textarea:focus,
+.vrq-field select:focus,
+.vrq-field input:focus { outline: none; border-color: var(--primary-color); }
+.vrq-field textarea[readonly] { background: transparent; }
+.vrq-fdrop { display: flex; width: 100%; }
+.vrq-fdrop .fdrop-trigger { width: 100%; justify-content: space-between; }
+.vrq-actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
+.vrq-secondary,
+.vrq-danger {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.vrq-danger { margin-right: auto; color: #b91c1c; }
+.vrq-danger:hover:not(:disabled) { border-color: #dc2626; }
+.vrq-error {
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, #ef4444 8%, transparent);
+  color: #b91c1c;
+  font-size: 0.8125rem;
+}
+[data-theme='dark'] .vrq-error, [data-theme='dark'] .vrq-danger { color: #fca5a5; }
+.vrq-meta { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.75rem; color: var(--text-tertiary); }
+.vrq-deleted { color: #b91c1c; font-weight: 600; }
+.vrq-docs { border-top: 1px solid var(--border-color); padding-top: 0.75rem; }
+.vrq-docs-title { margin: 0 0 0.5rem; font-size: 0.875rem; font-weight: 700; color: var(--text-primary); }

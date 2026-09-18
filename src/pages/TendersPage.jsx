@@ -2414,11 +2414,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Число колонок основной таблицы. Считаем один раз: и строка «нет данных», и
   // раскрытый блок участников должны растягиваться ровно на всю ширину, иначе
   // справа остаётся пустая клетка под «Действиями».
+  // «ВОРы и РД» — у основного строительства и у совместных тендеров; «План затрат»
+  // и «Тендер на материалы» — только у основного строительства.
+  const showVorColumn = !compactView && !isMaterialsView && (department === 'construction' || department === 'joint')
   const mainTableColSpan = compactView
     ? 9
-    : (isCompletedTab
-      ? (!isMaterialsView && department === 'construction' ? 12 : 10)
-      : (isMaterialsView ? 10 : (department === 'construction' ? 13 : 10)))
+    : isMaterialsView
+      ? 10
+      : 10
+        + (showVorColumn ? 1 : 0)
+        + (department === 'construction' && !isCompletedTab ? 1 : 0)
+        + (department === 'construction' ? 1 : 0)
 
   // Проверка просроченности
   const today = new Date().toISOString().split('T')[0]
@@ -2477,7 +2483,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         rdCodesByTender,
         proposalCounts: tenderProposalCounts,
         docCounts: { vor: vorDocCounts, package: packageDocCounts },
-        options: { isMaterialsView, withConstructionPhases: department === 'construction', hideNotes },
+        options: { isMaterialsView, withConstructionPhases: department === 'construction', withVorPhase: department === 'joint', hideNotes },
       })
       const bytes = await buildTendersRegistryWorkbook({ headers, rows })
       const fileTitle = pageTitle.replace(/[\\/:*?"<>|]+/g, ' ').trim()
@@ -3304,7 +3310,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 Срок проведения<br />тендерных процедур{sortIndicator('tender_start_date')}
               </th>
               <th style={{ width: '130px' }}>Ответственный<br />по тендеру</th>
-              {!compactView && department === 'construction' && (
+              {showVorColumn && (
                 <th style={{ width: '90px' }}>ВОРы<br />и&nbsp;РД</th>
               )}
               <th style={{ width: '105px' }}>Тендерный<br />пакет</th>
@@ -3562,7 +3568,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       )}
                     </td>
                     {/* ВОРы и РД */}
-                    {!compactView && department === 'construction' && (
+                    {showVorColumn && (
                       <td>
                         <div className="phase-cell">
                           {(() => {

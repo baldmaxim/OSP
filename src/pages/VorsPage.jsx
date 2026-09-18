@@ -1,9 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import VorRdModal from '../components/VorRdModal'
+import VorRequestModal from '../components/VorRequestModal'
+import {
+  fetchVorRequests, fetchVorRequestDocCounts, countVorRequestDocs,
+  VOR_REQUESTS_TABLE, VOR_REQUESTS_MIGRATION_HINT,
+} from '../services/vorRequests'
 import { countVorRdDocs, fetchVorRdDocCounts } from '../services/tenderVorRd'
 import { fetchStoEmployees, vorResponsibleOf, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
@@ -47,6 +52,13 @@ function isMissingDivisionColumnError(err) {
   return (err?.code === '42703' || err?.code === 'PGRST204') && /vor_division/.test(String(err?.message || ''))
 }
 
+// Направления страницы: основное строительство и совместные тендеры.
+const SCOPES = [
+  { key: 'construction', label: 'Основное строительство' },
+  { key: 'joint', label: 'Совместные тендеры' },
+]
+const SCOPE_STORAGE_KEY = 'vors:scope'
+
 // Статусы, при которых срок подготовки ВОР больше не отслеживается.
 const VOR_CLOSED = ['completed', 'not_required']
 
@@ -69,6 +81,8 @@ function VorsPage() {
   // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
   const logTenderEvent = async (tenderId, eventType, payload = {}) => {
     if (!tenderId || !eventType) return
+    // Заявки без тендера в журнал тендера не пишутся (там FK на tenders).
+    if (tendersRef.current.find(t => t.id === tenderId)?._kind === 'request') return
     try {
       const role = localStorage.getItem('userRole') || null
       await supabase.from('tender_audit_log').insert([{
@@ -85,7 +99,28 @@ function VorsPage() {
       console.error('Ошибка записи истории тендера:', err.message)
     }
   }
+  // Строки страницы: тендеры (_kind 'tender') и заявки на ВОР без тендера (_kind 'request').
   const [tenders, setTenders] = useState([])
+  const tendersRef = useRef([])
+  tendersRef.current = tenders
+  // Направление: основное строительство / совместные тендеры (запоминается).
+  const [scope, setScope] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SCOPE_STORAGE_KEY)
+      return SCOPES.some(x => x.key === saved) ? saved : 'construction'
+    } catch {
+      return 'construction'
+    }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(SCOPE_STORAGE_KEY, scope) } catch { /* приватный режим */ }
+  }, [scope])
+  // false — таблицы заявок ещё нет (миграция 20261003 не применена).
+  const [requestsSupported, setRequestsSupported] = useState(true)
+  // Окно заявки: { mode: 'create' } | { id } | null.
+  const [requestModal, setRequestModal] = useState(null)
+  // Объекты для формы новой заявки — грузятся при первом открытии формы.
+  const [formObjects, setFormObjects] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('all') // 'all' | 'not_started' | 'in_progress' | 'completed'
   // task 241: статус-вкладки скрыты под кнопкой «ВОРы и РД по статусам»
@@ -135,8 +170,9 @@ function VorsPage() {
           vor_responsible:contacts!vor_responsible_id(id, full_name, position),
           responsible_contact:contacts!responsible_contact_id(id, full_name)
         `)
-        // Отбор направления на сервере; окончательная проверка — isConstructionTender ниже.
-        .or('department.is.null,department.eq.construction')
+        // Отбор направления на сервере; для основного строительства окончательная
+        // проверка — isConstructionTender ниже.
+        .or(scope === 'joint' ? 'department.eq.joint' : 'department.is.null,department.eq.construction')
         .order('start_date', { ascending: false })
         .order('id', { ascending: true })
         .range(from, to))
@@ -164,27 +200,45 @@ function VorsPage() {
       // Без тендеров гарантийного отдела и «прочего»: см. isConstructionTender
       // (объект в гарантии или тендер без объекта из реестра — не наш раздел).
       let filtered = (data || []).filter(t =>
-        isConstructionTender(t)
+        (scope === 'joint' ? t.department === 'joint' : isConstructionTender(t))
         && (!t.tender_type || t.tender_type === 'main')
-      )
-      if (scopedObjectIds.length > 0) {
-        filtered = filtered.filter(t => scopedObjectIds.includes(t.object_id))
+      ).map(t => ({ ...t, _kind: 'tender' }))
+
+      // Заявки на ВОР без тендера того же направления (миграция 20261003).
+      let requests = []
+      try {
+        const res = await fetchVorRequests(scope)
+        setRequestsSupported(res.supported)
+        requests = res.rows.map(r => ({ ...r, _kind: 'request' }))
+      } catch (err) {
+        console.error('Ошибка загрузки заявок на ВОР:', err.message)
       }
-      setTenders(filtered)
-      fetchVorDocCounts(filtered.map(t => t.id))
+
+      let rows = [...requests, ...filtered]
+      if (scopedObjectIds.length > 0) {
+        rows = rows.filter(t => scopedObjectIds.includes(t.object_id))
+      }
+      setTenders(rows)
+      fetchVorDocCounts(rows)
     } catch (err) {
       console.error('Ошибка загрузки ВОРов:', err.message)
       alert('Ошибка загрузки: ' + err.message)
     } finally {
       setLoading(false)
     }
-  }, [scopedObjectIds])
+  }, [scopedObjectIds, scope])
 
   // Счётчики документов раздела (РД, ВОР и ранее загруженные) — для бейджа и
   // статус-гейта «Завершён». Порциями: сотни UUID одним IN-списком роняют запрос.
-  const fetchVorDocCounts = async (tenderIds) => {
+  const fetchVorDocCounts = async (rows) => {
     try {
-      setVorDocCounts(await fetchVorRdDocCounts(tenderIds))
+      const tenderIds = rows.filter(r => r._kind !== 'request').map(r => r.id)
+      const requestIds = rows.filter(r => r._kind === 'request').map(r => r.id)
+      const [tenderCounts, requestCounts] = await Promise.all([
+        fetchVorRdDocCounts(tenderIds),
+        requestIds.length ? fetchVorRequestDocCounts(requestIds) : {},
+      ])
+      setVorDocCounts({ ...tenderCounts, ...requestCounts })
     } catch (err) {
       console.error('Ошибка загрузки счётчиков документов ВОР:', err.message)
     }
@@ -193,7 +247,8 @@ function VorsPage() {
   // Пересчитать число документов для одного тендера (после изменений в окне)
   const refreshVorDocCount = async (tenderId) => {
     try {
-      const count = await countVorRdDocs(tenderId)
+      const isRequest = tendersRef.current.find(t => t.id === tenderId)?._kind === 'request'
+      const count = isRequest ? await countVorRequestDocs(tenderId) : await countVorRdDocs(tenderId)
       setVorDocCounts(prev => ({ ...prev, [tenderId]: count }))
     } catch (err) {
       console.error('Ошибка обновления счётчика документов ВОР:', err.message)
@@ -214,6 +269,24 @@ function VorsPage() {
     return () => { alive = false }
   }, [])
 
+  // Поля ВОР у заявки названы так же, как у тендера, — отличается только таблица.
+  const tableOf = (id) => (tendersRef.current.find(t => t.id === id)?._kind === 'request' ? VOR_REQUESTS_TABLE : 'tenders')
+
+  const openCreateRequest = async () => {
+    if (!requestsSupported) { alert(VOR_REQUESTS_MIGRATION_HINT); return }
+    setRequestModal({ mode: 'create' })
+    if (formObjects) return
+    try {
+      const { data, error } = await supabase.from('objects').select('id, name, status').order('name', { ascending: true })
+      if (error) throw error
+      // У основного строительства — без объектов гарантийного отдела, как и у тендеров.
+      setFormObjects(data || [])
+    } catch (err) {
+      console.error('Ошибка загрузки объектов:', err.message)
+      setFormObjects([])
+    }
+  }
+
   const handleChangeDivision = async (tenderId, value) => {
     if (!divisionSupported) { alert(DIVISION_MIGRATION_HINT); return }
     const next = value || null
@@ -221,7 +294,7 @@ function VorsPage() {
     const oldValue = tender?.vor_division || null
     if (oldValue === next) return
     try {
-      const { error } = await supabase.from('tenders').update({ vor_division: next }).eq('id', tenderId)
+      const { error } = await supabase.from(tableOf(tenderId)).update({ vor_division: next }).eq('id', tenderId)
       if (error) throw error
       setTenders(prev => prev.map(t => (t.id === tenderId ? { ...t, vor_division: next } : t)))
       const oldLabel = VOR_DIVISION_LABEL[oldValue] || null
@@ -251,7 +324,7 @@ function VorsPage() {
     }
     try {
       const { error } = await supabase
-        .from('tenders')
+        .from(tableOf(tenderId))
         .update({ vor_status: newStatus })
         .eq('id', tenderId)
       if (error) throw error
@@ -275,7 +348,7 @@ function VorsPage() {
     const newName = emp?.display_name || null
     const patch = { vor_sto_user_id: value, vor_sto_name: newName }
     try {
-      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
+      const { error } = await supabase.from(tableOf(tenderId)).update(patch).eq('id', tenderId)
       if (error) throw error
       setTenders(prev => prev.map(t => (t.id === tenderId ? { ...t, ...patch } : t)))
       if (oldName !== newName) {
@@ -300,7 +373,7 @@ function VorsPage() {
     const value = next.trim() || null
     try {
       const { error } = await supabase
-        .from('tenders')
+        .from(tableOf(tenderId))
         .update({ vor_link: value })
         .eq('id', tenderId)
       if (error) throw error
@@ -315,7 +388,7 @@ function VorsPage() {
     const next = value || null
     try {
       const { error } = await supabase
-        .from('tenders')
+        .from(tableOf(tenderId))
         .update({ [field]: next })
         .eq('id', tenderId)
       if (error) throw error
@@ -382,6 +455,7 @@ function VorsPage() {
     const q = searchQuery.trim().toLowerCase()
     filtered = filtered.filter(t =>
       String(t.public_tender_number ?? '').includes(q) ||
+      (t._kind === 'request' && `заявка ${t.request_number}`.includes(q)) ||
       (t.objects?.name || '').toLowerCase().includes(q) ||
       (t.work_description || '').toLowerCase().includes(q) ||
       (VOR_DIVISION_LABEL[t.vor_division] || '').toLowerCase().includes(q) ||
@@ -430,6 +504,20 @@ function VorsPage() {
           <IconTile tone="amber" className="page-icon-tile"><IconDocument size={16} /></IconTile>
           ВОРы и РД
         </h2>
+        <div className="vor-scope-switch" role="tablist" aria-label="Направление">
+          {SCOPES.map(x => (
+            <button
+              key={x.key}
+              type="button"
+              role="tab"
+              aria-selected={scope === x.key}
+              className={`vor-scope-btn${scope === x.key ? ' is-active' : ''}`}
+              onClick={() => { if (scope !== x.key) { setScope(x.key); setObjectFilterIds([]) } }}
+            >
+              {x.label}
+            </button>
+          ))}
+        </div>
         <div className="cp-header-right">
           {/* Тот же дежурный, что в шапке «Тендеров»; меняется там (админ). */}
           <div className="vor-duty-chip" title={`Дежурный по тендерам на этой неделе: ${duty.name}${duty.overridden ? ' (ручная замена)' : ''}`}>
@@ -439,7 +527,7 @@ function VorsPage() {
             {duty.overridden && <span className="vor-duty-dot" aria-hidden />}
           </div>
           <div className="page-header-hint">
-            Список тендеров основного строительства. Ответственный СТО выбирается из сотрудников сметно-технического отдела.
+            {scope === 'joint' ? 'Совместные тендеры' : 'Тендеры основного строительства'} и заявки на ВОР без тендера. Ответственный СТО выбирается из сотрудников сметно-технического отдела.
           </div>
         </div>
       </div>
@@ -560,6 +648,16 @@ function VorsPage() {
           ]}
         />
         <div className="cp-toolbar-tail">
+          {canEditVors && (
+            <button
+              type="button"
+              className="vor-request-add"
+              onClick={openCreateRequest}
+              title="Заявка на подготовку ВОР без привязки к тендеру"
+            >
+              + Заявка на ВОР
+            </button>
+          )}
           <span className="cp-shown">Показано: <b>{activeTab === 'deleted' ? deletedRows.length : visible.length}</b></span>
           {hasActiveFilters && (
             <button
@@ -598,7 +696,7 @@ function VorsPage() {
               <tr>
                 <td colSpan={9} className="no-data">
                   {tenders.length === 0
-                    ? 'Нет тендеров. Создайте тендер на странице «Тендеры».'
+                    ? 'Нет тендеров и заявок. Создайте тендер на странице «Тендеры» или заявку на ВОР кнопкой выше.'
                     : activeTab === 'deleted'
                       ? 'Удалённых ВОРов нет'
                       : activeTab === 'completed'
@@ -614,9 +712,11 @@ function VorsPage() {
               </tr>
             ) : (
               visible.map((t) => (
-                <tr key={t.id}>
+                <tr key={t.id} className={t._kind === 'request' ? 'vor-request-row' : undefined}>
                   <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-                    {t.public_tender_number ?? '—'}
+                    {t._kind === 'request'
+                      ? <span className="vor-request-badge" title="Заявка на ВОР без тендера">Заявка<br />№ {t.request_number}</span>
+                      : (t.public_tender_number ?? '—')}
                   </td>
                   <td>
                     {t.object_id && canOpenObject ? (
@@ -632,7 +732,16 @@ function VorsPage() {
                     )}
                   </td>
                   <td>
-                    {canOpenTender ? (
+                    {t._kind === 'request' ? (
+                      <button
+                        type="button"
+                        className="vor-desc-link vor-desc-btn"
+                        onClick={() => setRequestModal({ id: t.id })}
+                        title="Открыть заявку на ВОР"
+                      >
+                        {t.work_description || '—'}
+                      </button>
+                    ) : canOpenTender ? (
                       <Link
                         to={`/tenders/${t.id}`}
                         className="vor-desc-link"
@@ -717,7 +826,11 @@ function VorsPage() {
                     })()}
                   </td>
                   <td className="muted-text">
-                    {t.responsible_contact?.full_name || <span className="muted-tiny">—</span>}
+                    {t._kind === 'request'
+                      ? (t.created_by_name
+                        ? <span title="Автор заявки">{t.created_by_name}<div className="muted-tiny">автор заявки</div></span>
+                        : <span className="muted-tiny">—</span>)
+                      : (t.responsible_contact?.full_name || <span className="muted-tiny">—</span>)}
                   </td>
                   <td>
                     {/* Срок — читаемым текстом; правка в окошке. Просрочен, если
@@ -725,7 +838,7 @@ function VorsPage() {
                     <DateRangeCell
                       start={vorStartDate(t)}
                       lockStart
-                      lockStartHint="дата создания тендера"
+                      lockStartHint={t._kind === 'request' ? 'дата создания заявки' : 'дата создания тендера'}
                       end={t.vor_end_date}
                       disabled={!canEditVors}
                       overdue={!!t.vor_end_date && !VOR_CLOSED.includes(t.vor_status)
@@ -770,7 +883,7 @@ function VorsPage() {
                       <button
                         type="button"
                         className={`vor-docs-btn${vorDocCounts[t.id] ? ' has-docs' : ''}`}
-                        onClick={() => setVorDocsModalTenderId(t.id)}
+                        onClick={() => (t._kind === 'request' ? setRequestModal({ id: t.id }) : setVorDocsModalTenderId(t.id))}
                         title="Рабочая документация (PDF с шифрами) и ведомости объёмов работ"
                       >
                         <PaperclipIcon size={12} />
@@ -797,6 +910,31 @@ function VorsPage() {
           </tbody>
         </table>
       </div>
+
+      {requestModal && (() => {
+        const request = requestModal.id ? tenders.find(x => x.id === requestModal.id) : null
+        if (requestModal.id && !request) return null
+        const objectsForForm = (formObjects || []).filter(o => scope === 'joint' || o.status !== 'warranty_service')
+        return (
+          <VorRequestModal
+            key={requestModal.id || 'create'}
+            request={request}
+            department={scope}
+            canEdit={canEditVors}
+            objects={objectsForForm}
+            stoEmployees={stoEmployees}
+            divisions={VOR_DIVISIONS}
+            byName={userProfile?.full_name || null}
+            onClose={() => setRequestModal(null)}
+            onCreated={(row) => {
+              setTenders(prev => [{ ...row, _kind: 'request' }, ...prev])
+              setRequestModal({ id: row.id })
+            }}
+            onUpdated={(id, patch) => setTenders(prev => prev.map(x => (x.id === id ? { ...x, ...patch } : x)))}
+            onDocsChanged={() => refreshVorDocCount(request?.id)}
+          />
+        )
+      })()}
 
       {vorDocsModalTenderId && (() => {
         const t = tenders.find(x => x.id === vorDocsModalTenderId)
