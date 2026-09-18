@@ -72,10 +72,26 @@ function AdminPage() {
   const [newRoleLabel, setNewRoleLabel] = useState('')
   const [roleFeedback, setRoleFeedback] = useState(null)
 
+  // Справочники грузим по одному разу за визит на страницу, а не при каждом
+  // переключении вкладок: раньше возврат на «Пользователей» заново тянул всех
+  // пользователей, объекты и несколько тысяч контрагентов (постранично, по очереди).
+  const loadedRef = useRef({ users: false, objects: false, counterparties: false })
   useEffect(() => {
-    if (activeTab === 'users' || activeTab === 'preview') { fetchUsers(); fetchObjectsList(); fetchCounterpartiesList() }
-    else if (activeTab === 'permissions') fetchPermissions()
+    if (activeTab === 'users' || activeTab === 'preview') {
+      if (!loadedRef.current.users) fetchUsers()
+      if (!loadedRef.current.objects) fetchObjectsList()
+    }
+    // Контрагенты нужны только для привязки логина к кабинету подрядчика —
+    // в окне пользователя и в «Просмотре от имени роли».
+    if (activeTab === 'preview') ensureCounterparties()
+    if (activeTab === 'permissions') fetchPermissions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
+
+  useEffect(() => {
+    if (editUser) ensureCounterparties()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editUser])
 
   // Debounce поиска (данные пользователей клиентские, но набор не дёргается на каждый символ).
   useEffect(() => {
@@ -95,6 +111,7 @@ function AdminPage() {
     try {
       const { data, error } = await supabase.from('objects').select('id, name').order('name', { ascending: true })
       if (error) throw error
+      loadedRef.current.objects = true
       setObjectsList(data || [])
     } catch (err) {
       console.warn('Не удалось загрузить список объектов:', err.message)
@@ -102,30 +119,49 @@ function AdminPage() {
   }
 
   // Контрагенты для привязки логина к кабинету подрядчика (Фаза 4 согласования).
-  const fetchCounterpartiesList = async () => {
+  // Грузятся один раз и только когда понадобились.
+  const ensureCounterparties = async () => {
+    if (loadedRef.current.counterparties) return
+    loadedRef.current.counterparties = true
     try {
       const data = await fetchAllActiveCounterparties('id, name')
       setCounterpartiesList(data || [])
     } catch (err) {
+      loadedRef.current.counterparties = false // дать повторить при следующем открытии
       console.warn('Не удалось загрузить список контрагентов:', err.message)
     }
   }
 
-  const fetchUsers = async () => {
-    setLoadingUsers(true)
+  // silent — обновить после действия (блокировка, сохранение) без скелетона:
+  // раньше таблица на каждое действие пропадала и рисовалась заново.
+  const usersRequestRef = useRef(0)
+  const fetchUsers = async ({ silent = false } = {}) => {
+    const requestId = ++usersRequestRef.current
+    if (!silent) setLoadingUsers(true)
     setUsersError(false)
     try {
-      const { data: roles, error: rolesError } = await supabase
-        .from('user_roles').select('*')
-        .order('is_approved', { ascending: true })
-        .order('created_at', { ascending: true })
+      // Оба запроса независимы — параллельно, а не друг за другом.
+      const [rolesRes, authRes] = await Promise.all([
+        supabase.from('user_roles').select('*')
+          .order('is_approved', { ascending: true })
+          .order('created_at', { ascending: true }),
+        supabase.rpc('get_auth_users'),
+      ])
+      // Ответ устарел (запущено новое обновление) — не перетираем свежие данные.
+      if (requestId !== usersRequestRef.current) return
+      const { data: roles, error: rolesError } = rolesRes
       if (rolesError) throw rolesError
-
-      const { data: authUsers, error: authError } = await supabase.rpc('get_auth_users')
+      const { data: authUsers, error: authError } = authRes
+      loadedRef.current.users = true
       if (authError) {
+        // Без auth.users нет e-mail и дат входа тех, кто ещё без роли. Показываем
+        // хотя бы пользователей с ролью — в том же виде, что и основной путь.
         console.warn('Не удалось загрузить auth.users:', authError.message)
-        setUserRoles(roles || [])
-        setLoadingUsers(false)
+        setUserRoles((roles || []).map(r => ({
+          ...r,
+          object_ids: (Array.isArray(r.object_ids) && r.object_ids.length) ? r.object_ids : (r.object_id ? [r.object_id] : []),
+          has_role: true,
+        })))
         return
       }
 
@@ -161,10 +197,11 @@ function AdminPage() {
       })
       setUserRoles(merged)
     } catch (err) {
+      if (requestId !== usersRequestRef.current) return
       console.error('Ошибка загрузки пользователей:', err.message)
       setUsersError(true)
     } finally {
-      setLoadingUsers(false)
+      if (requestId === usersRequestRef.current) setLoadingUsers(false)
     }
   }
 
@@ -194,7 +231,7 @@ function AdminPage() {
         const { error } = await supabase.from('user_roles').update(patch).eq('user_id', u.user_id)
         if (error) throw error
       }
-      await fetchUsers()
+      await fetchUsers({ silent: true })
       notify('ok', status === 'blocked' ? 'Пользователь заблокирован'
         : userStatus(u) === 'blocked' ? 'Пользователь разблокирован' : 'Доступ подтверждён')
     } catch (err) {
@@ -214,7 +251,7 @@ function AdminPage() {
           if (delError) throw delError
         } else { throw error }
       }
-      await fetchUsers()
+      await fetchUsers({ silent: true })
       notify('ok', 'Пользователь удалён')
     } catch (err) {
       notify('err', 'Ошибка удаления: ' + err.message)
@@ -262,7 +299,7 @@ function AdminPage() {
       if (!error) notify('err', 'Сохранено, но несколько объектов не записаны — примените миграцию 20260730')
     }
     if (error) throw error
-    await fetchUsers()
+    await fetchUsers({ silent: true })
     setEditUser(null)
     notify('ok', 'Изменения сохранены')
   }
@@ -279,7 +316,7 @@ function AdminPage() {
         const { error } = await supabase.from('user_roles').update(statusPatch(patch, userProfile?.full_name || null)).in('user_id', ids.slice(i, i + CHUNK))
         if (error) throw error
       }
-      await fetchUsers()
+      await fetchUsers({ silent: true })
       setSelected(new Set())
       notify('ok', successText)
     } catch (err) {
@@ -584,7 +621,7 @@ function AdminPage() {
                   ) : usersError ? (
                     <tr><td colSpan={colCount}><div className="table-state">
                       <p className="table-state-title">Не удалось загрузить пользователей</p>
-                      <button type="button" className="btn-secondary" onClick={fetchUsers}>Повторить</button>
+                      <button type="button" className="btn-secondary" onClick={() => fetchUsers()}>Повторить</button>
                     </div></td></tr>
                   ) : userRoles.length === 0 ? (
                     <tr><td colSpan={colCount}><div className="table-state">
