@@ -4,6 +4,11 @@ import { useRole } from '../contexts/RoleContext'
 import BrandLogo from '../components/BrandLogo'
 import './LoginPage.css'
 
+// Приём заявок подрядчиков на доступ в кабинет. Временно остановлен (2026-09-18):
+// ссылка «Подать заявку» скрыта, форма не открывается. Уже поданные заявки и вход
+// подтверждённых подрядчиков работают как раньше. Чтобы возобновить — true.
+const CONTRACTOR_SIGNUP_OPEN = false
+
 // variant: 'employee' — вход для сотрудников (+ регистрация); 'contractor' — вход для
 // подрядчиков (выбор организации). Экран выбора роли убран, у каждого входа свой URL.
 function LoginPage({ variant = 'employee' }) {
@@ -121,6 +126,10 @@ function LoginPage({ variant = 'employee' }) {
     e.preventDefault()
     setError('')
     setSuccessMessage('')
+    if (!CONTRACTOR_SIGNUP_OPEN) {
+      setError('Регистрация подрядчиков временно приостановлена.')
+      return
+    }
     if (!companyName.trim()) { setError('Укажите название организации'); return }
     if (password.length < 6) { setError('Пароль должен быть не менее 6 символов'); return }
     if (password !== passwordConfirm) { setError('Пароли не совпадают'); return }
@@ -261,7 +270,7 @@ function LoginPage({ variant = 'employee' }) {
         )}
 
         {/* Заявка подрядчика на доступ в кабинет */}
-        {mode === 'contractor_register' && (
+        {mode === 'contractor_register' && CONTRACTOR_SIGNUP_OPEN && (
           <form onSubmit={handleContractorSignUp} className="login-form">
             <div className="form-field">
               <label>Организация *</label>
@@ -392,7 +401,12 @@ function LoginPage({ variant = 'employee' }) {
         <div className="login-footer">
           {isContractorVariant ? (
             <>
-              {mode === 'contractor_register' ? (
+              {!CONTRACTOR_SIGNUP_OPEN ? (
+                <p className="login-note login-signup-paused">
+                  Регистрация новых подрядчиков временно приостановлена. Если вашей организации
+                  нужен доступ в кабинет, обратитесь в отдел сопровождения подрядчиков.
+                </p>
+              ) : mode === 'contractor_register' ? (
                 <button type="button" className="login-link" onClick={() => switchMode('contractor')}>
                   Уже есть доступ? Войти
                 </button>

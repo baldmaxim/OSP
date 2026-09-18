@@ -172,3 +172,6 @@
   line-height: 1.45;
   color: var(--text-tertiary, #6b7280);
 }
+
+/* Приём заявок подрядчиков остановлен — пояснение вместо ссылки. */
+.login-signup-paused { text-align: center; margin: 0 0 0.5rem; }
