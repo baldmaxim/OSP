@@ -39,10 +39,10 @@ const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required
 // Подразделение, готовящее ВОР (tenders.vor_division, миграция 20260927).
 const VOR_DIVISIONS = [
   { value: 'monolith', label: 'Монолит' },
-  { value: 'nvf_spk', label: 'НВФ, СПК' },
+  { value: 'nvf_spk', label: 'НВФ/СПК' },
   { value: 'general', label: 'Общестроительные работы' },
-  { value: 'hvac_water', label: 'ОВ, ВК' },
-  { value: 'electrical', label: 'ЭОМ, СС' },
+  { value: 'hvac_water', label: 'ОВиВК' },
+  { value: 'electrical', label: 'ЭОМ/СС' },
 ]
 const VOR_DIVISION_LABEL = Object.fromEntries(VOR_DIVISIONS.map(d => [d.value, d.label]))
 const NO_DIVISION = '__none__'
