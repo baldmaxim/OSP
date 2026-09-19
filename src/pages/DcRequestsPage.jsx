@@ -10,13 +10,22 @@ import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
 import { IconDcRequest } from '../components/icons/NavIcons'
 import { IconHardHat } from '../components/icons/TenderHubIcons'
-import { IconObject, IconUser } from '../components/icons/ToolbarIcons'
+import { IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
 import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
+import { IconPencil as IconEdit, IconTrash, IconRestore, IconChecklist, IconClock, IconCalendar, IconLink, IconCheck as IconCheckMark } from '../components/icons/ActionIcons'
+import ClampText from '../components/ClampText'
+import PersonName from '../components/PersonName'
+import BreakableId from '../components/BreakableId'
+import PaperclipIcon from '../components/icons/PaperclipIcon'
 import { useIsPhone } from '../hooks/useMediaQuery'
+import useBodyClass from '../hooks/useBodyClass'
 import { copyToClipboard } from '../utils/clipboard'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 import './DcRequestsPage.css'
+// Общий рабочий стиль разделов (docs/UI_GUIDELINES.md) — после стилей страницы.
+import '../styles/fonts.css'
+import '../styles/workUi.css'
 
 // Task 306 + 307 + 309 + 310. Реестр «Заявок на ДС» — независимая сущность.
 // Объект можно выбрать из ОБОИХ отделов: основное строительство и гарантийный отдел.
@@ -314,6 +323,24 @@ function DeadlinePopover({ initial, anchorRect, onClose, onSave }) {
   )
 }
 
+// Выбор в узкой ячейке: нативный select не переносит текст, и длинное значение
+// («Доп. работы по текущему договору») обрезалось. Видимая плашка — обычный
+// текст с переносом; сам select лежит поверх прозрачным слоем, поэтому клик,
+// клавиатура и экранный диктор работают с настоящим select, как раньше.
+function WrapSelect({ faceClassName, label, children, ...selectProps }) {
+  return (
+    <span className="dcr-wrap-select">
+      <span className={`${faceClassName} dcr-wrap-select-face`} aria-hidden="true">
+        {label}
+        <svg className="dcr-wrap-select-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 4.5 6 7.5 9 4.5" />
+        </svg>
+      </span>
+      <select className="dcr-wrap-select-native" {...selectProps}>{children}</select>
+    </span>
+  )
+}
+
 function formatBytes(bytes) {
   if (bytes == null) return ''
   if (bytes === 0) return '0 Б'
@@ -349,6 +376,8 @@ function AmountCellInput({ value, disabled, onSave }) {
 
 function DcRequestsPage() {
   const { userProfile, canEdit, isAdmin, isSuperAdmin, role, scopedObjectIds } = useRole()
+  // Всплывающие списки фильтров и окошко срока рисуются в <body>.
+  useBodyClass('ui-work-portal')
   // Телефон: список заявок рендерим карточками вместо широкой таблицы
   const isPhone = useIsPhone()
   // task 333: гейт add/edit/delete и inline-editing на этой странице.
@@ -1460,7 +1489,7 @@ function DcRequestsPage() {
   }
 
   return (
-    <div className="dc-requests-page contract-registry">
+    <div className="dc-requests-page contract-registry ui-work">
       <div className="registry-header">
         <h2>
           <IconTile tone="coral" className="dcr-title-icon"><IconDcRequest /></IconTile>
@@ -1476,7 +1505,7 @@ function DcRequestsPage() {
               className="dcr-link-btn"
               title={externalLink}
             >
-              <span aria-hidden>🔗</span>
+              <IconLink size={15} />
               <span>Общая таблица отделов</span>
             </a>
           ) : canEditDc && (
@@ -1486,7 +1515,7 @@ function DcRequestsPage() {
               onClick={openLinkEditor}
               title="Задать ссылку на общую таблицу"
             >
-              <span aria-hidden>🔗</span>
+              <IconLink size={15} />
               <span>Указать ссылку</span>
             </button>
           )}
@@ -1538,13 +1567,18 @@ function DcRequestsPage() {
       </div>
 
       <div className="dcr-toolbar">
-        <input
-          type="search"
-          className="dcr-search"
-          placeholder="Поиск по объекту, контрагенту, № ДС или работам…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+        <div className="ui-search">
+          <IconSearch />
+          {/* Короткая подсказка помещается целиком; где ищет поле — в aria-label. */}
+          <input
+            type="search"
+            className="dcr-search"
+            placeholder="Объект, контрагент, № ДС, работы"
+            aria-label="Поиск по объекту, контрагенту, номеру ДС и описанию работ"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
         {/* Фильтр по нескольким статусам сразу. На вкладке конкретного статуса
             он бы только сужал до нуля, поэтому выбор статусов переводит на «Все». */}
         {!isDeletedTab && (
@@ -1609,7 +1643,7 @@ function DcRequestsPage() {
             className="dcr-filter-clear"
             onClick={() => { setFilterStatuses([]); setFilterObjectIds([]); setFilterCounterpartyIds([]); setFilterResponsibleIds([]) }}
             title="Сбросить фильтры"
-          >×</button>
+          >Сбросить</button>
         )}
       </div>
 
@@ -1636,7 +1670,7 @@ function DcRequestsPage() {
                     <span className={`status-badge ${statusOpt?.className || ''}`}>{STATUS_LABEL[currentStatus]}</span>
                   </div>
                   <div className="mcard-title">{req.objects?.name || '—'}</div>
-                  {req.works_description && <div className="mcard-desc"><CollapsibleText text={req.works_description} lines={4} /></div>}
+                  {req.works_description && <div className="mcard-desc"><ClampText text={req.works_description} lines={4} /></div>}
                   <div className="mcard-rows">
                     <div className="mcard-row">
                       <span className="mcard-label">Контрагент</span>
@@ -1694,7 +1728,7 @@ function DcRequestsPage() {
                     </div>
                   </div>
                   <div className="mcard-foot">
-                    {docsCount > 0 && <span className="mcard-chip">📎 {docsCount}</span>}
+                    {docsCount > 0 && <span className="mcard-chip" aria-label={`Файлов: ${docsCount}`}><PaperclipIcon size={12} /> {docsCount}</span>}
                     <div className="mcard-actions">
                       <button
                         className="btn-icon btn-history"
@@ -1714,19 +1748,19 @@ function DcRequestsPage() {
                         title="Задачи и ответы"
                         aria-label="Задачи и ответы"
                       >
-                        ✔ {totalTasks > 0 ? `${completedTasks}/${totalTasks}` : '0'}
+                        <IconChecklist size={15} /> {totalTasks > 0 ? `${completedTasks}/${totalTasks}` : '0'}
                       </button>
                       {isDeletedTab ? (
                         <>
                           {canEditDc && (
-                            <button className="btn-icon btn-restore" onClick={() => handleRestore(req.id)} title="Восстановить" aria-label="Восстановить">↩</button>
+                            <button type="button" className="btn-icon btn-restore" onClick={() => handleRestore(req.id)} title="Восстановить" aria-label="Восстановить"><IconRestore /></button>
                           )}
                           {isAdmin && (
-                            <button className="btn-icon btn-delete" onClick={() => handleHardDelete(req.id)} title="Удалить безвозвратно" aria-label="Удалить безвозвратно">🗑️</button>
+                            <button type="button" className="btn-icon btn-delete" onClick={() => handleHardDelete(req.id)} title="Удалить безвозвратно" aria-label="Удалить безвозвратно"><IconTrash /></button>
                           )}
                         </>
                       ) : canEditDc ? (
-                        <button className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать" aria-label="Редактировать">✏️</button>
+                        <button type="button" className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать" aria-label="Редактировать"><IconEdit /></button>
                       ) : null}
                     </div>
                   </div>
@@ -1738,26 +1772,36 @@ function DcRequestsPage() {
       ) : (
         <div className="table-container">
           <table className="dcr-table">
+            {/* Ширины — в DcRequestsPage.css (.dcr-col-*): суммы и номера целиком,
+                описание ДС забирает остаток. task 334: «Задачи» — только
+                счётчик-кнопка, подробности в модалке. */}
+            <colgroup>
+              <col className="dcr-col-num" />
+              <col className="dcr-col-object" />
+              <col className="dcr-col-cp" />
+              <col className="dcr-col-dsnum" />
+              <col className="dcr-col-desc" />
+              <col className="dcr-col-amount" />
+              <col className="dcr-col-status" />
+              <col className="dcr-col-resp" />
+              <col className="dcr-col-tasks" />
+              <col className="dcr-col-docs" />
+              <col className="dcr-col-actions" />
+            </colgroup>
             <thead>
               <tr>
-                <th style={{ width: '3%' }}>№</th>
-                <th style={{ width: '11%' }}>Объект</th>
-                <th style={{ width: '13%' }}>Контрагент</th>
-                <th style={{ width: '6%', textAlign: 'center' }}>№ ДС</th>
-                <th style={{ width: '10%' }}>Описание ДС</th>
+                <th style={{ textAlign: 'center' }}>№</th>
+                <th>Объект</th>
+                <th>Контрагент</th>
+                <th>№ ДС</th>
+                <th>Описание ДС</th>
                 {/* task 370: сумма ДС («Было подано» / «Утверждено») с НДС 22% перед статусом */}
-                <th style={{ width: '14%', whiteSpace: 'normal', textAlign: 'center' }}>Сумма, руб. с НДС 22%</th>
-                {/* 10%: самый длинный статус — «Проверка по договору», на 8%
-                    он ломался на три строки. Процент забран у «Задач», где
-                    внутри только счётчик-кнопка. */}
-                <th style={{ width: '10%' }}>Статус</th>
-                <th style={{ width: '9%' }}>Ответственный</th>
-                {/* task 334: было «Задачи и ответы» (inline) — теперь только счётчик-кнопка,
-                    подробности в модалке. Колонка сильно компактнее, освобождённое место —
-                    в «Описание ДС» и «Документы». */}
-                <th style={{ width: '6%', textAlign: 'center' }}>Задачи</th>
-                <th style={{ width: '13%' }}>Документы</th>
-                <th style={{ width: '5%', textAlign: 'right' }}>Действия</th>
+                <th style={{ textAlign: 'right' }}>Сумма, руб. с НДС 22%</th>
+                <th>Статус</th>
+                <th>Ответственный</th>
+                <th style={{ textAlign: 'center' }}>Задачи</th>
+                <th>Документы</th>
+                <th><span className="ui-sr-only">Действия</span></th>
               </tr>
             </thead>
             <tbody>
@@ -1804,26 +1848,26 @@ function DcRequestsPage() {
 
                   return (
                     <tr key={req.id} className={req.deleted_at ? 'row-deleted' : ''}>
-                      <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
+                      <td className="ui-rownum" style={{ textAlign: 'center' }}>{idx + 1}</td>
                       <td>
                         <div className="dcr-object-name">
                           {req.objects?.name || <span className="muted-dash">—</span>}
                         </div>
                         {(req.created_at || req.created_by_name) && (
-                          <div className="dcr-meta-line" title={req.created_by_name ? `Создал: ${req.created_by_name}` : undefined}>
-                            <span className="dcr-meta-icon" aria-hidden>🕒</span>
-                            {req.created_at && formatShortDate(req.created_at)}
+                          <div className="dcr-meta-line">
+                            <span className="dcr-meta-icon" aria-hidden><IconClock size={12} /></span>
+                            {req.created_at && <span className="ui-num">{formatShortDate(req.created_at)}</span>}
                             {req.created_by_name && (
                               <>
                                 <span className="dcr-meta-sep">·</span>
-                                <span className="dcr-meta-author">{req.created_by_name}</span>
+                                <PersonName full={req.created_by_name} titlePrefix="Создал" className="dcr-meta-author" />
                               </>
                             )}
                           </div>
                         )}
                         {/* task 365: ориентировочный срок согласования + inline-edit */}
                         <div className="dcr-meta-deadline">
-                          <span className="dcr-meta-icon" aria-hidden>📅</span>
+                          <span className="dcr-meta-icon" aria-hidden><IconCalendar size={12} /></span>
                           <span className="dcr-meta-deadline-label">Ориентировочный срок:</span>
                           {req.expected_approval_date ? (
                             <button
@@ -1863,17 +1907,19 @@ function DcRequestsPage() {
                         {canEditDc ? (
                           <div className="dcr-material-edit">
                             <span className="dcr-material-edit-label">Материал:</span>
-                            <select
-                              className={`dcr-material-select ${MATERIAL_CLASS[req.material_type] || 'is-empty'}`}
+                            <WrapSelect
+                              faceClassName={`dcr-material-select ${MATERIAL_CLASS[req.material_type] || 'is-empty'}`}
+                              label={MATERIAL_LABEL[req.material_type] || 'Не указан'}
                               value={req.material_type || ''}
                               onChange={(e) => handleSaveMaterial(req.id, e.target.value)}
                               title="Тип материала"
+                              aria-label="Тип материала"
                             >
-                              <option value="">— не указан —</option>
+                              <option value="">Не указан</option>
                               {MATERIAL_OPTIONS.map(opt => (
                                 <option key={opt.value} value={opt.value}>{opt.label}</option>
                               ))}
-                            </select>
+                            </WrapSelect>
                           </div>
                         ) : req.material_type && (
                           <div className={`dcr-material-badge ${MATERIAL_CLASS[req.material_type] || ''}`}>
@@ -1885,20 +1931,22 @@ function DcRequestsPage() {
                         {canEditDc ? (
                           <div className="dcr-material-edit">
                             <span className="dcr-material-edit-label">Тип ДС:</span>
-                            <select
-                              className={`dcr-material-select dcr-dstype-select ${DS_TYPE_CLASS[req.ds_type] || (req.ds_type ? '' : 'is-empty')}`}
+                            <WrapSelect
+                              faceClassName={`dcr-material-select dcr-dstype-select ${DS_TYPE_CLASS[req.ds_type] || (req.ds_type ? '' : 'is-empty')}`}
+                              label={req.ds_type ? (DS_TYPE_LABEL[req.ds_type] || req.ds_type) : 'Не указан'}
                               value={req.ds_type || ''}
                               onChange={(e) => handleSaveDsType(req.id, e.target.value)}
                               title="Тип ДС"
+                              aria-label="Тип ДС"
                             >
-                              <option value="">— не указан —</option>
+                              <option value="">Не указан</option>
                               {req.ds_type && !DS_TYPE_OPTIONS.some(o => o.value === req.ds_type) && (
                                 <option value={req.ds_type} disabled>{DS_TYPE_LABEL[req.ds_type] || req.ds_type}</option>
                               )}
                               {DS_TYPE_OPTIONS.map(opt => (
                                 <option key={opt.value} value={opt.value}>{opt.label}</option>
                               ))}
-                            </select>
+                            </WrapSelect>
                           </div>
                         ) : req.ds_type && (
                           <div className={`dcr-tag ${DS_TYPE_CLASS[req.ds_type] || ''}`}>
@@ -1906,11 +1954,14 @@ function DcRequestsPage() {
                           </div>
                         )}
                       </td>
-                      <td style={{ textAlign: 'center' }}>{req.ds_number || <span className="muted-dash">—</span>}</td>
-                      <td className="dcr-cell-works">
-                        {req.works_description
-                          ? <CollapsibleText text={req.works_description} />
+                      <td className="dcr-cell-dsnum">
+                        {req.ds_number
+                          ? <BreakableId value={req.ds_number} className="ui-num-wrap" />
                           : <span className="muted-dash">—</span>}
+                      </td>
+                      <td className="dcr-cell-works">
+                        {/* До трёх строк, длиннее — «Показать полностью». */}
+                        <ClampText text={req.works_description} />
                       </td>
                       {/* task 370: сумма ДС («Было подано» / «Утверждено») с инлайн-редактированием + разница */}
                       <td className="dcr-cell-amount">
@@ -2026,7 +2077,7 @@ function DcRequestsPage() {
                           >+ Итог проверки</button>
                         ) : null}
                       </td>
-                      <td>{req.responsible?.full_name || <span className="muted-dash">—</span>}</td>
+                      <td>{req.responsible?.full_name ? <PersonName full={req.responsible.full_name} /> : <span className="muted-dash">Не назначен</span>}</td>
                       <td className="dcr-cell-tasks">
                         {/* task 334: кнопка-счётчик. Клик открывает модалку
                             со списком задач (общий контейнер на странице). */}
@@ -2041,7 +2092,7 @@ function DcRequestsPage() {
                           title={totalTasks === 0 ? (canEditDc ? 'Добавить задачу' : 'Задач нет') : `Задачи: выполнено ${completedTasks} из ${totalTasks}`}
                           aria-label={totalTasks === 0 ? (canEditDc ? 'Добавить задачу' : 'Задач нет') : `Задачи: ${completedTasks} из ${totalTasks}`}
                         >
-                          <span className="dcr-tasks-pill-icon" aria-hidden>📋</span>
+                          <span className="dcr-tasks-pill-icon" aria-hidden><IconChecklist size={14} /></span>
                           {totalTasks > 0 ? (
                             <span className="dcr-tasks-pill-counter">
                               {completedTasks}<span className="dcr-tasks-pill-sep">/</span>{totalTasks}
@@ -2191,7 +2242,7 @@ function DcRequestsPage() {
                         {(finalDocs.length > 0 || canEditDc) && (
                           <div className={`dcr-final-docs${finalDocs.length > 0 ? ' has-final' : ''}`}>
                             <div className="dcr-final-docs-title">
-                              <span className="dcr-final-docs-icon" aria-hidden>✔</span>
+                              <span className="dcr-final-docs-icon" aria-hidden><IconCheckMark size={12} /></span>
                               Итоговые документы
                               {finalDocs.length > 0 && (
                                 <span className="dcr-final-docs-count">{finalDocs.length}</span>
@@ -2230,16 +2281,16 @@ function DcRequestsPage() {
                         {isDeletedTab ? (
                           <>
                             {canEditDc && (
-                              <button className="btn-icon btn-restore" onClick={() => handleRestore(req.id)} title="Восстановить">↩</button>
+                              <button type="button" className="btn-icon btn-restore" onClick={() => handleRestore(req.id)} title="Восстановить" aria-label="Восстановить заявку"><IconRestore /></button>
                             )}
                             {isAdmin && (
-                              <button className="btn-icon btn-delete" onClick={() => handleHardDelete(req.id)} title="Удалить безвозвратно (админ)">🗑️</button>
+                              <button type="button" className="btn-icon btn-delete" onClick={() => handleHardDelete(req.id)} title="Удалить безвозвратно (админ)" aria-label="Удалить заявку безвозвратно"><IconTrash /></button>
                             )}
                           </>
                         ) : canEditDc ? (
                           <>
-                            <button className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать">✏️</button>
-                            <button className="btn-icon btn-delete" onClick={() => handleDelete(req.id)} title="Удалить">🗑️</button>
+                            <button type="button" className="btn-icon btn-edit" onClick={() => handleEdit(req)} title="Редактировать" aria-label="Редактировать заявку"><IconEdit /></button>
+                            <button type="button" className="btn-icon btn-delete" onClick={() => handleDelete(req.id)} title="Удалить" aria-label="Удалить заявку"><IconTrash /></button>
                           </>
                         ) : null}
                       </td>
@@ -3029,49 +3080,3 @@ function DcRequestsPage() {
 }
 
 export default DcRequestsPage
-
-
-// Длинное описание сворачивается до нескольких строк; «Показать полностью» —
-// только если текст действительно не помещается (меряем по высоте, с учётом
-// переносов при текущей ширине колонки).
-function CollapsibleText({ text, lines = 6 }) {
-  const ref = useRef(null)
-  const [expanded, setExpanded] = useState(false)
-  const [overflowing, setOverflowing] = useState(false)
-
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const measure = () => {
-      if (expanded) return
-      setOverflowing(el.scrollHeight > el.clientHeight + 1)
-    }
-    measure()
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [text, expanded, lines])
-
-  return (
-    <div className="dcr-collapsible">
-      <div
-        ref={ref}
-        className={`dcr-collapsible-text${expanded ? '' : ' is-collapsed'}${!expanded && overflowing ? ' has-fade' : ''}`}
-        style={expanded ? undefined : { maxHeight: `calc(${lines} * 1.45em)` }}
-      >
-        {text}
-      </div>
-      {(overflowing || expanded) && (
-        <button
-          type="button"
-          className="dcr-collapsible-toggle"
-          onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
-          aria-expanded={expanded}
-        >
-          {expanded ? 'Свернуть ▴' : 'Показать полностью ▾'}
-        </button>
-      )}
-    </div>
-  )
-}

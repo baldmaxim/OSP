@@ -11,19 +11,22 @@
    переопределяется. Шкала: основной 14/20, кнопки и фильтры 14/20 (500),
    заголовки колонок 13/18 (500), пояснения 12/16, заголовок раздела 20/28 (600). */
 
+/* Значения шкалы — общие токены --ui-* (src/styles/workUi.css): одна шкала
+   на все разделы в рабочем стиле. Имена --vr-* оставлены, чтобы не трогать
+   правила ниже. */
 body.vors-typography {
-  --vr-font: 'Inter OSP', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --vr-text: 0.875rem;        /* 14px */
-  --vr-text-lh: 1.25rem;      /* 20px */
-  --vr-th: 0.8125rem;         /* 13px */
-  --vr-th-lh: 1.125rem;       /* 18px */
-  --vr-hint: 0.75rem;         /* 12px */
-  --vr-hint-lh: 1rem;         /* 16px */
-  --vr-title: 1.25rem;        /* 20px */
-  --vr-title-lh: 1.75rem;     /* 28px */
-  --vr-regular: 400;
-  --vr-medium: 500;
-  --vr-semibold: 600;
+  --vr-font: var(--ui-font);
+  --vr-text: var(--ui-text);          /* 14px */
+  --vr-text-lh: var(--ui-text-lh);    /* 20px */
+  --vr-th: var(--ui-th);              /* 13px */
+  --vr-th-lh: var(--ui-th-lh);        /* 18px */
+  --vr-hint: var(--ui-hint);          /* 12px */
+  --vr-hint-lh: var(--ui-hint-lh);    /* 16px */
+  --vr-title: var(--ui-title);        /* 20px */
+  --vr-title-lh: var(--ui-title-lh);  /* 28px */
+  --vr-regular: var(--ui-regular);
+  --vr-medium: var(--ui-medium);
+  --vr-semibold: var(--ui-semibold);
 }
 
 /* ── Основа ─────────────────────────────────────────────────────────────── */
@@ -324,6 +327,11 @@ body.vors-typography :is(.drc-done, .drc-link) {
 /* Текст только для экранного диктора (полное ФИО). */
 .vr-sr-only {
   position: absolute;
+  /* Прижат к углу контейнера: без top/left он стоит там, где был бы в потоке, —
+     в прокручиваемой таблице это может быть далеко справа, и такой узел
+     расширял бы документ (горизонтальная прокрутка всей страницы). */
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   padding: 0;

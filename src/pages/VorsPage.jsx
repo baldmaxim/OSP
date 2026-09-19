@@ -25,6 +25,9 @@ import './CostPlansPage.css'
 // Типографика раздела (этап 1): шрифт Inter с нашего сервера и шкала размеров —
 // только внутри «ВОРов и РД». Правила — docs/UI_GUIDELINES.md.
 import '../styles/fonts.css'
+// Токены шкалы (--ui-*); правила workUi.css действуют только на .ui-work —
+// у «ВОРов и РД» этого класса нет, их вид задаёт VorsTypography.css.
+import '../styles/workUi.css'
 import './VorsTypography.css'
 
 // Значение фильтра «Ответственный» для тендеров без ответственного.

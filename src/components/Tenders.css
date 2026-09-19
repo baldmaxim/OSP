@@ -1903,3 +1903,46 @@
   white-space: nowrap;
 }
 [data-theme='dark'] .tp-counts-warn { color: #fcd34d; }
+
+/* ── Бывшие инлайн-стили реестра ─────────────────────────────────────────────
+   Вынесены в классы, чтобы рабочий стиль (src/styles/workUi.css) мог их
+   переопределить для «Основного строительства» и «Тендеров на материалы».
+   Значения — прежние: у гарантийного отдела, совместных и прочих вид тот же. */
+.tenders-page .tp-filters { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 0.5rem 0; }
+.tenders-page .tenders-search-wrap { display: flex; align-items: center; gap: 0.5rem; flex: 1 1 240px; min-width: 200px; max-width: 360px; }
+.tenders-page .tp-search {
+  width: 100%;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.tenders-page .tp-filters-reset { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 0.8125rem; }
+.tenders-page .tp-num { text-align: center; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.tenders-page .tp-obj-address { font-size: 0.75rem; color: var(--text-tertiary); word-break: break-word; }
+.tenders-page .tp-status-badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.6875rem; font-weight: 600; }
+.tenders-page .tp-docs-btn {
+  background: none;
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  padding: 0.0625rem 0.375rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.6875rem;
+}
+.tenders-page .tp-docs-btn-inner { display: inline-flex; align-items: center; gap: 0.1875rem; }
+.tenders-page .tp-sub-line { font-size: 0.6875rem; color: var(--text-tertiary); margin-top: 0.125rem; }
+.tenders-page .tp-add-link {
+  background: none;
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  padding: 0.1875rem 0.5rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+.tenders-page .tp-dash { color: var(--text-tertiary); font-size: 0.75rem; }
+.tenders-page .tp-link-row { display: flex; align-items: center; gap: 0.375rem; }
+.tenders-page a.tender-desc-link { color: var(--primary-color); text-decoration: underline; }

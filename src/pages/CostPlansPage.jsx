@@ -10,7 +10,13 @@ import RootFolderPathButton from '../components/RootFolderPathButton'
 import { IconCoins, IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
 import CostPlanInstructionModal from '../components/CostPlanInstructionModal'
 import DateRangeCell from '../components/DateRangeCell'
+import ClampText from '../components/ClampText'
+import PersonName from '../components/PersonName'
+import useBodyClass from '../hooks/useBodyClass'
 import './CostPlansPage.css'
+// Общий рабочий стиль разделов (docs/UI_GUIDELINES.md) — после стилей страницы.
+import '../styles/fonts.css'
+import '../styles/workUi.css'
 
 const STATUS_LABELS = {
   not_started: 'Не начат',
@@ -30,6 +36,9 @@ function CostPlansPage() {
   const { scopedObjectIds, userProfile, canEdit } = useRole()
   // Путь к папке — поле самого тендера, поэтому и право на правку от тендеров.
   const canEditTenders = canEdit('tenders')
+  // Всплывающие списки фильтров и окошко срока рисуются в <body> — им нужен
+  // тот же шрифт, что и странице.
+  useBodyClass('ui-work-portal')
 
   // Лог изменений в журнал тендера (используется при смене ответственного / ссылки).
   const logTenderEvent = async (tenderId, eventType, payload = {}) => {
@@ -407,7 +416,7 @@ function CostPlansPage() {
 
   if (loading) {
     return (
-      <div className="cost-plans-page">
+      <div className="cost-plans-page ui-work">
         <div className="page-header"><h2>Планы затрат</h2></div>
         <div className="loading">Загрузка...</div>
       </div>
@@ -415,7 +424,7 @@ function CostPlansPage() {
   }
 
   return (
-    <div className="cost-plans-page">
+    <div className="cost-plans-page ui-work">
       <div className="page-header page-header-cost-plans">
         <h2>
           <IconTile tone="green" className="page-icon-tile"><IconCoins /></IconTile>
@@ -497,7 +506,7 @@ function CostPlansPage() {
         )}
         {/* task 267: удалённые планы затрат (тендер удалён → сюда) */}
         <button
-          className={`tab ${activeTab === 'deleted' ? 'active' : ''}`}
+          className={`tab tab-deleted ${activeTab === 'deleted' ? 'active' : ''}`}
           onClick={() => setActiveTab('deleted')}
         >
           Удалённые
@@ -509,12 +518,15 @@ function CostPlansPage() {
           договоров: с поиском внутри и множественным выбором. Нативные <select>
           на 300+ объектов листались тяжело и выглядели чужеродно. */}
       <div className="cost-plans-toolbar">
-        <div className="cp-search-wrap">
+        <div className="cp-search-wrap ui-search">
           <IconSearch />
+          {/* Подсказка короткая, чтобы помещалась целиком; полный перечень
+              того, где ищет поле, — в aria-label. */}
           <input
             type="search"
             className="cost-plans-search"
-            placeholder="Поиск по № тендера, объекту, описанию, ответственному…"
+            placeholder="№, объект, описание, ФИО"
+            aria-label="Поиск по номеру тендера, объекту, описанию работ, ответственному и примечанию"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -701,22 +713,27 @@ const NO_CONTACTS = []
 const CostPlanRow = memo(function CostPlanRow({ t, canEditTenders, isEditingResponsible, contacts, actions }) {
   return (
     <tr>
-      <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+      <td className="ui-rownum" style={{ textAlign: 'center' }}>
         {t.public_tender_number ?? '—'}
       </td>
       <td className="cp-object-cell">
         {t.objects?.name || '—'}
       </td>
-      <td className="muted-text">
-        <Link
-          to={`/tenders/${t.id}`}
-          className="row-link primary cp-desc-link"
-          title={`${t.work_description || ''}\n\nОткрыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)`}
-        >
-          {/* Не больше трёх строк: полный текст — в подсказке. Ограничение строк
-              работает только на внутреннем элементе, не на ячейке таблицы. */}
-          <span className="cp-desc-text">{t.work_description || '—'}</span>
-        </Link>
+      <td>
+        {/* До трёх строк; длиннее — «Показать полностью» под текстом. Переход
+            в тендер — по самому тексту, раскрытие — отдельной кнопкой. */}
+        <ClampText
+          text={t.work_description}
+          wrap={(body) => (
+            <Link
+              to={`/tenders/${t.id}`}
+              className="row-link primary cp-desc-link ui-title-link"
+              title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
+            >
+              {body}
+            </Link>
+          )}
+        />
         {/* Путь к папке с документами тендера — то же поле, что в
             реестре тендеров: правка здесь видна и там. */}
         <FolderPathCell
@@ -737,7 +754,7 @@ const CostPlanRow = memo(function CostPlanRow({ t, canEditTenders, isEditingResp
             }}
             onBlur={() => actions.editResponsible(null)}
           >
-            <option value="">— не назначен —</option>
+            <option value="">Не назначен</option>
             {contacts.length === 0 && <option value="" disabled>Загрузка сотрудников…</option>}
             {contacts.map(c => (
               <option key={c.id} value={c.id}>{c.full_name}</option>
@@ -749,24 +766,24 @@ const CostPlanRow = memo(function CostPlanRow({ t, canEditTenders, isEditingResp
             onClick={() => actions.editResponsible(t.id)}
             title="Назначить ответственного"
           >
-            {t.cost_plan_responsible?.full_name || (
-              <span className="responsible-empty">— не назначен —</span>
-            )}
+            {t.cost_plan_responsible?.full_name
+              ? <PersonName full={t.cost_plan_responsible.full_name} />
+              : <span className="responsible-empty">Не назначен</span>}
           </button>
         )}
         {t.cost_plan_responsible?.position && (
-          <div className="muted-tiny">{t.cost_plan_responsible.position}</div>
+          <div className="ui-sub">{t.cost_plan_responsible.position}</div>
         )}
       </td>
-      <td className="muted-text" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+      <td className="ui-num">
         {t.tender_start_date
           ? new Date(t.tender_start_date).toLocaleDateString('ru-RU')
-          : <span className="muted-tiny">—</span>}
+          : <span className="ui-empty">—</span>}
       </td>
-      <td className="muted-text" style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+      <td className="ui-num">
         {t.tender_end_date
           ? new Date(t.tender_end_date).toLocaleDateString('ru-RU')
-          : <span className="muted-tiny">—</span>}
+          : <span className="ui-empty">—</span>}
       </td>
       <td>
         {/* Окошко с черновиком: нативное поле даты сохраняло каждую цифру года
@@ -848,6 +865,14 @@ const NotesCell = memo(function NotesCell({ tender, onSave }) {
   useLayoutEffect(() => {
     // Пустое поле подгонять незачем: высота одной строки задана rows={1}.
     if (ref.current && tender.cost_plan_notes) fit(ref.current)
+  }, [tender.cost_plan_notes])
+  // Шрифт раздела (Inter) приезжает после первой отрисовки, и текст в нём
+  // занимает больше строк — без повторной подгонки последняя строка обрезалась.
+  useEffect(() => {
+    if (!tender.cost_plan_notes || !document.fonts?.ready) return undefined
+    let alive = true
+    document.fonts.ready.then(() => { if (alive && ref.current) fit(ref.current) })
+    return () => { alive = false }
   }, [tender.cost_plan_notes])
   return (
     <textarea

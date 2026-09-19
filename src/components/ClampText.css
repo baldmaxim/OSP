@@ -1,0 +1,33 @@
+/* ClampText: до N строк (--ui-clamp-lines) + «Показать полностью». Ограничение
+   строк — на внутреннем span: на ячейке таблицы или ссылке-блоке оно ломает
+   раскладку. white-space: pre-line — переносы, набранные в тексте, сохраняются. */
+.ui-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--ui-clamp-lines, 3);
+  line-clamp: var(--ui-clamp-lines, 3);
+  overflow: hidden;
+  overflow-wrap: break-word;
+  white-space: pre-line;
+}
+.ui-clamp.is-expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+}
+.ui-clamp-toggle {
+  display: inline-block;
+  margin-top: 0.125rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-link, var(--primary-color));
+  font: inherit;
+  font-size: var(--ui-hint, 0.75rem);
+  line-height: var(--ui-hint-lh, 1rem);
+  font-weight: var(--ui-medium, 500);
+  text-align: left;
+  cursor: pointer;
+}
+.ui-clamp-toggle:hover { text-decoration: underline; text-underline-offset: 2px; }

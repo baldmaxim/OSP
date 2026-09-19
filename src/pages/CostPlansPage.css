@@ -980,70 +980,44 @@
   .vor-scope-switch { margin-left: 0; }
 }
 
-/* ── «Планы затрат»: таблица по ширине окна, без горизонтального ползунка ──
-   Ширины столбцов — долями в <colgroup>. Только для .cp-table: «ВОРы и РД»
-   пользуются теми же классами .data-table и не меняются. */
-@media (min-width: 901px) {
-  .cost-plans-page .cp-table-container { overflow-x: visible; }
-  .cost-plans-page .cp-table { table-layout: fixed; width: 100%; }
-  .cost-plans-page .cp-table th {
-    white-space: normal;
-    vertical-align: bottom;
-    padding-left: 0.5rem;
-    padding-right: 0.5rem;
-  }
-  .cost-plans-page .cp-table td {
-    min-width: 0;
-    overflow: hidden;
-    padding-left: 0.5rem;
-    padding-right: 0.5rem;
-  }
-  /* Выпадающий список ответственного и статус — по ширине ячейки. */
-  .cost-plans-page .cp-table .responsible-display,
-  .cost-plans-page .cp-table .inline-responsible-select,
-  .cost-plans-page .cp-table .plan-status-select { max-width: 100%; }
-  .cost-plans-page .cp-table .responsible-display { white-space: normal; text-align: left; }
-  /* Срок-«пилюля»: не шире ячейки, текст с многоточием. */
-  .cost-plans-page .cp-table .drc-btn { max-width: 100%; }
+/* ── «Планы затрат»: сетка таблицы ──────────────────────────────────────────
+   Общий вид (шрифт, заголовки, ячейки, статусы) — src/styles/workUi.css, здесь
+   только ширины. Всё, кроме описания работ, — фиксированной ширины в rem
+   (растёт вместе со шрифтом браузера); описание забирает остаток окна.
+   min-width = сумма колонок (80.5rem) + 16rem под описание: на 1920 таблица
+   помещается целиком (описание ≈ 23rem), в окне уже — прокручивается сама
+   таблица, а не обрезаются даты и не мельчает шрифт.
+   Только .ui-work: «ВОРы и РД» живут на тех же классах .cost-plans-page. */
+.cost-plans-page.ui-work .cp-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 96.5rem;
+}
+.cost-plans-page.ui-work .cp-col-num { width: 4rem; }
+.cost-plans-page.ui-work .cp-col-object { width: 9rem; }
+/* .cp-col-desc — без ширины: остаток */
+.cost-plans-page.ui-work .cp-col-resp { width: 10rem; }
+.cost-plans-page.ui-work .cp-col-date { width: 6.5rem; }     /* «10.09.2026» */
+.cost-plans-page.ui-work .cp-col-term { width: 14.5rem; }    /* «21.12.2026 — 15.01.2027» целиком */
+.cost-plans-page.ui-work .cp-col-link { width: 7rem; }
+.cost-plans-page.ui-work .cp-col-status { width: 9rem; }     /* плашка «Не требуется» */
+.cost-plans-page.ui-work .cp-col-notes { width: 14rem; }
 
-  /* Доли столбцов (сумма 100%). Рассчитаны на 1920×1080: рабочая область ~1690px. */
-  .cost-plans-page .cp-col-num { width: 3.5%; }
-  .cost-plans-page .cp-col-object { width: 8%; }
-  .cost-plans-page .cp-col-desc { width: 24%; }
-  .cost-plans-page .cp-col-resp { width: 10%; }
-  .cost-plans-page .cp-col-date { width: 6.25%; }
-  .cost-plans-page .cp-col-term { width: 11%; }
-  .cost-plans-page .cp-col-link { width: 7%; }
-  .cost-plans-page .cp-col-status { width: 9%; }
-  .cost-plans-page .cp-col-notes { width: 15%; }
-}
+.cost-plans-page.ui-work .cp-object-cell { overflow-wrap: break-word; }
+.cost-plans-page.ui-work .cp-desc-link { display: block; text-align: left; }
+.cost-plans-page.ui-work .cost-plan-link-cell { gap: 0.25rem; }
 
-/* Узкие мониторы и ноутбуки (1366–1500): описание уже, даты/статус/срок шире,
-   шрифт мельче — всё по-прежнему в одном окне без ползунка. */
-@media (min-width: 901px) and (max-width: 1500px) {
-  .cost-plans-page .cp-table { font-size: 0.75rem; }
-  .cost-plans-page .cp-table th { font-size: 0.625rem; letter-spacing: 0.01em; padding-left: 0.35rem; padding-right: 0.35rem; }
-  .cost-plans-page .cp-table td { padding-left: 0.35rem; padding-right: 0.35rem; }
-  .cost-plans-page .cp-col-num { width: 5%; }
-  .cost-plans-page .cp-col-object { width: 8.5%; }
-  .cost-plans-page .cp-col-desc { width: 18%; }
-  .cost-plans-page .cp-col-resp { width: 10%; }
-  .cost-plans-page .cp-col-date { width: 7.5%; }
-  .cost-plans-page .cp-col-term { width: 11.5%; }
-  .cost-plans-page .cp-col-link { width: 7%; }
-  .cost-plans-page .cp-col-status { width: 10%; }
-  .cost-plans-page .cp-col-notes { width: 15%; }
-  /* Срок в две строки вместо обрезки: «10.09 —» / «25.09.2026». */
-  .cost-plans-page .cp-table .drc-btn { white-space: normal; border-radius: 10px; text-align: left; font-size: 0.6875rem; }
-  .cost-plans-page .cp-table .drc-text { white-space: normal; }
-  .cost-plans-page .cp-table .plan-status-select { padding-left: 0.4rem; padding-right: 1.1rem; font-size: 0.6875rem; }
+/* Примечание: поле правки с автоподгонкой высоты — текст читается целиком. */
+.cost-plans-page.ui-work textarea.cost-plan-notes {
+  margin: -0.25rem -0.5rem;
+  width: calc(100% + 1rem);
+  padding: 0.25rem 0.5rem;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  border-radius: var(--ui-radius);
 }
-.cost-plans-page .cp-object-cell { overflow-wrap: break-word; }
-.cost-plans-page .cp-desc-link { display: block; text-align: left; }
-.cost-plans-page .cp-desc-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: break-word;
-}
+.cost-plans-page.ui-work textarea.cost-plan-notes::placeholder { font-style: normal; }
+.cost-plans-page.ui-work textarea.cost-plan-notes:hover { border-color: var(--border-color); background: var(--bg-secondary); }
+
+/* Кнопка «?» (инструкция) — в ряд с заголовком, как иконка-кнопка. */
+.cost-plans-page.ui-work .cpi-open-btn { font-size: var(--ui-th); font-weight: var(--ui-semibold); }

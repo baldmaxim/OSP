@@ -2559,37 +2559,221 @@
 .dcr-dstype-select.dstype-out:hover,
 .dcr-dstype-select.dstype-tender:hover { border-color: rgba(148, 163, 184, 0.45); }
 
-/* Описание ДС: сворачивание длинного текста. */
-.dcr-collapsible-text {
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-.dcr-collapsible-text.is-collapsed {
-  overflow: hidden;
-  position: relative;
-}
-/* Мягкое затухание последней строки — видно, что текст продолжается. */
-.dcr-collapsible-text.has-fade {
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent);
-}
-.dcr-collapsible-toggle {
-  margin-top: 0.2rem;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--primary-color, #2563eb);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.dcr-collapsible-toggle:hover { text-decoration: underline; }
-
 /* Задачи: пилюля не шире колонки. */
 .dcr-cell-tasks .dcr-tasks-pill {
   max-width: 100%;
   white-space: nowrap;
 }
 .dcr-tasks-pill-empty-label { font-weight: 700; }
+
+/* ══ Рабочий стиль (src/styles/workUi.css) ════════════════════════════════════
+   Общий вид — шрифт, шапка, вкладки, панель, таблица, статусы — задаёт
+   workUi.css. Здесь — то, что свойственно только заявкам на ДС: сетка
+   колонок, суммы, мета-строки объекта, документы. Префикс
+   .dc-requests-page.ui-work сильнее правил ContractRegistry*.css, которые
+   делит с реестром договоров класс .contract-registry. */
+
+/* Раздел — одна «карточка» без внутренних отступов, как «Тендеры» и «Планы
+   затрат»: шапка, вкладки, панель и таблица во всю ширину. */
+.dc-requests-page.ui-work { padding: 0; }
+.dc-requests-page.ui-work .dcr-header-actions { flex-wrap: wrap; gap: 0.5rem; }
+.dc-requests-page.ui-work .dcr-link-btn-empty { color: var(--text-secondary); }
+.dc-requests-page.ui-work .dcr-link-edit { width: var(--ui-control-h); height: var(--ui-control-h); }
+.dc-requests-page.ui-work .status-tabs .status-tab.tab-deleted { margin-left: auto; }
+.dc-requests-page.ui-work .dcr-toolbar .ui-search { flex: 1 1 18rem; max-width: 28rem; }
+.dc-requests-page.ui-work .dcr-filter-drop { min-width: 0; max-width: none; flex: 0 0 auto; }
+.dc-requests-page.ui-work .dcr-filter-drop .fdrop-trigger { width: auto; font-weight: var(--ui-regular); }
+.dc-requests-page.ui-work .dcr-filter-drop.is-active .fdrop-trigger { font-weight: var(--ui-regular); color: var(--text-primary); border-color: var(--primary-color); background: var(--primary-light); }
+
+/* Сетка: всё, кроме описания ДС, — фиксированной ширины в rem. Сумма
+   фиксированных — 86.75rem, min-width = + 12rem под описание. На 1920 таблица
+   помещается (описание ≈ 17rem); уже — прокручивается внутри себя.
+   Прокрутку включаем только там, где таблица не помещается: пока она не
+   нужна, остаётся прежний overflow-x: clip — выбор статуса открывается прямо
+   в ячейке и у нижних строк не должен упираться в край контейнера. */
+.dc-requests-page.ui-work .dcr-table { table-layout: fixed; width: 100%; min-width: 98.75rem; }
+.dc-requests-page.ui-work .table-container { overflow-x: auto; }
+@media (min-width: 115.75rem) {  /* 98.75rem таблицы + сайдбар 200px + поля ≈ 1852px */
+  .dc-requests-page.ui-work .table-container { overflow-x: clip; }
+}
+.dc-requests-page.ui-work .dcr-col-num { width: 2.75rem; }
+.dc-requests-page.ui-work .dcr-col-object { width: 11rem; }      /* значок + «Ориентировочный срок:» в строку */
+.dc-requests-page.ui-work .dcr-col-cp { width: 12.25rem; }       /* «Доп. работы вне договора» в селекторе */
+.dc-requests-page.ui-work .dcr-col-dsnum { width: 6.5rem; }        /* «ДС-2026/0457-А» — перенос после «/» */
+/* .dcr-col-desc — без ширины: остаток */
+.dc-requests-page.ui-work .dcr-col-amount { width: 11.5rem; }      /* сумма до «999 999 999 999,99» целиком */
+.dc-requests-page.ui-work .dcr-col-status { width: 10.25rem; }
+.dc-requests-page.ui-work .dcr-col-resp { width: 8.5rem; }
+.dc-requests-page.ui-work .dcr-col-tasks { width: 5rem; }
+.dc-requests-page.ui-work .dcr-col-docs { width: 12.5rem; }
+.dc-requests-page.ui-work .dcr-col-actions { width: 6.5rem; }     /* три кнопки 28px */
+
+.dc-requests-page.ui-work .dcr-table tbody td { word-break: normal; overflow-wrap: break-word; }
+
+/* Объект: название — заголовок строки (500), под ним дата/автор и срок. */
+.dc-requests-page.ui-work .dcr-object-name { font-weight: var(--ui-medium); }
+.dc-requests-page.ui-work :is(.dcr-meta-line, .dcr-meta-deadline) {
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  color: var(--text-secondary);
+}
+.dc-requests-page.ui-work .dcr-meta-icon { display: inline-flex; color: var(--text-tertiary); }
+.dc-requests-page.ui-work .dcr-meta-author { color: var(--text-secondary); }
+.dc-requests-page.ui-work .dcr-meta-deadline-label { opacity: 1; }
+.dc-requests-page.ui-work .dcr-meta-deadline-value {
+  font-size: var(--ui-hint);
+  font-weight: var(--ui-medium);
+  border-radius: 4px;
+}
+.dc-requests-page.ui-work .dcr-meta-deadline-link { font-size: var(--ui-hint); }
+.dc-requests-page.ui-work .dcr-meta-deadline-empty { opacity: 1; }
+
+/* Контрагент: материал и тип ДС — подпись над селектором. */
+.dc-requests-page.ui-work .dcr-material-edit-label { font-size: var(--ui-hint); color: var(--text-secondary); }
+/* Значение в селекторе — данные строки: обычный вес, переносится целиком
+   (WrapSelect: плашка-текст + прозрачный select поверх). */
+.dc-requests-page.ui-work .dcr-material-select { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: var(--ui-regular); padding: 0.125rem 0.25rem; }
+.dc-requests-page.ui-work :is(.dcr-material-badge, .dcr-tag) { font-size: var(--ui-hint); font-weight: var(--ui-medium); }
+
+/* № ДС: целиком, перенос только после разделителей (BreakableId). */
+.dc-requests-page.ui-work .dcr-cell-dsnum { font-variant-numeric: tabular-nums; }
+
+/* Суммы: подпись («Было подано», «Утверждено») — строкой над значением, значение
+   на всю ширину колонки, вправо, моноширинными цифрами. Рядом с подписью сумма
+   от 10 млрд уже не помещалась в поле. Исходная сумма, утверждённая и разница —
+   отдельными строками; знак и направление изменения (↓/↑, −/+) не скрываются. */
+.dc-requests-page.ui-work .dcr-amount { gap: 0.25rem; }
+.dc-requests-page.ui-work .dcr-amount-row { flex-direction: column; align-items: stretch; gap: 0; }
+.dc-requests-page.ui-work .dcr-amount-label {
+  width: auto;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  letter-spacing: normal;
+  color: var(--text-secondary);
+}
+.dc-requests-page.ui-work :is(.dcr-amount-input, .dcr-amount-value) {
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.dc-requests-page.ui-work .dcr-amount-input { padding: 0.0625rem 0.375rem; }
+.dc-requests-page.ui-work .dcr-amount-diff { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: var(--ui-medium); }
+.dc-requests-page.ui-work .dcr-amount-diff .dcr-diff-pct { font-size: var(--ui-hint); }
+.dc-requests-page.ui-work .dcr-amount-diff.is-zero { font-weight: var(--ui-regular); color: var(--text-secondary); }
+
+/* Статус и итог проверки. */
+.dc-requests-page.ui-work .dcr-status-chip {
+  padding: 0.125rem 0.375rem 0.125rem 0.5rem;
+  gap: 0.25rem;
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+  border-radius: 0.75rem;
+  box-shadow: none;
+}
+.dc-requests-page.ui-work .dcr-status-popover-item { font-size: var(--ui-text); }
+/* Итог проверки: исход одной строкой, дата — под ним (раньше «С замечаниями»
+   рвалось посреди слова). */
+.dc-requests-page.ui-work .dcr-verdict-badge {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  margin-top: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--ui-radius);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+}
+.dc-requests-page.ui-work .dcr-verdict-badge-text { white-space: nowrap; }
+.dc-requests-page.ui-work .dcr-verdict-badge-date { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: var(--ui-regular); opacity: 1; }
+.dc-requests-page.ui-work .dcr-verdict-add { margin-top: 0.375rem; font-size: var(--ui-hint); font-weight: var(--ui-medium); }
+
+/* Задачи: счётчик-кнопка. */
+.dc-requests-page.ui-work .dcr-tasks-pill { font-size: var(--ui-hint); font-variant-numeric: tabular-nums; }
+.dc-requests-page.ui-work .dcr-tasks-pill-icon { display: inline-flex; }
+
+/* Документы: путь к папке, файлы, отчёт и итоговые — подписи обычным регистром. */
+.dc-requests-page.ui-work :is(.dcr-folder-path-text, .dcr-folder-path-add, .dcr-docs-summary, .dcr-doc-add) {
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.dc-requests-page.ui-work .dcr-final-docs-title {
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  font-weight: var(--ui-semibold);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.dc-requests-page.ui-work .dcr-final-docs-icon { display: inline-flex; }
+
+/* Имя файла в чипе — целиком, переносом, а не многоточием. */
+.dc-requests-page.ui-work .dcr-doc-chip { align-items: flex-start; }
+.dc-requests-page.ui-work .dcr-doc-chip-main { align-items: flex-start; text-align: left; font-size: var(--ui-hint); }
+.dc-requests-page.ui-work .dcr-doc-chip-desc {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+
+/* Действия — в ряд, по правому краю. */
+.dc-requests-page.ui-work .dcr-table .actions-cell { text-align: right; }
+.dc-requests-page.ui-work .dcr-table .actions-cell .btn-icon { margin: 0; }
+
+/* WrapSelect: плашка выбранного значения переносится; select — прозрачный слой. */
+.dcr-wrap-select { position: relative; display: block; }
+.dcr-wrap-select-face {
+  display: block;
+  position: relative;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: left;
+}
+.dc-requests-page .dcr-wrap-select .dcr-wrap-select-face.dcr-material-select { padding-right: 1.125rem; }
+.dcr-wrap-select-chev {
+  position: absolute;
+  right: 0.375rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.dcr-wrap-select-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.dcr-wrap-select:hover .dcr-wrap-select-face { border-color: rgba(148, 163, 184, 0.45); }
+.dcr-wrap-select:focus-within .dcr-wrap-select-face { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+/* Подложки колонок «Задачи» и «Документы» — лишний вид разделения рядом с
+   линиями строк; в рабочем стиле их нет. */
+.dc-requests-page.ui-work :is(.dcr-cell-docs, .dcr-cell-tasks) { background: none; }
+
+/* Контраст текста статусов и счётчиков (было 4,0–4,5:1, у счётчика итоговых
+   документов 2,8:1). Оттенки прежние — текст на ступень темнее. */
+.dc-requests-page.ui-work .dcr-status-chip.status-contract-check { color: #92400e; }
+.dc-requests-page.ui-work .dcr-status-chip.status-completed { color: #166534; }
+.dc-requests-page.ui-work .dcr-material-select.material-tolling { color: #92400e; }
+.dc-requests-page.ui-work .dcr-amount-diff.is-cheaper { color: #166534; }
+.dc-requests-page.ui-work .dcr-amount-diff.is-pricier { color: #b91c1c; }
+.dc-requests-page.ui-work .dcr-tasks-pill-done .dcr-tasks-pill-counter { color: #166534; }
+.dc-requests-page.ui-work .dcr-final-docs-count { background: #15803d; }
+.dc-requests-page.ui-work :is(.dcr-meta-sep, .dcr-tasks-pill-sep) { opacity: 1; color: var(--text-secondary); }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-status-chip.status-contract-check { color: #fcd34d; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-status-chip.status-completed { color: #86efac; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-material-select.material-tolling { color: #fcd34d; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-amount-diff.is-cheaper { color: #86efac; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-amount-diff.is-pricier { color: #fca5a5; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-tasks-pill-done .dcr-tasks-pill-counter { color: #86efac; }
+.dc-requests-page.ui-work .dcr-material-select.is-empty,
+.dc-requests-page.ui-work .dcr-docs-chev { color: var(--text-secondary); }

@@ -21,8 +21,7 @@ import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
 import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
 import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
-import { shortPersonName } from '../utils/personName'
-import { formatDateRange as formatShortDateRange } from '../utils/dateRange'
+import { formatDateRange as formatShortDateRange, breakAfterDash } from '../utils/dateRange'
 import DateRangeCell from '../components/DateRangeCell'
 import { vorStartDate } from '../utils/vorDates'
 import {
@@ -35,7 +34,7 @@ import IconTile from '../components/IconTile'
 import { IconHardHat, IconShieldCheck, IconPackage } from '../components/icons/TenderHubIcons'
 import {
   IconObject, IconTag, IconUser, IconColumns, IconColumnsWide,
-  IconJoint, IconOther, IconFolderTree, IconDocsStack,
+  IconJoint, IconOther, IconFolderTree, IconDocsStack, IconSearch,
 } from '../components/icons/ToolbarIcons'
 import { departmentConfig, objectDeptBadge, tenderObjectName, isConstructionTender } from '../utils/tenderDepartments'
 import { weekKey } from '../utils/weeks'
@@ -47,9 +46,16 @@ import { sanitizeUserText, sanitizeDeep } from '../utils/text'
 import { diffWords } from '../utils/textDiff'
 import { describeSupabaseError, isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { useIsPhone } from '../hooks/useMediaQuery'
+import useBodyClass from '../hooks/useBodyClass'
+import ClampText from '../components/ClampText'
+import PersonName from '../components/PersonName'
+import { IconPencil, IconTrash, IconRestore, IconLetter } from '../components/icons/ActionIcons'
 import '../components/Tenders.css'
 import '../components/TendersRegistryPolish.css'
 import '../components/MobileCards.css'
+// Общий рабочий стиль разделов (docs/UI_GUIDELINES.md) — после стилей страницы.
+import '../styles/fonts.css'
+import '../styles/workUi.css'
 
 // «Дежурный по тендерам»: ротация и ручная замена — src/utils/tenderDuty.js
 // (показывается и в «ВОРах и РД»).
@@ -101,6 +107,11 @@ const TENDER_LIST_SELECT = '*, objects(name, status, address, map_link), winner:
 
 function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const isMaterialsView = tenderType === 'materials'
+  // Общий рабочий стиль (workUi.css) — только «Основное строительство» и
+  // «Тендеры на материалы». Гарантийный отдел, совместные и прочие тендеры
+  // рендерит этот же компонент, их вид не меняется.
+  const uiWork = isMaterialsView || department === 'construction'
+  useBodyClass('ui-work-portal', uiWork)
   const { scopedObjectIds, userProfile, isAdmin, canEdit, canView, role } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
   // Тендеры на материалы — отдельный раздел прав (снабжение, миграция 20260924):
@@ -700,6 +711,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     } catch (error) {
       console.error('Ошибка загрузки сотрудников:', error.message)
     }
+  }
+
+  const notRequiredLabel = uiWork ? 'Не требуется' : '— Не требуется'
+
+  // Ответственный в ячейке: в рабочем стиле — «Фамилия И. О.» (полное — в
+  // подсказке и для диктора), пусто — «Не назначен» обычным текстом.
+  const responsibleLabel = (name) => {
+    if (!name) return <span className="responsible-empty">{uiWork ? 'Не назначен' : '— не назначен —'}</span>
+    return uiWork ? <PersonName full={name} /> : name
   }
 
   // Найти имя ответственного по tender
@@ -2506,7 +2526,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const tenderObjects = objects.filter(o => tenderObjectIds.includes(o.id))
 
   return (
-    <div className="tenders-page">
+    <div className={`tenders-page${uiWork ? ' ui-work' : ''}`}>
       {/* Акцент шапки — тон направления: разделы отличаются с одного взгляда. */}
       <div className={`page-header page-header-tenders hdr-tone--${headerTone}`}>
         <h2>
@@ -2590,7 +2610,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   <circle cx="12" cy="7" r="4" />
                 </svg>
                 <span className="tender-resp-chip-label">Дежурный по тендерам:</span>
-                <span className="tender-resp-chip-name">{currentResponsible}</span>
+                <span className="tender-resp-chip-name"><PersonName full={currentResponsible} /></span>
                 {overrideActive && <span className="tender-resp-chip-dot" title="ручная замена на неделю" aria-hidden />}
                 {isAdmin && <span className="tender-resp-chip-caret" aria-hidden>▾</span>}
               </button>
@@ -2711,10 +2731,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
       {/* Фильтры и таблица (скрываем на вкладке шаблона) */}
       {activeTab !== 'template' && (<>
-      <div
-        className={`tp-filters${isPhone && !mobileFiltersOpen ? ' is-collapsed' : ''}`}
-        style={{ padding: '0.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}
-      >
+      <div className={`tp-filters${isPhone && !mobileFiltersOpen ? ' is-collapsed' : ''}`}>
         {isPhone && (
           <button
             type="button"
@@ -2729,21 +2746,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <span className="tp-filters-chevron" aria-hidden>▾</span>
           </button>
         )}
-        <div className="tenders-search-wrap" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 240px', minWidth: '200px', maxWidth: '360px' }}>
+        <div className={`tenders-search-wrap${uiWork ? ' ui-search' : ''}`}>
+          {uiWork && <IconSearch />}
+          {/* Короткая подсказка помещается целиком; где ищет поле — в aria-label. */}
           <input
             type="search"
+            className="tp-search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Поиск по № тендера, объекту, адресу, описанию работ…"
-            style={{
-              width: '100%',
-              padding: '0.375rem 0.625rem',
-              fontSize: '0.8125rem',
-              border: '1px solid var(--border-color)',
-              borderRadius: '4px',
-              background: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-            }}
+            placeholder={uiWork ? '№, объект, адрес, описание' : 'Поиск по № тендера, объекту, адресу, описанию работ…'}
+            aria-label="Поиск по номеру тендера, объекту, адресу и описанию работ"
           />
         </div>
 
@@ -2816,7 +2828,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             value={responsibleFilter}
             onChange={setResponsibleFilter}
             options={[
-              { value: '__unassigned__', label: '— Не назначен —' },
+              { value: '__unassigned__', label: uiWork ? 'Не назначен' : '— Не назначен —' },
               // Тендеры на материалы: сотрудники снабжения, назначенные из реестра.
               ...(isMaterialsView
                 ? [...new Map(tenders
@@ -2837,8 +2849,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
         {(objectFilter.length > 0 || responsibleFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || searchQuery) && (
           <button
+            type="button"
+            className="tp-filters-reset"
             onClick={() => { setObjectFilter([]); setResponsibleFilter([]); setStatusFilter([]); setPriorityFilter([]); setSearchQuery('') }}
-            style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.8125rem' }}
           >
             Сбросить все
           </button>
@@ -2921,36 +2934,50 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         )
       ) : (
       <div className="table-container">
-        <table className={`data-table tenders-registry ${compactView ? 'data-table--compact' : ''}`}>
+        <table className={`data-table tenders-registry ${compactView ? 'data-table--compact' : ''}${uiWork ? ' tp-grid' : ''}`}>
           {isMaterialsView ? (
             <>
+              {/* Ширины — в TendersRegistryPolish.css (.tp-mc-*): даты и суммы
+                  целиком, описание и примечание забирают остаток. */}
+              <colgroup>
+                <col className="tp-mc-num" />
+                <col className="tp-mc-object" />
+                <col className="tp-mc-desc" />
+                <col className="tp-mc-prio" />
+                <col className="tp-mc-supply" />
+                <col className="tp-mc-mainresp" />
+                <col className="tp-mc-date" />
+                <col className="tp-mc-date" />
+                <col className="tp-mc-link" />
+                <col className="tp-mc-status" />
+                {!hideNotes && <col className="tp-mc-notes" />}
+                <col className="tp-mc-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th
                     className="sortable-th"
-                    style={{ width: '52px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+                    style={{ textAlign: 'center' }}
                     onClick={() => toggleSort('public_tender_number')}
                     title="Номер тендера. Кликните для сортировки"
                   >
                     №{sortIndicator('public_tender_number')}
                   </th>
-                  <th style={{ width: '130px', textAlign: 'center' }}>Объект</th>
-                  <th style={{ width: '170px', textAlign: 'center' }}>Описание работ</th>
+                  <th>Объект</th>
+                  <th>Описание работ</th>
                   <th
                     className="sortable-th"
                     onClick={() => toggleSort('materials_priority')}
                     title="Сортировать по приоритету: сначала высокий"
-                    style={{ width: '120px', cursor: 'pointer', userSelect: 'none' }}
                   >
                     Приоритет{sortIndicator('materials_priority')}
                   </th>
-                  <th style={{ width: '170px' }}>Ответственный<br />снабжение</th>
-                  <th style={{ width: '140px' }}>Ответственный<br />по тендеру</th>
+                  <th>Ответственный<br />снабжение</th>
+                  <th>Ответственный<br />по тендеру</th>
                   <th
                     className="sortable-th"
                     onClick={() => toggleSort('parent_tender_start_date')}
                     title="Срок из тендера основного строительства. Кликните для сортировки"
-                    style={{ width: '150px', textAlign: 'center' }}
                   >
                     Срок проведения<br />тендерных процедур{sortIndicator('parent_tender_start_date')}
                   </th>
@@ -2958,14 +2985,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     className="sortable-th"
                     onClick={() => toggleSort('materials_proposal_deadline')}
                     title="Сортировать по сроку"
-                    style={{ width: '165px', textAlign: 'center' }}
                   >
                     Срок предоставления<br />КП на материалы{sortIndicator('materials_proposal_deadline')}
                   </th>
-                  <th style={{ width: '140px' }}>Ссылка на КП</th>
-                  <th style={{ width: '140px' }}>Статус</th>
-                  {!hideNotes && <th style={{ minWidth: '180px' }}>Примечание</th>}
-                  <th className="actions-column" style={{ width: '90px' }}>Действия</th>
+                  <th>Ссылка на КП</th>
+                  <th>Статус</th>
+                  {!hideNotes && <th>Примечание</th>}
+                  <th className="actions-column"><span className="ui-sr-only">Действия</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -2988,25 +3014,27 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         tender.materials_priority === 'high' ? 'mat-prio-high-row' : '',
                       ].filter(Boolean).join(' ')}
                     >
-                      <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                      <td className="tp-num">
                         {tenderNumberOf(tender) ?? '—'}
                       </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {tenderObjectName(tender, '-')}
+                      <td>
+                        {tenderObjectName(tender, '—')}
                       </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {tender.parent_tender_id && canOpenTenderCard ? (
-                          <Link
-                            to={`/tenders/${tender.parent_tender_id}`}
-                            className="row-link primary"
-                            title="Открыть тендер основного строительства (Ctrl+клик или средняя кнопка — в новой вкладке)"
-                            style={{ fontSize: '0.75rem', textAlign: 'center', display: 'inline-block', color: 'var(--primary-color)', textDecoration: 'underline' }}
-                          >
-                            {tender.work_description}
-                          </Link>
-                        ) : (
-                          <span style={{ fontSize: '0.75rem' }}>{tender.work_description}</span>
-                        )}
+                      <td>
+                        {/* Описание — из основного тендера; переход — в него.
+                            До трёх строк, длиннее — «Показать полностью». */}
+                        <ClampText
+                          text={tender.work_description}
+                          wrap={tender.parent_tender_id && canOpenTenderCard ? (body) => (
+                            <Link
+                              to={`/tenders/${tender.parent_tender_id}`}
+                              className="row-link primary ui-title-link tp-desc-link"
+                              title="Открыть тендер основного строительства (Ctrl+клик или средняя кнопка — в новой вкладке)"
+                            >
+                              {body}
+                            </Link>
+                          ) : undefined}
+                        />
                       </td>
                       {/* Приоритет: низкий / средний / высокий. Высокий подсвечивается
                           и чипом, и полосой слева у всей строки. */}
@@ -3014,20 +3042,20 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         <FilterDropdown
                           className={`mat-prio-fdrop prio-${tender.materials_priority || 'none'}`}
                           label=""
-                          allLabel="— не указан —"
+                          allLabel="Не указан"
                           value={tender.materials_priority || ''}
                           onChange={(v) => handleUpdateMaterialsPriority(tender.id, v)}
                           disabled={!canEditTenders}
-                          options={[{ value: '', label: '— не указан —' }, ...MATERIALS_PRIORITY_OPTIONS]}
+                          options={[{ value: '', label: 'Не указан' }, ...MATERIALS_PRIORITY_OPTIONS]}
                           formatTrigger={() => (
                             tender.materials_priority
                               ? <span className={`mat-prio-chip prio-${tender.materials_priority}`}>{MATERIALS_PRIORITY_LABEL[tender.materials_priority]}</span>
-                              : <span className="mat-muted">— не указан —</span>
+                              : <span className="mat-muted">Не указан</span>
                           )}
                           renderOption={(o) => (
                             o.value
                               ? <span className={`mat-prio-chip prio-${o.value}`}>{o.label}</span>
-                              : <span className="mat-muted">— не указан —</span>
+                              : <span className="mat-muted">Не указан</span>
                           )}
                         />
                       </td>
@@ -3041,21 +3069,20 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                 className="mat-resp-fdrop"
                                 label="" searchable
                                 searchPlaceholder="Поиск сотрудника снабжения…"
-                                allLabel="— не назначен —"
+                                allLabel="Не назначен"
                                 value={tender.materials_resp_user_id || ''}
                                 onChange={(v) => handleUpdateMaterialsResponsible(tender.id, v)}
                                 disabled={!canEditTenders}
                                 options={[
-                                  { value: '', label: '— не назначен —' },
+                                  { value: '', label: 'Не назначен' },
                                   ...supplyEmployees.map(emp => ({ value: emp.user_id, label: emp.display_name })),
                                 ]}
+                                // В ячейке — «Фамилия И. О.» обычным текстом, в списке
+                                // выбора — полное ФИО с инициалами-кружком.
                                 formatTrigger={() => (
                                   resp.name
-                                    ? <span className="mat-person">
-                                        <span className="mat-avatar" aria-hidden>{personInitials(resp.name)}</span>
-                                        <span className="mat-person-name">{resp.name}</span>
-                                      </span>
-                                    : <span className="mat-muted">— не назначен —</span>
+                                    ? <PersonName full={resp.name} className="mat-person-name" />
+                                    : <span className="mat-muted">Не назначен</span>
                                 )}
                                 renderOption={(o) => (
                                   o.value
@@ -3063,7 +3090,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                         <span className="mat-avatar" aria-hidden>{personInitials(o.label)}</span>
                                         <span className="mat-person-name">{o.label}</span>
                                       </span>
-                                    : <span className="mat-muted">— не назначен —</span>
+                                    : <span className="mat-muted">Не назначен</span>
                                 )}
                               />
                               {supplyLoadError && canEditTenders && (
@@ -3081,10 +3108,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       {/* Ответственный по основному тендеру (основное строительство). */}
                       <td className="mat-main-resp">
                         {tender.parent_tender?.responsible_contact?.full_name
-                          ? <span title={tender.parent_tender.responsible_contact.full_name}>
-                              {shortPersonName(tender.parent_tender.responsible_contact.full_name)}
-                            </span>
-                          : <span className="mat-muted">—</span>}
+                          ? <PersonName full={tender.parent_tender.responsible_contact.full_name} />
+                          : <span className="mat-muted">Не назначен</span>}
                       </td>
                       {/* Сроки тендерных процедур — из основного тендера (основное строительство).
                           Здесь только просмотр: меняются исключительно в основном тендере. */}
@@ -3116,7 +3141,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </td>
                       <td>
                         {tender.materials_proposal_link ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                          <div className="tp-link-row">
                             <a
                               href={tender.materials_proposal_link}
                               target="_blank"
@@ -3127,40 +3152,34 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             </a>
                             {canEditTenders && (
                               <button
+                                type="button"
                                 className="btn-icon btn-edit"
                                 onClick={() => handleUpdateMaterialsLink(tender.id, tender.materials_proposal_link)}
                                 title="Изменить ссылку"
-                                style={{ fontSize: '0.75rem' }}
+                                aria-label="Изменить ссылку на КП"
                               >
-                                ✏️
+                                <IconPencil size={14} />
                               </button>
                             )}
                           </div>
                         ) : (
                           canEditTenders ? (
                             <button
+                              type="button"
+                              className="tp-add-link"
                               onClick={() => handleUpdateMaterialsLink(tender.id, '')}
-                              style={{
-                                background: 'none',
-                                border: '1px dashed var(--border-color)',
-                                borderRadius: '4px',
-                                padding: '0.1875rem 0.5rem',
-                                color: 'var(--text-tertiary)',
-                                cursor: 'pointer',
-                                fontSize: '0.75rem'
-                              }}
                               title="Добавить ссылку на КП"
                             >
                               + ссылка
                             </button>
                           ) : (
-                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                            <span className="mat-muted">—</span>
                           )
                         )}
                       </td>
                       <td>
                         {isCompletedTab || !canEditTenders ? (
-                          <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ display: 'inline-block', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
+                          <span className={`status-badge tp-status-badge ${getStatusBadgeClass(tender.status)}`}>
                             {tender.status}
                           </span>
                         ) : (
@@ -3211,7 +3230,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           ) : (
                             <div className="mat-notes-view">
                               {tender.notes
-                                ? <span className="mat-notes-text" title={tender.notes}>{tender.notes}</span>
+                                ? <span className="mat-notes-text"><ClampText text={tender.notes} /></span>
                                 : <span className="mat-muted">—</span>}
                               <span className="mat-notes-tools">
                                 {canEditTenders && (
@@ -3249,31 +3268,37 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             <>
                               {canEditTenders && (
                                 <button
+                                  type="button"
                                   className="btn-icon"
                                   onClick={() => handleRestoreTender(tender.id, tenderObjectName(tender, 'тендер'))}
                                   title="Восстановить"
+                                  aria-label="Восстановить тендер"
                                 >
-                                  ♻️
+                                  <IconRestore />
                                 </button>
                               )}
                               {isAdmin && (
                                 <button
+                                  type="button"
                                   className="btn-icon btn-delete"
                                   onClick={() => handleHardDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
                                   title="Удалить безвозвратно (только для администратора)"
+                                  aria-label="Удалить тендер безвозвратно"
                                 >
-                                  🗑️
+                                  <IconTrash />
                                 </button>
                               )}
                             </>
                           ) : (
                             isAdmin && (
                               <button
+                                type="button"
                                 className="btn-icon btn-delete"
                                 onClick={() => handleDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
                                 title="Переместить в Корзину (только для администратора)"
+                                aria-label="Переместить тендер в корзину"
                               >
-                                🗑️
+                                <IconTrash />
                               </button>
                             )
                           )}
@@ -3286,6 +3311,25 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             </>
           ) : (
           <>
+          {/* Сетка рабочего стиля — ширины в TendersRegistryPolish.css (.tp-c-*).
+              Набор колонок повторяет условия шапки ниже. */}
+          {uiWork && (
+            <colgroup>
+              <col className="tp-c-num" />
+              <col className="tp-c-kp" />
+              <col className="tp-c-object" />
+              <col className="tp-c-desc" />
+              <col className={isCompletedTab ? 'tp-c-winner' : 'tp-c-status'} />
+              <col className="tp-c-period" />
+              <col className="tp-c-resp" />
+              {showVorColumn && <col className="tp-c-vor" />}
+              <col className="tp-c-package" />
+              {!compactView && department === 'construction' && !isCompletedTab && <col className="tp-c-plan" />}
+              {!compactView && !isMaterialsView && department === 'construction' && <col className="tp-c-mat" />}
+              {!compactView && <col className="tp-c-summary" />}
+              <col className="tp-c-actions" />
+            </colgroup>
+          )}
           <thead>
             <tr>
               <th
@@ -3296,7 +3340,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               >
                 №{sortIndicator('public_tender_number')}
               </th>
-              <th style={{ width: '36px' }}></th>
+              <th style={{ width: '36px' }}><span className="ui-sr-only">Участники и КП</span></th>
               <th style={{ minWidth: '160px' }}>Наименование<br />объекта</th>
               <th style={{ minWidth: '140px', maxWidth: '220px' }}>Описание работ</th>
               {!isCompletedTab && <th style={{ width: '100px' }}>Статус</th>}
@@ -3321,7 +3365,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 <th style={{ width: '105px' }}>Тендер<br />на&nbsp;материалы</th>
               )}
               {!compactView && <th style={{ width: '105px' }}>Сводная<br />КП</th>}
-              <th className="actions-column" style={{ width: '72px' }}>Действия</th>
+              <th className="actions-column" style={{ width: '72px' }}>{uiWork ? <span className="ui-sr-only">Действия</span> : 'Действия'}</th>
             </tr>
           </thead>
           <tbody>
@@ -3340,7 +3384,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 <React.Fragment key={tender.id}>
                   <tr className={isOverdue(tender) ? 'overdue-row' : ''}>
                     {/* nowrap — подстраховка: номер не должен переноситься между цифрами */}
-                    <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    <td className="tp-num">
                       {tender.public_tender_number ?? '—'}
                     </td>
                     <td>
@@ -3402,7 +3446,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           <span className="row-link primary" style={{ cursor: 'default' }}>{tenderObjectName(tender, '-')}</span>
                         )}
                         {tender.objects?.address && (
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', wordBreak: 'break-word' }}>
+                          <div className="tp-obj-address">
                             {tender.objects.address}
                           </div>
                         )}
@@ -3425,18 +3469,22 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       </div>
                     </td>
                     <td className="tender-desc-cell">
-                      {canOpenTenderCard ? (
-                        <Link
-                          to={`/tenders/${tender.id}`}
-                          className="row-link primary tender-desc-link"
-                          title={`${tender.work_description || ''}\n\nОткрыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)`}
-                          style={{ color: 'var(--primary-color)', textDecoration: 'underline' }}
-                        >
-                          {tender.work_description}
-                        </Link>
-                      ) : (
-                        <span className="tender-desc-link">{tender.work_description}</span>
-                      )}
+                      {/* До трёх строк; длиннее — «Показать полностью» под текстом.
+                          Переход в тендер — по самому тексту, раскрытие — отдельной
+                          кнопкой, полный текст в DOM (поиск, выгрузка не затронуты). */}
+                      <ClampText
+                        text={tender.work_description}
+                        empty=""
+                        wrap={canOpenTenderCard ? (body) => (
+                          <Link
+                            to={`/tenders/${tender.id}`}
+                            className={`row-link primary tender-desc-link${uiWork ? ' ui-title-link' : ''}`}
+                            title={`${tender.work_description || ''}\n\nОткрыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)`}
+                          >
+                            {body}
+                          </Link>
+                        ) : (body) => <span className="tender-desc-link">{body}</span>}
+                      />
                       {/* Путь к папке — сразу под наименованием: с него начинают
                           поиск документов, отметки ниже относятся к ходу тендера.
                           Открыть проводник кликом браузер не даёт, поэтому путь
@@ -3481,7 +3529,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             ariaLabel="Статус тендера"
                           />
                         ) : (
-                          <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ display: 'inline-block', padding: '0.25rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
+                          <span className={`status-badge tp-status-badge ${getStatusBadgeClass(tender.status)}`}>
                             {tender.status}
                           </span>
                         )}
@@ -3492,15 +3540,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         {(() => {
                           const winners = getTenderWinners(tender)
                           if (winners.length === 0) {
-                            return (
-                              <span style={{
-                                color: 'var(--text-tertiary)',
-                                fontStyle: 'italic',
-                                fontSize: '0.8125rem'
-                              }}>
-                                Не выбран
-                              </span>
-                            )
+                            return <span className="responsible-empty">Не выбран</span>
                           }
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
@@ -3524,8 +3564,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     )}
                     {/* Цвет просрочки — классом, а не инлайн-стилем: инлайн не знает про тему,
                         и ярко-красный #dc2626 на тёмном фоне резал глаз. */}
-                    <td className={`tender-period-cell ${isOverdue(tender) ? 'is-overdue' : ''}`}>
-                      {formatDateRange(tender.tender_start_date, tender.tender_end_date)}
+                    <td className={`tender-period-cell ui-num ${isOverdue(tender) ? 'is-overdue' : ''}`}>
+                      {breakAfterDash(formatDateRange(tender.tender_start_date, tender.tender_end_date))}
                       {isOverdue(tender) && <span className="tender-period-warn" title="Срок истёк">!</span>}
                     </td>
                     <td>
@@ -3540,7 +3580,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           }}
                           onBlur={() => setEditingResponsibleTenderId(null)}
                         >
-                          <option value="">— не назначен —</option>
+                          <option value="">{uiWork ? 'Не назначен' : '— не назначен —'}</option>
                           {getResponsibleOptions(tender.responsible_contact_id).map((contact) => (
                             <option key={contact.id} value={contact.id}>
                               {contact.full_name}
@@ -3550,19 +3590,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       ) : (
                         canEditTenders ? (
                           <button
+                            type="button"
                             className="responsible-display"
                             onClick={() => setEditingResponsibleTenderId(tender.id)}
                             title="Назначить ответственного"
                           >
-                            {getResponsibleName(tender) || (
-                              <span className="responsible-empty">— не назначен —</span>
-                            )}
+                            {responsibleLabel(getResponsibleName(tender))}
                           </button>
                         ) : (
                           <span className="responsible-display" style={{ cursor: 'default' }}>
-                            {getResponsibleName(tender) || (
-                              <span className="responsible-empty">— не назначен —</span>
-                            )}
+                            {responsibleLabel(getResponsibleName(tender))}
                           </span>
                         )
                       )}
@@ -3575,7 +3612,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             const s = tender.vor_status || 'not_started'
                             const hasDocs = (vorDocCounts[tender.id] || 0) > 0
                             if (s === 'not_required') {
-                              return <span className="phase-done" title="ВОР не требуется">— Не требуется</span>
+                              return <span className="phase-done" title="ВОР не требуется">{notRequiredLabel}</span>
                             }
                             if (s === 'completed') {
                               return (tender.vor_link || hasDocs)
@@ -3599,19 +3636,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           )}
                           <button
                             type="button"
+                            className="tp-docs-btn"
                             onClick={() => setVorDocsModalTenderId(tender.id)}
-                            style={{
-                              background: 'none',
-                              border: '1px dashed var(--border-color)',
-                              borderRadius: '4px',
-                              padding: '0.0625rem 0.375rem',
-                              color: 'var(--text-tertiary)',
-                              cursor: 'pointer',
-                              fontSize: '0.6875rem'
-                            }}
                             title="Документы ВОР и РД"
+                            aria-label={`Документы ВОР и РД${vorDocCounts[tender.id] ? `: ${vorDocCounts[tender.id]}` : ''}`}
                           >
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.1875rem' }}>
+                            <span className="tp-docs-btn-inner">
                               <PaperclipIcon size={12} />
                               {vorDocCounts[tender.id] ? vorDocCounts[tender.id] : ''}
                             </span>
@@ -3627,16 +3657,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               className={`vor-phase-dates${overdue ? ' is-overdue' : ''}`}
                               title={overdue ? 'Срок подготовки ВОР истёк' : 'Срок подготовки ВОР'}
                             >
-                              {formatShortDateRange(vorStartDate(tender), tender.vor_end_date)}
+                              {breakAfterDash(formatShortDateRange(vorStartDate(tender), tender.vor_end_date))}
                             </div>
                           )
                         })()}
                         {vorResponsibleName(tender) && (
-                          <div
-                            style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}
-                            title={vorResponsibleName(tender)}
-                          >
-                            {shortPersonName(vorResponsibleName(tender))}
+                          <div className="tp-sub-line">
+                            <PersonName full={vorResponsibleName(tender)} />
                           </div>
                         )}
                       </td>
@@ -3656,50 +3683,37 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             </a>
                             {canEditTenders && (
                               <button
+                                type="button"
                                 className="btn-icon btn-edit"
                                 onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', tender.tender_package_link)}
                                 title="Изменить ссылку"
-                                style={{ fontSize: '0.75rem' }}
-                              >✏️</button>
+                                aria-label="Изменить ссылку на тендерный пакет"
+                              ><IconPencil size={14} /></button>
                             )}
                           </div>
                         ) : (
                           canEditTenders ? (
                             <button
+                              type="button"
+                              className="tp-add-link"
                               onClick={() => handleUpdateTenderLink(tender.id, 'tender_package_link', '')}
-                              style={{
-                                background: 'none',
-                                border: '1px dashed var(--border-color)',
-                                borderRadius: '4px',
-                                padding: '0.1875rem 0.5rem',
-                                color: 'var(--text-tertiary)',
-                                cursor: 'pointer',
-                                fontSize: '0.75rem'
-                              }}
                               title="Добавить ссылку на тендерный пакет"
                             >+ ссылка</button>
                           ) : (
                             !((packageDocCounts[tender.id] || 0) > 0) && (
-                              <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                              <span className="tp-dash">—</span>
                             )
                           )
                         )}
                         {(canEditTenders || (packageDocCounts[tender.id] || 0) > 0) && (
                           <button
                             type="button"
+                            className="tp-docs-btn"
                             onClick={() => setPackageDocsModalTenderId(tender.id)}
-                            style={{
-                              background: 'none',
-                              border: '1px dashed var(--border-color)',
-                              borderRadius: '4px',
-                              padding: '0.0625rem 0.375rem',
-                              color: 'var(--text-tertiary)',
-                              cursor: 'pointer',
-                              fontSize: '0.6875rem'
-                            }}
                             title="Документы тендерного пакета"
+                            aria-label={`Документы тендерного пакета${packageDocCounts[tender.id] ? `: ${packageDocCounts[tender.id]}` : ''}`}
                           >
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.1875rem' }}>
+                            <span className="tp-docs-btn-inner">
                               <PaperclipIcon size={12} />
                               {packageDocCounts[tender.id] ? packageDocCounts[tender.id] : ''}
                             </span>
@@ -3720,7 +3734,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           {(() => {
                             const s = tender.cost_plan_status || 'not_started'
                             if (s === 'not_required') {
-                              return <span className="phase-done" title="План затрат не требуется">— Не требуется</span>
+                              return <span className="phase-done" title="План затрат не требуется">{notRequiredLabel}</span>
                             }
                             if (s === 'completed') {
                               return tender.cost_plan_link
@@ -3747,8 +3761,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           )}
                         </div>
                         {tender.cost_plan_responsible?.full_name && (
-                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: '0.125rem' }}>
-                            {tender.cost_plan_responsible.full_name}
+                          <div className="tp-sub-line">
+                            {uiWork
+                              ? <PersonName full={tender.cost_plan_responsible.full_name} />
+                              : tender.cost_plan_responsible.full_name}
                           </div>
                         )}
                       </td>
@@ -3767,7 +3783,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                 return <span className="phase-progress" title="В работе">В работе</span>
                               }
                               if (s === 'Не требуется' || s === 'Не нужно') {
-                                return <span className="phase-done" title="Тендер на материалы не требуется">— Не требуется</span>
+                                return <span className="phase-done" title="Тендер на материалы не требуется">{notRequiredLabel}</span>
                               }
                               return <span className="phase-pending" title={s || 'Не начат'}>{s || 'Не начат'}</span>
                             })()}
@@ -3788,7 +3804,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           // материал создаётся автоматически при создании основного тендера.
                           // Если у тендера нет материала (исторические данные или ошибка) —
                           // показываем прочерк, а не предлагаем создать вручную.
-                          <span className="muted" style={{ fontSize: '0.75rem' }} title="Тендер на материалы не создан">—</span>
+                          <span className="tp-dash" title="Тендер на материалы не создан">—</span>
                         )}
                       </td>
                     )}
@@ -3807,30 +3823,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             </a>
                             {canEditTenders && (
                               <button
+                                type="button"
                                 className="btn-icon btn-edit"
                                 onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', tender.summary_proposal_link)}
                                 title="Изменить ссылку"
-                                style={{ fontSize: '0.75rem' }}
-                              >✏️</button>
+                                aria-label="Изменить ссылку на сводную КП"
+                              ><IconPencil size={14} /></button>
                             )}
                           </div>
                         ) : (
                           canEditTenders ? (
                             <button
+                              type="button"
+                              className="tp-add-link"
                               onClick={() => handleUpdateTenderLink(tender.id, 'summary_proposal_link', '')}
-                              style={{
-                                background: 'none',
-                                border: '1px dashed var(--border-color)',
-                                borderRadius: '4px',
-                                padding: '0.1875rem 0.5rem',
-                                color: 'var(--text-tertiary)',
-                                cursor: 'pointer',
-                                fontSize: '0.75rem'
-                              }}
                               title="Добавить ссылку на сводную КП"
                             >+ ссылка</button>
                           ) : (
-                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>—</span>
+                            <span className="tp-dash">—</span>
                           )
                         )}
                       </td>
@@ -3840,52 +3850,60 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         <>
                           {canEditTenders && (
                             <button
+                              type="button"
                               className="btn-icon"
                               onClick={() => handleRestoreTender(tender.id, tenderObjectName(tender, 'тендер'))}
                               title="Восстановить"
-                              style={{ fontSize: '0.875rem' }}
+                              aria-label="Восстановить тендер"
                             >
-                              ↩️
+                              <IconRestore />
                             </button>
                           )}
                           {isAdmin && (
                             <button
+                              type="button"
                               className="btn-icon btn-delete"
                               onClick={() => handleHardDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
                               title="Удалить безвозвратно (только для администратора)"
+                              aria-label="Удалить тендер безвозвратно"
                             >
-                              🗑️
+                              <IconTrash />
                             </button>
                           )}
                         </>
                       ) : (
                         <>
                           <button
+                            type="button"
                             className="btn-icon"
                             onClick={() => handleShowLetterForTender(tender)}
                             title="Шаблон письма подрядчикам"
-                            style={{ fontSize: '0.875rem' }}
+                            aria-label="Шаблон письма подрядчикам"
                           >
-                            ✉️
+                            <IconLetter />
                           </button>
                           {canEditTenders && (
                             <button
+                              type="button"
                               className="btn-icon btn-edit"
                               onClick={() => handleEditTender(tender)}
                               title="Редактировать"
+                              aria-label="Редактировать тендер"
                             >
-                              ✏️
+                              <IconPencil />
                             </button>
                           )}
                           {isAdmin && (
                             <button
+                              type="button"
                               className="btn-icon btn-delete"
                               onClick={() =>
                                 handleDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))
                               }
                               title="В корзину (только для администратора)"
+                              aria-label="Переместить тендер в корзину"
                             >
-                              🗑️
+                              <IconTrash />
                             </button>
                           )}
                         </>

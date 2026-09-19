@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { formatDateRange } from '../utils/dateRange'
+import { formatDateRange, breakAfterDash } from '../utils/dateRange'
 import './DateRangeCell.css'
 
 // Срок «с … по …» в строке таблицы: читаемым текстом вместо двух системных полей
@@ -152,7 +152,7 @@ export default function DateRangeCell({ start, end, onChange, disabled = false, 
         disabled={disabled && !text}
       >
         <IconCalendar />
-        <span className="drc-text">{text || (disabled ? '—' : 'Указать срок')}</span>
+        <span className="drc-text">{text ? breakAfterDash(text) : (disabled ? '—' : 'Указать срок')}</span>
       </button>
       {hint && <div className={`drc-hint${overdue ? ' is-overdue' : ''}`}>{hint}</div>}
 
