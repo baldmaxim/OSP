@@ -31,7 +31,7 @@ import {
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
-import { IconHardHat, IconShieldCheck, IconPackage } from '../components/icons/TenderHubIcons'
+import { IconHardHat, IconShieldCheck, IconPackage, IconChevronDown } from '../components/icons/TenderHubIcons'
 import {
   IconObject, IconTag, IconUser, IconColumns, IconColumnsWide,
   IconJoint, IconOther, IconFolderTree, IconDocsStack, IconSearch,
@@ -192,6 +192,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [editingTender, setEditingTender] = useState(null)
   const [expandedTenderId, setExpandedTenderId] = useState(null)
+  // Раскрытые адреса объектов в реестре (плотный вариант): id тендеров. Не
+  // сохраняется — после перезагрузки адреса снова свёрнуты.
+  const [openAddressIds, setOpenAddressIds] = useState(() => new Set())
+  const toggleAddress = (tenderId) => setOpenAddressIds(prev => {
+    const next = new Set(prev)
+    if (next.has(tenderId)) next.delete(tenderId)
+    else next.add(tenderId)
+    return next
+  })
   const [tenderCounterparties, setTenderCounterparties] = useState({})
   // Идентификаторы тендеров, у которых список контрагентов сейчас грузится
   // (чтобы при раскрытии показать индикатор загрузки, а не «контрагентов нет»).
@@ -717,6 +726,24 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   }
 
   const notRequiredLabel = uiWork ? 'Не требуется' : '— Не требуется'
+
+  // «Месторасположение» объекта (Яндекс.Карты) — ссылка, если есть map_link.
+  const renderMapLink = (tender) => tender.objects?.map_link && (
+    <a
+      href={tender.objects.map_link}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      title="Открыть в Яндекс.Картах"
+      className="yandex-map-link"
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+        <circle cx="12" cy="10" r="3" />
+      </svg>
+      <span>Месторасположение</span>
+    </a>
+  )
 
   // Кнопка раскрытия участников и счётчик КП строки реестра.
   const renderExpandToggle = (tender) => (
@@ -3475,30 +3502,43 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                              наименование («прочее»), карточки объекта у него нет. */
                           <span className="row-link primary" style={{ cursor: 'default' }}>{tenderObjectName(tender, '-')}</span>
                         )}
-                        {tender.objects?.address && (
-                          <div className="tp-obj-address">
-                            {/* «Компактный вид» плотного реестра: адрес до двух строк,
-                                длиннее — «Показать полностью» (мышь и клавиатура). */}
-                            {denseRegistry && compactView
-                              ? <ClampText text={tender.objects.address} lines={2} />
-                              : tender.objects.address}
-                          </div>
-                        )}
-                        {tender.objects?.map_link && (
-                          <a
-                            href={tender.objects.map_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            title="Открыть в Яндекс.Картах"
-                            className="yandex-map-link"
-                          >
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                              <circle cx="12" cy="10" r="3" />
-                            </svg>
-                            <span>Месторасположение</span>
-                          </a>
+                        {denseRegistry ? (
+                          /* Плотный реестр: адрес свёрнут под кнопкой «Показать адрес»
+                             (состояние — по id тендера, до перезагрузки страницы).
+                             Кнопка — отдельно от ссылки на объект; свёрнутый блок —
+                             hidden: не занимает места и не попадает в обход Tab. */
+                          tender.objects?.address ? (
+                            <>
+                              <button
+                                type="button"
+                                className={`tp-addr-toggle${openAddressIds.has(tender.id) ? ' is-open' : ''}`}
+                                aria-expanded={openAddressIds.has(tender.id)}
+                                aria-controls={`tp-addr-${tender.id}`}
+                                onClick={() => toggleAddress(tender.id)}
+                              >
+                                <IconChevronDown size={12} />
+                                {openAddressIds.has(tender.id) ? 'Скрыть адрес' : 'Показать адрес'}
+                              </button>
+                              <div id={`tp-addr-${tender.id}`} className="tp-addr-block" hidden={!openAddressIds.has(tender.id)}>
+                                <div className="tp-obj-address">{tender.objects.address}</div>
+                                {renderMapLink(tender)}
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              {tender.object_id && <span className="tp-addr-none">Адрес не указан</span>}
+                              {renderMapLink(tender)}
+                            </>
+                          )
+                        ) : (
+                          <>
+                            {tender.objects?.address && (
+                              <div className="tp-obj-address">
+                                {tender.objects.address}
+                              </div>
+                            )}
+                            {renderMapLink(tender)}
+                          </>
                         )}
                       </div>
                     </td>
