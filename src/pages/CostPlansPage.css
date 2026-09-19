@@ -979,3 +979,71 @@
 @media (max-width: 900px) {
   .vor-scope-switch { margin-left: 0; }
 }
+
+/* ── «Планы затрат»: таблица по ширине окна, без горизонтального ползунка ──
+   Ширины столбцов — долями в <colgroup>. Только для .cp-table: «ВОРы и РД»
+   пользуются теми же классами .data-table и не меняются. */
+@media (min-width: 901px) {
+  .cost-plans-page .cp-table-container { overflow-x: visible; }
+  .cost-plans-page .cp-table { table-layout: fixed; width: 100%; }
+  .cost-plans-page .cp-table th {
+    white-space: normal;
+    vertical-align: bottom;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  .cost-plans-page .cp-table td {
+    min-width: 0;
+    overflow: hidden;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  /* Выпадающий список ответственного и статус — по ширине ячейки. */
+  .cost-plans-page .cp-table .responsible-display,
+  .cost-plans-page .cp-table .inline-responsible-select,
+  .cost-plans-page .cp-table .plan-status-select { max-width: 100%; }
+  .cost-plans-page .cp-table .responsible-display { white-space: normal; text-align: left; }
+  /* Срок-«пилюля»: не шире ячейки, текст с многоточием. */
+  .cost-plans-page .cp-table .drc-btn { max-width: 100%; }
+
+  /* Доли столбцов (сумма 100%). Рассчитаны на 1920×1080: рабочая область ~1690px. */
+  .cost-plans-page .cp-col-num { width: 3.5%; }
+  .cost-plans-page .cp-col-object { width: 8%; }
+  .cost-plans-page .cp-col-desc { width: 24%; }
+  .cost-plans-page .cp-col-resp { width: 10%; }
+  .cost-plans-page .cp-col-date { width: 6.25%; }
+  .cost-plans-page .cp-col-term { width: 11%; }
+  .cost-plans-page .cp-col-link { width: 7%; }
+  .cost-plans-page .cp-col-status { width: 9%; }
+  .cost-plans-page .cp-col-notes { width: 15%; }
+}
+
+/* Узкие мониторы и ноутбуки (1366–1500): описание уже, даты/статус/срок шире,
+   шрифт мельче — всё по-прежнему в одном окне без ползунка. */
+@media (min-width: 901px) and (max-width: 1500px) {
+  .cost-plans-page .cp-table { font-size: 0.75rem; }
+  .cost-plans-page .cp-table th { font-size: 0.625rem; letter-spacing: 0.01em; padding-left: 0.35rem; padding-right: 0.35rem; }
+  .cost-plans-page .cp-table td { padding-left: 0.35rem; padding-right: 0.35rem; }
+  .cost-plans-page .cp-col-num { width: 5%; }
+  .cost-plans-page .cp-col-object { width: 8.5%; }
+  .cost-plans-page .cp-col-desc { width: 18%; }
+  .cost-plans-page .cp-col-resp { width: 10%; }
+  .cost-plans-page .cp-col-date { width: 7.5%; }
+  .cost-plans-page .cp-col-term { width: 11.5%; }
+  .cost-plans-page .cp-col-link { width: 7%; }
+  .cost-plans-page .cp-col-status { width: 10%; }
+  .cost-plans-page .cp-col-notes { width: 15%; }
+  /* Срок в две строки вместо обрезки: «10.09 —» / «25.09.2026». */
+  .cost-plans-page .cp-table .drc-btn { white-space: normal; border-radius: 10px; text-align: left; font-size: 0.6875rem; }
+  .cost-plans-page .cp-table .drc-text { white-space: normal; }
+  .cost-plans-page .cp-table .plan-status-select { padding-left: 0.4rem; padding-right: 1.1rem; font-size: 0.6875rem; }
+}
+.cost-plans-page .cp-object-cell { overflow-wrap: break-word; }
+.cost-plans-page .cp-desc-link { display: block; text-align: left; }
+.cost-plans-page .cp-desc-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}

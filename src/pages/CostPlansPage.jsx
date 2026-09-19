@@ -549,26 +549,43 @@ function CostPlansPage() {
         </div>
       </div>
 
-      <div className="table-container">
-        <table className="data-table">
+      <div className="table-container cp-table-container">
+        {/* Ширины — долями окна (colgroup + table-layout: fixed в CSS): таблица
+            помещается в рабочую область без горизонтального ползунка. При
+            авто-раскладке длинное описание растягивалось в одну строку, а
+            «Объект» ужимался до пары букв в строке. */}
+        <table className="data-table cp-table">
+          {/* Доли столбцов — в CSS (.cp-col-*): на узких экранах они другие. */}
+          <colgroup>
+            <col className="cp-col-num" />
+            <col className="cp-col-object" />
+            <col className="cp-col-desc" />
+            <col className="cp-col-resp" />
+            <col className="cp-col-date" />
+            <col className="cp-col-date" />
+            <col className="cp-col-term" />
+            <col className="cp-col-link" />
+            <col className="cp-col-status" />
+            <col className="cp-col-notes" />
+          </colgroup>
           <thead>
             <tr>
               <th
                 className="sortable-th"
                 onClick={() => toggleSort('public_tender_number')}
                 title="Номер тендера. Кликните для сортировки"
-                style={{ width: '64px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+                style={{ textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
               >
                 №<br />тендера{sortIndicator('public_tender_number')}
               </th>
-              <th style={{ width: '150px' }}>Объект</th>
+              <th>Объект</th>
               <th>Описание работ</th>
               <th>Ответственный</th>
               <th
                 className="sortable-th"
                 onClick={() => toggleSort('tender_start_date')}
                 title="Сортировать по началу тендерной процедуры"
-                style={{ width: '120px', cursor: 'pointer', userSelect: 'none' }}
+                style={{ cursor: 'pointer', userSelect: 'none' }}
               >
                 Начало<br />тендера{sortIndicator('tender_start_date')}
               </th>
@@ -576,14 +593,14 @@ function CostPlansPage() {
                 className="sortable-th"
                 onClick={() => toggleSort('tender_end_date')}
                 title="Сортировать по окончанию тендерной процедуры"
-                style={{ width: '120px', cursor: 'pointer', userSelect: 'none' }}
+                style={{ cursor: 'pointer', userSelect: 'none' }}
               >
                 Окончание<br />тендера{sortIndicator('tender_end_date')}
               </th>
-              <th>Срок выполнения плана затрат</th>
-              <th>План затрат</th>
-              <th style={{ width: '180px' }}>Статус плана</th>
-              <th style={{ minWidth: '220px' }}>Примечание</th>
+              <th>Срок выполнения<br />плана затрат</th>
+              <th>План<br />затрат</th>
+              <th>Статус<br />плана</th>
+              <th>Примечание</th>
             </tr>
           </thead>
           <tbody>
@@ -687,17 +704,18 @@ const CostPlanRow = memo(function CostPlanRow({ t, canEditTenders, isEditingResp
       <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
         {t.public_tender_number ?? '—'}
       </td>
-      <td style={{ width: '150px', maxWidth: '150px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+      <td className="cp-object-cell">
         {t.objects?.name || '—'}
       </td>
       <td className="muted-text">
         <Link
           to={`/tenders/${t.id}`}
-          className="row-link primary"
-          title="Открыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)"
-          style={{ whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word', display: 'inline-block' }}
+          className="row-link primary cp-desc-link"
+          title={`${t.work_description || ''}\n\nОткрыть тендер (Ctrl+клик или средняя кнопка — в новой вкладке)`}
         >
-          {t.work_description || '—'}
+          {/* Не больше трёх строк: полный текст — в подсказке. Ограничение строк
+              работает только на внутреннем элементе, не на ячейке таблицы. */}
+          <span className="cp-desc-text">{t.work_description || '—'}</span>
         </Link>
         {/* Путь к папке с документами тендера — то же поле, что в
             реестре тендеров: правка здесь видна и там. */}
