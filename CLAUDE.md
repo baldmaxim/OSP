@@ -100,6 +100,14 @@ const { theme, toggleTheme } = useTheme()
 
 CSS variables defined for `[data-theme="light"]` and `[data-theme="dark"]` in `index.css`.
 
+### Typography & tables (UI guidelines)
+
+Правила типографики и таблиц — **[docs/UI_GUIDELINES.md](docs/UI_GUIDELINES.md)**. Читать перед правкой вёрстки.
+Этап 1: действуют только в разделе «ВОРы и РД» (`src/pages/VorsTypography.css`, шрифт Inter с нашего
+сервера — `src/styles/fonts.css`, `public/fonts/inter/`). Кратко: шкала 14/20 · 13/18 · 12/16 · 20/28 в `rem`,
+заголовки колонок без прописных, `tabular-nums` для чисел, ФИО «Фамилия И. О.» с полным в `title`,
+видимый `:focus-visible`, контраст ≥ 4,5:1. Новые разделы переводить так же — класс-обёртка + свой CSS.
+
 ## Supabase Integration
 
 ### Client Usage

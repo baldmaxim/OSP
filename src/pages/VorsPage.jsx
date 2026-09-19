@@ -22,6 +22,10 @@ import { shortPersonName } from '../utils/personName'
 import { vorStartDate } from '../utils/vorDates'
 import { DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import './CostPlansPage.css'
+// Типографика раздела (этап 1): шрифт Inter с нашего сервера и шкала размеров —
+// только внутри «ВОРов и РД». Правила — docs/UI_GUIDELINES.md.
+import '../styles/fonts.css'
+import './VorsTypography.css'
 
 // Значение фильтра «Ответственный» для тендеров без ответственного.
 const UNASSIGNED = '__unassigned__'
@@ -262,6 +266,13 @@ function VorsPage() {
   // Список небольшой (сотрудники СТО) — грузим сразу: выпадашка есть в каждой строке.
   useEffect(() => { loadStoEmployees() }, [])
 
+  // Всплывающие списки фильтров и окошко срока рисуются порталом в <body> —
+  // типографика раздела достаётся им через этот класс (VorsTypography.css).
+  useEffect(() => {
+    document.body.classList.add('vors-typography')
+    return () => document.body.classList.remove('vors-typography')
+  }, [])
+
   useEffect(() => {
     let alive = true
     supabase.from('app_settings').select('value').eq('key', DUTY_OVERRIDE_KEY).maybeSingle()
@@ -412,7 +423,7 @@ function VorsPage() {
 
   if (loading) {
     return (
-      <div className="cost-plans-page">
+      <div className="cost-plans-page vors-page">
         <div className="page-header"><h2>ВОРы и РД</h2></div>
         <div className="loading">Загрузка...</div>
       </div>
@@ -498,7 +509,7 @@ function VorsPage() {
     : notStarted
 
   return (
-    <div className="cost-plans-page">
+    <div className="cost-plans-page vors-page">
       <div className="page-header page-header-vors">
         <h2>
           <IconTile tone="amber" className="page-icon-tile"><IconDocument size={16} /></IconTile>
@@ -523,7 +534,7 @@ function VorsPage() {
           <div className="vor-duty-chip" title={`Дежурный по тендерам на этой неделе: ${duty.name}${duty.overridden ? ' (ручная замена)' : ''}`}>
             <IconUser size={15} />
             <span className="vor-duty-label">Дежурный по тендерам:</span>
-            <span className="vor-duty-name">{duty.name}</span>
+            <span className="vor-duty-name">{shortPersonName(duty.name)}</span>
             {duty.overridden && <span className="vor-duty-dot" aria-hidden />}
           </div>
           <div className="page-header-hint">
@@ -671,24 +682,37 @@ function VorsPage() {
 
       <div className="table-container">
         <table className="data-table vors-table">
+          {/* Доли колонок — в VorsTypography.css (.vr-col-*): таблица по ширине
+              окна, без сжатия правых колонок до нуля на 1366 px. */}
+          <colgroup>
+            <col className="vr-col-num" />
+            <col className="vr-col-object" />
+            <col className="vr-col-desc" />
+            <col className="vr-col-division" />
+            <col className="vr-col-sto" />
+            <col className="vr-col-resp" />
+            <col className="vr-col-term" />
+            <col className="vr-col-docs" />
+            <col className="vr-col-status" />
+          </colgroup>
           <thead>
             <tr>
               <th
                 className="sortable-th"
                 onClick={() => toggleSort('public_tender_number')}
                 title="Номер тендера. Кликните для сортировки"
-                style={{ width: '64px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+                style={{ textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
               >
                 №<br />тендера{sortIndicator('public_tender_number')}
               </th>
-              <th style={{ width: '150px' }}>Объект</th>
+              <th>Объект</th>
               <th>Описание работ</th>
-              <th style={{ width: '125px' }}>Подразделение</th>
-              <th style={{ width: '150px' }}>Ответственный СТО</th>
-              <th style={{ width: '135px' }}>Ответственный<br />по тендеру</th>
-              <th style={{ width: '165px' }}>Срок подготовки ВОР</th>
-              <th style={{ width: '195px' }}>ВОРы и РД</th>
-              <th style={{ width: '130px' }}>Статус</th>
+              <th>Подразделение</th>
+              <th>Ответственный СТО</th>
+              <th>Ответственный<br />по тендеру</th>
+              <th>Срок подготовки ВОР</th>
+              <th>ВОРы и РД</th>
+              <th>Статус</th>
             </tr>
           </thead>
           <tbody>
@@ -713,7 +737,7 @@ function VorsPage() {
             ) : (
               visible.map((t) => (
                 <tr key={t.id} className={t._kind === 'request' ? 'vor-request-row' : undefined}>
-                  <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                  <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
                     {t._kind === 'request'
                       ? <span className="vor-request-badge" title="Заявка на ВОР без тендера">Заявка<br />№ {t.request_number}</span>
                       : (t.public_tender_number ?? '—')}
@@ -737,7 +761,7 @@ function VorsPage() {
                         type="button"
                         className="vor-desc-link vor-desc-btn"
                         onClick={() => setRequestModal({ id: t.id })}
-                        title="Открыть заявку на ВОР"
+                        title={`${t.work_description || ''}\n\nОткрыть заявку на ВОР`}
                       >
                         {t.work_description || '—'}
                       </button>
@@ -745,7 +769,7 @@ function VorsPage() {
                       <Link
                         to={`/tenders/${t.id}`}
                         className="vor-desc-link"
-                        title="Открыть тендер (Ctrl+клик — в новой вкладке)"
+                        title={`${t.work_description || ''}\n\nОткрыть тендер (Ctrl+клик — в новой вкладке)`}
                       >
                         {t.work_description || '—'}
                       </Link>
@@ -754,7 +778,7 @@ function VorsPage() {
                         type="button"
                         className="vor-desc-link vor-desc-btn"
                         onClick={() => setVorDocsModalTenderId(t.id)}
-                        title="Открыть ВОРы и РД по тендеру"
+                        title={`${t.work_description || ''}\n\nОткрыть ВОРы и РД по тендеру`}
                       >
                         {t.work_description || '—'}
                       </button>
@@ -764,15 +788,15 @@ function VorsPage() {
                     <FilterDropdown
                       className="vor-resp-fdrop vor-div-fdrop"
                       label=""
-                      allLabel="— не указано —"
+                      allLabel="Не указано"
                       value={t.vor_division || ''}
                       onChange={(v) => handleChangeDivision(t.id, v)}
                       disabled={!canEditVors}
-                      options={[{ value: '', label: '— не указано —' }, ...VOR_DIVISIONS]}
+                      options={[{ value: '', label: 'Не указано' }, ...VOR_DIVISIONS]}
                       formatTrigger={() => (
                         t.vor_division
                           ? <span className="vor-div-chip">{VOR_DIVISION_LABEL[t.vor_division] || t.vor_division}</span>
-                          : <span className="vor-resp-empty">— не указано —</span>
+                          : <span className="vor-resp-empty">Не указано</span>
                       )}
                     />
                   </td>
@@ -788,12 +812,12 @@ function VorsPage() {
                             className="vor-resp-fdrop"
                             label="" searchable
                             searchPlaceholder="Поиск сотрудника СТО…"
-                            allLabel="— не назначен —"
+                            allLabel="Не назначен"
                             value={t.vor_sto_user_id || ''}
                             onChange={(v) => handleChangeResponsible(t.id, v)}
                             disabled={!canEditVors}
                             options={[
-                              { value: '', label: '— не назначен —' },
+                              { value: '', label: 'Не назначен' },
                               ...stoEmployees.map(emp => ({ value: emp.user_id, label: emp.display_name })),
                             ]}
                             formatTrigger={() => (
@@ -802,7 +826,9 @@ function VorsPage() {
                                     <span className="vor-resp-avatar" aria-hidden>{initialsOf(resp.name)}</span>
                                     <span className="vor-resp-name">{shortPersonName(resp.name)}</span>
                                   </span>
-                                : <span className="vor-resp-empty">— не назначен —</span>
+                                : (VOR_CLOSED.includes(t.vor_status) || t.deleted_at
+                                  ? <span className="vor-resp-empty">Не назначен</span>
+                                  : <span className="vor-resp-empty is-alert" title="ВОР в работе, а ответственный СТО не назначен">Не назначен</span>)
                             )}
                             renderOption={(o) => (
                               o.value
@@ -810,7 +836,7 @@ function VorsPage() {
                                     <span className="vor-resp-avatar" aria-hidden>{initialsOf(o.label)}</span>
                                     <span className="vor-resp-name">{o.label}</span>
                                   </span>
-                                : <span className="vor-resp-empty">— не назначен —</span>
+                                : <span className="vor-resp-empty">Не назначен</span>
                             )}
                           />
                           {stoError && <div className="muted-tiny vor-resp-warn">{stoError}</div>}
@@ -828,9 +854,11 @@ function VorsPage() {
                   <td className="muted-text">
                     {t._kind === 'request'
                       ? (t.created_by_name
-                        ? <span title="Автор заявки">{t.created_by_name}<div className="muted-tiny">автор заявки</div></span>
+                        ? <span title={`Автор заявки: ${t.created_by_name}`}>{shortPersonName(t.created_by_name)}<div className="muted-tiny">автор заявки</div></span>
                         : <span className="muted-tiny">—</span>)
-                      : (t.responsible_contact?.full_name || <span className="muted-tiny">—</span>)}
+                      : (t.responsible_contact?.full_name
+                        ? <span title={t.responsible_contact.full_name}>{shortPersonName(t.responsible_contact.full_name)}</span>
+                        : <span className="muted-tiny">—</span>)}
                   </td>
                   <td>
                     {/* Срок — читаемым текстом; правка в окошке. Просрочен, если
