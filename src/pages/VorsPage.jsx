@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useLayoutEffect, useId } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { fetchAllRows } from '../utils/fetchAllRows'
@@ -65,6 +65,58 @@ const SCOPE_STORAGE_KEY = 'vors:scope'
 
 // Статусы, при которых срок подготовки ВОР больше не отслеживается.
 const VOR_CLOSED = ['completed', 'not_required']
+
+// ФИО в ячейке — «Фамилия И. О.», полное — в подсказке (мышь) и в тексте для
+// экранного диктора (vr-sr-only). Поиск и выгрузка работают по полному значению.
+function PersonName({ full, titlePrefix = '' }) {
+  return (
+    <span title={titlePrefix ? `${titlePrefix}: ${full}` : full}>
+      <span aria-hidden="true">{shortPersonName(full)}</span>
+      <span className="vr-sr-only">{full}</span>
+    </span>
+  )
+}
+
+// Описание работ: до трёх строк. Если текст длиннее — кнопка «Показать
+// полностью» (доступна с клавиатуры, aria-expanded). Сам текст не сокращается:
+// в DOM, поиске и подсказке — полное значение. renderAction получает текстовый
+// узел и оборачивает его в ссылку/кнопку открытия тендера или заявки.
+function ClampedDescription({ text, renderAction }) {
+  const [expanded, setExpanded] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+  const ref = useRef(null)
+  const id = useId()
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return undefined
+    const check = () => {
+      if (!el.classList.contains('is-expanded')) setOverflows(el.scrollHeight > el.clientHeight + 1)
+    }
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [text])
+  const content = (
+    <span ref={ref} id={id} className={`vr-desc-text${expanded ? ' is-expanded' : ''}`}>{text || '—'}</span>
+  )
+  return (
+    <>
+      {renderAction(content)}
+      {(overflows || expanded) && (
+        <button
+          type="button"
+          className="vr-desc-toggle"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded(v => !v)}
+        >
+          {expanded ? 'Свернуть' : 'Показать полностью'}
+        </button>
+      )}
+    </>
+  )
+}
 
 // «Иванов Иван Иванович» → «ИИ»: две первые буквы фамилии и имени.
 function initialsOf(name) {
@@ -534,7 +586,7 @@ function VorsPage() {
           <div className="vor-duty-chip" title={`Дежурный по тендерам на этой неделе: ${duty.name}${duty.overridden ? ' (ручная замена)' : ''}`}>
             <IconUser size={15} />
             <span className="vor-duty-label">Дежурный по тендерам:</span>
-            <span className="vor-duty-name">{shortPersonName(duty.name)}</span>
+            <span className="vor-duty-name"><PersonName full={duty.name} /></span>
             {duty.overridden && <span className="vor-duty-dot" aria-hidden />}
           </div>
           <div className="page-header-hint">
@@ -612,7 +664,8 @@ function VorsPage() {
           <input
             type="search"
             className="cost-plans-search"
-            placeholder="Поиск по № тендера, объекту, описанию, ответственному…"
+            placeholder="№, объект, описание, ФИО"
+            aria-label="Поиск по номеру тендера или заявки, объекту, описанию работ и ФИО ответственных"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -756,33 +809,36 @@ function VorsPage() {
                     )}
                   </td>
                   <td>
-                    {t._kind === 'request' ? (
-                      <button
-                        type="button"
-                        className="vor-desc-link vor-desc-btn"
-                        onClick={() => setRequestModal({ id: t.id })}
-                        title={`${t.work_description || ''}\n\nОткрыть заявку на ВОР`}
-                      >
-                        {t.work_description || '—'}
-                      </button>
-                    ) : canOpenTender ? (
-                      <Link
-                        to={`/tenders/${t.id}`}
-                        className="vor-desc-link"
-                        title={`${t.work_description || ''}\n\nОткрыть тендер (Ctrl+клик — в новой вкладке)`}
-                      >
-                        {t.work_description || '—'}
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        className="vor-desc-link vor-desc-btn"
-                        onClick={() => setVorDocsModalTenderId(t.id)}
-                        title={`${t.work_description || ''}\n\nОткрыть ВОРы и РД по тендеру`}
-                      >
-                        {t.work_description || '—'}
-                      </button>
-                    )}
+                    <ClampedDescription
+                      text={t.work_description}
+                      renderAction={(content) => (t._kind === 'request' ? (
+                        <button
+                          type="button"
+                          className="vor-desc-link vor-desc-btn"
+                          onClick={() => setRequestModal({ id: t.id })}
+                          title={`${t.work_description || ''}\n\nОткрыть заявку на ВОР`}
+                        >
+                          {content}
+                        </button>
+                      ) : canOpenTender ? (
+                        <Link
+                          to={`/tenders/${t.id}`}
+                          className="vor-desc-link"
+                          title={`${t.work_description || ''}\n\nОткрыть тендер (Ctrl+клик — в новой вкладке)`}
+                        >
+                          {content}
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          className="vor-desc-link vor-desc-btn"
+                          onClick={() => setVorDocsModalTenderId(t.id)}
+                          title={`${t.work_description || ''}\n\nОткрыть ВОРы и РД по тендеру`}
+                        >
+                          {content}
+                        </button>
+                      ))}
+                    />
                   </td>
                   <td>
                     <FilterDropdown
@@ -824,7 +880,10 @@ function VorsPage() {
                               resp.name
                                 ? <span className="vor-resp-person" title={resp.name}>
                                     <span className="vor-resp-avatar" aria-hidden>{initialsOf(resp.name)}</span>
-                                    <span className="vor-resp-name">{shortPersonName(resp.name)}</span>
+                                    <span className="vor-resp-name">
+                                      <span aria-hidden="true">{shortPersonName(resp.name)}</span>
+                                      <span className="vr-sr-only">{resp.name}</span>
+                                    </span>
                                   </span>
                                 : (VOR_CLOSED.includes(t.vor_status) || t.deleted_at
                                   ? <span className="vor-resp-empty">Не назначен</span>
@@ -854,10 +913,10 @@ function VorsPage() {
                   <td className="muted-text">
                     {t._kind === 'request'
                       ? (t.created_by_name
-                        ? <span title={`Автор заявки: ${t.created_by_name}`}>{shortPersonName(t.created_by_name)}<div className="muted-tiny">автор заявки</div></span>
+                        ? <span><PersonName full={t.created_by_name} titlePrefix="Автор заявки" /><div className="muted-tiny">автор заявки</div></span>
                         : <span className="muted-tiny">—</span>)
                       : (t.responsible_contact?.full_name
-                        ? <span title={t.responsible_contact.full_name}>{shortPersonName(t.responsible_contact.full_name)}</span>
+                        ? <PersonName full={t.responsible_contact.full_name} />
                         : <span className="muted-tiny">—</span>)}
                   </td>
                   <td>
