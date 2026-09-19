@@ -718,6 +718,51 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   const notRequiredLabel = uiWork ? 'Не требуется' : '— Не требуется'
 
+  // Кнопка раскрытия участников и счётчик КП строки реестра.
+  const renderExpandToggle = (tender) => (
+    <button
+      type="button"
+      onClick={() => handleToggleTender(tender.id)}
+      className={`expand-toggle${expandedTenderId === tender.id ? ' is-expanded' : ''}`}
+      title="Показать контрагентов"
+      aria-label="Показать контрагентов"
+      aria-expanded={expandedTenderId === tender.id}
+    >
+      <span className="expand-toggle-chevron" aria-hidden>›</span>
+    </button>
+  )
+  const renderKpCounter = (tender) => {
+    const c = tenderProposalCounts[tender.id]
+    // Три разных состояния, и раньше два последних выглядели
+    // одинаково — пустым местом:
+    //   нет записи  → счётчик не загрузился;
+    //   total === 0 → участников ещё не приглашали;
+    //   иначе       → «предоставили/всего».
+    if (!c) {
+      return (
+        <span className="kp-counter kp-counter-unknown" title="Счётчик участников не загрузился. Обновите страницу или проверьте связь">
+          — КП
+        </span>
+      )
+    }
+    if (c.total === 0) {
+      return (
+        <span className="kp-counter kp-counter-empty" title="Контрагенты в тендер ещё не добавлены">
+          0 участников
+        </span>
+      )
+    }
+    const all = c.proposalProvided === c.total
+    return (
+      <span
+        className={`kp-counter ${all ? 'kp-counter-full' : ''}`}
+        title={`КП предоставлено: ${c.proposalProvided} из ${c.total} контрагентов`}
+      >
+        {c.proposalProvided}/{c.total} КП
+      </span>
+    )
+  }
+
   // Ответственный в ячейке: в рабочем стиле — «Фамилия И. О.» (полное — в
   // подсказке и для диктора), пусто — «Не назначен» обычным текстом.
   const responsibleLabel = (name) => {
@@ -2440,7 +2485,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // «ВОРы и РД» — у основного строительства и у совместных тендеров; «План затрат»
   // и «Тендер на материалы» — только у основного строительства.
   const showVorColumn = !compactView && !isMaterialsView && (department === 'construction' || department === 'joint')
-  const mainTableColSpan = compactView
+  // Плотный реестр: № и счётчик участников — одна колонка (на одну меньше).
+  const mainTableColSpan = (compactView
     ? 9
     : isMaterialsView
       ? 10
@@ -2448,6 +2494,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         + (showVorColumn ? 1 : 0)
         + (department === 'construction' && !isCompletedTab ? 1 : 0)
         + (department === 'construction' ? 1 : 0)
+  ) - (denseRegistry ? 1 : 0)
 
   // Проверка просроченности
   const today = new Date().toISOString().split('T')[0]
@@ -3319,7 +3366,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           {uiWork && (
             <colgroup>
               <col className="tp-c-num" />
-              <col className="tp-c-kp" />
+              {!denseRegistry && <col className="tp-c-kp" />}
               <col className="tp-c-object" />
               <col className="tp-c-desc" />
               <col className={isCompletedTab ? 'tp-c-winner' : 'tp-c-status'} />
@@ -3337,13 +3384,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <tr>
               <th
                 className="sortable-th"
-                style={{ width: '52px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+                style={{ width: '52px', textAlign: denseRegistry ? 'left' : 'center', cursor: 'pointer', userSelect: 'none' }}
                 onClick={() => toggleSort('public_tender_number')}
                 title="Номер тендера. Кликните для сортировки"
               >
                 №{sortIndicator('public_tender_number')}
               </th>
-              <th style={{ width: '36px' }}><span className="ui-sr-only">Участники и КП</span></th>
+              {/* Плотный реестр: раскрытие и счётчик участников — в колонке «№». */}
+              {!denseRegistry && <th style={{ width: '36px' }}><span className="ui-sr-only">Участники и КП</span></th>}
               {uiWork
                 ? <th style={{ minWidth: '160px' }} title="Наименование объекта">Объект</th>
                 : <th style={{ minWidth: '160px' }}>Наименование<br />объекта</th>}
@@ -3370,7 +3418,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 <th style={{ width: '105px' }}>Тендер<br />на&nbsp;материалы</th>
               )}
               {!compactView && <th style={{ width: '105px' }}>Сводная<br />КП</th>}
-              <th className="actions-column" style={{ width: '72px' }}>{uiWork ? <span className="ui-sr-only">Действия</span> : 'Действия'}</th>
+              <th className="actions-column" style={{ width: '72px' }}>Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -3388,53 +3436,30 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               sortedTenders.map((tender) => (
                 <React.Fragment key={tender.id}>
                   <tr className={isOverdue(tender) ? 'overdue-row' : ''}>
-                    {/* nowrap — подстраховка: номер не должен переноситься между цифрами */}
-                    <td className="tp-num">
-                      {tender.public_tender_number ?? '—'}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
-                        <button
-                          onClick={() => handleToggleTender(tender.id)}
-                          className={`expand-toggle${expandedTenderId === tender.id ? ' is-expanded' : ''}`}
-                          title="Показать контрагентов"
-                          aria-expanded={expandedTenderId === tender.id}
-                        >
-                          <span className="expand-toggle-chevron" aria-hidden>›</span>
-                        </button>
-                        {(() => {
-                          const c = tenderProposalCounts[tender.id]
-                          // Три разных состояния, и раньше два последних выглядели
-                          // одинаково — пустым местом:
-                          //   нет записи  → счётчик не загрузился;
-                          //   total === 0 → участников ещё не приглашали;
-                          //   иначе       → «предоставили/всего».
-                          if (!c) {
-                            return (
-                              <span className="kp-counter kp-counter-unknown" title="Счётчик участников не загрузился. Обновите страницу или проверьте связь">
-                                — КП
-                              </span>
-                            )
-                          }
-                          if (c.total === 0) {
-                            return (
-                              <span className="kp-counter kp-counter-empty" title="Контрагенты в тендер ещё не добавлены">
-                                0 участников
-                              </span>
-                            )
-                          }
-                          const all = c.proposalProvided === c.total
-                          return (
-                            <span
-                              className={`kp-counter ${all ? 'kp-counter-full' : ''}`}
-                              title={`КП предоставлено: ${c.proposalProvided} из ${c.total} контрагентов`}
-                            >
-                              {c.proposalProvided}/{c.total} КП
-                            </span>
-                          )
-                        })()}
-                      </div>
-                    </td>
+                    {/* Плотный реестр: № и кнопка раскрытия — сверху, счётчик
+                        участников и КП — под ними, в одной узкой колонке. Иначе —
+                        как было, двумя колонками. Номер не переносится (nowrap). */}
+                    {denseRegistry ? (
+                      <td className="tp-num tp-num-merged">
+                        <div className="tp-num-top">
+                          <span className="tp-num-value">{tender.public_tender_number ?? '—'}</span>
+                          {renderExpandToggle(tender)}
+                        </div>
+                        {renderKpCounter(tender)}
+                      </td>
+                    ) : (
+                      <>
+                        <td className="tp-num">
+                          {tender.public_tender_number ?? '—'}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
+                            {renderExpandToggle(tender)}
+                            {renderKpCounter(tender)}
+                          </div>
+                        </td>
+                      </>
+                    )}
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
                         {tender.object_id ? (
@@ -3452,7 +3477,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         )}
                         {tender.objects?.address && (
                           <div className="tp-obj-address">
-                            {tender.objects.address}
+                            {/* «Компактный вид» плотного реестра: адрес до двух строк,
+                                длиннее — «Показать полностью» (мышь и клавиатура). */}
+                            {denseRegistry && compactView
+                              ? <ClampText text={tender.objects.address} lines={2} />
+                              : tender.objects.address}
                           </div>
                         )}
                         {tender.objects?.map_link && (
@@ -3629,28 +3658,32 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             }
                             return <span className="phase-pending" title="Не начат">Не начат</span>
                           })()}
-                          {tender.vor_link && (
-                            <a
-                              href={tender.vor_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="link"
+                          {/* «Открыть» и документы — одной строкой в плотном реестре
+                              (без него обёртка display: contents — вид прежний). */}
+                          <span className="phase-actions">
+                            {tender.vor_link && (
+                              <a
+                                href={tender.vor_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="link"
+                              >
+                                Открыть
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              className="tp-docs-btn"
+                              onClick={() => setVorDocsModalTenderId(tender.id)}
+                              title="Документы ВОР и РД"
+                              aria-label={`Документы ВОР и РД${vorDocCounts[tender.id] ? `: ${vorDocCounts[tender.id]}` : ''}`}
                             >
-                              Открыть
-                            </a>
-                          )}
-                          <button
-                            type="button"
-                            className="tp-docs-btn"
-                            onClick={() => setVorDocsModalTenderId(tender.id)}
-                            title="Документы ВОР и РД"
-                            aria-label={`Документы ВОР и РД${vorDocCounts[tender.id] ? `: ${vorDocCounts[tender.id]}` : ''}`}
-                          >
-                            <span className="tp-docs-btn-inner">
-                              <PaperclipIcon size={12} />
-                              {vorDocCounts[tender.id] ? vorDocCounts[tender.id] : ''}
-                            </span>
-                          </button>
+                              <span className="tp-docs-btn-inner">
+                                <PaperclipIcon size={12} />
+                                {vorDocCounts[tender.id] ? vorDocCounts[tender.id] : ''}
+                              </span>
+                            </button>
+                          </span>
                         </div>
                         {/* Срок подготовки ВОР; просроченный (ВОР не закрыт) — красным. */}
                         {tender.vor_end_date && (() => {
@@ -3675,7 +3708,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                     )}
                     {/* Тендерный пакет */}
                     <td>
-                        <div className="phase-cell">
+                        <div className="phase-cell phase-cell--actions">
                         {tender.tender_package_link ? (
                           <div className="link-with-edit">
                             <a
