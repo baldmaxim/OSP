@@ -67,6 +67,9 @@ body.ui-work-portal :is(.fdrop-panel, .drc-pop, .status-dropdown-menu-portal, .d
 }
 .ui-work.ui-work :is(button, select, input, textarea):disabled { cursor: not-allowed; }
 
+/* Неразрывная группа (инициалы «В. А.» в PersonName). */
+.ui-nowrap { white-space: nowrap; }
+
 /* Текст только для экранного диктора (полное ФИО и т.п.). */
 .ui-sr-only {
   position: absolute;

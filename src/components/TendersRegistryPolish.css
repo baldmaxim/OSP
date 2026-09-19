@@ -345,7 +345,10 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work .tp-grid :is(.drc-text, .tender-period-cell) { white-space: normal; }
 .ui-work.ui-work .tp-grid .drc-btn { align-items: flex-start; gap: 0.3125rem; padding: 0.125rem 0.375rem; text-align: left; border-radius: 10px; }
 .ui-work.ui-work .tp-grid .drc-btn > svg { margin-top: 0.1875rem; }
-.ui-work.ui-work .tp-grid .tender-period-cell.is-overdue { font-weight: var(--ui-medium); }
+/* Просроченный срок процедур — красным, как было: общее правило цвета ячейки
+   (0,3,3) перебивало .tender-period-cell.is-overdue, и просрочку было не видно. */
+.ui-work.ui-work .tp-grid > tbody > tr > td.tender-period-cell.is-overdue { color: #b91c1c; font-weight: var(--ui-medium); }
+[data-theme='dark'] .ui-work.ui-work .tp-grid > tbody > tr > td.tender-period-cell.is-overdue { color: #fca5a5; }
 .ui-work.ui-work .tp-grid .drc-hint { padding-left: 0; }
 
 /* Номер — обычным весом, вторичным цветом; высокий приоритет остаётся красным. */
@@ -390,14 +393,17 @@ tr:hover .mat-notes-tools { opacity: 1; }
   font-variant-numeric: tabular-nums;
 }
 .ui-work.ui-work .tp-grid .tp-docs-btn:hover { border-color: var(--primary-color); color: var(--ui-link); }
-.ui-work.ui-work .tp-grid :is(.tp-dash, .mat-muted) { color: var(--text-tertiary); font-size: var(--ui-text); font-style: normal; }
+.ui-work.ui-work .tp-grid :is(.tp-dash, .mat-muted) { color: var(--text-secondary); font-size: var(--ui-text); font-style: normal; }
 .ui-work.ui-work .tp-grid .tender-rd-check { margin-top: 0.375rem; }
 .ui-work.ui-work .tp-grid .tp-link-row { gap: 0.25rem; }
 
-/* Действия: иконки в ряд, выравнивание по правому краю ячейки. */
-.ui-work.ui-work .tp-grid .actions-cell,
-.ui-work.ui-work .tp-grid td:last-child > div { text-align: right; justify-content: flex-end; }
-.ui-work.ui-work .tp-grid .actions-cell .btn-icon { margin: 0; padding: 0; font-size: var(--ui-text); }
+/* Действия: иконки в ряд, по правому краю ячейки. Только прямые ячейки самого
+   реестра: правило «td:last-child > div» задевало раскрытую строку (у неё
+   единственная ячейка — тоже последняя) и вложенную таблицу участников, и их
+   текст уезжал вправо. */
+.ui-work.ui-work .tp-grid > tbody > tr > td.actions-cell,
+.ui-work.ui-work .tp-grid > tbody > tr > td.actions-cell > div { text-align: right; justify-content: flex-end; }
+.ui-work.ui-work .tp-grid > tbody > tr > td.actions-cell .btn-icon { margin: 0; padding: 0; font-size: var(--ui-text); }
 
 /* Материалы: приоритет и ответственный снабжения — значение строки, а не поле. */
 .ui-work.ui-work .tp-grid .fdrop.mat-prio-fdrop .fdrop-trigger,
@@ -443,3 +449,111 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work .tender-notes-text { font-size: var(--ui-text); line-height: var(--ui-text-lh); }
 .ui-work.ui-work .tender-notes-text.is-empty { font-style: normal; }
 .ui-work.ui-work .tp-grid .kp-counter-empty { color: var(--text-secondary); }
+
+/* ══ Плотный вариант: реестр «Тендеры — Основное строительство» (.tp-dense) ══
+   Рабочий реестр на сотни строк: шапка в одну строку, таблица 13/18, заголовки
+   колонок 12/16, статусы 12/16, тонкие вертикальные разделители. Токены
+   переопределены только внутри шапки, вкладок, панели и таблицы (включая
+   раскрытую строку) — окна (modal-overlay) и всплывающие списки остаются на
+   обычной шкале 14/20. Шрифт — тот же Inter, без zoom/scale. */
+.tenders-page.ui-work.tp-dense :is(.page-header, .tender-tabs, .tp-filters, .table-container) {
+  --ui-title: 1.125rem;       /* 18 */
+  --ui-title-lh: 1.5rem;      /* 24 */
+  --ui-text: 0.8125rem;       /* 13 — данные, кнопки, фильтры, вкладки */
+  --ui-text-lh: 1.125rem;     /* 18 */
+  --ui-th: 0.75rem;           /* 12 — заголовки колонок, статусы */
+  --ui-th-lh: 1rem;           /* 16 */
+  --ui-hint: 0.75rem;         /* 12 — вторичные сведения */
+  --ui-hint-lh: 1rem;
+  --ui-control-h: 2rem;       /* 32 */
+  --ui-cell-py: 0.375rem;     /* 6 */
+  --ui-cell-px: 0.375rem;     /* 6 */
+}
+
+/* Шапка: название и действия — одной строкой, пока хватает ширины; иначе
+   переносятся группы кнопок. */
+.ui-work.ui-work.tp-dense .page-header { padding: 0.5rem 1rem; gap: 0.375rem 0.75rem; flex-wrap: wrap; }
+.ui-work.ui-work.tp-dense .page-header h2 { gap: 0.5rem; white-space: nowrap; }
+.ui-work.ui-work.tp-dense .page-header h2 .ic-tile { width: 26px; height: 26px; }
+.ui-work.ui-work.tp-dense .page-header > .tp-header-actions { flex: 1 1 auto; }   /* не помещается рядом с названием — вся группа строкой ниже (ниже итоговая высота, чем три ряда сбоку) */
+.ui-work.ui-work.tp-dense :is(.btn-primary, .btn-view-toggle, .rfpath-btn, .tender-resp-chip) { padding: 0 0.625rem; gap: 0.3125rem; }
+.ui-work.ui-work.tp-dense :is(.btn-view-toggle, .rfpath-btn).is-icon-only { padding: 0; }
+.ui-work.ui-work.tp-dense .tp-live { padding: 0.125rem 0.5rem; }
+
+/* Вкладки и панель. */
+.ui-work.ui-work.tp-dense .tender-tabs { padding: 0 0.5rem; }
+.ui-work.ui-work.tp-dense .tender-tabs .tender-tab { min-height: 2.25rem; padding: 0 0.625rem; }
+.ui-work.ui-work.tp-dense .tender-tabs .tender-tab-count { min-width: 1.125rem; height: 1.125rem; padding: 0 0.3125rem; }
+.ui-work.ui-work.tp-dense .tp-filters { padding: 0.5rem 1rem; gap: 0.375rem 0.625rem; }
+.ui-work.ui-work.tp-dense .tp-filters .ui-search { flex: 1 1 14rem; min-width: 12rem; max-width: 22rem; }
+.ui-work.ui-work.tp-dense .tp-filters .fdrop-trigger { padding: 0 0.5rem; }
+
+/* Таблица: тонкие вертикальные разделители — малоконтрастные, между колонками. */
+.ui-work.ui-work.tp-dense .tp-grid > thead > tr > th,
+.ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+}
+.ui-work.ui-work.tp-dense .tp-grid > thead > tr > th:last-child,
+.ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td:last-child { border-right: 0; }
+.ui-work.ui-work.tp-dense .tp-grid > thead > tr > th { padding: 0.375rem var(--ui-cell-px); }
+
+/* Сетка плотного варианта. Сумма фиксированных — 88.25rem; на 1920 описанию
+   остаётся ≈ 15rem, min-width — +13rem. Объекту — место под название и адрес;
+   срок одного года (и с «!» просрочки) — в строку, разных лет — перенос после
+   тире; главный статус длиннее «Заявка на тендер» — в две строки. */
+.ui-work.ui-work.tp-dense .tp-grid { min-width: 101.25rem; }
+.ui-work.ui-work.tp-dense .tp-grid.data-table--compact { min-width: 67.25rem; }
+.ui-work.ui-work.tp-dense .tp-c-num { width: 3rem; }
+.ui-work.ui-work.tp-dense .tp-c-kp { width: 6rem; }
+.ui-work.ui-work.tp-dense .tp-c-object { width: 10.75rem; }
+.ui-work.ui-work.tp-dense .tp-c-status { width: 8.5rem; }
+.ui-work.ui-work.tp-dense .tp-c-winner { width: 11rem; }
+.ui-work.ui-work.tp-dense .tp-c-period { width: 9.75rem; }
+.ui-work.ui-work.tp-dense .tp-c-resp { width: 8.5rem; }
+.ui-work.ui-work.tp-dense .tp-c-vor { width: 7.5rem; }
+.ui-work.ui-work.tp-dense .tp-c-package { width: 7.5rem; }
+.ui-work.ui-work.tp-dense .tp-c-plan { width: 7.5rem; }
+.ui-work.ui-work.tp-dense .tp-c-mat { width: 7.25rem; }
+.ui-work.ui-work.tp-dense .tp-c-summary { width: 6rem; }
+.ui-work.ui-work.tp-dense .tp-c-actions { width: 6rem; }
+
+/* Описание работ — ссылка на тендер: акцентный цвет и тонкое подчёркивание,
+   500. Раскрытие «Показать полностью» — отдельной кнопкой, только если текст
+   длиннее трёх строк. */
+.ui-work.ui-work.tp-dense .tp-grid :is(a, button).ui-title-link.tender-desc-link {
+  color: var(--ui-link);
+  font-weight: var(--ui-medium);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 2px;
+}
+.ui-work.ui-work.tp-dense .tp-grid :is(a, button).ui-title-link.tender-desc-link:hover { text-decoration-color: currentColor; }
+.ui-work.ui-work.tp-dense .tp-grid .row-link.primary:not(.ui-title-link) { font-weight: var(--ui-medium); }
+
+/* Промежутки внутри ячеек: 2–4px между связанными элементами. */
+.ui-work.ui-work.tp-dense .tp-grid :is(.fpath, .fpath-add) { margin-top: 0.1875rem; padding: 0.0625rem 0.3125rem; }
+.ui-work.ui-work.tp-dense .tp-grid .tender-flags { margin-top: 0.1875rem; gap: 0.1875rem; }
+.ui-work.ui-work.tp-dense .tp-grid .tgpub { padding: 0 0.3125rem; }
+.ui-work.ui-work.tp-dense .tp-grid .phase-cell { gap: 0.1875rem; }
+.ui-work.ui-work.tp-dense .tp-grid :is(.tp-sub-line, .vor-phase-dates) { margin-top: 0.125rem; }
+.ui-work.ui-work.tp-dense .tp-grid .tender-rd-check { margin-top: 0.1875rem; }
+.ui-work.ui-work.tp-dense .tp-grid .tp-docs-btn { height: 1.25rem; padding: 0 0.375rem; }
+.ui-work.ui-work.tp-dense .tp-grid .tp-add-link { height: 1.375rem; padding: 0 0.4375rem; }
+.ui-work.ui-work.tp-dense .tp-grid .expand-toggle { width: 1.375rem; height: 1.375rem; }
+.ui-work.ui-work.tp-dense .tp-grid .kp-counter { padding: 0 0.25rem; }
+.ui-work.ui-work.tp-dense .tp-grid .yandex-map-link { margin-top: 0.125rem; }
+.ui-work.ui-work.tp-dense .tp-grid .ui-clamp-toggle { margin-top: 0.0625rem; }
+
+/* Главный статус тендера — плашка 12/16; этапы — легче: без внутренних
+   отступов по высоте. */
+.ui-work.ui-work.tp-dense .tp-grid .status-dropdown-trigger { padding: 0.125rem 0.3125rem 0.125rem 0.4375rem; }
+.ui-work.ui-work.tp-dense .tp-grid :is(.phase-done, .phase-warn, .phase-pending, .phase-progress, .phase-awaiting) { padding: 0 0.375rem; }
+
+/* Кнопки действий — 26px: меньше шума, область нажатия больше иконки. */
+.ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td.actions-cell .btn-icon { width: 1.625rem; height: 1.625rem; }
+.ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td.actions-cell { padding-left: 0.25rem; padding-right: 0.25rem; }
+
+/* Раскрытая строка: примечание и таблица участников — по левому краю. */
+.ui-work.ui-work.tp-dense .expanded-cp-row { padding: 0.5rem 0.75rem; }
+.ui-work.ui-work.tp-dense .tender-notes-block { margin-bottom: 0.5rem; padding: 0.375rem 0.625rem; }

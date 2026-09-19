@@ -112,6 +112,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // рендерит этот же компонент, их вид не меняется.
   const uiWork = isMaterialsView || department === 'construction'
   useBodyClass('ui-work-portal', uiWork)
+  // Плотный вариант рабочего стиля — только реестр «Основное строительство»
+  // (TendersRegistryPolish.css, .tp-dense): 13/18 в таблице, шапка в одну строку.
+  const denseRegistry = uiWork && !isMaterialsView
   const { scopedObjectIds, userProfile, isAdmin, canEdit, canView, role } = useRole()
   // task 333: гейт add/edit/delete для раздела «tenders»
   // Тендеры на материалы — отдельный раздел прав (снабжение, миграция 20260924):
@@ -2526,7 +2529,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const tenderObjects = objects.filter(o => tenderObjectIds.includes(o.id))
 
   return (
-    <div className={`tenders-page${uiWork ? ' ui-work' : ''}`}>
+    <div className={`tenders-page${uiWork ? ' ui-work' : ''}${denseRegistry ? ' tp-dense' : ''}`}>
       {/* Акцент шапки — тон направления: разделы отличаются с одного взгляда. */}
       <div className={`page-header page-header-tenders hdr-tone--${headerTone}`}>
         <h2>
@@ -3260,7 +3263,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           )}
                         </td>
                       )}
-                      <td>
+                      <td className="actions-cell">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
                           {/* task 246 (исправление): в тендер на материалы нельзя «заходить внутрь» —
                               кнопка открытия его собственной карточки убрана */}
@@ -3341,17 +3344,19 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 №{sortIndicator('public_tender_number')}
               </th>
               <th style={{ width: '36px' }}><span className="ui-sr-only">Участники и КП</span></th>
-              <th style={{ minWidth: '160px' }}>Наименование<br />объекта</th>
+              {uiWork
+                ? <th style={{ minWidth: '160px' }} title="Наименование объекта">Объект</th>
+                : <th style={{ minWidth: '160px' }}>Наименование<br />объекта</th>}
               <th style={{ minWidth: '140px', maxWidth: '220px' }}>Описание работ</th>
               {!isCompletedTab && <th style={{ width: '100px' }}>Статус</th>}
               {isCompletedTab && <th style={{ width: '130px' }}>Победитель</th>}
               <th
                 className="sortable-th"
                 onClick={() => toggleSort('tender_start_date')}
-                title="Сортировать по срокам тендерных процедур"
+                title="Срок проведения тендерных процедур. Кликните для сортировки"
                 style={{ width: '150px' }}
               >
-                Срок проведения<br />тендерных процедур{sortIndicator('tender_start_date')}
+                {uiWork ? <>Срок тендерных<br />процедур</> : <>Срок проведения<br />тендерных процедур</>}{sortIndicator('tender_start_date')}
               </th>
               <th style={{ width: '130px' }}>Ответственный<br />по тендеру</th>
               {showVorColumn && (
@@ -4013,7 +4018,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                               onClick={() => handleCopyEmailsForTender(tender.id)}
                               title="Скопировать все email-адреса контрагентов в буфер обмена"
                             >
-                              {copiedEmailsTenderId === tender.id ? '✓ Скопировано' : '📋 Копировать email'}
+                              {copiedEmailsTenderId === tender.id ? '✓ Скопировано' : <><IconLetter size={14} /> Копировать email</>}
                             </button>
                           )}
                         </div>
@@ -4257,11 +4262,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                                     <td style={{ textAlign: 'center' }}>
                                       {canEditTenders && (
                                         <button
+                                          type="button"
                                           className="btn-icon btn-delete"
                                           onClick={() => handleRemoveCounterpartyFromTender(tender.id, tc.id)}
                                           title="Удалить из тендера"
+                                          aria-label="Удалить контрагента из тендера"
                                         >
-                                          🗑️
+                                          <IconTrash />
                                         </button>
                                       )}
                                     </td>
