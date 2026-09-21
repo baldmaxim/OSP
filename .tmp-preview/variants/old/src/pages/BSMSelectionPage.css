@@ -1,0 +1,136 @@
+.bsm-selection-page {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.bsm-selection-page .page-header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.bsm-selection-page .page-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--text-primary);
+}
+
+.bsm-selection-page .section-selection {
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+.bsm-selection-page .selection-label {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+}
+
+.bsm-selection-page .section-cards {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.bsm-selection-page .section-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 2.5rem;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-color);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 180px;
+  max-width: 220px;
+}
+
+.bsm-selection-page .section-card:hover {
+  border-color: var(--primary-color);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+}
+
+.bsm-selection-page .section-icon {
+  font-size: 2.5rem;
+}
+
+.bsm-selection-page .section-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bsm-selection-page .section-description {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* BSM Divider */
+.bsm-divider {
+  display: flex;
+  align-items: center;
+  margin: 2.5rem 0 2rem;
+  gap: 1rem;
+}
+
+.bsm-divider::before,
+.bsm-divider::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--primary-color), transparent);
+}
+
+.bsm-divider-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  padding: 0.5rem 1.5rem;
+  background: var(--bg-secondary);
+  border: 2px solid var(--primary-color);
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* BSM Cards styling */
+.bsm-selection-page .bsm-card {
+  border-color: var(--primary-color);
+  background: linear-gradient(135deg, var(--bg-tertiary), rgba(var(--primary-color-rgb, 59, 130, 246), 0.05));
+}
+
+.bsm-selection-page .bsm-card:hover {
+  background: linear-gradient(135deg, var(--bg-tertiary), rgba(var(--primary-color-rgb, 59, 130, 246), 0.1));
+  box-shadow: 0 12px 24px rgba(var(--primary-color-rgb, 59, 130, 246), 0.2);
+}
+
+/* Dark theme */
+[data-theme='dark'] .bsm-selection-page .section-card {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color-dark);
+}
+
+[data-theme='dark'] .bsm-selection-page .section-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 768px) {
+  .bsm-selection-page .section-cards {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .bsm-selection-page .section-card {
+    width: 100%;
+    max-width: 300px;
+  }
+}

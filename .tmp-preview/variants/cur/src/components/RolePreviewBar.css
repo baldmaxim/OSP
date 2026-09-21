@@ -1,0 +1,76 @@
+/* Полоса режима просмотра от имени роли. Снизу, а не сверху: сверху на телефоне
+   уже висит слим-топбар сайдбара, а перекрывать навигацию нельзя. */
+.role-preview-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  max-width: min(920px, calc(100vw - 1.5rem));
+  padding: 0.6rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(217, 119, 6, 0.45);
+  background: var(--bg-secondary);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.rpb-main { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.rpb-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #d97706;
+  flex: 0 0 auto;
+}
+.rpb-text { min-width: 0; }
+.rpb-note {
+  flex: 1 1 22rem;
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+.rpb-actions { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+
+.rpb-exit {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rpb-exit:hover { border-color: #d97706; color: #b45309; }
+
+.rpb-collapse {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  line-height: 1;
+}
+
+@media (max-width: 640px) {
+  .role-preview-bar {
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    transform: none;
+    max-width: none;
+    gap: 0.5rem;
+  }
+  .rpb-actions { width: 100%; }
+  .rpb-exit { flex: 1; }
+}

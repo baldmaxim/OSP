@@ -1,0 +1,852 @@
+/* task 346 + 349: «Сравнение КП» — таблица позиции × контрагенты + агрегаты. */
+
+.proposals-section {
+  padding: 0;
+}
+
+.proposals-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.875rem;
+}
+
+.proposals-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ===== Tree-tabs документов (как во вкладке ВОР) ===== */
+.proposals-doc-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.875rem 0.875rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin-bottom: 0.875rem;
+}
+
+.proposals-doc-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.proposals-doc-tab:hover {
+  border-color: #475569;
+  color: var(--text-primary);
+}
+.proposals-doc-tab.active {
+  background: #475569;
+  border-color: #475569;
+  color: #fff;
+}
+[data-theme='dark'] .proposals-doc-tab.active {
+  background: #64748b;
+  border-color: #64748b;
+}
+.proposals-doc-tab-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.proposals-doc-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 0.4375rem;
+  border-radius: 9px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.proposals-doc-tab.active .proposals-doc-tab-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.proposals-doc-tab-parent {
+  padding: 0.5625rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  width: 100%;
+  justify-content: flex-start;
+}
+.proposals-doc-tab-parent-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: #475569;
+  flex-shrink: 0;
+}
+.proposals-doc-tab-parent.active .proposals-doc-tab-parent-icon {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.proposals-doc-tab-parent-hint {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.proposals-doc-tab-parent.active .proposals-doc-tab-parent-hint {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.proposals-doc-tabs-children {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-left: 1.5rem;
+  margin-top: 0.0625rem;
+}
+.proposals-doc-tabs-children::before {
+  content: '';
+  position: absolute;
+  left: 0.6875rem;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed var(--border-color);
+}
+
+.proposals-doc-tab-child {
+  align-self: flex-start;
+  max-width: 100%;
+}
+.proposals-doc-tab-branch {
+  position: absolute;
+  left: -0.8125rem;
+  top: 50%;
+  width: 0.8125rem;
+  height: 1px;
+  border-top: 1px dashed var(--border-color);
+}
+.proposals-doc-tab-child.is-last::after {
+  content: '';
+  position: absolute;
+  left: -0.8125rem;
+  top: 50%;
+  bottom: -1rem;
+  width: 2px;
+  background: var(--bg-secondary);
+}
+
+/* task 355: подсветка «итог нерепрезентативный — есть нерасценённые позиции».
+   Мягкий жёлтый фон + warning-цвет текста. Применяется в матрице сверху,
+   агрегированных таблицах и подытогах групп. */
+.psmt-td-num.is-incomplete,
+.psmt-tf-num.is-incomplete,
+.proposals-table .td-price.is-incomplete,
+.proposals-table .td-total.is-incomplete,
+.proposals-group-subtotal .td-group-subtotal.is-incomplete {
+  background: rgba(234, 179, 8, 0.14) !important;
+  color: #a16207 !important;
+  position: relative;
+}
+[data-theme='dark'] .psmt-td-num.is-incomplete,
+[data-theme='dark'] .psmt-tf-num.is-incomplete,
+[data-theme='dark'] .proposals-table .td-price.is-incomplete,
+[data-theme='dark'] .proposals-table .td-total.is-incomplete,
+[data-theme='dark'] .proposals-group-subtotal .td-group-subtotal.is-incomplete {
+  background: rgba(234, 179, 8, 0.22) !important;
+  color: #fde047 !important;
+}
+/* Если позиция одновременно «минимум» и «неполная» — приоритет жёлтый
+   (вводит в заблуждение что итог самый низкий, хотя цены не все указаны). */
+.psmt-td-num.psmt-td-total.is-incomplete.is-min,
+.psmt-tf-num.psmt-tf-total.is-incomplete.is-min {
+  background: rgba(234, 179, 8, 0.22) !important;
+  color: #a16207 !important;
+}
+[data-theme='dark'] .psmt-td-num.psmt-td-total.is-incomplete.is-min,
+[data-theme='dark'] .psmt-tf-num.psmt-tf-total.is-incomplete.is-min {
+  color: #fde047 !important;
+}
+
+/* ===== task 354: сводная матрица «ВОР × контрагенты» =====
+   Заменяет отдельные карточки контрагентов на одну сравнительную таблицу. */
+.proposals-summary-matrix-wrap {
+  overflow-x: auto;
+  margin-bottom: 0.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+.proposals-summary-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.proposals-summary-matrix-table thead th {
+  padding: 0.5rem 0.625rem;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: bottom;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.proposals-summary-matrix-table .psmt-th-doc {
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  min-width: 200px;
+  max-width: 280px;
+}
+.proposals-summary-matrix-table .psmt-th-cp {
+  position: relative;
+  text-align: center;
+  border-left: 2px solid var(--border-color);
+  padding: 0.625rem 0.5rem 0.4375rem;
+}
+.proposals-summary-matrix-table .psmt-th-cp-name {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-right: 1rem; /* место для × */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proposals-summary-matrix-table .psmt-th-cp-date {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+/* Дата загрузки КП на сайт — чуть тусклее «КП от …», чтобы не спорили за внимание. */
+.proposals-summary-matrix-table .psmt-th-cp-uploaded {
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.proposals-summary-matrix-table .psmt-th-cp-remove {
+  position: absolute;
+  top: 0.3125rem;
+  right: 0.3125rem;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.proposals-summary-matrix-table .psmt-th-cp:hover .psmt-th-cp-remove {
+  opacity: 0.7;
+}
+.proposals-summary-matrix-table .psmt-th-cp-remove:hover {
+  opacity: 1;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.10);
+}
+.proposals-summary-matrix-table .psmt-th-sub {
+  text-align: right;
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text-tertiary);
+  padding: 0.25rem 0.5rem 0.4375rem;
+  white-space: nowrap;
+}
+.proposals-summary-matrix-table .psmt-th-sub-total {
+  border-right: 2px solid var(--border-color);
+}
+.proposals-summary-matrix-table tbody td {
+  padding: 0.4375rem 0.625rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+.proposals-summary-matrix-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.proposals-summary-matrix-table tbody tr:hover td {
+  background: rgba(71, 85, 105, 0.04);
+}
+.proposals-summary-matrix-table .psmt-td-doc {
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+.proposals-summary-matrix-table .psmt-td-num {
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.proposals-summary-matrix-table .psmt-td-mat {
+  border-left: 2px solid var(--border-color);
+}
+.proposals-summary-matrix-table .psmt-td-total {
+  font-weight: 700;
+  color: var(--text-primary);
+  border-right: 2px solid var(--border-color);
+}
+.proposals-summary-matrix-table .psmt-td-total.is-min {
+  background: rgba(22, 163, 74, 0.10);
+  color: #15803d;
+}
+[data-theme='dark'] .proposals-summary-matrix-table .psmt-td-total.is-min {
+  background: rgba(22, 163, 74, 0.18);
+  color: #4ade80;
+}
+.proposals-summary-matrix-table tfoot td {
+  padding: 0.5625rem 0.625rem;
+  background: var(--bg-tertiary);
+  border-top: 2px solid var(--border-color);
+  font-variant-numeric: tabular-nums;
+}
+.proposals-summary-matrix-table .psmt-tf-label {
+  font-weight: 700;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+.proposals-summary-matrix-table .psmt-tf-num {
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.proposals-summary-matrix-table .psmt-tf-total {
+  font-weight: 800;
+  font-size: 0.9375rem;
+  border-right: 2px solid var(--border-color);
+}
+.proposals-summary-matrix-table .psmt-tf-total.is-min {
+  background: rgba(22, 163, 74, 0.15);
+  color: #15803d;
+}
+[data-theme='dark'] .proposals-summary-matrix-table .psmt-tf-total.is-min {
+  background: rgba(22, 163, 74, 0.25);
+  color: #4ade80;
+}
+
+/* ===== Sub-tabs: Исходный КП / Материалы / Работы ===== */
+.proposals-subtabs {
+  display: flex;
+  gap: 0.4375rem;
+  margin-bottom: 0.625rem;
+}
+.proposals-subtab {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.proposals-subtab:hover {
+  border-color: #475569;
+  color: var(--text-primary);
+}
+.proposals-subtab.active {
+  background: #475569;
+  border-color: #475569;
+  color: #fff;
+  font-weight: 600;
+}
+[data-theme='dark'] .proposals-subtab.active {
+  background: #64748b;
+  border-color: #64748b;
+}
+
+/* ===== Таблица сравнения ===== */
+/* task 410: виртуализированная большая таблица сравнения — собственный вертикальный
+   скролл (контейнер виртуализации) + липкая шапка (thead уже sticky) внутри него.
+   Горизонтальный скролл сохраняется. Включается только выше порога VIRTUALIZE_FROM. */
+.proposals-table-wrap.proposals-virtual {
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  /* См. VirtualTableBody: при сдвиге окна строк меняется высота контента над вьюпортом,
+     и scroll anchoring переписывал бы scrollTop → зацикленный пересчёт и «дрожание». */
+  overflow-anchor: none;
+}
+.vt-spacer td {
+  background: transparent;
+}
+
+.proposals-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+.proposals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.proposals-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.5rem 0.625rem;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  white-space: nowrap;
+}
+.proposals-table thead .th-cp {
+  text-align: center;
+  border-left: 2px solid var(--border-color);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 0.5rem 0.5rem 0.375rem;
+}
+.proposals-table thead .th-cp-name {
+  display: block;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+.proposals-table thead .th-cp-date {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.proposals-table thead .th-cp-uploaded {
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  opacity: 0.85;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+.proposals-table thead .th-sub {
+  text-align: right;
+  font-size: 0.625rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.4375rem;
+  background: var(--bg-tertiary);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.proposals-table thead .th-sub-total {
+  border-right: 2px solid var(--border-color);
+}
+
+.proposals-table tbody td {
+  padding: 0.4375rem 0.625rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  color: var(--text-primary);
+}
+.proposals-table tbody tr:hover td {
+  background: rgba(71, 85, 105, 0.04);
+}
+
+.proposals-table .td-num {
+  text-align: center;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+}
+.proposals-table .td-doc {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proposals-table .td-code {
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.proposals-table .td-name {
+  min-width: 240px;
+  max-width: 420px;
+  word-break: break-word;
+}
+.proposals-table .td-unit,
+.proposals-table .td-vol {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.proposals-table .td-vol {
+  text-align: right;
+}
+.proposals-table .td-price {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.proposals-table .td-cp-first {
+  border-left: 2px solid var(--border-color);
+}
+.proposals-table .td-sum {
+  color: var(--text-secondary);
+  font-size: 0.78125rem;
+}
+.proposals-table .td-total {
+  font-weight: 700;
+  color: var(--text-primary);
+  border-right: 2px solid var(--border-color);
+}
+.proposals-table .td-total.is-min {
+  background: rgba(22, 163, 74, 0.10);
+  color: #15803d;
+}
+[data-theme='dark'] .proposals-table .td-total.is-min {
+  background: rgba(22, 163, 74, 0.18);
+  color: #4ade80;
+}
+
+.proposals-table tfoot .proposals-total-row td {
+  padding: 0.625rem;
+  background: var(--bg-tertiary);
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  border-top: 2px solid var(--border-color);
+}
+.proposals-table tfoot .td-total-cp {
+  text-align: right;
+  border-left: 2px solid var(--border-color);
+  border-right: 2px solid var(--border-color);
+}
+.proposals-table tfoot .td-total-cp.is-min {
+  background: rgba(22, 163, 74, 0.15);
+  color: #15803d;
+}
+[data-theme='dark'] .proposals-table tfoot .td-total-cp.is-min {
+  background: rgba(22, 163, 74, 0.25);
+  color: #4ade80;
+}
+
+/* task 408/409: блок «Снабжение» — два первых ценовых столбца-ориентира (Цена/ед + Итого),
+   НЕ КП подрядчика. Отделён рамками от колонок подрядчиков, не участвует в подсветке минимума. */
+.proposals-table .th-supply-group {
+  border-left: 2px solid var(--border-color);
+}
+.proposals-table thead .th-sub.th-supply {
+  background: rgba(59, 130, 246, 0.08);
+}
+.proposals-table .td-supply {
+  background: rgba(59, 130, 246, 0.05);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.proposals-table .td-supply.td-cp-first {
+  border-left: 2px solid var(--border-color);
+}
+.proposals-table .td-supply.td-supply-total {
+  font-weight: 600;
+  border-right: 2px solid var(--border-color);
+}
+[data-theme='dark'] .proposals-table .td-supply {
+  background: rgba(59, 130, 246, 0.12);
+}
+.proposals-table tfoot .td-total-cp.td-supply {
+  color: var(--text-primary);
+}
+/* Нерасценённая снабжением позиция — жёлтая подсветка (тот же тон, что is-incomplete) */
+.proposals-table .td-supply.supply-price-missing,
+.proposals-group-subtotal .td-group-subtotal.td-supply.supply-price-missing {
+  background: rgba(234, 179, 8, 0.18) !important;
+  color: #a16207 !important;
+}
+[data-theme='dark'] .proposals-table .td-supply.supply-price-missing,
+[data-theme='dark'] .proposals-group-subtotal .td-group-subtotal.td-supply.supply-price-missing {
+  background: rgba(234, 179, 8, 0.26) !important;
+  color: #fde047 !important;
+}
+/* task 409: столбец «Снабжение» в верхней сводной таблице по системам */
+.proposals-summary-matrix-table .psmt-th-supply {
+  border-left: 2px solid var(--border-color);
+  border-right: 2px solid var(--border-color);
+  text-align: right;
+  background: rgba(59, 130, 246, 0.08);
+  white-space: nowrap;
+}
+.proposals-summary-matrix-table .psmt-td-supply {
+  border-left: 2px solid var(--border-color);
+  border-right: 2px solid var(--border-color);
+  background: rgba(59, 130, 246, 0.05);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+[data-theme='dark'] .proposals-summary-matrix-table .psmt-td-supply {
+  background: rgba(59, 130, 246, 0.12);
+}
+.proposals-summary-matrix-table .psmt-td-supply.supply-price-missing {
+  background: rgba(234, 179, 8, 0.18) !important;
+  color: #a16207 !important;
+}
+[data-theme='dark'] .proposals-summary-matrix-table .psmt-td-supply.supply-price-missing {
+  background: rgba(234, 179, 8, 0.26) !important;
+  color: #fde047 !important;
+}
+.proposals-table tbody tr.supply-row-missing td {
+  background: rgba(234, 179, 8, 0.05);
+}
+[data-theme='dark'] .proposals-table tbody tr.supply-row-missing td {
+  background: rgba(234, 179, 8, 0.09);
+}
+.proposals-group-supply-warn {
+  margin-left: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #a16207;
+}
+[data-theme='dark'] .proposals-group-supply-warn {
+  color: #fde047;
+}
+
+/* task 350: группа-разделитель по ВОРу в агрегированном виде */
+.proposals-group-header td {
+  padding: 0.625rem 0.75rem !important;
+  background: rgba(71, 85, 105, 0.08) !important;
+  border-top: 2px solid #475569;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.8125rem;
+}
+[data-theme='dark'] .proposals-group-header td {
+  background: rgba(148, 163, 184, 0.10) !important;
+  border-top-color: #64748b;
+}
+.proposals-group-header-label {
+  display: inline-block;
+  padding: 0.125rem 0.4375rem;
+  background: var(--bg-primary);
+  border: 1px solid #475569;
+  border-radius: 3px;
+  color: #475569;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 0.5rem;
+}
+[data-theme='dark'] .proposals-group-header-label {
+  color: #94a3b8;
+  border-color: #64748b;
+}
+.proposals-group-header-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+.proposals-group-header-count {
+  margin-left: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.proposals-group-subtotal td {
+  padding: 0.5rem 0.75rem !important;
+  background: var(--bg-tertiary) !important;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+}
+.proposals-group-subtotal td:first-child {
+  color: var(--text-secondary);
+}
+.proposals-group-subtotal .td-group-subtotal {
+  text-align: right;
+  border-left: 2px solid var(--border-color);
+  border-right: 2px solid var(--border-color);
+  color: var(--text-primary);
+}
+.proposals-group-subtotal .td-group-subtotal.is-min {
+  background: rgba(22, 163, 74, 0.10) !important;
+  color: #15803d;
+}
+[data-theme='dark'] .proposals-group-subtotal .td-group-subtotal.is-min {
+  background: rgba(22, 163, 74, 0.18) !important;
+  color: #4ade80;
+}
+
+/* Подпись под агрегированной таблицей */
+.proposals-aggregate-hint {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+/* ===== Пустое состояние ===== */
+.proposals-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-tertiary);
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+}
+.proposals-empty p {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+}
+.proposals-empty .hint {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+/* ===== Формат-карточки в модалке загрузки ===== */
+.proposal-format-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.proposal-format-card:hover {
+  border-color: #475569;
+}
+.proposal-format-card input[type='radio'] {
+  margin-top: 0.1875rem;
+  flex-shrink: 0;
+}
+.proposal-format-card input[type='radio']:checked + span strong {
+  color: #475569;
+}
+.proposal-format-card span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.proposal-format-card span strong {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+.proposal-format-card span small {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  line-height: 1.35;
+}
+
+/* ===== task 401: пометка «учтено в другой позиции» в «Исходном КП» ===== */
+.proposals-table .td-covered-cell {
+  white-space: normal;
+}
+/* Денежная часть над чекбоксом «учтено» в агрегированной ячейке. */
+.proposals-table .td-covered-cell .td-total-money {
+  margin-bottom: 0.25rem;
+}
+.proposals-table .td-total.is-covered-elsewhere {
+  background: rgba(234, 179, 8, 0.10);
+}
+.covered-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  cursor: pointer;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.covered-check input[type='checkbox'] {
+  cursor: pointer;
+  margin: 0;
+}
+.covered-note-input {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.1875rem 0.375rem;
+  font-size: 0.6875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.covered-note-input:focus {
+  outline: none;
+  border-color: #475569;
+}
+.covered-badge {
+  display: inline-block;
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #a16207;
+  background: rgba(234, 179, 8, 0.16);
+  border-radius: 4px;
+}
+[data-theme='dark'] .covered-badge {
+  color: #fde047;
+  background: rgba(234, 179, 8, 0.24);
+}

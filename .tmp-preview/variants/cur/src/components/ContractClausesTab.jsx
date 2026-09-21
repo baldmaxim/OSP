@@ -1,0 +1,708 @@
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
+import { supabase } from '../supabase'
+import { useRealtimeTable } from '../hooks/useRealtimeTable'
+import { useRole } from '../contexts/RoleContext'
+import AutoGrowTextarea from './AutoGrowTextarea'
+import { uploadFile, fetchDocuments, deleteDocument } from '../services/s3'
+import { formatMoney } from '../utils/estimateImport'
+import { diffWords, countDiffWords } from '../utils/textDiff'
+import { suggestClause, AI_MODES } from '../services/aiAssist'
+import './ContractClausesTab.css'
+
+// Наша сторона в протоколе и в чате подписывается всегда так.
+const OUR_COMPANY = 'СУ-10'
+
+function fmtDate(s) {
+  if (!s) return '—'
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU')
+}
+
+// docx-preview крупный — грузим лениво, только когда открыта вкладка «Согласование».
+const DocxPreview = lazy(() => import('./DocxPreview'))
+
+const TEMPLATE_CATEGORY = 'negotiation_template'
+
+const DISPUTE_STATUS = [
+  { value: 'open', label: 'Открыт' },
+  { value: 'in_review', label: 'На рассмотрении' },
+  { value: 'agreed', label: 'Согласовано' },
+  { value: 'rejected', label: 'Отклонено' },
+]
+const STATUS_LABEL = Object.fromEntries(DISPUTE_STATUS.map((s) => [s.value, s.label]))
+// Тон подсветки/бейджа по статусу: открытый вопрос — жёлтый, согласован — зелёный, отклонён — серый.
+const statusTone = (s) => (s === 'agreed' ? 'agreed' : s === 'rejected' ? 'rejected' : 'open')
+
+const norm = (s) => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim()
+
+// Иконки (аккуратный SVG вместо эмодзи).
+const Svg = (p) => <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...p} />
+const IconUpload = () => <Svg><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></Svg>
+const IconChevron = ({ up }) => <Svg style={{ transform: up ? 'rotate(180deg)' : 'none' }}><path d="m6 9 6 6 6-6" /></Svg>
+const IconSpark = () => <Svg><path d="M12 3v4M12 17v4M3 12h4M17 12h4" /><path d="M12 8.5 13.4 11l2.6 1-2.6 1-1.4 2.5L10.6 13 8 12l2.6-1L12 8.5Z" /></Svg>
+
+// Красивый выбор статуса: цветной бейдж-кнопка + выпадающее меню с цветными пунктами.
+function StatusPicker({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+  return (
+    <div className="cct-statuspick" ref={ref}>
+      <button type="button" className={`cct-badge tone-${statusTone(value)} cct-badge-btn`} onClick={() => setOpen((o) => !o)}>
+        {STATUS_LABEL[value] || value}
+        <span className="cct-badge-chev"><IconChevron up={open} /></span>
+      </button>
+      {open && (
+        <div className="cct-statuspick-menu">
+          {DISPUTE_STATUS.map((s) => (
+            <button key={s.value} type="button"
+              className={`cct-statuspick-item tone-${statusTone(s.value)}${s.value === value ? ' is-active' : ''}`}
+              onClick={() => { onChange(s.value); setOpen(false) }}>
+              <span className="cct-dot" />{s.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function fmtDateTime(s) {
+  if (!s) return ''
+  const d = new Date(s)
+  return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+// Четвёртая колонка пункта: что подрядчик убрал и что добавил относительно
+// исходной редакции. Пословный diff + легенда и счётчик «+N / −M слов».
+function ClauseDiff({ base, draft, cpName }) {
+  const parts = useMemo(() => diffWords(base || '', draft || ''), [base, draft])
+  const { added, removed } = useMemo(() => countDiffWords(parts), [parts])
+
+  return (
+    <div className="cct-ed tone-diff">
+      <div className="cct-ed-label">Изменения</div>
+      <div className="cct-diff-box">
+        <div className="cct-diff-legend">
+          <span className="cct-diff-key"><i className="cct-diff-sw added" />добавлено</span>
+          <span className="cct-diff-key"><i className="cct-diff-sw removed" />удалено</span>
+          {(added > 0 || removed > 0) && (
+            <span className="cct-diff-count" title="Изменено слов относительно исходной редакции">
+              +{added} / −{removed}
+            </span>
+          )}
+        </div>
+        {!draft ? (
+          <div className="cct-diff-empty">{cpName} ещё не предложил свою редакцию.</div>
+        ) : added === 0 && removed === 0 ? (
+          <div className="cct-diff-empty">Текст совпадает с исходной редакцией.</div>
+        ) : (
+          <div className="cct-diff-text">
+            {parts.map((p, i) => (
+              p.type === 'same'
+                ? <span key={i}>{p.text}</span>
+                : <span key={i} className={`cct-diff-${p.type}`}>{p.text}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Модалка ИИ-помощника по одному пункту протокола: три режима подсказки,
+// результат можно вставить в итоговую редакцию или отправить в обсуждение.
+// Ответ ИИ — черновик: решение всё равно принимает юрист.
+function AiSuggestModal({ dispute, cpName, contract, comments, canInsertFinal, onInsertFinal, onSendToThread, onClose }) {
+  const [mode, setMode] = useState('compromise')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState('')
+
+  const run = useCallback(async (nextMode) => {
+    setLoading(true)
+    setError('')
+    setResult('')
+    try {
+      const data = await suggestClause({
+        mode: nextMode,
+        clauseLabel: dispute.label,
+        ourText: dispute.our_text,
+        counterpartyText: dispute.counterparty_text,
+        finalText: dispute.final_text,
+        counterpartyName: cpName,
+        contract: {
+          number: contract?.contract_number || '',
+          date: contract?.contract_date || '',
+          object: contract?.objects?.name || '',
+          work: contract?.work_name || '',
+        },
+        comments,
+      })
+      setResult(data.text)
+    } catch (err) {
+      setError(err.message || String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [dispute, cpName, contract, comments])
+
+  return (
+    <div className="cct-modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="cct-modal" role="dialog" aria-modal="true">
+        <div className="cct-modal-head">
+          <h3><IconSpark /> ИИ-помощник — {dispute.label || 'пункт'}</h3>
+          <button type="button" className="cct-modal-close" onClick={onClose} aria-label="Закрыть">×</button>
+        </div>
+
+        <div className="cct-modal-body">
+          <div className="cct-ai-modes">
+            {AI_MODES.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                className={`cct-ai-mode${mode === m.value ? ' is-active' : ''}`}
+                title={m.hint}
+                disabled={loading}
+                onClick={() => { setMode(m.value); run(m.value) }}
+              >{m.label}</button>
+            ))}
+          </div>
+
+          {loading && <div className="cct-empty">ИИ читает пункт и переписку…</div>}
+          {error && <div className="cct-error">{error}</div>}
+          {!loading && !error && !result && (
+            <div className="cct-empty">Выберите, что подсказать по этому пункту.</div>
+          )}
+          {result && <div className="cct-ai-result">{result}</div>}
+        </div>
+
+        <div className="cct-modal-foot">
+          <span className="cct-ai-note">Черновик ИИ. Проверьте формулировку перед отправкой контрагенту.</span>
+          <div className="cct-modal-actions">
+            {result && (
+              <>
+                <button type="button" className="cct-btn" onClick={() => navigator.clipboard?.writeText(result)}>Копировать</button>
+                <button type="button" className="cct-btn" onClick={() => onSendToThread(result)}>В обсуждение</button>
+                {canInsertFinal && (
+                  <button type="button" className="cct-btn cct-btn-accent" onClick={() => onInsertFinal(result)}>В итоговую редакцию</button>
+                )}
+              </>
+            )}
+            <button type="button" className="cct-btn" onClick={onClose}>Закрыть</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Согласование условий договора: Word-предпросмотр текста + протокол разногласий
+// (наша / контрагент / итоговая редакция) + обсуждение.
+// side='employee' — СУ-10 (грузит шаблон, правит итоговую редакцию/статус).
+// side='contractor' — кабинет подрядчика (читает договор, вносит свою редакцию + комментарии).
+function ContractClausesTab({ contractId, parties = [], contract = null, canEdit, side = 'employee', counterpartyId = null }) {
+  const { userProfile, contractorInfo } = useRole()
+  const isEmployee = side === 'employee'
+  const authorName = isEmployee ? (userProfile?.full_name || 'Сотрудник') : (contractorInfo?.name || userProfile?.full_name || 'Контрагент')
+
+  const [templateDoc, setTemplateDoc] = useState(null)
+  const [disputes, setDisputes] = useState([])
+  const [commentsByDispute, setCommentsByDispute] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [activeCpId, setActiveCpId] = useState(isEmployee ? (parties[0]?.id || null) : counterpartyId)
+  // Наименование компании подрядчика: у сотрудника — из списка сторон договора,
+  // в кабинете подрядчика — из его собственного профиля.
+  const cpName = useMemo(() => {
+    if (!isEmployee) return contractorInfo?.name || 'Подрядчик'
+    const party = parties.find((p) => p.id === activeCpId) || parties[0]
+    return party?.name || contract?.counterparties?.name || 'Подрядчик'
+  }, [isEmployee, contractorInfo, parties, activeCpId, contract])
+  const [replyDrafts, setReplyDrafts] = useState({})
+  const [replyNonce, setReplyNonce] = useState({})
+  const [textCollapsed, setTextCollapsed] = useState(false)
+  const [expandedDisputes, setExpandedDisputes] = useState(() => new Set()) // по умолчанию все свёрнуты
+  const [statusFilter, setStatusFilter] = useState(null) // null | 'open' | 'in_review' | 'agreed' | 'rejected'
+  const [paraOrder, setParaOrder] = useState([])   // порядок абзацев документа (для сортировки)
+  const [popup, setPopup] = useState(null)          // { text, top, left } — всплывашка у выделения
+  const [aiDispute, setAiDispute] = useState(null)  // пункт, по которому открыт ИИ-помощник
+  const fileRef = useRef(null)
+  const previewRef = useRef(null) // контейнер docx-preview — читаем из него выделение
+
+  const toggleDispute = (id) => setExpandedDisputes((p) => {
+    const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+
+  useEffect(() => {
+    if (!isEmployee) { setActiveCpId(counterpartyId); return }
+    if (!activeCpId && parties[0]) setActiveCpId(parties[0].id)
+  }, [parties, activeCpId, isEmployee, counterpartyId])
+
+  const canUpload = isEmployee && canEdit           // грузить/заменять шаблон
+  const canCreateDispute = isEmployee ? !!canEdit : true
+  const canEditFinal = isEmployee && canEdit        // итоговая редакция + статус
+  const canEditOwnEdition = !isEmployee             // подрядчик правит свою редакцию
+
+  const loadTemplate = useCallback(async () => {
+    try {
+      const docs = await fetchDocuments('contract', contractId, TEMPLATE_CATEGORY)
+      setTemplateDoc(docs[0] || null) // fetchDocuments сортирует created_at desc → [0] новейший
+    } catch (err) {
+      console.error('Загрузка шаблона согласования:', err)
+    }
+  }, [contractId])
+
+  const loadDisputes = useCallback(async () => {
+    setLoading(true)
+    setLoadError('')
+    try {
+      let dq = supabase.from('contract_clause_disputes').select('*').eq('contract_id', contractId)
+      if (!isEmployee && counterpartyId) dq = dq.eq('counterparty_id', counterpartyId)
+      const { data: ds, error } = await dq.order('created_at', { ascending: true })
+      if (error) throw error
+      setDisputes(ds || [])
+      const ids = (ds || []).map((d) => d.id)
+      if (ids.length) {
+        const { data: cm } = await supabase
+          .from('contract_clause_comments').select('*').in('dispute_id', ids).order('created_at', { ascending: true })
+        const map = {}
+        ;(cm || []).forEach((c) => { (map[c.dispute_id] = map[c.dispute_id] || []).push(c) })
+        setCommentsByDispute(map)
+      } else {
+        setCommentsByDispute({})
+      }
+    } catch (err) {
+      console.error('Загрузка протокола:', err)
+      setLoadError(err.message || 'Ошибка загрузки. Возможно, миграция 20260815 ещё не применена.')
+    } finally {
+      setLoading(false)
+    }
+  }, [contractId, isEmployee, counterpartyId])
+
+  useEffect(() => { loadTemplate(); loadDisputes() }, [loadTemplate, loadDisputes])
+
+  // Онлайн-обсуждение: юрист и подрядчик правят один и тот же протокол.
+  // Разногласия отфильтрованы по договору на стороне сервера; комментарии
+  // привязаны к разногласиям, поэтому серверного фильтра для них нет — перезагрузку
+  // всё равно делает loadDisputes, она тянет и споры, и переписку разом.
+  useRealtimeTable({
+    table: 'contract_clause_disputes',
+    filter: contractId ? `contract_id=eq.${contractId}` : null,
+    onStructuralChange: loadDisputes,
+    onUpdate: loadDisputes,
+  })
+  useRealtimeTable({
+    table: 'contract_clause_comments',
+    onStructuralChange: loadDisputes,
+    onUpdate: loadDisputes,
+  })
+
+  const activeDisputes = useMemo(
+    () => disputes.filter((d) => !activeCpId || d.counterparty_id === activeCpId),
+    [disputes, activeCpId],
+  )
+  // Тексты + статусы для подсветки абзацев в предпросмотре (мемо — чтобы не пересчитывать при печати).
+  const highlightItems = useMemo(
+    () => activeDisputes.map((d) => ({ text: d.our_text, status: d.status })),
+    [activeDisputes],
+  )
+
+  // Хронологический порядок: сортируем разногласия по позиции их текста в документе,
+  // а не по времени создания. Позиция = индекс первого совпавшего абзаца предпросмотра.
+  const orderedDisputes = useMemo(() => {
+    if (paraOrder.length === 0) return activeDisputes
+    const posOf = (d) => {
+      const dt = norm(d.our_text)
+      if (!dt) return Number.MAX_SAFE_INTEGER
+      const i = paraOrder.findIndex((pt) => dt.includes(pt) || (dt.length >= 20 && pt.includes(dt)))
+      return i < 0 ? Number.MAX_SAFE_INTEGER : i
+    }
+    return [...activeDisputes]
+      .map((d) => ({ d, pos: posOf(d) }))
+      .sort((a, b) => a.pos - b.pos || String(a.d.created_at).localeCompare(String(b.d.created_at)))
+      .map((x) => x.d)
+  }, [activeDisputes, paraOrder])
+
+  // Сводка по статусам (для карточки «Прогресс согласования» и фильтра).
+  const stats = useMemo(() => {
+    const s = { total: activeDisputes.length, open: 0, in_review: 0, agreed: 0, rejected: 0 }
+    activeDisputes.forEach((d) => { if (s[d.status] != null) s[d.status]++ })
+    s.progress = s.total ? Math.round((s.agreed / s.total) * 100) : 0
+    return s
+  }, [activeDisputes])
+
+  const visibleDisputes = useMemo(() => {
+    if (!statusFilter) return orderedDisputes
+    if (statusFilter === 'open') return orderedDisputes.filter((d) => d.status === 'open' || d.status === 'in_review')
+    return orderedDisputes.filter((d) => d.status === statusFilter)
+  }, [orderedDisputes, statusFilter])
+
+  async function handleUpload(e) {
+    const file = e.target.files?.[0]
+    if (fileRef.current) fileRef.current.value = ''
+    if (!file) return
+    if (/\.doc$/i.test(file.name)) {
+      alert('Формат .doc не поддерживается. Откройте файл в Word и сохраните как .docx (Файл → Сохранить как → Документ Word .docx), затем загрузите его.')
+      return
+    }
+    if (!/\.docx$/i.test(file.name)) { alert('Нужен файл .docx.'); return }
+    if (templateDoc && !window.confirm('Заменить текущий шаблон договора? Существующие разногласия протокола сохранятся.')) return
+    setImporting(true)
+    try {
+      // Убираем прежние шаблоны, чтобы всегда был ровно один актуальный.
+      const old = await fetchDocuments('contract', contractId, TEMPLATE_CATEGORY)
+      for (const d of old) { try { await deleteDocument(d) } catch { /* лучшее усилие */ } }
+      await uploadFile({ file, ownerType: 'contract', ownerId: contractId, category: TEMPLATE_CATEGORY })
+      await loadTemplate()
+    } catch (err) {
+      console.error('Загрузка шаблона:', err)
+      alert('Ошибка загрузки шаблона: ' + (err.message || err))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  // При выделении текста внутри предпросмотра — показываем всплывашку у выделения.
+  function handlePreviewMouseUp() {
+    if (!canCreateDispute) return
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) { setPopup(null); return }
+    const c = previewRef.current
+    if (c && (!c.contains(sel.anchorNode) || !c.contains(sel.focusNode))) { setPopup(null); return }
+    const text = sel.toString().trim()
+    if (!text) { setPopup(null); return }
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    setPopup({ text, top: rect.top - 8, left: rect.left + rect.width / 2 })
+  }
+
+  // Скрываем всплывашку при прокрутке/ресайзе (координаты станут неверными).
+  useEffect(() => {
+    if (!popup) return
+    const hide = () => setPopup(null)
+    window.addEventListener('scroll', hide, true)
+    window.addEventListener('resize', hide)
+    return () => { window.removeEventListener('scroll', hide, true); window.removeEventListener('resize', hide) }
+  }, [popup])
+
+  async function createDispute(text) {
+    if (!activeCpId) return alert('У договора нет контрагента — протокол вести не с кем.')
+    const t = (text || '').trim()
+    if (!t) return
+    const numMatch = t.match(/^\s*(\d+(?:\.\d+)*)/)
+    const label = numMatch ? `п. ${numMatch[1]}` : (t.slice(0, 40) + (t.length > 40 ? '…' : ''))
+    try {
+      const { error } = await supabase.from('contract_clause_disputes')
+        .insert({ contract_id: contractId, counterparty_id: activeCpId, label, our_text: t, created_by_side: side })
+      if (error) throw error
+      setPopup(null)
+      window.getSelection()?.removeAllRanges()
+      loadDisputes()
+    } catch (err) {
+      alert('Ошибка создания разногласия: ' + (err.message || err))
+    }
+  }
+
+  async function saveDispute(id, patch) {
+    const { error } = await supabase.from('contract_clause_disputes').update(patch).eq('id', id)
+    if (error) alert('Ошибка: ' + error.message)
+    else setDisputes((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)))
+  }
+  async function deleteDispute(id) {
+    if (!window.confirm('Удалить разногласие из протокола?')) return
+    const { error } = await supabase.from('contract_clause_disputes').delete().eq('id', id)
+    if (error) return alert('Ошибка: ' + error.message)
+    loadDisputes()
+  }
+  async function addComment(dispute) {
+    const body = (replyDrafts[dispute.id] || '').trim()
+    if (!body) return
+    const { error } = await supabase.from('contract_clause_comments').insert({
+      dispute_id: dispute.id, counterparty_id: dispute.counterparty_id,
+      author_side: side, author_name: authorName, body,
+    })
+    if (error) return alert('Ошибка: ' + error.message)
+    setReplyDrafts((p) => ({ ...p, [dispute.id]: '' }))
+    setReplyNonce((p) => ({ ...p, [dispute.id]: (p[dispute.id] || 0) + 1 }))
+    loadDisputes()
+  }
+
+  return (
+    <div className="cct-wrap">
+      {/* Всплывашка у выделения — «Вынести в протокол» */}
+      {popup && canCreateDispute && (
+        <div className="cct-sel-popup" style={{ top: popup.top, left: popup.left }}
+          onMouseDown={(e) => e.preventDefault()}>
+          <button type="button" onClick={() => createDispute(popup.text)}>Вынести в протокол</button>
+        </div>
+      )}
+
+      <div className="cct-layout">
+      <div className="cct-main">
+      {/* Текст договора — предпросмотр как в Word. Единый заголовок-бар с действиями. */}
+      <section className="cct-section cct-card">
+        <div className="cct-section-head">
+          <h3>Текст договора</h3>
+          <div className="cct-head-actions">
+            {isEmployee && parties.length > 1 && (
+              <div className="cct-party-pick">
+                <span>Протокол&nbsp;с:</span>
+                <select value={activeCpId || ''} onChange={(e) => setActiveCpId(e.target.value)}>
+                  {parties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            )}
+            {canUpload && (
+              <label className={`cct-btn cct-btn-accent${importing ? ' is-disabled' : ''}`}>
+                <IconUpload />
+                {importing ? 'Загрузка…' : (templateDoc ? 'Заменить шаблон' : 'Загрузить шаблон')}
+                <input ref={fileRef} type="file" accept=".docx" hidden disabled={importing} onChange={handleUpload} />
+              </label>
+            )}
+            {templateDoc && (
+              <button type="button" className="cct-btn" onClick={() => setTextCollapsed((v) => !v)}>
+                <IconChevron up={!textCollapsed} />
+                {textCollapsed ? 'Развернуть' : 'Свернуть'}
+              </button>
+            )}
+          </div>
+        </div>
+        {!templateDoc ? (
+          <div className="cct-empty">
+            {isEmployee
+              ? 'Загрузите шаблон договора (.docx) — он отобразится как в Word, и можно будет выделять пункты для протокола.'
+              : 'Текст договора пока не загружен представителем СУ-10.'}
+          </div>
+        ) : textCollapsed ? (
+          <div className="cct-collapsed-note">Текст договора свёрнут.</div>
+        ) : (
+          <>
+            {canCreateDispute && (
+              <p className="cct-preview-hint">
+                Выделите нужный пункт (или несколько) мышью — рядом появится кнопка «Вынести в протокол».
+                {activeDisputes.length > 0 && (
+                  <span className="cct-hint-legend">
+                    {' '}Подсветка: <span className="cct-hint-swatch open" /> открыт · <span className="cct-hint-swatch agreed" /> согласован.
+                  </span>
+                )}
+              </p>
+            )}
+            <div onMouseUp={handlePreviewMouseUp}>
+              <Suspense fallback={<div className="cct-empty">Загрузка предпросмотра…</div>}>
+                <DocxPreview s3Key={templateDoc.s3_key} containerRef={previewRef} highlights={highlightItems} onParagraphs={setParaOrder} />
+              </Suspense>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Протокол разногласий */}
+      <section className="cct-section cct-card">
+        <div className="cct-section-head">
+          <h3>Протокол разногласий {activeDisputes.length > 0 && <span className="cct-count">{activeDisputes.length}</span>}</h3>
+          {activeDisputes.length > 0 && (
+            <div className="cct-filters">
+              <button type="button" className={`cct-chip-btn${!statusFilter ? ' is-active' : ''}`} onClick={() => setStatusFilter(null)}>Все</button>
+              {stats.open + stats.in_review > 0 && (
+                <button type="button" className={`cct-chip-btn tone-open${statusFilter === 'open' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'open' ? null : 'open')}>Открытые</button>
+              )}
+              {stats.agreed > 0 && (
+                <button type="button" className={`cct-chip-btn tone-agreed${statusFilter === 'agreed' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'agreed' ? null : 'agreed')}>Согласованные</button>
+              )}
+              {stats.rejected > 0 && (
+                <button type="button" className={`cct-chip-btn tone-rejected${statusFilter === 'rejected' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'rejected' ? null : 'rejected')}>Отклонённые</button>
+              )}
+            </div>
+          )}
+        </div>
+        {loadError ? (
+          <div className="cct-error">{loadError}</div>
+        ) : loading ? (
+          <div className="cct-empty">Загрузка…</div>
+        ) : activeDisputes.length === 0 ? (
+          <div className="cct-empty">
+            {isEmployee
+              ? 'Разногласий пока нет. Контрагент вносит пункты из своего кабинета, либо выделите текст выше и вынесите сами.'
+              : 'Разногласий пока нет. Выделите пункт в договоре и нажмите «Вынести выделенное в протокол», чтобы предложить свою редакцию.'}
+          </div>
+        ) : (
+          <div className="cct-disputes">
+            {visibleDisputes.map((d) => {
+              const tone = statusTone(d.status)
+              const isExpanded = expandedDisputes.has(d.id)
+              const cnt = (commentsByDispute[d.id] || []).length
+              return (
+                <div key={d.id} className={`cct-dispute tone-${tone}${isExpanded ? ' is-expanded' : ''}`}>
+                  <div className="cct-dispute-head">
+                    <button type="button" className="cct-dispute-toggle" onClick={() => toggleDispute(d.id)}>
+                      <span className="cct-chev" style={{ transform: isExpanded ? 'none' : 'rotate(-90deg)' }}><IconChevron /></span>
+                      <span className="cct-dispute-label">{d.label || 'Пункт'}</span>
+                      {!canEditFinal && <span className={`cct-badge tone-${tone}`}>{STATUS_LABEL[d.status] || d.status}</span>}
+                      {!isExpanded && d.our_text && <span className="cct-dispute-preview">{d.our_text}</span>}
+                      {cnt > 0 && <span className="cct-thread-count" title="Сообщений в обсуждении">{cnt}</span>}
+                    </button>
+                    <div className="cct-dispute-actions">
+                      {isEmployee && (
+                        <button
+                          type="button"
+                          className="cct-ai-btn"
+                          title="ИИ-помощник: компромиссная редакция, ответ подрядчику, риски"
+                          onClick={() => setAiDispute(d)}
+                        ><IconSpark /> ИИ</button>
+                      )}
+                      {canEditFinal && <StatusPicker value={d.status} onChange={(v) => saveDispute(d.id, { status: v })} />}
+                      {canEditFinal && <button type="button" className="cct-clause-del" title="Удалить" onClick={() => deleteDispute(d.id)}>×</button>}
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <div className="cct-dispute-body">
+                      <div className="cct-editions">
+                        <div className="cct-ed tone-our">
+                          <div className="cct-ed-label">Исходная редакция</div>
+                          <div className="cct-ed-text ro">{d.our_text || '—'}</div>
+                        </div>
+                        <div className="cct-ed tone-cp">
+                          <div className="cct-ed-label" title={cpName}>Редакция {cpName}</div>
+                          {canEditOwnEdition ? (
+                            <AutoGrowTextarea className="cct-ed-text" minHeight={60} defaultValue={d.counterparty_text}
+                              placeholder="Ваша предлагаемая формулировка пункта…"
+                              onBlur={(e) => e.target.value !== d.counterparty_text && saveDispute(d.id, { counterparty_text: e.target.value })} />
+                          ) : (
+                            <div className="cct-ed-text ro">{d.counterparty_text || '—'}</div>
+                          )}
+                        </div>
+                        <div className="cct-ed tone-final">
+                          <div className="cct-ed-label">Итоговая редакция</div>
+                          {canEditFinal ? (
+                            <AutoGrowTextarea className="cct-ed-text" minHeight={60} defaultValue={d.final_text}
+                              onBlur={(e) => e.target.value !== d.final_text && saveDispute(d.id, { final_text: e.target.value })} />
+                          ) : (
+                            <div className="cct-ed-text ro">{d.final_text || '—'}</div>
+                          )}
+                        </div>
+                        <ClauseDiff base={d.our_text} draft={d.counterparty_text} cpName={cpName} />
+                      </div>
+                      <div className="cct-thread">
+                        {(commentsByDispute[d.id] || []).map((c) => {
+                          // Свои сообщения — справа, сообщения второй стороны — слева
+                          // (как в мессенджерах), поэтому ориентируемся на side текущего кабинета.
+                          const isOwn = c.author_side === side
+                          const company = c.author_side === 'employee' ? OUR_COMPANY : cpName
+                          return (
+                            <div key={c.id} className={`cct-msg cct-msg-${c.author_side}${isOwn ? ' is-own' : ''}`}>
+                              <div className="cct-msg-meta">
+                                <span className="cct-msg-author">{c.author_name || (c.author_side === 'employee' ? 'Сотрудник' : 'Подрядчик')}</span>
+                                <span className="cct-msg-company" title="Сторона договора">{company}</span>
+                              </div>
+                              <div className="cct-msg-body">{c.body}</div>
+                              <div className="cct-msg-date">{fmtDateTime(c.created_at)}</div>
+                            </div>
+                          )
+                        })}
+                        <div className="cct-reply">
+                          <AutoGrowTextarea key={`r-${d.id}-${replyNonce[d.id] || 0}`} className="cct-reply-input" minHeight={36}
+                            defaultValue={replyDrafts[d.id] || ''}
+                            onInput={(e) => setReplyDrafts((p) => ({ ...p, [d.id]: e.target.value }))}
+                            placeholder="Ответить в обсуждении…" />
+                          <button type="button" className="btn-secondary" onClick={() => addComment(d)}>Отправить</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+      </div>{/* /cct-main */}
+
+      <aside className="cct-rail">
+        {contract && (
+          <div className="cct-rail-card">
+            <div className="cct-rail-title">О договоре</div>
+            <div className="cct-rr"><span className="cct-rr-l">№</span><span className="cct-rr-v">{contract.contract_number || '—'}</span></div>
+            <div className="cct-rr"><span className="cct-rr-l">Дата</span><span className="cct-rr-v">{fmtDate(contract.contract_date)}</span></div>
+            <div className="cct-rr"><span className="cct-rr-l">Объект</span><span className="cct-rr-v">{contract.objects?.name || '—'}</span></div>
+            <div className="cct-rr"><span className="cct-rr-l">Контрагент</span><span className="cct-rr-v">{parties[0]?.name || contract.counterparties?.name || '—'}</span></div>
+            {contract.contract_amount != null && <div className="cct-rr"><span className="cct-rr-l">Сумма</span><span className="cct-rr-v">{formatMoney(contract.contract_amount, contract.currency) || '—'}</span></div>}
+            {contract.vat_rate != null && <div className="cct-rr"><span className="cct-rr-l">НДС</span><span className="cct-rr-v">{contract.vat_rate}%{contract.amount_includes_vat === false ? ' (без НДС)' : ''}</span></div>}
+            {contract.responsible?.full_name && <div className="cct-rr"><span className="cct-rr-l">Юрист</span><span className="cct-rr-v">{contract.responsible.full_name}</span></div>}
+            {contract.work_name && <div className="cct-rr"><span className="cct-rr-l">Работы</span><span className="cct-rr-v">{contract.work_name}</span></div>}
+          </div>
+        )}
+
+        <div className="cct-rail-card">
+          <div className="cct-rail-title">Прогресс согласования</div>
+          {stats.total === 0 ? (
+            <div className="cct-rail-empty">Разногласий пока нет.</div>
+          ) : (
+            <>
+              <div className="cct-progress-head"><strong>{stats.agreed}</strong> из {stats.total} согласовано</div>
+              <div className="cct-progress-bar"><span style={{ width: `${stats.progress}%` }} /></div>
+              <button type="button" className={`cct-prow tone-open${statusFilter === 'open' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'open' ? null : 'open')}>
+                <span className="cct-dot" /> Открытые <span className="cct-prow-n">{stats.open + stats.in_review}</span>
+              </button>
+              <button type="button" className={`cct-prow tone-agreed${statusFilter === 'agreed' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'agreed' ? null : 'agreed')}>
+                <span className="cct-dot" /> Согласовано <span className="cct-prow-n">{stats.agreed}</span>
+              </button>
+              {stats.rejected > 0 && (
+                <button type="button" className={`cct-prow tone-rejected${statusFilter === 'rejected' ? ' is-active' : ''}`} onClick={() => setStatusFilter(statusFilter === 'rejected' ? null : 'rejected')}>
+                  <span className="cct-dot" /> Отклонено <span className="cct-prow-n">{stats.rejected}</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        {(canUpload || activeDisputes.length > 0) && (
+          <div className="cct-rail-card">
+            <div className="cct-rail-title">Быстрые действия</div>
+            {canUpload && (
+              <button type="button" className="cct-qa" onClick={() => fileRef.current?.click()}><IconUpload /> Заменить шаблон</button>
+            )}
+            {activeDisputes.length > 0 && (
+              <>
+                <button type="button" className="cct-qa" onClick={() => setExpandedDisputes(new Set(activeDisputes.map((x) => x.id)))}>Развернуть все пункты</button>
+                <button type="button" className="cct-qa" onClick={() => setExpandedDisputes(new Set())}>Свернуть все пункты</button>
+              </>
+            )}
+          </div>
+        )}
+      </aside>
+      </div>{/* /cct-layout */}
+
+      {aiDispute && (
+        <AiSuggestModal
+          dispute={aiDispute}
+          cpName={cpName}
+          contract={contract}
+          comments={commentsByDispute[aiDispute.id] || []}
+          canInsertFinal={canEditFinal}
+          onClose={() => setAiDispute(null)}
+          onInsertFinal={async (text) => {
+            // Не затираем молча уже написанную итоговую редакцию.
+            if (aiDispute.final_text && !window.confirm('Заменить текущую итоговую редакцию текстом от ИИ?')) return
+            await saveDispute(aiDispute.id, { final_text: text })
+            setAiDispute(null)
+          }}
+          onSendToThread={(text) => {
+            // Кладём в поле ответа — отправляет человек, прочитав текст.
+            setReplyDrafts((p) => ({ ...p, [aiDispute.id]: text }))
+            setReplyNonce((p) => ({ ...p, [aiDispute.id]: (p[aiDispute.id] || 0) + 1 }))
+            setExpandedDisputes((p) => new Set(p).add(aiDispute.id))
+            setAiDispute(null)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+export default ContractClausesTab

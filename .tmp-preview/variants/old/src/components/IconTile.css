@@ -1,0 +1,26 @@
+/* Плитка под иконку — повторяет .nav-ic бокового меню, но со своими тонами,
+   чтобы страницы не зависели от Sidebar.css. */
+.ic-tile {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: rgb(var(--ic-tone));
+  background: rgba(var(--ic-tone), 0.10);
+  border: 1px solid rgba(var(--ic-tone), 0.22);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+/* Те же сдержанные тона, что в боковом меню. */
+.ic-tile--amber  { --ic-tone: 217, 162, 74; }
+.ic-tile--teal   { --ic-tone: 96, 178, 178; }
+.ic-tile--rose   { --ic-tone: 209, 116, 140; }
+.ic-tile--sky    { --ic-tone: 95, 168, 216; }
+.ic-tile--sand   { --ic-tone: 201, 177, 131; }
+.ic-tile--coral  { --ic-tone: 224, 138, 111; }
+.ic-tile--green  { --ic-tone: 109, 191, 146; }
+.ic-tile--violet { --ic-tone: 143, 143, 230; }
+.ic-tile--slate  { --ic-tone: 138, 160, 189; }

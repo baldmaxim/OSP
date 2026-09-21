@@ -1,0 +1,493 @@
+/* TenderCounterpartyFiles — компонент файлов КП/документов одного контрагента
+   (task 290 + 291 + 294 + 300). */
+
+.tcpf {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+}
+
+/* === Quick actions (task 300): «+ КП» / «+ Документ» всегда видны сверху ячейки. === */
+.tcpf-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+/* === Тоггл «Файлы: N КП · M док.» (task 300) === */
+.tcpf-toggle-header {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.3125rem 0.5rem;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.tcpf-toggle-header:hover {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-primary);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+/* Активный тоггл — у контрагента уже есть хоть один файл (task 301).
+   Палитра — спокойный «emerald», как у .doc-link-signed в карточке объекта. */
+.tcpf-toggle-header-active {
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.30);
+  color: #15803d;
+}
+.tcpf-toggle-header-active:hover {
+  background: rgba(22, 163, 74, 0.13);
+  border-color: rgba(22, 163, 74, 0.45);
+  color: #15803d;
+}
+.tcpf-toggle-header-active .tcpf-chev,
+.tcpf-toggle-header-active .tcpf-summary {
+  color: #15803d;
+  font-weight: 600;
+}
+[data-theme='dark'] .tcpf-toggle-header-active {
+  background: rgba(22, 163, 74, 0.18);
+  border-color: rgba(22, 163, 74, 0.40);
+  color: #86efac;
+}
+[data-theme='dark'] .tcpf-toggle-header-active:hover {
+  background: rgba(22, 163, 74, 0.25);
+}
+[data-theme='dark'] .tcpf-toggle-header-active .tcpf-chev,
+[data-theme='dark'] .tcpf-toggle-header-active .tcpf-summary {
+  color: #bbf7d0;
+}
+
+.tcpf-toggle-header .tcpf-chev {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+}
+
+.tcpf-toggle-header .tcpf-summary {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+
+/* === Раскрытое содержимое (task 300) === */
+.tcpf-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding-top: 0.125rem;
+}
+
+/* Маленький uppercase-разделитель «Документы» между КП-группами и вложениями. */
+.tcpf-attachments-divider {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  padding: 0.375rem 0 0.125rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  margin-top: 0.125rem;
+}
+
+/* === Кнопки === */
+.tcpf-btn-primary,
+.tcpf-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.tcpf-btn-primary {
+  background: #2563eb;
+  color: #fff;
+  border: 1px solid #2563eb;
+}
+
+.tcpf-btn-primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.tcpf-btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+}
+
+.tcpf-btn-secondary:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.tcpf-btn-primary:disabled,
+.tcpf-btn-secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* === Статусы загрузки / ошибки / пусто === */
+.tcpf-empty,
+.tcpf-error {
+  padding: 0.5rem 0.625rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+}
+
+.tcpf-empty {
+  color: var(--text-tertiary);
+  background: rgba(148, 163, 184, 0.06);
+  font-style: italic;
+}
+
+.tcpf-error {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+/* === Группа КП — карточка с цветным акцентом слева === */
+.tcpf-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.625rem 0.625rem;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-left: 3px solid #2563eb;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.03);
+}
+
+[data-theme='dark'] .tcpf-group {
+  border-color: rgba(96, 165, 250, 0.25);
+  border-left-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.tcpf-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  align-self: flex-start;
+  padding: 0.125rem 0.375rem;
+  margin: 0.125rem 0;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tcpf-toggle:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-primary);
+}
+
+.tcpf-older {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid rgba(148, 163, 184, 0.2);
+  margin: 0.125rem 0 0.25rem;
+}
+
+/* === Строка файла. Двухстрочная раскладка для узкого столбца. === */
+.tcpf-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.5rem;
+  row-gap: 0.125rem;
+  align-items: center;
+  padding: 0.375rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid transparent;
+}
+
+.tcpf-row .tcpf-row-main { grid-column: 1; grid-row: 1; }
+.tcpf-row .tcpf-row-actions { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
+.tcpf-row .tcpf-row-meta { grid-column: 1; grid-row: 2; }
+
+.tcpf-row:hover {
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+.tcpf-row-primary {
+  background: var(--bg-primary);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+[data-theme='dark'] .tcpf-row-primary {
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+.tcpf-row-muted {
+  background: transparent;
+  opacity: 0.85;
+}
+
+.tcpf-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.tcpf-row-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.tcpf-row-label {
+  flex-shrink: 0;
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+  border-radius: 999px;
+}
+
+[data-theme='dark'] .tcpf-row-label {
+  color: #93c5fd;
+  background: rgba(96, 165, 250, 0.18);
+}
+
+.tcpf-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.tcpf-row-meta-sep {
+  opacity: 0.5;
+}
+
+.tcpf-row-actions {
+  display: inline-flex;
+  gap: 0.125rem;
+}
+
+.tcpf-row-actions button {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  padding: 0;
+  transition: background-color 0.12s ease;
+}
+
+.tcpf-row-actions button:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.tcpf-row-actions .tcpf-btn-danger:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+/* ====================================================================
+   Модалка загрузки КП (task 300).
+   ==================================================================== */
+.tcpf-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+  animation: tcpf-fade-in 0.12s ease;
+}
+
+@keyframes tcpf-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.tcpf-modal {
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: tcpf-modal-in 0.14s ease;
+}
+
+@keyframes tcpf-modal-in {
+  from { transform: translateY(8px) scale(0.985); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+.tcpf-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tcpf-modal-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tcpf-modal-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.tcpf-modal-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.tcpf-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1rem;
+}
+
+.tcpf-modal-file {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.tcpf-modal-file-icon {
+  font-size: 1.125rem;
+  flex-shrink: 0;
+}
+
+.tcpf-modal-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.tcpf-modal-file-name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tcpf-modal-file-size {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.tcpf-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+
+.tcpf-modal-field-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.tcpf-modal-input {
+  padding: 0.4375rem 0.625rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.tcpf-modal-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.tcpf-modal-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.tcpf-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.tcpf-modal-footer .tcpf-btn-primary,
+.tcpf-modal-footer .tcpf-btn-secondary {
+  padding: 0.4375rem 1rem;
+  font-size: 0.8125rem;
+}

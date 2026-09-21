@@ -1,0 +1,134 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  /* Golos Text — шрифт, нарисованный под кириллицу и интерфейсы: ровный ритм
+     строчных, различимые «а/о/е» в мелком кегле и спокойные цифры. Inter
+     оставлен следующим в стеке: если Google Fonts недоступен, вид не поедет. */
+  font-family: 'Golos Text', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;
+  --font-ui: 'Golos Text', 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Light theme (default) - warm and soft */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --border-color: #e2e8f0;
+  --border-color-dark: #cbd5e1;
+  --hover-bg: #f1f5f9;
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+
+  /* Accent colors */
+  --primary-color: #0891b2;
+  --primary-hover: #0e7490;
+  --primary-light: #f0fdfa;
+  /* Фирменный красный логотипа СУ_10 (одинаков в светлой и тёмной теме) */
+  --brand-red: #a83c39;
+  --success-color: #16a34a;
+  --success-light: #f0fdf4;
+  --success-muted: #86efac;
+  --warning-color: #b45309;
+  --warning-light: #fffbeb;
+  --warning-muted: #fcd34d;
+  --danger-color: #dc2626;
+  --danger-light: #fef2f2;
+  --danger-muted: #fca5a5;
+  --info-color: #4f46e5;
+  --info-light: #eef2ff;
+  --info-muted: #a5b4fc;
+
+  /* Card styles */
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --card-shadow-hover: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='dark'] {
+  /* Dark theme - deep and elegant */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --border-color: #334155;
+  --border-color-dark: #475569;
+  --hover-bg: #334155;
+  --scrollbar-track: #1e293b;
+  --scrollbar-thumb: #475569;
+  --scrollbar-thumb-hover: #64748b;
+
+  /* Accent colors - softer for dark mode */
+  --primary-color: #94a8d0;
+  --primary-hover: #7b93c1;
+  --primary-light: #1e2a3e;
+  --success-color: #6ee7b7;
+  --success-light: #14532d;
+  --success-muted: #047857;
+  --warning-color: #fcd34d;
+  --warning-light: #422006;
+  --warning-muted: #a16207;
+  --danger-color: #fca5a5;
+  --danger-light: #450a0a;
+  --danger-muted: #991b1b;
+  --info-color: #c7d2fe;
+  --info-light: #1e1b4b;
+  --info-muted: #4338ca;
+
+  /* Card styles */
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --card-shadow-hover: 0 4px 6px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button {
+  font-family: inherit;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}

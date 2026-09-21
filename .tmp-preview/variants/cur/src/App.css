@@ -1,0 +1,53 @@
+.layout {
+  display: flex;
+  /* Фиксируем высоту вьюпорта и прокручиваем контент внутри .main-content, а не окно.
+     Иначе .main-content с overflow-y:auto без ограничения высоты — «мёртвый»
+     скролл-контейнер: реально скроллит окно, но перехватывает position:sticky,
+     из-за чего залипающие шапки таблиц не работают. dvh — корректная высота на
+     мобильных (адресная строка). */
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+}
+
+.main-content {
+  flex: 1;
+  /* min-width:0 обязателен на flex-элементе: без него широкий контент (таблицы)
+     распирает страницу и вызывает горизонтальную прокрутку всего экрана вместо
+     локального overflow-x внутри .table-container. */
+  min-width: 0;
+  /* Ширину рабочей области НЕ ограничиваем: на мониторах шире ~2020px кламп с
+     центрированием (max-width + margin-inline:auto) отрывал контент от сайдбара
+     и съедал ширину у таблиц — реестры тендеров и договоров и без того тесные.
+     Контент всегда заполняет место справа от сайдбара. */
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.placeholder {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 3rem;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.placeholder h2 {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary);
+}
+
+.placeholder p {
+  margin: 0;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 768px) {
+  /* Сайдбар на телефоне — fixed off-canvas drawer (см. Sidebar.css), вне потока,
+     поэтому .main-content и так во всю ширину. flex-direction не нужен.
+     padding-top очищает контент из-под фиксированного слим-топбара (52px). */
+  .main-content {
+    padding: calc(52px + 0.75rem) 1rem 1rem;
+  }
+}

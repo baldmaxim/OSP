@@ -1,0 +1,54 @@
+// task 398/406/407/408: общие хелперы сопоставления расценок снабжения (tender_vor_supply_rates)
+// с материалами ВОР. Вынесены из TenderDetailPage, чтобы TenderProposalsCompare
+// («Сравнение КП») считал ключ расценки ИДЕНТИЧНО — иначе колонка «Цена от снабжения»
+// в сравнении не совпала бы с тем, что показывает вкладка «Расценки снабжения».
+
+// task 406/407: нормализация наименования для сопоставления расценок снабжения и
+// материалов ВОР. Имена «выглядят одинаково», но не совпадали из-за невидимых отличий:
+// символ диаметра (Ø/∅/⌀/Ө в разных файлах), десятичная запятая vs точка, латиница/кириллица.
+// Детерминированно (без нечёткости): 1) NFC+lower; 2) десятичный разделитель → точка
+// (цифры/разрядность сохраняем, чтобы Ø12,7 ≠ Ø1,27); 3) кириллические гомоглифы → латиница
+// (только реально неразличимые буквы); 4) выбросить всё, кроме латиницы/кириллицы/цифр/точки —
+// это единообразно удаляет ЛЮБОЙ символ диаметра, пробелы и пунктуацию на обеих сторонах.
+const NN_HOMOGLYPH = { а: 'a', в: 'b', е: 'e', ё: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x' }
+const computeNormName = (s) =>
+  s
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/(\d)[.,](\d)/g, '$1.$2')
+    .replace(/[авеёкмнорстух]/g, (c) => NN_HOMOGLYPH[c])
+    .replace(/[^a-zа-я0-9.]+/g, '')
+
+// Кэш: таблицы «Сравнение КП» и снабжения зовут нормализацию по нескольку раз на
+// каждую позицию при каждой перерисовке, а функция чистая и дорогая (NFC + 3 regex).
+const NN_CACHE = new Map()
+const NN_CACHE_LIMIT = 100000
+export const normName = (s) => {
+  const key = String(s ?? '')
+  let value = NN_CACHE.get(key)
+  if (value === undefined) {
+    value = computeNormName(key)
+    if (NN_CACHE.size >= NN_CACHE_LIMIT) NN_CACHE.clear()
+    NN_CACHE.set(key, value)
+  }
+  return value
+}
+
+// task 398: ключ расценки снабжения — (ВОР-документ ∣ наименование материала, нормализованное).
+export const supplyKey = (estimateName, name) =>
+  `${estimateName || 'Основная смета'}∣${normName(name)}`
+
+// task 409: загруженная из файла снабжения цена — это ЦЕНА ЗА ЕДИНИЦУ (supply_price).
+// Возвращает её, либо null если расценки нет / цена не положительная (0/пусто/нечисло).
+export const supplyUnitPrice = (ratesMap, estimateName, name) => {
+  const p = ratesMap?.get(supplyKey(estimateName, name))
+  return p != null && Number.isFinite(Number(p)) && Number(p) > 0 ? Number(p) : null
+}
+
+// task 409: итог от снабжения = объём материалов × цена за единицу.
+// null, если нет цены или объём отсутствует/некорректен/<=0 (не считаем ошибочно).
+export const supplyTotal = (unitPrice, volume) => {
+  const v = Number(volume)
+  if (unitPrice == null || !Number.isFinite(v) || v <= 0) return null
+  return unitPrice * v
+}

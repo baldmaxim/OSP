@@ -1,0 +1,401 @@
+/* Инструкция по разделу «Планы затрат».
+   Окно широкое — в нём таблицы и формулы, — но текст в нём НЕ во всю ширину:
+   длинная строка читается плохо, глаз теряет начало следующей. Поэтому проза
+   ограничена мерой (--cpi-measure), а таблицы и плитки занимают всю ширину. */
+/* Оверлей описан ЗДЕСЬ, а не взят из общего .modal-overlay: тот живёт в CSS
+   других разделов (GeneralInfo/Tenders/ContractRegistry), а «Планы затрат»
+   грузятся лениво и их не тянут. Пока пользователь не зашёл в «Договоры» или
+   «Тендеры», у общего класса нет стилей — окно вклеивалось в поток слева. */
+.cpi-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* .modal.cpi-modal, а не просто .cpi-modal: общий класс .modal описан в CSS
+   нескольких разделов (max-width 600/700/800px, width:100%). Какой из них
+   победит, зависело от того, какие разделы пользователь открывал раньше, — и
+   окно сжималось до ~500px, а сетка разделов уезжала вбок с прокруткой. */
+.modal.cpi-modal {
+  --cpi-measure: 68ch;
+  max-width: none;
+  /* Почти во весь экран: разделов много, и в узком окне они выстраивались в
+     одну длинную колонку. */
+  width: min(94rem, calc(100vw - 3rem));
+  height: calc(100vh - 3rem);
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 14px;
+  background: var(--bg-primary);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.cpi-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 1.75rem 0.9rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.cpi-head h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.cpi-sub {
+  margin: 0.3rem 0 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.cpi-tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 1.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.cpi-tab {
+  padding: 0.7rem 0.25rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.cpi-tab:hover { color: var(--text-primary); }
+.cpi-tab.is-active {
+  color: var(--primary-color, #2563eb);
+  border-bottom-color: var(--primary-color, #2563eb);
+  font-weight: 600;
+}
+
+.cpi-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.5rem 1.75rem 1.75rem;
+}
+
+/* Вкладка «Сотрудники»: имя крупно, роль и повод обратиться — под ним. */
+.cpi-people { margin: 0; padding: 0; list-style: none; }
+.cpi-people li {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+.cpi-people li:last-child { border-bottom: none; }
+.cpi-person {
+  display: block;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cpi-person-role {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.8125rem;
+  color: var(--primary-color, #2563eb);
+}
+.cpi-person-note {
+  display: block;
+  max-width: var(--cpi-measure);
+  margin-top: 0.15rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+/* Должность под ФИО в таблице эскалации. */
+.cpi-role {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.cpi-note {
+  max-width: var(--cpi-measure);
+  margin: 0.9rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* Столбец «Итого» в примере — акцент, к нему сводится расчёт. */
+.cpi-table .cpi-total-col {
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 6%, transparent);
+  font-weight: 700;
+  color: var(--text-primary);
+  border-left: 1px solid var(--border-color);
+}
+
+/* Разделы — самостоятельные модули в сетке: на широком экране 2–3 колонки, на
+   ноутбуке 2, на телефоне 1. Одной колонкой в окне такой ширины разделы читались
+   бы узкой лентой с пустотой справа.
+   Нумерация автоматическая: пять одинаковых по весу заголовков подряд не
+   читались как шаги, а порядок здесь важен — это порядок работы. */
+.cpi-body {
+  counter-reset: cpi-section;
+  display: grid;
+  /* min(…, 100%): в окне уже 26rem колонка не должна распирать сетку. */
+  grid-template-columns: repeat(auto-fit, minmax(min(26rem, 100%), 1fr));
+  gap: 1rem;
+  align-content: start;
+}
+.cpi-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;          /* иначе широкая таблица внутри распирает колонку сетки */
+  padding: 1.1rem 1.25rem 1.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+/* Последний блок карточки не должен «висеть» — прижимаем содержимое к верху,
+   карточка тянется до высоты ряда, а не растягивает свои отступы. */
+.cpi-section > :last-child { margin-bottom: 0; }
+/* Раздел с примером расчёта шире прочих: в нём таблица и две формулы. */
+/* 1 / -1, а не span 2: когда колонка одна, span 2 создавал неявную вторую
+   колонку и выталкивал содержимое за правый край. */
+.cpi-section--wide { grid-column: 1 / -1; }
+@media (max-width: 60rem) {
+  .cpi-section--wide { grid-column: auto; }
+}
+/* Замыкающая заметка (не раздел) — во всю ширину сетки. */
+.cpi-body > .cpi-note { grid-column: 1 / -1; margin-top: 0; }
+.cpi-section h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+/* На вкладке «Сотрудники» разделы — не шаги, а группы людей: номера там сбивали
+   бы с толку. */
+.cpi-body--people .cpi-section h4::before { content: none; }
+
+.cpi-section h4::before {
+  counter-increment: cpi-section;
+  content: counter(cpi-section);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 12%, transparent);
+  color: var(--primary-color, #2563eb);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.cpi-rule {
+  max-width: var(--cpi-measure);
+  margin: 0 0 0.9rem;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* Таблица примера: узкая, но на телефоне всё равно прокручивается — цифры
+   важнее, чем перенос по слогам. */
+.cpi-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.cpi-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.cpi-table th,
+.cpi-table td {
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+  text-align: right;
+  white-space: nowrap;
+}
+.cpi-table thead th {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  background: var(--bg-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cpi-table tbody th[scope='row'] {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.cpi-table td { font-variant-numeric: tabular-nums; }
+.cpi-table tbody tr:last-child th,
+.cpi-table tbody tr:last-child td { border-bottom: none; }
+
+.cpi-formula {
+  max-width: var(--cpi-measure);
+  margin-top: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid color-mix(in srgb, var(--primary-color, #2563eb) 55%, transparent);
+  border-radius: 0 10px 10px 0;
+  background: var(--bg-secondary);
+  font-size: 0.875rem;
+  line-height: 1.9;
+  color: var(--text-secondary);
+}
+.cpi-formula code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* Подзаголовок внутри раздела: «Сверять обязательно:», «У кого запрашивать:». */
+.cpi-label {
+  margin: 1.1rem 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+.cpi-label:first-child { margin-top: 0; }
+
+/* Путь к сетевой папке. Открыть проводник кликом нельзя — только копирование. */
+.cpi-path {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px dashed rgba(148, 163, 184, 0.55);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.07);
+}
+.cpi-path code {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.cpi-path button {
+  flex-shrink: 0;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.cpi-path button:hover { color: var(--primary-color, #2563eb); }
+
+/* Таблица «кто за что отвечает» — без шапки, подписи слева. */
+.cpi-table--left th,
+.cpi-table--left td { text-align: left; white-space: normal; }
+.cpi-table--left tbody th[scope='row'] {
+  width: 40%;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.cpi-list {
+  max-width: var(--cpi-measure);
+  margin: 0;
+  padding-left: 1.15rem;
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: var(--text-secondary);
+}
+.cpi-list li + li { margin-top: 0.3rem; }
+
+/* Предупреждение о частой ошибке — сложении процентов вместо умножения. */
+.cpi-warn {
+  max-width: var(--cpi-measure);
+  margin: 0.9rem 0 0;
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid #d97706;
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, #d97706 10%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.cpi-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.85rem 1.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 640px) {
+  .cpi-overlay { padding: 0; }
+  .cpi-modal {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+  .cpi-head,
+  .cpi-actions { padding-left: 1rem; padding-right: 1rem; }
+  .cpi-tabs { padding: 0 1rem; }
+  .cpi-body {
+    padding: 1rem;
+    /* На телефоне карточки только съедали бы ширину рамками. */
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .cpi-section { padding: 0.9rem 1rem 1rem; }
+  .cpi-section h4 { font-size: 1rem; }
+}
+
+/* Кнопка-иконка «?» в шапке раздела. */
+.cpi-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 0.5rem;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.cpi-open-btn:hover {
+  color: var(--primary-color, #2563eb);
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 45%, transparent);
+  background: var(--bg-secondary);
+}

@@ -1,0 +1,4014 @@
+.tender-detail-page {
+  padding: 0;
+}
+
+/* Header */
+.tender-detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding: 1.5rem 2rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border-color);
+}
+
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 1.25rem;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.btn-back:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+}
+
+.tender-detail-title {
+  flex: 1;
+}
+
+.tender-detail-title h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  color: var(--text-primary);
+}
+
+.tender-number-badge {
+  display: inline-block;
+  margin-right: 0.5rem;
+  padding: 0.0625rem 0.5rem;
+  border-radius: 6px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.06));
+  color: var(--text-secondary);
+  font-size: 0.8em;
+  font-weight: 600;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.tender-work-description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+}
+
+.yandex-map-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.25rem 0.6875rem;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid var(--border-color);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.yandex-map-link:hover {
+  background: var(--hover-bg, var(--bg-secondary));
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
+.tender-work-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 0.25rem;
+}
+
+.tender-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.tender-created-at {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.status-badge {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-badge.status-not-started {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge.status-in-progress {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-badge.status-completed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.status-accepted {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.status-badge.status-waiting-vor {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.status-badge.status-suspended {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.status-badge.status-summarizing {
+  background: #cffafe;
+  color: #155e75;
+}
+
+/* Info Card */
+.tender-info-card {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 1.5rem 2rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border-color);
+}
+
+.tender-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1.5rem;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.info-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.info-value {
+  font-size: 1rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.info-sub {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+/* task 249: статус / срок / ссылка — каждое на своей строке */
+.info-value.info-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
+.info-item.winner .info-value {
+  color: #166534;
+  background: #dcfce7;
+  padding: 0.375rem 0.75rem;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+.info-link {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.info-link:hover {
+  text-decoration: underline;
+}
+
+/* Tabs */
+.tender-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid var(--border-color);
+  padding-bottom: 0;
+}
+
+.tender-tab {
+  padding: 1rem 1.5rem;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tender-tab:hover {
+  color: var(--text-primary);
+}
+
+.tender-tab.active {
+  color: var(--primary-color);
+}
+
+.tender-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--primary-color);
+}
+
+.tab-count {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 0.125rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.tender-tab.active .tab-count {
+  background: var(--primary-color);
+  color: white;
+}
+
+/* Tab Content */
+.tender-tab-content {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  min-height: 400px;
+}
+
+/* Section Header */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  color: var(--text-primary);
+}
+
+.section-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--text-secondary);
+}
+
+.empty-state p {
+  margin: 0 0 0.5rem;
+}
+
+.empty-state .hint {
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+}
+
+/* Estimate Table */
+.estimate-section {
+  overflow: hidden;
+}
+
+/* Fullscreen mode for estimate section */
+.estimate-section.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: var(--bg-primary);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.estimate-section.fullscreen .section-header {
+  flex-shrink: 0;
+  margin-bottom: 1rem;
+  padding: 0;
+  border-bottom: none;
+}
+
+.estimate-section.fullscreen .estimates-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  min-height: 0; /* Important for flex child scrolling */
+}
+
+.estimate-section.fullscreen .estimate-card {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 150px);
+}
+
+.estimate-section.fullscreen .estimate-card-content {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+  overflow: auto;
+}
+
+.estimate-section.fullscreen .empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-container {
+  overflow-x: auto;
+  padding: 0 1rem 1rem;
+}
+
+/* task 410: контейнер виртуализированной таблицы — собственный вертикальный скролл
+   (чтобы было место для окна виртуализации) + липкая шапка внутри него. Горизонтальный
+   скролл сохраняется. Применяется только к большим ВОР (выше порога VIRTUALIZE_FROM). */
+.table-container.table-virtual {
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+  /* Виртуализация меняет высоту контента над вьюпортом при сдвиге окна строк.
+     Со scroll anchoring браузер в ответ сам переписывает scrollTop, это порождает
+     новое событие scroll → пересчёт окна → строки «штробят» без участия пользователя.
+     Окно и так позиционируется по измеренным высотам — якорение только мешает. */
+  overflow-anchor: none;
+}
+.table-container.table-virtual .estimate-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.vt-spacer td {
+  background: transparent;
+}
+
+.estimate-table-container {
+  overflow-x: auto;
+  padding: 0;
+  max-height: calc(100vh - 350px);
+}
+
+.estimate-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.estimate-table th {
+  background: var(--bg-tertiary);
+  padding: 0.875rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.estimate-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.estimate-table td.center,
+.estimate-table th.center {
+  text-align: center;
+}
+
+.estimate-table td.right {
+  text-align: right;
+}
+
+.estimate-table td.actions {
+  white-space: nowrap;
+  text-align: center;
+}
+
+.estimate-table tbody tr:hover {
+  background: var(--hover-bg);
+}
+
+/* Full Estimate Table (with counterparty columns) */
+.estimate-table.full-estimate {
+  font-size: 0.8125rem;
+}
+
+.estimate-table.full-estimate th,
+.estimate-table.full-estimate td {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-color);
+}
+
+.estimate-table.full-estimate thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-tertiary);
+}
+
+.estimate-table.full-estimate .header-row-1 th {
+  top: 0;
+}
+
+.estimate-table.full-estimate .header-row-2 th {
+  top: 42px;
+}
+
+/* Sticky columns for full estimate */
+.estimate-table.full-estimate .sticky-col {
+  position: sticky;
+  background: var(--bg-secondary);
+  z-index: 5;
+}
+
+.estimate-table.full-estimate thead .sticky-col {
+  z-index: 15;
+  background: var(--bg-tertiary);
+}
+
+/* Checkbox column */
+.estimate-table.full-estimate .col-checkbox {
+  left: 0;
+  min-width: 40px;
+  width: 40px;
+  text-align: center;
+}
+
+.estimate-table.full-estimate .col-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.estimate-table.full-estimate .col-num {
+  left: 40px;
+  min-width: 50px;
+  width: 50px;
+}
+
+.estimate-table.full-estimate .col-code {
+  left: 90px;
+  min-width: 80px;
+}
+
+.estimate-table.full-estimate .col-type {
+  left: 170px;
+  min-width: 120px;
+}
+
+.estimate-table.full-estimate .col-name {
+  left: 170px;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+/* Selected row highlight */
+.estimate-table.full-estimate tbody tr.selected-row {
+  background: var(--primary-color-light, rgba(59, 130, 246, 0.1)) !important;
+}
+
+.estimate-table.full-estimate tbody tr.selected-row:hover {
+  background: var(--primary-color-light, rgba(59, 130, 246, 0.15)) !important;
+}
+
+.estimate-table.full-estimate .col-actions {
+  min-width: 80px;
+  text-align: center;
+}
+
+/* Counterparty header cell */
+.counterparty-header-cell {
+  text-align: center !important;
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%) !important;
+  min-width: 800px;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.cp-header-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+  font-size: 0.9375rem;
+}
+
+/* Sub-headers for counterparty columns */
+.estimate-table.full-estimate .sub-header {
+  font-size: 0.6875rem;
+  text-align: center !important;
+  background: var(--bg-tertiary) !important;
+  font-weight: 500;
+  min-width: 90px;
+  padding: 0.5rem 0.375rem !important;
+}
+
+/* Price cells */
+.estimate-table.full-estimate .price-cell {
+  font-family: 'Roboto Mono', 'Consolas', monospace;
+  font-size: 0.75rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.estimate-table.full-estimate .total-cell {
+  background: rgba(8, 145, 178, 0.05);
+  font-weight: 600;
+}
+
+.estimate-table.full-estimate .sum-cell {
+  background: rgba(8, 145, 178, 0.1);
+  font-weight: 600;
+}
+
+.estimate-table.full-estimate .grand-cell {
+  background: rgba(34, 197, 94, 0.1);
+  font-weight: 600;
+  color: #166534;
+}
+
+.estimate-table.full-estimate .note-cell {
+  font-size: 0.75rem;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Totals row for full estimate */
+.estimate-table.full-estimate .totals-row {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.estimate-table.full-estimate .totals-row td {
+  border-top: 2px solid var(--border-color);
+}
+
+.estimate-table.full-estimate .totals-label {
+  text-align: right;
+  padding-right: 1rem;
+}
+
+.estimate-table.full-estimate .total-value {
+  font-family: 'Roboto Mono', 'Consolas', monospace;
+  text-align: right;
+}
+
+.estimate-table.full-estimate .grand-total {
+  background: rgba(34, 197, 94, 0.1);
+  color: #166534;
+}
+
+/* Comparison Table */
+.comparison-section {
+  overflow: hidden;
+}
+
+/* Fullscreen mode for comparison section */
+.comparison-section.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: var(--bg-primary);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.comparison-section.fullscreen .section-header {
+  flex-shrink: 0;
+  margin-bottom: 1rem;
+  padding: 0;
+}
+
+.comparison-section.fullscreen .comparison-table-container {
+  flex: 1;
+  max-height: none;
+  overflow: auto;
+}
+
+.comparison-section.fullscreen .empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Sub-tabs for comparison section - pill style */
+.comparison-sub-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  margin: 0 1rem 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+}
+
+.comparison-sub-tab {
+  padding: 0.5rem 1.25rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.comparison-sub-tab:hover {
+  color: var(--text-primary);
+}
+
+.comparison-sub-tab.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.comparison-section.fullscreen .comparison-sub-tabs {
+  flex-shrink: 0;
+}
+
+/* Summary table container */
+.comparison-summary-container {
+  padding: 1.5rem 2rem;
+}
+
+.summary-table {
+  width: 100%;
+  max-width: 700px;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.summary-table th,
+.summary-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.summary-table thead th {
+  background: transparent;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-align: left;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.summary-table tbody tr {
+  transition: background-color 0.1s ease;
+}
+
+.summary-table tbody tr:hover {
+  background: var(--hover-bg);
+}
+
+.summary-table .price-cell {
+  font-family: 'Roboto Mono', 'Consolas', monospace;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.summary-table .total-cell {
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.summary-table .best-price-row {
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.summary-table .best-price-row:hover {
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.summary-table .best-price-row td:first-child {
+  position: relative;
+}
+
+.summary-table .best-price-row td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #22c55e;
+  border-radius: 0 2px 2px 0;
+}
+
+[data-theme='dark'] .summary-table .best-price-row {
+  background: rgba(34, 197, 94, 0.1);
+}
+
+[data-theme='dark'] .summary-table .best-price-row:hover {
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.comparison-table-container {
+  overflow-x: auto;
+  padding: 0;
+  max-height: 600px;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.comparison-table th,
+.comparison-table td {
+  padding: 0.5rem 0.625rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.comparison-table thead th {
+  background: var(--bg-secondary);
+  font-weight: 500;
+  color: var(--text-secondary);
+  position: sticky;
+  z-index: 10;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Row styles */
+.comparison-table tbody tr {
+  transition: background-color 0.1s ease;
+}
+
+.comparison-table tbody tr:hover {
+  background: var(--hover-bg);
+}
+
+.comparison-table tbody tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.015);
+}
+
+[data-theme='dark'] .comparison-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.comparison-table tbody tr:hover td {
+  background: inherit;
+}
+
+/* First header row - contractor names */
+.comparison-table thead .header-row-1 th {
+  top: 0;
+  padding: 0.75rem 0.625rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+/* Second header row - sub-headers */
+.comparison-table thead .header-row-2 th {
+  top: 38px;
+  font-size: 0.625rem;
+  padding: 0.5rem 0.5rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-color);
+  background: var(--bg-tertiary);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.comparison-table .sticky-col {
+  position: sticky;
+  left: 0;
+  background: var(--bg-secondary);
+  z-index: 5;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+}
+
+.comparison-table thead .sticky-col {
+  z-index: 20;
+  background: var(--bg-secondary);
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.08);
+}
+
+.comparison-table thead .header-row-2 .sticky-col {
+  background: var(--bg-tertiary);
+}
+
+[data-theme='dark'] .comparison-table .sticky-col {
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme='dark'] .comparison-table thead .sticky-col {
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.3);
+}
+
+.comparison-table .col-1 {
+  left: 0;
+  min-width: 45px;
+  width: 45px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+}
+
+.comparison-table .col-2 {
+  left: 45px;
+  min-width: 200px;
+  max-width: 300px;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.counterparty-header {
+  text-align: center;
+  min-width: 400px;
+  padding: 0.75rem 1rem !important;
+  vertical-align: middle;
+  border-left: 3px solid #0891b2 !important;
+  background: #e0f4f7 !important;
+}
+
+/* Чередующиеся цвета для подрядчиков */
+.counterparty-header.cp-group-odd {
+  border-left: 3px solid #0891b2 !important;
+  background: #e0f4f7 !important;
+}
+
+.counterparty-header.cp-group-even {
+  border-left: 3px solid #6366f1 !important;
+  background: #e8e8fc !important;
+}
+
+.cp-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  letter-spacing: 0.01em;
+}
+
+.cp-actions {
+  margin-top: 0.375rem;
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 0.2s, max-height 0.2s;
+}
+
+.counterparty-header:hover .cp-actions {
+  opacity: 1;
+  max-height: 40px;
+}
+
+/* Dark theme для заголовков подрядчиков */
+[data-theme='dark'] .counterparty-header.cp-group-odd {
+  background: #1a3a40 !important;
+}
+
+[data-theme='dark'] .counterparty-header.cp-group-even {
+  background: #2a2a4a !important;
+}
+
+.btn-upload-small {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-upload-small:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+}
+
+.sub-header {
+  font-size: 0.625rem;
+  text-align: center;
+  background: var(--bg-tertiary) !important;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.price-cell {
+  text-align: right;
+  font-family: 'Roboto Mono', 'Consolas', monospace;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+
+.price-cell.total {
+  font-weight: 500;
+  background: transparent;
+}
+
+.price-cell.sum {
+  font-weight: 600;
+  background: transparent;
+}
+
+/* Группа ячеек подрядчика - цветная левая граница */
+.price-cell.cp-first {
+  border-left: 3px solid #0891b2;
+}
+
+/* Чередование цветов групп подрядчиков */
+.price-cell.cp-group-odd {
+  background: rgba(8, 145, 178, 0.03);
+}
+
+.price-cell.cp-group-even {
+  background: rgba(99, 102, 241, 0.03);
+}
+
+.price-cell.cp-group-odd.cp-first {
+  border-left: 3px solid #0891b2;
+}
+
+.price-cell.cp-group-even.cp-first {
+  border-left: 3px solid #6366f1;
+}
+
+[data-theme='dark'] .price-cell.cp-group-odd {
+  background: rgba(8, 145, 178, 0.06);
+}
+
+[data-theme='dark'] .price-cell.cp-group-even {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+/* Выделение лучшей цены (самая низкая) - мягкий зелёный */
+.price-cell.price-best {
+  background: rgba(34, 197, 94, 0.1) !important;
+  color: #15803d;
+  font-weight: 600;
+}
+
+/* Выделение худшей цены (выше на 5%+ от лучшей) - мягкий красный */
+.price-cell.price-worse {
+  background: rgba(239, 68, 68, 0.06) !important;
+  color: #dc2626;
+}
+
+/* Нерасценённые позиции - мягкий оранжевый */
+.price-cell.unpriced {
+  background: rgba(245, 158, 11, 0.1) !important;
+  color: #b45309;
+}
+
+[data-theme='dark'] .price-cell.unpriced {
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #f59e0b;
+}
+
+[data-theme='dark'] .price-cell.price-best {
+  background: rgba(34, 197, 94, 0.15) !important;
+  color: #4ade80;
+}
+
+[data-theme='dark'] .price-cell.price-worse {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #f87171;
+}
+
+/* Подзаголовки - с непрозрачными цветами групп подрядчиков */
+.sub-header.cp-group-odd {
+  background: #d4f0f4 !important;
+}
+
+.sub-header.cp-group-even {
+  background: #dcdcf8 !important;
+}
+
+.sub-header.cp-first {
+  border-left: 3px solid #0891b2;
+}
+
+.sub-header.cp-group-even.cp-first {
+  border-left: 3px solid #6366f1;
+}
+
+[data-theme='dark'] .sub-header.cp-group-odd {
+  background: #15333a !important;
+}
+
+[data-theme='dark'] .sub-header.cp-group-even {
+  background: #252540 !important;
+}
+
+.totals-row {
+  background: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.totals-row td {
+  border-top: 2px solid var(--border-color);
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.totals-row .sticky-col {
+  background: var(--bg-secondary);
+  z-index: 5;
+}
+
+.totals-label {
+  text-align: right;
+  padding-right: 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.total-value {
+  text-align: right;
+  font-family: 'Roboto Mono', 'Consolas', monospace;
+  font-size: 0.8125rem;
+}
+
+.total-value.cp-first {
+  border-left: 3px solid #0891b2;
+}
+
+.total-value.cp-group-odd.cp-first {
+  border-left: 3px solid #0891b2;
+}
+
+.total-value.cp-group-even.cp-first {
+  border-left: 3px solid #6366f1;
+}
+
+.total-value.cp-group-odd {
+  background: rgba(8, 145, 178, 0.05);
+}
+
+.total-value.cp-group-even {
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.grand-total {
+  background: rgba(34, 197, 94, 0.08) !important;
+  color: #15803d;
+  font-weight: 600;
+}
+
+[data-theme='dark'] .grand-total {
+  background: rgba(34, 197, 94, 0.12) !important;
+  color: #4ade80;
+}
+
+/* Uploaded Files */
+.uploaded-files {
+  padding: 1.5rem 2rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.uploaded-files h4 {
+  margin: 0 0 1rem;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+}
+
+.uploaded-files ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.uploaded-files li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s;
+}
+
+.uploaded-files li:hover {
+  border-color: var(--primary-color);
+}
+
+.uploaded-files .file-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.file-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.file-info {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.btn-delete-file {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  opacity: 0.6;
+}
+
+.uploaded-files li:hover .btn-delete-file {
+  opacity: 1;
+}
+
+.btn-delete-file:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+[data-theme='dark'] .btn-delete-file:hover {
+  background: #450a0a;
+  border-color: #b91c1c;
+}
+
+/* Participants Section */
+.participants-section {
+  padding-bottom: 1.5rem;
+}
+
+.participants-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  padding: 1.5rem 2rem;
+}
+
+.participant-card {
+  background: var(--bg-tertiary);
+  border-radius: 12px;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+  position: relative;
+  transition: all 0.2s;
+}
+
+.participant-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.participant-card.winner {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.winner-badge {
+  position: absolute;
+  top: -0.5rem;
+  right: 1rem;
+  background: #22c55e;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.participant-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.participant-work-type {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.participant-inn {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  margin-bottom: 0.75rem;
+}
+
+.participant-status {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.participant-status-select {
+  margin-bottom: 1rem;
+}
+
+.participant-status-select select {
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.participant-status-select select:hover {
+  border-color: var(--primary-color);
+}
+
+.participant-status-select select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.15);
+}
+
+.participant-contacts {
+  border-top: 1px solid var(--border-color);
+  padding-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.contact-item {
+  margin-bottom: 0.75rem;
+}
+
+.contact-item:last-child {
+  margin-bottom: 0;
+}
+
+.contact-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.contact-position {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.contact-phone,
+.contact-email {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.contact-phone:hover,
+.contact-email:hover {
+  text-decoration: underline;
+}
+
+.participant-actions {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Modal */
+.modal-content {
+  padding: 1.5rem 2rem;
+}
+
+.upload-hint {
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
+  font-size: 0.9375rem;
+}
+
+.upload-area {
+  background: var(--bg-tertiary);
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+}
+
+.upload-area input[type="file"] {
+  cursor: pointer;
+}
+
+.uploading-indicator {
+  margin-top: 1rem;
+  color: var(--primary-color);
+  font-weight: 500;
+}
+
+/* Upload Options in Modal */
+.upload-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.upload-option {
+  padding: 1.25rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.upload-option.recommended {
+  background: rgba(8, 145, 178, 0.05);
+  border-color: var(--primary-color);
+}
+
+.upload-option-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.option-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.25rem 0.5rem;
+  background: var(--primary-color);
+  color: white;
+  border-radius: 4px;
+}
+
+.upload-option h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.upload-option-desc {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.upload-option-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.upload-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.upload-btn input[type="file"] {
+  display: none;
+}
+
+/* Format info block */
+.upload-format-info {
+  margin-bottom: 1rem;
+}
+
+.format-details {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.format-details summary {
+  padding: 0.625rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: var(--bg-secondary);
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.format-details summary:hover {
+  color: var(--text-primary);
+}
+
+.format-details[open] summary {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.format-details-content {
+  padding: 0.875rem 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.format-details-content p {
+  margin: 0 0 0.75rem;
+}
+
+.format-details-content p:last-child {
+  margin-bottom: 0;
+}
+
+.format-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  margin-bottom: 0.75rem;
+}
+
+.format-table th,
+.format-table td {
+  padding: 0.375rem 0.625rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.format-table th {
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.format-table td strong {
+  color: var(--text-primary);
+}
+
+.format-row-skip td {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.format-note {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* Dark theme adjustments */
+[data-theme='dark'] .status-badge.status-not-started {
+  background: #78350f;
+  color: #fde68a;
+}
+
+[data-theme='dark'] .status-badge.status-in-progress {
+  background: #1e3a8a;
+  color: #93c5fd;
+}
+
+[data-theme='dark'] .status-badge.status-completed {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+[data-theme='dark'] .status-badge.status-waiting-vor {
+  background: #3b2a5a;
+  color: #d8c8ff;
+}
+
+[data-theme='dark'] .status-badge.status-suspended {
+  background: #4a2c1a;
+  color: #fbbf94;
+}
+
+[data-theme='dark'] .status-badge.status-summarizing {
+  background: #164e63;
+  color: #a5f3fc;
+}
+
+[data-theme='dark'] .status-badge.status-accepted {
+  background: #312e81;
+  color: #c7d2fe;
+}
+
+[data-theme='dark'] .info-item.winner .info-value {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+[data-theme='dark'] .estimate-table.full-estimate .grand-cell {
+  background: rgba(34, 197, 94, 0.15);
+  color: #86efac;
+}
+
+[data-theme='dark'] .winner-badge {
+  background: #16a34a;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .tender-detail-header {
+    flex-direction: column;
+    padding: 1rem;
+  }
+
+  .tender-info-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tender-tabs {
+    overflow-x: auto;
+  }
+
+  .tender-tab {
+    padding: 0.875rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .section-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .participants-grid {
+    grid-template-columns: 1fr;
+    padding: 1rem;
+  }
+}
+
+/* Buttons */
+.btn-primary {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+  color: white;
+  border: none;
+  padding: 0.625rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #0e7490 0%, #0a7487 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.3);
+}
+
+/* Dark theme для основной кнопки */
+[data-theme='dark'] .btn-primary {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+  color: white;
+}
+
+[data-theme='dark'] .btn-primary:hover {
+  background: linear-gradient(135deg, #0e7490 0%, #0a7487 100%);
+  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.35);
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  padding: 0.625rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.375rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  background: var(--hover-bg);
+  transform: scale(1.1);
+}
+
+/* Form Grid */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  padding: 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+}
+
+.form-hint {
+  display: block;
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+/* Price Template Section */
+.price-template-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.analysis-stats {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.analysis-stats .stat-item {
+  flex: 1;
+  min-width: 120px;
+  padding: 1rem 1.25rem;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.analysis-stats .stat-item.highlight {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.analysis-stats .stat-value {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.analysis-stats .stat-item.highlight .stat-value {
+  color: #22c55e;
+}
+
+.analysis-stats .stat-label {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+}
+
+.template-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.template-actions .btn-primary {
+  font-size: 1rem;
+  padding: 0.75rem 1.5rem;
+}
+
+.action-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+[data-theme='dark'] .analysis-stats .stat-item.highlight {
+  background: rgba(34, 197, 94, 0.15);
+}
+
+[data-theme='dark'] .analysis-stats .stat-item.highlight .stat-value {
+  color: #4ade80;
+}
+
+[data-theme='dark'] .form-group input,
+[data-theme='dark'] .form-group textarea,
+[data-theme='dark'] .form-group select {
+  border-color: var(--border-color-dark);
+  background: var(--bg-tertiary);
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal {
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  max-width: 700px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.75rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--text-secondary);
+}
+
+.modal form {
+  padding: 2rem;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Help button */
+.btn-help {
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  color: var(--text-secondary);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-help:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: rgba(8, 145, 178, 0.05);
+}
+
+/* Instruction Modal */
+.instruction-modal {
+  max-width: 900px;
+}
+
+.instruction-content {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.instruction-section {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.instruction-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.instruction-section h4 {
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  margin: 0 0 1rem;
+}
+
+.instruction-section p {
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  line-height: 1.6;
+}
+
+.instruction-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.instruction-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.instruction-table th,
+.instruction-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.instruction-table th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.instruction-table td {
+  color: var(--text-primary);
+}
+
+.instruction-table tr:last-child td {
+  border-bottom: none;
+}
+
+.instruction-table tbody tr:hover {
+  background: var(--hover-bg);
+}
+
+.instruction-note {
+  background: rgba(8, 145, 178, 0.1);
+  border-left: 4px solid var(--primary-color);
+  padding: 1rem;
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+
+.instruction-note.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-left-color: #f59e0b;
+}
+
+.instruction-steps {
+  margin: 0;
+  padding-left: 1.5rem;
+  color: var(--text-primary);
+}
+
+.instruction-steps li {
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+}
+
+.instruction-steps li:last-child {
+  margin-bottom: 0;
+}
+
+.instruction-section .btn-secondary {
+  margin-top: 0.5rem;
+}
+
+/* Import Modal */
+.import-modal {
+  max-width: 600px;
+}
+
+.import-modal .modal-content {
+  padding: 0;
+}
+
+/* Import Upload Section */
+.import-upload-section {
+  padding: 2rem;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.import-upload-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 2rem 1.5rem;
+  background: var(--bg-secondary);
+  border: 2px dashed var(--primary-color);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.import-upload-btn:hover {
+  background: rgba(8, 145, 178, 0.05);
+  border-color: var(--primary-hover);
+  transform: translateY(-2px);
+}
+
+.import-upload-btn input[type="file"] {
+  display: none;
+}
+
+.import-upload-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.import-upload-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.import-upload-hint {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+/* Import Template Section */
+.import-template-section {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.btn-template {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 1rem 1.25rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.btn-template:hover {
+  background: var(--hover-bg);
+  border-color: var(--primary-color);
+}
+
+.template-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.template-text {
+  flex: 1;
+}
+
+.template-title {
+  display: block;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.template-desc {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+/* Import Instruction */
+.import-instruction {
+  padding: 1.5rem 2rem;
+}
+
+.import-instruction h4 {
+  color: var(--text-primary);
+  font-size: 1rem;
+  margin: 0 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.import-instruction h4::before {
+  content: '📋';
+}
+
+.import-instruction .instruction-table-wrapper {
+  margin-bottom: 1rem;
+}
+
+.import-instruction .instruction-table td.required {
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--text-primary);
+}
+
+.import-instruction .instruction-note {
+  margin-bottom: 0;
+}
+
+.import-modal .modal-footer {
+  padding: 1.5rem 2rem;
+  margin: 0;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+/* Dark theme adjustments for import modal */
+[data-theme='dark'] .import-upload-btn {
+  background: var(--bg-tertiary);
+}
+
+[data-theme='dark'] .import-upload-btn:hover {
+  background: rgba(8, 145, 178, 0.15);
+}
+
+[data-theme='dark'] .import-instruction .instruction-table td.required {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* ========== Source Data Tab (Исходные данные) ========== */
+.source-data-section {
+  padding: 1.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.source-data-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.source-data-card-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.source-data-card-header h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  color: var(--text-primary);
+}
+
+.source-data-description {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.source-data-card-content {
+  padding: 1.5rem;
+}
+
+/* Template Section */
+.template-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.template-file {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+}
+
+.template-file .file-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.template-file .file-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.template-file .file-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+
+.template-file .file-size {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+.template-file .file-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.no-template {
+  text-align: center;
+  padding: 2rem 1rem;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  border: 2px dashed var(--border-color);
+}
+
+.no-template p {
+  margin: 0 0 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+}
+
+/* Documents Section */
+.documents-upload-area {
+  margin-bottom: 1.5rem;
+}
+
+.empty-documents {
+  text-align: center;
+  padding: 2rem 1rem;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  border: 2px dashed var(--border-color);
+}
+
+.empty-documents p {
+  margin: 0 0 0.5rem;
+  color: var(--text-secondary);
+}
+
+.empty-documents .hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+.documents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.document-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  transition: all 0.2s;
+}
+
+.document-item:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.document-item .doc-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.document-item .doc-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.document-item .doc-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.document-item .doc-size {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.document-item .doc-url,
+.template-file .file-url {
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-item .doc-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Icon Action Buttons */
+.btn-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.btn-icon-action:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  transform: scale(1.05);
+}
+
+.btn-icon-action.btn-delete-doc:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+}
+
+/* Danger Button */
+.btn-danger {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+/* Dark theme adjustments for source data */
+[data-theme='dark'] .source-data-card {
+  background: var(--bg-tertiary);
+}
+
+[data-theme='dark'] .document-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ========== Multiple Estimates (Множественные сметы) ========== */
+
+/* Список смет */
+.estimates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+
+/* Карточка сметы */
+.estimate-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.estimate-card:hover {
+  border-color: var(--primary-color);
+}
+
+/* Заголовок карточки сметы */
+.estimate-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.estimate-card-header:hover {
+  background: var(--hover-bg);
+}
+
+.estimate-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.expand-icon {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  width: 1rem;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.estimate-card-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.estimate-count {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  padding: 0.125rem 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.estimate-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  margin-left: 1rem;
+}
+
+/* Контент карточки сметы */
+.estimate-card-content {
+  border-top: 1px solid var(--border-color);
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 350px);
+  min-height: 300px;
+}
+
+/* Компактная таблица сметы */
+.estimate-table.compact {
+  font-size: 0.8125rem;
+}
+
+.estimate-table.compact th,
+.estimate-table.compact td {
+  padding: 0.5rem 0.75rem;
+}
+
+.estimate-table.compact th {
+  background: var(--bg-tertiary);
+  font-size: 0.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.estimate-table.compact thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.estimate-table.compact .col-checkbox {
+  width: 40px;
+  min-width: 40px;
+  text-align: center;
+}
+
+.estimate-table.compact .col-checkbox input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.estimate-table.compact .col-name-compact {
+  min-width: 250px;
+  max-width: 500px;
+  white-space: normal;
+  word-wrap: break-word;
+  line-height: 1.4;
+}
+
+.estimate-table.compact tbody tr.selected-row {
+  background: rgba(8, 145, 178, 0.08);
+}
+
+.estimate-table.compact tbody tr.selected-row:hover {
+  background: rgba(8, 145, 178, 0.12);
+}
+
+/* Маленькая кнопка с иконкой */
+.btn-icon-small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.btn-icon-small:hover {
+  background: var(--hover-bg);
+  border-color: var(--primary-color);
+  transform: scale(1.05);
+}
+
+/* Модал названия сметы */
+.estimate-name-modal {
+  max-width: 450px;
+}
+
+.estimate-name-modal .modal-content {
+  padding: 1.5rem 2rem;
+}
+
+.estimate-name-modal .form-group {
+  margin-top: 1rem;
+}
+
+.estimate-name-modal .form-group input {
+  width: 100%;
+  font-size: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+/* Описание в модале */
+.modal-description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+/* Предупреждающее сообщение */
+.warning-message {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  color: #b45309;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+[data-theme='dark'] .warning-message {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+/* Dark theme для карточек смет */
+[data-theme='dark'] .estimate-card {
+  background: var(--bg-tertiary);
+}
+
+[data-theme='dark'] .estimate-card-header {
+  background: var(--bg-secondary);
+}
+
+[data-theme='dark'] .estimate-table.compact tbody tr.selected-row {
+  background: rgba(8, 145, 178, 0.15);
+}
+
+[data-theme='dark'] .estimate-table.compact tbody tr.selected-row:hover {
+  background: rgba(8, 145, 178, 0.2);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .source-data-section {
+    padding: 1rem;
+  }
+
+  .source-data-card-header {
+    padding: 1rem;
+  }
+
+  .source-data-card-content {
+    padding: 1rem;
+  }
+
+  .template-file {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .template-file .file-actions {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .document-item {
+    flex-wrap: wrap;
+  }
+
+  .document-item .doc-actions {
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+
+  .estimates-list {
+    padding: 1rem;
+  }
+
+  .estimate-card-header {
+    padding: 0.875rem 1rem;
+  }
+
+  .estimate-card-header h4 {
+    font-size: 0.9375rem;
+  }
+
+  .estimate-header-actions {
+    margin-left: 0.5rem;
+  }
+}
+
+/* ========== Section Rows (Строки-разделы в смете) ========== */
+
+/* Строка раздела */
+.estimate-table tbody tr.section-row {
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.08) 0%, rgba(8, 145, 178, 0.03) 100%);
+  border-top: 2px solid var(--primary-color);
+}
+
+.estimate-table tbody tr.section-row:hover {
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.12) 0%, rgba(8, 145, 178, 0.06) 100%);
+}
+
+/* Название раздела */
+.estimate-table .section-name {
+  font-weight: 700;
+  color: var(--primary-color);
+  font-size: 0.875rem;
+  letter-spacing: 0.3px;
+}
+
+/* Иконка раздела */
+.estimate-table .section-icon {
+  font-size: 0.875rem;
+  margin-right: 0.25rem;
+}
+
+/* Строка раздела с выделением */
+.estimate-table tbody tr.section-row.selected-row {
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.18) 0%, rgba(8, 145, 178, 0.10) 100%);
+}
+
+/* Dark theme для разделов */
+[data-theme='dark'] .estimate-table tbody tr.section-row {
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.15) 0%, rgba(8, 145, 178, 0.05) 100%);
+}
+
+[data-theme='dark'] .estimate-table tbody tr.section-row:hover {
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.22) 0%, rgba(8, 145, 178, 0.10) 100%);
+}
+
+[data-theme='dark'] .estimate-table .section-name {
+  color: #22d3ee;
+}
+
+[data-theme='dark'] .estimate-table tbody tr.section-row.selected-row {
+  background: linear-gradient(135deg, rgba(8, 145, 178, 0.28) 0%, rgba(8, 145, 178, 0.15) 100%);
+}
+
+/* История изменений тендера — таймлайн */
+.history-section {
+  padding: 1rem 1.5rem 2rem;
+}
+
+.tender-history-timeline {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  position: relative;
+}
+
+.tender-history-timeline::before {
+  content: '';
+  position: absolute;
+  left: 1rem;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  width: 2px;
+  background: var(--border-color);
+}
+
+.history-event {
+  position: relative;
+  display: flex;
+  gap: 0.875rem;
+  padding: 0.75rem 0 0.75rem 0;
+  margin-left: 0;
+}
+
+.history-event-marker {
+  flex: 0 0 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  z-index: 1;
+}
+
+.history-event-created .history-event-marker {
+  border-color: #16a34a;
+}
+.history-event-status_changed .history-event-marker {
+  border-color: var(--primary-color);
+}
+.history-event-winner_assigned .history-event-marker {
+  border-color: #d97706;
+}
+.history-event-field_updated .history-event-marker {
+  border-color: #6b7280;
+}
+
+.history-event-body {
+  flex: 1 1 auto;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.625rem 0.875rem;
+}
+
+.history-event-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.history-event-diff {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.history-field-name {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.history-old {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.history-arrow {
+  color: var(--text-tertiary);
+}
+
+.history-new {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.history-event-meta {
+  margin-top: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* ===== Compact / minimal layout, scoped to tender detail page ===== */
+.tender-detail-page .tender-detail-header {
+  padding: 0.875rem 1.25rem;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  gap: 0.875rem;
+}
+
+.tender-detail-page .btn-back {
+  width: 32px;
+  height: 32px;
+  font-size: 1rem;
+  border-radius: 6px;
+}
+
+.tender-detail-page .tender-detail-title h2 {
+  font-size: 1.0625rem;
+  margin-bottom: 0.25rem;
+}
+
+.tender-detail-page .tender-work-description {
+  font-size: 0.8125rem;
+}
+
+.tender-detail-page .status-badge {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+}
+
+.tender-detail-page .tender-info-card {
+  padding: 0.875rem 1.25rem;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+}
+
+.tender-detail-page .tender-info-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.875rem;
+}
+
+.tender-detail-page .info-label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.3px;
+}
+
+.tender-detail-page .info-value {
+  font-size: 0.875rem;
+}
+
+.tender-detail-page .info-item.winner .info-value {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.tender-detail-page .tender-tabs {
+  margin-bottom: 1rem;
+  gap: 0.25rem;
+}
+
+.tender-detail-page .tender-tab {
+  padding: 0.625rem 1rem;
+  font-size: 0.8125rem;
+}
+
+.tender-detail-page .tab-count {
+  padding: 0.0625rem 0.4375rem;
+  font-size: 0.6875rem;
+}
+
+.tender-detail-page .tender-tab-content {
+  border-radius: 8px;
+  min-height: 280px;
+}
+
+.tender-detail-page .section-header {
+  padding: 0.75rem 1.25rem;
+}
+
+.tender-detail-page .section-header h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.tender-detail-page .section-actions {
+  gap: 0.5rem;
+}
+
+.tender-detail-page .btn-primary,
+.tender-detail-page .btn-secondary {
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.8125rem;
+  border-radius: 6px;
+}
+
+.tender-detail-page .empty-state {
+  padding: 2.5rem 1.5rem;
+  font-size: 0.8125rem;
+}
+
+.tender-detail-page .empty-state .hint {
+  font-size: 0.75rem;
+}
+
+/* Participants tab — compact list cards */
+.tender-detail-page .participants-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.625rem;
+  padding: 0.875rem 1.25rem;
+}
+
+.tender-detail-page .participant-card {
+  padding: 0.75rem 0.875rem;
+  border-radius: 8px;
+}
+
+.tender-detail-page .participant-card:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.tender-detail-page .winner-badge {
+  top: -0.4375rem;
+  right: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+}
+
+.tender-detail-page .participant-name {
+  font-size: 0.9375rem;
+  margin-bottom: 0.25rem;
+}
+
+.tender-detail-page .participant-work-type {
+  font-size: 0.75rem;
+  margin-bottom: 0.125rem;
+}
+
+.tender-detail-page .participant-inn {
+  font-size: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.tender-detail-page .participant-status {
+  font-size: 0.8125rem;
+  margin-bottom: 0.5rem;
+}
+
+.tender-detail-page .participant-status-select {
+  margin-bottom: 0.5rem;
+}
+
+.tender-detail-page .participant-contacts {
+  padding-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.tender-detail-page .contact-item {
+  margin-bottom: 0.375rem;
+}
+
+.tender-detail-page .contact-name {
+  font-size: 0.8125rem;
+}
+
+.tender-detail-page .contact-phone,
+.tender-detail-page .contact-email {
+  font-size: 0.75rem;
+}
+
+.tender-detail-page .participant-actions {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+/* Participants table inside tender detail */
+.tender-detail-page .participants-section .data-table th,
+.tender-detail-page .participants-section .data-table td {
+  padding: 0.4375rem 0.625rem;
+}
+
+/* task 222: вертикальные разделители столбцов для наглядности */
+.tender-detail-page .participants-section .data-table th,
+.tender-detail-page .participants-section .data-table td {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+
+.tender-detail-page .participants-section .data-table th:last-child,
+.tender-detail-page .participants-section .data-table td:last-child {
+  border-right: none;
+}
+
+/* task 243: горизонтальные полупрозрачные линии между строками для читаемости */
+.tender-detail-page .participants-section .data-table th,
+.tender-detail-page .participants-section .data-table td {
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 45%, transparent);
+}
+
+.tender-detail-page .participants-section .data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Tender notes (inline editor inside info-card) */
+.tender-detail-page .tender-notes {
+  margin-top: 0.875rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.tender-detail-page .tender-notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.375rem;
+}
+
+.tender-detail-page .tender-notes-status {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.tender-detail-page .tender-notes-status.saved {
+  color: #16a34a;
+}
+
+.tender-detail-page .tender-notes-textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.625rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  resize: vertical;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.tender-detail-page .tender-notes-textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.12);
+  background: var(--bg-secondary);
+}
+
+/* task 259: вкладка «Смета» тендера */
+.tender-detail-page .estimate-section {
+  padding: 1rem 1.25rem 1.5rem;
+}
+
+.tender-detail-page .estimate-import-label {
+  cursor: pointer;
+}
+
+.tender-detail-page .estimate-verify-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.875rem;
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary-color) 35%, transparent);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.tender-detail-page .estimate-verify-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tender-detail-page .estimate-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tender-detail-page .estimate-table th,
+.tender-detail-page .estimate-table td {
+  padding: 0.4375rem 0.625rem;
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.tender-detail-page .estimate-table th {
+  /* Заглавная строка таблицы ВОР выделена акцентным цветом бренда — чтобы шапка
+     визуально отличалась от тела таблицы и строк-разделов.
+     Это правило (scoped под .tender-detail-page) фактически задаёт фон шапки —
+     оно специфичнее базового `.estimate-table th`, поэтому меняем именно здесь. */
+  background: color-mix(in srgb, var(--primary-color) 22%, var(--bg-secondary));
+  color: var(--text-primary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-bottom: 2px solid color-mix(in srgb, var(--primary-color) 48%, var(--border-color));
+}
+
+.tender-detail-page .estimate-table th:last-child,
+.tender-detail-page .estimate-table td:last-child {
+  border-right: none;
+}
+
+.tender-detail-page .estimate-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.tender-detail-page .estimate-table .estimate-num,
+.tender-detail-page .estimate-table .estimate-num-cell {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.tender-detail-page .estimate-table .estimate-num-cell {
+  text-align: right;
+}
+
+.tender-detail-page .estimate-table .estimate-section-row td {
+  background: var(--bg-tertiary);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* task 260: подвкладки сметы + группировка/сворачивание */
+.tender-detail-page .estimate-subtabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.tender-detail-page .estimate-subtabs-left {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.tender-detail-page .estimate-subtab {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.tender-detail-page .estimate-subtab:hover {
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
+/* task 352: единая палитра с табами документов — slate-600 вместо primary blue */
+.tender-detail-page .estimate-subtab.active {
+  background: #475569;
+  border-color: #475569;
+  color: #fff;
+  font-weight: 600;
+}
+[data-theme='dark'] .tender-detail-page .estimate-subtab.active {
+  background: #64748b;
+  border-color: #64748b;
+}
+
+.tender-detail-page .estimate-collapse-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tender-detail-page .btn-sm {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8125rem;
+}
+
+.tender-detail-page .estimate-group-toggle {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tender-detail-page .estimate-group-toggle:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.tender-detail-page .estimate-section-row td {
+  cursor: default;
+}
+
+/* task 263: итоговая строка в Материалах/Работах */
+.tender-detail-page .estimate-table tfoot .estimate-total-row td {
+  background: var(--bg-tertiary);
+  font-weight: 700;
+  color: var(--text-primary);
+  border-top: 2px solid var(--border-color);
+}
+
+/* task 264: выбор варианта раскладки колонок при импорте ВОР */
+.tender-detail-page .estimate-variant-cards,
+.modal .estimate-variant-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.estimate-variant-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.estimate-variant-card:hover {
+  border-color: var(--text-tertiary);
+}
+
+.estimate-variant-card.active {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
+
+.estimate-variant-radio {
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.estimate-variant-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.estimate-variant-text strong {
+  font-size: 0.875rem;
+}
+
+.estimate-variant-text small {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* task 345: модалка импорта ВОР с column-mapping (по образцу BSMPage). */
+.vor-import-modal {
+  max-width: 720px;
+  width: 92vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.vor-import-form {
+  padding: 1.25rem 1.5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  overflow-y: auto;
+}
+.vor-import-row {
+  display: flex;
+  gap: 0.875rem;
+  flex-wrap: wrap;
+}
+.vor-import-field {
+  flex: 1;
+  min-width: 110px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+.vor-import-field label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.vor-import-field input,
+.vor-import-field select {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.vor-import-field input:focus,
+.vor-import-field select:focus {
+  outline: none;
+  border-color: var(--primary-color, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+}
+
+.vor-import-section {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.875rem 1rem;
+  background: var(--bg-secondary);
+}
+.vor-import-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.vor-import-section-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.vor-import-reset {
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.vor-import-reset:hover {
+  border-color: var(--primary-color, #2563eb);
+  color: var(--primary-color, #2563eb);
+  background: rgba(37, 99, 235, 0.04);
+}
+.vor-import-hint {
+  margin: 0 0 0.875rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.vor-column-map-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.625rem 1rem;
+}
+@media (max-width: 600px) {
+  .vor-column-map-grid { grid-template-columns: 1fr; }
+}
+.vor-column-map-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.vor-column-map-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.vor-column-map-select {
+  width: 100%;
+  padding: 0.4375rem 0.5625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.vor-column-map-select:focus {
+  outline: none;
+  border-color: var(--primary-color, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+}
+
+.vor-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* task 348 + 351: tree-layout вкладок ВОР.
+   Сверху — родитель «Объединённый ВОР» (полная ширина).
+   Снизу — дочерние ВОРы с CSS-branch-индикаторами (├─ / └─) как в file-tree. */
+.estimate-doc-tabs {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  padding: 0.75rem 0.875rem 0.875rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin-bottom: 0.625rem;
+}
+
+/* Базовый стиль tab */
+.estimate-doc-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.estimate-doc-tab:hover {
+  border-color: #475569;
+  color: var(--text-primary);
+}
+/* task 352: спокойный slate-600 вместо ярко-синего primary */
+.estimate-doc-tab.active {
+  background: #475569;
+  border-color: #475569;
+  color: #fff;
+}
+[data-theme='dark'] .estimate-doc-tab.active {
+  background: #64748b;
+  border-color: #64748b;
+}
+.estimate-doc-tab-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.estimate-doc-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 0.4375rem;
+  border-radius: 9px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.estimate-doc-tab.active .estimate-doc-tab-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* Родительский tab «Объединённый ВОР» — крупнее, с иконкой и подсказкой справа */
+.estimate-doc-tab-parent {
+  padding: 0.5625rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  width: 100%;
+  justify-content: flex-start;
+}
+.estimate-doc-tab-parent-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: #475569;
+  flex-shrink: 0;
+}
+.estimate-doc-tab-parent.active .estimate-doc-tab-parent-icon {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.estimate-doc-tab-parent-hint {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.estimate-doc-tab-parent.active .estimate-doc-tab-parent-hint {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* Контейнер дочерних — индент слева под branch-линию */
+.estimate-doc-tabs-children {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-left: 1.5rem;
+  margin-top: 0.0625rem;
+}
+/* Вертикальная линия слева — bone дерева */
+.estimate-doc-tabs-children::before {
+  content: '';
+  position: absolute;
+  left: 0.6875rem;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed var(--border-color);
+}
+
+/* Каждый дочерний tab с branch-индикатором ├─ слева через ::before.
+   У последнего — обрезаем вертикальную линию через ::after, чтобы линия
+   visually обрывалась после └─. */
+.estimate-doc-tab-child {
+  align-self: flex-start;
+  max-width: 100%;
+}
+.estimate-doc-tab-branch {
+  position: absolute;
+  left: -0.8125rem;
+  top: 50%;
+  width: 0.8125rem;
+  height: 1px;
+  border-top: 1px dashed var(--border-color);
+}
+/* Если последний — заливаем нижнюю половину вертикальной линии bg-color
+   контейнера, чтобы dashed-линия «обрывалась» сразу после └─. */
+.estimate-doc-tab-child.is-last::after {
+  content: '';
+  position: absolute;
+  left: -0.8125rem;
+  top: 50%;
+  bottom: -1rem;
+  width: 2px;
+  background: var(--bg-secondary);
+}
+
+/* task 350 + 352: разделитель документа внутри «Объединённого ВОР».
+   Тонко-серый slate-фон вместо ярко-синего — спокойнее для глаз. */
+.estimate-doc-divider-row {
+  background: rgba(71, 85, 105, 0.06) !important;
+  border-top: 2px solid #475569;
+}
+[data-theme='dark'] .estimate-doc-divider-row {
+  background: rgba(148, 163, 184, 0.10) !important;
+  border-top-color: #64748b;
+}
+.estimate-doc-divider-row td {
+  padding: 0.625rem 0.875rem !important;
+  vertical-align: middle;
+}
+.estimate-doc-divider-row.is-collapsed {
+  border-top-style: dashed;
+  background: var(--bg-secondary) !important;
+}
+.estimate-doc-divider-content {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+.estimate-doc-divider-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #475569;
+  padding: 0.125rem 0.4375rem;
+  background: var(--bg-primary);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  line-height: 1;
+}
+[data-theme='dark'] .estimate-doc-divider-eyebrow {
+  color: #94a3b8;
+}
+.estimate-doc-divider-name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.estimate-doc-divider-count {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.estimate-doc-divider-link {
+  margin-left: auto;
+  padding: 0.25rem 0.625rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.estimate-doc-divider-link:hover {
+  border-color: #475569;
+  color: #1e293b;
+  background: var(--bg-primary);
+}
+[data-theme='dark'] .estimate-doc-divider-link:hover {
+  color: #cbd5e1;
+}
+.estimate-doc-toggle {
+  color: #475569;
+  font-weight: 700;
+}
+[data-theme='dark'] .estimate-doc-toggle {
+  color: #94a3b8;
+}
+
+/* task 352: кнопка «Скачать Excel» в правом блоке управления */
+.estimate-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* task 398: колонка «Стоимость материалов от снабжения» */
+.tender-detail-page .estimate-table .estimate-supply-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.tender-detail-page .estimate-table .estimate-supply-total {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* task 398: кнопка загрузки расценок снабжения + бейдж количества */
+.estimate-supply-import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  cursor: pointer;
+}
+.estimate-supply-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--accent-color, #2563eb);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* task 398: вкладка «Расценки снабжения» */
+.supply-tab-current {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+.supply-tab-hint {
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+/* task 406: счётчик сопоставленных расценок снабжения */
+.supply-tab-match-hint {
+  font-weight: 400;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.supply-tab-match-hint.is-partial {
+  color: var(--warning, #c2700f);
+}
+/* task 407: раскрываемый список не сопоставленных расценок снабжения */
+.supply-unmatched {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.supply-unmatched > summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--warning, #c2700f);
+}
+.supply-unmatched ul {
+  margin: 0.375rem 0 0;
+  padding-left: 1.1rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.supply-unmatched li {
+  margin: 0.1rem 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 640px;
+}
+/* task 408: материал без цены от снабжения — жёлтая подсветка ячейки и строки */
+.estimate-table .estimate-supply-cell.supply-price-missing {
+  background: rgba(234, 179, 8, 0.18);
+  color: #a16207;
+  font-weight: 600;
+}
+[data-theme='dark'] .estimate-table .estimate-supply-cell.supply-price-missing {
+  background: rgba(234, 179, 8, 0.26);
+  color: #fde047;
+}
+.estimate-table tbody tr.supply-row-missing td {
+  background: rgba(234, 179, 8, 0.05);
+}
+[data-theme='dark'] .estimate-table tbody tr.supply-row-missing td {
+  background: rgba(234, 179, 8, 0.09);
+}
+
+/* task 398: модал импорта расценок снабжения */
+.supply-import-modal {
+  max-width: 760px;
+}
+.supply-import-body {
+  padding: 0 1.25rem;
+}
+.supply-import-file {
+  margin: 0.5rem 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+.supply-import-stats {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.supply-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.6rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+.supply-stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.supply-stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.supply-stat.new .supply-stat-value { color: #16a34a; }
+.supply-stat.conflict .supply-stat-value { color: #d97706; }
+
+.supply-import-section {
+  margin-bottom: 1rem;
+}
+.supply-import-section h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+}
+.supply-import-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.supply-new-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.supply-new-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  font-size: 0.8125rem;
+}
+.supply-new-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.supply-new-price {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.supply-more {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  padding: 0.2rem 0.5rem;
+}
+
+.supply-conflict-bulk {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.supply-conflict-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.supply-conflict-row {
+  display: grid;
+  grid-template-columns: 1fr 6rem 6rem 8rem 11rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.8125rem;
+  border-top: 1px solid var(--border-color);
+}
+.supply-conflict-row:first-child {
+  border-top: none;
+}
+.supply-conflict-head {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.supply-conflict-row .sc-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.supply-conflict-row .sc-old,
+.supply-conflict-row .sc-new,
+.supply-conflict-row .sc-diff {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.supply-conflict-row .sc-diff.up { color: #dc2626; }
+.supply-conflict-row .sc-diff.down { color: #16a34a; }
+.supply-conflict-row .sc-diff small { color: var(--text-tertiary); }
+.supply-conflict-row.update {
+  background: rgba(22, 163, 74, 0.08);
+}
+.supply-conflict-row .sc-act {
+  display: flex;
+  gap: 0.5rem;
+}
+.supply-conflict-row .sc-act label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.supply-conflict-row .sc-act label.selected {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.supply-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
+/* ── Телефон (≤640px): карточка тендера ─────────────────────────────────────
+   Инфо-поля в одну колонку; вкладки прокручиваются (уже задано на 768).
+   Глубокие таблицы (ВОР, сравнение КП min-width:800px, участники) намеренно
+   ОСТАЮТСЯ с горизонтальной прокруткой внутри своего .table-container —
+   это десктопные представления, пользователь выбрал «просмотр». */
+@media (max-width: 640px) {
+  .tender-info-grid {
+    grid-template-columns: 1fr;
+  }
+  .tender-detail-title h1,
+  .tender-detail-title h2 {
+    font-size: 1.125rem;
+  }
+  .tender-notes {
+    padding: 0.75rem 1rem;
+  }
+  .tender-tab {
+    white-space: nowrap;
+  }
+  /* Крупные таблицы не должны распирать страницу — только свой скролл */
+  .tender-detail-page .table-container {
+    max-width: 100%;
+  }
+  /* Тулбар раскрытых участников — в столбец */
+  .tenders-page .expanded-cp-toolbar,
+  .expanded-cp-toolbar {
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Перетаскивание участников тендера (task 427, вкладка «Участники») ───────── */
+.tc-drag-cell {
+  text-align: center;
+  vertical-align: middle;
+  width: 26px;
+  padding: 0 !important;
+}
+.tc-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  color: var(--text-tertiary);
+  cursor: grab;
+  letter-spacing: -2px;
+  font-size: 0.875rem;
+  line-height: 1;
+  user-select: none;
+  border-radius: 4px;
+}
+.tc-drag-handle:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.tc-drag-handle:active { cursor: grabbing; }
+
+.participants-section tr.tc-dragging td { opacity: 0.5; }
+.participants-section tr.tc-drop-before td { box-shadow: inset 0 2px 0 var(--primary-color); }
+.participants-section tr.tc-drop-after td { box-shadow: inset 0 -2px 0 var(--primary-color); }
+
+/* task 428: сохранённые «пустые» строки ВОР — подсветка, чтобы не терялись и были заметны */
+.estimate-table tbody tr.estimate-empty-row td {
+  background: rgba(148, 163, 184, 0.14);
+}
+.estimate-empty-label {
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: 0.8125rem;
+}
+[data-theme='dark'] .estimate-table tbody tr.estimate-empty-row td {
+  background: rgba(148, 163, 184, 0.10);
+}
+
+/* Ответственный по тендеру — строкой под «Выполняемыми работами» */
+.tender-responsible-line { margin-top: 0.15rem; }
+.tender-responsible-name { font-weight: 600; color: var(--text-primary); }
+.tender-responsible-empty { color: var(--text-tertiary); font-style: italic; }
+.tender-responsible-phone {
+  margin-left: 0.5rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+.tender-responsible-phone:hover { color: var(--primary-color); text-decoration: underline; }
+
+/* Кнопка «Редактировать» в шапке карточки тендера */
+.tender-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 32px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.tender-edit-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }

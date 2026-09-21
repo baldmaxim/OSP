@@ -1,0 +1,335 @@
+/* ══ «ВОРы и РД»: типографика раздела (этап 1) ══════════════════════════════
+   Правила — в docs/UI_GUIDELINES.md. Действуют только внутри раздела:
+   • .cost-plans-page.vors-page — корень страницы (VorsPage);
+   • body.vors-typography — пока страница открыта; нужен для всплывающих
+     окошек, которые рисуются порталом в <body> (списки фильтров, выбор срока).
+   Общий CostPlansPage.css и остальной портал не меняются.
+   Откат: убрать импорт этого файла и fonts.css из VorsPage.jsx (класс
+   vors-page и vors-typography без этого файла ничего не делают).
+
+   Все размеры — в rem: пользовательский базовый размер шрифта браузера не
+   переопределяется. Шкала: основной 14/20, кнопки и фильтры 14/20 (500),
+   заголовки колонок 13/18 (500), пояснения 12/16, заголовок раздела 20/28 (600). */
+
+body.vors-typography {
+  --vr-font: 'Inter OSP', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --vr-text: 0.875rem;        /* 14px */
+  --vr-text-lh: 1.25rem;      /* 20px */
+  --vr-th: 0.8125rem;         /* 13px */
+  --vr-th-lh: 1.125rem;       /* 18px */
+  --vr-hint: 0.75rem;         /* 12px */
+  --vr-hint-lh: 1rem;         /* 16px */
+  --vr-title: 1.25rem;        /* 20px */
+  --vr-title-lh: 1.75rem;     /* 28px */
+  --vr-regular: 400;
+  --vr-medium: 500;
+  --vr-semibold: 600;
+}
+
+/* ── Основа ─────────────────────────────────────────────────────────────── */
+.cost-plans-page.vors-page,
+body.vors-typography .fdrop-panel,
+body.vors-typography .drc-pop {
+  font-family: var(--vr-font);
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+  font-weight: var(--vr-regular);
+}
+
+/* Поля и кнопки по умолчанию не наследуют шрифт (select рисовался Arial). */
+.cost-plans-page.vors-page :is(button, input, select, textarea),
+body.vors-typography :is(.fdrop-panel, .drc-pop) :is(button, input, select, textarea) {
+  font-family: inherit;
+}
+
+/* Видимый фокус с клавиатуры — на всём интерактивном в разделе. */
+.cost-plans-page.vors-page :is(a, button, select, input, textarea, [tabindex]):focus-visible,
+body.vors-typography :is(.fdrop-panel, .drc-pop) :is(a, button, select, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* ── Шапка ───────────────────────────────────────────────────────────────── */
+.cost-plans-page.vors-page .page-header h2 {
+  font-size: var(--vr-title);
+  line-height: var(--vr-title-lh);
+  font-weight: var(--vr-semibold);
+}
+.cost-plans-page.vors-page .page-header-hint {
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+}
+.cost-plans-page.vors-page .vor-duty-chip { font-size: var(--vr-text); line-height: var(--vr-text-lh); }
+.cost-plans-page.vors-page .vor-duty-name { font-weight: var(--vr-medium); }
+.cost-plans-page.vors-page .vor-scope-btn {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+  font-weight: var(--vr-medium);
+}
+
+/* ── Вкладки ─────────────────────────────────────────────────────────────── */
+.cost-plans-page.vors-page .cost-plans-tabs .tab,
+.cost-plans-page.vors-page .cost-plans-tabs .tab.active,
+.cost-plans-page.vors-page .cost-plans-tabs .cost-plans-status-toggle {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+  font-weight: var(--vr-medium);
+}
+/* Неактивные вкладки — --text-secondary: у --text-tertiary на сером фоне
+   панели вкладок контраст 4,3:1, ниже нормы 4,5:1. */
+.cost-plans-page.vors-page .cost-plans-tabs .tab:not(.active) { color: var(--text-secondary); }
+.cost-plans-page.vors-page .cost-plans-tabs .tab-count {
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+  font-weight: var(--vr-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Панель фильтров ─────────────────────────────────────────────────────── */
+.cost-plans-page.vors-page .cost-plans-toolbar { font-size: var(--vr-text); }
+.cost-plans-page.vors-page .cost-plans-toolbar .cost-plans-search {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+}
+.cost-plans-page.vors-page .cost-plans-toolbar .fdrop-trigger,
+.cost-plans-page.vors-page .cost-plans-toolbar .reset-btn,
+.cost-plans-page.vors-page .vor-request-add {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+  font-weight: var(--vr-medium);
+}
+/* Выбранное значение фильтра — тем же весом, что подпись кнопки (было 600). */
+.cost-plans-page.vors-page .cost-plans-toolbar .fdrop-value { font-weight: var(--vr-medium); }
+.cost-plans-page.vors-page .cp-shown {
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+}
+.cost-plans-page.vors-page .cp-shown b { font-weight: var(--vr-semibold); }
+
+/* ── Таблица ─────────────────────────────────────────────────────────────── */
+.cost-plans-page.vors-page .data-table {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+}
+/* Заголовки — обычным регистром: ВОР, РД, СТО остаются прописными, потому что
+   так написаны в тексте, а не из-за text-transform. Цвет — --text-secondary:
+   у --text-tertiary на сером фоне шапки контраст ниже 4,5:1. */
+.cost-plans-page.vors-page .data-table th {
+  font-size: var(--vr-th);
+  line-height: var(--vr-th-lh);
+  font-weight: var(--vr-medium);
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-secondary);
+  vertical-align: bottom;
+}
+.cost-plans-page.vors-page .data-table td { line-height: var(--vr-text-lh); }
+/* Номер тендера и все числа/даты — моноширинными цифрами. */
+.cost-plans-page.vors-page .vors-table td:first-child,
+.cost-plans-page.vors-page .vors-table .drc-btn,
+.cost-plans-page.vors-page .vors-table .vor-docs-count {
+  font-variant-numeric: tabular-nums;
+}
+.cost-plans-page.vors-page .vors-table td:first-child { font-weight: var(--vr-medium); }
+
+.cost-plans-page.vors-page .vors-table .vor-desc-link {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+  font-weight: var(--vr-medium);
+}
+.cost-plans-page.vors-page .vors-table .vor-div-chip,
+.cost-plans-page.vors-page .vor-request-badge {
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+  font-weight: var(--vr-medium);
+}
+/* Значения в ячейках (выбор СТО, подразделения) — обычный текст строки. */
+.cost-plans-page.vors-page .vors-table .fdrop.vor-resp-fdrop .fdrop-trigger {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+  font-weight: var(--vr-regular);
+}
+/* ФИО — обычным весом, как остальные данные строки. */
+.cost-plans-page.vors-page .vors-table .vor-resp-name { font-weight: var(--vr-regular); }
+/* Выбранное значение в ячейке (подразделение, СТО): у FilterDropdown по умолчанию
+   600 — «Не указано» выходило жирнее заполненных данных. */
+.cost-plans-page.vors-page .vors-table .fdrop-value { font-weight: inherit; }
+.cost-plans-page.vors-page .vor-resp-empty {
+  font-style: normal;
+  color: var(--text-tertiary);
+}
+/* Активный ВОР без ответственного СТО — заметно, а не бледным курсивом. */
+.cost-plans-page.vors-page .vor-resp-empty.is-alert {
+  display: inline-block;
+  padding: 0 0.375rem;
+  border-radius: 6px;
+  background: var(--warning-light);
+  color: var(--warning-color);
+  font-weight: var(--vr-medium);
+}
+
+.cost-plans-page.vors-page .muted-tiny,
+.cost-plans-page.vors-page .vor-resp-warn,
+.cost-plans-page.vors-page .drc-hint {
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+}
+
+/* Срок подготовки ВОР: диапазон целиком, без многоточия. Цифры моноширинные,
+   поэтому длина диапазона постоянна — под самый длинный («дд.мм.гггг —
+   дд.мм.гггг», разные годы) рассчитана ширина колонки (.vr-col-term). */
+.cost-plans-page.vors-page .vors-table .drc-btn {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+  font-weight: var(--vr-regular);
+  max-width: none;
+}
+.cost-plans-page.vors-page .vors-table .drc-text {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+.cost-plans-page.vors-page .vors-table .drc-btn.is-overdue { font-weight: var(--vr-medium); }
+.cost-plans-page.vors-page .vors-table .drc-btn.is-empty {
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+}
+
+/* Мелкие действия в строке («+ ссылка», «РД и ВОР», «Открыть») */
+.cost-plans-page.vors-page .vors-table :is(.vor-docs-btn, .link-add-btn) {
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+  font-weight: var(--vr-medium);
+}
+.cost-plans-page.vors-page .vors-table .vor-docs-count {
+  font-size: var(--vr-hint);
+  font-weight: var(--vr-semibold);
+}
+.cost-plans-page.vors-page .vors-table .link { font-size: var(--vr-text); font-weight: var(--vr-medium); }
+
+/* Статус: компактная плашка по содержимому (не на всю колонку); «Не требуется» —
+   самое длинное значение, помещается целиком. */
+.cost-plans-page.vors-page .vors-table .plan-status-select {
+  width: auto;
+  max-width: 100%;
+  font-size: var(--vr-th);
+  line-height: var(--vr-th-lh);
+  font-weight: var(--vr-medium);
+  padding-left: 0.5rem;
+  padding-right: 1.25rem;
+}
+
+/* ── Всплывающие списки и окошко срока (порталы) ─────────────────────────── */
+body.vors-typography .fdrop-panel :is(.fdrop-option, .fdrop-option-text, .fdrop-search, .fdrop-empty) {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+}
+body.vors-typography .drc-field > span {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+  font-weight: var(--vr-medium);
+}
+body.vors-typography .drc-field input {
+  font-size: var(--vr-text);
+  font-variant-numeric: tabular-nums;
+}
+body.vors-typography :is(.drc-done, .drc-link) {
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+  font-weight: var(--vr-medium);
+}
+
+/* ── Окна раздела: «РД и ВОР», заявка на ВОР (внутри страницы) ────────────── */
+.cost-plans-page.vors-page .s3-doc-modal-title {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: var(--vr-semibold);
+}
+.cost-plans-page.vors-page .s3-doc-table th,
+.cost-plans-page.vors-page .vrq-field > span {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: var(--vr-th);
+  line-height: var(--vr-th-lh);
+  font-weight: var(--vr-medium);
+  color: var(--text-secondary);
+}
+.cost-plans-page.vors-page :is(.vrq-hint, .vrq-meta, .tvr-hint) {
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+}
+.cost-plans-page.vors-page :is(.vrq-field textarea, .vrq-field select, .vrq-field input) {
+  font-size: var(--vr-text);
+  line-height: var(--vr-text-lh);
+}
+
+/* ── Ширина колонок ────────────────────────────────────────────────────────
+   Все колонки, кроме описания, — фиксированной ширины в rem (растут вместе с
+   размером шрифта браузера); описание забирает всё остальное место.
+   Минимальная ширина таблицы не даёт ужать данные: если окно уже (1366 px,
+   масштаб 125–200%), таблица прокручивается по горизонтали, а не обрезает
+   даты и статусы. Уменьшать шрифт ради ширины нельзя. */
+.cost-plans-page.vors-page .vors-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 95.5rem;          /* сумма колонок ниже (79.5rem) + 16rem под описание */
+}
+.cost-plans-page.vors-page .vors-table td { overflow-wrap: break-word; }
+.cost-plans-page.vors-page .vr-col-num { width: 4.5rem; }
+.cost-plans-page.vors-page .vr-col-object { width: 9rem; }
+/* .vr-col-desc — без ширины: остаток */
+.cost-plans-page.vors-page .vr-col-division { width: 10rem; } /* чип «Общестроительные работы» */
+.cost-plans-page.vors-page .vr-col-sto { width: 11rem; }
+.cost-plans-page.vors-page .vr-col-resp { width: 10rem; }
+.cost-plans-page.vors-page .vr-col-term { width: 15rem; }    /* «21.12.2026 — 15.01.2027» + значок + отступы */
+.cost-plans-page.vors-page .vr-col-docs { width: 11rem; }
+.cost-plans-page.vors-page .vr-col-status { width: 9rem; }   /* плашка «Не требуется» (≈7.3rem) + отступы ячейки */
+
+/* ── Описание работ: до трёх строк + «Показать полностью» ─────────────────── */
+.cost-plans-page.vors-page .vors-table .vor-desc-link {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+  line-height: var(--vr-text-lh);
+}
+.cost-plans-page.vors-page .vr-desc-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.cost-plans-page.vors-page .vr-desc-text.is-expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+}
+.cost-plans-page.vors-page .vr-desc-toggle {
+  margin-top: 0.125rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary-color);
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+  font-weight: var(--vr-medium);
+  cursor: pointer;
+}
+.cost-plans-page.vors-page .vr-desc-toggle:hover { text-decoration: underline; }
+
+/* Текст только для экранного диктора (полное ФИО). */
+.vr-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

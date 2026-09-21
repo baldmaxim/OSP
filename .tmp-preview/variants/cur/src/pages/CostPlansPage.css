@@ -1,0 +1,1128 @@
+.cost-plans-page {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.cost-plans-page .inline-responsible-select {
+  width: 100%;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.cost-plans-page .inline-responsible-select:hover,
+.cost-plans-page .inline-responsible-select:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+
+.cost-plans-page .responsible-display {
+  display: inline-block;
+  width: 100%;
+  background: none;
+  border: 1px dashed transparent;
+  text-align: left;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  padding: 0.25rem 0.375rem;
+  cursor: pointer;
+  border-radius: 4px;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.3;
+  font-family: inherit;
+}
+
+.cost-plans-page .responsible-display:hover {
+  border-color: var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.cost-plans-page .responsible-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.cost-plans-page .inline-date-input {
+  width: 130px;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.cost-plans-page .inline-date-input:hover {
+  border-color: var(--primary-color);
+}
+
+.cost-plans-page .inline-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.cost-plans-page .inline-date-range .dash {
+  color: var(--text-tertiary);
+}
+
+.cost-plans-page .page-header {
+  /* Раскладку задаём явно: общий .page-header описан в CSS других разделов и
+     подключается, только если пользователь их уже открывал — без него подсказка
+     справа падала под заголовок. */
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cost-plans-page .page-header h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.page-header-cost-plans {
+  border-left: 4px solid #16a34a;
+  background: linear-gradient(90deg, rgba(22, 163, 74, 0.07) 0%, transparent 60%);
+}
+
+.page-header-cost-plans .page-icon {
+  color: #16a34a;
+}
+
+.page-header-vors {
+  border-left: 4px solid #ea580c;
+  background: linear-gradient(90deg, rgba(234, 88, 12, 0.07) 0%, transparent 60%);
+}
+
+.page-header-vors .page-icon {
+  color: #ea580c;
+}
+
+.cost-plans-page .page-header-hint {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.cost-plans-page .loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+/* Tabs */
+.cost-plans-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  padding: 0 1.25rem;
+}
+
+.cost-plans-tabs .tab {
+  padding: 0.5rem 1.125rem;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.cost-plans-tabs .tab:hover {
+  color: var(--text-primary);
+  background: var(--hover-bg);
+}
+
+.cost-plans-tabs .tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  background: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.cost-plans-tabs .tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.375rem;
+  border-radius: 8px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: var(--primary-color);
+  color: white;
+}
+
+.cost-plans-tabs .tab-count.completed {
+  background: #16a34a;
+}
+
+/* task 234: кнопка-переключатель статус-вкладок */
+.cost-plans-tabs .cost-plans-status-toggle {
+  font-weight: 600;
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+}
+
+.cost-plans-tabs .tab-chevron {
+  font-size: 0.7rem;
+  opacity: 0.75;
+  display: inline-block;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+/* task 241: шеврон-стрелка разворачивается при раскрытии (как в тендерах) */
+.cost-plans-tabs .cost-plans-status-toggle.open .tab-chevron {
+  opacity: 1;
+  transform: rotate(180deg);
+}
+
+/* Шапка: слева заголовок с иконкой и «?», справа — общая папка и подсказка. */
+.cp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Toolbar */
+.cost-plans-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  font-size: 0.8125rem;
+  flex-wrap: wrap;
+}
+
+/* Поиск: иконка внутри поля, а не эмодзи в плейсхолдере. */
+.cp-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 280px;
+  min-width: 220px;
+  max-width: 420px;
+}
+.cp-search-wrap > svg {
+  position: absolute;
+  left: 0.6rem;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+.cost-plans-toolbar .cost-plans-search {
+  width: 100%;
+  height: 34px;
+  padding: 0 0.7rem 0 2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cost-plans-toolbar .cost-plans-search:focus {
+  outline: none;
+  border-color: var(--primary-color, #2563eb);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #2563eb) 15%, transparent);
+}
+
+/* Выпадашки фильтров. Подсветку активного фильтра рисует сам FilterDropdown
+   (.fdrop.is-active), здесь только раскладка. */
+.cost-plans-toolbar .fdrop-trigger { height: 34px; }
+
+.cp-toolbar-tail {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+.cp-shown { font-size: 0.75rem; color: var(--text-tertiary); }
+.cp-shown b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+.cost-plans-toolbar .reset-btn {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+.cost-plans-toolbar .reset-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+@media (max-width: 640px) {
+  .cost-plans-toolbar { padding: 0.6rem 0.75rem; }
+  .cp-search-wrap { flex-basis: 100%; max-width: none; }
+  .cp-toolbar-tail { margin-left: 0; }
+}
+
+/* Table */
+.cost-plans-page .table-container {
+  overflow-x: auto;
+}
+
+.cost-plans-page .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+/* Шапка залипает: таблица длинная, и на середине списка было непонятно, какой
+   столбец где. Прокрутка идёт у .table-container, поэтому sticky работает. */
+.cost-plans-page .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-tertiary);
+}
+
+.cost-plans-page .data-table th {
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  /* task 211: тонкие полупрозрачные вертикальные полоски */
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 45%, transparent);
+  white-space: nowrap;
+}
+
+.cost-plans-page .data-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 45%, transparent);
+  color: var(--text-primary);
+  vertical-align: top;
+}
+
+.cost-plans-page .data-table th:last-child,
+.cost-plans-page .data-table td:last-child {
+  border-right: none;
+}
+
+/* Чередование строк: в таблице много узких столбцов с датами, взгляд по строке
+   без подложки соскальзывает. Ховер поверх зебры остаётся заметным. */
+.cost-plans-page .data-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--text-tertiary) 4%, transparent);
+}
+
+.cost-plans-page .data-table tbody tr:hover {
+  background: var(--hover-bg);
+}
+
+.cost-plans-page .data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cost-plans-page .no-data {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.cost-plans-page .row-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.cost-plans-page .row-link:hover {
+  text-decoration: underline;
+}
+
+.cost-plans-page .muted-text {
+  color: var(--text-secondary);
+}
+
+.cost-plans-page .muted-tiny {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: 0.125rem;
+}
+
+.cost-plans-page .nowrap {
+  white-space: nowrap;
+}
+
+.cost-plans-page .link {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.cost-plans-page .link:hover {
+  text-decoration: underline;
+}
+
+/* task 211: статус-бейдж — минималистичный pill */
+.plan-status-select {
+  padding: 0.3125rem 1.5rem 0.3125rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  width: 100%;
+  background-color: var(--bg-secondary);
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 0.75em;
+  /* стрелка-шеврон через inline svg */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2364748b' stroke-width='1.5'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  transition: filter 0.12s ease, box-shadow 0.12s ease;
+}
+
+.plan-status-select:hover { filter: brightness(0.97); }
+.plan-status-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 35%, transparent);
+}
+
+.plan-status-select.status-not_started {
+  color: #475569;
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}
+
+.plan-status-select.status-in_progress {
+  color: #1e40af;
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.plan-status-select.status-completed {
+  color: #166534;
+  border-color: #86efac;
+  background: #dcfce7;
+}
+
+[data-theme='dark'] .plan-status-select.status-not_started {
+  color: #cbd5e1;
+  border-color: #475569;
+  background: #334155;
+}
+
+[data-theme='dark'] .plan-status-select.status-in_progress {
+  color: #bfdbfe;
+  border-color: #3b82f6;
+  background: #1e3a5c;
+}
+
+[data-theme='dark'] .plan-status-select.status-completed {
+  color: #a8d4be;
+  border-color: #4a7a62;
+  background: #2a4038;
+}
+
+/* «Ожидание КП» — фиолетовый: отличается и от «В работе» (синий), и от
+   «Завершён» (зелёный) — план уже посчитан, но ещё не закрыт. */
+.plan-status-select.status-awaiting_kp {
+  color: #5b21b6;
+  border-color: #c4b5fd;
+  background: #ede9fe;
+}
+
+[data-theme='dark'] .plan-status-select.status-awaiting_kp {
+  color: #ddd6fe;
+  border-color: #7c3aed;
+  background: #3b2a5c;
+}
+
+/* task 208: «Не требуется» — нейтральный серый */
+.plan-status-select.status-not_required {
+  color: #64748b;
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}
+
+[data-theme='dark'] .plan-status-select.status-not_required {
+  color: #94a3b8;
+  border-color: #475569;
+  background: #2a3340;
+}
+
+/* Action buttons */
+.cost-plans-page .actions-cell {
+  white-space: nowrap;
+}
+
+.cost-plans-page .btn-small {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  border-radius: 4px;
+}
+
+/* task 179: сортируемые заголовки */
+.cost-plans-page .data-table th.sortable-th:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+/* task 177: автоматически расширяющееся примечание */
+.cost-plans-page textarea.cost-plan-notes {
+  width: 100%;
+  min-height: 28px;
+  padding: 0.3125rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  resize: none;
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.cost-plans-page textarea.cost-plan-notes::placeholder {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.cost-plans-page textarea.cost-plan-notes:hover {
+  background: var(--bg-tertiary);
+}
+
+.cost-plans-page textarea.cost-plan-notes:focus {
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+  outline: none;
+}
+
+/* task 211: ячейка ссылки на план затрат — аккуратная иконка вместо большого emoji */
+.cost-plan-link-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cost-plans-page .link-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.cost-plans-page .link-edit-btn:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+}
+
+.cost-plans-page .link-add-btn {
+  background: none;
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  padding: 0.25rem 0.625rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.cost-plans-page .link-add-btn:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+/* task 211: модалка редактирования ссылки */
+.cp-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.cp-modal {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.cp-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cp-modal-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cp-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.375rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 6px;
+}
+
+.cp-modal-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.cp-modal-body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.cp-modal-label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.cp-modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary, var(--bg-secondary));
+  color: var(--text-primary);
+}
+
+.cp-modal-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
+}
+
+.cp-modal-preview-link {
+  font-size: 0.8125rem;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.cp-modal-preview-link:hover { text-decoration: underline; }
+
+.cp-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.cp-modal-footer button {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.cp-modal-btn-ghost {
+  background: none;
+  color: var(--text-tertiary);
+  margin-right: auto;
+}
+
+.cp-modal-btn-ghost:hover { color: #dc2626; }
+
+.cp-modal-btn-secondary {
+  background: var(--bg-secondary);
+  border-color: var(--border-color) !important;
+  color: var(--text-secondary);
+}
+
+.cp-modal-btn-secondary:hover { background: var(--hover-bg); }
+
+.cp-modal-btn-primary {
+  background: var(--primary-color);
+  color: #fff;
+}
+
+.cp-modal-btn-primary:hover { filter: brightness(1.08); }
+
+/* ── «ВОРы и РД» (VorsPage) ─────────────────────────────────────────────────
+   Страница живёт на стилях «Планов затрат»; здесь только её собственные ячейки.
+   Описание работ — обычным тёмным текстом: синие подчёркнутые описания во всю
+   строку (плюс синий объект рядом) превращали таблицу в сплошную ссылку. */
+.vors-table td { vertical-align: middle; }
+.vors-table .row-link { text-decoration: none; }
+.vors-table .vor-desc-link {
+  color: var(--text-primary);
+  font-weight: 500;
+  line-height: 1.4;
+  text-decoration: none;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.vors-table .vor-desc-link:hover {
+  color: var(--primary-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Сроки: два поля одной строкой. Ширина полей меньше общей (130px), иначе в
+   колонке они вставали друг под друга. */
+.vors-table .vor-date-range { flex-wrap: nowrap; }
+.vors-table .vor-date-range .inline-date-input {
+  width: 118px;
+  padding: 0.2rem 0.3rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1500px) {
+  .vors-table .vor-date-range { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+  .vors-table .vor-date-range .dash { display: none; }
+}
+
+/* Ссылка и документы — одна строка. */
+.vors-table .vor-links-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.vors-table .vor-docs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.vors-table .vor-docs-btn:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.vors-table .vor-docs-btn.has-docs { color: var(--text-secondary); }
+.vors-table .vor-docs-count {
+  min-width: 16px;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  color: var(--primary-color);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.vors-table .plan-status-select { width: 100%; }
+
+/* Описание работ кнопкой (роль без доступа к тендерам открывает ВОРы и РД). */
+.vors-table .vor-desc-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.cost-plans-page .responsible-display:disabled,
+.cost-plans-page .inline-date-input:disabled,
+.cost-plans-page .plan-status-select:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.cost-plans-page .responsible-display:disabled:hover { border-color: transparent; background: none; }
+
+/* ── «Ответственный СТО»: выпадающий список в строке ────────────────────────
+   Это значение строки, а не поле ввода: рамки и фон появляются при наведении,
+   стрелка — тоже. Панель списка рисует сам FilterDropdown (портал). */
+.vors-table .fdrop.vor-resp-fdrop { display: flex; width: 100%; }
+.vors-table .fdrop.vor-resp-fdrop .fdrop-trigger {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  padding: 0.2rem 0.3rem;
+  gap: 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  font-size: 0.8125rem;
+}
+.vors-table .fdrop.vor-resp-fdrop:not(.is-disabled) .fdrop-trigger:hover,
+.vors-table .fdrop.vor-resp-fdrop.is-open .fdrop-trigger {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.vors-table .fdrop.vor-resp-fdrop.is-disabled .fdrop-trigger { cursor: default; opacity: 1; }
+.vors-table .fdrop.vor-resp-fdrop .fdrop-value { min-width: 0; overflow: hidden; }
+.vors-table .fdrop.vor-resp-fdrop .fdrop-arrow { opacity: 0; transition: opacity 0.12s ease; }
+.vors-table tbody tr:hover .fdrop.vor-resp-fdrop .fdrop-arrow,
+.vors-table .fdrop.vor-resp-fdrop.is-open .fdrop-arrow { opacity: 0.5; }
+.vors-table .fdrop.vor-resp-fdrop.is-disabled .fdrop-arrow { display: none; }
+
+.vor-resp-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+/* Инициалы вместо фото: узнаваемо и не требует загрузки аватарок. */
+.vor-resp-avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  color: var(--primary-color);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.vor-resp-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.vor-resp-empty { color: var(--text-tertiary); font-style: italic; }
+.vor-resp-warn { color: #b45309; }
+
+/* Опции в панели — крупнее строки таблицы, с воздухом. */
+.fdrop-panel .vor-resp-person { font-size: 0.8125rem; }
+
+/* ВОРы и РД: подразделение в строке */
+.vors-table .vor-div-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.15rem 0.5rem;
+  border-radius: 8px;
+  line-height: 1.25;
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  /* «Общестроительные работы» — в две строки, а не обрезкой */
+  white-space: normal;
+  overflow-wrap: normal;
+}
+.vors-table .fdrop.vor-div-fdrop .fdrop-value { white-space: normal; }
+
+/* ВОРы и РД: дежурный по тендерам в шапке (как чип в «Тендерах», только чтение) */
+.vor-duty-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 34px;
+  max-width: min(560px, 100%);
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+.vor-duty-chip > svg { flex-shrink: 0; }
+.vor-duty-label { flex-shrink: 0; color: var(--text-secondary); }
+.vor-duty-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.vor-duty-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--primary-color); }
+@media (max-width: 640px) {
+  .vor-duty-label { display: none; }
+}
+
+/* Стрелка выпадашек в строке «ВОРов» — поверх, а не в потоке: она видна только
+   при наведении, а место под неё раздувало узкие столбцы. */
+.vors-table .fdrop.vor-resp-fdrop .fdrop-trigger { position: relative; padding-right: 0.3rem; }
+.vors-table .fdrop.vor-resp-fdrop .fdrop-arrow {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.vors-table .fdrop.vor-div-fdrop .vor-div-chip { padding: 0.15rem 0.4rem; }
+.vors-table .fdrop.vor-div-fdrop .fdrop-value { text-align: left; }
+
+/* ВОРы и РД: переключатель направлений в шапке */
+.vor-scope-switch {
+  display: inline-flex;
+  padding: 3px;
+  margin-left: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  gap: 2px;
+}
+.vor-scope-btn {
+  padding: 0.3rem 0.8rem;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vor-scope-btn:hover:not(.is-active) { color: var(--text-primary); }
+.vor-scope-btn.is-active {
+  background: var(--bg-primary);
+  color: var(--primary-color);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+/* ВОРы и РД: заявки без тендера */
+.vor-request-add {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--primary-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--primary-color);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vor-request-add:hover { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
+.vor-request-badge {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, #8b5cf6 12%, transparent);
+  color: #6d28d9;
+  font-size: 0.6875rem;
+  line-height: 1.25;
+}
+[data-theme='dark'] .vor-request-badge { color: #c4b5fd; }
+@media (max-width: 900px) {
+  .vor-scope-switch { margin-left: 0; }
+}
+
+/* ── «Планы затрат»: сетка таблицы ──────────────────────────────────────────
+   Общий вид (шрифт, заголовки, ячейки, статусы) — src/styles/workUi.css, здесь
+   только ширины. Всё, кроме описания работ, — фиксированной ширины в rem
+   (растёт вместе со шрифтом браузера); описание забирает остаток окна.
+   min-width = сумма колонок (80.5rem) + 16rem под описание: на 1920 таблица
+   помещается целиком (описание ≈ 23rem), в окне уже — прокручивается сама
+   таблица, а не обрезаются даты и не мельчает шрифт.
+   Только .ui-work: «ВОРы и РД» живут на тех же классах .cost-plans-page. */
+.cost-plans-page.ui-work .cp-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 96.5rem;
+}
+.cost-plans-page.ui-work .cp-col-num { width: 4rem; }
+.cost-plans-page.ui-work .cp-col-object { width: 9rem; }
+/* .cp-col-desc — без ширины: остаток */
+.cost-plans-page.ui-work .cp-col-resp { width: 10rem; }
+.cost-plans-page.ui-work .cp-col-date { width: 6.5rem; }     /* «10.09.2026» */
+.cost-plans-page.ui-work .cp-col-term { width: 14.5rem; }    /* «21.12.2026 — 15.01.2027» целиком */
+.cost-plans-page.ui-work .cp-col-link { width: 7rem; }
+.cost-plans-page.ui-work .cp-col-status { width: 9rem; }     /* плашка «Не требуется» */
+.cost-plans-page.ui-work .cp-col-notes { width: 14rem; }
+
+.cost-plans-page.ui-work .cp-object-cell { overflow-wrap: break-word; }
+.cost-plans-page.ui-work .cp-desc-link { display: block; text-align: left; }
+.cost-plans-page.ui-work .cost-plan-link-cell { gap: 0.25rem; }
+
+/* Примечание: поле правки с автоподгонкой высоты — текст читается целиком. */
+.cost-plans-page.ui-work textarea.cost-plan-notes {
+  margin: -0.25rem -0.5rem;
+  width: calc(100% + 1rem);
+  padding: 0.25rem 0.5rem;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  border-radius: var(--ui-radius);
+}
+.cost-plans-page.ui-work textarea.cost-plan-notes::placeholder { font-style: normal; }
+.cost-plans-page.ui-work textarea.cost-plan-notes:hover { border-color: var(--border-color); background: var(--bg-secondary); }
+
+/* Кнопка «?» (инструкция) — в ряд с заголовком, как иконка-кнопка. */
+.cost-plans-page.ui-work .cpi-open-btn { font-size: var(--ui-th); font-weight: var(--ui-semibold); }
+
+/* ══ Плотный вариант: реестр «Планы затрат» (.cp-dense) ═════════════════════
+   Рабочая таблица на сотни строк: 13/18, заголовки колонок и статусы 12/16,
+   ячейка 6/8px, тонкая сетка и очень лёгкая зебра — взгляд не соскальзывает
+   со строки. Токены переопределены только внутри шапки, вкладок, панели и
+   таблицы; окна (инструкция, срок) остаются на обычной шкале 14/20.
+   Класс ставится в CostPlansPage: те же классы .cost-plans-page использует
+   страница «ВОРы и РД», её вид не меняется. */
+.cost-plans-page.ui-work.cp-dense :is(.page-header, .cost-plans-tabs, .cost-plans-toolbar, .table-container) {
+  --ui-title: 1.125rem;       /* 18 */
+  --ui-title-lh: 1.5rem;      /* 24 */
+  --ui-text: 0.8125rem;       /* 13 — данные, кнопки, фильтры, вкладки */
+  --ui-text-lh: 1.125rem;     /* 18 */
+  --ui-th: 0.75rem;           /* 12 — заголовки колонок, статусы */
+  --ui-th-lh: 1rem;           /* 16 */
+  --ui-hint: 0.75rem;         /* 12 — вторичные подписи (роль, «Показано») */
+  --ui-hint-lh: 1rem;
+  --ui-control-h: 2rem;       /* 32 */
+  --ui-cell-py: 0.375rem;     /* 6 */
+  --ui-cell-px: 0.5rem;       /* 8 */
+}
+
+/* Шапка: зелёный маркер раздела и очень мягкая подложка — как было. Общий
+   слой их снимает (border: 0; background: --bg-secondary). Без градиента. */
+.cost-plans-page.ui-work.cp-dense .page-header {
+  padding: 0.5rem 1rem;
+  gap: 0.375rem 0.75rem;
+  border-left: 3px solid #16a34a;
+  background: color-mix(in srgb, #16a34a 4%, var(--bg-secondary));
+}
+.cost-plans-page.ui-work.cp-dense .page-header h2 { gap: 0.5rem; }
+.cost-plans-page.ui-work.cp-dense .page-header h2 .ic-tile { width: 26px; height: 26px; }
+.cost-plans-page.ui-work.cp-dense .cost-plans-tabs { padding: 0 0.5rem; }
+.cost-plans-page.ui-work.cp-dense .cost-plans-tabs .tab { min-height: 2.25rem; padding: 0 0.625rem; }
+.cost-plans-page.ui-work.cp-dense .cost-plans-tabs .tab-count { min-width: 1.125rem; height: 1.125rem; padding: 0 0.3125rem; }
+.cost-plans-page.ui-work.cp-dense .cost-plans-toolbar { padding: 0.5rem 1rem; gap: 0.375rem 0.625rem; }
+.cost-plans-page.ui-work.cp-dense .cost-plans-toolbar .fdrop-trigger { height: var(--ui-control-h); padding: 0 0.5rem; }
+.cost-plans-page.ui-work.cp-dense :is(.btn-primary, .btn-secondary, .rfpath-btn) { padding: 0 0.625rem; gap: 0.3125rem; }
+
+/* Таблица: тонкие вертикальные разделители и очень лёгкая зебра (общий слой
+   снимает и то, и другое). Без переносов по слогам — «внутридворо-/вых». */
+.cost-plans-page.ui-work.cp-dense .cp-table > thead > tr > th,
+.cost-plans-page.ui-work.cp-dense .cp-table > tbody > tr > td {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+}
+.cost-plans-page.ui-work.cp-dense .cp-table > thead > tr > th:last-child,
+.cost-plans-page.ui-work.cp-dense .cp-table > tbody > tr > td:last-child { border-right: 0; }
+.cost-plans-page.ui-work.cp-dense .cp-table > thead > tr > th { padding: 0.375rem var(--ui-cell-px); }
+.cost-plans-page.ui-work.cp-dense .cp-table > tbody > tr:nth-child(even) { background: color-mix(in srgb, var(--text-tertiary) 4%, transparent); }
+.cost-plans-page.ui-work.cp-dense .cp-table > tbody > tr:hover { background: var(--hover-bg); }
+.cost-plans-page.ui-work.cp-dense .table-container :is(td, th) { hyphens: manual; }
+
+/* Описание работ — ссылка в карточку тендера: акцентный цвет, тонкое
+   подчёркивание, 500. Кнопка пути к папке под ним — отдельное действие. */
+.cost-plans-page.ui-work.cp-dense .cp-table :is(a, button).ui-title-link.cp-desc-link {
+  color: var(--ui-link);
+  font-weight: var(--ui-medium);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 2px;
+}
+.cost-plans-page.ui-work.cp-dense .cp-table :is(a, button).ui-title-link.cp-desc-link:hover { text-decoration-color: currentColor; }
+
+/* Сетка. Сумма фиксированных — 73.75rem: описанию остаётся ≈ 29rem на 1920
+   (было ≈ 23rem при 14px). «Срок выполнения плана затрат» — по самому
+   длинному значению «21.12.2026 — 15.01.2027», а не по запасу. */
+.cost-plans-page.ui-work.cp-dense .cp-table { min-width: 92.25rem; }
+.cost-plans-page.ui-work.cp-dense .cp-col-num { width: 4rem; }
+.cost-plans-page.ui-work.cp-dense .cp-col-object { width: 9rem; }
+.cost-plans-page.ui-work.cp-dense .cp-col-resp { width: 9.5rem; }
+.cost-plans-page.ui-work.cp-dense .cp-col-date { width: 6rem; }
+.cost-plans-page.ui-work.cp-dense .cp-col-term { width: 13.75rem; }  /* «21.12.2026 — 15.01.2027» целиком, замер 13.56rem */
+.cost-plans-page.ui-work.cp-dense .cp-col-link { width: 6.5rem; }
+.cost-plans-page.ui-work.cp-dense .cp-col-status { width: 8.5rem; }
+.cost-plans-page.ui-work.cp-dense .cp-col-notes { width: 13rem; }
+
+/* Срок: плашка компактнее, перенос — только после тире. */
+.cost-plans-page.ui-work.cp-dense .cp-table .drc { gap: 0.125rem; }
+.cost-plans-page.ui-work.cp-dense .cp-table .drc-btn { gap: 0.25rem; padding: 0.0625rem 0.375rem; border-radius: 8px; }
+.cost-plans-page.ui-work.cp-dense .cp-table .drc-btn > svg { margin-top: 0.125rem; }
+.cost-plans-page.ui-work.cp-dense .cp-table .drc-text { white-space: normal; }
+.cost-plans-page.ui-work.cp-dense .cp-table .drc-btn.is-empty { color: var(--text-secondary); }
+
+/* Ответственный: «Кобозев М. В.» строкой, роль (.ui-sub) — вплотную под ним. */
+.cost-plans-page.ui-work.cp-dense .cp-table .ui-sub { margin-top: 0.125rem; }
+.cost-plans-page.ui-work.cp-dense .cp-table .responsible-display { padding: 0.0625rem 0.25rem; margin-left: -0.25rem; }
+
+/* Примечание: поле правки видно как поле — мягкая подложка и рамка, при
+   наведении и фокусе заметнее. Сохранение (blur) не меняется. */
+.cost-plans-page.ui-work.cp-dense textarea.cost-plan-notes {
+  margin: -0.1875rem -0.25rem;
+  width: calc(100% + 0.5rem);
+  padding: 0.1875rem 0.375rem;
+  border-color: color-mix(in srgb, var(--border-color) 55%, transparent);
+  background: color-mix(in srgb, var(--text-tertiary) 5%, transparent);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+}
+.cost-plans-page.ui-work.cp-dense textarea.cost-plan-notes:hover { border-color: var(--border-color); background: var(--bg-secondary); }
+.cost-plans-page.ui-work.cp-dense textarea.cost-plan-notes:focus { background: var(--bg-secondary); }
+
+/* Ссылка на план и правка — в одну строку; действия строки — 26px. */
+.cost-plans-page.ui-work.cp-dense .cp-table .cost-plan-link-cell { gap: 0.125rem; }
+.cost-plans-page.ui-work.cp-dense .cp-table :is(.btn-icon, .link-edit-btn) { width: 1.625rem; height: 1.625rem; }

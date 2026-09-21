@@ -1,0 +1,288 @@
+// Сервис для работы с файлами КП/документов по тендеру (task 290).
+// Промежуточный слой поверх s3.js — добавляет метаданные file_kind / proposal_group_id /
+// version_label, чтобы выделять «коммерческое предложение» и группировать его версии.
+import { supabase } from '../supabase'
+import { deleteDocument, uploadFile } from './s3'
+import { fetchAllRows } from '../utils/fetchAllRows'
+import { STAGE_FIELDS } from '../utils/kpReviewStages'
+
+// task 431: статусы проверки КП аналитиком-экономистом.
+export const KP_REVIEW_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  HAS_REMARKS: 'has_remarks',
+}
+export const KP_REVIEW_LABEL = {
+  pending: 'На проверке',
+  approved: 'Проверено',
+  has_remarks: 'Есть замечания',
+}
+
+// Возвращает структуру для UI:
+//   {
+//     proposals: [{ groupId, latest, older: [...] }, ...]  // группы КП, в каждой последняя версия впереди
+//     attachments: [...]                                   // прочие документы (новые сверху)
+//   }
+export async function fetchProposalFiles(tenderId, counterpartyId) {
+  if (!tenderId || !counterpartyId) return { proposals: [], attachments: [] }
+
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
+    .eq('tender_id', tenderId)
+    .eq('counterparty_id', counterpartyId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+
+  const proposalsMap = new Map()
+  const attachments = []
+  for (const row of data || []) {
+    if (row.file_kind === 'attachment') {
+      attachments.push(row)
+    } else {
+      // Должен быть proposal_group_id; на всякий случай fallback на row.id —
+      // тогда КП без группы будет одиночным элементом.
+      const key = row.proposal_group_id || row.id
+      if (!proposalsMap.has(key)) proposalsMap.set(key, [])
+      proposalsMap.get(key).push(row)
+    }
+  }
+
+  const proposals = Array.from(proposalsMap.entries()).map(([groupId, files]) => ({
+    groupId,
+    latest: files[0],          // newest version
+    older: files.slice(1),     // older versions (already DESC by created_at)
+  }))
+  // Группы — самые свежие сверху (по дате последней версии).
+  proposals.sort((a, b) => new Date(b.latest.created_at) - new Date(a.latest.created_at))
+
+  return { proposals, attachments }
+}
+
+// Загружает файл в S3 и регистрирует в tender_proposal_files.
+// fileKind: 'commercial_proposal' | 'attachment'
+// proposalGroupId: для нового КП — null (сгенерируется новая группа);
+//                  для вариации к существующему КП — передать groupId этой группы.
+export async function addProposalFile({
+  tenderId,
+  counterpartyId,
+  file,
+  fileKind,
+  proposalGroupId = null,
+  versionLabel = null,
+}) {
+  const s3doc = await uploadFile({ file, ownerType: 'tender', ownerId: tenderId })
+
+  const group_id =
+    fileKind === 'commercial_proposal'
+      ? (proposalGroupId || crypto.randomUUID())
+      : null
+
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .insert({
+      tender_id: tenderId,
+      counterparty_id: counterpartyId,
+      s3_document_id: s3doc.id,
+      file_kind: fileKind,
+      proposal_group_id: group_id,
+      version_label: versionLabel?.trim() || null,
+    })
+    .select('*, s3:s3_documents!s3_document_id(*)')
+    .single()
+
+  if (error) {
+    // Откат: если в БД не легло — убираем уже залитый S3-объект и s3_documents-запись.
+    try { await deleteDocument(s3doc) } catch { /* best effort */ }
+    throw error
+  }
+  return data
+}
+
+// task 431: проставить результат проверки КП аналитиком.
+// status: 'approved' (проверено, ОК) | 'has_remarks' (есть замечания) | 'pending' (вернуть на проверку).
+// Замечания (review_note) и файл замечаний сохраняются только для has_remarks.
+// sendRequired — подветка замечаний (миграция 20260826): true — замечания идут
+//   подрядчику, false — обрабатываются без отправки. Вне has_remarks смысла не
+//   имеет и сбрасывается в значение по умолчанию.
+// Опциональный файл замечаний:
+//   remarksFile        — новый File для загрузки (заменяет текущий);
+//   removeRemarksFile  — снять текущий файл без загрузки нового;
+//   tenderId           — владелец S3 при загрузке (owner_type='tender');
+//   currentRemarksDoc  — текущая запись s3_documents файла замечаний (для замены/очистки).
+export async function setProposalReview(fileId, {
+  status,
+  note = '',
+  reviewer = '',
+  sendRequired = true,
+  remarksFile = null,
+  removeRemarksFile = false,
+  tenderId = null,
+  currentRemarksDoc = null,
+}) {
+  // Вычисляем итоговую ссылку на файл замечаний.
+  let uploadedDoc = null
+  let noteDocId = currentRemarksDoc?.id || null
+  if (status !== 'has_remarks') {
+    noteDocId = null // нет замечаний → файла тоже нет
+  } else if (remarksFile) {
+    uploadedDoc = await uploadFile({ file: remarksFile, ownerType: 'tender', ownerId: tenderId })
+    noteDocId = uploadedDoc.id
+  } else if (removeRemarksFile) {
+    noteDocId = null
+  }
+
+  const nextSendRequired = status === 'has_remarks' ? sendRequired !== false : true
+  const payload = {
+    review_status: status,
+    review_note: status === 'has_remarks' ? (note?.trim() || null) : null,
+    reviewed_at: status === 'pending' ? null : new Date().toISOString(),
+    reviewed_by: status === 'pending' ? null : (reviewer?.trim() || null),
+    review_note_s3_document_id: noteDocId,
+    remarks_send_required: nextSendRequired,
+  }
+  // Переключение в подветку «без отправки подрядчику» (или уход из замечаний
+  // вовсе) обнуляет отметку об отправке — иначе КП осталось бы «отправленным»
+  // на маршруте, где отправки нет.
+  if (!nextSendRequired || status !== 'has_remarks') {
+    payload.remarks_sent = false
+    payload.remarks_sent_at = null
+    payload.remarks_sent_by = null
+  }
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .update(payload)
+    .eq('id', fileId)
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
+    .single()
+  if (error) {
+    // Откат только что залитого файла, если запись не прошла.
+    if (uploadedDoc) { try { await deleteDocument(uploadedDoc) } catch { /* best effort */ } }
+    throw error
+  }
+  // Старый файл замечаний больше не нужен (заменён или снят) — убираем из S3,
+  // чтобы не оставлять orphan (запись уже разлинкована апдейтом выше).
+  if (currentRemarksDoc?.id && currentRemarksDoc.id !== noteDocId && currentRemarksDoc.s3_key) {
+    try { await deleteDocument(currentRemarksDoc) } catch { /* best effort */ }
+  }
+  return data
+}
+
+// task 431 (цепочка замечаний): инженер отмечает, что замечания по КП отправлены
+// Отметка «занесено в сводную таблицу» — промежуточный этап между проверкой
+// аналитиком и отправкой замечаний контрагенту. Нужен обеим веткам: и КП без
+// замечаний, и КП с замечаниями сначала попадают в сводную.
+// Ручная установка ЛЮБОГО этапа проверки (суперпользователь). Обычный путь —
+// шаги вперёд и точечные отмены; здесь же этап выставляется сразу, чтобы
+// исправить ошибку: откатить «Готово» на «На проверке», перевести КП в другую
+// подветку и т.п.
+//
+// Этап не хранится полем, он выводится из четырёх (см. stageOf в
+// utils/kpReviewStages.js), поэтому пишем согласованный набор одним UPDATE.
+//
+// review_note и review_note_s3_document_id НЕ трогаем: замечания аналитика не
+// должны пропадать оттого, что этап поправили руками.
+export async function setReviewStage(fileId, stage, { author = '' } = {}) {
+  const fields = STAGE_FIELDS[stage]
+  if (!fields) throw new Error(`Неизвестный этап проверки: ${stage}`)
+  const now = new Date().toISOString()
+  const who = author?.trim() || null
+
+  const payload = { ...fields }
+  // Отметки «кто и когда» приводим в соответствие этапу: иначе у КП, снятого с
+  // «занесено», осталась бы подпись «Занёс: …» — на этапе одно, в карточке другое.
+  if (fields.review_status === 'pending') {
+    payload.reviewed_at = null
+    payload.reviewed_by = null
+  } else {
+    payload.reviewed_at = now
+    payload.reviewed_by = who
+  }
+  payload.summary_added_at = fields.summary_added ? now : null
+  payload.summary_added_by = fields.summary_added ? who : null
+  payload.remarks_sent_at = fields.remarks_sent ? now : null
+  payload.remarks_sent_by = fields.remarks_sent ? who : null
+
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .update(payload)
+    .eq('id', fileId)
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function setSummaryAdded(fileId, { added, author = '' }) {
+  const payload = added
+    ? { summary_added: true, summary_added_at: new Date().toISOString(), summary_added_by: author?.trim() || null }
+    : { summary_added: false, summary_added_at: null, summary_added_by: null }
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .update(payload)
+    .eq('id', fileId)
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
+    .single()
+  if (error) throw error
+  return data
+}
+
+// контрагенту (sent=true) или снимает отметку (sent=false). sender — ФИО/e-mail.
+export async function setRemarksSent(fileId, { sent, sender = '' }) {
+  const payload = sent
+    ? { remarks_sent: true, remarks_sent_at: new Date().toISOString(), remarks_sent_by: sender?.trim() || null }
+    : { remarks_sent: false, remarks_sent_at: null, remarks_sent_by: null }
+  const { data, error } = await supabase
+    .from('tender_proposal_files')
+    .update(payload)
+    .eq('id', fileId)
+    .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
+    .single()
+  if (error) throw error
+  return data
+}
+
+// task 431: очередь КП на проверку (вкладка «Проверка КП»). Тянет все КП-файлы
+// (file_kind='commercial_proposal') с джойном тендера/объекта/контрагента/ответственного.
+// statuses — массив статусов (null = все); objectIds — ограничение по объектам (scope сотрудника).
+export async function fetchProposalFilesForReview({ statuses = null, objectIds = null } = {}) {
+  return fetchAllRows((from, to) => {
+    let q = supabase
+      .from('tender_proposal_files')
+      .select(`id, tender_id, counterparty_id, version_label, created_at,
+               review_status, review_note, reviewed_at, reviewed_by, review_required,
+               remarks_send_required,
+               remarks_sent, remarks_sent_at, remarks_sent_by,
+               summary_added, summary_added_at, summary_added_by,
+               s3:s3_documents!s3_document_id(*),
+               review_note_s3:s3_documents!review_note_s3_document_id(*),
+               counterparties(name),
+               tenders!inner(id, public_tender_number, work_description, object_id, department,
+                 folder_path, cost_plan_link, cost_plan_status, objects(name, status),
+                 responsible_contact:contacts!responsible_contact_id(full_name),
+                 cost_plan_responsible:contacts!cost_plan_responsible_id(full_name))`)
+      .eq('file_kind', 'commercial_proposal')
+      // Только КП, загруженные с момента запуска (легаси-бэклог в очередь не попадает).
+      .eq('review_required', true)
+    if (statuses && statuses.length) q = q.in('review_status', statuses)
+    if (objectIds && objectIds.length) q = q.in('tenders.object_id', objectIds)
+    return q.order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to)
+  })
+}
+
+// Удаляет файл КП/документа. ON DELETE CASCADE на FK s3_document_id снесёт строку
+// tender_proposal_files автоматически вслед за s3_documents.
+export async function deleteProposalFile(file) {
+  const s3doc = file.s3
+  if (!s3doc?.id || !s3doc?.s3_key) {
+    throw new Error('deleteProposalFile: ожидается file.s3 со связкой s3_documents')
+  }
+  // Прикреплённый файл замечаний не удаляется каскадом (он лишь SET NULL) — сносим явно,
+  // иначе останется orphan в S3 после удаления самого КП.
+  const remarksDoc = file.review_note_s3
+  if (remarksDoc?.id && remarksDoc?.s3_key) {
+    try { await deleteDocument(remarksDoc) } catch { /* best effort */ }
+  }
+  await deleteDocument(s3doc)
+}

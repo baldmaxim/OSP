@@ -1,0 +1,236 @@
+/* Глобальный мобильный слой. Импортируется ПОСЛЕДНИМ в App.jsx, поэтому при равной
+   специфичности перебивает базовые правила. Брейкпоинт 640px совпадает с useIsPhone()
+   — так CSS и JS-переключение карточек синхронны.
+
+   Базовые классы (.modal, .data-table, .table-container, .form-grid, .page-header)
+   объявлены глобально и дублируются во многих файлах — здесь чиним их разом.
+   Страницы со своим карточным режимом (Тендеры/Договоры/ДС) на телефоне таблицу
+   не показывают, поэтому table-правила им не мешают, а модалки/формы — дополняют. */
+
+@media (max-width: 640px) {
+  /* ── Контент ────────────────────────────────────────────── */
+  /* padding-top сохраняет зазор под фиксированным слим-топбаром (52px, см. Sidebar.css). */
+  .main-content { padding: calc(52px + 0.75rem) 0.75rem 0.75rem; }
+
+  /* ── Модалки → лист на весь экран ───────────────────────── */
+  .modal-overlay,
+  .gd-modal-overlay,
+  .s3-doc-modal-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+  .gd-modal, .s3-doc-modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 100dvh;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  /* max-width:100% !important перебивает именованные модалки (cp-detail 1080px,
+     dcr-tasks 1180px, calc(100vw-48px) и т.п.). Скоуп-модалки (.counterparties-page
+     .modal, .object-detail-page .modal) имеют бОльшую специфичность — перечислены ниже. */
+  .modal-overlay > .modal,
+  .modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 100dvh;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  .counterparties-page .modal,
+  .object-detail-page .modal,
+  .cost-plans-page .modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    border-radius: 0 !important;
+  }
+  /* Правые выдвижные панели — во всю ширину */
+  .adm-drawer, .emp-drawer {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+
+  /* ── Таблицы → горизонтальная прокрутка с инерцией ──────── */
+  .table-container, .table-wrapper,
+  .users-table-wrap, .gd-table-container, .bsm-table-wrap,
+  .summary-table-wrap, .public-tenders-table-wrap, .roles-table-wrap,
+  .permissions-list-table-wrap, .rr-table-wrap,
+  .estimate-table-wrapper, .psdc-table-wrapper, .work-types-wrap,
+  /* Остальные обёртки таблиц проекта — чтобы ни одна таблица не распирала экран. */
+  .bsm-table-container, .cim-warn-table-wrap, .cpi-table-wrap, .doc-table-wrap,
+  .expanded-cp-table-wrap, .kprv-table-wrap, .oa-table-wrap, .trd-table-wrap,
+  .proposals-summary-matrix-wrap, .tender-history-table-wrap, .ce-appendix-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  .data-table,
+  table.compact-table,
+  table.contracts-table,
+  table.dcr-table,
+  table.rr-table,
+  table.users-table,
+  table.gd-table,
+  table.bsm-table,
+  table.summary-table,
+  table.public-tenders-table,
+  table.dense-table {
+    font-size: 0.75rem;
+  }
+  .data-table th, .data-table td { padding: 0.5rem 0.4rem; }
+
+  /* ── Формы → одна колонка ───────────────────────────────── */
+  .form-grid { grid-template-columns: 1fr !important; }
+  .form-row { flex-direction: column; align-items: stretch; }
+  .form-row > * { width: 100%; }
+
+  /* ── Шапки страниц → в столбец ──────────────────────────── */
+  .page-header, .registry-header,
+  .rr-header, .bsm-header, .gd-header, .reports-header,
+  .contractor-header, .public-header-inner, .thub-header,
+  .general-info-header, .summary-header-board,
+  .object-detail-header, .info-header, .tender-detail-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.75rem;
+  }
+  /* Инфо-гриды детальных карточек → одна колонка */
+  .tender-info-grid, .contract-detail-grid, .info-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .page-header h2, .registry-header h2 { font-size: 1.25rem; }
+
+  /* ── Панели фильтров/тулбары → перенос, поля во всю ширину ─ */
+  .registry-filters, .rr-filters, .summary-filters, .reports-filters,
+  .user-filters, .bsm-filters, .map-filters, .emp-filters, .gd-toolbar,
+  .counterparties-toolbar, .toolbar-row, .toolbar-center, .toolbar-actions,
+  .report-toolbar, .rf-quick, .dcr-toolbar, .cost-plans-toolbar {
+    flex-wrap: wrap !important;
+    gap: 0.5rem;
+  }
+  /* Дочерние поля фильтров — на всю ширину строки */
+  .registry-filters > *, .rr-filters > *, .summary-filters > *,
+  .reports-filters > *, .user-filters > *, .gd-toolbar > *,
+  .counterparties-toolbar > *, .toolbar-center > *, .cost-plans-toolbar > * {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: none;
+  }
+  /* Поля внутри тулбара «Планы затрат / ВОРы» — на всю ширину, без фикс. min/max */
+  .cost-plans-search, .cost-plans-toolbar select, .cost-plans-toolbar .fdrop {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+  /* FilterDropdown внутри фильтров — на всю ширину */
+  .registry-filters .fdrop, .rr-filters .fdrop, .user-filters .fdrop,
+  .gd-toolbar .fdrop, .counterparties-toolbar .fdrop, .reports-filters .fdrop {
+    width: 100%;
+  }
+
+  /* ── Ряды кнопок/действий → перенос ─────────────────────── */
+  .page-header-actions, .header-actions, .modal-actions,
+  .form-actions, .drawer-actions, .bulk-bar {
+    flex-wrap: wrap;
+  }
+
+  /* ── Вкладки → горизонтальная прокрутка вместо переноса ──── */
+  .contract-tabs, .admin-tabs, .bsm-tabs-main, .bsm-tabs-sub,
+  .contacts-tabs, .estimate-doc-tabs, .status-tabs,
+  .tender-tabs, .estimate-subtabs, .estimate-subtabs-left, .rr-top-tabs,
+  .cost-plans-tabs, .gd-tabs, .tasks-tabs, .cp-detail-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .contract-tabs::-webkit-scrollbar, .admin-tabs::-webkit-scrollbar,
+  .bsm-tabs-main::-webkit-scrollbar, .bsm-tabs-sub::-webkit-scrollbar,
+  .contacts-tabs::-webkit-scrollbar, .estimate-doc-tabs::-webkit-scrollbar,
+  .status-tabs::-webkit-scrollbar, .tender-tabs::-webkit-scrollbar,
+  .estimate-subtabs::-webkit-scrollbar, .rr-top-tabs::-webkit-scrollbar,
+  .cost-plans-tabs::-webkit-scrollbar, .gd-tabs::-webkit-scrollbar,
+  .tasks-tabs::-webkit-scrollbar,
+  .cp-detail-tabs::-webkit-scrollbar { display: none; }
+  .contract-tab, .admin-tab, .contacts-tabs button, .status-tab,
+  .tender-tabs button, .estimate-subtabs button, .rr-top-tab,
+  .cost-plans-tabs button, .gd-tab, .tasks-tab, .cp-detail-tab {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  /* ── KPI/дашборд-сетки → одна колонка ───────────────────── */
+  .kpi-grid, .dash-grid, .summary-kpis { grid-template-columns: 1fr !important; }
+
+  /* ── Точечные фиксы наездов (аудит) ──────────────────────── */
+  /* Импорт цен снабжения (модалка тендера): строка конфликтов вылезала за экран
+     фикс-колонками — радио «обновить/пропустить» было недоступно. Даём скролл. */
+  .supply-conflict-list { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .supply-conflict-row, .supply-conflict-head { min-width: 34rem; }
+
+  /* BSM: панель сопоставления столбцов была шире экрана (min-width:360) → выезд. */
+  .bsm-column-map-panel {
+    min-width: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    width: calc(100vw - 1.5rem) !important;
+    max-width: calc(100vw - 1.5rem) !important;
+  }
+
+  /* Заявка на ДС: строка задачи (чекбокс + задача + ответ + кнопка) — в столбик. */
+  .dcr-task-row { grid-template-columns: 1fr !important; }
+
+  /* ── Двухколоночные раскладки «список + содержимое» → в столбик ─────────
+     На экране 360-400px колонка-список в 260-340px съедала почти всё место,
+     а вторая колонка сжималась до нечитаемой. */
+  .cn-body,                       /* согласование договоров у подрядчика */
+  .task-modal-columns,            /* карточка задачи */
+  .cct-layout,                    /* протокол разногласий */
+  .contracts-overview,            /* отчёты: KPI + диаграмма */
+  .dash-grid {                    /* отчёты: дэшборд */
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Канбан-доски → горизонтальная прокрутка вместо сжатия колонок ─────
+     Колонки доски нельзя сузить до ширины телефона: карточки станут нечитаемы.
+     Даём ленту с прокруткой и фиксируем ширину колонки. */
+  /* .task-board не перечислен намеренно: на телефоне доска задач не рендерится
+     вовсе (TasksPage: effectiveView = isPhone ? 'list' : view). */
+  .kanban-board, .dc-board {
+    display: flex !important;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+  }
+  .kanban-board > *, .dc-board > * {
+    flex: 0 0 82vw;
+    max-width: 82vw;
+    scroll-snap-align: start;
+  }
+
+  /* ── Плиточные сетки → одна колонка ───────────────────────────────────── */
+  .thub-grid,                     /* направления тендеров */
+  .section-cards,                 /* хабы «Общая информация» и БСМ */
+  .proposal-actions {             /* кабинет подрядчика: шаги 1-2 */
+    grid-template-columns: 1fr !important;
+  }
+  /* Плитки-счётчики админки: пять в ряд не помещаются. */
+  .admin-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  /* Сводка по тендерам: пять KPI в ряд не помещаются даже в альбомной. */
+  .summary-kpis { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Разбор конфликтов при импорте расценок (БСМ): пять фиксированных колонок
+     шире экрана — строка в столбик, шапка не нужна. */
+  .conflict-item { grid-template-columns: 1fr !important; gap: 0.35rem !important; }
+  .conflict-header { display: none !important; }
+
+  /* ── Полосы действий и поиск ──────────────────────────────────────────── */
+  .contractor-header, .cn-header { padding-left: 1rem; padding-right: 1rem; }
+
+  /* Правые панели-«свойства» в модалках не должны иметь собственной прокрутки:
+     на телефоне это вложенный скролл внутри скролла. */
+  .task-modal-side { max-height: none !important; overflow: visible !important; }
+  /* Реестр расценок: панель фильтров — четыре колонки на гриде. */
+  .rr-filters { grid-template-columns: 1fr !important; }
+}

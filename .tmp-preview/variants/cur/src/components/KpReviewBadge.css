@@ -1,0 +1,84 @@
+/* task 431: бейдж статуса проверки КП */
+.kpb-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+  max-width: 100%;
+}
+.kpb-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.kpb-pill-inner { display: inline-flex; align-items: center; gap: 0.3rem; }
+button.kpb-pill { cursor: pointer; font-family: inherit; }
+.kpb-clickable:hover { filter: brightness(0.96); }
+
+.kpb-pending {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+}
+.kpb-approved {
+  background: color-mix(in srgb, #16a34a 14%, transparent);
+  color: #15803d;
+  border-color: color-mix(in srgb, #16a34a 35%, transparent);
+}
+.kpb-remarks {
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
+  color: #b45309;
+  border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+}
+[data-theme='dark'] .kpb-approved { color: #4ade80; }
+[data-theme='dark'] .kpb-remarks { color: #fbbf24; }
+
+.kpb-remarks-text {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Ссылка на приложенный файл замечаний */
+.kpb-remarks-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, #f59e0b 10%, transparent);
+  color: #b45309;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.kpb-remarks-file:hover { background: color-mix(in srgb, #f59e0b 18%, transparent); }
+.kpb-remarks-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-theme='dark'] .kpb-remarks-file { color: #fbbf24; }
+
+/* Шаг цепочки замечаний: отправлено контрагенту / к отправке */
+.kpb-sent {
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.kpb-sent.is-sent { color: #0369a1; }
+.kpb-sent.is-todo { color: #b45309; }
+[data-theme='dark'] .kpb-sent.is-sent { color: #7dd3fc; }
+[data-theme='dark'] .kpb-sent.is-todo { color: #fbbf24; }
+/* Подветка «без отправки» — не задача, а пометка о маршруте: приглушаем. */
+.kpb-sent.is-muted { color: var(--text-tertiary); font-weight: 500; }

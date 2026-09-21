@@ -1,0 +1,42 @@
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin: 1rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: calc(100% - 3rem);
+}
+
+.theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.theme-icon {
+  font-size: 1.25rem;
+}
+
+.theme-label {
+  flex: 1;
+  text-align: left;
+}
+
+@media (max-width: 768px) {
+  .theme-toggle {
+    margin: 1rem;
+    width: calc(100% - 2rem);
+    font-size: 0.75rem;
+    padding: 0.625rem 0.875rem;
+  }
+
+  .theme-icon {
+    font-size: 1rem;
+  }
+}

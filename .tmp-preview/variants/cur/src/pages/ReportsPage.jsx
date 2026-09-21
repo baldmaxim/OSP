@@ -1,0 +1,1485 @@
+import { useState, useEffect, useMemo } from 'react'
+import { supabase } from '../supabase'
+import { fetchAllRows } from '../utils/fetchAllRows'
+import { useRole } from '../contexts/RoleContext'
+import { vorResponsibleName, withStoColumns } from '../services/stoEmployees'
+import { currencySymbol } from '../utils/estimateImport'
+import { isConstructionTender } from '../utils/tenderDepartments'
+import { isMissingVorRequestsTable } from '../services/vorRequests'
+import EngineersActivity from '../components/reports/EngineersActivity'
+import './ReportsPage.css'
+
+// «В работе» — только активная процедура; «Не начат» сюда не входит.
+const isInWork = (x) => x.status === 'Идет тендерная процедура'
+const isClosed = (x) => x.status === 'Завершен'
+
+// Договоры бывают в разных валютах (RUB/CNY/USD/EUR). Складывать их в одно число нельзя,
+// поэтому суммы агрегируем и показываем по каждой валюте отдельно.
+const CURRENCY_ORDER = ['RUB', 'CNY', 'USD', 'EUR']
+const fmtInt = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n)
+// Записи { cur, amt } в стабильном порядке (RUB, CNY, USD, EUR, затем прочие).
+function currencyEntries(map) {
+  if (!map) return []
+  const known = CURRENCY_ORDER.filter((c) => map[c])
+  const extra = Object.keys(map).filter((c) => !CURRENCY_ORDER.includes(c) && map[c])
+  return [...known, ...extra].map((c) => ({ cur: c, amt: map[c] }))
+}
+const fmtCur = (amt, cur) => `${fmtInt(amt)} ${currencySymbol(cur)}`
+
+// Ориентировочные курсы к рублю для приблизительного пересчёта валютных договоров.
+// Значения приблизительные — обновляйте вручную под актуальный курс; в интерфейсе
+// пересчитанные суммы всегда помечены «≈».
+const APPROX_RATES_TO_RUB = { RUB: 1, CNY: 12, USD: 85, EUR: 95 }
+const toRub = (amt, cur) => amt * (APPROX_RATES_TO_RUB[cur] ?? 0)
+// Итог по всем валютам, приведённый к рублю (приблизительно).
+const totalRub = (map) => currencyEntries(map).reduce((s, e) => s + toRub(e.amt, e.cur), 0)
+// Подсказка с используемыми курсами (для title).
+const RATE_NOTE = 'Курс (ориентировочно): '
+  + ['CNY', 'USD', 'EUR'].map((c) => `${currencySymbol(c)} ${APPROX_RATES_TO_RUB[c]} ₽`).join(' · ')
+
+// Ячейка суммы: каждая валюта на своей строке; для валют, отличных от рубля,
+// строкой ниже добавляем приблизительный пересчёт «≈ N ₽».
+function MoneyCell({ map }) {
+  const entries = currencyEntries(map)
+  if (!entries.length) return <span className="muted">—</span>
+  return (
+    <span className="money-multi">
+      {entries.flatMap((e) => {
+        const lines = [<span key={e.cur} className="money-line">{fmtCur(e.amt, e.cur)}</span>]
+        if (e.cur !== 'RUB') {
+          lines.push(
+            <span key={`${e.cur}-rub`} className="money-line approx-rub" title={RATE_NOTE}>
+              ≈ {fmtInt(toRub(e.amt, e.cur))} ₽
+            </span>
+          )
+        }
+        return lines
+      })}
+    </span>
+  )
+}
+
+function groupByResp(rows) {
+  const map = new Map()
+  for (const x of rows) {
+    if (!isInWork(x) && !isClosed(x)) continue
+    const id = x.responsible_contact_id || '_unassigned'
+    const name = x.responsible_contact?.full_name || 'Не назначен'
+    if (!map.has(id)) map.set(id, { id, name, inWork: 0, completed: 0 })
+    const r = map.get(id)
+    if (isClosed(x)) r.completed += 1
+    else r.inWork += 1
+  }
+  return Array.from(map.values())
+    .map(r => ({ ...r, total: r.inWork + r.completed }))
+    .sort((a, b) => b.total - a.total)
+}
+
+// Динамика по месяцам создания (реальные created_at). Окно = periodMonths.
+function buildDynamics(rows, periodMonths) {
+  const now = new Date()
+  const months = []
+  for (let i = periodMonths - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push({
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: d.toLocaleDateString('ru-RU', { month: 'short' }),
+      total: 0, inWork: 0, closed: 0,
+    })
+  }
+  const idx = new Map(months.map((m, i) => [m.key, i]))
+  for (const x of rows) {
+    if (!x.created_at) continue
+    const i = idx.get(String(x.created_at).slice(0, 7))
+    if (i == null) continue
+    months[i].total += 1
+    if (isClosed(x)) months[i].closed += 1
+    else if (isInWork(x)) months[i].inWork += 1
+  }
+  return months
+}
+
+// task: фильтруемая тендерная аналитика (используется в useMemo). ЕДИНАЯ выборка
+// `rows` (период по created_at + отдел + ответственный + объект) — от неё считаются
+// ВСЕ блоки дашборда (KPI/donut/динамика/внимание/отделы/ответственные).
+function computeTenderStats(allRows, { dept = 'all', respId = 'all', objectId = 'all', periodMonths = 6 }) {
+  const today = new Date().toISOString().split('T')[0]
+  // Период: 'all' — без фильтра по дате (все тендеры); иначе — созданные за последние
+  // periodMonths месяцев (включая текущий). График ограничиваем 12 месяцами.
+  const allPeriod = periodMonths === 'all'
+  let rows = allRows
+  if (!allPeriod) {
+    const now = new Date()
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - (periodMonths - 1), 1)
+    const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-01`
+    rows = allRows.filter(x => x.created_at && String(x.created_at).slice(0, 10) >= cutoffStr)
+  }
+  if (dept !== 'all') rows = rows.filter(x => x.objects?.status === dept)
+  if (objectId !== 'all') rows = rows.filter(x => String(x.object_id) === String(objectId))
+  if (respId !== 'all') rows = rows.filter(x => (x.responsible_contact_id || '_unassigned') === respId)
+
+  const open = rows.filter(isInWork).length
+  const closed = rows.filter(isClosed).length
+  const deptBlock = (st) => {
+    const r = rows.filter(x => x.objects?.status === st)
+    return {
+      total: r.length, open: r.filter(isInWork).length, closed: r.filter(isClosed).length,
+      unassigned: r.filter(x => !x.responsible_contact_id).length, byResp: groupByResp(r),
+    }
+  }
+  return {
+    total: rows.length,
+    open,
+    closed,
+    notStarted: Math.max(0, rows.length - open - closed),
+    overdue: rows.filter(x => isInWork(x) && x.end_date && x.end_date < today).length,
+    unassigned: rows.filter(x => !x.responsible_contact_id).length,
+    byResponsible: groupByResp(rows),
+    dynamics: buildDynamics(rows, allPeriod ? 12 : periodMonths),
+    byDept: {
+      main_construction: deptBlock('main_construction'),
+      warranty_service: deptBlock('warranty_service'),
+    },
+  }
+}
+
+function ReportsPage() {
+  // isSuperAdmin — доступ по e-mail из SUPER_ADMINS (RoleContext). Отчёт «Работа
+  // инженеров» показывает персональную активность сотрудников, поэтому виден только
+  // владельцу системы, а не всем администраторам.
+  const { scopedObjectIds, isSuperAdmin, canView } = useRole()
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState(null)
+  // Какие отчёты видны роли. С правом «Отчёты: все вкладки» (reports_full, миграция
+  // 20260930 выдала его всем ролям, у которых отчёты уже были) — все, как раньше.
+  // Без него — только отчёты рабочих разделов: у «Сметный отдел_Руководители»
+  // в отчётах остаются одни «ВОРы и РД».
+  const fullReports = canView('reports_full')
+  const allowedTabs = fullReports
+    ? ['tenders', 'winners', 'materials', 'cost_plans', 'vors', 'contracts', ...(isSuperAdmin ? ['activity'] : [])]
+    : [
+        ...(canView('vors') || canView('tenders') ? ['vors'] : []),
+        ...(canView('tenders_materials') ? ['materials'] : []),
+      ]
+  const [activeTabState, setActiveTab] = useState(() => allowedTabs[0] || 'tenders')
+  // Выбранная вкладка, которой роли не положено (права сменились), подменяется первой доступной.
+  const activeTab = allowedTabs.includes(activeTabState) ? activeTabState : allowedTabs[0]
+  // null = обзор, 'construction' | 'warranty' = детализация по выбранному отделу
+  const [tDeptView, setTDeptView] = useState(null)
+  // task: сырые основные тендеры + момент загрузки (для фильтрации без повторных запросов)
+  const [rawTenders, setRawTenders] = useState([])
+  const [loadedAt, setLoadedAt] = useState(null)
+  // Фильтры тендерного дашборда
+  const [fDept, setFDept] = useState('all')
+  const [fResp, setFResp] = useState('all')
+  const [fObject, setFObject] = useState('all')
+  const [fPeriod, setFPeriod] = useState(6)
+  // Отчёт «ВОРы и РД»: основное строительство или совместные тендеры — как на странице ВОРов.
+  const [vorScope, setVorScope] = useState('construction')
+
+  useEffect(() => {
+    fetchStats()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedObjectIds])
+
+  // task: тендерная аналитика пересчитывается на клиенте при смене фильтров.
+  const tStats = useMemo(
+    () => computeTenderStats(rawTenders, { dept: fDept, respId: fResp, objectId: fObject, periodMonths: fPeriod }),
+    [rawTenders, fDept, fResp, fObject, fPeriod]
+  )
+  // Списки для дропдаунов фильтров — из сырых тендеров.
+  const objectOptions = useMemo(() => {
+    const m = new Map()
+    for (const x of rawTenders) {
+      if (x.object_id && x.objects?.name) m.set(x.object_id, x.objects.name)
+    }
+    return Array.from(m, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  }, [rawTenders])
+  const respOptions = useMemo(() => {
+    const m = new Map()
+    for (const x of rawTenders) {
+      if (x.responsible_contact_id && x.responsible_contact?.full_name) {
+        m.set(x.responsible_contact_id, x.responsible_contact.full_name)
+      }
+    }
+    return Array.from(m, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  }, [rawTenders])
+  const fActive = fDept !== 'all' || fResp !== 'all' || fObject !== 'all' || fPeriod !== 6
+  const resetFilters = () => { setFDept('all'); setFResp('all'); setFObject('all'); setFPeriod(6) }
+
+  const fetchStats = async () => {
+    try {
+      setLoading(true)
+
+      // Запрос собирается ВНУТРИ колбэка: fetchAllRows зовёт его на каждую
+      // страницу, а повторный .range() на одном и том же билдере supabase-js
+      // переписал бы диапазон предыдущего.
+      const tendersQuery = (stoCols) => (from, to) => {
+        let q = supabase
+        .from('tenders')
+        .select(`
+          id, object_id, status, end_date, created_at, responsible_contact_id, tender_type, deleted_at, department,
+          cost_plan_status, cost_plan_responsible_id, cost_plan_end_date,
+          vor_status, vor_responsible_id, vor_end_date${stoCols},
+          materials_proposal_deadline,
+          winner_counterparty_id,
+          objects(id, name, status),
+          responsible_contact:contacts!responsible_contact_id(id, full_name),
+          cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name),
+          vor_responsible:contacts!vor_responsible_id(id, full_name),
+          winner:counterparties!winner_counterparty_id(id, name)
+        `)
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        return q.order('id', { ascending: true }).range(from, to)
+      }
+      // Постранично: без .range() PostgREST молча отдаёт первые 1000 строк, и
+      // отчёт считался бы по неполному набору — числа в нём просто врут.
+      // Колонки СТО (миграция 20260922) — если их ещё нет, отчёт строится без них.
+      const tendersRaw = await withStoColumns((stoCols) => fetchAllRows(tendersQuery(stoCols)))
+
+      // Заявки на ВОР без тендера (миграция 20261003) — считаются в отчёте «ВОРы и РД»
+      // вместе с тендерами. Нет таблицы — отчёт строится без них.
+      let vorRequests = []
+      {
+        let q = supabase
+          .from('vor_requests')
+          .select('id, department, object_id, vor_status, vor_end_date, vor_sto_user_id, vor_sto_name')
+          .is('deleted_at', null)
+          .limit(5000)
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        const { data: reqData, error: reqError } = await q
+        if (reqError && !isMissingVorRequestsTable(reqError)) console.error('Заявки на ВОР для отчёта:', reqError.message)
+        vorRequests = reqData || []
+      }
+
+      const contractsQuery = (from, to) => {
+        let q = supabase
+          .from('contracts')
+          .select('id, object_id, status, contract_amount, currency, counterparty_id, responsible_contact_id, deleted_at, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
+          .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят
+        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+        return q.order('id', { ascending: true }).range(from, to)
+      }
+      const contracts = await fetchAllRows(contractsQuery)
+
+      // Отчёт по тендерам считаем только по основным тендерам, не по дочерним на материалы.
+      // Если миграция tender_type не применена, x.tender_type === undefined — учитываем как main.
+      const allTenders = (tendersRaw || []).filter(x => !x.deleted_at)
+      const t = allTenders.filter(x => !x.tender_type || x.tender_type === 'main')
+      const materialsTenders = allTenders.filter(x => x.tender_type === 'materials')
+      // Реестр «Договоры и ДС» показывает только договоры основного строительства
+      // (объект в статусе main_construction). Отчёт держим на том же наборе, иначе в него
+      // попадают договоры гарантийных/без-объектных договоров, которых нет в реестре
+      // (в т.ч. без ответственного юриста → фантомный «Не назначен»).
+      const c = (contracts || []).filter(x => x.objects?.status === 'main_construction')
+      const today = new Date().toISOString().split('T')[0]
+
+      // «В работе» считаем только статус 'Идет тендерная процедура' —
+      // «Не начат» сюда не входит (task 288).
+      const isInWork = (x) => x.status === 'Идет тендерная процедура'
+      const isClosed = (x) => x.status === 'Завершен'
+
+      const tConst = t.filter(x => x.objects?.status === 'main_construction')
+      const tWar = t.filter(x => x.objects?.status === 'warranty_service')
+
+      // Группировка по ответственным — в работу попадают только активные
+      // процедуры, завершённые отдельно. Тендеры со статусом «Не начат» не
+      // учитываются в total ответственного (но видны в KPI «Всего»).
+      const groupByResponsible = (rows) => {
+        const map = new Map()
+        for (const x of rows) {
+          if (!isInWork(x) && !isClosed(x)) continue
+          const id = x.responsible_contact_id || '_unassigned'
+          const name = x.responsible_contact?.full_name || 'Не назначен'
+          if (!map.has(id)) {
+            map.set(id, { id, name, inWork: 0, completed: 0 })
+          }
+          const row = map.get(id)
+          if (isClosed(x)) row.completed += 1
+          else row.inWork += 1
+        }
+        return Array.from(map.values())
+          .map(r => ({ ...r, total: r.inWork + r.completed }))
+          .sort((a, b) => b.total - a.total)
+      }
+
+      const unassignedCount = (rows) => rows.filter(x => !x.responsible_contact_id).length
+
+      // Суммы по валютам: { RUB: n, CNY: n, ... } — только ненулевые.
+      const sumByCurrency = (rows) => {
+        const acc = {}
+        for (const r of rows) {
+          const amt = Number(r.contract_amount) || 0
+          if (!amt) continue
+          const cur = r.currency || 'RUB'
+          acc[cur] = (acc[cur] || 0) + amt
+        }
+        return acc
+      }
+
+      // Разбивка договоров по объектам: количество по статусам + суммы по валютам, сортировка по «всего».
+      const contractsByObject = (rows) => {
+        const map = new Map()
+        for (const x of rows) {
+          const id = x.object_id || '_none'
+          if (!map.has(id)) {
+            map.set(id, {
+              objectId: id,
+              name: x.objects?.name || 'Без объекта',
+              total: 0, cNew: 0, inWork: 0, paused: 0, completed: 0, amountByCur: {},
+            })
+          }
+          const row = map.get(id)
+          row.total += 1
+          const amt = Number(x.contract_amount) || 0
+          if (amt) {
+            const cur = x.currency || 'RUB'
+            row.amountByCur[cur] = (row.amountByCur[cur] || 0) + amt
+          }
+          if (x.status === 'new_request') row.cNew += 1
+          else if (x.status === 'in_work') row.inWork += 1
+          else if (x.status === 'paused') row.paused += 1
+          else if (x.status === 'completed') row.completed += 1
+        }
+        return Array.from(map.values()).sort((a, b) => b.total - a.total)
+      }
+
+      // Сводка по ответственным юристам: сколько договоров в работе / всего.
+      // «Не назначен» собирается отдельным ведром и показывается последним.
+      const contractsByLawyer = (rows) => {
+        const map = new Map()
+        for (const x of rows) {
+          const id = x.responsible_contact_id || '_unassigned'
+          if (!map.has(id)) {
+            map.set(id, {
+              id,
+              name: x.responsible?.full_name || 'Не назначен',
+              total: 0, cNew: 0, inWork: 0, paused: 0, completed: 0,
+            })
+          }
+          const row = map.get(id)
+          row.total += 1
+          if (x.status === 'new_request') row.cNew += 1
+          else if (x.status === 'in_work') row.inWork += 1
+          else if (x.status === 'paused') row.paused += 1
+          else if (x.status === 'completed') row.completed += 1
+        }
+        return Array.from(map.values()).sort((a, b) => {
+          if (a.id === '_unassigned') return 1      // «Не назначен» — всегда в конце
+          if (b.id === '_unassigned') return -1
+          if (b.inWork !== a.inWork) return b.inWork - a.inWork
+          return b.total - a.total
+        })
+      }
+
+      // Общая группировка по ответственному с произвольным предикатом «завершено»
+      // и произвольным getter ответственного — реюзается для materials/cost-plans/vor.
+      const groupByResponsibleGeneric = (rows, getRespId, getRespName, isDoneFn) => {
+        const map = new Map()
+        for (const x of rows) {
+          const id = getRespId(x) || '_unassigned'
+          const name = getRespName(x) || 'Не назначен'
+          if (!map.has(id)) map.set(id, { id, name, inWork: 0, completed: 0 })
+          const row = map.get(id)
+          if (isDoneFn(x)) row.completed += 1
+          else row.inWork += 1
+        }
+        return Array.from(map.values())
+          .map(r => ({ ...r, total: r.inWork + r.completed }))
+          .sort((a, b) => b.total - a.total)
+      }
+
+      // === Тендеры на материалы ===
+      const isMaterialsClosed = (x) => x.status === 'Завершён' || x.status === 'Завершен'
+      const isMaterialsOpen = (x) => !isMaterialsClosed(x)
+      const isMaterialsInWork = (x) => x.status === 'В работе'
+      const isMaterialsNotStarted = (x) => x.status === 'Не начат' || (!isMaterialsClosed(x) && !isMaterialsInWork(x))
+      const mat = {
+        total: materialsTenders.length,
+        open: materialsTenders.filter(isMaterialsOpen).length,
+        closed: materialsTenders.filter(isMaterialsClosed).length,
+        notStarted: materialsTenders.filter(isMaterialsNotStarted).length,
+        inWork: materialsTenders.filter(isMaterialsInWork).length,
+        overdue: materialsTenders.filter(x =>
+          isMaterialsOpen(x) && x.materials_proposal_deadline && x.materials_proposal_deadline < today
+        ).length,
+        unassigned: materialsTenders.filter(x => !x.responsible_contact_id).length,
+        byResp: groupByResponsibleGeneric(
+          materialsTenders,
+          (x) => x.responsible_contact_id,
+          (x) => x.responsible_contact?.full_name,
+          isMaterialsClosed
+        ),
+      }
+
+      // === Планы затрат (только основные тендеры основного строительства) ===
+      const cpRows = tConst
+      const isCpDone = (x) => x.cost_plan_status === 'completed'
+      const cp = {
+        total: cpRows.length,
+        notStarted: cpRows.filter(x => !x.cost_plan_status || x.cost_plan_status === 'not_started').length,
+        inProgress: cpRows.filter(x => x.cost_plan_status === 'in_progress').length,
+        awaitingKp: cpRows.filter(x => x.cost_plan_status === 'awaiting_kp').length,
+        completed: cpRows.filter(isCpDone).length,
+        overdue: cpRows.filter(x => !isCpDone(x) && x.cost_plan_end_date && x.cost_plan_end_date < today).length,
+        unassigned: cpRows.filter(x => !x.cost_plan_responsible_id).length,
+        byResp: groupByResponsibleGeneric(
+          cpRows,
+          (x) => x.cost_plan_responsible_id,
+          (x) => x.cost_plan_responsible?.full_name,
+          isCpDone
+        ),
+      }
+
+      // === Победители тендеров ===
+      // Считаем только завершённые основные тендеры с указанным победителем.
+      const winnerTenders = t.filter(x => isClosed(x) && x.winner_counterparty_id)
+      const contractsByCounterparty = (c || []).reduce((acc, contract) => {
+        const cpId = contract.counterparty_id
+        if (!cpId) return acc
+        if (!acc[cpId]) acc[cpId] = { signed: 0, signedByCur: {}, total: 0, totalByCur: {} }
+        const amount = Number(contract.contract_amount) || 0
+        const cur = contract.currency || 'RUB'
+        acc[cpId].total += 1
+        // По валютам, а не одним числом: раньше доллары и юани складывались с
+        // рублями один к одному, и таблица победителей показывала завышенные
+        // (или заниженные) суммы со знаком ₽.
+        acc[cpId].totalByCur[cur] = (acc[cpId].totalByCur[cur] || 0) + amount
+        // «Заключённый» договор = статус 'completed' (Завершено); старое 'signed' не существует.
+        if (contract.status === 'completed') {
+          acc[cpId].signed += 1
+          acc[cpId].signedByCur[cur] = (acc[cpId].signedByCur[cur] || 0) + amount
+        }
+        return acc
+      }, {})
+
+      const winnerMap = new Map()
+      for (const x of winnerTenders) {
+        const id = x.winner_counterparty_id
+        const name = x.winner?.name || 'Контрагент удалён'
+        if (!winnerMap.has(id)) {
+          winnerMap.set(id, {
+            id,
+            name,
+            wins: 0,
+            winsConst: 0,
+            winsWar: 0,
+            signedContracts: 0,
+            signedByCur: {},
+            // Приблизительный итог в рублях — только для сортировки и показа
+            // общей суммы; помечается «≈», если есть валютные договоры.
+            signedAmountRub: 0,
+            hasForeign: false,
+          })
+        }
+        const row = winnerMap.get(id)
+        row.wins += 1
+        if (x.objects?.status === 'main_construction') row.winsConst += 1
+        else if (x.objects?.status === 'warranty_service') row.winsWar += 1
+        const cStats = contractsByCounterparty[id]
+        if (cStats) {
+          row.signedContracts = cStats.signed
+          row.signedByCur = cStats.signedByCur
+          row.signedAmountRub = totalRub(cStats.signedByCur)
+          row.hasForeign = Object.keys(cStats.signedByCur).some((c) => c !== 'RUB')
+        }
+      }
+      const winners = {
+        total: winnerTenders.length,
+        unique: winnerMap.size,
+        totalAmount: Array.from(winnerMap.values()).reduce((s, r) => s + r.signedAmountRub, 0),
+        anyForeign: Array.from(winnerMap.values()).some((r) => r.hasForeign),
+        rows: Array.from(winnerMap.values()).sort((a, b) => b.wins - a.wins || b.signedAmountRub - a.signedAmountRub),
+      }
+
+      // === ВОРы и РД ===
+      // По направлениям, как на странице «ВОРы и РД»: основное строительство и
+      // совместные тендеры; к тендерам добавляются заявки на ВОР без тендера.
+      // «Не требуется» закрывает этап так же, как «Завершён» (не просрочен, не в очереди).
+      const isVorDone = (x) => x.vor_status === 'completed' || x.vor_status === 'not_required'
+      const vorStats = (vorRows) => ({
+        total: vorRows.length,
+        requests: vorRows.filter(x => x._request).length,
+        notStarted: vorRows.filter(x => !x.vor_status || x.vor_status === 'not_started').length,
+        inProgress: vorRows.filter(x => x.vor_status === 'in_progress').length,
+        completed: vorRows.filter(isVorDone).length,
+        overdue: vorRows.filter(x => !isVorDone(x) && x.vor_end_date && x.vor_end_date < today).length,
+        // Ответственный СТО из реестра, иначе прежний контакт (миграция 20260922).
+        unassigned: vorRows.filter(x => !x.vor_sto_user_id && !x.vor_responsible_id).length,
+        byResp: groupByResponsibleGeneric(
+          vorRows,
+          (x) => x.vor_sto_user_id || x.vor_responsible_id,
+          (x) => vorResponsibleName(x),
+          isVorDone
+        ),
+      })
+      const requestsOf = (dept) => vorRequests.filter(r => r.department === dept).map(r => ({ ...r, _request: true }))
+      const vor = {
+        construction: vorStats([...t.filter(isConstructionTender), ...requestsOf('construction')]),
+        joint: vorStats([...t.filter(x => x.department === 'joint'), ...requestsOf('joint')]),
+      }
+
+      // Динамика тендеров по месяцам создания (реальные created_at). Последние 6 месяцев.
+      // Для каждого месяца: всего создано + сколько из них сейчас в работе / завершено.
+      const now = new Date()
+      const dynMonths = []
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        dynMonths.push({
+          key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+          label: d.toLocaleDateString('ru-RU', { month: 'short' }),
+          total: 0, inWork: 0, closed: 0,
+        })
+      }
+      const dynIdx = new Map(dynMonths.map((m, i) => [m.key, i]))
+      for (const x of t) {
+        if (!x.created_at) continue
+        const i = dynIdx.get(String(x.created_at).slice(0, 7))
+        if (i == null) continue
+        dynMonths[i].total += 1
+        if (isClosed(x)) dynMonths[i].closed += 1
+        else if (isInWork(x)) dynMonths[i].inWork += 1
+      }
+
+      const tClosedCount = t.filter(isClosed).length
+      const tOpenCount = t.filter(isInWork).length
+
+      // task: сохраняем сырые тендеры для клиентской фильтрации дашборда + момент загрузки.
+      setRawTenders(t)
+      setLoadedAt(new Date())
+
+      setStats({
+        // Тендеры — общие
+        tTotal: t.length,
+        tOpen: tOpenCount,
+        tClosed: tClosedCount,
+        // «Не начат»/прочие = всего − в работе − завершено (для donut статусов).
+        tNotStarted: Math.max(0, t.length - tOpenCount - tClosedCount),
+        // Просроченные: открытая процедура с прошедшим сроком (end_date) — реальное поле.
+        tOverdue: t.filter(x => isInWork(x) && x.end_date && x.end_date < today).length,
+        tDynamics: dynMonths,
+        tUnassigned: unassignedCount(t),
+        // По отделам тендеры
+        tOpenConst: tConst.filter(isInWork).length,
+        tClosedConst: tConst.filter(isClosed).length,
+        tTotalConst: tConst.length,
+        tUnassignedConst: unassignedCount(tConst),
+        tOpenWar: tWar.filter(isInWork).length,
+        tClosedWar: tWar.filter(isClosed).length,
+        tTotalWar: tWar.length,
+        tUnassignedWar: unassignedCount(tWar),
+        // По ответственным
+        byResponsible: groupByResponsible(t),
+        byResponsibleConst: groupByResponsible(tConst),
+        byResponsibleWar: groupByResponsible(tWar),
+        // Договоры — сводка по всем (реальные статусы new_request/in_work/paused/completed)
+        cTotal: c.length,
+        cNew: c.filter(x => x.status === 'new_request').length,
+        cInWork: c.filter(x => x.status === 'in_work').length,
+        cPaused: c.filter(x => x.status === 'paused').length,
+        cCompleted: c.filter(x => x.status === 'completed').length,
+        cAmountByCur: sumByCurrency(c),
+        cAmountCompletedByCur: sumByCurrency(c.filter(x => x.status === 'completed')),
+        cByObject: contractsByObject(c),
+        cByLawyer: contractsByLawyer(c),
+        // Тендеры на материалы
+        mat,
+        // Планы затрат
+        cp,
+        // ВОРы и РД
+        vor,
+        // Победители тендеров
+        winners,
+      })
+    } catch (err) {
+      console.error('Ошибка загрузки отчётов:', err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="reports-page">
+        <div className="reports-header"><h2>Отчёты</h2></div>
+        <div className="reports-loading">Загрузка...</div>
+      </div>
+    )
+  }
+  if (!stats) return null
+  const s = stats
+  // Права есть на «Отчёты», но ни на одну вкладку — объясняем, а не рисуем пустую страницу.
+  if (allowedTabs.length === 0) {
+    return (
+      <div className="reports-page">
+        <div className="reports-header"><h2>Отчёты</h2></div>
+        <div className="reports-loading">Для вашей роли нет доступных отчётов. Обратитесь к администратору.</div>
+      </div>
+    )
+  }
+
+  const pct = (a, b) => b > 0 ? Math.round((a / b) * 100) : 0
+  const fmtMoney = (n) => {
+    if (!n) return '0 ₽'
+    return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n) + ' ₽'
+  }
+
+  // Общая сумма договоров по валютам: рубли — главной строкой, валюты — отдельными
+  // строками с приблизительным пересчётом; плюс общий итог в рублях (приблизительно).
+  const cTotalEntries = currencyEntries(s.cAmountByCur)
+  const cRubEntry = cTotalEntries.find((e) => e.cur === 'RUB')
+  const cForeignEntries = cTotalEntries.filter((e) => e.cur !== 'RUB')
+  const cGrandRub = totalRub(s.cAmountByCur)
+  const cCompletedText = currencyEntries(s.cAmountCompletedByCur)
+    .map((e) => fmtCur(e.amt, e.cur)).join(' · ') || '0 ₽'
+
+  // Данные текущего отдела (для детального вида) — из отфильтрованного tStats.
+  const deptData = tDeptView === 'construction'
+    ? { title: 'Основное строительство', icon: '🏗️', accent: 'dept-card--construction', ...tStats.byDept.main_construction }
+    : tDeptView === 'warranty'
+      ? { title: 'Гарантийный отдел', icon: '🛡️', accent: 'dept-card--warranty', ...tStats.byDept.warranty_service }
+      : null
+
+  const reportTabs = [
+    { key: 'tenders', label: 'Тендеры', icon: '🏗️', count: s.tTotal },
+    { key: 'winners', label: 'Победители', icon: '🏆', count: s.winners.unique },
+    { key: 'materials', label: 'Материалы', icon: '📦', count: s.mat.total },
+    { key: 'cost_plans', label: 'Планы затрат', icon: '💰', count: s.cp.total },
+    { key: 'vors', label: 'ВОРы и РД', icon: '📐', count: s.vor.construction.total + s.vor.joint.total },
+    { key: 'contracts', label: 'Договоры', icon: '📝', count: s.cTotal },
+    // Счётчик не показываем: данные вкладки грузятся отдельно, по выбранному дню.
+    // Вкладка только для владельца системы — это персональная активность сотрудников.
+    ...(isSuperAdmin ? [{ key: 'activity', label: 'Работа инженеров', icon: '📞', count: null }] : []),
+  ].filter(tab => allowedTabs.includes(tab.key))
+  const updatedLabel = loadedAt
+    ? `Обновлено: сегодня, ${loadedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+    : null
+
+  return (
+    <div className="reports-page">
+      <div className="reports-header">
+        <div>
+          <h2>Отчёты</h2>
+          <div className="reports-subtitle">{fullReports ? 'Аналитика по тендерам' : 'Аналитика по вашим разделам'}</div>
+        </div>
+        <div className="report-toolbar">
+          {updatedLabel && <span className="reports-updated">{updatedLabel}</span>}
+          <button type="button" className="reports-export" title="Экспорт — скоро" disabled>
+            <span aria-hidden>⬆</span> Экспорт
+          </button>
+        </div>
+      </div>
+
+      {/* Верхние разделы аналитики — компактные вкладки */}
+      <nav className="reports-tabs" aria-label="Разделы отчётов">
+        {reportTabs.map(tab => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`reports-tab ${activeTab === tab.key ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab(tab.key)
+              if (tab.key !== 'tenders') setTDeptView(null)
+            }}
+            aria-pressed={activeTab === tab.key}
+          >
+            <span className="reports-tab-icon" aria-hidden>{tab.icon}</span>
+            <span className="reports-tab-label">{tab.label}</span>
+            {tab.count != null && <span className="reports-tab-count">{tab.count}</span>}
+          </button>
+        ))}
+      </nav>
+
+      {/* Фильтр-бар — компактные inline-чипы (только для вкладки «Тендеры») */}
+      {activeTab === 'tenders' && (
+        <div className="reports-filters">
+          <label className={`rf-chip ${fPeriod !== 6 ? 'is-active' : ''}`}>
+            <span className="rf-chip-key">Период:</span>
+            <select className="rf-chip-select" value={fPeriod}
+              onChange={(e) => { const v = e.target.value; setFPeriod(v === 'all' ? 'all' : Number(v)) }}>
+              <option value="all">Все</option>
+              <option value={1}>1 мес.</option>
+              <option value={3}>3 мес.</option>
+              <option value={6}>6 мес.</option>
+              <option value={12}>12 мес.</option>
+            </select>
+          </label>
+          <label className={`rf-chip ${fDept !== 'all' ? 'is-active' : ''}`}>
+            <span className="rf-chip-key">Отдел:</span>
+            <select className="rf-chip-select" value={fDept} onChange={(e) => { setFDept(e.target.value); setTDeptView(null) }}>
+              <option value="all">Все</option>
+              <option value="main_construction">Основное строительство</option>
+              <option value="warranty_service">Гарантийный отдел</option>
+            </select>
+          </label>
+          <label className={`rf-chip ${fResp !== 'all' ? 'is-active' : ''}`}>
+            <span className="rf-chip-key">Ответственный:</span>
+            <select className="rf-chip-select" value={fResp} onChange={(e) => setFResp(e.target.value)}>
+              <option value="all">Все</option>
+              <option value="_unassigned">Не назначен</option>
+              {respOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </label>
+          <label className={`rf-chip ${fObject !== 'all' ? 'is-active' : ''}`}>
+            <span className="rf-chip-key">Объект:</span>
+            <select className="rf-chip-select" value={fObject} onChange={(e) => setFObject(e.target.value)}>
+              <option value="all">Все</option>
+              {objectOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </label>
+          {fActive && (
+            <button type="button" className="rf-reset" onClick={resetFilters}>✕ Сбросить</button>
+          )}
+        </div>
+      )}
+
+      <div className="reports-content">
+        {activeTab === 'tenders' && !deptData && (
+          <>
+            {/* KPI по тендерам */}
+            <div className="kpi-grid kpi-grid--5">
+              <div className="kpi-card kpi-card--ico">
+                <span className="kpi-ico kpi-ico--blue" aria-hidden>🏗️</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">Всего тендеров</div>
+                  <div className="kpi-value">{tStats.total}</div>
+                </div>
+              </div>
+              <div className="kpi-card kpi-card--ico">
+                <span className="kpi-ico kpi-ico--cyan" aria-hidden>⏳</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">В работе</div>
+                  <div className="kpi-value accent-info">{tStats.open}</div>
+                  <div className="kpi-foot">{pct(tStats.open, tStats.total)}% от всех</div>
+                </div>
+              </div>
+              <div className="kpi-card kpi-card--ico kpi-card--success">
+                <span className="kpi-ico kpi-ico--green" aria-hidden>✓</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">Завершено</div>
+                  <div className="kpi-value accent-success">{tStats.closed}</div>
+                  <div className="kpi-foot">{pct(tStats.closed, tStats.total)}% завершения</div>
+                </div>
+              </div>
+              <div className={`kpi-card kpi-card--ico ${tStats.unassigned > 0 ? 'kpi-card--warn' : ''}`}>
+                <span className="kpi-ico kpi-ico--amber" aria-hidden>👤</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">Без ответственного</div>
+                  <div className={`kpi-value ${tStats.unassigned > 0 ? 'accent-warn' : ''}`}>{tStats.unassigned}</div>
+                  <div className="kpi-foot">требуют назначения</div>
+                </div>
+              </div>
+              <div className={`kpi-card kpi-card--ico ${tStats.overdue > 0 ? 'kpi-card--danger' : ''}`}>
+                <span className="kpi-ico kpi-ico--red" aria-hidden>⚠️</span>
+                <div className="kpi-body">
+                  <div className="kpi-label">Просроченные</div>
+                  <div className={`kpi-value ${tStats.overdue > 0 ? 'accent-danger' : ''}`}>{tStats.overdue}</div>
+                  <div className="kpi-foot">срок процедуры прошёл</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Dashboard: статусы + динамика + требует внимания */}
+            <div className="dash-grid">
+              <section className="dash-card">
+                <header className="dash-card-head"><h3>Статусы тендеров</h3></header>
+                <StatusDonut
+                  total={tStats.total}
+                  segments={[
+                    { label: 'В работе', value: tStats.open, color: '#2563eb' },
+                    { label: 'Завершено', value: tStats.closed, color: '#16a34a' },
+                    { label: 'Не начато', value: tStats.notStarted, color: '#94a3b8' },
+                  ]}
+                />
+              </section>
+
+              <section className="dash-card">
+                <header className="dash-card-head">
+                  <h3>Динамика тендеров</h3>
+                  <span className="dash-card-meta">создано / в работе / завершено · {fPeriod === 'all' ? 'последние 12 мес.' : `${fPeriod} мес.`}</span>
+                </header>
+                <BarChart
+                  data={tStats.dynamics}
+                  series={[
+                    { key: 'total', label: 'Создано', color: '#2563eb' },
+                    { key: 'inWork', label: 'В работе', color: '#f59e0b' },
+                    { key: 'closed', label: 'Завершено', color: '#16a34a' },
+                  ]}
+                />
+              </section>
+
+              <section className="dash-card dash-card--attention">
+                <header className="dash-card-head"><h3>Требует внимания</h3></header>
+                <div className="attn-list">
+                  <AttentionItem icon="👤" tone="warn" label="Без ответственного" value={tStats.unassigned}
+                    hint="назначьте ответственного" onClick={() => setFResp('_unassigned')} />
+                  <AttentionItem icon="⚠️" tone="danger" label="Просроченные" value={tStats.overdue}
+                    hint="срок процедуры прошёл" />
+                  <AttentionItem icon="🕓" tone="muted" label="Не начато" value={tStats.notStarted}
+                    hint="ожидают старта процедуры" />
+                </div>
+              </section>
+            </div>
+
+            {/* Компактная summary-таблица по отделам (только реальные отделы) */}
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По отделам</h3>
+                <span className="section-meta">нажмите строку для деталей</span>
+              </header>
+              <table className="dense-table dept-table">
+                <thead>
+                  <tr>
+                    <th>Отдел</th>
+                    <th className="num">Всего</th>
+                    <th className="num">В работе</th>
+                    <th className="num">Завершено</th>
+                    <th className="bar-col">Завершение</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { view: 'construction', icon: '🏗️', name: 'Основное строительство', data: tStats.byDept.main_construction, show: fDept === 'all' || fDept === 'main_construction' },
+                    { view: 'warranty', icon: '🛡️', name: 'Гарантийный отдел', data: tStats.byDept.warranty_service, show: fDept === 'all' || fDept === 'warranty_service' },
+                  ].filter(d => d.show).map(d => (
+                    <tr key={d.view} className="dept-row" onClick={() => setTDeptView(d.view)}
+                      role="button" tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTDeptView(d.view) } }}>
+                      <td>
+                        <span className="dept-row-name"><span className="dept-row-ico" aria-hidden>{d.icon}</span>{d.name}</span>
+                      </td>
+                      <td className="num strong">{d.data.total}</td>
+                      <td className="num">{d.data.open}</td>
+                      <td className="num accent-success">{d.data.closed}</td>
+                      <td className="bar-col"><ProgressBar value={d.data.closed} total={d.data.total} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="report-section">
+              {(() => {
+                const realResp = tStats.byResponsible.filter(r => r.id !== '_unassigned')
+                return (
+                  <>
+                    <header className="section-head">
+                      <h3>По ответственным</h3>
+                      <span className="section-meta">{realResp.length}</span>
+                    </header>
+                    {tStats.unassigned > 0 && (
+                      <div className="resp-warning">
+                        <span aria-hidden>⚠️</span>
+                        <span><strong>{tStats.unassigned}</strong> тендеров без ответственного — требуют назначения</span>
+                      </div>
+                    )}
+                    {realResp.length === 0 ? (
+                      <div className="section-empty">Нет назначенных ответственных за период</div>
+                    ) : (
+                      <ResponsibleTable rows={realResp} />
+                    )}
+                  </>
+                )
+              })()}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'tenders' && deptData && (
+          <>
+            <div className="reports-breadcrumb">
+              <button className="reports-back" onClick={() => setTDeptView(null)}>
+                ← Все отделы
+              </button>
+              <span className="reports-breadcrumb-sep">·</span>
+              <span className="reports-breadcrumb-current">
+                <span aria-hidden style={{ marginRight: '0.375rem' }}>{deptData.icon}</span>
+                {deptData.title}
+              </span>
+            </div>
+
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">Всего</div>
+                <div className="kpi-value">{deptData.total}</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">В работе</div>
+                <div className="kpi-value">{deptData.open}</div>
+                <div className="kpi-foot">{pct(deptData.open, deptData.total)}% от всех</div>
+              </div>
+              <div className="kpi-card kpi-card--success">
+                <div className="kpi-label">Завершено</div>
+                <div className="kpi-value accent-success">{deptData.closed}</div>
+                <div className="kpi-foot">{pct(deptData.closed, deptData.total)}% завершения</div>
+              </div>
+              <div className={`kpi-card ${deptData.unassigned > 0 ? 'kpi-card--warn' : ''}`}>
+                <div className="kpi-label">Без ответственного</div>
+                <div className={`kpi-value ${deptData.unassigned > 0 ? 'accent-warn' : ''}`}>{deptData.unassigned}</div>
+                <div className="kpi-foot">требуют назначения</div>
+              </div>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По ответственным</h3>
+                <span className="section-meta">{deptData.byResp.length}</span>
+              </header>
+              {deptData.byResp.length === 0 ? (
+                <div className="section-empty">В этом отделе тендеров нет</div>
+              ) : (
+                <ResponsibleTable rows={deptData.byResp} />
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'winners' && (
+          <>
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">Завершённых тендеров с победителем</div>
+                <div className="kpi-value">{s.winners.total}</div>
+              </div>
+              <div className="kpi-card kpi-card--success">
+                <div className="kpi-label">Уникальных победителей</div>
+                <div className="kpi-value accent-success">{s.winners.unique}</div>
+                <div className="kpi-foot">подрядчиков-победителей</div>
+              </div>
+              <div className="kpi-card kpi-card-wide">
+                <div className="kpi-label">Сумма заключённых договоров</div>
+                <div className="kpi-value" title={s.winners.anyForeign ? RATE_NOTE : undefined}>
+                  {s.winners.anyForeign ? `≈ ${fmtMoney(s.winners.totalAmount)}` : fmtMoney(s.winners.totalAmount)}
+                </div>
+                <div className="kpi-foot">
+                  по победителям тендеров{s.winners.anyForeign ? ' · валюта пересчитана ориентировочно' : ''}
+                </div>
+              </div>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>Рейтинг победителей</h3>
+                <span className="section-meta">{s.winners.rows.length}</span>
+              </header>
+              {s.winners.rows.length === 0 ? (
+                <div className="section-empty">Победителей пока нет. Назначьте победителя у завершённого тендера.</div>
+              ) : (
+                <WinnersTable rows={s.winners.rows} fmtMoney={fmtMoney} />
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'materials' && (
+          <>
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">Всего тендеров</div>
+                <div className="kpi-value">{s.mat.total}</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">Не начато</div>
+                <div className="kpi-value">{s.mat.notStarted}</div>
+                <div className="kpi-foot">{pct(s.mat.notStarted, s.mat.total)}%</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">В работе</div>
+                <div className="kpi-value accent-warn">{s.mat.inWork}</div>
+                <div className="kpi-foot">{pct(s.mat.inWork, s.mat.total)}%</div>
+              </div>
+              <div className="kpi-card kpi-card--success">
+                <div className="kpi-label">Завершено</div>
+                <div className="kpi-value accent-success">{s.mat.closed}</div>
+                <div className="kpi-foot">{pct(s.mat.closed, s.mat.total)}% завершения</div>
+              </div>
+              <div className={`kpi-card ${s.mat.overdue > 0 ? 'kpi-card--danger' : ''}`}>
+                <div className="kpi-label">Просрочено (КП)</div>
+                <div className={`kpi-value ${s.mat.overdue > 0 ? 'accent-danger' : ''}`}>{s.mat.overdue}</div>
+                <div className="kpi-foot">срок предоставления КП прошёл</div>
+              </div>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По ответственным</h3>
+                <span className="section-meta">{s.mat.byResp.length}</span>
+              </header>
+              {s.mat.byResp.length === 0 ? (
+                <div className="section-empty">Тендеров на материалы пока нет</div>
+              ) : (
+                <ResponsibleTable rows={s.mat.byResp} />
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'cost_plans' && (
+          <>
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">Всего тендеров</div>
+                <div className="kpi-value">{s.cp.total}</div>
+                <div className="kpi-foot">только основное строительство</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">Не начато</div>
+                <div className="kpi-value">{s.cp.notStarted}</div>
+                <div className="kpi-foot">{pct(s.cp.notStarted, s.cp.total)}%</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">В работе</div>
+                <div className="kpi-value accent-warn">{s.cp.inProgress}</div>
+                <div className="kpi-foot">{pct(s.cp.inProgress, s.cp.total)}%</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">Ожидание КП</div>
+                <div className="kpi-value">{s.cp.awaitingKp ?? 0}</div>
+                <div className="kpi-foot">{pct(s.cp.awaitingKp ?? 0, s.cp.total)}%</div>
+              </div>
+              <div className="kpi-card kpi-card--success">
+                <div className="kpi-label">Завершено</div>
+                <div className="kpi-value accent-success">{s.cp.completed}</div>
+                <div className="kpi-foot">{pct(s.cp.completed, s.cp.total)}% готовности</div>
+              </div>
+              <div className={`kpi-card ${s.cp.overdue > 0 ? 'kpi-card--danger' : ''}`}>
+                <div className="kpi-label">Просрочено</div>
+                <div className={`kpi-value ${s.cp.overdue > 0 ? 'accent-danger' : ''}`}>{s.cp.overdue}</div>
+                <div className="kpi-foot">срок плана прошёл</div>
+              </div>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По ответственным за план затрат</h3>
+                <span className="section-meta">{s.cp.byResp.length}</span>
+              </header>
+              {s.cp.byResp.length === 0 ? (
+                <div className="section-empty">Тендеров основного строительства пока нет</div>
+              ) : (
+                <ResponsibleTable rows={s.cp.byResp} />
+              )}
+            </section>
+          </>
+        )}
+
+        {activeTab === 'vors' && (() => {
+          const v = s.vor[vorScope]
+          const scopeLabel = vorScope === 'joint' ? 'совместные тендеры' : 'основное строительство'
+          return (
+          <>
+            {/* Направление — как переключатель на странице «ВОРы и РД» */}
+            <div className="reports-filters">
+              {[['construction', 'Основное строительство'], ['joint', 'Совместные тендеры']].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`rf-chip rf-chip-btn ${vorScope === key ? 'is-active' : ''}`}
+                  onClick={() => setVorScope(key)}
+                  aria-pressed={vorScope === key}
+                >
+                  {label}
+                  <span className="rf-chip-count">{s.vor[key].total}</span>
+                </button>
+              ))}
+            </div>
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">Всего ВОРов</div>
+                <div className="kpi-value">{v.total}</div>
+                <div className="kpi-foot">{scopeLabel}{v.requests > 0 ? `, из них заявок без тендера: ${v.requests}` : ''}</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">Не начато</div>
+                <div className="kpi-value">{v.notStarted}</div>
+                <div className="kpi-foot">{pct(v.notStarted, v.total)}%</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">В работе</div>
+                <div className="kpi-value accent-warn">{v.inProgress}</div>
+                <div className="kpi-foot">{pct(v.inProgress, v.total)}%</div>
+              </div>
+              <div className="kpi-card kpi-card--success">
+                <div className="kpi-label">Завершено</div>
+                <div className="kpi-value accent-success">{v.completed}</div>
+                <div className="kpi-foot">{pct(v.completed, v.total)}% готовности</div>
+              </div>
+              <div className={`kpi-card ${v.overdue > 0 ? 'kpi-card--danger' : ''}`}>
+                <div className="kpi-label">Просрочено</div>
+                <div className={`kpi-value ${v.overdue > 0 ? 'accent-danger' : ''}`}>{v.overdue}</div>
+                <div className="kpi-foot">срок ВОР прошёл</div>
+              </div>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По ответственным за ВОР</h3>
+                <span className="section-meta">{v.byResp.length}</span>
+              </header>
+              {v.byResp.length === 0 ? (
+                <div className="section-empty">{vorScope === 'joint' ? 'Совместных тендеров и заявок пока нет' : 'Тендеров основного строительства пока нет'}</div>
+              ) : (
+                <ResponsibleTable rows={v.byResp} />
+              )}
+            </section>
+          </>
+          )
+        })()}
+
+        {activeTab === 'contracts' && (
+          <>
+            {/* Заголовок сводки: числовые KPI + наглядная структура по статусам */}
+            <div className="contracts-overview">
+              <div className="kpi-grid contracts-kpi">
+                <div className="kpi-card kpi-card--ico">
+                  <div className="kpi-label">Всего договоров</div>
+                  <div className="kpi-value">{s.cTotal}</div>
+                  <div className="kpi-foot">на {s.cByObject.length} объект(ах)</div>
+                </div>
+                <div className="kpi-card kpi-card--success">
+                  <div className="kpi-label">Завершено</div>
+                  <div className="kpi-value accent-success">{s.cCompleted}</div>
+                  <div className="kpi-foot">{pct(s.cCompleted, s.cTotal)}% от всех</div>
+                </div>
+                <div className="kpi-card kpi-card-wide">
+                  <div className="kpi-label">Общая сумма договоров</div>
+                  <div className="kpi-value contracts-total-value">
+                    {cRubEntry ? fmtCur(cRubEntry.amt, 'RUB')
+                      : (cTotalEntries.length ? fmtCur(cTotalEntries[0].amt, cTotalEntries[0].cur) : '0 ₽')}
+                  </div>
+                  {cForeignEntries.length > 0 && (
+                    <div className="contracts-total-extra">
+                      {cForeignEntries.map((e) => (
+                        <span key={e.cur}>
+                          {fmtCur(e.amt, e.cur)}
+                          <span className="approx-rub" title={RATE_NOTE}> ≈ {fmtInt(toRub(e.amt, e.cur))} ₽</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {cForeignEntries.length > 0 && (
+                    <div className="contracts-total-grand" title={RATE_NOTE}>
+                      ≈ {fmtInt(cGrandRub)} ₽ — итого в рублях
+                    </div>
+                  )}
+                  <div className="kpi-foot">в т.ч. завершённые: {cCompletedText}</div>
+                </div>
+              </div>
+
+              <section className="report-section contracts-donut-section">
+                <header className="section-head"><h3>Структура по статусам</h3></header>
+                <StatusDonut
+                  total={s.cTotal}
+                  segments={[
+                    { label: 'Новая заявка', value: s.cNew, color: '#64748b' },
+                    { label: 'В работе', value: s.cInWork, color: '#f59e0b' },
+                    { label: 'Приостановка', value: s.cPaused, color: '#ef4444' },
+                    { label: 'Завершено', value: s.cCompleted, color: '#22c55e' },
+                  ]}
+                />
+              </section>
+            </div>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По ответственным юристам</h3>
+                <span className="section-meta">в работе: {s.cInWork}</span>
+              </header>
+              <table className="dense-table">
+                <thead>
+                  <tr>
+                    <th className="num" style={{ width: '40px' }}>#</th>
+                    <th>Юрист</th>
+                    <th className="num">Новая заявка</th>
+                    <th className="num">В работе</th>
+                    <th className="num">Приостановка</th>
+                    <th className="num">Завершено</th>
+                    <th className="num">Всего</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.cByLawyer.length === 0 ? (
+                    <tr><td colSpan="7" className="muted">Договоров нет</td></tr>
+                  ) : (
+                    s.cByLawyer.map((l, idx) => (
+                      <tr key={l.id} className={l.id === '_unassigned' ? 'row-muted' : ''}>
+                        <td className="num muted">{l.id === '_unassigned' ? '—' : idx + 1}</td>
+                        <td>{l.name}</td>
+                        <td className="num">{l.cNew || '—'}</td>
+                        <td className="num strong accent-warn">{l.inWork || '—'}</td>
+                        <td className="num">{l.paused || '—'}</td>
+                        <td className="num">{l.completed || '—'}</td>
+                        <td className="num strong">{l.total}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="report-section">
+              <header className="section-head">
+                <h3>По объектам</h3>
+                <span className="section-meta">{s.cByObject.length} объект(ов)</span>
+              </header>
+              <table className="dense-table">
+                <thead>
+                  <tr>
+                    <th>Объект</th>
+                    <th className="num">Новая заявка</th>
+                    <th className="num">В работе</th>
+                    <th className="num">Приостановка</th>
+                    <th className="num">Завершено</th>
+                    <th className="num">Всего</th>
+                    <th className="money-col">Сумма</th>
+                    <th className="bar-col">Готовность</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.cByObject.length === 0 ? (
+                    <tr><td colSpan="8" className="muted">Договоров нет</td></tr>
+                  ) : (
+                    s.cByObject.map(o => (
+                      <tr key={o.objectId}>
+                        <td>{o.name}</td>
+                        <td className="num">{o.cNew || '—'}</td>
+                        <td className="num">{o.inWork || '—'}</td>
+                        <td className="num">{o.paused || '—'}</td>
+                        <td className="num">{o.completed || '—'}</td>
+                        <td className="num strong">{o.total}</td>
+                        <td className="money-col"><MoneyCell map={o.amountByCur} /></td>
+                        <td className="bar-col">
+                          <ProgressBar value={o.completed} total={o.total} />
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                {s.cByObject.length > 0 && (
+                  <tfoot>
+                    <tr className="dense-total-row">
+                      <td>Итого</td>
+                      <td className="num">{s.cNew || '—'}</td>
+                      <td className="num">{s.cInWork || '—'}</td>
+                      <td className="num">{s.cPaused || '—'}</td>
+                      <td className="num">{s.cCompleted || '—'}</td>
+                      <td className="num strong">{s.cTotal}</td>
+                      <td className="money-col" title={RATE_NOTE}>≈ {fmtInt(cGrandRub)} ₽</td>
+                      <td className="bar-col">
+                        <ProgressBar value={s.cCompleted} total={s.cTotal} />
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </section>
+          </>
+        )}
+
+        {/* Ежедневная работа инженеров в тендерах — считается по журналу изменений,
+            поэтому вкладка грузит свои данные сама и не зависит от fetchStats.
+            Проверку isSuperAdmin дублируем здесь: скрытой вкладки мало, содержимое
+            не должно отрисоваться, даже если activeTab окажется 'activity'. */}
+        {activeTab === 'activity' && isSuperAdmin && (
+          <EngineersActivity scopedObjectIds={scopedObjectIds} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// task: donut статусов на чистом SVG (без зависимостей). segments суммируются в total.
+function StatusDonut({ total, segments }) {
+  const sum = segments.reduce((a, seg) => a + seg.value, 0) || 1
+  const R = 54
+  const C = 2 * Math.PI * R
+  let offset = 0
+  return (
+    <div className="donut-wrap">
+      <svg viewBox="0 0 140 140" className="donut-svg" role="img" aria-label="Статусы тендеров">
+        <circle cx="70" cy="70" r={R} fill="none" stroke="var(--border-color)" strokeWidth="18" opacity="0.3" />
+        {segments.filter(seg => seg.value > 0).map((seg, i) => {
+          const len = (seg.value / sum) * C
+          const el = (
+            <circle key={i} cx="70" cy="70" r={R} fill="none" stroke={seg.color} strokeWidth="18"
+              strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset}
+              transform="rotate(-90 70 70)" />
+          )
+          offset += len
+          return el
+        })}
+        <text x="70" y="66" textAnchor="middle" className="donut-num">{total}</text>
+        <text x="70" y="86" textAnchor="middle" className="donut-cap">Всего</text>
+      </svg>
+      <ul className="donut-legend">
+        {segments.map((seg, i) => (
+          <li key={i}>
+            <span className="legend-dot" style={{ background: seg.color }} />
+            <span className="legend-label">{seg.label}</span>
+            <span className="legend-val">{seg.value}</span>
+            <span className="legend-pct">{Math.round((seg.value / sum) * 100)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// task: grouped bar chart динамики на чистом SVG (без зависимостей).
+// data — [{label,total,inWork,closed}]; series — [{key,label,color}].
+function BarChart({ data, series }) {
+  const W = 520, H = 190
+  const pad = { l: 24, r: 10, t: 22, b: 22 }
+  const iw = W - pad.l - pad.r
+  const ih = H - pad.t - pad.b
+  const max = Math.max(1, ...data.flatMap(d => series.map(se => d[se.key])))
+  const n = data.length || 1
+  const groupW = iw / n
+  const barGap = 3
+  const barW = Math.max(4, (groupW * 0.66 - barGap * (series.length - 1)) / series.length)
+  const y = (v) => pad.t + (1 - v / max) * ih
+  return (
+    <div className="bars-wrap">
+      <svg viewBox={`0 0 ${W} ${H}`} className="bars-svg" role="img" aria-label="Динамика тендеров">
+        {[0, 0.5, 1].map((g) => {
+          const yy = pad.t + g * ih
+          return <line key={g} x1={pad.l} x2={W - pad.r} y1={yy} y2={yy} stroke="var(--border-color)" strokeWidth="1" opacity="0.45" />
+        })}
+        {data.map((d, i) => {
+          const gx = pad.l + i * groupW + (groupW - (barW * series.length + barGap * (series.length - 1))) / 2
+          return (
+            <g key={i}>
+              {series.map((se, j) => {
+                const v = d[se.key]
+                const bx = gx + j * (barW + barGap)
+                const by = y(v)
+                return (
+                  <g key={se.key}>
+                    <rect x={bx} y={by} width={barW} height={Math.max(0, pad.t + ih - by)} rx="2" fill={se.color} />
+                    {v > 0 && <text x={bx + barW / 2} y={by - 3} textAnchor="middle" className="bar-val" fill={se.color}>{v}</text>}
+                  </g>
+                )
+              })}
+              <text x={pad.l + i * groupW + groupW / 2} y={H - 6} textAnchor="middle" className="bar-x">{d.label}</text>
+            </g>
+          )
+        })}
+      </svg>
+      <ul className="bars-legend">
+        {series.map(se => (
+          <li key={se.key}><span className="legend-dot" style={{ background: se.color }} />{se.label}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// task: action-item «требует внимания» — кликабельный (применяет фильтр) с шевроном.
+function AttentionItem({ icon, tone, label, value, hint, onClick }) {
+  return (
+    <button type="button" className={`attn-item attn-item--${tone}${onClick ? ' is-clickable' : ''}`}
+      onClick={onClick} disabled={!onClick}>
+      <span className="attn-ico" aria-hidden>{icon}</span>
+      <div className="attn-body">
+        <div className="attn-label">{label}</div>
+        <div className="attn-hint">{hint}</div>
+      </div>
+      <div className="attn-val">{value}</div>
+      {onClick && <span className="attn-chev" aria-hidden>›</span>}
+    </button>
+  )
+}
+
+function ResponsibleTable({ rows }) {
+  return (
+    <table className="dense-table">
+      <thead>
+        <tr>
+          <th className="num" style={{ width: '40px' }}>#</th>
+          <th>Ответственный</th>
+          <th className="num">В работе</th>
+          <th className="num">Завершено</th>
+          <th className="num">Всего</th>
+          <th className="bar-col">Завершение</th>
+        </tr>
+      </thead>
+      <tbody>
+        {/* «Не назначен» исключаем из таблицы сотрудников — он показан плашкой выше. */}
+        {rows.filter(r => r.id !== '_unassigned').map((r, idx) => (
+          <tr key={r.id}>
+            <td className="num muted">{idx + 1}</td>
+            <td>{r.name}</td>
+            <td className="num">{r.inWork}</td>
+            <td className="num">{r.completed}</td>
+            <td className="num strong">{r.total}</td>
+            <td className="bar-col">
+              <ProgressBar value={r.completed} total={r.total} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function WinnersTable({ rows, fmtMoney }) {
+  const maxWins = Math.max(...rows.map(r => r.wins), 1)
+  return (
+    <table className="dense-table">
+      <thead>
+        <tr>
+          <th style={{ width: '44px' }} className="num">#</th>
+          <th>Контрагент</th>
+          <th className="num">Побед</th>
+          <th className="num">Стр-во</th>
+          <th className="num">Гарантия</th>
+          <th className="num">Договоров</th>
+          <th className="num">Сумма</th>
+          <th className="bar-col">Доля побед</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, idx) => (
+          <tr key={r.id}>
+            <td className="num" style={{ fontWeight: 600, color: idx < 3 ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+              {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
+            </td>
+            <td style={{ fontWeight: 500 }}>{r.name}</td>
+            <td className="num strong">{r.wins}</td>
+            <td className="num">{r.winsConst || '—'}</td>
+            <td className="num">{r.winsWar || '—'}</td>
+            <td className="num">{r.signedContracts || '—'}</td>
+            <td
+              className="num"
+              title={r.hasForeign
+                ? `${RATE_NOTE}
+` + currencyEntries(r.signedByCur).map((e) => fmtCur(e.amt, e.cur)).join(' · ')
+                : undefined}
+            >
+              {r.signedAmountRub > 0
+                ? (r.hasForeign ? `≈ ${fmtMoney(r.signedAmountRub)}` : fmtMoney(r.signedAmountRub))
+                : '—'}
+            </td>
+            <td className="bar-col">
+              <ProgressBar value={r.wins} total={maxWins} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function ProgressBar({ value, total }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0
+  return (
+    <div className="bar-with-pct">
+      <div className="bar-track">
+        <div className="bar-fill" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="bar-pct">{pct}%</span>
+    </div>
+  )
+}
+
+export default ReportsPage

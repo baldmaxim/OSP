@@ -1,0 +1,275 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   ПЛОТНОСТЬ РЕЕСТРА ТЕНДЕРОВ
+
+   На 1920×1080 при 100% строка тендера занимала до 240px: описание работ в семь
+   строк, под ним три плашки столбиком («Указать путь», «Публикация в ТГ»,
+   «Письмо о завершении»), у объекта — адрес и кнопка «Месторасположение».
+   На экран помещалось четыре тендера.
+
+   Здесь — та же логика, что в реестре договоров (ContractRegistryPolish.css):
+   всё на ступень мельче, описание ограничено тремя строками (полный текст в
+   подсказке и в карточке), отметки хода тендера — одной строкой мелких чипов.
+   Импортируется в TendersPage ПОСЛЕ Tenders.css; класс .tenders-registry стоит
+   только на основной таблице, вложенные таблицы раскрытой строки не задеты.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.tenders-page .data-table.tenders-registry {
+  font-size: 0.75rem;
+}
+.tenders-page .tenders-registry > thead > tr > th {
+  padding: 0.5rem 0.55rem;
+  font-size: 0.6875rem;
+  line-height: 1.25;
+}
+.tenders-page .tenders-registry > tbody > tr > td {
+  padding: 0.5rem 0.55rem;
+  line-height: 1.35;
+  vertical-align: top;
+}
+
+/* Объект: название, адрес мельче, «Месторасположение» — тихая ссылка, а не
+   кнопка в рамке. */
+.tenders-page .tenders-registry .row-link.primary { font-size: 0.75rem; }
+.tenders-page .tenders-registry > tbody > tr > td > div > div[style] { font-size: 0.6875rem !important; }
+.tenders-page .tenders-registry .yandex-map-link {
+  gap: 0.25rem;
+  margin-top: 0.1rem;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+}
+.tenders-page .tenders-registry .yandex-map-link:hover {
+  background: none;
+  color: var(--primary-color);
+}
+
+/* Описание работ — три строки. Кламп на самой ссылке (она блочная), а не на
+   <td>: display:-webkit-box на ячейке выбивает её из table-cell. */
+/* Ширина колонки задаётся явно. Ссылка в режиме -webkit-box (кламп) для
+   автоматической раскладки таблицы «весит» как вся фраза в одну строку, и без
+   ширины колонка растягивалась под самое длинное описание — таблица переставала
+   помещаться. В компактном виде колонок меньше, там описание забирает остаток. */
+.tenders-page .tenders-registry:not(.data-table--compact) > tbody > tr > td.tender-desc-cell {
+  width: 230px;
+  min-width: 180px;
+  max-width: 230px;
+}
+.tenders-page .tenders-registry .tender-desc-link {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* Путь к папке и отметки — мелкими подписями без рамок. */
+.tenders-page .tenders-registry .fpath,
+.tenders-page .tenders-registry .fpath-add {
+  margin-top: 0.25rem;
+  padding: 0.05rem 0;
+  border: none;
+  background: none;
+  font-size: 0.625rem;
+}
+.tenders-page .tenders-registry .fpath-text { font-size: 0.625rem; }
+.tenders-page .tenders-registry .fpath-icon { width: 18px; height: 18px; }
+.tenders-page .tenders-registry .fpath-add > svg,
+.tenders-page .tenders-registry .fpath > svg { width: 11px; height: 11px; }
+
+.tenders-page .tenders-registry .tender-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+.tenders-page .tenders-registry .tgpub {
+  margin-top: 0;
+  gap: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 5px;
+  font-size: 0.625rem;
+  font-weight: 500;
+}
+.tenders-page .tenders-registry .tgpub svg { width: 11px; height: 11px; }
+/* «Проверка РД» под тендерным пакетом. */
+.tenders-page .tenders-registry .tender-rd-check { margin-top: 0.3rem; }
+
+/* Счётчик КП и стрелка раскрытия. */
+.tenders-page .tenders-registry .expand-toggle { width: 20px; height: 20px; }
+.tenders-page .tenders-registry .kp-counter { padding: 0 0.35rem; font-size: 0.625rem; }
+
+/* Статус, срок, ответственный. */
+.tenders-page .tenders-registry .status-dropdown-trigger {
+  padding: 0.2rem 0.35rem 0.2rem 0.4rem;
+  font-size: 0.625rem;
+}
+.tenders-page .tenders-registry .tender-period-cell { font-size: 0.75rem; }
+.tenders-page .tenders-registry .responsible-display {
+  padding: 0.1rem 0.25rem;
+  font-size: 0.75rem;
+}
+
+/* Этапы (ВОР, пакет, план затрат, материалы, сводная КП). */
+.tenders-page .tenders-registry .phase-cell { gap: 0.1rem; }
+.tenders-page .tenders-registry .phase-done,
+.tenders-page .tenders-registry .phase-warn,
+.tenders-page .tenders-registry .phase-pending,
+.tenders-page .tenders-registry .phase-progress,
+.tenders-page .tenders-registry .phase-awaiting {
+  padding: 0 0.35rem;
+  font-size: 0.625rem;
+}
+.tenders-page .tenders-registry .link { font-size: 0.75rem; }
+
+/* Действия: иконки-эмодзи заданы инлайн 0.875rem — перекрываем. */
+.tenders-page .tenders-registry .actions-cell .btn-icon {
+  padding: 0.15rem 0.2rem;
+  font-size: 0.75rem !important;
+}
+
+/* ── Тендеры на материалы: приоритет, ответственный снабжения, просрочка ──── */
+.tenders-registry .fdrop.mat-prio-fdrop,
+.tenders-registry .fdrop.mat-resp-fdrop { display: flex; width: 100%; }
+.tenders-registry .fdrop.mat-prio-fdrop .fdrop-trigger,
+.tenders-registry .fdrop.mat-resp-fdrop .fdrop-trigger {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  padding: 0.2rem 0.3rem;
+  gap: 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  font-size: 0.75rem;
+}
+.tenders-registry .fdrop.mat-prio-fdrop:not(.is-disabled) .fdrop-trigger:hover,
+.tenders-registry .fdrop.mat-resp-fdrop:not(.is-disabled) .fdrop-trigger:hover,
+.tenders-registry .fdrop.mat-prio-fdrop.is-open .fdrop-trigger,
+.tenders-registry .fdrop.mat-resp-fdrop.is-open .fdrop-trigger {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.tenders-registry .fdrop.mat-prio-fdrop .fdrop-value,
+.tenders-registry .fdrop.mat-resp-fdrop .fdrop-value { min-width: 0; overflow: hidden; }
+.tenders-registry .fdrop.mat-prio-fdrop .fdrop-arrow,
+.tenders-registry .fdrop.mat-resp-fdrop .fdrop-arrow { opacity: 0; transition: opacity 0.12s ease; }
+.tenders-registry tbody tr:hover .fdrop.mat-prio-fdrop .fdrop-arrow,
+.tenders-registry tbody tr:hover .fdrop.mat-resp-fdrop .fdrop-arrow { opacity: 0.5; }
+.tenders-registry .fdrop.mat-prio-fdrop.is-disabled .fdrop-arrow,
+.tenders-registry .fdrop.mat-resp-fdrop.is-disabled .fdrop-arrow { display: none; }
+.tenders-registry .fdrop.mat-prio-fdrop.is-disabled .fdrop-trigger,
+.tenders-registry .fdrop.mat-resp-fdrop.is-disabled .fdrop-trigger { cursor: default; opacity: 1; }
+
+/* Чип приоритета. Высокий — насыщенный красный, чтобы читался издалека. */
+.mat-prio-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mat-prio-chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.mat-prio-chip.prio-low { color: #475569; background: #f1f5f9; }
+.mat-prio-chip.prio-medium { color: #92400e; background: #fef3c7; }
+.mat-prio-chip.prio-high { color: #fff; background: #dc2626; }
+.mat-prio-chip.prio-high::before { background: #fff; }
+[data-theme='dark'] .mat-prio-chip.prio-low { color: #cbd5e1; background: #334155; }
+[data-theme='dark'] .mat-prio-chip.prio-medium { color: #fcd34d; background: rgba(245, 158, 11, 0.18); }
+
+/* Высокий приоритет — красная полоса слева у всей строки. */
+.tenders-registry tr.mat-prio-high-row > td:first-child {
+  box-shadow: inset 4px 0 0 #dc2626;
+  color: #dc2626 !important;
+}
+
+.mat-person { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.mat-avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  color: var(--primary-color);
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+.mat-person-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.mat-muted { color: var(--text-tertiary); font-style: italic; }
+.mat-note { margin-top: 0.15rem; font-size: 0.625rem; color: var(--text-tertiary); }
+.mat-note.is-warn { color: #b45309; }
+
+/* Срок КП на материалы истёк. */
+.mat-overdue-note {
+  margin-top: 0.2rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: #dc2626;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+[data-theme='dark'] .mat-overdue-note { color: #f87171; }
+
+.fdrop-panel .mat-person,
+.fdrop-panel .mat-prio-chip { font-size: 0.8125rem; }
+
+/* Столбец «ВОРы и РД»: срок подготовки ВОР под статусом */
+.vor-phase-dates {
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.vor-phase-dates.is-overdue { color: #dc2626; font-weight: 600; }
+[data-theme='dark'] .vor-phase-dates.is-overdue { color: #fca5a5; }
+
+/* Тендеры на материалы: ответственный по основному тендеру */
+.mat-main-resp { font-size: 0.75rem; color: var(--text-primary); white-space: nowrap; }
+
+/* Тендеры на материалы: примечание в строке */
+.mat-notes-view { display: flex; align-items: flex-start; gap: 0.35rem; min-width: 0; }
+.mat-notes-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.mat-notes-view > .mat-muted { flex: 1 1 auto; }
+.mat-notes-tools { flex: 0 0 auto; display: inline-flex; gap: 0.15rem; opacity: 0.55; transition: opacity 0.12s ease; }
+tr:hover .mat-notes-tools { opacity: 1; }
+.mat-notes-cell .tc-notes-textarea { min-height: 72px; font-size: 0.75rem; }
+
+/* Тендеры на материалы: сроки тендерных процедур основного тендера */
+.mat-proc-dates .drc { align-items: center; }

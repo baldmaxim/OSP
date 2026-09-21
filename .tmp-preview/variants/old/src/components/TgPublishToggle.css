@@ -1,0 +1,48 @@
+/* Галочка «Публикация в ТГ» под описанием работ в строке тендера */
+.tgpub {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+  background: none;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.tgpub svg { flex-shrink: 0; }
+.tgpub > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Опубликовано — «горит» приятным зелёным (изумруд) */
+.tgpub.is-pub {
+  color: #047857;
+  background: color-mix(in srgb, #10b981 12%, transparent);
+  border-color: color-mix(in srgb, #10b981 35%, transparent);
+}
+.tgpub.is-pub:hover { background: color-mix(in srgb, #10b981 20%, transparent); }
+[data-theme='dark'] .tgpub.is-pub { color: #6ee7b7; }
+
+/* Не опубликовано — нейтральная «галочка-напоминание» */
+.tgpub.is-unpub {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+}
+.tgpub.is-unpub:hover {
+  color: #047857;
+  border-color: color-mix(in srgb, #10b981 40%, transparent);
+}
+
+/* Только для чтения — без интерактивности */
+.tgpub.is-readonly { cursor: default; }
+.tgpub.is-readonly:hover { color: inherit; background: none; }
+.tgpub.is-unpub.is-readonly { background: none; border-color: transparent; color: var(--text-tertiary); }

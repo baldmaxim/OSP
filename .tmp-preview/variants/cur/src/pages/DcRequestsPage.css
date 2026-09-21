@@ -1,0 +1,3033 @@
+/* DcRequestsPage — реестр «Заявок на ДС» (task 306).
+   Базовые стили (registry-header, modal-*, btn-*, form-grid) подтягиваем из
+   ContractRegistry.css; ниже только специфика. */
+
+.dc-requests-page {
+  padding: 1rem;
+}
+
+/* Иконка раздела в шапке — та же плитка, что у пунктов бокового меню. */
+.dc-requests-page .registry-header h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.dcr-title-icon { width: 26px; height: 26px; }
+
+/* Признаки заявки бейджами под контрагентом (миграция 20260824): тип ДС и
+   результат сверки с договором. Отдельных колонок не заводим — таблица и так
+   плотная. */
+.dcr-tag {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.dstype-rd  { color: #1e40af; background: #dbeafe; border-color: #93c5fd; }
+.dstype-in  { color: #166534; background: #dcfce7; border-color: #86efac; }
+.dstype-out { color: #9a3412; background: #ffedd5; border-color: #fdba74; }
+.check-matches     { color: #166534; background: #dcfce7; border-color: #86efac; }
+.check-not-matches { color: #991b1b; background: #fee2e2; border-color: #fca5a5; }
+.check-not-checked { color: var(--text-tertiary); background: var(--bg-tertiary); border-color: var(--border-color); }
+
+/* Новый первый этап (миграция 20260823) — тёплый янтарный: заявка ещё не в
+   работе, её сверяют с договором. Отличается от синего «В работе». */
+.status-contract-check {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.status-check-result {
+  background-color: #ede9fe;
+  color: #5b21b6;
+  border: 1px solid #c4b5fd;
+}
+
+/* Отчёт по документам — тот же каркас, что у итоговых документов, но в
+   фиолетовой гамме этапа «Итог проверки», чтобы блоки не путали. */
+.dcr-report-docs.has-final {
+  border-color: rgba(124, 58, 237, 0.40);
+  background: rgba(124, 58, 237, 0.07);
+}
+.dcr-report-docs.has-final .dcr-final-docs-title,
+.dcr-report-docs.has-final .dcr-doc-add-final {
+  color: #6d28d9;
+}
+.dcr-report-docs.has-final .dcr-doc-add-final {
+  border-color: rgba(124, 58, 237, 0.45);
+}
+.dcr-report-docs .dcr-final-docs-count {
+  background: rgba(124, 58, 237, 0.85);
+}
+[data-theme='dark'] .dcr-report-docs.has-final {
+  border-color: rgba(167, 139, 250, 0.40);
+  background: rgba(167, 139, 250, 0.10);
+}
+[data-theme='dark'] .dcr-report-docs.has-final .dcr-final-docs-title,
+[data-theme='dark'] .dcr-report-docs.has-final .dcr-doc-add-final {
+  color: #c4b5fd;
+}
+
+/* Компактная шапка вместо «коробки» из ContractRegistry.css (task 315). */
+.dc-requests-page .registry-header {
+  padding: 0.625rem 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0.75rem;
+}
+
+.dc-requests-page .registry-header h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+/* task 324: блок действий справа в шапке — ссылка на общую таблицу + «+ Добавить заявку». */
+.dcr-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dcr-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.dcr-link-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: rgba(8, 145, 178, 0.06);
+}
+.dcr-link-btn-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.dcr-link-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.dcr-link-edit:hover {
+  border-color: var(--border-color);
+  color: var(--primary-color);
+  background: var(--bg-secondary);
+}
+
+/* ===== Компактные табы (task 309) — pill-style вместо громоздкого подчёркивания. ===== */
+.dc-requests-page .status-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0 0 0.875rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.dc-requests-page .status-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  min-height: 28px;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.dc-requests-page .status-tab:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
+.dc-requests-page .status-tab.active {
+  color: #fff;
+  background: var(--primary-color, #2563eb);
+  border-color: var(--primary-color, #2563eb);
+  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.25);
+}
+
+.dc-requests-page .status-tab.active:hover {
+  filter: brightness(1.05);
+  background: var(--primary-color, #2563eb);
+}
+
+/* Убираем подчёркивание-индикатор, унаследованное от ContractRegistry. */
+.dc-requests-page .status-tab::after {
+  display: none !important;
+}
+
+.dcr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.dcr-search {
+  flex: 1;
+  min-width: 280px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.dcr-search:focus {
+  border-color: var(--primary-color, #2563eb);
+}
+
+.dcr-count {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  padding: 0.5rem 0.875rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* Фильтры по объекту и ответственному (task 311). */
+.dcr-filter {
+  flex-shrink: 0;
+  min-width: 160px;
+  max-width: 240px;
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.dcr-filter:focus,
+.dcr-filter:hover {
+  border-color: var(--primary-color, #2563eb);
+}
+
+/* Активный фильтр (выбран не-дефолтный пункт) — синяя подложка + жирный текст. */
+.dcr-filter.is-active {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.10);
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+[data-theme='dark'] .dcr-filter.is-active {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+  border-color: #60a5fa;
+}
+
+/* Фильтры-дропдауны (множественный выбор + поиск): подгоняем под вид .dcr-filter */
+.dcr-filter-drop {
+  flex-shrink: 0;
+  min-width: 170px;
+  max-width: 240px;
+}
+.dcr-filter-drop .fdrop { width: 100%; }
+.dcr-filter-drop .fdrop-trigger {
+  width: 100%;
+  max-width: none;
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+.dcr-filter-drop .fdrop-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dcr-filter-drop.is-active .fdrop-trigger {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.10);
+  color: #1d4ed8;
+  font-weight: 600;
+}
+[data-theme='dark'] .dcr-filter-drop.is-active .fdrop-trigger {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+  border-color: #60a5fa;
+}
+
+/* Модалка истории изменений заявки */
+.dcr-history-modal {
+  width: 640px;
+  max-width: calc(100vw - 48px);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+}
+.dcr-history-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.dcr-history-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.5rem;
+}
+.dcr-history-empty {
+  padding: 1.5rem 0.5rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.dcr-history-empty p { margin: 0; font-size: 0.875rem; }
+.dcr-history-hint {
+  margin-top: 0.5rem !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.45;
+  opacity: 0.85;
+}
+.btn-icon.btn-history { color: var(--text-tertiary); }
+.btn-icon.btn-history:hover { color: var(--primary-color, #2563eb); }
+
+.dcr-filter-clear {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.dcr-filter-clear:hover {
+  background: rgba(220, 38, 38, 0.10);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.30);
+}
+
+/* Таблица заявок. */
+.dcr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  /* Фиксированная раскладка: колонки строго своих ширин (см. inline в JSX),
+     длинный текст переносится внутри ячейки — без горизонтального скролла. */
+  table-layout: fixed;
+}
+
+/* Жёсткий перенос для любого текста: word-break ломает длинные слова,
+   overflow-wrap страхует от непрерывных строк (URL, длинные имена файлов). */
+.dcr-table tbody td {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Контейнер таблицы — глушим горизонтальный скролл. При table-layout: fixed
+   ширины колонок гарантированы, и любое микропереполнение от вложенных
+   inline-flex / grid (textarea, чипы) просто обрезается, а не разъезжается.
+   Важно: именно `clip`, а не `hidden` — `overflow-x: hidden` вынуждает
+   `overflow-y: auto` и делает контейнер скролл-контейнером, из-за чего у
+   sticky-шапки таблицы ломается прилипание. `clip` обрезает без скролл-контекста. */
+.dc-requests-page .table-container {
+  overflow-x: clip;
+}
+
+/* Внутренние grid-контейнеры в ячейках должны уметь ужиматься, чтобы их
+   1fr-колонки не раздувались под intrinsic-content. */
+.dcr-task-row { min-width: 0; }
+.dcr-task-text,
+.dcr-task-response,
+.dcr-task-row > * { min-width: 0; }
+.dcr-doc-chip,
+.dcr-doc-chips { max-width: 100%; min-width: 0; }
+
+.dcr-table thead th {
+  text-align: center;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+  vertical-align: middle;
+  /* Закреплённая шапка: при прокрутке страницы остаётся вверху.
+     Прилипает к скролл-контейнеру страницы (.main-content), т.к. контейнер
+     таблицы использует overflow-x: clip и своего скролла не создаёт. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.dcr-table tbody td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+  color: var(--text-primary);
+}
+
+.dcr-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.dcr-table tbody tr:hover {
+  background: var(--bg-tertiary);
+}
+
+/* Полупрозрачные вертикальные разделители колонок (task 309). */
+.dcr-table th:not(:last-child),
+.dcr-table td:not(:last-child) {
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+/* Имя объекта и мета-строка «создал/когда» под ним. */
+.dcr-object-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dcr-meta-line {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.dcr-meta-icon {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.dcr-meta-sep {
+  opacity: 0.5;
+}
+
+.dcr-meta-author {
+  color: var(--text-secondary);
+}
+
+/* ===== task 365: «Ориентировочный срок согласования» — отдельная мета-строка
+   под датой создания. Pill для значения + ссылка-плейсхолдер «Указать срок» +
+   inline-popover для быстрого редактирования. ===== */
+.dcr-meta-deadline {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.1875rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  position: relative;
+}
+.dcr-meta-deadline-label {
+  opacity: 0.85;
+}
+.dcr-meta-deadline-value {
+  padding: 0.0625rem 0.4375rem;
+  border: 1px solid transparent;
+  background: rgba(37, 99, 235, 0.10);
+  color: #1d4ed8;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s;
+}
+.dcr-meta-deadline-value:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(37, 99, 235, 0.30);
+}
+.dcr-meta-deadline-value:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+[data-theme='dark'] .dcr-meta-deadline-value {
+  background: rgba(96, 165, 250, 0.16);
+  color: #bfdbfe;
+}
+[data-theme='dark'] .dcr-meta-deadline-value:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.26);
+  border-color: rgba(96, 165, 250, 0.40);
+}
+.dcr-meta-deadline-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #2563eb;
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+}
+.dcr-meta-deadline-link:hover {
+  color: #1d4ed8;
+}
+[data-theme='dark'] .dcr-meta-deadline-link {
+  color: #93c5fd;
+}
+[data-theme='dark'] .dcr-meta-deadline-link:hover {
+  color: #bfdbfe;
+}
+.dcr-meta-deadline-empty {
+  opacity: 0.6;
+}
+
+/* Popover с date-input + кнопками. task 366: рендерится через portal в <body>
+   с position:fixed и inline-координатами (top/left/width задаются JS-стилем),
+   поэтому здесь только визуальная стилизация. */
+.dcr-deadline-popover {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+}
+[data-theme='dark'] .dcr-deadline-popover {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+.dcr-deadline-popover input[type='date'] {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.dcr-deadline-popover input[type='date']:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+.dcr-deadline-popover-actions {
+  display: flex;
+  gap: 0.375rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.dcr-deadline-btn {
+  padding: 0.375rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.dcr-deadline-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+.dcr-deadline-btn-save {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+.dcr-deadline-btn-save:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+.dcr-deadline-btn-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dcr-deadline-btn-clear {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.30);
+}
+.dcr-deadline-btn-clear:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+}
+
+/* ===== Статус — клик-чип с popover (task 310) ===== */
+.dcr-status-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.dcr-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  /* Перенос по словам: «Проверка по договору» в одну строку не влезало в 8%
+     ширины колонки и наезжало на «Ответственного». Слова целиком — рвать их
+     по буквам нельзя. */
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+  text-align: left;
+  line-height: 1.25;
+  max-width: 100%;
+  transition: filter 0.12s ease, box-shadow 0.12s ease;
+}
+/* Шеврон не должен уезжать на отдельную строку вслед за текстом. */
+.dcr-status-wrap { max-width: 100%; }
+.dcr-status-chip > span:first-child { min-width: 0; }
+
+/* Этап «Проверка по договору» (миграция 20260823). Без своего правила чип падал
+   на общую плашку .status-contract-check — она задаёт квадратный border и
+   плоскую заливку, из-за чего этап выбивался из ряда остальных статусов. */
+.dcr-status-chip.status-contract-check {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+  border-color: rgba(217, 119, 6, 0.32);
+}
+
+/* «Итог проверки» (миграция 20260907) — фиолетовый: между янтарной сверкой
+   и синей работой, не сливается ни с одним соседним этапом. */
+.dcr-status-chip.status-check-result {
+  background: rgba(124, 58, 237, 0.12);
+  color: #6d28d9;
+  border-color: rgba(124, 58, 237, 0.30);
+}
+
+[data-theme='dark'] .dcr-status-chip.status-check-result {
+  background: rgba(124, 58, 237, 0.24);
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.42);
+}
+
+.dcr-status-chip.status-in-work {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.30);
+}
+
+.dcr-status-chip.status-completed {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+  border-color: rgba(22, 163, 74, 0.30);
+}
+
+[data-theme='dark'] .dcr-status-chip.status-contract-check {
+  background: rgba(217, 119, 6, 0.24);
+  color: #fcd34d;
+  border-color: rgba(251, 191, 36, 0.42);
+}
+
+[data-theme='dark'] .dcr-status-chip.status-in-work {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+  border-color: rgba(96, 165, 250, 0.40);
+}
+
+[data-theme='dark'] .dcr-status-chip.status-completed {
+  background: rgba(22, 163, 74, 0.22);
+  color: #86efac;
+  border-color: rgba(22, 163, 74, 0.40);
+}
+
+.dcr-status-chip:hover:not(:disabled),
+.dcr-status-chip.is-open {
+  filter: brightness(0.97);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.10);
+}
+
+.dcr-status-chip:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.dcr-status-chev {
+  font-size: 0.625rem;
+  opacity: 0.7;
+}
+
+/* Поповер выбора статуса */
+.dcr-status-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 160px;
+  padding: 0.25rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  animation: dcr-pop-in 0.1s ease;
+}
+
+@keyframes dcr-pop-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.dcr-status-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.625rem;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  text-align: left;
+  transition: background-color 0.1s ease;
+}
+
+.dcr-status-popover-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.dcr-status-popover-item.is-current {
+  font-weight: 600;
+  background: rgba(148, 163, 184, 0.08);
+  cursor: default;
+}
+
+.dcr-status-popover-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Без своего правила точка этапа оставалась прозрачной — в списке выбора статус
+   выглядел «пустым» рядом с остальными. */
+.dcr-status-popover-item.status-contract-check .dcr-status-popover-dot {
+  background: #d97706;
+}
+
+.dcr-status-popover-item.status-check-result .dcr-status-popover-dot {
+  background: #7c3aed;
+}
+
+.dcr-status-popover-item.status-in-work .dcr-status-popover-dot {
+  background: #2563eb;
+}
+
+.dcr-status-popover-item.status-completed .dcr-status-popover-dot {
+  background: #16a34a;
+}
+
+.dcr-status-popover-check {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+/* ===== Документы заявки (task 310) ===== */
+.dcr-cell-docs {
+  background: rgba(148, 163, 184, 0.03);
+}
+
+/* Путь к папке в хранилище — первая строка ячейки «Документы».
+   Моноширинный шрифт: в пути важен каждый символ, а слэши и цифры в
+   пропорциональном шрифте читаются хуже. */
+.dcr-folder-path {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.06);
+}
+.dcr-folder-path > svg { flex-shrink: 0; margin-top: 1px; color: var(--text-tertiary); }
+.dcr-folder-path-text {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  /* Путь длинный и без пробелов — рвём по любому месту, иначе распирает колонку. */
+  word-break: break-all;
+}
+.dcr-folder-path-copy {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.dcr-folder-path-copy:hover {
+  color: var(--primary-color, #2563eb);
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+
+/* Режим правки прямо в ячейке — без захода в форму заявки. */
+.dcr-folder-path.is-edit { align-items: center; flex-wrap: wrap; }
+.dcr-folder-path-input {
+  flex: 1 1 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 0.4rem;
+  border: 1px solid var(--primary-color, #2563eb);
+  border-radius: 5px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.6875rem;
+}
+.dcr-folder-path-input:focus { outline: none; }
+.dcr-folder-path-btn {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--primary-color, #2563eb);
+  border-radius: 5px;
+  background: var(--primary-color, #2563eb);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dcr-folder-path-btn.is-cancel {
+  background: none;
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+.dcr-folder-path-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Пустое состояние: путь ещё не указан. */
+.dcr-folder-path-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.dcr-folder-path-add:hover {
+  color: var(--primary-color, #2563eb);
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 45%, transparent);
+}
+
+.dcr-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.dcr-docs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  align-self: flex-start;
+  padding: 0.25rem 0.625rem;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.dcr-docs-toggle:hover {
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--text-primary);
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.dcr-docs-chev {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.dcr-docs-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.dcr-docs-summary strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Icon-чипы документов — каждый на отдельной строке (task 311+). */
+.dcr-doc-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dcr-doc-chip {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  overflow: hidden;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.dcr-doc-chip-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.6875rem;
+  min-width: 0;
+  transition: background-color 0.12s ease;
+}
+
+.dcr-doc-chip-main:hover {
+  background: rgba(148, 163, 184, 0.10);
+}
+
+.dcr-doc-chip-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.dcr-doc-chip-desc {
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.dcr-doc-chip-desc-empty {
+  font-style: normal;
+  color: var(--text-primary);
+}
+
+.dcr-doc-chip-action,
+.dcr-doc-chip-del {
+  width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--border-color);
+  cursor: pointer;
+  color: var(--text-tertiary);
+  line-height: 1;
+  padding: 0;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  flex-shrink: 0;
+}
+
+.dcr-doc-chip-action svg {
+  width: 13px;
+  height: 13px;
+}
+
+.dcr-doc-chip-action:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.dcr-doc-chip-del {
+  font-size: 0.875rem;
+}
+
+.dcr-doc-chip-del:hover {
+  background: rgba(220, 38, 38, 0.10);
+  color: #dc2626;
+}
+
+.dcr-doc-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.dcr-doc-add:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+/* ===== task 370: итоговые документы — отдельная подсвечиваемая секция ===== */
+.dcr-final-docs {
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.dcr-final-docs.has-final {
+  border-style: solid;
+  border-color: rgba(22, 163, 74, 0.45);
+  background: rgba(22, 163, 74, 0.08);
+}
+
+[data-theme='dark'] .dcr-final-docs.has-final {
+  border-color: rgba(74, 222, 128, 0.40);
+  background: rgba(74, 222, 128, 0.10);
+}
+
+.dcr-final-docs-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+
+.dcr-final-docs.has-final .dcr-final-docs-title {
+  color: #15803d;
+}
+
+[data-theme='dark'] .dcr-final-docs.has-final .dcr-final-docs-title {
+  color: #4ade80;
+}
+
+.dcr-final-docs-icon {
+  font-size: 0.75rem;
+}
+
+.dcr-final-docs-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 0.25rem;
+  border-radius: 8px;
+  background: rgba(22, 163, 74, 0.85);
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dcr-final-docs.has-final .dcr-doc-add-final {
+  border-color: rgba(22, 163, 74, 0.5);
+  color: #15803d;
+}
+
+[data-theme='dark'] .dcr-final-docs.has-final .dcr-doc-add-final {
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #4ade80;
+}
+
+/* ===== task 370: бейдж типа материала под контрагентом ===== */
+.dcr-material-badge {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.dcr-material-badge.material-tolling {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
+.dcr-material-badge.material-realization {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+[data-theme='dark'] .dcr-material-badge.material-tolling {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .dcr-material-badge.material-realization {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
+}
+
+/* task 371: инлайн-селектор материала прямо в таблице.
+   Лейбл сверху, select на всю ширину ячейки — чтобы «Давальческие (М-15)»
+   помещался целиком и не обрезался. */
+.dcr-material-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.125rem;
+  margin-top: 0.3125rem;
+  font-size: 0.6875rem;
+}
+
+.dcr-material-edit-label {
+  color: var(--text-tertiary);
+}
+
+.dcr-material-select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.0625rem 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.10);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.dcr-material-select:hover {
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.dcr-material-select:focus {
+  outline: none;
+  border-color: var(--primary-color, #2563eb);
+}
+
+.dcr-material-select.is-empty {
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.dcr-material-select.material-tolling {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
+.dcr-material-select.material-realization {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+[data-theme='dark'] .dcr-material-select.material-tolling {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
+}
+
+[data-theme='dark'] .dcr-material-select.material-realization {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
+}
+
+/* ===== task 370: столбец «Сумма» («Было подано» / «Утверждено») с инлайн-вводом ===== */
+.dcr-cell-amount {
+  font-variant-numeric: tabular-nums;
+}
+
+.dcr-amount {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dcr-amount-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Подписи «Было подано» / «Утверждено» — фиксированная колонка слева, без переноса */
+.dcr-amount-label {
+  flex-shrink: 0;
+  width: 72px;
+  font-size: 0.625rem;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
+
+.dcr-amount-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.1875rem 0.375rem;
+  font-size: 0.75rem;
+  text-align: right;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.12s, background 0.12s;
+  -moz-appearance: textfield;
+}
+
+.dcr-amount-input::-webkit-outer-spin-button,
+.dcr-amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.dcr-amount-input:hover {
+  border-color: var(--border-color);
+}
+
+.dcr-amount-input:focus {
+  outline: none;
+  border-color: var(--primary-color, #2563eb);
+  background: var(--bg-secondary);
+}
+
+.dcr-amount-value {
+  width: 100%;
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+
+/* Разница: абсолютная сумма + процент изменения (от «Было подано») */
+.dcr-amount-diff {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.3125rem;
+  flex-wrap: wrap;
+  margin-top: 0.0625rem;
+  text-align: right;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-height: 0.875rem;
+  white-space: nowrap;
+}
+
+/* Процент — на мягкой плашке в цвет направления изменения */
+.dcr-amount-diff .dcr-diff-pct {
+  padding: 0.0625rem 0.25rem;
+  border-radius: 4px;
+  font-size: 0.625rem;
+}
+
+.dcr-amount-diff.is-cheaper .dcr-diff-pct {
+  background: rgba(21, 128, 61, 0.12);
+}
+
+.dcr-amount-diff.is-pricier .dcr-diff-pct {
+  background: rgba(220, 38, 38, 0.12);
+}
+
+[data-theme='dark'] .dcr-amount-diff.is-cheaper .dcr-diff-pct {
+  background: rgba(74, 222, 128, 0.16);
+}
+
+[data-theme='dark'] .dcr-amount-diff.is-pricier .dcr-diff-pct {
+  background: rgba(248, 113, 113, 0.16);
+}
+
+.dcr-amount-diff.is-cheaper {
+  color: #15803d;
+}
+
+.dcr-amount-diff.is-pricier {
+  color: #dc2626;
+}
+
+.dcr-amount-diff.is-zero {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+[data-theme='dark'] .dcr-amount-diff.is-cheaper {
+  color: #4ade80;
+}
+
+[data-theme='dark'] .dcr-amount-diff.is-pricier {
+  color: #f87171;
+}
+
+/* ===== task 370: кнопка экспорта в Excel ===== */
+.dcr-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Модалка загрузки документа */
+.dcr-doc-modal {
+  max-width: 480px;
+}
+
+.dcr-doc-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1rem 1.5rem;
+}
+
+.dcr-doc-modal-file {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.dcr-doc-modal-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.dcr-doc-modal-fileinfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.dcr-doc-modal-filename {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dcr-doc-modal-filesize {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.dcr-doc-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+
+.dcr-doc-modal-field > span {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.dcr-doc-modal-field textarea {
+  padding: 0.5rem 0.625rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.dcr-doc-modal-field textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+/* Футер модалки документа — собственная стилизация, без наследования
+   «полного» бордера от глобального .modal-footer. */
+.dcr-doc-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  padding: 0.875rem 1.5rem;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.dcr-doc-modal-footer .btn-primary,
+.dcr-doc-modal-footer .btn-secondary {
+  min-width: 96px;
+  padding: 0.5rem 1.125rem;
+  font-size: 0.875rem;
+}
+
+.dcr-cell-works {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.muted-dash {
+  color: var(--text-tertiary);
+}
+
+/* Колонка задач — компактный стек. */
+.dcr-cell-tasks {
+  background: rgba(148, 163, 184, 0.04);
+  text-align: center;
+}
+
+/* task 334: кнопка-пилюля «Задачи N/M» в ячейке таблицы.
+   Клик открывает модалку с полным списком задач и ответов. */
+.dcr-tasks-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+.dcr-tasks-pill:hover {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.40);
+  color: #2563eb;
+}
+.dcr-tasks-pill-icon { font-size: 0.875rem; line-height: 1; }
+.dcr-tasks-pill-counter {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.dcr-tasks-pill-sep {
+  margin: 0 0.0625rem;
+  opacity: 0.55;
+  font-weight: 400;
+}
+.dcr-tasks-pill-empty {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-tertiary);
+}
+.dcr-tasks-pill-empty:hover {
+  color: #2563eb;
+}
+.dcr-tasks-pill-done {
+  background: rgba(22, 163, 74, 0.10);
+  border-color: rgba(22, 163, 74, 0.35);
+  color: #15803d;
+}
+.dcr-tasks-pill-done:hover {
+  background: rgba(22, 163, 74, 0.16);
+  border-color: rgba(22, 163, 74, 0.55);
+  color: #15803d;
+}
+
+/* task 334/336/337/338: модалка «Задачи и ответы» — enterprise-стиль.
+   Никаких эмодзи, без gradient, без скруглений-пилюль. Плоская поверхность,
+   сдержанные акценты на primary. Похоже на Jira/Linear. */
+.dcr-tasks-modal {
+  max-width: 1180px;
+  width: 96vw;
+  max-height: 92vh;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+}
+/* Скрываем дефолтный modal-header — у нас свой. */
+.dcr-tasks-modal > .modal-header { display: none; }
+
+/* ===== Шапка модалки ===== */
+.dcr-tasks-modal-header {
+  position: relative;
+  padding: 1.125rem 1.5rem 0.875rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+.dcr-tasks-modal-head-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+  margin-bottom: 0.875rem;
+}
+.dcr-tasks-modal-title { flex: 1; min-width: 0; }
+.dcr-tasks-modal-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 0.25rem;
+}
+.dcr-tasks-modal-title h3 {
+  margin: 0 0 0.4375rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+.dcr-tasks-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.25rem;
+}
+.dcr-tasks-modal-meta-item {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+  min-width: 0;
+}
+.dcr-tasks-modal-meta-key {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.dcr-tasks-modal-meta-val {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+/* KPI справа: «Выполнено» N/M */
+.dcr-tasks-modal-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+.dcr-tasks-modal-kpi-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.dcr-tasks-modal-counter {
+  display: inline-flex;
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.dcr-tasks-modal-counter.is-complete {
+  color: #16a34a;
+}
+.dcr-tasks-modal-counter-done { color: inherit; }
+.dcr-tasks-modal-counter-sep {
+  margin: 0 0.125rem;
+  font-size: 1.125rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+.dcr-tasks-modal-counter-total {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.dcr-tasks-modal-header .modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  align-self: flex-start;
+  margin-top: -0.125rem;
+}
+.dcr-tasks-modal-header .modal-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+/* Тонкая прогресс-полоса — плоская, без gradient */
+.dcr-tasks-modal-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.dcr-tasks-modal-progress-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+.dcr-tasks-modal-progress-fill {
+  height: 100%;
+  background: var(--primary-color, #2563eb);
+  transition: width 0.25s ease, background-color 0.25s;
+}
+.dcr-tasks-modal-progress-fill.is-complete {
+  background: #16a34a;
+}
+.dcr-tasks-modal-progress-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* ===== Тело модалки ===== */
+.dcr-tasks-modal-body {
+  padding: 1.25rem 1.5rem 1.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+/* Пустое состояние */
+.dcr-tasks-modal-empty {
+  padding: 3rem 1.5rem 2.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.dcr-tasks-modal-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.875rem;
+  color: var(--text-tertiary);
+  opacity: 0.55;
+}
+.dcr-tasks-modal-empty-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.375rem;
+}
+.dcr-tasks-modal-empty-hint {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  max-width: 380px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* ===== Список задач ===== */
+.dcr-tasks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* ===== Карточка задачи — без скруглений-пилюль, строгий border, без shadow ===== */
+.dcr-task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--border-color);
+  border-radius: 4px;
+  transition: border-left-color 0.15s, background 0.12s;
+}
+.dcr-task-card:hover {
+  border-left-color: var(--primary-color, #2563eb);
+}
+.dcr-task-card.is-done {
+  border-left-color: #16a34a;
+  background: var(--bg-secondary);
+}
+[data-theme='dark'] .dcr-task-card.is-done {
+  background: var(--bg-secondary);
+}
+
+.dcr-task-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.dcr-task-card-num {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.dcr-task-card.is-done .dcr-task-card-num {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+.dcr-task-card-spacer { flex: 1; }
+
+/* Кастомный чекбокс — square, primary blue (не green) — это «нейтральный»
+   статус, а не «успех». Зелёный остаётся для KPI и левого border'а. */
+.dcr-task-checkbox {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.dcr-task-checkbox.is-disabled { cursor: not-allowed; }
+.dcr-task-checkbox input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: inherit;
+  margin: 0;
+}
+.dcr-task-checkbox-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--text-tertiary);
+  border-radius: 3px;
+  background: var(--bg-primary);
+  color: transparent;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.dcr-task-checkbox-box svg {
+  width: 14px;
+  height: 14px;
+}
+.dcr-task-checkbox:hover .dcr-task-checkbox-box {
+  border-color: var(--primary-color, #2563eb);
+}
+.dcr-task-checkbox.is-checked .dcr-task-checkbox-box {
+  background: var(--primary-color, #2563eb);
+  border-color: var(--primary-color, #2563eb);
+  color: #fff;
+}
+.dcr-task-checkbox.is-checked:hover .dcr-task-checkbox-box {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+.dcr-task-checkbox.is-disabled .dcr-task-checkbox-box {
+  opacity: 0.5;
+}
+.dcr-task-checkbox input:focus-visible + .dcr-task-checkbox-box {
+  outline: 2px solid var(--primary-color, #2563eb);
+  outline-offset: 2px;
+}
+
+/* Кнопка удаления карточки */
+.dcr-task-card-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.12s, background 0.12s, border-color 0.12s;
+}
+.dcr-task-card:hover .dcr-task-card-delete,
+.dcr-task-card-delete:focus-visible {
+  opacity: 1;
+}
+.dcr-task-card-delete:hover {
+  color: #dc2626;
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+}
+
+/* task 337/338: тело карточки — две колонки (задача слева, ответ справа).
+   Чекбокс остался в head, body без отступа под него. */
+.dcr-task-card-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+.dcr-task-card-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.dcr-task-card-section-response {
+  position: relative;
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--border-color);
+}
+
+/* Метки секций */
+.dcr-task-card-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.dcr-task-card-label-tag {
+  padding: 0.0625rem 0.4375rem;
+  background: rgba(22, 163, 74, 0.10);
+  color: #16a34a;
+  border-radius: 3px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Meta-блок «Поставил/Ответил» — без плашки, просто inline-текст */
+.dcr-task-card-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+.dcr-task-card-meta-label {
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+.dcr-task-card-meta-val {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.dcr-task-card-meta-sep {
+  opacity: 0.5;
+}
+.dcr-task-card-meta-date {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.dcr-task-card-meta-muted {
+  font-style: italic;
+  opacity: 0.7;
+}
+.dcr-task-card-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.dcr-task-card-label-tag {
+  padding: 0.0625rem 0.4375rem;
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* Textarea внутри карточки — плоский input с тонким бордером */
+.dcr-task-card .dcr-task-text,
+.dcr-task-card .dcr-task-response {
+  width: 100%;
+  min-height: 68px;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  font-family: inherit;
+  resize: none;
+  overflow: hidden;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  box-sizing: border-box;
+}
+.dcr-task-card .dcr-task-text {
+  font-weight: 500;
+}
+.dcr-task-card .dcr-task-text:hover:not(:disabled),
+.dcr-task-card .dcr-task-response:hover:not(:disabled) {
+  border-color: var(--text-tertiary);
+}
+.dcr-task-card .dcr-task-text:focus,
+.dcr-task-card .dcr-task-response:focus {
+  outline: none;
+  border-color: var(--primary-color, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+}
+.dcr-task-card.is-done .dcr-task-text {
+  color: var(--text-tertiary);
+}
+.dcr-task-card .dcr-task-text:disabled,
+.dcr-task-card .dcr-task-response:disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+/* ===== Карточка добавления новой задачи — strict utility-bar style ===== */
+.dcr-task-add-card {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.625rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.dcr-task-add-card:focus-within {
+  border-color: var(--primary-color, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+.dcr-task-add-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.dcr-task-add-card:focus-within .dcr-task-add-card-icon {
+  color: var(--primary-color, #2563eb);
+}
+.dcr-task-add-card-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  padding: 0.4375rem 0;
+  outline: none;
+}
+.dcr-task-add-card-input::placeholder {
+  color: var(--text-tertiary);
+}
+.dcr-task-add-card-btn {
+  padding: 0.4375rem 0.875rem;
+  border: 1px solid var(--primary-color, #2563eb);
+  border-radius: 4px;
+  background: var(--primary-color, #2563eb);
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+  flex-shrink: 0;
+}
+.dcr-task-add-card-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+.dcr-task-add-card-btn:disabled {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+/* task 337: на узких экранах две колонки → одна (друг под другом),
+   отступ под чекбоксом убираем, секция «Ответ» теряет левый бордер. */
+@media (max-width: 820px) {
+  .dcr-task-card-body {
+    grid-template-columns: 1fr;
+    padding-left: 0;
+    gap: 0.75rem;
+  }
+  .dcr-task-card-section-response {
+    padding-left: 0;
+    border-left: 0;
+    padding-top: 0.625rem;
+    border-top: 1px dashed var(--border-color);
+  }
+  .dcr-task-card.is-done .dcr-task-card-section-response {
+    border-top-color: rgba(22, 163, 74, 0.35);
+  }
+  .dcr-tasks-modal-head-row {
+    flex-wrap: wrap;
+  }
+}
+
+.dcr-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.dcr-task-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.375rem;
+  align-items: start;
+}
+
+.dcr-task-text,
+.dcr-task-response {
+  width: 100%;
+  min-height: 28px;
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.dcr-task-text {
+  font-weight: 500;
+}
+
+.dcr-task-text:focus,
+.dcr-task-response:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.dcr-task-text:disabled,
+.dcr-task-response:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.dcr-task-delete {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 1.125rem;
+  line-height: 1;
+  padding: 0;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.dcr-task-delete:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+/* Inline-форма добавления задачи. */
+.dcr-task-add {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.125rem;
+}
+
+.dcr-task-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.75rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.dcr-task-add input:focus {
+  border-color: #2563eb;
+  border-style: solid;
+}
+
+.dcr-task-add-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #2563eb;
+  color: #fff;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+  transition: background-color 0.12s ease;
+}
+
+.dcr-task-add-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.dcr-task-add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dcr-table .actions-cell {
+  white-space: nowrap;
+  text-align: right;
+  padding-left: 0.125rem;
+  padding-right: 0.375rem;
+}
+
+/* Компактные иконки действий в ДС-таблице (task 311 + 326). */
+.dcr-table .actions-cell .btn-icon {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  font-size: 0.6875rem;
+  padding: 0;
+  line-height: 1;
+}
+.dcr-table .actions-cell .btn-icon + .btn-icon {
+  margin-left: 0.0625rem;
+}
+
+.dcr-table .no-data {
+  padding: 2rem 1rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* ===== Бейдж-счётчик в табе (task 307) ===== */
+.dc-requests-page .status-tab .tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  margin-left: 0;
+  padding: 0 0.4375rem;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dc-requests-page .status-tab.active .tab-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* Удалённая заявка (вкладка «Удаленные») — приглушаем визуально */
+.dc-requests-page tr.row-deleted {
+  opacity: 0.72;
+}
+
+/* ===== Тоггл «Задачи: N/M» (task 307) ===== */
+.dcr-tasks-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  align-self: flex-start;
+  padding: 0.25rem 0.625rem;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.dcr-tasks-toggle:hover {
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--text-primary);
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
+.dcr-tasks-chev {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.dcr-tasks-summary {
+  white-space: nowrap;
+}
+
+.dcr-tasks-summary strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Все задачи выполнены → toggle зелёный */
+.dcr-tasks-toggle-done {
+  background: rgba(22, 163, 74, 0.10);
+  border-color: rgba(22, 163, 74, 0.30);
+  color: #15803d;
+}
+
+.dcr-tasks-toggle-done:hover {
+  background: rgba(22, 163, 74, 0.15);
+  border-color: rgba(22, 163, 74, 0.45);
+  color: #15803d;
+}
+
+.dcr-tasks-toggle-done .dcr-tasks-chev {
+  color: #15803d;
+}
+
+[data-theme='dark'] .dcr-tasks-toggle-done {
+  background: rgba(22, 163, 74, 0.18);
+  border-color: rgba(22, 163, 74, 0.40);
+  color: #86efac;
+}
+
+[data-theme='dark'] .dcr-tasks-toggle-done .dcr-tasks-chev {
+  color: #86efac;
+}
+
+/* ===== Чекбокс задачи + выполненный вид (task 307) ===== */
+.dcr-task-row {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  gap: 0.375rem;
+  align-items: start;
+}
+
+.dcr-task-check {
+  width: 16px;
+  height: 16px;
+  margin-top: 0.4375rem;
+  cursor: pointer;
+  accent-color: #16a34a;
+  flex-shrink: 0;
+}
+
+.dcr-task-check:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.dcr-task-row-done .dcr-task-text {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+  background: rgba(22, 163, 74, 0.04);
+}
+
+[data-theme='dark'] .dcr-task-row-done .dcr-task-text {
+  background: rgba(22, 163, 74, 0.08);
+}
+
+/* ── Телефон (≤640px): обвязка списка заявок на ДС ──────────────────────────
+   Карточки рендерятся вместо таблицы через useIsPhone (DcRequestsPage.jsx).
+   Тулбар фильтров переносим, поиск и дропдауны — на всю ширину. */
+@media (max-width: 640px) {
+  .dcr-toolbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .dcr-search {
+    min-width: 0;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .dcr-filter-drop {
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .dcr-filter-drop .fdrop,
+  .dcr-filter-drop .fdrop-trigger {
+    width: 100%;
+    max-width: none;
+  }
+  /* Действия на карточке заявки — компактные, аккуратный ряд */
+  .mcard .mcard-actions .btn-icon {
+    font-size: 0.8125rem;
+    padding: 0.25rem 0.4375rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1875rem;
+  }
+}
+
+/* Пикер объекта в заявке на ДС (FilterDropdown) — на всю ширину + бейдж отдела ОС/ГО */
+.dcr-object-picker { display: flex; width: 100%; }
+.dcr-object-picker .fdrop-trigger { width: 100%; max-width: none; height: 40px; }
+
+.dcr-obj-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+.dcr-obj-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.dcr-obj-badge {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.dcr-obj-badge.is-os {
+  color: #1d4ed8;
+  background: color-mix(in srgb, #3b82f6 14%, transparent);
+  border-color: color-mix(in srgb, #3b82f6 30%, transparent);
+}
+.dcr-obj-badge.is-go {
+  color: #15803d;
+  background: color-mix(in srgb, #16a34a 14%, transparent);
+  border-color: color-mix(in srgb, #16a34a 30%, transparent);
+}
+[data-theme='dark'] .dcr-obj-badge.is-os { color: #93c5fd; }
+[data-theme='dark'] .dcr-obj-badge.is-go { color: #6ee7b7; }
+
+/* ===== Результат проверки по договору ===== */
+
+/* Бейдж исхода под чипом статуса: цвет = вердикт, дата — когда зафиксирован. */
+.dcr-verdict-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  text-align: left;
+}
+.dcr-verdict-badge:hover { filter: brightness(0.97); }
+.dcr-verdict-badge-date {
+  font-weight: 500;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.dcr-verdict-ok {
+  background: color-mix(in srgb, #16a34a 13%, transparent);
+  border-color: color-mix(in srgb, #16a34a 30%, transparent);
+  color: #15803d;
+}
+.dcr-verdict-warn {
+  background: color-mix(in srgb, #d97706 15%, transparent);
+  border-color: color-mix(in srgb, #d97706 32%, transparent);
+  color: #b45309;
+}
+.dcr-verdict-bad {
+  background: color-mix(in srgb, #dc2626 13%, transparent);
+  border-color: color-mix(in srgb, #dc2626 32%, transparent);
+  color: #b91c1c;
+}
+[data-theme='dark'] .dcr-verdict-ok { color: #6ee7b7; }
+[data-theme='dark'] .dcr-verdict-warn { color: #fcd34d; }
+[data-theme='dark'] .dcr-verdict-bad { color: #fca5a5; }
+
+/* Пока исход не зафиксирован — приглушённая кнопка-приглашение. */
+.dcr-verdict-add {
+  margin-top: 0.3rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dcr-verdict-add:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+/* Окно результата */
+.dcr-verdict-modal { max-width: 640px; width: 100%; }
+.dcr-verdict-body {
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.dcr-verdict-note {
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, #d97706 10%, transparent);
+  color: #b45309;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+[data-theme='dark'] .dcr-verdict-note { color: #fcd34d; }
+
+.dcr-verdict-field { display: flex; flex-direction: column; gap: 0.4rem; }
+.dcr-verdict-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.dcr-verdict-options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.dcr-verdict-option {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dcr-verdict-option:disabled { cursor: default; opacity: 0.6; }
+/* Невыбранные варианты остаются нейтральными: три цветных кнопки разом
+   выглядели бы как уже принятое решение. */
+.dcr-verdict-option.is-active.dcr-verdict-ok,
+.dcr-verdict-option.is-active.dcr-verdict-warn,
+.dcr-verdict-option.is-active.dcr-verdict-bad {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.dcr-verdict-option:not(.is-active) {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+.dcr-verdict-textarea {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+.dcr-verdict-empty,
+.dcr-verdict-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+.dcr-verdict-signature {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* Тип ДС «ДС по тендеру» — фиолетовый, отличается от трёх остальных. */
+.dstype-tender { color: #5b21b6; background: #ede9fe; border-color: #c4b5fd; }
+/* Тип ДС в инлайн-селекторе — цвет как у бейджа, рамка без акцента. */
+.dcr-dstype-select.dstype-rd,
+.dcr-dstype-select.dstype-in,
+.dcr-dstype-select.dstype-out,
+.dcr-dstype-select.dstype-tender { border-color: transparent; }
+.dcr-dstype-select.dstype-rd:hover,
+.dcr-dstype-select.dstype-in:hover,
+.dcr-dstype-select.dstype-out:hover,
+.dcr-dstype-select.dstype-tender:hover { border-color: rgba(148, 163, 184, 0.45); }
+
+/* Задачи: пилюля не шире колонки. */
+.dcr-cell-tasks .dcr-tasks-pill {
+  max-width: 100%;
+  white-space: nowrap;
+}
+.dcr-tasks-pill-empty-label { font-weight: 700; }
+
+/* ══ Рабочий стиль (src/styles/workUi.css) ════════════════════════════════════
+   Общий вид — шрифт, шапка, вкладки, панель, таблица, статусы — задаёт
+   workUi.css. Здесь — то, что свойственно только заявкам на ДС: сетка
+   колонок, суммы, мета-строки объекта, документы. Префикс
+   .dc-requests-page.ui-work сильнее правил ContractRegistry*.css, которые
+   делит с реестром договоров класс .contract-registry. */
+
+/* Раздел — одна «карточка» без внутренних отступов, как «Тендеры» и «Планы
+   затрат»: шапка, вкладки, панель и таблица во всю ширину. */
+.dc-requests-page.ui-work { padding: 0; }
+.dc-requests-page.ui-work .dcr-header-actions { flex-wrap: wrap; gap: 0.5rem; }
+.dc-requests-page.ui-work .dcr-link-btn-empty { color: var(--text-secondary); }
+.dc-requests-page.ui-work .dcr-link-edit { width: var(--ui-control-h); height: var(--ui-control-h); }
+.dc-requests-page.ui-work .status-tabs .status-tab.tab-deleted { margin-left: auto; }
+.dc-requests-page.ui-work .dcr-toolbar .ui-search { flex: 1 1 18rem; max-width: 28rem; }
+.dc-requests-page.ui-work .dcr-filter-drop { min-width: 0; max-width: none; flex: 0 0 auto; }
+.dc-requests-page.ui-work .dcr-filter-drop .fdrop-trigger { width: auto; font-weight: var(--ui-regular); }
+.dc-requests-page.ui-work .dcr-filter-drop.is-active .fdrop-trigger { font-weight: var(--ui-regular); color: var(--text-primary); border-color: var(--primary-color); background: var(--primary-light); }
+
+/* Сетка: всё, кроме описания ДС, — фиксированной ширины в rem. Сумма
+   фиксированных — 86.75rem, min-width = + 12rem под описание. На 1920 таблица
+   помещается (описание ≈ 17rem); уже — прокручивается внутри себя.
+   Прокрутку включаем только там, где таблица не помещается: пока она не
+   нужна, остаётся прежний overflow-x: clip — выбор статуса открывается прямо
+   в ячейке и у нижних строк не должен упираться в край контейнера. */
+.dc-requests-page.ui-work .dcr-table { table-layout: fixed; width: 100%; min-width: 98.75rem; }
+.dc-requests-page.ui-work .table-container { overflow-x: auto; }
+@media (min-width: 115.75rem) {  /* 98.75rem таблицы + сайдбар 200px + поля ≈ 1852px */
+  .dc-requests-page.ui-work .table-container { overflow-x: clip; }
+}
+.dc-requests-page.ui-work .dcr-col-num { width: 2.75rem; }
+.dc-requests-page.ui-work .dcr-col-object { width: 11rem; }      /* значок + «Ориентировочный срок:» в строку */
+.dc-requests-page.ui-work .dcr-col-cp { width: 12.25rem; }       /* «Доп. работы вне договора» в селекторе */
+.dc-requests-page.ui-work .dcr-col-dsnum { width: 6.5rem; }        /* «ДС-2026/0457-А» — перенос после «/» */
+/* .dcr-col-desc — без ширины: остаток */
+.dc-requests-page.ui-work .dcr-col-amount { width: 11.5rem; }      /* сумма до «999 999 999 999,99» целиком */
+.dc-requests-page.ui-work .dcr-col-status { width: 10.25rem; }
+.dc-requests-page.ui-work .dcr-col-resp { width: 8.5rem; }
+.dc-requests-page.ui-work .dcr-col-tasks { width: 5rem; }
+.dc-requests-page.ui-work .dcr-col-docs { width: 12.5rem; }
+.dc-requests-page.ui-work .dcr-col-actions { width: 6.5rem; }     /* три кнопки 28px */
+
+.dc-requests-page.ui-work .dcr-table tbody td { word-break: normal; overflow-wrap: break-word; }
+
+/* Объект: название — заголовок строки (500), под ним дата/автор и срок. */
+.dc-requests-page.ui-work .dcr-object-name { font-weight: var(--ui-medium); }
+.dc-requests-page.ui-work :is(.dcr-meta-line, .dcr-meta-deadline) {
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  color: var(--text-secondary);
+}
+.dc-requests-page.ui-work .dcr-meta-icon { display: inline-flex; color: var(--text-tertiary); }
+.dc-requests-page.ui-work .dcr-meta-author { color: var(--text-secondary); }
+.dc-requests-page.ui-work .dcr-meta-deadline-label { opacity: 1; }
+.dc-requests-page.ui-work .dcr-meta-deadline-value {
+  font-size: var(--ui-hint);
+  font-weight: var(--ui-medium);
+  border-radius: 4px;
+}
+.dc-requests-page.ui-work .dcr-meta-deadline-link { font-size: var(--ui-hint); }
+.dc-requests-page.ui-work .dcr-meta-deadline-empty { opacity: 1; }
+
+/* Контрагент: материал и тип ДС — подпись над селектором. */
+.dc-requests-page.ui-work .dcr-material-edit-label { font-size: var(--ui-hint); color: var(--text-secondary); }
+/* Значение в селекторе — данные строки: обычный вес, переносится целиком
+   (WrapSelect: плашка-текст + прозрачный select поверх). */
+.dc-requests-page.ui-work .dcr-material-select { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: var(--ui-regular); padding: 0.125rem 0.25rem; }
+.dc-requests-page.ui-work :is(.dcr-material-badge, .dcr-tag) { font-size: var(--ui-hint); font-weight: var(--ui-medium); }
+
+/* № ДС: целиком, перенос только после разделителей (BreakableId). */
+.dc-requests-page.ui-work .dcr-cell-dsnum { font-variant-numeric: tabular-nums; }
+
+/* Суммы: подпись («Было подано», «Утверждено») — строкой над значением, значение
+   на всю ширину колонки, вправо, моноширинными цифрами. Рядом с подписью сумма
+   от 10 млрд уже не помещалась в поле. Исходная сумма, утверждённая и разница —
+   отдельными строками; знак и направление изменения (↓/↑, −/+) не скрываются. */
+.dc-requests-page.ui-work .dcr-amount { gap: 0.25rem; }
+.dc-requests-page.ui-work .dcr-amount-row { flex-direction: column; align-items: stretch; gap: 0; }
+.dc-requests-page.ui-work .dcr-amount-label {
+  width: auto;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  letter-spacing: normal;
+  color: var(--text-secondary);
+}
+.dc-requests-page.ui-work :is(.dcr-amount-input, .dcr-amount-value) {
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.dc-requests-page.ui-work .dcr-amount-input { padding: 0.0625rem 0.375rem; }
+.dc-requests-page.ui-work .dcr-amount-diff { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: var(--ui-medium); }
+.dc-requests-page.ui-work .dcr-amount-diff .dcr-diff-pct { font-size: var(--ui-hint); }
+.dc-requests-page.ui-work .dcr-amount-diff.is-zero { font-weight: var(--ui-regular); color: var(--text-secondary); }
+
+/* Статус и итог проверки. */
+.dc-requests-page.ui-work .dcr-status-chip {
+  padding: 0.125rem 0.375rem 0.125rem 0.5rem;
+  gap: 0.25rem;
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+  border-radius: 0.75rem;
+  box-shadow: none;
+}
+.dc-requests-page.ui-work .dcr-status-popover-item { font-size: var(--ui-text); }
+/* Итог проверки: исход одной строкой, дата — под ним (раньше «С замечаниями»
+   рвалось посреди слова). */
+.dc-requests-page.ui-work .dcr-verdict-badge {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  margin-top: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--ui-radius);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+}
+.dc-requests-page.ui-work .dcr-verdict-badge-text { white-space: nowrap; }
+.dc-requests-page.ui-work .dcr-verdict-badge-date { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); font-weight: var(--ui-regular); opacity: 1; }
+.dc-requests-page.ui-work .dcr-verdict-add { margin-top: 0.375rem; font-size: var(--ui-hint); font-weight: var(--ui-medium); }
+
+/* Задачи: счётчик-кнопка. */
+.dc-requests-page.ui-work .dcr-tasks-pill { font-size: var(--ui-hint); font-variant-numeric: tabular-nums; }
+.dc-requests-page.ui-work .dcr-tasks-pill-icon { display: inline-flex; }
+
+/* Документы: путь к папке, файлы, отчёт и итоговые — подписи обычным регистром. */
+.dc-requests-page.ui-work :is(.dcr-folder-path-text, .dcr-folder-path-add, .dcr-docs-summary, .dcr-doc-add) {
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.dc-requests-page.ui-work .dcr-final-docs-title {
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  font-weight: var(--ui-semibold);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.dc-requests-page.ui-work .dcr-final-docs-icon { display: inline-flex; }
+
+/* Имя файла в чипе — целиком, переносом, а не многоточием. */
+.dc-requests-page.ui-work .dcr-doc-chip { align-items: flex-start; }
+.dc-requests-page.ui-work .dcr-doc-chip-main { align-items: flex-start; text-align: left; font-size: var(--ui-hint); }
+.dc-requests-page.ui-work .dcr-doc-chip-desc {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+
+/* Действия — в ряд, по правому краю. */
+.dc-requests-page.ui-work .dcr-table .actions-cell { text-align: right; }
+.dc-requests-page.ui-work .dcr-table .actions-cell .btn-icon { margin: 0; }
+
+/* WrapSelect: плашка выбранного значения переносится; select — прозрачный слой. */
+.dcr-wrap-select { position: relative; display: block; }
+.dcr-wrap-select-face {
+  display: block;
+  position: relative;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: left;
+}
+.dc-requests-page .dcr-wrap-select .dcr-wrap-select-face.dcr-material-select { padding-right: 1.125rem; }
+.dcr-wrap-select-chev {
+  position: absolute;
+  right: 0.375rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.dcr-wrap-select-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.dcr-wrap-select:hover .dcr-wrap-select-face { border-color: rgba(148, 163, 184, 0.45); }
+.dcr-wrap-select:focus-within .dcr-wrap-select-face { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+/* Подложки колонок «Задачи» и «Документы» — лишний вид разделения рядом с
+   линиями строк; в рабочем стиле их нет. */
+.dc-requests-page.ui-work :is(.dcr-cell-docs, .dcr-cell-tasks) { background: none; }
+
+/* Контраст текста статусов и счётчиков (было 4,0–4,5:1, у счётчика итоговых
+   документов 2,8:1). Оттенки прежние — текст на ступень темнее. */
+.dc-requests-page.ui-work .dcr-status-chip.status-contract-check { color: #92400e; }
+.dc-requests-page.ui-work .dcr-status-chip.status-completed { color: #166534; }
+.dc-requests-page.ui-work .dcr-material-select.material-tolling { color: #92400e; }
+.dc-requests-page.ui-work .dcr-amount-diff.is-cheaper { color: #166534; }
+.dc-requests-page.ui-work .dcr-amount-diff.is-pricier { color: #b91c1c; }
+.dc-requests-page.ui-work .dcr-tasks-pill-done .dcr-tasks-pill-counter { color: #166534; }
+.dc-requests-page.ui-work .dcr-final-docs-count { background: #15803d; }
+.dc-requests-page.ui-work :is(.dcr-meta-sep, .dcr-tasks-pill-sep) { opacity: 1; color: var(--text-secondary); }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-status-chip.status-contract-check { color: #fcd34d; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-status-chip.status-completed { color: #86efac; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-material-select.material-tolling { color: #fcd34d; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-amount-diff.is-cheaper { color: #86efac; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-amount-diff.is-pricier { color: #fca5a5; }
+[data-theme='dark'] .dc-requests-page.ui-work .dcr-tasks-pill-done .dcr-tasks-pill-counter { color: #86efac; }
+.dc-requests-page.ui-work .dcr-material-select.is-empty,
+.dc-requests-page.ui-work .dcr-docs-chev { color: var(--text-secondary); }
+
+/* ══ Плотный вариант реестра (.dcr-dense) ═══════════════════════════════════
+   Реестр заявок вернул плотность прежней версии: таблица 13/18, заголовки
+   колонок и статусы 12/16, ячейка 6px, 2–4px между элементами внутри ячейки,
+   тонкие вертикальные разделители. Шрифт — тот же Inter, без zoom/scale.
+   Класс ставится только на компьютере: телефон показывает карточки.
+   Все правила — только для шапки, вкладок, панели и таблицы (.table-container):
+   окна (.modal-overlay лежит внутри корня страницы и использует те же
+   карточки файлов и кнопки), всплывающие списки фильтров и меню статуса
+   остаются на обычной шкале 14/20 и в прежнем виде.
+   Префикс .dc-requests-page.ui-work.dcr-dense (3 класса) сильнее и workUi
+   (.ui-work.ui-work), и правил выше (.dc-requests-page.ui-work); ячейки —
+   через table.dcr-table, чтобы перебить workUi ':is(.dcr-table) > … > td'. */
+.dc-requests-page.ui-work.dcr-dense :is(.registry-header, .status-tabs, .dcr-toolbar, .table-container) {
+  --ui-title: 1.125rem;       /* 18 */
+  --ui-title-lh: 1.5rem;      /* 24 */
+  --ui-text: 0.8125rem;       /* 13 — данные, кнопки, фильтры, вкладки */
+  --ui-text-lh: 1.125rem;     /* 18 */
+  --ui-th: 0.75rem;           /* 12 — заголовки колонок, статусы */
+  --ui-th-lh: 1rem;           /* 16 */
+  --ui-hint: 0.75rem;         /* 12 — вторичные сведения */
+  --ui-hint-lh: 1rem;
+  --ui-control-h: 2rem;       /* 32 */
+  --ui-cell-py: 0.375rem;     /* 6 */
+  --ui-cell-px: 0.375rem;     /* 6 */
+}
+/* Меню статуса рисуется внутри ячейки — возвращаем ему обычную шкалу. */
+.dc-requests-page.ui-work.dcr-dense .dcr-status-popover { --ui-text: 0.875rem; --ui-text-lh: 1.25rem; }
+
+/* Шапка, вкладки, панель — ниже на 8–12px каждая. */
+.dc-requests-page.ui-work.dcr-dense .registry-header { padding: 0.5rem 1rem; gap: 0.375rem 0.75rem; }
+.dc-requests-page.ui-work.dcr-dense .registry-header h2 { gap: 0.5rem; }
+.dc-requests-page.ui-work.dcr-dense .registry-header :is(.btn-primary, .btn-secondary, .dcr-link-btn) { padding: 0 0.625rem; gap: 0.3125rem; }
+.dc-requests-page.ui-work.dcr-dense .status-tabs { padding: 0 0.5rem; }
+.dc-requests-page.ui-work.dcr-dense .status-tabs .status-tab { min-height: 2.25rem; padding: 0 0.625rem; }
+.dc-requests-page.ui-work.dcr-dense .status-tabs .tab-count { min-width: 1.125rem; height: 1.125rem; padding: 0 0.3125rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-toolbar { padding: 0.5rem 1rem; gap: 0.375rem 0.625rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-toolbar .fdrop-trigger { padding: 0 0.5rem; }
+
+/* Таблица: малоконтрастные вертикальные разделители между колонками, как в
+   прежней версии и в реестре тендеров; без переносов по слогам. Заголовок
+   «Действия» — видимый, как в прежней версии и в реестре тендеров. */
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th,
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr > td {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+}
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th:last-child,
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr > td:last-child { border-right: 0; }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th { padding: 0.375rem var(--ui-cell-px); }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr > td { hyphens: manual; }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th:last-child > .ui-sr-only {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: nowrap;
+}
+
+/* Сетка. Место отдано «Документам» (было 12.5rem — имена файлов шли столбиком
+   по 5–15 строк), «Сумме» (подпись и значение в строку) и «Статусу»
+   («Проверка по договору» в одну строку); «Действия» — три кнопки 24px.
+   Сумма фиксированных — 89.75rem; на 1920 описанию остаётся ≈ 13rem.
+   min-width 99.5rem — таблица помещается без прокрутки от ≈ 1870px окна
+   (1920 с открытой боковой панелью Edge); уже — прокручивается внутри себя. */
+.dc-requests-page.ui-work.dcr-dense .dcr-table { min-width: 99.5rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-num { width: 2.25rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-object { width: 11rem; }      /* значок + «Ориентировочный срок:» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-cp { width: 13rem; }          /* подпись 3.875rem + «Изменение ПСДЦ» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-dsnum { width: 5.75rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-amount { width: 13.25rem; }   /* «Было подано» и сумма до «999 999 999,99» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-status { width: 10.75rem; }   /* «Проверка по договору ▾» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-resp { width: 8rem; }        /* «Садовников Д. Ю.» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-tasks { width: 4.75rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-docs { width: 16rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-actions { width: 5rem; }
+/* Меню статуса открывается вниз прямо из ячейки. Строки стали ниже, и у
+   короткой последней строки меню уходило за нижний край таблицы (карточка
+   раздела обрезает содержимое) — «Завершено» было не нажать. Пока меню
+   последней строки открыто, строка не ниже меню (height у tr — минимальная
+   высота): высокую строку это не меняет, короткая подрастает под меню. */
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr:last-child:has(.dcr-status-popover) { height: 13rem; }
+
+/* Дальше — содержимое ячеек; префикс с .table-container, чтобы не задеть
+   те же элементы в окнах (карточки файлов в «Результате проверки»). */
+
+/* Объект: название, под ним дата/автор и срок — без лишних отступов. */
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-meta-line, .dcr-meta-deadline) {
+  display: flex;
+  margin-top: 0.125rem;
+  gap: 0 0.25rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-meta-deadline-value { padding: 0 0.3125rem; line-height: var(--ui-hint-lh); }
+
+/* Контрагент: «Материал» и «Тип ДС» — подпись и поле в одну строку, как
+   встроенные поля таблицы, а не форма; поля обеих строк начинаются с одной
+   вертикали. Пустое поле — без подложки; цветные значения (давальческие,
+   тип ДС) сохраняют свой цвет. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-material-edit {
+  display: grid;
+  grid-template-columns: 3.875rem minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 0.375rem;
+  margin-top: 0.1875rem;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-material-edit-label { white-space: nowrap; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-wrap-select .dcr-wrap-select-face.dcr-material-select {
+  padding: 0.0625rem 0.875rem 0.0625rem 0.25rem;
+  line-height: var(--ui-hint-lh);
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-wrap-select .dcr-material-select.is-empty { background: none; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-wrap-select-chev { right: 0.125rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-material-badge, .dcr-tag) { margin-top: 0.1875rem; line-height: var(--ui-hint-lh); }
+
+/* Сумма: подпись и значение в строку, поля одной ширины и по правому краю —
+   значения читаются столбиком. Поле растёт по содержимому (field-sizing);
+   если значение с подписью не помещается (суммы от 1 млрд), поле уходит
+   строкой ниже — целиком, без обрезки. Без field-sizing — раскладка
+   столбиком, как раньше. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount { gap: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 0.375rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-input {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 7.125rem;        /* 114px — «999 999 999,99» */
+  max-width: 100%;
+  margin-left: auto;
+  padding: 0 0.25rem;
+  field-sizing: content;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-input::placeholder { color: var(--text-secondary); opacity: 1; }
+@supports not (field-sizing: content) {
+  .dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-input { flex-basis: 100%; }
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-value { width: auto; margin-left: auto; }
+/* Разница и процент — одной группой справа, под значениями. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-diff { margin-top: 0; gap: 0 0.25rem; min-height: 0; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-diff .dcr-diff-pct { padding: 0 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-diff:empty { display: none; }
+
+/* Статус и итог проверки: плашки 12/16, итог — по содержимому, дата строкой
+   ниже. Текст итога — на ступень темнее (было 4,3:1). */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-status-chip { padding: 0.0625rem 0.25rem 0.0625rem 0.375rem; gap: 0.1875rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-add { margin-top: 0.3125rem; padding: 0 0.375rem; line-height: var(--ui-hint-lh); }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge { margin-top: 0.25rem; padding: 0.0625rem 0.375rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge.dcr-verdict-ok { color: #166534; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge.dcr-verdict-warn { color: #92400e; }
+[data-theme='dark'] .dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge.dcr-verdict-ok { color: #6ee7b7; }
+[data-theme='dark'] .dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge.dcr-verdict-warn { color: #fcd34d; }
+
+/* Задачи: счётчик-кнопка 20px. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-tasks-pill { gap: 0.25rem; padding: 0.0625rem 0.4375rem; line-height: var(--ui-hint-lh); }
+
+/* Документы. Путь к папке, «Файлы: N» и «+ Документ» — кнопками 20px;
+   «Файлы» и «+ Документ» — рядом. Отчёт и итоговые документы — рамки с
+   заголовком и кнопкой добавления в одну строку, если помещаются. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path-add { margin-bottom: 0.25rem; padding: 0.0625rem 0.375rem; gap: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-docs { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-docs-toggle, .dcr-doc-add) { padding: 0.0625rem 0.5rem; gap: 0.3125rem; line-height: var(--ui-hint-lh); }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-final-docs {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.375rem;
+  margin-top: 0.375rem;
+  padding: 0.25rem 0.375rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-final-docs-title { flex: 1 1 auto; gap: 0.25rem; }
+/* Счётчик файлов — 12px, как остальной мелкий текст (было 10px). */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-final-docs-count { font-size: var(--ui-hint); line-height: 1; }
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-docs, .dcr-final-docs) > .dcr-doc-chips { flex: 1 0 100%; gap: 0.1875rem; }
+
+/* Путь к папке: кнопки «копировать» и «изменить» (20×19, между ними 4px) —
+   в правом верхнем углу, путь обтекает их в первой строке и дальше идёт на
+   всю ширину. Перенос — по пробелам и разделителям, внутри имени папки —
+   только если оно длиннее строки (было word-break: break-all — «ДС\2|026»).
+   В режиме правки — значок и поле в одну строку, текст 12px (было 11px). */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path:not(.is-edit) {
+  --dcr-path-acts: 1;
+  position: relative;
+  margin-bottom: 0.25rem;
+  padding: 0.1875rem 0.25rem 0.125rem;
+  gap: 0.25rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path:not(.is-edit):has(> .dcr-folder-path-copy + .dcr-folder-path-copy) { --dcr-path-acts: 2; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path:not(.is-edit) > .dcr-folder-path-copy {
+  position: absolute;
+  top: 0;
+  right: 0.1875rem;
+  width: 1.25rem;
+  height: 1.1875rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path:not(.is-edit) > .dcr-folder-path-copy:nth-last-child(2) { right: 1.6875rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path-text { word-break: normal; overflow-wrap: anywhere; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path-text::before {
+  content: '';
+  float: right;
+  width: calc(var(--dcr-path-acts) * 1.5rem - 0.1875rem);
+  height: 1rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path.is-edit { margin-bottom: 0.25rem; padding: 0.1875rem 0.25rem; gap: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path.is-edit .dcr-folder-path-input { flex-basis: calc(100% - 1.25rem); }
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-folder-path-input, .dcr-folder-path-btn) { font-size: var(--ui-hint); }
+
+/* Файл: имя целиком, обычным текстом. Кнопки (просмотр, скачать, удалить,
+   24×20) прижаты к правому верхнему углу; имя обтекает их только в первой
+   строке, дальше идёт на всю ширину карточки — длинное имя занимает 2–4
+   строки, а не 5–15 узким столбиком. Место под кнопки держит пустой float в
+   начале имени, его ширина — по числу кнопок (--dcr-chip-acts). */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip { --dcr-chip-acts: 1; display: block; position: relative; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip:has(> :nth-child(3)) { --dcr-chip-acts: 2; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip:has(> :nth-child(4)) { --dcr-chip-acts: 3; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip-main {
+  display: flex;
+  width: 100%;
+  padding: 0.25rem 0.375rem 0.1875rem;
+  line-height: var(--ui-hint-lh);
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip-icon { margin-top: 0.125rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip-desc { flex: 1 1 auto; min-width: 0; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip-desc::before {
+  content: '';
+  float: right;
+  width: calc(var(--dcr-chip-acts) * 1.5rem - 0.125rem);
+  height: 1rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip > :is(.dcr-doc-chip-action, .dcr-doc-chip-del) {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1.5rem;
+  height: 1.25rem;
+  border-left: 0;
+  border-radius: 4px;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip > :nth-last-child(2):not(.dcr-doc-chip-main) { right: 1.5rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip > :nth-last-child(3):not(.dcr-doc-chip-main) { right: 3rem; }
+/* Карточка обрезает содержимое по скруглению — рамку фокуса рисуем внутри. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip :focus-visible { outline-offset: -2px; }
+
+/* Описание и действия. Кнопки действий — 24px (у плотного реестра тендеров
+   26px): три в колонке 5rem. */
+.dc-requests-page.ui-work.dcr-dense .table-container .ui-clamp-toggle { margin-top: 0.0625rem; }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr > td.actions-cell { padding-left: 0.25rem; padding-right: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .actions-cell .btn-icon { width: 1.5rem; height: 1.5rem; }

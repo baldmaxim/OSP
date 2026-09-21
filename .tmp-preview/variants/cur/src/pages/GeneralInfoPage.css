@@ -1,0 +1,108 @@
+.general-info-page {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.general-info-page .page-header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.general-info-page .page-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--text-primary);
+}
+
+.section-selection {
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+.section-selection .selection-label {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+}
+
+.section-cards {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.section-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 2.5rem;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-color);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 180px;
+}
+
+.section-card:hover {
+  border-color: var(--primary-color);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+}
+
+.section-icon {
+  font-size: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.5rem;
+  color: var(--primary-color, #2563eb);
+}
+
+.section-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.section-description {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* Dark theme */
+[data-theme='dark'] .section-card {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color-dark);
+}
+
+[data-theme='dark'] .section-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 768px) {
+  .section-cards {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .section-card {
+    width: 100%;
+    max-width: 300px;
+  }
+}
+
+@media (max-width: 640px) {
+  .general-info-page .page-header { padding: 1rem; }
+  .general-info-page .page-header h2 { font-size: 1.25rem; }
+  .section-selection { padding: 1.25rem 1rem 1.75rem; }
+  .section-selection .selection-label { font-size: 1rem; margin-bottom: 1.25rem; }
+  .section-card { max-width: none; padding: 1.25rem 1rem; }
+}

@@ -1,0 +1,231 @@
+/* Модалка «Структура хранения документов» — справочник по папкам в хранилище. */
+.dss-modal {
+  width: min(58rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.dss-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.dss-header h3 { margin: 0; font-size: 1.0625rem; }
+.dss-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.dss-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+}
+
+.dss-root {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.dss-root-label {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.dss-root-path {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* Дерево. Вертикальная направляющая — border вложенного списка: псевдографика
+   не нужна, текст остаётся выделяемым и копируется без «мусора». */
+.dss-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dss-list .dss-list {
+  margin: 0 0 0 0.55rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--border-color);
+}
+
+/* Строка-переключатель: у ветки это <button> во всю ширину, у листа — <div>.
+   Сбрасываем кнопочные умолчания, чтобы обе выглядели одинаково. */
+.dss-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.22rem 0.35rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  min-width: 0;
+}
+button.dss-row { cursor: pointer; }
+button.dss-row:hover { background: var(--bg-secondary); }
+button.dss-row:focus-visible { outline: 2px solid var(--primary-color, #2563eb); outline-offset: -2px; }
+
+/* Панель над деревом: подсказка + «развернуть/свернуть всё». */
+.dss-tree-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+.dss-tree-hint { font-size: 0.6875rem; color: var(--text-tertiary); }
+.dss-tree-btn {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+.dss-tree-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+/* Сколько папок внутри свёрнутой ветки. */
+.dss-count {
+  flex-shrink: 0;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.dss-toggle {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.dss-toggle.is-collapsed { transform: rotate(-90deg); }
+.dss-toggle.is-leaf { cursor: default; }
+
+.dss-ico { flex-shrink: 0; color: var(--text-tertiary); }
+
+.dss-name {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.78125rem;
+  color: var(--text-primary);
+}
+
+/* Пояснение — приглушённое и обрезается: это подсказка, а не содержание строки.
+   Из-за неё строка не должна ломаться и уезжать по ширине. */
+.dss-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Уровни различаем насыщенностью и цветом иконки, не заливкой строк. */
+.dss-item--object > .dss-row .dss-name { font-weight: 700; font-size: 0.8125rem; }
+.dss-item--object > .dss-row .dss-ico { color: var(--text-secondary); }
+.dss-item--counterparty > .dss-row .dss-name { font-weight: 700; }
+.dss-item--contract > .dss-row .dss-name { font-weight: 700; color: var(--primary-color, #2563eb); }
+.dss-item--contract > .dss-row .dss-ico { color: var(--primary-color, #2563eb); }
+.dss-item--group > .dss-row .dss-name { font-weight: 600; }
+/* Стадии внутри договора и ДС — самый нижний уровень, намеренно бледнее. */
+.dss-item--stage > .dss-row .dss-name { color: var(--text-secondary); }
+
+/* Чип с именем стадии — используется в легенде под деревом. */
+.dss-stage {
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Расшифровка стадий — один раз внизу, а не в каждой ветке дерева. */
+.dss-legend {
+  margin-top: 1.1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.dss-legend-head {
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.dss-legend-list { margin: 0; padding: 0; list-style: none; }
+.dss-legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+.dss-legend-list .dss-stage { background: var(--bg-primary); flex-shrink: 0; }
+
+.dss-notes {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-color);
+}
+.dss-notes p {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.dss-notes p:last-child { margin-bottom: 0; }
+
+.dss-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 640px) {
+  .dss-root { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+  /* На телефоне подсказка уводится под строку — в неё иначе не помещается ничего. */
+  .dss-row { flex-wrap: wrap; }
+  .dss-hint { flex-basis: 100%; padding-left: 1.35rem; white-space: normal; }
+  .dss-legend-list li { flex-wrap: wrap; }
+}

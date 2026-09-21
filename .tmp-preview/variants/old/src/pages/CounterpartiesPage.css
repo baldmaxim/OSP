@@ -1,0 +1,2159 @@
+/* CounterpartiesPage - Minimalist Table */
+
+.counterparties-page {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 2rem);
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Toolbar */
+.counterparties-toolbar {
+  padding: 1rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-right: auto;
+  flex-shrink: 0;
+}
+
+/* task 199: крупнее и понятнее заголовок */
+.page-title {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.counter-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+.counter-badge.blacklist {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+[data-theme='dark'] .counter-badge.blacklist {
+  background: rgba(220, 38, 38, 0.2);
+  color: #fca5a5;
+}
+
+.toolbar-center {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.search-container {
+  position: relative;
+  flex: 1;
+  min-width: 160px;
+  max-width: 280px;
+}
+
+.search-container input {
+  width: 100%;
+  padding: 0.5rem 0.5rem 0.5rem 2rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 38px;
+  box-sizing: border-box;
+}
+
+.search-container input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.search-icon {
+  position: absolute;
+  left: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.filter-select {
+  padding: 0.5rem 1.5rem 0.5rem 0.5rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  appearance: none;
+  height: 36px;
+  flex-shrink: 1;
+  min-width: 130px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.375rem center;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.filter-select.active {
+  border-color: var(--primary-color);
+}
+
+.counterparties-page .btn-add {
+  padding: 0.5rem 2rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  background: var(--primary-color);
+  color: white;
+  cursor: pointer;
+  height: 36px;
+  white-space: nowrap;
+  overflow: visible;
+  min-width: fit-content;
+}
+
+.btn-add:hover {
+  background: var(--primary-hover);
+}
+
+.btn-import {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  height: 34px;
+  white-space: nowrap;
+}
+
+.btn-import:hover {
+  background: var(--bg-tertiary);
+}
+
+.btn-import:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Selection bar */
+.toolbar-selection {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.375rem 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.btn-link {
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: none;
+  background: none;
+  color: var(--primary-color);
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+.btn-bulk-delete {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: none;
+  border-radius: 4px;
+  background: #dc2626;
+  color: white;
+  cursor: pointer;
+}
+
+.btn-bulk-delete:hover {
+  background: #b91c1c;
+}
+
+/* Content */
+.counterparties-content {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.table-wrapper {
+  height: 100%;
+  overflow: auto;
+}
+
+/* Table */
+.compact-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.compact-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-tertiary);
+}
+
+.compact-table th {
+  padding: 0.3rem 0.375rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border-color);
+  user-select: none;
+}
+
+.compact-table td {
+  padding: 0.4375rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  /* task 200: тонкие, почти прозрачные вертикальные полоски между столбцами */
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  vertical-align: top;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-table th {
+  /* такие же лёгкие вертикальные полоски в шапке */
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+}
+
+.compact-table th:last-child,
+.compact-table td:last-child {
+  border-right: none;
+}
+
+/* task 200: Наименование, Вид работ, ИНН — по центру вертикально (как просил пользователь) */
+/* task 200/202: Наименование, Вид работ, ИНН + одноклеточные — по центру вертикально */
+.compact-table td.col-name,
+.compact-table td.col-worktype,
+.compact-table td.col-inn,
+.compact-table td.col-num,
+.compact-table td.col-checkbox,
+.compact-table td.col-website,
+.compact-table td.col-status,
+.compact-table td.col-actions {
+  vertical-align: middle;
+}
+
+/* task 202: № — гарантированная центровка по горизонтали и вертикали */
+.compact-table th.col-num,
+.compact-table td.col-num {
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* task 203: чекбокс — полная центровка в столбце (был смещён вправо из-за паддингов) */
+.compact-table th.col-checkbox,
+.compact-table td.col-checkbox {
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.compact-table .col-checkbox input[type="checkbox"] {
+  display: inline-block;
+  margin: 0;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.compact-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Column sizing */
+.compact-table { table-layout: fixed; }
+/* task 199: № — крупнее и в кружочке-плашке */
+.col-num {
+  width: 44px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.col-checkbox { width: 36px; text-align: center; }
+.col-name { width: 17%; }
+.col-worktype { width: 14%; }
+.col-inn { width: 9%; font-size: 0.75rem; }
+.col-contact-name { width: 17%; }
+/* task 202: телефон фикс. минимальной ширины — формат +7(000)000-00-00 (16 симв.) */
+.col-contact-phone { width: 132px; font-size: 0.75rem; }
+.col-contact-email { width: 14%; font-size: 0.75rem; }
+.col-website { width: 5%; text-align: center; }
+/* task 199: «Примечание» — шире */
+.col-notes { width: 18%; font-size: 0.75rem; }
+.col-status { width: 9%; }
+.col-actions { width: 6%; text-align: center; }
+
+/* Row states */
+.table-row {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.table-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.table-row.selected {
+  background: rgba(8, 145, 178, 0.06);
+}
+
+.table-row.blacklist {
+  color: var(--text-secondary);
+}
+
+.table-row.blacklist .company-name {
+  opacity: 0.7;
+}
+
+/* task 341/342: визуальная «активность» раскрытой строки — без полосок и
+   стрипов слева. Только лёгкий primary-tint фон, который продолжается на
+   блок истории под ней. Глаз сразу видит вертикальный «кластер» одного цвета. */
+.table-row.expanded td {
+  background: rgba(37, 99, 235, 0.04);
+}
+.table-row.expanded .col-num {
+  color: var(--primary-color, #2563eb);
+  font-weight: 700;
+}
+.table-row.expanded .company-name {
+  color: var(--primary-color, #2563eb);
+}
+[data-theme='dark'] .table-row.expanded td {
+  background: rgba(96, 165, 250, 0.08);
+}
+[data-theme='dark'] .table-row.expanded .col-num,
+[data-theme='dark'] .table-row.expanded .company-name {
+  color: #93c5fd;
+}
+
+/* Checkbox */
+.compact-table input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+/* Cell content */
+.company-name {
+  font-weight: 600;
+}
+
+/* task 422: индикаторы документов — на своей строке под чипом «карточка компании». */
+.col-name .cp-doc-badges {
+  display: flex;
+  margin-top: 0.25rem;
+}
+
+.has-notes {
+  color: var(--primary-color);
+  font-weight: 700;
+  margin-left: 0.25rem;
+  cursor: help;
+}
+
+.col-worktype td,
+.compact-table td.col-worktype {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inn-value {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.8125rem;
+}
+
+.kpp-value {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* Department tags */
+.department-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: center;
+}
+
+.department-tag {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  border-radius: 3px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.department-tag.construction {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+}
+
+.department-tag.warranty {
+  background: rgba(234, 88, 12, 0.12);
+  color: #ea580c;
+  border: 1px solid rgba(234, 88, 12, 0.25);
+}
+
+[data-theme='dark'] .department-tag.construction {
+  background: rgba(96, 165, 250, 0.15);
+  color: #93bbfd;
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+[data-theme='dark'] .department-tag.warranty {
+  background: rgba(251, 146, 60, 0.15);
+  color: #fdba74;
+  border-color: rgba(251, 146, 60, 0.3);
+}
+
+.worktype-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* task 199: длинные виды работ — переносим текст на следующую строчку */
+.worktype-tag {
+  display: block;
+  padding: 0.1875rem 0.4375rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  border-left: 2px solid var(--primary-color);
+}
+
+.empty-cell {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.contacts-more {
+  margin-left: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.contact-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.contact-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.contact-name {
+  font-size: 0.8125rem;
+}
+
+.contact-position {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  line-height: 1.2;
+}
+
+/* task 197: компактная кнопка добавления контакта — pill-стиль, фиксированная под текст */
+.btn-add-contact-inline {
+  align-self: flex-start;
+  padding: 0.1875rem 0.5rem;
+  margin-top: 0.125rem;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.btn-add-contact-inline:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: rgba(8, 145, 178, 0.04);
+}
+
+.btn-add-contact-inline.btn-add-contact-empty {
+  margin-top: 0;
+}
+
+.contact-link {
+  color: var(--primary-color);
+  text-decoration: none;
+  font-size: 0.8125rem;
+}
+
+.contact-link:hover {
+  text-decoration: underline;
+}
+
+/* Status mini select */
+.status-select-mini {
+  padding: 0.125rem 1rem 0.125rem 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  appearance: none;
+  background-repeat: no-repeat;
+  background-position: right 0.25rem center;
+  background-size: 8px;
+}
+
+.status-select-mini.active {
+  background-color: #d1fae5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%23047857' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  color: #047857;
+}
+
+.status-select-mini.blacklist {
+  background-color: #fee2e2;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%23b91c1c' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  color: #b91c1c;
+}
+
+[data-theme='dark'] .status-select-mini.active {
+  background-color: #064e3b;
+  color: #a7f3d0;
+}
+
+[data-theme='dark'] .status-select-mini.blacklist {
+  background-color: #450a0a;
+  color: #fca5a5;
+}
+
+/* Actions */
+.actions-group {
+  display: flex;
+  gap: 0.125rem;
+  justify-content: center;
+}
+
+.btn-action {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+}
+
+.btn-action:hover {
+  background: var(--bg-tertiary);
+  color: var(--primary-color);
+}
+
+.btn-action.delete:hover {
+  color: #dc2626;
+}
+
+/* Expanded row — продолжение primary-tint фона с родительской строки */
+.expanded-row td {
+  padding: 0 !important;
+  background: rgba(37, 99, 235, 0.04);
+}
+[data-theme='dark'] .expanded-row td {
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.expanded-content {
+  padding: 0.625rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  animation: slideDown 0.15s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.expanded-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+}
+
+.detail-item {
+  display: flex;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.detail-label {
+  color: var(--text-tertiary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.detail-value {
+  color: var(--text-primary);
+}
+
+/* Contacts subtable */
+.expanded-contacts {
+  margin-top: 0.25rem;
+}
+
+.contacts-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.contacts-subtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.contacts-subtable td {
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  color: var(--text-primary);
+}
+
+.contacts-subtable th {
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.text-muted {
+  color: var(--text-tertiary);
+}
+
+.contact-sub-actions {
+  display: flex;
+  gap: 0.125rem;
+}
+
+.contact-sub-actions button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.contact-sub-actions button:hover {
+  background: var(--bg-secondary);
+  color: var(--primary-color);
+}
+
+.contact-sub-actions button:last-child:hover {
+  color: #dc2626;
+}
+
+/* Relations */
+.expanded-relations {
+  margin-top: 0.25rem;
+  padding-top: 0.375rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+.relations-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+
+.relation-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(8, 145, 178, 0.1);
+  color: var(--primary-color);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+[data-theme='dark'] .relation-tag {
+  background: rgba(8, 145, 178, 0.2);
+}
+
+.relation-tag-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--primary-color);
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.relation-tag-remove:hover {
+  opacity: 1;
+  background: rgba(8, 145, 178, 0.15);
+}
+
+/* Relation modal */
+.relation-modal {
+  max-width: 520px;
+  width: 100%;
+}
+
+.relation-modal-body {
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.relation-search-input {
+  width: 100%;
+  padding: 0.5625rem 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  margin-bottom: 0.625rem;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.relation-search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 16%, transparent);
+}
+
+.relation-list {
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.375rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-primary);
+}
+
+.relation-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5625rem 0.6875rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.relation-option:hover {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+.relation-option-name {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.relation-option-inn {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.relation-option-worktype {
+  margin-left: auto;
+  padding: 0.125rem 0.4375rem;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.relation-empty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  background: var(--bg-primary);
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+}
+
+/* Счётчик связей на кнопке в строке — выделенный бейдж. */
+.cp-rel-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: var(--primary-color);
+  border-radius: 999px;
+}
+
+/* ── Detail-модалка контрагента (клик по строке) ── */
+.modal.cp-detail-modal {
+  max-width: 1080px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+/* ФИО контрагента показываем полностью (не обрезаем и не прячем за кнопкой). */
+.cp-detail-title h3 {
+  line-height: 1.25;
+  word-break: break-word;
+}
+.cp-detail-modal .modal-header {
+  border-bottom: none;
+  padding-bottom: 0.75rem;
+}
+.cp-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.cp-detail-title { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.cp-detail-title h3 { margin: 0; }
+.cp-detail-inn {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+.cp-detail-header-actions { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
+.cp-detail-edit { white-space: nowrap; }
+
+.cp-detail-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.cp-detail-tab {
+  padding: 0.625rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.cp-detail-tab:hover { color: var(--text-primary); }
+.cp-detail-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.cp-detail-body {
+  padding: 1.25rem 1.5rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ── Вкладка «Изменения»: журнал правок контрагента (миграция 20260829) ──────
+   Свои классы, а не общие .audit-* из ContractRegistry.css: эта страница тот
+   файл не импортирует, и тянуть его сюда ради нескольких правил не стоит. */
+.cp-audit-empty { padding: 2rem 0; text-align: center; color: var(--text-secondary); }
+.cp-audit-hint { font-size: 0.8125rem; color: var(--text-tertiary); }
+
+.cp-audit-legend {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+.cp-audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+/* Полоса слева выстраивает записи в ленту — видно, что это хронология. */
+.cp-audit-item {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid color-mix(in srgb, var(--primary-color, #2563eb) 45%, transparent);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.cp-audit-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-bottom: 0.2rem;
+}
+.cp-audit-when { font-variant-numeric: tabular-nums; }
+.cp-audit-who { font-weight: 600; }
+.cp-audit-what {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+.cp-audit-diff {
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* Подсветка пословного diff — те же имена, что в истории примечаний тендера. */
+.cp-audit-diff .nd-added,
+.cp-audit-legend .nd-added {
+  background: rgba(22, 163, 74, 0.18);
+  color: #15803d;
+  border-radius: 3px;
+}
+.cp-audit-diff .nd-removed,
+.cp-audit-legend .nd-removed {
+  background: rgba(220, 38, 38, 0.16);
+  color: #b91c1c;
+  text-decoration: line-through;
+  border-radius: 3px;
+}
+[data-theme='dark'] .cp-audit-diff .nd-added,
+[data-theme='dark'] .cp-audit-legend .nd-added { color: #86efac; }
+[data-theme='dark'] .cp-audit-diff .nd-removed,
+[data-theme='dark'] .cp-audit-legend .nd-removed { color: #fca5a5; }
+.cp-detail-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.cp-doc-section {
+  padding: 1rem 1.125rem 1.125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-primary);
+}
+
+/* Empty & Loading */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+}
+
+.empty-title {
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+  margin: 0 0 1rem 0;
+}
+
+.loading-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Modal overrides */
+.counterparties-page .modal-overlay {
+  backdrop-filter: blur(2px);
+}
+
+.counterparties-page .modal {
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+}
+
+.counterparties-page .modal-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.counterparties-page .modal-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.counterparties-page .modal-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+}
+
+.counterparties-page .modal form {
+  padding: 1.25rem;
+}
+
+.counterparties-page .form-group label {
+  font-weight: 500;
+  font-size: 0.8125rem;
+}
+
+.counterparties-page .form-group input,
+.counterparties-page .form-group textarea,
+.counterparties-page .form-group select {
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.counterparties-page .form-group input:focus,
+.counterparties-page .form-group textarea:focus,
+.counterparties-page .form-group select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.1);
+}
+
+.counterparties-page .modal-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.counterparties-page .modal-footer .btn-primary,
+.counterparties-page .modal-footer .btn-secondary {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  border-radius: 4px;
+}
+
+/* Work Types Tags */
+.work-types-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.work-types-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.work-type-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--primary-color);
+  color: white;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.work-type-tag-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.work-type-tag-remove:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.work-type-input-row {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.work-type-input-row select {
+  flex: 1;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.work-type-input-row select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.work-type-input-row input {
+  flex: 1;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.work-type-input-row input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.btn-add-work-type {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.btn-add-work-type:hover {
+  background: var(--primary-hover);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .toolbar-row {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-left {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 0.5rem;
+  }
+
+  .toolbar-right {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .search-container {
+    flex: 1;
+    min-width: 150px;
+  }
+}
+
+/* ====================================================================
+   Task 196 + 197: вкладки + стек контактов + примечание + история тендеров
+   ==================================================================== */
+
+/* Вкладки «Активные / Удалённые» (task 197) */
+/* task 343: pending-стейт пока React готовит новую таблицу в background.
+   Едва заметная opacity-полусекунда — пользователь понимает «процесс идёт»,
+   но не блокирует UI. */
+.counterparties-tabs.is-pending {
+  opacity: 0.78;
+  cursor: progress;
+  transition: opacity 0.12s ease;
+}
+
+.counterparties-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.625rem 1rem 0;
+  background: transparent;
+  border-bottom: 1px solid var(--border-color);
+  margin-top: 0.25rem;
+}
+
+.cp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.5rem 0.875rem;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.cp-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.cp-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  font-weight: 600;
+}
+
+.cp-tab-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 0.375rem;
+  border-radius: 9px;
+  background: var(--bg-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.cp-tab.active .cp-tab-count {
+  background: var(--primary-color);
+  color: #fff;
+}
+
+/* Вкладка «Удалённые» — красная, в правый край */
+/* task 201: вкладка «Чёрный список» — серо-стальной акцент */
+.cp-tab-blacklist { color: #475569; }
+.cp-tab-blacklist:hover { color: #1e293b; }
+.cp-tab-blacklist.active { color: #1e293b; border-bottom-color: #475569; }
+.cp-tab-blacklist.active .cp-tab-count { background: #475569; }
+[data-theme='dark'] .cp-tab-blacklist { color: #cbd5e1; }
+[data-theme='dark'] .cp-tab-blacklist.active { color: #f1f5f9; border-bottom-color: #94a3b8; }
+
+/* «Удалённые» прижата к правому краю */
+.cp-tab-deleted { margin-left: auto; color: #b91c1c; }
+.cp-tab-deleted:hover { color: #991b1b; }
+.cp-tab-deleted.active { color: #991b1b; border-bottom-color: #b91c1c; }
+.cp-tab-deleted.active .cp-tab-count { background: #b91c1c; }
+[data-theme='dark'] .cp-tab-deleted { color: #fca5a5; }
+[data-theme='dark'] .cp-tab-deleted.active { color: #fecaca; border-bottom-color: #fca5a5; }
+
+/* task 321: вкладка «Виды работ» — справочник, визуально отделим лёгкой
+   границей слева от status-tabs группы. */
+.cp-tab-worktypes {
+  margin-left: 0.5rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+.cp-tab-worktypes:hover { color: var(--text-primary); }
+.cp-tab-worktypes.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+/* task 323: поисковый dropdown «Виды работ» в тулбаре контрагентов.
+   Визуально перекликается с .filter-select (36px, тот же бордер), но это input
+   + всплывающий список — позволяет печатать и фильтровать длинный справочник. */
+.wt-filter-wrap {
+  position: relative;
+  min-width: 180px;
+  flex-shrink: 1;
+}
+.wt-filter-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 1.75rem 0 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  box-sizing: border-box;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+}
+.wt-filter-input::placeholder { color: var(--text-tertiary); }
+.wt-filter-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background-image: none;
+}
+.wt-filter-input.active {
+  border-color: var(--primary-color);
+}
+.wt-filter-clear {
+  position: absolute;
+  right: 0.375rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wt-filter-clear:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+.wt-filter-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+}
+.wt-filter-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+.wt-filter-item:last-child { border-bottom: none; }
+.wt-filter-item:hover { background: rgba(8, 145, 178, 0.08); }
+.wt-filter-item.is-current {
+  background: rgba(8, 145, 178, 0.12);
+  font-weight: 600;
+  color: var(--primary-color);
+}
+.wt-filter-empty {
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* task 322: поиск вида работ из справочника в карточке контрагента.
+   Текстовый input + выпадающий фильтрованный список (по name). */
+.wt-search-wrap {
+  position: relative;
+  width: 100%;
+}
+.wt-search-input {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+.wt-search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.10);
+}
+.wt-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+}
+.wt-search-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+.wt-search-item:last-child { border-bottom: none; }
+.wt-search-item:hover,
+.wt-search-item.active {
+  background: rgba(8, 145, 178, 0.08);
+}
+.wt-search-empty {
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* task 321: панель справочника видов работ.
+   Родитель .counterparties-content — flex-column с overflow:hidden и min-height:0,
+   поэтому панель тоже flex-column во всю высоту, а внутренний .table-wrapper
+   занимает остаток (flex:1) и сам скроллится. */
+.work-types-directory {
+  padding: 1rem 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+.work-types-directory .table-wrapper {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.work-types-directory-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
+}
+
+/* task 326: поиск в шапке справочника видов работ. Растягивается между
+   заголовком слева и кнопкой «+ Добавить» справа. */
+.work-types-directory-search {
+  position: relative;
+  flex: 1;
+  max-width: 360px;
+  margin-right: auto;
+}
+.work-types-directory-search .search-icon {
+  position: absolute;
+  left: 0.625rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+.work-types-directory-search input {
+  width: 100%;
+  height: 34px;
+  padding: 0 1.75rem 0 2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  box-sizing: border-box;
+}
+.work-types-directory-search input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.10);
+}
+.work-types-directory-search-clear {
+  position: absolute;
+  right: 0.375rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 0.9375rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.work-types-directory-search-clear:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+.work-types-directory-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.work-types-table tbody td {
+  padding: 0.625rem 0.75rem;
+  vertical-align: middle;
+}
+.work-types-table .actions-group {
+  display: flex;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+/* Кнопка «Восстановить» (task 197) */
+.btn-action-restore {
+  color: #16a34a;
+}
+
+.btn-action-restore:hover {
+  background: rgba(22, 163, 74, 0.12);
+}
+
+/* Стек всех контактов в одной ячейке */
+.contacts-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.contact-stack-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.0625rem;
+  padding: 0.375rem 0.5rem 0.5rem;
+  /* task 328: единая высота строки контакта во всех трёх колонках
+     (контакты / телефон / email), чтобы border-bottom разделители
+     стояли строго на одной высоте. */
+  min-height: 3.25rem;
+  border-left: 2px solid var(--border-color);
+  /* task 200 + 327: видимая разделительная черта снизу — отделяет контакты
+     друг от друга. Не dashed/alpha (был незаметен), а solid + чуть темнее. */
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  border-radius: 0 4px 4px 0;
+  transition: border-color 0.15s, background 0.15s;
+  box-sizing: border-box;
+}
+
+.contact-stack-item:hover {
+  border-left-color: var(--primary-color);
+  background: var(--bg-tertiary);
+}
+
+.contacts-stack > .contact-stack-item:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0.25rem;
+}
+
+.contact-stack-item .contact-position {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+  font-style: italic;
+}
+
+.contact-stack-item .contact-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.contact-stack-item .contact-phones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+  margin-top: 0.125rem;
+}
+
+.contact-stack-item .contact-phones .contact-link {
+  font-size: 0.75rem;
+}
+
+/* task 199: построчное выравнивание стеков (контакты / телефоны / email) — высота строки = ~ .contact-stack-item */
+.contacts-stack-phones,
+.contacts-stack-emails {
+  gap: 0.625rem;
+  font-size: 0.75rem;
+}
+
+/* task 200 + 327 + 328: разделители между контактами в колонках телефон/email.
+   Высота строки и padding такие же, как у .contact-stack-item — тогда нижние
+   border-bottom оказываются на одной Y-координате во всех трёх колонках. */
+.contacts-stack-phones .phone-cell,
+.contacts-stack-emails .phone-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+  min-height: 3.25rem;
+  padding: 0.375rem 0 0.5rem;
+  justify-content: center;
+  word-break: break-word;
+  border-bottom: 1px solid var(--border-color);
+  box-sizing: border-box;
+}
+
+.contacts-stack-phones > .phone-cell:last-of-type,
+.contacts-stack-phones > .empty-cell:last-of-type,
+.contacts-stack-emails > .phone-cell:last-of-type,
+.contacts-stack-emails > .empty-cell:last-of-type {
+  border-bottom: none;
+}
+
+.contacts-stack-phones > .empty-cell,
+.contacts-stack-emails > .empty-cell {
+  display: flex;
+  align-items: center;
+  min-height: 3.25rem;
+  padding: 0.375rem 0 0.5rem;
+  line-height: 1.35;
+  word-break: break-word;
+  border-bottom: 1px solid var(--border-color);
+  box-sizing: border-box;
+}
+
+.contacts-stack-phones .phone-cell .contact-link {
+  font-size: 0.78125rem;
+  white-space: nowrap;
+}
+
+/* task 302: длинные email не помещаются в колонку и обрезаются — разрешаем
+   перенос по любому символу. */
+.col-contact-email,
+.contacts-stack-emails .phone-cell,
+.contacts-stack-emails .contact-link {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+/* Примечание */
+.col-notes .notes-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+/* task 203 + 330: редактируемое примечание прямо в таблице.
+   resize: none — высота управляется автоматически из JS по scrollHeight. */
+.col-notes textarea.notes-edit {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2rem;
+  padding: 0.25rem 0.375rem;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  resize: none;
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.col-notes textarea.notes-edit::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.col-notes textarea.notes-edit:hover {
+  border-color: var(--border-color);
+}
+
+.col-notes textarea.notes-edit:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+}
+
+/* Иконка «Открыть полную карточку» */
+.btn-action-card {
+  color: var(--primary-color);
+}
+
+.btn-action-card:hover {
+  background: rgba(8, 145, 178, 0.12);
+}
+
+/* ===== task 340 + 341: «История участия в тендерах» — enterprise-стиль =====
+   Без декоративных пилюль, плоская таблица, status-дот вместо плашки.
+   Шапка с лёгким primary-tint фоном — визуально привязывает секцию к
+   развёрнутой строке контрагента (которая тоже primary-accent сверху). */
+.tender-history-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.tender-history-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.tender-history-section-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.tender-history-section-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.tender-history-section-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tender-history-section-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3125rem;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.tender-history-section-count-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.tender-history-loading,
+.tender-history-empty {
+  padding: 1.25rem 1rem;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+  text-align: center;
+}
+
+.tender-history-table-wrap {
+  overflow-x: auto;
+}
+
+.tender-history-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+}
+
+.tender-history-table .th-num    { width: 48px; }
+.tender-history-table .th-obj    { width: 22%; }
+.tender-history-table .th-desc   { width: auto; }
+.tender-history-table .th-status { width: 170px; }
+.tender-history-table .th-dates  { width: 200px; }
+
+.tender-history-table thead th {
+  text-align: left;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tender-history-table thead .th-num { text-align: center; }
+
+.tender-history-table tbody td {
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  word-break: break-word;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+/* task 341: тонкие вертикальные разделители — мягкие, чтобы упорядочить
+   взгляд но не «расчертить» таблицу как Excel. */
+.tender-history-table th:not(:last-child),
+.tender-history-table td:not(:last-child) {
+  border-right: 1px solid rgba(148, 163, 184, 0.20);
+}
+
+.tender-history-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Лёгкая «зебра» для читаемости длинного списка (правило ховера ниже — перекрывает её). */
+.tender-history-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent);
+}
+
+.tender-history-table tbody tr:hover td {
+  background: var(--bg-tertiary);
+}
+
+.tender-history-num {
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tender-history-obj {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Ссылка-описание — спокойный underline-on-hover, без агрессивного цвета */
+.tender-history-link {
+  color: var(--text-primary);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--border-color);
+  transition: color 0.12s, border-color 0.12s;
+}
+.tender-history-link:hover {
+  color: var(--primary-color, #2563eb);
+  border-bottom-color: var(--primary-color, #2563eb);
+}
+
+.tender-history-dates {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-size: 0.78125rem;
+}
+.tender-history-dates-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+.tender-history-dates-sep {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+/* Status — dot + label, плоский фон без насыщенных пастелей */
+.tender-history-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.1875rem 0.5rem 0.1875rem 0.4375rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.tender-history-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.tender-history-status.status-request_sent      .tender-history-status-dot { background: #6366f1; }
+.tender-history-status.status-declined           .tender-history-status-dot { background: #dc2626; }
+.tender-history-status.status-proposal_provided  .tender-history-status-dot { background: #16a34a; }
+.tender-history-status.status-accepted_for_work  .tender-history-status-dot { background: #7c3aed; }
+
+.tender-history-status.status-declined          { color: #991b1b; border-color: rgba(220, 38, 38, 0.30); }
+.tender-history-status.status-proposal_provided { color: #166534; border-color: rgba(22, 163, 74, 0.30); }
+.tender-history-status.status-accepted_for_work { color: #5b21b6; border-color: rgba(124, 58, 237, 0.30); }
+
+[data-theme='dark'] .tender-history-status.status-declined          { color: #fecaca; border-color: rgba(220, 38, 38, 0.45); }
+[data-theme='dark'] .tender-history-status.status-proposal_provided { color: #bbf7d0; border-color: rgba(22, 163, 74, 0.45); }
+[data-theme='dark'] .tender-history-status.status-accepted_for_work { color: #ddd6fe; border-color: rgba(124, 58, 237, 0.45); }
+
+/* Инкрементальный рендер большого списка — строка «Показать ещё». */
+.show-more-row td {
+  text-align: center;
+  padding: 0.875rem 1rem;
+  background: var(--bg-secondary);
+}
+.btn-show-more {
+  padding: 0.4375rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-show-more:hover {
+  background: var(--hover-bg);
+  border-color: var(--primary-color);
+}
+.show-more-info {
+  margin-left: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* Кнопка «Связи» под карточкой компании (в ячейке наименования). */
+.cp-relations-btn {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.3125rem;
+  padding: 0.1875rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.cp-relations-btn:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+}
+.cp-relations-btn.has-rel {
+  color: var(--primary-color);
+  border-color: color-mix(in srgb, var(--primary-color) 40%, var(--border-color));
+}
+.cp-relations-btn svg { flex-shrink: 0; }
+
+/* Секции модалки связей: текущие связи (чипы с удалением) + добавление. */
+.relation-section { margin-bottom: 1rem; }
+.relation-section:last-child { margin-bottom: 0; }
+.relation-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+  margin-bottom: 0.5rem;
+}
+.relation-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4375rem;
+}
+.relation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.4375rem 0.25rem 0.625rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+}
+.relation-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 0.9375rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.relation-chip-remove:hover { color: #dc2626; background: rgba(220, 38, 38, 0.1); }
+
+/* ── Телефон (≤640px): карточка контрагента ─────────────────────────────────
+   Модалка на весь экран, шапка без переполнения, вкладки — прокручиваемой
+   строкой, «История участия» — карточками вместо таблицы (см. isPhone в JSX). */
+.cp-history-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.cp-history-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: inherit;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.cp-history-card:active { border-color: var(--primary-color, #2563eb); }
+.cp-history-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+.cp-history-card-obj { font-weight: 600; font-size: 0.875rem; color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; }
+.cp-history-card-head .tender-history-status { flex-shrink: 0; white-space: nowrap; }
+.cp-history-card-desc { font-size: 0.8125rem; line-height: 1.35; color: var(--text-secondary); overflow-wrap: anywhere; }
+.cp-history-card-foot { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.75rem; color: var(--text-tertiary); }
+.cp-history-card-open { color: var(--primary-color, #2563eb); font-weight: 600; white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .modal.cp-detail-modal { max-height: 100dvh; height: 100dvh; max-width: none; border-radius: 0; }
+  .cp-detail-header { padding: 0.75rem 0.875rem !important; gap: 0.5rem; }
+  .cp-detail-title h3 { font-size: 1rem; }
+  .cp-detail-header-actions { display: flex; align-items: center; gap: 0.375rem; flex-shrink: 0; }
+  .cp-detail-edit { padding: 0.375rem 0.625rem !important; font-size: 0.8125rem !important; }
+  .cp-detail-tabs {
+    padding: 0 0.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cp-detail-tabs::-webkit-scrollbar { display: none; }
+  .cp-detail-tab { flex: 0 0 auto; white-space: nowrap; padding: 0.625rem 0.625rem; }
+  .cp-detail-body { padding: 0.75rem 0.75rem 1rem; }
+  .cp-audit-meta { flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+}
+
+/* Пояснение под «Текущие связи»: связь транзитивна, группа общая. */
+.relation-group-hint {
+  margin: -0.25rem 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}

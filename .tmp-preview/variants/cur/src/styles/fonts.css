@@ -1,0 +1,36 @@
+/* Inter 4.1 — официальный релиз https://github.com/rsms/inter (v4.1, каталог web/).
+   Лицензия SIL Open Font License 1.1 — public/fonts/inter/LICENSE.txt.
+   Файлы отдаёт само приложение (public/fonts/inter), без внешнего CDN.
+
+   Семейство названо 'Inter OSP', а не 'Inter': index.html до сих пор подгружает
+   'Inter' с Google Fonts, и одноимённые @font-face из двух источников смешались бы.
+   Имя здесь и в --ui-font (src/styles/workUi.css) должно совпадать.
+
+   Шрифт применён в разделах с рабочим стилем: «ВОРы и РД», «Планы затрат»,
+   «Тендеры — Основное строительство», «Тендеры на материалы», «Заявка на ДС».
+   Файл скачивается браузером лишь там, где семейство реально применено.
+   Начертания — только нужные по шкале: 400 (текст), 500 (кнопки, заголовки
+   колонок, статусы), 600 (заголовки раздела и блоков). */
+@font-face {
+  font-family: 'Inter OSP';
+  src: url('/fonts/inter/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter OSP';
+  src: url('/fonts/inter/Inter-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter OSP';
+  src: url('/fonts/inter/Inter-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}

@@ -1,0 +1,1952 @@
+.tenders-page {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  border: 1px solid var(--border-color);
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--text-primary);
+}
+
+.table-container {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.data-table thead {
+  background-color: var(--bg-tertiary);
+}
+
+.data-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+/* task 182: «Открыть» сверху, кнопка ✏️ снизу — чтобы слово влезало в узкую колонку */
+.link-with-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.link-with-edit .btn-icon {
+  padding: 0;
+  line-height: 1;
+}
+
+.data-table tbody tr:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.no-data {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.loading {
+  text-align: center;
+  padding: 3rem;
+  font-size: 1.125rem;
+  color: var(--text-tertiary);
+}
+
+/* Status select */
+.status-select {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+  min-width: 180px;
+}
+
+.status-select:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.status-select:focus {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.status-not-started {
+  background-color: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.status-in-progress {
+  background-color: #fef7ed;
+  color: #9a6b3a;
+  border: 1px solid #e8d5c0;
+}
+
+.status-completed {
+  background-color: #f0f7f4;
+  color: #3d6b56;
+  border: 1px solid #c2d9cf;
+}
+
+.status-accepted {
+  background-color: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+.status-waiting-vor {
+  background-color: #f5f3ff;
+  color: #6b3fa0;
+  border: 1px solid #ddd6fe;
+}
+
+.status-suspended {
+  background-color: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fed7aa;
+}
+
+.status-summarizing {
+  background-color: #ecfeff;
+  color: #155e75;
+  border: 1px solid #a5f3fc;
+}
+
+[data-theme='dark'] .status-summarizing {
+  background-color: #164e63;
+  color: #a5f3fc;
+  border-color: #0891b2;
+}
+
+[data-theme='dark'] .status-not-started {
+  background-color: #334155;
+  color: #cbd5e1;
+  border-color: #475569;
+}
+
+[data-theme='dark'] .status-in-progress {
+  background-color: #44382c;
+  color: #e2c9a8;
+  border-color: #8b7355;
+}
+
+[data-theme='dark'] .status-completed {
+  background-color: #2a4038;
+  color: #a8d4be;
+  border-color: #4a7a62;
+}
+
+[data-theme='dark'] .status-accepted {
+  background-color: #312e81;
+  color: #c7d2fe;
+  border-color: #4338ca;
+}
+
+[data-theme='dark'] .status-waiting-vor {
+  background-color: #3b2a5a;
+  color: #d8c8ff;
+  border-color: #5b4a8a;
+}
+
+[data-theme='dark'] .status-suspended {
+  background-color: #4a2c1a;
+  color: #fbbf94;
+  border-color: #8a4a30;
+}
+
+/* Options в select для темной темы */
+[data-theme='dark'] .status-select option {
+  background-color: #1e293b;
+  color: #e2e8f0;
+  padding: 0.5rem;
+}
+
+.status-select option {
+  background-color: #ffffff;
+  color: #1e293b;
+  padding: 0.5rem;
+}
+
+/* Links */
+.link {
+  color: var(--primary-color);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.link:hover {
+  color: var(--primary-hover);
+  text-decoration: underline;
+}
+
+[data-theme='dark'] .link {
+  color: var(--primary-color);
+}
+
+[data-theme='dark'] .link:hover {
+  color: var(--primary-hover);
+}
+
+/* Buttons */
+.btn-primary,
+.btn-secondary {
+  padding: 0.625rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #0e7490 0%, #0a7487 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(8, 145, 178, 0.25);
+}
+
+/* Dark theme для основной кнопки */
+[data-theme='dark'] .btn-primary {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+  color: white;
+}
+
+[data-theme='dark'] .btn-primary:hover {
+  background: linear-gradient(135deg, #0e7490 0%, #0a7487 100%);
+  box-shadow: 0 4px 6px rgba(8, 145, 178, 0.35);
+}
+
+.btn-secondary {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background-color: var(--hover-bg);
+  border-color: var(--border-color-dark);
+}
+
+/* Dark theme для кнопки Отмена */
+[data-theme='dark'] .btn-secondary {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-color: var(--border-color-dark);
+}
+
+[data-theme='dark'] .btn-secondary:hover {
+  background-color: var(--hover-bg);
+}
+
+/* Action buttons */
+.actions-column {
+  width: 120px;
+  text-align: center;
+}
+
+.actions-cell {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.375rem 0.5rem;
+  margin: 0 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon:hover {
+  background-color: var(--hover-bg);
+  transform: scale(1.1);
+}
+
+.btn-edit:hover {
+  filter: brightness(1.2);
+}
+
+.btn-delete:hover {
+  filter: brightness(1.2);
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+
+.modal {
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  max-width: 700px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  border: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  color: var(--text-secondary);
+}
+
+.modal form {
+  padding: 2rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  padding: 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+}
+
+/* Dark theme для полей ввода */
+[data-theme='dark'] .form-group input,
+[data-theme='dark'] .form-group textarea,
+[data-theme='dark'] .form-group select {
+  border-color: var(--border-color-dark);
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .form-group input:focus,
+[data-theme='dark'] .form-group textarea:focus,
+[data-theme='dark'] .form-group select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.1);
+}
+
+/* Select options для темной темы */
+[data-theme='dark'] .form-group select option {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.form-group textarea {
+  resize: vertical;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border: 1px solid var(--border-color);
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .page-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .data-table {
+    font-size: 0.75rem;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal {
+    margin: 0;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .modal form {
+    padding: 1.5rem;
+  }
+
+  .btn-icon {
+    font-size: 1rem;
+    padding: 0.25rem 0.375rem;
+  }
+
+  .actions-column {
+    width: 80px;
+  }
+
+  .status-select {
+    font-size: 0.625rem;
+    padding: 0.375rem 0.5rem;
+    min-width: 140px;
+  }
+}
+
+/* Tender Tabs */
+/* task 252: без горизонтального ползунка — вкладки переносятся на след. строку */
+.tender-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  overflow-x: visible;
+  gap: 0;
+  border-bottom: 2px solid var(--border-color);
+  background-color: var(--bg-tertiary);
+}
+
+/* task 251: в «Тендеры на материалы» вкладок мало — убираем ненужный ползунок */
+.tender-tabs.tender-tabs--simple {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+/* task 238/240: вкладки в одну строку — компактнее, без переноса и без скролла */
+.tender-tab {
+  padding: 0.55rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tender-tab:hover {
+  color: var(--text-primary);
+  background-color: var(--hover-bg);
+}
+
+/* task 194: вкладка «Удалённые» — в правый край */
+/* task 253: без margin-left:auto — вкладки идут подряд, без пустого
+   промежутка между статусами и «Удалёнными» (как в ВОРы и РД / Планах затрат) */
+.tender-tab-deleted { color: #b91c1c; }
+.tender-tab-deleted:hover { color: #991b1b; }
+.tender-tab-deleted.active { color: #991b1b; border-bottom-color: #b91c1c !important; }
+[data-theme='dark'] .tender-tab-deleted { color: #fca5a5; }
+[data-theme='dark'] .tender-tab-deleted.active { color: #fecaca; }
+
+.tender-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  background-color: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.tender-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.3rem;
+  border-radius: 10px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.tender-tab-count.completed {
+  background-color: #16a34a;
+}
+
+/* task 232/233/235/236: кнопка-переключатель и встроенные вкладки статусов,
+   раскрывающиеся вправо прямо в строке вкладок */
+.tender-tab-status-toggle {
+  font-weight: 600;
+  border-right: 1px solid var(--border-color);
+}
+
+.tender-tab-chevron {
+  font-size: 0.7rem;
+  opacity: 0.75;
+  display: inline-block;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.tender-tab-status-toggle.open .tender-tab-chevron {
+  opacity: 1;
+  transform: rotate(180deg);
+}
+
+/* Встроенные вкладки статусов — компактнее обычных и на лёгком фоне,
+   чтобы раскрытая вправо группа читалась как единое целое и не была громоздкой */
+.tender-tab.tender-tab-status {
+  gap: 0.5rem;
+  background: var(--bg-secondary);
+}
+
+.tender-tab.tender-tab-status .tender-tab-count {
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+}
+
+.tender-tab.tender-tab-status:hover {
+  background: var(--hover-bg);
+}
+
+/* Dark theme для вкладок тендеров */
+[data-theme='dark'] .tender-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  background-color: var(--bg-secondary);
+}
+
+[data-theme='dark'] .tender-tab-count {
+  background-color: var(--primary-color);
+}
+
+[data-theme='dark'] .tender-tab-count.completed {
+  background-color: #22c55e;
+}
+
+/* Просроченные тендеры */
+.overdue-row {
+  background-color: rgba(220, 38, 38, 0.06) !important;
+}
+
+.overdue-row td {
+  color: var(--text-primary);
+}
+
+.overdue-row:hover {
+  background-color: rgba(220, 38, 38, 0.1) !important;
+}
+
+[data-theme='dark'] .overdue-row {
+  background-color: rgba(220, 38, 38, 0.1) !important;
+}
+
+[data-theme='dark'] .overdue-row:hover {
+  background-color: rgba(220, 38, 38, 0.15) !important;
+}
+
+@media (max-width: 768px) {
+  .tender-tabs {
+    overflow-x: auto;
+  }
+
+  .tender-tab {
+    padding: 0.75rem 1rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  .tender-tab-count {
+    min-width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.7rem;
+  }
+}
+
+/* ===== Compact / minimal layout, scoped to tenders page ===== */
+.tenders-page {
+  border-radius: 8px;
+}
+
+.tenders-page .page-header {
+  padding: 0.875rem 1.25rem;
+  border-width: 1px;
+  border-style: solid;
+}
+
+.tenders-page .page-header h2 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Цветной акцент шапки страницы — визуальное отличие разделов.
+   Тон приходит классом hdr-tone--* и совпадает с тоном плитки-иконки
+   (см. tenderDepartments.js и IconTile.css). */
+.page-header-tenders {
+  --hdr-tone: 95, 168, 216;
+  border-left: 4px solid rgb(var(--hdr-tone));
+  background: linear-gradient(90deg, rgba(var(--hdr-tone), 0.07) 0%, transparent 60%);
+}
+.page-header-tenders.hdr-tone--sky    { --hdr-tone: 95, 168, 216; }
+.page-header-tenders.hdr-tone--green  { --hdr-tone: 109, 191, 146; }
+.page-header-tenders.hdr-tone--violet { --hdr-tone: 143, 143, 230; }
+.page-header-tenders.hdr-tone--slate  { --hdr-tone: 138, 160, 189; }
+.page-header-tenders.hdr-tone--sand   { --hdr-tone: 201, 177, 131; }
+
+/* Плитка иконки в заголовке чуть меньше, чем в боковом меню. */
+.tenders-page .page-header h2 .page-icon-tile { width: 26px; height: 26px; }
+
+/* Переключатель вида таблицы (Компактный / Все столбцы) */
+/* Разметку окна «Документы раздела» перенесли в TenderDocsModal.css (task 435):
+   там она вместе с вкладками «Инструкция» и «Сотрудники СТО». */
+
+/* Возврат из шаблона письма: кнопки в шапке больше нет, нужен явный путь назад. */
+.tender-docs-back {
+  margin-bottom: 1rem;
+  padding: 0.25rem 0.6rem 0.25rem 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.tender-docs-back:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+@media (max-width: 640px) {
+  .tender-docs { padding: 1rem; }
+  .tender-docs-grid { grid-template-columns: 1fr; }
+}
+
+/* Кнопка-иконка без подписи: шапка тендеров тесная, и у редких действий
+   («Шаблон письма», предпросмотр напоминания) подпись занимала больше места,
+   чем стоила. Смысл раскрывает title и aria-label. */
+.btn-view-toggle.is-icon-only {
+  gap: 0;
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+.btn-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.4375rem 0.75rem;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn-view-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
+.btn-view-toggle.active {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
+[data-theme='dark'] .btn-view-toggle.active {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+  border-color: rgba(37, 99, 235, 0.5);
+}
+
+/* Компактный режим таблицы: оставшимся столбцам разрешаем растягиваться */
+.tenders-page .data-table--compact {
+  table-layout: auto;
+  width: 100%;
+}
+
+.tenders-page .data-table--compact th,
+.tenders-page .data-table--compact td {
+  /* Снимаем maxWidth у «Описание работ», чтобы оно занимало освободившееся место */
+  max-width: none;
+}
+
+.tenders-page .tender-tabs {
+  border-bottom-width: 1px;
+}
+
+/* task 252: размер вкладок как в «Планах затрат» (.cost-plans-tabs .tab) */
+.tenders-page .tender-tab {
+  padding: 0.5rem 1.125rem;
+  font-size: 0.8125rem;
+  border-bottom-width: 2px;
+  margin-bottom: -1px;
+}
+
+.tenders-page .tender-tab.tender-tab-status {
+  padding: 0.5rem 1.125rem;
+  font-size: 0.8125rem;
+}
+
+.tenders-page .tender-tab-count {
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  border-radius: 8px;
+}
+
+.tenders-page .data-table {
+  font-size: 0.8125rem;
+}
+
+.tenders-page .data-table th {
+  padding: 0.375rem 0.5rem;
+  border-width: 1px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
+  line-height: 1.2;
+  font-size: 0.75rem;
+  vertical-align: middle;
+}
+
+/* break-word, а НЕ anywhere: `anywhere` занижает минимальную ширину содержимого
+   до одного символа, и алгоритм таблицы решает, что колонку можно сжать до
+   цифры — номер тендера 733 показывался как «73/3». `break-word` так же не даёт
+   длинной ссылке вылезти за ячейку, но ширину колонок не ломает. */
+.tenders-page .data-table td {
+  vertical-align: top;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.tenders-page .data-table th.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: normal;
+}
+
+.tenders-page .data-table th.sortable-th:hover {
+  color: var(--text-primary);
+  background-color: var(--hover-bg);
+}
+
+.tenders-page .data-table td {
+  padding: 0.5rem 0.625rem;
+}
+
+.tenders-page .status-select {
+  min-width: 150px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border-radius: 6px;
+}
+
+.tenders-page .status-select:hover {
+  transform: none;
+}
+
+
+.tenders-page .btn-primary,
+.tenders-page .btn-secondary {
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.8125rem;
+  border-radius: 6px;
+}
+
+.tenders-page .btn-primary:hover {
+  transform: none;
+}
+
+.tenders-page .btn-icon {
+  font-size: 0.9375rem;
+  padding: 0.25rem 0.375rem;
+  margin: 0 0.125rem;
+}
+
+.tenders-page .btn-icon:hover {
+  transform: none;
+}
+
+.tenders-page .actions-column {
+  width: 88px;
+}
+
+/* Expanded counterparties row inside the tenders table */
+.tenders-page .expanded-cp-row {
+  padding: 0.5rem 0.75rem;
+  background-color: var(--bg-tertiary);
+  box-shadow: inset 3px 0 0 var(--primary-color);
+}
+
+/* Примечание по тендеру — первым блоком в раскрытии, до списка участников.
+   Тон подложки отделяет общий контекст тендера от таблицы контрагентов. */
+.tenders-page .tender-notes-block {
+  margin-bottom: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid color-mix(in srgb, var(--primary-color, #2563eb) 55%, transparent);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.tenders-page .tender-notes-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.tenders-page .tender-notes-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.tenders-page .tender-notes-text {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tenders-page .tender-notes-text.is-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+/* Поле правки здесь шире, чем в ячейке участника, — примечание тендера длиннее. */
+.tenders-page .tender-notes-block .tc-notes-textarea {
+  min-height: 72px;
+  font-size: 0.8125rem;
+}
+
+.tenders-page .expanded-cp-toolbar {
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tenders-page .expanded-cp-toolbar .btn-primary,
+.tenders-page .expanded-cp-toolbar .btn-secondary {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+}
+
+.tenders-page .kp-counter {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.tenders-page .kp-counter.kp-counter-full {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+[data-theme='dark'] .tenders-page .kp-counter.kp-counter-full {
+  background: #2a4038;
+  color: #a8d4be;
+  border-color: #4a7a62;
+}
+
+/* Статус контрагента в раскрытом тендере: список опций был жёстко белым (инлайн),
+   из-за чего в тёмной теме выпадающий список слепил. Отдаём цвета теме. */
+.tc-status-select option {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* Срок проведения процедур; просроченный — красным, но в тёмной теме мягче */
+.tender-period-cell { white-space: nowrap; }
+.tender-period-cell.is-overdue {
+  color: #dc2626;
+  font-weight: 600;
+}
+[data-theme='dark'] .tender-period-cell.is-overdue { color: #e88b8b; }
+.tender-period-warn {
+  margin-left: 0.375rem;
+  font-size: 0.75rem;
+}
+
+.inline-responsible-select {
+  width: 100%;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.inline-responsible-select:hover {
+  border-color: var(--primary-color);
+}
+
+.inline-responsible-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.responsible-display {
+  display: inline-block;
+  width: 100%;
+  background: none;
+  border: 1px dashed transparent;
+  text-align: left;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  padding: 0.25rem 0.375rem;
+  cursor: pointer;
+  border-radius: 4px;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.3;
+  font-family: inherit;
+}
+
+.responsible-display:hover {
+  border-color: var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.responsible-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.phase-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+}
+
+.yandex-map-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  margin-top: 0.1875rem;
+  padding: 0.1875rem 0.5625rem;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid var(--border-color);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.yandex-map-link:hover {
+  background: var(--hover-bg, var(--bg-secondary));
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
+.phase-done {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+  border-radius: 10px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.phase-warn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.phase-pending {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+/* План затрат «Ожидание КП» — фиолетовый, как на странице «Планы затрат». */
+.phase-awaiting {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: #ede9fe;
+  color: #5b21b6;
+  border: 1px solid #c4b5fd;
+  border-radius: 10px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+[data-theme='dark'] .phase-awaiting {
+  background: #3b2a5c;
+  color: #ddd6fe;
+  border-color: #7c3aed;
+}
+
+.phase-progress {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #854d0e;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+/* Тёмная тема для плашек фаз. Светлые пастельные фоны (#dcfce7/#fef3c7/#fee2e2)
+   рассчитаны на белый лист — на тёмном фоне они «светятся» и режут глаз.
+   Берём ту же приглушённую палитру, что уже используется у статусов тендера
+   (.status-completed / .status-in-progress в тёмной теме): тёмный фон + мягкий
+   светлый текст + средняя рамка. */
+[data-theme='dark'] .phase-done {
+  background: #2a4038;
+  color: #a8d4be;
+  border-color: #4a7a62;
+}
+
+[data-theme='dark'] .phase-warn,
+[data-theme='dark'] .phase-progress {
+  background: #44382c;
+  color: #e2c9a8;
+  border-color: #8b7355;
+}
+
+[data-theme='dark'] .phase-pending {
+  background: #402a2a;
+  color: #dfaaaa;
+  border-color: #8a5555;
+}
+
+.winner-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.winner-icon {
+  font-size: 0.875rem;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.winner-name {
+  color: var(--text-primary);
+}
+
+.inline-date-input {
+  width: 130px;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.inline-date-input:hover {
+  border-color: var(--primary-color);
+}
+
+.inline-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.inline-date-range .dash {
+  color: var(--text-tertiary);
+}
+
+.tenders-page .expanded-cp-table-wrap {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tenders-page .expanded-cp-table-wrap .data-table th,
+.tenders-page .expanded-cp-table-wrap .data-table td {
+  padding: 0.3125rem 0.5rem;
+}
+
+.tenders-page .expanded-cp-table-wrap .data-table th {
+  font-size: 0.7rem;
+}
+
+.tenders-page .expanded-cp-empty {
+  margin: 0;
+  padding: 0.625rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: 0.8125rem;
+}
+
+/* Индикатор загрузки списка контрагентов при раскрытии тендера */
+.tenders-page .expanded-cp-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem 0.625rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+.tenders-page .expanded-cp-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary-color, #2563eb);
+  border-radius: 50%;
+  animation: tenders-cp-spin 0.7s linear infinite;
+}
+@keyframes tenders-cp-spin {
+  to { transform: rotate(360deg); }
+}
+
+.tenders-page .expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.tenders-page .expand-toggle:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.tenders-page .expand-toggle.is-expanded {
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.tenders-page .expand-toggle-chevron {
+  display: block;
+  font-size: 0.9375rem;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 0.18s ease;
+}
+
+.tenders-page .expand-toggle.is-expanded .expand-toggle-chevron {
+  transform: rotate(90deg);
+}
+
+.tenders-page .row-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.tenders-page .row-link.primary {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.tenders-page .row-link.primary:hover {
+  text-decoration: underline;
+}
+
+.tenders-page .row-link.muted {
+  color: var(--text-primary);
+}
+
+.tenders-page .row-link.muted:hover {
+  color: var(--primary-color);
+}
+
+/* Независимая сводка «Ответственный по тендерам на неделе» — чип в шапке слева от «Шаблон письма» */
+/* Фильтры тендеров: подпись + FilterDropdown (множественный выбор с поиском) */
+.tender-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.tender-filter-label {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.tender-filter-item .fdrop-trigger {
+  min-height: 32px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.tender-resp-chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.tender-resp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 34px;
+  padding: 0 0.625rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: default;
+  /* Влезает «Дежурный по тендерам: Савостенко Владислав Андреевич» целиком */
+  max-width: min(560px, 100%);
+  white-space: nowrap;
+}
+.tender-resp-chip.is-clickable { cursor: pointer; }
+.tender-resp-chip.is-clickable:hover { border-color: var(--primary-color); color: var(--text-primary); }
+.tender-resp-chip.is-open { border-color: var(--primary-color); color: var(--text-primary); }
+.tender-resp-chip-icon { flex-shrink: 0; color: var(--text-tertiary); }
+.tender-resp-chip-label { flex-shrink: 0; color: var(--text-secondary); }
+.tender-resp-chip-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tender-resp-chip-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary-color);
+}
+.tender-resp-chip-caret { flex-shrink: 0; font-size: 0.625rem; color: var(--text-tertiary); }
+
+.tender-resp-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 1300;
+  min-width: 260px;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: 0.375rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+}
+.tender-resp-menu-head {
+  padding: 0.25rem 0.5rem 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+.tender-resp-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.5rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.tender-resp-menu-item:hover { background: var(--hover-bg); }
+.tender-resp-menu-item.is-current { background: var(--primary-light); color: var(--primary-color); font-weight: 600; }
+.tender-resp-menu-check { color: var(--primary-color); }
+.tender-resp-menu-hint {
+  padding: 0.375rem 0.5rem 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+/* Контакты участника тендера: каждый контакт — блок с нижней разделительной полоской.
+   Одинаковые min-height/padding/box-sizing в колонках «Контактные данные» и «Email» держат
+   разделители на одной высоте, чтобы email визуально стоял на уровне своего контакта
+   (тот же приём, что в разделе «Контрагенты»). */
+.tc-contacts-stack {
+  display: flex;
+  flex-direction: column;
+}
+.tc-contact-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.0625rem;
+  min-height: 3.5rem;
+  padding: 0.375rem 0 0.4375rem;
+  border-bottom: 1px solid var(--border-color);
+  box-sizing: border-box;
+}
+.tc-contacts-stack > .tc-contact-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0.25rem;
+}
+
+/* Статус участника тендера на базе FilterDropdown: триггер выглядит как цветная
+   пилюля-select (как раньше, привычный вид в таблице), а выпадающий список —
+   аккуратный кастомный (чистые строки со статус-точкой), а не нативный.
+   Цвет статуса пробрасывается инлайном через --tc-color; is-active/is-open
+   перекрываем 4-классовым селектором, чтобы базовые стили фильтра не мешали. */
+.fdrop.tc-status-fdrop { display: flex; width: 100%; }
+.tc-status-fdrop .fdrop-trigger,
+.fdrop.tc-status-fdrop.is-active .fdrop-trigger,
+.fdrop.tc-status-fdrop.is-open .fdrop-trigger {
+  width: 100%;
+  height: auto;
+  max-width: none;
+  padding: 0.3125rem 0.5rem;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tc-color);
+  background: color-mix(in srgb, var(--tc-color) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tc-color) 40%, transparent);
+  border-radius: 7px;
+  box-shadow: none;
+}
+.tc-status-fdrop .fdrop-value,
+.fdrop.tc-status-fdrop.is-active .fdrop-value {
+  color: var(--tc-color);
+  overflow: visible;
+}
+.tc-status-fdrop .fdrop-arrow { color: var(--tc-color); opacity: 0.8; }
+
+/* Опция списка: цветная точка статуса + название (чистая строка). */
+.tc-status-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.tc-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+/* ── Примечание участника: просмотр / редактирование + история правок ───────
+   Раньше это была textarea с молчаливым сохранением по blur. Теперь явный
+   цикл «Редактировать → Сохранить/Отмена», а каждая правка пишется в
+   tender_audit_log (field_name='participant_notes') и видна в модалке истории. */
+.tc-notes-cell { vertical-align: top; }
+
+.tc-notes-view {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+}
+.tc-notes-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-top: 0.125rem;
+}
+.tc-notes-text.is-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.tc-notes-tools {
+  display: flex;
+  gap: 0.125rem;
+  flex-shrink: 0;
+}
+.tc-notes-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.tc-notes-icon:hover {
+  color: var(--primary-color, #2563eb);
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+}
+
+.tc-notes-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.tc-notes-textarea {
+  width: 100%;
+  min-height: 56px;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--primary-color, #2563eb);
+  border-radius: 6px;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.tc-notes-textarea:focus { outline: none; }
+.tc-notes-actions {
+  display: flex;
+  gap: 0.375rem;
+}
+.tc-notes-btn {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.tc-notes-btn:disabled { opacity: 0.6; cursor: default; }
+.tc-notes-btn-save {
+  background: var(--primary-color, #2563eb);
+  border-color: var(--primary-color, #2563eb);
+  color: #fff;
+}
+.tc-notes-btn-cancel:hover:not(:disabled) { background: var(--bg-tertiary); }
+
+/* Модалка хронологии */
+.modal.tc-notes-history-modal {
+  width: 640px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+}
+.tc-notes-history-sub {
+  margin: 0.125rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.tc-notes-history-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.5rem;
+}
+.tc-notes-history-empty { color: var(--text-secondary); font-size: 0.875rem; }
+.tc-notes-history-hint {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.tc-notes-history-legend {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+}
+.tc-notes-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.tc-notes-history-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.625rem 0.75rem;
+  background: var(--bg-secondary);
+}
+.tc-notes-history-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+.tc-notes-history-who { font-weight: 500; }
+.tc-notes-history-kind {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.tc-notes-diff {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tc-notes-diff-empty { color: var(--text-tertiary); font-style: italic; }
+
+/* Пословная подсветка: что удалено и что добавлено */
+.nd-removed {
+  background: rgba(220, 38, 38, 0.14);
+  color: #b91c1c;
+  text-decoration: line-through;
+  border-radius: 3px;
+}
+.nd-added {
+  background: rgba(22, 163, 74, 0.16);
+  color: #15803d;
+  border-radius: 3px;
+}
+[data-theme='dark'] .nd-removed {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fca5a5;
+}
+[data-theme='dark'] .nd-added {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+/* ── Телефон (≤640px): обвязка списка тендеров ──────────────────────────────
+   Карточки рендерятся вместо таблицы через useIsPhone (см. TendersPage.jsx).
+   Здесь — только адаптация фильтров, вкладок и вложенной таблицы участников. */
+@media (max-width: 640px) {
+  /* Поиск и фильтры — каждый на всю ширину, удобные тап-таргеты */
+  .tenders-page .tenders-search-wrap {
+    max-width: none !important;
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+    width: 100%;
+  }
+  .tenders-page .tender-filter-item {
+    width: 100%;
+  }
+  .tenders-page .tender-filter-item > .fdrop {
+    width: 100%;
+  }
+  /* Чип «Дежурный по тендерам» не должен распирать шапку */
+  .tenders-page .tender-resp-chip {
+    max-width: 100%;
+  }
+  /* Вложенная таблица участников (в карточке тендера на детальной странице
+     раскрытие не используется, но на планшете 641–768 остаётся таблица) —
+     дать ей собственный горизонтальный скролл вместо overflow:hidden. */
+  .tenders-page .expanded-cp-table-wrap {
+    overflow-x: auto;
+  }
+
+  /* Шапка: заголовок сверху, кнопки — одной прокручиваемой строкой,
+     а не стопкой на пол-экрана. */
+  .tenders-page .page-header-tenders {
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .tenders-page .tp-header-actions {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    width: 100%;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tenders-page .tp-header-actions::-webkit-scrollbar { display: none; }
+  .tenders-page .tp-header-actions > * { flex: 0 0 auto; }
+  .tenders-page .tender-resp-chip-label { display: none; }
+
+  /* Вкладки — одна строка со скроллом */
+  .tenders-page .tender-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tenders-page .tender-tabs::-webkit-scrollbar { display: none; }
+  .tenders-page .tender-tab { flex: 0 0 auto; white-space: nowrap; }
+
+  /* Фильтры: поиск и кнопка «Фильтры» в строку, остальное — по кнопке */
+  .tenders-page .tp-filters {
+    gap: 0.5rem !important;
+  }
+  .tenders-page .tp-filters .tenders-search-wrap {
+    order: 0;
+    flex: 1 1 0 !important;
+    width: auto;
+  }
+  .tenders-page .tp-filters .tenders-search-wrap input {
+    min-height: 40px;
+    font-size: 16px !important; /* iOS не зумит поле с 16px */
+  }
+  .tenders-page .tp-filters-toggle {
+    order: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 40px;
+    padding: 0 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .tenders-page .tp-filters-toggle.is-open { border-color: var(--primary-color, #2563eb); }
+  .tenders-page .tp-filters-count {
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--primary-color, #2563eb);
+    color: #fff;
+    font-size: 0.6875rem;
+    line-height: 18px;
+    text-align: center;
+  }
+  .tenders-page .tp-filters-chevron { transition: transform 0.15s; font-size: 0.75rem; }
+  .tenders-page .tp-filters-toggle.is-open .tp-filters-chevron { transform: rotate(180deg); }
+  .tenders-page .tp-filters > .tender-filter-item,
+  .tenders-page .tp-filters > button:not(.tp-filters-toggle) { order: 2; }
+  .tenders-page .tp-filters.is-collapsed > .tender-filter-item { display: none; }
+  .tenders-page .tp-filters .tender-filter-label { display: none; }
+
+  /* Карточка тендера: верх — ссылка внутрь, ниже отметки и путь, внизу кнопка */
+  .tenders-page .tp-mcard { gap: 0; padding: 0; overflow: hidden; }
+  .tenders-page .tp-mcard-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem 0.875rem 0.625rem;
+    color: inherit;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tenders-page .tp-mcard-main:active { background: var(--bg-tertiary, rgba(0, 0, 0, 0.04)); }
+  .tenders-page .tp-mcard-main * { text-decoration: none; }
+  .tenders-page .tp-mcard-desc { -webkit-line-clamp: 3; }
+  .tenders-page .tp-mcard-extra {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem 0.75rem;
+    padding: 0.5rem 0.875rem;
+    border-top: 1px dashed var(--border-color);
+  }
+  .tenders-page .tp-mcard-extra:empty { display: none; }
+  .tenders-page .tp-mcard-extra > :last-child:not(:first-child) { flex: 1 1 100%; min-width: 0; }
+  .tenders-page .tp-mcard-open {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 44px;
+    border-top: 1px solid var(--border-color);
+    color: var(--primary-color, #2563eb);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tenders-page .tp-mcard-open:active { background: rgba(37, 99, 235, 0.08); }
+}
+
+/* ── Перетаскивание участников тендера (task 427) ───────────────────────────
+   Ручка ⋮⋮ в первой ячейке; строка-цель подсвечивается сверху/снизу. */
+.tc-drag-cell {
+  text-align: center;
+  vertical-align: middle;
+  width: 26px;
+  padding: 0 !important;
+}
+.tc-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  color: var(--text-tertiary);
+  cursor: grab;
+  letter-spacing: -2px;
+  font-size: 0.875rem;
+  line-height: 1;
+  user-select: none;
+  border-radius: 4px;
+}
+.tc-drag-handle:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.tc-drag-handle:active { cursor: grabbing; }
+
+.expanded-cp-table-wrap tr.tc-dragging td { opacity: 0.5; }
+.expanded-cp-table-wrap tr.tc-drop-before td { box-shadow: inset 0 2px 0 var(--primary-color); }
+.expanded-cp-table-wrap tr.tc-drop-after td { box-shadow: inset 0 -2px 0 var(--primary-color); }
+
+/* Индикатор онлайн-обновлений в шапке реестра тендеров. */
+.tp-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.tp-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.tp-live.is-on { color: #15803d; border-color: color-mix(in srgb, #16a34a 35%, transparent); }
+.tp-live.is-on .tp-live-dot { background: #16a34a; }
+[data-theme='dark'] .tp-live.is-on { color: #6ee7b7; }
+
+/* Счётчик участников: «не загрузилось» и «участников нет» больше не выглядят
+   одинаково — раньше оба состояния были просто пустым местом в колонке. */
+.tenders-page .kp-counter.kp-counter-empty,
+.tenders-page .kp-counter.kp-counter-unknown {
+  background: transparent;
+  border: 1px dashed var(--border-color);
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+.tenders-page .kp-counter.kp-counter-unknown { border-style: dotted; }
+
+/* Повтор загрузки счётчиков, если часть порций не дошла. */
+.tp-counts-warn {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid color-mix(in srgb, #d97706 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, #d97706 10%, transparent);
+  color: #b45309;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+[data-theme='dark'] .tp-counts-warn { color: #fcd34d; }
+
+/* ── Бывшие инлайн-стили реестра ─────────────────────────────────────────────
+   Вынесены в классы, чтобы рабочий стиль (src/styles/workUi.css) мог их
+   переопределить для «Основного строительства» и «Тендеров на материалы».
+   Значения — прежние: у гарантийного отдела, совместных и прочих вид тот же. */
+.tenders-page .tp-filters { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 0.5rem 0; }
+.tenders-page .tenders-search-wrap { display: flex; align-items: center; gap: 0.5rem; flex: 1 1 240px; min-width: 200px; max-width: 360px; }
+.tenders-page .tp-search {
+  width: 100%;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.tenders-page .tp-filters-reset { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 0.8125rem; }
+.tenders-page .tp-num { text-align: center; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.tenders-page .tp-obj-address { font-size: 0.75rem; color: var(--text-tertiary); word-break: break-word; }
+.tenders-page .tp-status-badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.6875rem; font-weight: 600; }
+.tenders-page .tp-docs-btn {
+  background: none;
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  padding: 0.0625rem 0.375rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.6875rem;
+}
+.tenders-page .tp-docs-btn-inner { display: inline-flex; align-items: center; gap: 0.1875rem; }
+.tenders-page .tp-sub-line { font-size: 0.6875rem; color: var(--text-tertiary); margin-top: 0.125rem; }
+.tenders-page .tp-add-link {
+  background: none;
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  padding: 0.1875rem 0.5rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+.tenders-page .tp-dash { color: var(--text-tertiary); font-size: 0.75rem; }
+.tenders-page .tp-link-row { display: flex; align-items: center; gap: 0.375rem; }
+.tenders-page a.tender-desc-link { color: var(--primary-color); text-decoration: underline; }
+
+/* Обёртка «Открыть» + документы в ячейке этапа: без плотного реестра её как
+   будто нет — элементы остаются прямыми детьми .phase-cell, вид прежний. */
+.tenders-page .phase-actions { display: contents; }

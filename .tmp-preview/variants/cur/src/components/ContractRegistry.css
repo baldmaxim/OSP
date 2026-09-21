@@ -1,0 +1,3344 @@
+.contract-registry {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.registry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  border: 1px solid var(--border-color);
+}
+
+.registry-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--text-primary);
+}
+
+.table-container {
+  overflow-x: auto;
+}
+
+.contracts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.contracts-table thead {
+  background-color: var(--bg-tertiary);
+}
+
+.contracts-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.contracts-table td {
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.contracts-table tbody tr:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.no-data {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.loading {
+  text-align: center;
+  padding: 3rem;
+  font-size: 1.125rem;
+  color: var(--text-tertiary);
+}
+
+/* Buttons */
+.btn-primary,
+.btn-secondary {
+  padding: 0.625rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #0e7490 0%, #0a7487 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(8, 145, 178, 0.25);
+}
+
+/* Dark theme для основной кнопки */
+[data-theme='dark'] .btn-primary {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+  color: white;
+}
+
+[data-theme='dark'] .btn-primary:hover {
+  background: linear-gradient(135deg, #0e7490 0%, #0a7487 100%);
+  box-shadow: 0 4px 6px rgba(8, 145, 178, 0.35);
+}
+
+.btn-secondary {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background-color: var(--hover-bg);
+  border-color: var(--border-color-dark);
+}
+
+/* Dark theme для кнопки Отмена */
+[data-theme='dark'] .btn-secondary {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-color: var(--border-color-dark);
+}
+
+[data-theme='dark'] .btn-secondary:hover {
+  background-color: var(--hover-bg);
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+
+.modal {
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  border: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  color: var(--text-secondary);
+}
+
+.modal form {
+  padding: 2rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  /* Без min-width: 0 grid-колонка раздувается под intrinsic-ширину select-а
+     с длинными option-ами (например длинные имена объектов/отделов). */
+  min-width: 0;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+/* Гарантируем, что инпуты не вылезают за границы своего .form-group. */
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.form-group label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.form-group input,
+.form-group textarea {
+  padding: 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+}
+
+/* Dark theme для полей ввода */
+[data-theme='dark'] .form-group input,
+[data-theme='dark'] .form-group textarea,
+[data-theme='dark'] .form-group select {
+  border-color: var(--border-color-dark);
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .form-group input:focus,
+[data-theme='dark'] .form-group textarea:focus,
+[data-theme='dark'] .form-group select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.1);
+}
+
+.form-group textarea {
+  resize: vertical;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border: 1px solid var(--border-color);
+}
+
+/* Action buttons */
+.actions-column {
+  width: 120px;
+  text-align: center;
+}
+
+.actions-cell {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.375rem 0.5rem;
+  margin: 0 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon:hover {
+  background-color: var(--hover-bg);
+  transform: scale(1.1);
+}
+
+.btn-edit:hover {
+  filter: brightness(1.2);
+}
+
+.btn-delete:hover {
+  filter: brightness(1.2);
+}
+
+/* Select styling */
+.form-group select {
+  padding: 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+}
+
+/* Select options для темной темы */
+[data-theme='dark'] .form-group select option {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+@media (max-width: 768px) {
+  .registry-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .registry-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .contracts-table {
+    font-size: 0.75rem;
+  }
+
+  .contracts-table th,
+  .contracts-table td {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal {
+    margin: 0;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .modal form {
+    padding: 1.5rem;
+  }
+
+  .btn-icon {
+    font-size: 1rem;
+    padding: 0.25rem 0.375rem;
+  }
+
+  .actions-column {
+    width: 80px;
+  }
+}
+
+/* Contract Status Select */
+.status-select {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+  min-width: 140px;
+}
+
+.status-select:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.status-select:focus {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.status-pending,
+.status-new-request {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.status-signed,
+.status-in-work {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+/* Согласование позади, ждём живые подписи — тёплый оранжевый: работа не стоит,
+   но и не закрыта. Отличается и от синего «В работе», и от зелёного «Завершено». */
+.status-awaiting-paper {
+  background-color: #ffedd5;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+}
+
+/* task 190: новый статус «Приостановка» — серо-фиолетовый */
+.status-paused {
+  background-color: #ede9fe;
+  color: #5b21b6;
+  border: 1px solid #c4b5fd;
+}
+
+.status-completed {
+  background-color: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+/* task 183: маркер удалённого договора (показывается во вкладке «Удалённые») */
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status-badge.status-deleted {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+/* Стили компактного статус-триггера `.status-fdrop` перенесены в FilterDropdown.css,
+   чтобы работать на всех страницах, использующих FilterDropdown (договоры, тендеры). */
+
+[data-theme='dark'] .status-pending,
+[data-theme='dark'] .status-new-request {
+  background-color: #78350f;
+  color: #fde68a;
+  border-color: #f59e0b;
+}
+
+[data-theme='dark'] .status-signed,
+[data-theme='dark'] .status-in-work {
+  background-color: #1e3a8a;
+  color: #bfdbfe;
+  border-color: #3b82f6;
+}
+
+[data-theme='dark'] .status-paused {
+  background-color: #3b1d6b;
+  color: #ddd6fe;
+  border-color: #8b5cf6;
+}
+
+[data-theme='dark'] .status-completed {
+  background-color: #14532d;
+  color: #bbf7d0;
+  border-color: #22c55e;
+}
+
+[data-theme='dark'] .status-badge.status-deleted {
+  background: #5b1414;
+  color: #fecaca;
+  border-color: #b91c1c;
+}
+
+/* Options в select для темной темы */
+[data-theme='dark'] .status-select option {
+  background-color: #1e293b;
+  color: #e2e8f0;
+  padding: 0.5rem;
+}
+
+.status-select option {
+  background-color: #ffffff;
+  color: #1e293b;
+  padding: 0.5rem;
+}
+
+/* Department Selection */
+.department-selection {
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+.selection-label {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+}
+
+.department-cards {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.department-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem 3rem;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-color);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 220px;
+}
+
+.department-card:hover {
+  border-color: var(--primary-color);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+}
+
+.department-icon {
+  font-size: 3rem;
+}
+
+.department-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Header with back button */
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.btn-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-back:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+/* Status Tabs */
+.status-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 2rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.status-tab {
+  padding: 1rem 1.5rem;
+  background: none;
+  border: none;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.status-tab:hover {
+  color: var(--text-primary);
+}
+
+.status-tab.active {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.status-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--primary-color);
+  border-radius: 3px 3px 0 0;
+}
+
+/* Счётчик количества в каждой вкладке */
+.status-tab-count {
+  display: inline-block;
+  min-width: 1.25rem;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.status-tab.active .status-tab-count {
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--primary-color) 30%, transparent);
+}
+.status-tab.tab-deleted.active .status-tab-count {
+  color: var(--danger-color, #dc2626);
+  background: color-mix(in srgb, var(--danger-color, #dc2626) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger-color, #dc2626) 30%, transparent);
+}
+
+/* Dark theme adjustments */
+[data-theme='dark'] .department-card {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color-dark);
+}
+
+[data-theme='dark'] .department-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* Task 168: поиск контрагента */
+.cp-search-wrap {
+  position: relative;
+}
+
+.cp-search-input {
+  width: 100%;
+  padding: 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.cp-search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+}
+
+[data-theme='dark'] .cp-search-input {
+  border-color: var(--border-color-dark);
+  background-color: var(--bg-tertiary);
+}
+
+.cp-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.cp-search-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cp-search-item:last-child {
+  border-bottom: none;
+}
+
+.cp-search-item:hover,
+.cp-search-item.active {
+  background: var(--hover-bg, rgba(8, 145, 178, 0.08));
+}
+
+.cp-search-name {
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.cp-search-inn {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 0.125rem;
+}
+
+.cp-search-empty {
+  padding: 0.75rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+  text-align: center;
+}
+
+/* Место под кнопку очистки справа в поле поиска. */
+.cp-search-wrap .cp-search-input {
+  padding-right: 2.25rem;
+}
+
+/* Кнопка очистки поля поиска контрагента. */
+.cp-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.cp-search-clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+/* Активный пункт при навигации клавишами ↑/↓. */
+.cp-search-item.is-highlighted {
+  background: var(--hover-bg, rgba(8, 145, 178, 0.08));
+}
+
+/* Подсказка внизу списка: сколько найдено / что показаны не все. */
+.cp-search-hint {
+  position: sticky;
+  bottom: 0;
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+}
+
+.cp-search-picked {
+  margin-left: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+/* ===== Стороны договора: чипы выбранных контрагентов (трёхсторонний договор) ===== */
+.cp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+}
+
+.cp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  padding: 0.25rem 0.375rem 0.25rem 0.5rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.cp-chip-badge {
+  padding: 0.0625rem 0.375rem;
+  background: var(--primary-color);
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.cp-chip-name {
+  overflow-wrap: anywhere;
+}
+
+.cp-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  font-size: 0.875rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.cp-chip-remove:hover {
+  background: var(--danger-color);
+  color: #fff;
+}
+
+.form-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* Список сторон в ячейке «Контрагент» реестра */
+.contracts-table-compact .cp-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contracts-table-compact .cp-list li {
+  overflow-wrap: anywhere;
+  /* Имя на своей строке, бейджи документов (СБ / должная осмотрительность) —
+     отдельной строкой ниже, чтобы в узкой колонке не вылезать на соседний столбец. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1875rem;
+  min-width: 0;
+}
+/* task 426 fix: бейджи с датами переносятся и стекаются внутри колонки, не выходя за неё */
+.contracts-table-compact .cp-list .cp-doc-badges {
+  flex-wrap: wrap;
+  max-width: 100%;
+  gap: 0.1875rem 0.25rem;
+}
+.contracts-table-compact .cp-list .cp-doc-badge {
+  font-size: 0.625rem;
+  padding: 0.0625rem 0.25rem;
+}
+.contracts-table-compact .cp-list .cp-doc-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.contracts-table-compact .cp-list li + li {
+  margin-top: 0.1875rem;
+  padding-top: 0.1875rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+/* Стороны договора в раскрытой строке */
+.ce-parties {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ce-parties li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.ce-party-name {
+  font-weight: 500;
+}
+
+.ce-party-inn {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.ce-party-main {
+  padding: 0.0625rem 0.375rem;
+  background: var(--primary-light);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+/* Task 175: списки приложений */
+.attachments-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+}
+
+.attachment-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.attachment-row input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.attachment-link {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.attachment-link:hover {
+  text-decoration: underline;
+}
+
+.attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.attachment-list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+}
+
+.attachment-add-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr auto;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.attachment-add-row input {
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.attachment-add-row .btn-primary {
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 768px) {
+  .attachment-add-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ====================================================================
+   Task 183 + 186 + 188: компактная страница договоров v2
+   ==================================================================== */
+
+/* Вкладка «Удалённые» — красноватая, чтобы визуально отделить */
+.status-tabs .status-tab.tab-deleted {
+  margin-left: auto;
+  color: #b91c1c;
+}
+
+.status-tabs .status-tab.tab-deleted.active {
+  color: #991b1b;
+}
+
+.status-tabs .status-tab.tab-deleted.active::after {
+  background: #b91c1c;
+}
+
+[data-theme='dark'] .status-tabs .status-tab.tab-deleted {
+  color: #fca5a5;
+}
+
+[data-theme='dark'] .status-tabs .status-tab.tab-deleted.active {
+  color: #fecaca;
+}
+
+/* task 186: компактная плотная таблица для 30+ записей */
+.contracts-table-compact {
+  font-family: var(--font-ui, 'Inter', 'Segoe UI', Roboto, Arial, sans-serif);
+  font-size: 0.8125rem;
+  table-layout: fixed;
+  width: 100%;
+  /* На рабочих экранах (1440+) таблица помещается без горизонтального скролла;
+     скролл включается только на очень узких экранах. */
+  min-width: 1080px;
+}
+
+/* Пропорциональные ширины колонок (сумма = 100%) — без горизонтального ползунка */
+.contracts-table-compact col.cg-num { width: 3.5%; }
+.contracts-table-compact col.cg-object { width: 8.5%; }
+.contracts-table-compact col.cg-ds { width: 13%; }
+.contracts-table-compact col.cg-counterparty { width: 10.5%; }
+.contracts-table-compact col.cg-work { width: 14%; }
+/* Только в представлении «Дополнительные соглашения» — изменяемый документ. */
+.contracts-table-compact col.cg-parent { width: 9%; }
+/* Суммы бывают миллиардные («1 960 000 000,00 ₽») — колонке нужен запас, иначе ₽ вылезает */
+.contracts-table-compact col.cg-amount { width: 9%; }
+.contracts-table-compact col.cg-status { width: 9%; }
+.contracts-table-compact col.cg-lawyer { width: 9%; }
+.contracts-table-compact col.cg-accepted { width: 7.5%; }
+.contracts-table-compact col.cg-planned { width: 7.5%; }
+/* Три иконки по 30px + зазоры ≈ 100px: колонке нужен запас, иначе кнопки вылезают
+   за ячейку и контейнер (overflow-x: auto) показывает горизонтальный ползунок. */
+.contracts-table-compact col.cg-actions { width: 8.5%; }
+
+.contracts-table-compact thead th {
+  padding: 0.7rem 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  white-space: normal;
+  line-height: 1.3;
+  text-align: left;
+  border-bottom: 2px solid var(--border-color);
+  vertical-align: middle;
+}
+
+/* Выравнивание колонок: числовые/статус/даты/действия — по центру, сумма — вправо,
+   текстовые (объект/договор/контрагент/работы/юрист) — влево. Заголовки совпадают
+   с данными по выравниванию. */
+.contracts-table-compact thead th:nth-child(1),   /* № */
+.contracts-table-compact thead th:nth-child(7),   /* Статус */
+.contracts-table-compact thead th:nth-child(9),   /* Дата принятия */
+.contracts-table-compact thead th:nth-child(10),  /* План. дата */
+.contracts-table-compact thead th:nth-child(11) { /* Действия */
+  text-align: center;
+}
+.contracts-table-compact thead th:nth-child(6) {  /* Сумма */
+  text-align: right;
+}
+/* Сортируемый заголовок — метка и стрелка по центру, если колонка центрирована */
+.contracts-table-compact thead th.th-sortable { display: table-cell; }
+
+.contracts-table-compact tbody td {
+  padding: 0.55rem 0.75rem;
+  vertical-align: middle;
+  line-height: 1.35;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Центрированные колонки данных */
+.contracts-table-compact .cell-status,
+.contracts-table-compact .cell-date {
+  text-align: center;
+}
+
+/* Длинные статусы («Ожидание подписания в бум. виде») в одну строку не влезали и
+   наезжали на соседнюю колонку. Разрешаем перенос внутри бейджа и держим для
+   колонки минимальную ширину, чтобы перенос шёл по словам, а не по буквам. */
+.contracts-table-compact .cell-status { min-width: 150px; }
+.contracts-table-compact .cell-status .status-badge {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.25;
+  text-align: center;
+}
+.contracts-table-compact .cell-status .fdrop-trigger { max-width: 100%; }
+.contracts-table-compact .cell-status .fdrop-value { min-width: 0; }
+.contracts-table-compact .cell-date .inline-cell-date { text-align: center; }
+
+/* Индикатор внесения в Larix — под статусом */
+.contracts-table-compact .larix-badge {
+  display: block;
+  width: fit-content;
+  margin: 0.3rem auto 0;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.contracts-table-compact .larix-badge.is-in {
+  color: #047857;
+  background: color-mix(in srgb, #10b981 13%, transparent);
+  border: 1px solid color-mix(in srgb, #10b981 35%, transparent);
+}
+.contracts-table-compact .larix-badge.is-out {
+  color: #b45309;
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 38%, transparent);
+}
+[data-theme='dark'] .contracts-table-compact .larix-badge.is-in { color: #6ee7b7; }
+[data-theme='dark'] .contracts-table-compact .larix-badge.is-out { color: #fbbf24; }
+
+.contracts-table-compact .cell-num {
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.contracts-table-compact .cell-counterparty,
+.contracts-table-compact .cell-object {
+  font-weight: 500;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.contracts-table-compact .cell-work {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  word-break: break-word;
+}
+
+/* ── Отдел объекта: ОС / ГО ──────────────────────────────────────────────────
+   Реестр общий для основного строительства и гарантийного обслуживания, поэтому
+   объекты помечаются бейджем: в пикере формы, в фильтре и в строке реестра (ГО). */
+.obj-dept-badge {
+  flex-shrink: 0;
+  margin-left: 0.375rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.obj-dept-badge.is-os {
+  color: #1d4ed8;
+  background: color-mix(in srgb, #3b82f6 14%, transparent);
+  border-color: color-mix(in srgb, #3b82f6 30%, transparent);
+}
+.obj-dept-badge.is-go {
+  color: #15803d;
+  background: color-mix(in srgb, #16a34a 14%, transparent);
+  border-color: color-mix(in srgb, #16a34a 30%, transparent);
+}
+[data-theme='dark'] .obj-dept-badge.is-os { color: #93c5fd; }
+[data-theme='dark'] .obj-dept-badge.is-go { color: #6ee7b7; }
+
+/* Опция «имя объекта + бейдж отдела» в выпадающих списках. */
+.obj-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+.obj-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.obj-option .obj-dept-badge { margin-left: 0; }
+
+/* Пикер объекта в форме договора — во всю ширину, как остальные поля формы. */
+.contract-object-picker { display: flex; width: 100%; }
+.contract-object-picker .fdrop-trigger { width: 100%; max-width: none; height: 40px; }
+
+.contracts-table-compact .cell-responsible .resp-name {
+  font-weight: 500;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.contracts-table-compact .cell-responsible .resp-position {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: 0.125rem;
+}
+
+.contracts-table-compact .muted-dash {
+  color: var(--text-tertiary);
+}
+
+/* Номер договора/ДС показываем целиком: длинные номера переносятся, а не режутся многоточием */
+.contracts-table-compact .cell-contract-num {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.contracts-table-compact .contract-number-link {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.contracts-table-compact .contract-number-link:hover {
+  filter: brightness(1.1);
+}
+
+.contracts-table-compact .tender-link {
+  color: var(--primary-color);
+  text-decoration: underline;
+  font-size: 0.78125rem;
+  word-break: break-word;
+}
+
+.contracts-table-compact .status-select {
+  min-width: 100%;
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+/* Колонка «Действия»: ВАЖНО — обычная table-cell (НЕ flex), иначе ячейка выпадает
+   из сетки border-collapse и рисуется отдельной «карточкой». Кнопки — во внутреннем
+   inline-flex, компактные иконки без рамок. */
+.contracts-table-compact .actions-cell {
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+.contracts-table-compact .actions-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.contracts-table-compact .btn-icon {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  border-radius: 8px;
+  color: var(--text-secondary);
+}
+.contracts-table-compact .btn-icon svg { display: block; }
+.contracts-table-compact .btn-icon:hover { transform: none; background: var(--hover-bg); color: var(--text-primary); }
+.contracts-table-compact .btn-edit:hover { color: var(--primary-color); background: var(--hover-bg); }
+.contracts-table-compact .btn-delete:hover { color: var(--danger-color); background: color-mix(in srgb, var(--danger-color) 12%, transparent); }
+.contracts-table-compact .btn-icon.btn-restore { color: var(--text-secondary); }
+.contracts-table-compact .btn-icon.btn-restore:hover { color: #16a34a; background: rgba(22, 163, 74, 0.12); }
+
+/* Удалённая строка — приглушаем визуально */
+.contracts-table-compact .row-deleted {
+  opacity: 0.85;
+  background: var(--bg-tertiary);
+}
+
+.btn-icon.btn-restore {
+  color: #16a34a;
+}
+
+.btn-icon.btn-restore:hover {
+  background-color: rgba(22, 163, 74, 0.1);
+}
+
+/* task 193: раскрытие строки договора с приложениями и комментариями */
+.contract-row { cursor: pointer; }
+.contract-row.is-expanded { background: var(--bg-tertiary); }
+.contract-row:not(.is-expanded):hover { background: var(--bg-tertiary); }
+
+.contracts-table-compact .cell-expand {
+  text-align: center;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
+
+.expand-chev {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.expand-chev.open {
+  transform: rotate(90deg);
+  color: var(--primary-color);
+}
+
+.expand-badge {
+  display: inline-block;
+  margin-left: 0.25rem;
+  min-width: 1rem;
+  padding: 0 0.3125rem;
+  background: var(--primary-color, #0891b2);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.contract-expanded-row > td {
+  background: var(--bg-tertiary);
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Раскрытый блок договора: «Примечание юриста» + «Сопутствующие приложения» */
+.contract-expanded-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+.ce-block {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.75rem 0.875rem;
+}
+.ce-block-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+/* Реквизиты договора в раскрытой строке — сетка «метка/значение». */
+.ce-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem 1.25rem;
+}
+.ce-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.ce-detail-wide { grid-column: 1 / -1; }
+.ce-detail-l {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.ce-detail-v {
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.ce-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+.ce-saving {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--primary-color);
+}
+.ce-note {
+  width: 100%;
+  min-height: 68px;
+  padding: 0.5rem 0.625rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-sizing: border-box;
+  /* Авторасширение (AutoGrowTextarea): высота задаётся из JS, без скролла/ручного ресайза */
+  resize: none;
+  overflow: hidden;
+}
+.ce-note:focus { outline: none; border-color: var(--primary-color); }
+.ce-note-ro {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ce-empty {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.ce-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.ce-open-card,
+.ce-edit-link {
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--primary-color);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ce-open-card:hover,
+.ce-edit-link:hover { filter: brightness(1.1); }
+.cap-item-icon { margin-right: 0.35rem; }
+.cap-item-comment-ro {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+/* ===== Task 419: таблица сопутствующих приложений (ручной ввод) ===== */
+.ce-add-appendix {
+  margin-left: auto;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--primary-color);
+  background: var(--primary-light);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.ce-add-appendix:hover { border-color: var(--primary-color); }
+.ce-appendix-wrap { overflow-x: auto; }
+.ce-appendix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.ce-appendix-table thead th {
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+.ce-appendix-table tbody td {
+  padding: 0.1875rem 0.375rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+.ce-appendix-table tbody tr:last-child td { border-bottom: none; }
+.ce-appendix-table .ce-ap-pick { width: 32px; text-align: center; }
+.ce-appendix-table .ce-ap-drag { width: 26px; text-align: center; }
+.ce-appendix-table .ce-ap-num { width: 64px; }
+.ce-appendix-table .ce-ap-appr { width: 92px; text-align: center; }
+.ce-appendix-table thead th.ce-ap-appr { white-space: normal; line-height: 1.2; }
+.ce-appendix-table .ce-ap-notes { width: 24%; }
+.ce-appendix-table .ce-ap-actions { width: 92px; text-align: center; }
+/* Галочка согласования */
+.ce-ap-check {
+  width: 17px;
+  height: 17px;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+.ce-ap-check:disabled { cursor: default; }
+/* Обе галочки проставлены — приложение согласовано, строка подсвечена зелёным */
+.ce-appendix-table tbody tr.ce-ap-approved > td {
+  background: color-mix(in srgb, #16a34a 12%, transparent);
+}
+[data-theme='dark'] .ce-appendix-table tbody tr.ce-ap-approved > td {
+  background: color-mix(in srgb, #22c55e 16%, transparent);
+}
+/* Примечание юриста — авторастущая textarea (высота по содержимому) */
+.ce-ap-textarea {
+  display: block;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.35;
+}
+.ce-ap-notes-ro {
+  padding: 0.3125rem 0.4375rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ce-appendix-table tbody td.ce-ap-notes { vertical-align: top; }
+.ce-ap-input {
+  width: 100%;
+  padding: 0.3125rem 0.4375rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+.ce-ap-input:hover:not([readonly]) { border-color: var(--border-color); background: var(--bg-secondary); }
+.ce-ap-input:focus { outline: none; border-color: var(--primary-color); background: var(--bg-secondary); }
+.ce-ap-input[readonly] { cursor: default; }
+.ce-ap-input-num { text-align: center; font-variant-numeric: tabular-nums; }
+.ce-ap-del {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ce-ap-del:hover { color: var(--danger-color); background: color-mix(in srgb, var(--danger-color) 12%, transparent); }
+
+/* ── Приложения к Договору: перетаскивание, иерархия, дочерние строки ── */
+.ce-ap-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1;
+  letter-spacing: -1px;
+  cursor: grab;
+  user-select: none;
+}
+.ce-ap-handle:active { cursor: grabbing; }
+.ce-appendix-table tbody tr:hover .ce-ap-handle { color: var(--text-secondary); }
+.ce-appendix-table tbody tr.ce-ap-dragging { opacity: 0.5; }
+/* Индикатор места вставки при перетаскивании */
+.ce-appendix-table tbody tr.ce-ap-drop-before td { box-shadow: inset 0 2px 0 var(--primary-color); }
+.ce-appendix-table tbody tr.ce-ap-drop-after td { box-shadow: inset 0 -2px 0 var(--primary-color); }
+/* Дочерняя строка (подпункт №N.1) */
+.ce-appendix-table tbody tr.ce-ap-child { background: color-mix(in srgb, var(--primary-color) 4%, transparent); }
+/* Обёртка внутри td (НЕ делаем сам td flex — иначе ячейка выпадает из сетки таблицы) */
+.ce-ap-name-inner { display: flex; align-items: center; gap: 0.25rem; }
+.ce-ap-child .ce-ap-name-inner { padding-left: 1.25rem; }
+.ce-ap-child-marker { flex-shrink: 0; color: var(--text-tertiary); font-size: 0.8125rem; }
+/* Кнопки иерархии → ← + */
+.ce-ap-actions-inner { display: inline-flex; align-items: center; gap: 2px; }
+.ce-ap-hier {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ce-ap-hier:hover:not(:disabled) { color: var(--primary-color); background: var(--bg-secondary); }
+.ce-ap-hier:disabled { opacity: 0.3; cursor: default; }
+
+/* Кнопка массового удаления выбранных приложений (в заголовке блока) */
+.ce-del-selected {
+  margin-left: auto;
+  padding: 0.25rem 0.625rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--danger-color);
+  background: color-mix(in srgb, var(--danger-color) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger-color) 35%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ce-del-selected:hover {
+  color: #fff;
+  background: var(--danger-color);
+  border-color: var(--danger-color);
+}
+/* Кнопка «+ Добавить приложение» стоит после «Удалить выбранные» — margin-left:auto
+   должен остаться только у первой из них, иначе кнопки разъезжаются. */
+.ce-del-selected ~ .ce-add-appendix { margin-left: 0.5rem; }
+
+/* Выбранная строка приложения. Правило идёт ПОСЛЕ .ce-ap-approved, поэтому подсветка
+   выбора перекрывает «зелёную» согласованную строку — выбор важнее показать. Для тёмной
+   темы нужна парная строка: там у .ce-ap-approved выше специфичность. */
+.ce-appendix-table tbody tr.ce-ap-picked > td {
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
+[data-theme='dark'] .ce-appendix-table tbody tr.ce-ap-picked > td {
+  background: color-mix(in srgb, var(--primary-color) 22%, transparent);
+}
+
+/* Ответственный: выпадающий поиск по сотрудникам вместо текстового инпута */
+.ce-appendix-table td.ce-ap-resp { min-width: 0; }
+.ce-appendix-table .ce-ap-resp .fdrop { display: flex; width: 100%; }
+.ce-appendix-table .ce-ap-resp .fdrop-trigger {
+  width: 100%;
+  max-width: none;
+  min-height: 30px;
+  padding: 0.25rem 0.4375rem;
+  gap: 0.25rem;
+  align-items: center;
+  font-size: 0.8125rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.ce-appendix-table .ce-ap-resp .fdrop-trigger:hover {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.ce-appendix-table .ce-ap-resp .fdrop.is-open .fdrop-trigger {
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+}
+.ce-appendix-table .ce-ap-resp .fdrop-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+.ce-appendix-table .ce-ap-resp .fdrop:not(.is-active) .fdrop-value { color: var(--text-tertiary); }
+.ce-appendix-table .ce-ap-resp .fdrop-arrow { flex-shrink: 0; }
+
+.cap-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.625rem;
+}
+
+.cap-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cap-count {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.cap-empty {
+  padding: 0.5rem 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.cap-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.cap-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+}
+
+.cap-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.cap-item-name {
+  font-weight: 500;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.cap-item-name a {
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+
+.cap-item-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.cap-item-comment {
+  width: 100%;
+  min-height: 26px;
+  padding: 0.3125rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.78125rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.cap-item-comment::placeholder {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.cap-item-comment:hover { background: var(--bg-tertiary); }
+.cap-item-comment:focus {
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+  outline: none;
+}
+
+/* task 191: описание в multiselect */
+.multiselect-row .ms-desc {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+/* task 188: multiselect dropdown в форме */
+.attachments-multiselect {
+  position: relative;
+}
+
+.attachments-multiselect-trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.attachments-multiselect-trigger:hover {
+  border-color: var(--primary-color);
+}
+
+.attachments-multiselect-trigger .caret {
+  color: var(--text-tertiary);
+  margin-left: 0.5rem;
+}
+
+.attachments-multiselect-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  padding: 0.5rem 0;
+}
+
+.multiselect-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0.25rem;
+}
+
+.multiselect-actions button {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.multiselect-actions button:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.multiselect-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.multiselect-row:hover {
+  background: var(--hover-bg, rgba(8, 145, 178, 0.06));
+}
+
+.multiselect-row input[type="checkbox"] { cursor: pointer; }
+
+.multiselect-row .attachment-link {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.multiselect-row .attachment-link:hover { text-decoration: underline; }
+
+/* ====================================================================
+   Task 185 + 187: страница деталей договора (notes + history)
+   ==================================================================== */
+.contract-detail .deleted-marker {
+  color: #b91c1c;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.contract-detail .status-badge-inline {
+  display: inline-block;
+  padding: 0.125rem 0.4375rem;
+  border-radius: 3px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  margin-left: 0.25rem;
+}
+
+.contract-detail .status-badge-inline.status-new_request {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.contract-detail .status-badge-inline.status-in_work {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.contract-detail .status-badge-inline.status-paused {
+  background-color: #ede9fe;
+  color: #5b21b6;
+}
+
+.contract-detail .status-badge-inline.status-completed {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.contract-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  padding: 1.5rem;
+}
+
+.contract-section {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 1.125rem 1.25rem;
+  border: 1px solid var(--border-color);
+}
+
+.contract-section-wide {
+  grid-column: 1 / -1;
+}
+
+.contract-section h3 {
+  margin: 0 0 0.875rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.contract-section .info-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+}
+
+.contract-section .info-row {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.contract-section .info-label {
+  color: var(--text-tertiary);
+  min-width: 140px;
+  flex-shrink: 0;
+}
+
+.contract-section .info-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.contract-section .info-value.mono {
+  font-family: Consolas, Monaco, monospace;
+}
+
+.attachments-readonly {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.attachments-readonly li {
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.625rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.attachments-readonly a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.attachments-readonly a:hover {
+  text-decoration: underline;
+}
+
+/* task 185: примечание */
+.contract-notes {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.contract-notes:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+/* task 187: лог изменений */
+.audit-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.audit-item {
+  padding: 0.625rem 0.875rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.audit-item .audit-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.audit-item .audit-type {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.audit-item .audit-date {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.audit-item .audit-desc {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.audit-item .audit-who {
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 900px) {
+  .contract-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Карточка договора: вкладки (задача 374) ===== */
+.contract-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 1rem;
+}
+.contract-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.contract-tab:hover { color: var(--text-primary); }
+.contract-tab { padding: 0.6rem 1rem; border-radius: 8px 8px 0 0; }
+.contract-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  font-weight: 600;
+  background: var(--bg-secondary);
+}
+.contract-tab-badge {
+  font-size: 0.6875rem;
+  background: var(--bg-tertiary, var(--border-color));
+  color: var(--text-secondary);
+  border-radius: 10px;
+  padding: 0 0.4rem;
+  min-width: 1.1rem;
+  text-align: center;
+}
+
+/* ===== Шапка карточки договора: заголовок + статус + метачипы ===== */
+.cd-header { display: flex; align-items: flex-start; gap: 0.75rem; }
+.cd-back {
+  background: none; border: none; font-size: 1.25rem; cursor: pointer; color: var(--text-secondary);
+  line-height: 1; padding: 0.15rem 0.35rem; border-radius: 6px; margin-top: 0.15rem;
+}
+.cd-back:hover { background: var(--bg-secondary); color: var(--text-primary); }
+.cd-header-info { flex: 1; min-width: 0; }
+.cd-title-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.cd-title-row h2 { margin: 0; font-size: 1.375rem; }
+.cd-status {
+  font-size: 0.75rem; font-weight: 600; padding: 0.22rem 0.7rem; border-radius: 999px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.cd-status.status-new_request { background: rgba(59, 130, 246, 0.12); color: #2563eb; border-color: rgba(59, 130, 246, 0.35); }
+.cd-status.status-in_work { background: rgba(234, 179, 8, 0.16); color: #a16207; border-color: rgba(234, 179, 8, 0.4); }
+.cd-status.status-paused { background: rgba(148, 163, 184, 0.2); color: #64748b; border-color: rgba(148, 163, 184, 0.5); }
+.cd-status.status-completed { background: rgba(34, 197, 94, 0.15); color: #15803d; border-color: rgba(34, 197, 94, 0.4); }
+.cd-status-deleted { background: rgba(220, 38, 38, 0.12); color: #dc2626; border-color: rgba(220, 38, 38, 0.4); }
+.cd-chips { display: flex; flex-wrap: wrap; gap: 0.4rem 0.5rem; margin-top: 0.55rem; }
+.cd-chip {
+  font-size: 0.75rem; color: var(--text-secondary);
+  background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: 8px; padding: 0.22rem 0.55rem; max-width: 22rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cd-chip-l { color: var(--text-tertiary); margin-right: 0.3rem; }
+
+/* ===== Кнопка danger / модалка импорта ===== */
+.btn-danger {
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.btn-danger:hover { background: #b91c1c; }
+.modal.modal-sm { max-width: 460px; }
+.modal-body { padding: 0 1.25rem; }
+
+/* ===== ПСДЦ / Авансы: заголовок и таблица ===== */
+.psdc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.psdc-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.psdc-import-label { display: inline-flex; align-items: center; cursor: pointer; }
+.advances-summary { font-weight: 400; font-size: 0.8125rem; color: var(--text-secondary); }
+.advances-summary .adv-over { color: #dc2626; }
+
+.psdc-table-wrapper { overflow-x: auto; }
+.psdc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.psdc-table th,
+.psdc-table td {
+  border: 1px solid var(--border-color);
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+.psdc-table thead th {
+  background: var(--bg-tertiary, var(--bg-primary));
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.psdc-table td.money { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.psdc-table td.center { text-align: center; }
+.psdc-table tfoot td {
+  background: var(--bg-tertiary, var(--bg-primary));
+  text-align: right;
+}
+.psdc-section-row td {
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  font-weight: 600;
+}
+.psdc-section-name { cursor: pointer; }
+.psdc-toggle-cell { text-align: center; }
+.psdc-toggle {
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  width: 1.4rem;
+  height: 1.4rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.psdc-davalchesky td { opacity: 0.7; font-style: italic; }
+.psdc-del {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  padding: 0 0.2rem;
+}
+.psdc-del:hover { color: #dc2626; }
+.psdc-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.psdc-hint { font-size: 0.75rem; line-height: 1.6; margin-top: 0.5rem; }
+
+/* ===== Форма транша авансирования ===== */
+.advance-form {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.advance-form-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.advance-form-row > div { display: flex; flex-direction: column; gap: 0.25rem; }
+.advance-form-row .advance-form-desc { flex: 1; min-width: 180px; }
+.advance-form-row label { font-size: 0.75rem; color: var(--text-secondary); }
+.advance-form-row input {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.advance-form-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
+.contract-documents-tab { margin-top: 0.5rem; }
+
+/* ===== Инлайн-правки в таблице реестра договоров (задача 391) ===== */
+.inline-cell-select,
+/* task 426: аккуратная инлайн-дата (кнопка с форматированной датой + скрытый picker) */
+.inline-date {
+  position: relative;
+  display: inline-flex;
+}
+.inline-date-native {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.inline-date-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.25rem 0.4375rem;
+  font-size: 0.75rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.1s, background 0.1s;
+}
+.inline-date-btn:hover:not(:disabled) {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.inline-date-btn:disabled { cursor: default; }
+.inline-date-btn svg { color: var(--text-tertiary); flex-shrink: 0; }
+.inline-date.is-empty .inline-date-text { color: var(--text-tertiary); }
+.inline-date.is-overdue .inline-date-text { color: #dc2626; font-weight: 600; }
+[data-theme='dark'] .inline-date.is-overdue .inline-date-text { color: #f87171; }
+
+.inline-cell-date,
+.inline-cell-notes {
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.75rem;
+  font-family: inherit;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-sizing: border-box;
+  transition: border-color 0.1s, background 0.1s;
+}
+/* Клик по всему полю даты открывает календарь (showPicker) — поэтому курсор-указатель. */
+.inline-cell-date { cursor: pointer; }
+.inline-cell-date:disabled { cursor: default; }
+.inline-cell-date::-webkit-calendar-picker-indicator { cursor: pointer; }
+.inline-cell-select:hover,
+.inline-cell-date:hover,
+.inline-cell-notes:hover {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.inline-cell-select:focus,
+.inline-cell-date:focus,
+.inline-cell-notes:focus {
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+  outline: none;
+}
+.inline-cell-select:disabled,
+.inline-cell-date:disabled,
+.inline-cell-notes:disabled {
+  color: var(--text-secondary);
+  cursor: default;
+}
+/* Ответственный юрист: длинное ФИО не наезжает на стрелку и не ломает строку */
+.inline-cell-select {
+  padding-right: 1.4rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inline-cell-notes {
+  resize: vertical;
+  min-height: 28px;
+  line-height: 1.35;
+}
+.cell-amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Компактный шрифт и узкие боковые отступы — чтобы миллиардные суммы влезали целиком */
+.contracts-table-compact .cell-amount {
+  padding-left: 0.375rem;
+  padding-right: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ===== Сумма: подряд и генподряд одной колонкой (миграция 20260827) ===== */
+.amt-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: flex-end;
+}
+/* Метка ДП/ДГП прижата влево, сумма — вправо: цифры остаются в одной колонке
+   и читаются столбиком, как в любой денежной таблице. */
+.amt-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+.amt-tag {
+  flex: 0 0 auto;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+}
+.amt-value { white-space: nowrap; }
+.amt-markup {
+  align-self: flex-end;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color, #2563eb) 12%, transparent);
+  color: var(--primary-color, #2563eb);
+  font-size: 0.65rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ===== Охват реестра: все договоры / наши договоры ===== */
+.registry-scope {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.25rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.registry-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.registry-scope-btn:hover { color: var(--text-primary); }
+.registry-scope-btn.is-active {
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+.registry-scope-count {
+  min-width: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Галочка в форме договора */
+.contract-form .inline-check,
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+.inline-check input { width: auto; margin: 0; }
+
+/* ===== Реестр договоров: панель фильтров над таблицей ===== */
+/* Панель фильтров — отдельная светлая карточка над таблицей */
+.registry-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin: 0.75rem 0 1rem;
+  padding: 0.875rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+.rf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+.rf-field-object { width: 240px; }
+.rf-field-lawyer { width: 260px; }
+.rf-field-search {
+  flex: 1 1 360px;
+  min-width: 360px;
+}
+.rf-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+.rf-search {
+  width: 100%;
+  height: 40px;
+  padding: 0 0.625rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+.rf-search:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+/* Кастомные дропдауны фильтров занимают всю ширину своего поля */
+.registry-filters .fdrop { display: flex; width: 100%; }
+.registry-filters .fdrop-trigger { width: 100%; max-width: none; height: 40px; }
+.rf-quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  /* Поиск (flex:1) заполняет левую часть → Объект/Юрист + быстрые фильтры уходят вправо.
+     margin-left:auto здесь больше не нужен (иначе разрывал бы группу справа). */
+}
+.qfilter {
+  height: 40px;
+  padding: 0 0.875rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s, border-color 0.1s;
+}
+.qfilter:hover:not(:disabled) {
+  border-color: var(--primary-color);
+  color: var(--text-primary);
+}
+.qfilter.active {
+  color: #fff;
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.qfilter-reset {
+  color: var(--text-tertiary);
+}
+.qfilter:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ===== Сортируемые заголовки ===== */
+.contracts-table-compact th.th-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: normal;
+}
+.contracts-table-compact th.th-sortable:hover {
+  color: var(--text-primary);
+}
+.contracts-table-compact th.th-sortable .sort-ind {
+  margin-left: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+}
+.contracts-table-compact th.th-sorted,
+.contracts-table-compact th.th-sorted .sort-ind {
+  color: var(--primary-color);
+}
+
+/* ===== Колонка «Договор / № ДС» ===== */
+.contract-ds-link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 0.125rem 0.25rem;
+  background: none;
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.25;
+}
+.contract-ds-link:hover {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.contract-ds-link.is-active {
+  border-color: var(--primary-color);
+}
+.contract-ds-link .cds-main {
+  max-width: 100%;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  text-decoration: underline;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.contract-ds-link .cds-sub {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Постоянный ID портала — компактно, приглушённо, моноширинно. */
+.contract-ds-link .cds-id {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ===== Договор без номера и/или даты — спокойная красная подсветка ===== */
+.contracts-table-compact td.cell-contract-num.is-incomplete {
+  background: rgba(185, 28, 28, 0.06);
+  box-shadow: inset 3px 0 0 rgba(185, 28, 28, 0.55);
+}
+
+/* Используется и в реестре, и в шапке карточки договора */
+.cds-missing {
+  color: #b91c1c;
+  font-style: italic;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.contract-ds-link .cds-main.cds-missing {
+  font-weight: 600;
+}
+
+[data-theme='dark'] .contracts-table-compact td.cell-contract-num.is-incomplete {
+  background: rgba(248, 113, 113, 0.08);
+  box-shadow: inset 3px 0 0 rgba(248, 113, 113, 0.5);
+}
+
+[data-theme='dark'] .cds-missing {
+  color: #f87171;
+}
+
+/* ===== Просроченная плановая дата подписания ===== */
+.contracts-table-compact td.date-cell {
+  position: relative;
+  white-space: nowrap;
+}
+.contracts-table-compact td.date-overdue .inline-cell-date {
+  color: var(--danger-color);
+  font-weight: 600;
+}
+.overdue-warn {
+  margin-left: 0.2rem;
+  color: var(--danger-color);
+  font-size: 0.8125rem;
+}
+
+/* ===== Мягкая подсветка раскрытой строки договора ===== */
+.contracts-table-compact tbody tr.contract-row.is-expanded > td {
+  background: var(--primary-light);
+}
+
+/* ===== Модалка «Стандартные приложения объекта» ===== */
+.oa-modal {
+  width: 1040px;
+  max-width: calc(100vw - 48px);
+  display: flex;
+  flex-direction: column;
+}
+
+.oa-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.oa-modal-heading h3 {
+  margin: 0;
+  font-size: 1.1875rem;
+  color: var(--text-primary);
+}
+
+.oa-modal-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+
+.oa-modal-body {
+  padding: 1.25rem 1.75rem 1.5rem;
+  overflow-y: auto;
+}
+
+/* Поле «label + control» */
+.oa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+  min-width: 0;
+}
+
+.oa-field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.oa-field input,
+.oa-field select {
+  width: 100%;
+  padding: 0.5625rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-sizing: border-box;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.oa-field input:focus,
+.oa-field select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.12);
+}
+
+.oa-placeholder {
+  margin-top: 1.25rem;
+  padding: 1.75rem 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+}
+
+.oa-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1.5rem 0 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.oa-count {
+  min-width: 1.25rem;
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  text-align: center;
+  color: #fff;
+  background: var(--primary-color);
+  border-radius: 999px;
+}
+
+.oa-empty {
+  padding: 1rem;
+  font-size: 0.875rem;
+  font-style: italic;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+}
+
+/* Таблица приложений объекта */
+.oa-table-wrap {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.oa-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.8125rem;
+}
+
+.oa-table thead th {
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.oa-table tbody td {
+  padding: 0.375rem 0.5rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-color);
+  overflow-wrap: anywhere;
+}
+
+.oa-table tbody tr:last-child td { border-bottom: none; }
+.oa-table tbody tr:hover { background: var(--bg-tertiary); }
+
+.oa-table .oa-col-drag { width: 26px; text-align: center; }
+.oa-table .oa-col-num {
+  width: 58px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* Ссылка и действия — узкие фикс-колонки; название и описание автоматически делят
+   оставшееся место поровну (столбцы без width под table-layout:fixed). */
+.oa-table .oa-col-link { width: 150px; }
+.oa-table .oa-col-act { width: 96px; text-align: center; }
+
+.oa-cell-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.oa-cell-desc { color: var(--text-secondary); }
+
+.oa-dash { color: var(--text-tertiary); }
+
+.oa-item-link {
+  color: var(--primary-color);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+/* ── Приложения объекта: инлайн-инпуты, перетаскивание, иерархия ── */
+.oa-input {
+  width: 100%;
+  padding: 0.3125rem 0.4375rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+.oa-input:hover { border-color: var(--border-color); background: var(--bg-secondary); }
+.oa-input:focus { outline: none; border-color: var(--primary-color); background: var(--bg-secondary); }
+.oa-input-num { text-align: center; font-variant-numeric: tabular-nums; }
+
+.oa-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1;
+  letter-spacing: -1px;
+  cursor: grab;
+  user-select: none;
+}
+.oa-handle:active { cursor: grabbing; }
+.oa-table tbody tr:hover .oa-handle { color: var(--text-secondary); }
+.oa-table tbody tr.oa-row-dragging { opacity: 0.5; }
+.oa-table tbody tr.oa-drop-before td { box-shadow: inset 0 2px 0 var(--primary-color); }
+.oa-table tbody tr.oa-drop-after td { box-shadow: inset 0 -2px 0 var(--primary-color); }
+.oa-table tbody tr.oa-row-child { background: color-mix(in srgb, var(--primary-color) 4%, transparent); }
+
+/* Обёртка в ячейке названия (td не делаем flex — иначе выпадает из сетки таблицы) */
+.oa-name-inner { display: flex; align-items: center; gap: 0.25rem; }
+.oa-row-child .oa-name-inner { padding-left: 1.25rem; }
+.oa-child-marker { flex-shrink: 0; color: var(--text-tertiary); font-size: 0.8125rem; }
+.oa-name-text { overflow-wrap: anywhere; }
+
+.oa-act-inner { display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
+.oa-hier {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.oa-hier:hover:not(:disabled) { color: var(--primary-color); background: var(--bg-secondary); }
+.oa-hier:disabled { opacity: 0.3; cursor: default; }
+
+/* Карточка добавления нового приложения */
+.oa-add-card {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.oa-add-title {
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.oa-add-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.oa-field-wide { grid-column: 1 / -1; }
+
+.oa-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.875rem;
+}
+
+.oa-add-actions .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (max-width: 640px) {
+  .oa-add-grid { grid-template-columns: 1fr; }
+}
+
+/* ===== Переносы длинного текста ===== */
+/* Объект, контрагент и работы показываются целиком: текст переносится, не обрезается */
+.contracts-table-compact .cell-object,
+.contracts-table-compact .cell-counterparty,
+.contracts-table-compact .cell-work {
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+/* ===== Колонка «№» + бейдж числа приложений (вместо отдельной колонки) ===== */
+/* ВАЖНО: ячейка «№» — обычный table-cell (НЕ flex), иначе выпадает из общей
+   сетки border-collapse и рисуется отдельной «карточкой» с собственной рамкой. */
+.contracts-table-compact .cell-num {
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.contracts-table-compact .cell-num-value {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.contracts-table-compact .expand-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  margin-left: 0.2rem;
+  padding: 0 0.2rem;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary-color);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.contracts-table-compact tr.is-expanded .expand-badge { filter: brightness(1.1); }
+
+/* ===== Ответственный юрист: краткое ФИО «Фамилия И.О.» в одну строку ===== */
+.contracts-table-compact .cell-lawyer {
+  vertical-align: middle;
+  /* Узкие боковые отступы: всю ширину колонки отдаём под ФИО */
+  padding-left: 0.375rem;
+  padding-right: 0.375rem;
+}
+.contracts-table-compact .cell-lawyer .fdrop { display: flex; width: 100%; }
+.contracts-table-compact .cell-lawyer .fdrop-trigger {
+  width: 100%;
+  max-width: none;
+  min-height: 32px;
+  /* Стрелка ▾ — отдельный flex-элемент внутри кнопки, поэтому НЕ резервируем под неё
+     ещё и padding-right: иначе место считается дважды и ФИО обрезается. */
+  padding: 4px 6px 4px 8px;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui, 'Inter', 'Segoe UI', Roboto, Arial, sans-serif);
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 500;
+  border-radius: 8px;
+  background: transparent;
+  border-color: transparent;
+}
+.contracts-table-compact .cell-lawyer .fdrop-trigger:hover {
+  border-color: var(--border-color);
+  background: var(--bg-secondary);
+}
+.contracts-table-compact .cell-lawyer .fdrop.is-open .fdrop-trigger {
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+  box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.12);
+}
+/* Краткое ФИО помещается в одну строку — без переноса и БЕЗ многоточия */
+.contracts-table-compact .cell-lawyer .fdrop-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+.contracts-table-compact .cell-lawyer .fdrop.is-active .fdrop-value { color: var(--text-primary); }
+.contracts-table-compact .cell-lawyer .fdrop-arrow { flex-shrink: 0; margin-top: 0; }
+
+/* ===== Просроченная плановая дата — мягкий красный + подпись ===== */
+.overdue-note {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--danger-color);
+}
+
+/* ===== Пагинация реестра ===== */
+.registry-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.75rem 0.25rem 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+.rp-info { color: var(--text-tertiary); }
+.rp-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.rp-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--text-tertiary);
+}
+.rp-size select {
+  height: 30px;
+  padding: 0 0.375rem;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.rp-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.rp-page {
+  padding: 0 0.5rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rp-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.rp-btn:hover:not(:disabled) { border-color: var(--primary-color); color: var(--text-primary); }
+.rp-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Телефон (≤640px): обвязка реестра договоров ────────────────────────────
+   Карточки рендерятся вместо таблицы через useIsPhone (ContractsPage.jsx).
+   Здесь адаптируем фильтры, вкладки-реестры и пагинацию. */
+@media (max-width: 640px) {
+  /* Фильтры — каждый на всю ширину строки */
+  .registry-filters {
+    gap: 0.625rem;
+    padding: 0.75rem;
+  }
+  .rf-field-object,
+  .rf-field-lawyer,
+  .rf-field-search {
+    width: 100%;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .rf-quick {
+    margin-left: 0;
+    width: 100%;
+  }
+  /* Вкладки-реестры прокручиваются горизонтально, не переносясь на 2 ряда */
+  .status-tabs {
+    padding: 0 1rem;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  .status-tab {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  /* Пагинация — переносим и центрируем */
+  .registry-pagination {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Карточка договора: вкладки прокручиваются, поля-строки в столбец.
+     Глубокие таблицы (ПСДЦ, авансы, приложения) остаются с горизонтальной
+     прокруткой внутри своих обёрток (.psdc-table-wrapper, .oa-table-wrap). */
+  .contract-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .contract-tab {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .contract-section .info-row {
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+}
+
+/* ===== Дополнительные соглашения ===== */
+
+/* Тип ДС прямо в строке реестра: два вида ветвления различаются цветом, иначе
+   «изменение ВОР» и «доп. работы» глазом не разделить. */
+.ds-type-badge {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.ds-type-badge.is-ds_vor {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+.ds-type-badge.is-ds_extra {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+[data-theme='dark'] .ds-type-badge.is-ds_vor { color: #93c5fd; }
+[data-theme='dark'] .ds-type-badge.is-ds_extra { color: #fcd34d; }
+
+/* Сколько соглашений висит на документе. */
+.ds-count-badge {
+  display: inline-block;
+  margin-top: 0.25rem;
+  margin-left: 0.3rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 0.625rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Ссылка на изменяемый документ (колонка представления ДС). */
+.parent-doc-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  text-decoration: none;
+  color: inherit;
+}
+.parent-doc-link:hover .cds-main { text-decoration: underline; }
+.parent-doc-link .cds-main { font-weight: 600; font-size: 0.75rem; }
+.parent-doc-link .cds-id,
+.parent-doc-link .cds-sub {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Актуальная сумма с учётом завершённых ДС — рядом с исходной. */
+.amt-actual .amt-tag {
+  background: rgba(5, 150, 105, 0.14);
+  color: #047857;
+}
+[data-theme='dark'] .amt-actual .amt-tag { color: #6ee7b7; }
+.amt-actual .amt-value { font-weight: 700; }
+.amt-solo.amt-original { color: var(--text-tertiary); }
+/* Сумма документа взята из применённой ПСДЦ. */
+.amt-tag.amt-psdc {
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--info-light);
+  color: var(--info-color);
+}
+
+/* Форма ДС: поле, которое соглашение переопределяет. */
+.form-group.is-ds-changed > label::after {
+  content: ' изменяется';
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+[data-theme='dark'] .form-group.is-ds-changed > label::after { color: #93c5fd; }
+.form-group.is-ds-changed > input,
+.form-group.is-ds-changed > select,
+.form-group.is-ds-changed > textarea {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.ds-changed-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-height: 1.75rem;
+  align-items: center;
+}
+.ds-changed-chip {
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+[data-theme='dark'] .ds-changed-chip { color: #93c5fd; }
+.ds-changed-empty {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* Завершённый документ: условия заморожены (то же правило в триггере БД). */
+.ds-frozen-note {
+  margin: 0 1.25rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(217, 119, 6, 0.1);
+  color: #b45309;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+[data-theme='dark'] .ds-frozen-note { color: #fcd34d; }
+
+/* ===== Дерево соглашений в карточке договора ===== */
+.cd-ds-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.cd-ds-head h3 { margin: 0; }
+.cd-ds-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.cd-ds-actions .btn-secondary {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
+}
+.cd-ds-actions .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cd-ds-empty {
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.cd-ds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+.cd-ds-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  text-decoration: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.cd-ds-item:hover { border-color: var(--primary-color); }
+.cd-ds-item.is-current {
+  border-color: var(--primary-color);
+  box-shadow: inset 3px 0 0 var(--primary-color);
+}
+.cd-ds-item .cd-ds-id {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+.cd-ds-item .cd-ds-num { font-weight: 600; }
+.cd-ds-item .cd-ds-date,
+.cd-ds-item .cd-ds-amount { color: var(--text-secondary); }
+.cd-ds-item .cd-ds-amount { margin-left: auto; font-variant-numeric: tabular-nums; }
+.cd-ds-item .ds-type-badge { margin-top: 0; }
+
+/* Карточка договора: условие изменено завершённым ДС на изменение ВОР */
+.cd-term-src {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  color: var(--primary-color);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+.cd-term-src:hover { text-decoration: underline; }

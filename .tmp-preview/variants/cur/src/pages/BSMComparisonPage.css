@@ -1,0 +1,345 @@
+.bsm-comparison-page {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.bsm-comparison-page h1 {
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.bsm-comparison-page .page-description {
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.object-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.object-selector label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.object-selector select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-width: 300px;
+  font-size: 14px;
+}
+
+/* Статистика */
+.comparison-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-card.success {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.stat-card.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.stat-card.info {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Общая разница */
+.total-difference {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 8px;
+  margin-bottom: 24px;
+  font-size: 15px;
+}
+
+.total-difference.positive {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--text-primary);
+}
+
+.total-difference.negative {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: var(--text-primary);
+}
+
+.total-difference strong {
+  font-size: 18px;
+}
+
+.total-difference .hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Панель инструментов */
+.comparison-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.comparison-toolbar .toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.comparison-toolbar .search-input {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  width: 250px;
+}
+
+.comparison-toolbar .filter-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-width: 180px;
+}
+
+.comparison-toolbar .count-label {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.comparison-toolbar .btn-export {
+  padding: 8px 16px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.comparison-toolbar .btn-export:hover {
+  opacity: 0.9;
+}
+
+.comparison-toolbar .btn-export:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Таблица сравнения */
+.table-container {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.comparison-table th {
+  background: var(--bg-secondary);
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.comparison-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.comparison-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.comparison-table .col-num {
+  width: 50px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.comparison-table .col-name {
+  min-width: 300px;
+}
+
+.comparison-table .col-unit {
+  width: 80px;
+  text-align: center;
+}
+
+.comparison-table .col-price {
+  width: 140px;
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.comparison-table .col-diff {
+  width: 120px;
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+}
+
+.comparison-table .col-percent {
+  width: 80px;
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.comparison-table .col-status {
+  width: 140px;
+  text-align: center;
+}
+
+/* Цвета для разницы */
+.col-diff.positive,
+.col-percent.positive {
+  color: #ef4444;
+}
+
+.col-diff.negative,
+.col-percent.negative {
+  color: #22c55e;
+}
+
+/* Статус-бейджи */
+.status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.status-badge.match {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.status-badge.different {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.status-badge.not_in_supply {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.status-badge.not_in_contract {
+  background: rgba(156, 163, 175, 0.15);
+  color: #6b7280;
+}
+
+/* Подсветка строк */
+.comparison-table tr.status-different {
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.comparison-table tr.status-not-in-supply {
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.comparison-table tr.status-not-in-contract {
+  background: rgba(156, 163, 175, 0.05);
+}
+
+.no-data {
+  color: var(--text-tertiary);
+}
+
+/* Пустое состояние и загрузка */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+  .comparison-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .total-difference {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .comparison-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .comparison-toolbar .toolbar-left,
+  .comparison-toolbar .toolbar-right {
+    width: 100%;
+  }
+
+  .comparison-toolbar .search-input {
+    width: 100%;
+  }
+}
