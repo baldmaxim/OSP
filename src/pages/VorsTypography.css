@@ -58,16 +58,57 @@ body.vors-typography :is(.fdrop-panel, .drc-pop) :is(a, button, select, input, t
   line-height: var(--vr-title-lh);
   font-weight: var(--vr-semibold);
 }
-.cost-plans-page.vors-page .page-header-hint {
-  font-size: var(--vr-hint);
-  line-height: var(--vr-hint-lh);
-}
 .cost-plans-page.vors-page .vor-duty-chip { font-size: var(--vr-text); line-height: var(--vr-text-lh); }
 .cost-plans-page.vors-page .vor-duty-name { font-weight: var(--vr-medium); }
 .cost-plans-page.vors-page .vor-scope-btn {
   font-size: var(--vr-text);
   line-height: var(--vr-text-lh);
   font-weight: var(--vr-medium);
+}
+
+/* Раскладка шапки: одна строка — слева заголовок и переключатель направления
+   (он относится к заголовку и меняет то, что показано ниже), справа дежурный.
+   Задаём явно: общий .page-header из Tenders.css ставит space-between, из-за
+   чего переключатель улетал к правому краю, а дежурный — на вторую строку.
+   Высота переключателя и чипа одна (34px — как у чипа дежурного в «Тендерах»),
+   чтобы они читались одной линией, а не двумя блоками разного роста. */
+.cost-plans-page.vors-page .page-header-vors {
+  justify-content: flex-start;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1.25rem;
+}
+.cost-plans-page.vors-page .page-header-vors .cp-header-right { gap: 0.5rem; }
+.cost-plans-page.vors-page .vor-scope-switch {
+  margin-left: 0;   /* расстояние до заголовка задаёт gap шапки */
+  padding: 0.1875rem;
+}
+.cost-plans-page.vors-page .vor-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 1.625rem;   /* 26px + отступы 2 × 3px + рамка 2 × 1px = 34px, как чип */
+  padding: 0 0.75rem;
+}
+
+/* Телефон: «Основное строительство | Совместные тендеры» в строку не влезают и
+   раздвигали шапку шире экрана — правый край уезжал за границу вместе с чипом
+   дежурного. Переключатель занимает всю ширину, половины равные. */
+@media (max-width: 640px) {
+  .cost-plans-page.vors-page .vor-scope-switch { width: 100%; }
+  .cost-plans-page.vors-page .vor-scope-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    /* На узком экране подпись переносится в две строки, а не обрезается. */
+    height: auto;
+    min-height: 1.625rem;
+    padding: 0.25rem 0.375rem;
+    font-size: var(--vr-th);
+    line-height: var(--vr-th-lh);
+    white-space: normal;
+    text-align: center;
+  }
+  .cost-plans-page.vors-page .page-header-vors .cp-header-right { max-width: 100%; }
+  .cost-plans-page.vors-page .vor-duty-chip { max-width: 100%; }
 }
 
 /* ── Вкладки ─────────────────────────────────────────────────────────────── */

@@ -17,8 +17,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '@variant/contexts/ThemeContext'
 import { RoleProvider } from '@variant/contexts/RoleContext'
 import TendersPage from '@variant/pages/TendersPage'
+import VorsPage from '@variant/pages/VorsPage'
 
 const params = new URLSearchParams(location.search)
+// ?page=vors — «ВОРы и РД» (маршрут /vors), по умолчанию реестр тендеров.
+const pageName = params.get('page') || 'tenders'
 const view = params.get('view') || 'construction'
 const isMaterials = view === 'materials'
 const theme = params.get('theme') || 'light'
@@ -35,7 +38,7 @@ if (params.get('keepState') !== '1') {
   } catch { /* noop */ }
 }
 
-const route = isMaterials ? '/tenders/materials' : `/tenders/${view}`
+const route = pageName === 'vors' ? '/vors' : isMaterials ? '/tenders/materials' : `/tenders/${view}`
 
 function Stand() {
   return (
@@ -46,9 +49,11 @@ function Stand() {
             {/* Место сайдбара (200px) — чтобы ширина рабочей области совпадала с приложением. */}
             <div className="stand-sidebar" aria-hidden />
             <main className="main-content">
-              {isMaterials
-                ? <TendersPage key="tenders-materials" tenderType="materials" />
-                : <TendersPage key={`tenders-${view}`} department={view} tenderType="main" />}
+              {pageName === 'vors'
+                ? <VorsPage />
+                : isMaterials
+                  ? <TendersPage key="tenders-materials" tenderType="materials" />
+                  : <TendersPage key={`tenders-${view}`} department={view} tenderType="main" />}
             </main>
           </div>
         </MemoryRouter>

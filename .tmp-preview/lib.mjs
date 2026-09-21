@@ -107,6 +107,7 @@ export async function openStand(o = {}) {
   const {
     variant = 'cur', view = 'construction', width = 1720, height = 1000,
     theme = 'light', now, role, readonly, headless = true, server: given,
+    page: pageName = 'tenders',
   } = o
   const server = given || await startServer()
   const browser = await chromium.launch({ ...browserLaunchOptions(), headless })
@@ -129,6 +130,7 @@ export async function openStand(o = {}) {
   })
 
   const q = new URLSearchParams({ view, theme })
+  if (pageName !== 'tenders') q.set('page', pageName)
   if (now) q.set('now', now)
   if (role) q.set('role', role)
   if (readonly) q.set('readonly', '1')
@@ -137,7 +139,9 @@ export async function openStand(o = {}) {
   await page.goto(url, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => window.__STAND_READY__ === true, null, { timeout: 30000 })
   // Таблица (или «нет данных») отрисована, шрифты доехали.
-  await page.waitForSelector('.tenders-registry tbody tr, .tenders-page .no-data', { timeout: 30000 })
+  await page.waitForSelector(pageName === 'vors'
+    ? '.vors-page .cost-plans-tabs'
+    : '.tenders-registry tbody tr, .tenders-page .no-data', { timeout: 30000 })
   await page.evaluate(() => document.fonts?.ready)
   await page.waitForTimeout(300) // ClampText меряет переполнение в ResizeObserver
 

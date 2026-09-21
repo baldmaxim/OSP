@@ -570,6 +570,11 @@ function VorsPage() {
           <IconTile tone="amber" className="page-icon-tile"><IconDocument size={16} /></IconTile>
           ВОРы и РД
         </h2>
+        {/* Направление («Основное строительство» / «Совместные тендеры») — рядом
+            с заголовком: это переключатель того, что показано ниже. Подписи под
+            шапкой нет: что в списке и тендеры, и заявки на ВОР без тендера, видно
+            по значку заявки в строке, а в ответственные СТО выпадашка и так
+            подставляет только сметно-технический отдел. */}
         <div className="vor-scope-switch" role="tablist" aria-label="Направление">
           {SCOPES.map(x => (
             <button
@@ -591,9 +596,6 @@ function VorsPage() {
             <span className="vor-duty-label">Дежурный по тендерам:</span>
             <span className="vor-duty-name"><PersonName full={duty.name} /></span>
             {duty.overridden && <span className="vor-duty-dot" aria-hidden />}
-          </div>
-          <div className="page-header-hint">
-            {scope === 'joint' ? 'Совместные тендеры' : 'Тендеры основного строительства'} и заявки на ВОР без тендера. Ответственный СТО выбирается из сотрудников сметно-технического отдела.
           </div>
         </div>
       </div>

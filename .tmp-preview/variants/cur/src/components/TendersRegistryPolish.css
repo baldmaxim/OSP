@@ -459,12 +459,12 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .tenders-page.ui-work.tp-dense :is(.page-header, .tender-tabs, .tp-filters, .table-container) {
   --ui-title: 1.125rem;       /* 18 */
   --ui-title-lh: 1.5rem;      /* 24 */
-  --ui-text: 0.8125rem;       /* 13 — данные, кнопки, фильтры, вкладки */
-  --ui-text-lh: 1.125rem;     /* 18 */
-  --ui-th: 0.75rem;           /* 12 — заголовки колонок, статусы */
-  --ui-th-lh: 1rem;           /* 16 */
-  --ui-hint: 0.75rem;         /* 12 — вторичные сведения */
-  --ui-hint-lh: 1rem;
+  --ui-text: 0.75rem;         /* 12 — данные таблицы (как в прежнем реестре) */
+  --ui-text-lh: 1rem;         /* 16 */
+  --ui-th: 0.6875rem;         /* 11 — заголовки колонок и статусы */
+  --ui-th-lh: 0.9375rem;      /* 15 */
+  --ui-hint: 0.6875rem;       /* 11 — вторичные подписи и мелкие действия */
+  --ui-hint-lh: 0.9375rem;
   --ui-control-h: 2rem;       /* 32 */
   --ui-cell-py: 0.375rem;     /* 6 */
   --ui-cell-px: 0.375rem;     /* 6 */
@@ -481,6 +481,16 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work.tp-dense .tp-live { padding: 0.125rem 0.5rem; }
 
 /* Вкладки и панель. */
+/* Шапка, вкладки и панель остаются на 13/18: мельче их делать незачем,
+   плотность нужна таблице. */
+.tenders-page.ui-work.tp-dense :is(.page-header, .tender-tabs, .tp-filters) {
+  --ui-text: 0.8125rem;
+  --ui-text-lh: 1.125rem;
+  --ui-th: 0.75rem;
+  --ui-th-lh: 1rem;
+  --ui-hint: 0.75rem;
+  --ui-hint-lh: 1rem;
+}
 .ui-work.ui-work.tp-dense .tender-tabs { padding: 0 0.5rem; }
 .ui-work.ui-work.tp-dense .tender-tabs .tender-tab { min-height: 2.25rem; padding: 0 0.625rem; }
 .ui-work.ui-work.tp-dense .tender-tabs .tender-tab-count { min-width: 1.125rem; height: 1.125rem; padding: 0 0.3125rem; }
@@ -497,26 +507,26 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td:last-child { border-right: 0; }
 .ui-work.ui-work.tp-dense .tp-grid > thead > tr > th { padding: 0.375rem var(--ui-cell-px); }
 
-/* Сетка плотного варианта. Сумма фиксированных — 88.25rem; на 1920 описанию
+/* Сетка плотного варианта. Ширины — по замеру содержимого при 12px
    остаётся ≈ 15rem, min-width — +13rem. «№» объединён со счётчиком участников
    (одна колонка 6rem вместо 3 + 6) — освободившееся отдано объекту (адреса
    вида «г. Москва, ЗАО, вн.тер.г. …» занимали 5–6 строк) и пакету; объекту —
    срок одного года (и с «!» просрочки) — в строку, разных лет — перенос после
    тире; главный статус длиннее «Заявка на тендер» — в две строки. */
-.ui-work.ui-work.tp-dense .tp-grid { min-width: 101.25rem; }
+.ui-work.ui-work.tp-dense .tp-grid { min-width: 92rem; }
 .ui-work.ui-work.tp-dense .tp-grid.data-table--compact { min-width: 67.25rem; }
-.ui-work.ui-work.tp-dense .tp-c-num { width: 6rem; }               /* № + раскрытие, под ними «0 участников» */
-.ui-work.ui-work.tp-dense .tp-c-object { width: 13.25rem; }
-.ui-work.ui-work.tp-dense .tp-c-status { width: 8.5rem; }
+.ui-work.ui-work.tp-dense .tp-c-num { width: 6rem; }   /* № + раскрытие, под ними «3/10 КП» */
+.ui-work.ui-work.tp-dense .tp-c-object { width: 10rem; }   /* название + «Показать адрес» */
+.ui-work.ui-work.tp-dense .tp-c-status { width: 8.5rem; }   /* «Идет тендерная процедура» в две строки */
 .ui-work.ui-work.tp-dense .tp-c-winner { width: 11rem; }
-.ui-work.ui-work.tp-dense .tp-c-period { width: 9.75rem; }
-.ui-work.ui-work.tp-dense .tp-c-resp { width: 8.5rem; }
-.ui-work.ui-work.tp-dense .tp-c-vor { width: 7.5rem; }
-.ui-work.ui-work.tp-dense .tp-c-package { width: 8.25rem; }         /* «Открыть ✎ 📎» одной строкой */
-.ui-work.ui-work.tp-dense .tp-c-plan { width: 7.5rem; }
-.ui-work.ui-work.tp-dense .tp-c-mat { width: 7.25rem; }
-.ui-work.ui-work.tp-dense .tp-c-summary { width: 5.75rem; }
-.ui-work.ui-work.tp-dense .tp-c-actions { width: 6rem; }
+.ui-work.ui-work.tp-dense .tp-c-period { width: 8.5rem; }   /* «17.09 — 21.09.2026» целиком */
+.ui-work.ui-work.tp-dense .tp-c-resp { width: 6.75rem; }   /* «Не назначен» и «Крюкова Ю. Д.» без переноса */
+.ui-work.ui-work.tp-dense .tp-c-vor { width: 7.5rem; }   /* срок ВОР «17.09 — 25.09.2026» */
+.ui-work.ui-work.tp-dense .tp-c-package { width: 7.25rem; }   /* «Проверка РД» */
+.ui-work.ui-work.tp-dense .tp-c-plan { width: 6.5rem; }   /* «Ожидание КП» */
+.ui-work.ui-work.tp-dense .tp-c-mat { width: 6.5rem; }   /* «Не требуется» */
+.ui-work.ui-work.tp-dense .tp-c-summary { width: 5rem; }   /* «+ ссылка» */
+.ui-work.ui-work.tp-dense .tp-c-actions { width: 5.5rem; }   /* три кнопки 26px */
 
 /* Описание работ — ссылка на тендер: акцентный цвет и тонкое подчёркивание,
    500. Раскрытие «Показать полностью» — отдельной кнопкой, только если текст
@@ -544,7 +554,23 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work.tp-dense .tp-grid .expand-toggle { width: 1.375rem; height: 1.375rem; }
 .ui-work.ui-work.tp-dense .tp-grid .kp-counter { padding: 0 0.25rem; }
 .ui-work.ui-work.tp-dense .tp-grid .yandex-map-link { margin-top: 0.125rem; }
-.ui-work.ui-work.tp-dense .tp-grid .ui-clamp-toggle { margin-top: 0.0625rem; }
+/* Описание работ: текст занимает свою строку, а «Показать полностью», путь к
+   папке и отметки идут строчными группами под ним — в одну строку, с переносом
+   только при нехватке ширины. Раньше каждый из них был отдельным блоком — три
+   лишние строки на запись, и высоту реестра задавало не содержание, а служебные
+   подписи. Сама ячейка остаётся table-cell: у ячейки с display: flex браузер
+   создаёт анонимную обёртку, рамка рисуется по содержимому, и вертикальная
+   линия колонки не доходит до низа строки.
+   Действия остаются разными: переход по тексту, раскрытие, папка, «ТГ». */
+.ui-work.ui-work.tp-dense .tp-grid .tender-desc-link { display: block; }
+.ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td.tender-desc-cell > :is(.ui-clamp-toggle, .fpath, .fpath-add, .tender-flags) {
+  display: inline-flex;
+  vertical-align: top;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0.1875rem 0.375rem 0 0;
+}
+.ui-work.ui-work.tp-dense .tp-grid .tender-flags { gap: 0.1875rem; }
 
 /* Главный статус тендера — плашка 12/16; этапы — легче: без внутренних
    отступов по высоте. */
