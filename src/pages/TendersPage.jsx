@@ -2603,7 +2603,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const tenderObjects = objects.filter(o => tenderObjectIds.includes(o.id))
 
   return (
-    <div className={`tenders-page${uiWork ? ' ui-work' : ''}${denseRegistry ? ' tp-dense' : ''}`}>
+    <div className={`tenders-page${uiWork ? ' ui-work' : ''}${denseRegistry ? ' tp-dense' : ''}${isMaterialsView ? ' tp-dense-mat' : ''}`}>
       {/* Акцент шапки — тон направления: разделы отличаются с одного взгляда. */}
       <div className={`page-header page-header-tenders hdr-tone--${headerTone}`}>
         <h2>
