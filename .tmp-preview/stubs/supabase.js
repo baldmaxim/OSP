@@ -177,8 +177,17 @@ class FakeQuery {
 
   then(resolve, reject) {
     let result
+    // Журнал обращений к «базе» — для замеров (сколько запросов и строк стоит
+    // то или иное действие). Читается из Playwright: window.__STAND_QUERIES__.
+    const logQuery = (rows) => {
+      try {
+        const log = (window.__STAND_QUERIES__ = window.__STAND_QUERIES__ || [])
+        log.push({ table: this.table, op: this.op, rows })
+      } catch { /* нет window — не страшно */ }
+    }
     try {
       const { data, count } = this._apply()
+      logQuery(Array.isArray(data) ? data.length : data ? 1 : 0)
       let out = this.headOnly ? null : data
       if (this.single) {
         if (this.headOnly) out = null

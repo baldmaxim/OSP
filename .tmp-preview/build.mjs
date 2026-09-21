@@ -20,6 +20,8 @@ const REPO = path.resolve(HERE, '..')
 const OUT = path.join(HERE, 'out')
 const VARIANTS_DIR = path.join(HERE, 'variants')
 const STUBS = path.join(HERE, 'stubs')
+// Боевой режим сборки (см. define ниже): STAND_PROD=1 node .tmp-preview/build.mjs new
+const PROD = process.env.STAND_PROD === '1'
 
 export const VARIANTS = {
   old: { rev: '09dbcf6', label: 'old · 09dbcf6 «ВОРы и РД»' },
@@ -199,12 +201,16 @@ export async function buildVariant(name) {
     target: ['chrome110'],
     jsx: 'automatic',
     loader: { '.js': 'jsx', '.woff2': 'file', '.woff': 'file', '.png': 'file', '.svg': 'dataurl' },
+    // STAND_PROD=1 — собрать так, как уходит в бой (React без отладочных
+    // проверок, минификация). Для замеров скорости это обязательно: в режиме
+    // разработки React рисует в разы медленнее, и числа получаются чужие.
+    minify: PROD,
     define: {
       'import.meta.env': JSON.stringify({
-        MODE: 'development', DEV: true, PROD: false, BASE_URL: '/',
+        MODE: PROD ? 'production' : 'development', DEV: !PROD, PROD, BASE_URL: '/',
         VITE_SUPABASE_URL: 'http://stand.local', VITE_SUPABASE_ANON_KEY: 'stand',
       }),
-      'process.env.NODE_ENV': '"development"',
+      'process.env.NODE_ENV': PROD ? '"production"' : '"development"',
       __BUILD_ID__: '"stand"',
     },
     plugins: [standPlugin(variantSrc)],

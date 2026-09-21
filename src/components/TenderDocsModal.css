@@ -238,6 +238,96 @@
 .tdm-unit-person { font-size: 0.875rem; color: var(--text-primary); }
 .tdm-unit-person + .tdm-unit-person { margin-top: 0.5rem; }
 
+/* ── Совместные тендеры: таблицы, правила, оговорки ────────────────────── */
+
+/* Карточка во всю ширину сетки (порядок работы — таблица на три колонки). */
+.tdm-section--wide { grid-column: 1 / -1; }
+
+/* Блок без номера: заголовок раздела и оговорка об источнике. Нумерация
+   карточек идёт счётчиком в .tdm-section h4::before — здесь его гасим, чтобы
+   номера совпали с разделами самой инструкции. */
+.tdm-section--plain { background: var(--bg-primary); }
+.tdm-section h4.tdm-h4-plain::before { content: none; counter-increment: none; }
+
+/* Узкое окно (телефон) не должно расширять карточку под таблицу: карточка
+   остаётся по ширине экрана, а прокручивается сама таблица — шрифт не мельчает.
+   min-width: 0 нужен, чтобы грид-карточка вообще могла сжаться. */
+.tdm-section { min-width: 0; }
+.tdm-table-wrap {
+  margin: 0 0 0.7rem;
+  overflow-x: auto;
+}
+.tdm-table-wrap .tdm-table { margin: 0; }
+
+.tdm-table {
+  width: 100%;
+  margin: 0 0 0.7rem;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.tdm-table th,
+.tdm-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: top;
+}
+.tdm-table thead th {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.tdm-table tbody tr:last-child td { border-bottom: none; }
+/* Выравнивание чисел перебивает общее left у .tdm-table th/td — отсюда пара
+   классов в селекторе. */
+.tdm-table .tdm-th-num,
+.tdm-table .tdm-td-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Порядок работы: номер узкий и по центру, срок не должен съедать описание. */
+.tdm-table--steps th:first-child,
+.tdm-table--steps td:first-child { width: 2.5rem; text-align: center; }
+.tdm-table--steps td:first-child { color: var(--text-tertiary); }
+.tdm-table--steps td:nth-child(2) { width: 58%; color: var(--text-primary); }
+
+/* Оговорка внутри ячейки срока — то, чего в источнике нет. */
+.tdm-unclear {
+  display: block;
+  margin-top: 0.35rem;
+  padding-left: 0.55rem;
+  border-left: 2px solid #d97706;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
+.tdm-rule + .tdm-rule { margin-top: 0.9rem; }
+.tdm-rule-title {
+  margin: 0 0 0.3rem !important;
+  font-weight: 600;
+  color: var(--text-primary) !important;
+}
+
+.tdm-list--check li::marker { color: var(--primary-color, #2563eb); }
+.tdm-list--warn li::marker { color: #d97706; }
+
+/* Имя файла-источника — один длинный токен: на узком экране он распирал
+   карточку. Перенос разрешён только внутри него, обычный текст не трогаем. */
+.tdm-filename { overflow-wrap: anywhere; }
+
+/* Адрес ячеек исходного файла — мелкой подписью под блоком. */
+.tdm-src {
+  margin: 0.6rem 0 0 !important;
+  font-size: 0.75rem !important;
+  color: var(--text-tertiary) !important;
+}
+
 .tdm-actions {
   display: flex;
   justify-content: flex-end;
@@ -254,4 +344,7 @@
   .tdm-body { padding: 1rem; }
   .tdm-body--guide { grid-template-columns: 1fr; gap: 0.75rem; }
   .tdm-cards { grid-template-columns: 1fr; }
+  /* Порядок работы: три колонки на телефон не ужать, поэтому таблица
+     прокручивается внутри карточки (см. .tdm-table-wrap). */
+  .tdm-table--steps { min-width: 30rem; }
 }

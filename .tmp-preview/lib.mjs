@@ -107,7 +107,7 @@ export async function openStand(o = {}) {
   const {
     variant = 'cur', view = 'construction', width = 1720, height = 1000,
     theme = 'light', now, role, readonly, headless = true, server: given,
-    page: pageName = 'tenders',
+    page: pageName = 'tenders', bulk,
   } = o
   const server = given || await startServer()
   const browser = await chromium.launch({ ...browserLaunchOptions(), headless })
@@ -131,6 +131,7 @@ export async function openStand(o = {}) {
 
   const q = new URLSearchParams({ view, theme })
   if (pageName !== 'tenders') q.set('page', pageName)
+  if (bulk) q.set('bulk', String(bulk))   // раздуть данные стенда (seed.mjs)
   if (now) q.set('now', now)
   if (role) q.set('role', role)
   if (readonly) q.set('readonly', '1')

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useLayoutEffect, useId } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabase'
 import { fetchAllRows } from '../utils/fetchAllRows'
@@ -20,6 +20,7 @@ import { IconDocument } from '../components/icons/TenderHubIcons'
 import { isConstructionTender } from '../utils/tenderDepartments'
 import { shortPersonName } from '../utils/personName'
 import { vorStartDate } from '../utils/vorDates'
+import { useClampOverflow } from '../utils/clampMeasure'
 import { DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import './CostPlansPage.css'
 // Типографика раздела (этап 1): шрифт Inter с нашего сервера и шкала размеров —
@@ -64,10 +65,22 @@ const SCOPES = [
   { key: 'construction', label: 'Основное строительство' },
   { key: 'joint', label: 'Совместные тендеры' },
 ]
+const SCOPE_KEYS = SCOPES.map(x => x.key)
 const SCOPE_STORAGE_KEY = 'vors:scope'
+
+// Относится ли строка к направлению. Тендеры — по isConstructionTender (нужен
+// объект основного строительства), заявки без тендера — по своему department.
+function inScope(row, scope) {
+  if (row._kind === 'request') return (row.department || 'construction') === scope
+  return scope === 'joint' ? row.department === 'joint' : isConstructionTender(row)
+}
 
 // Статусы, при которых срок подготовки ВОР больше не отслеживается.
 const VOR_CLOSED = ['completed', 'not_required']
+
+// Порции отрисовки таблицы: первый экран и добавка на каждый следующий кадр.
+const ROWS_FIRST = 50
+const ROWS_STEP = 400
 
 // ФИО в ячейке — «Фамилия И. О.», полное — в подсказке (мышь) и в тексте для
 // экранного диктора (vr-sr-only). Поиск и выгрузка работают по полному значению.
@@ -86,20 +99,11 @@ function PersonName({ full, titlePrefix = '' }) {
 // узел и оборачивает его в ссылку/кнопку открытия тендера или заявки.
 function ClampedDescription({ text, renderAction }) {
   const [expanded, setExpanded] = useState(false)
-  const [overflows, setOverflows] = useState(false)
-  const ref = useRef(null)
+  // Замер переполнения — общим проходом на всю таблицу (utils/clampMeasure):
+  // своё чтение scrollHeight в каждой строке заставляло браузер пересчитывать
+  // раскладку сотни раз подряд и заметно тормозило переключение направления.
+  const [ref, overflows] = useClampOverflow([text])
   const id = useId()
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return undefined
-    const check = () => {
-      if (!el.classList.contains('is-expanded')) setOverflows(el.scrollHeight > el.clientHeight + 1)
-    }
-    check()
-    const ro = new ResizeObserver(check)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [text])
   const content = (
     <span ref={ref} id={id} className={`vr-desc-text${expanded ? ' is-expanded' : ''}`}>{text || '—'}</span>
   )
@@ -158,10 +162,11 @@ function VorsPage() {
       console.error('Ошибка записи истории тендера:', err.message)
     }
   }
-  // Строки страницы: тендеры (_kind 'tender') и заявки на ВОР без тендера (_kind 'request').
-  const [tenders, setTenders] = useState([])
-  const tendersRef = useRef([])
-  tendersRef.current = tenders
+  // Строки страницы: тендеры (_kind 'tender') и заявки на ВОР без тендера
+  // (_kind 'request'). Держим ОБА направления разом: наборы отличаются только
+  // полем department, а раньше каждое нажатие переключателя заново тянуло весь
+  // реестр, заявки и счётчики документов — отсюда и была долгая загрузка.
+  const [allRows, setAllRows] = useState([])
   // Направление: основное строительство / совместные тендеры (запоминается).
   const [scope, setScope] = useState(() => {
     try {
@@ -174,6 +179,10 @@ function VorsPage() {
   useEffect(() => {
     try { localStorage.setItem(SCOPE_STORAGE_KEY, scope) } catch { /* приватный режим */ }
   }, [scope])
+  // Видимые строки направления — отбор в памяти, без запроса к базе.
+  const tenders = useMemo(() => allRows.filter(row => inScope(row, scope)), [allRows, scope])
+  const tendersRef = useRef([])
+  tendersRef.current = tenders
   // false — таблицы заявок ещё нет (миграция 20261003 не применена).
   const [requestsSupported, setRequestsSupported] = useState(true)
   // Окно заявки: { mode: 'create' } | { id } | null.
@@ -182,6 +191,12 @@ function VorsPage() {
   const [formObjects, setFormObjects] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('all') // 'all' | 'not_started' | 'in_progress' | 'completed'
+  // Сколько строк таблицы сейчас нарисовано (остальные дорисовываются кадрами,
+  // см. ROWS_FIRST). Сбрасываем на первый экран прямо в обработчиках смены
+  // набора строк: в эффекте сброс и добавка порции попадали в одно обновление
+  // и гасили друг друга — таблица замирала на середине.
+  const [renderLimit, setRenderLimit] = useState(ROWS_FIRST)
+  const showTab = (tab) => { setActiveTab(tab); setRenderLimit(ROWS_FIRST) }
   // task 241: статус-вкладки скрыты под кнопкой «ВОРы и РД по статусам»
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   // Фильтры — множественный выбор, как в «Планах затрат» (FilterDropdown).
@@ -229,12 +244,23 @@ function VorsPage() {
           vor_responsible:contacts!vor_responsible_id(id, full_name, position),
           responsible_contact:contacts!responsible_contact_id(id, full_name)
         `)
-        // Отбор направления на сервере; для основного строительства окончательная
-        // проверка — isConstructionTender ниже.
-        .or(scope === 'joint' ? 'department.eq.joint' : 'department.is.null,department.eq.construction')
+        // Оба направления раздела сразу; какое показать — решает inScope в
+        // памяти. Гарантийные и «прочие» тендеры отсекаются здесь же.
+        .or('department.is.null,department.eq.construction,department.eq.joint')
+        // Дочерние тендеры на материалы разделу не нужны — раньше они ехали с
+        // сервера и отбрасывались на странице (лишние строки в каждом ответе).
+        // Колонка NOT NULL DEFAULT 'main' (миграция 20260515), поэтому обычное
+        // равенство, а не «is null or eq».
+        .eq('tender_type', 'main')
         .order('start_date', { ascending: false })
         .order('id', { ascending: true })
         .range(from, to))
+      // Заявки без тендера идут параллельно с реестром, а не после него:
+      // это отдельная таблица, ждать ответа по тендерам ей незачем.
+      const requestsPromise = fetchVorRequests(SCOPE_KEYS).catch((err) => {
+        console.error('Ошибка загрузки заявок на ВОР:', err.message)
+        return { rows: [], supported: true }
+      })
       // Колонок СТО (миграция 20260922) и подразделения (20260927) может ещё не
       // быть — убираем недостающие по одной, страница работает и без них.
       let sto = true
@@ -253,31 +279,27 @@ function VorsPage() {
       setStoSupported(sto)
       setDivisionSupported(division)
 
-      // Только основные тендеры (без дочерних на материалы) по основному строительству.
-      // Направление берём из tenders.department (миграция 20260820), а не из статуса
-      // объекта: у «совместных» и «прочих» объект может быть тот же самый.
-      // Без тендеров гарантийного отдела и «прочего»: см. isConstructionTender
-      // (объект в гарантии или тендер без объекта из реестра — не наш раздел).
-      let filtered = (data || []).filter(t =>
-        (scope === 'joint' ? t.department === 'joint' : isConstructionTender(t))
-        && (!t.tender_type || t.tender_type === 'main')
-      ).map(t => ({ ...t, _kind: 'tender' }))
+      // Только основные тендеры (без дочерних на материалы). Направление берём
+      // из tenders.department (миграция 20260820), а не из статуса объекта: у
+      // «совместных» и «прочих» объект может быть тот же самый. Строки, не
+      // попадающие ни в одно направление раздела (объект в гарантии, тендер без
+      // объекта из реестра — см. isConstructionTender), отбрасываем сразу:
+      // иначе они зря попадут в запрос счётчиков документов.
+      const tenderRows = (data || [])
+        .filter(t => !t.tender_type || t.tender_type === 'main')
+        .map(t => ({ ...t, _kind: 'tender' }))
+        .filter(t => SCOPE_KEYS.some(key => inScope(t, key)))
 
-      // Заявки на ВОР без тендера того же направления (миграция 20261003).
-      let requests = []
-      try {
-        const res = await fetchVorRequests(scope)
-        setRequestsSupported(res.supported)
-        requests = res.rows.map(r => ({ ...r, _kind: 'request' }))
-      } catch (err) {
-        console.error('Ошибка загрузки заявок на ВОР:', err.message)
-      }
+      // Заявки на ВОР без тендера — обоих направлений (миграция 20261003).
+      const { rows: requestRows, supported } = await requestsPromise
+      setRequestsSupported(supported)
+      const requests = requestRows.map(r => ({ ...r, _kind: 'request' }))
 
-      let rows = [...requests, ...filtered]
+      let rows = [...requests, ...tenderRows]
       if (scopedObjectIds.length > 0) {
         rows = rows.filter(t => scopedObjectIds.includes(t.object_id))
       }
-      setTenders(rows)
+      setAllRows(rows)
       fetchVorDocCounts(rows)
     } catch (err) {
       console.error('Ошибка загрузки ВОРов:', err.message)
@@ -285,7 +307,7 @@ function VorsPage() {
     } finally {
       setLoading(false)
     }
-  }, [scopedObjectIds, scope])
+  }, [scopedObjectIds])
 
   // Счётчики документов раздела (РД, ВОР и ранее загруженные) — для бейджа и
   // статус-гейта «Завершён». Порциями: сотни UUID одним IN-списком роняют запрос.
@@ -362,7 +384,7 @@ function VorsPage() {
     try {
       const { error } = await supabase.from(tableOf(tenderId)).update({ vor_division: next }).eq('id', tenderId)
       if (error) throw error
-      setTenders(prev => prev.map(t => (t.id === tenderId ? { ...t, vor_division: next } : t)))
+      setAllRows(prev => prev.map(t => (t.id === tenderId ? { ...t, vor_division: next } : t)))
       const oldLabel = VOR_DIVISION_LABEL[oldValue] || null
       const newLabel = VOR_DIVISION_LABEL[next] || null
       logTenderEvent(tenderId, 'field_updated', {
@@ -394,7 +416,7 @@ function VorsPage() {
         .update({ vor_status: newStatus })
         .eq('id', tenderId)
       if (error) throw error
-      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, vor_status: newStatus } : t))
+      setAllRows(prev => prev.map(t => t.id === tenderId ? { ...t, vor_status: newStatus } : t))
     } catch (err) {
       console.error('Ошибка изменения статуса ВОР:', err.message)
       alert(newStatus === 'not_required' && (err.code === '23514' || /vor_status/.test(err.message || ''))
@@ -416,7 +438,7 @@ function VorsPage() {
     try {
       const { error } = await supabase.from(tableOf(tenderId)).update(patch).eq('id', tenderId)
       if (error) throw error
-      setTenders(prev => prev.map(t => (t.id === tenderId ? { ...t, ...patch } : t)))
+      setAllRows(prev => prev.map(t => (t.id === tenderId ? { ...t, ...patch } : t)))
       if (oldName !== newName) {
         logTenderEvent(tenderId, 'field_updated', {
           fieldName: 'vor_sto_user_id',
@@ -443,7 +465,7 @@ function VorsPage() {
         .update({ vor_link: value })
         .eq('id', tenderId)
       if (error) throw error
-      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, vor_link: value } : t))
+      setAllRows(prev => prev.map(t => t.id === tenderId ? { ...t, vor_link: value } : t))
     } catch (err) {
       console.error('Ошибка сохранения ссылки на ВОР:', err.message)
       alert('Ошибка: ' + err.message)
@@ -458,7 +480,7 @@ function VorsPage() {
         .update({ [field]: next })
         .eq('id', tenderId)
       if (error) throw error
-      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, [field]: next } : t))
+      setAllRows(prev => prev.map(t => t.id === tenderId ? { ...t, [field]: next } : t))
     } catch (err) {
       console.error('Ошибка изменения срока ВОР:', err.message)
       alert('Ошибка: ' + err.message)
@@ -475,15 +497,6 @@ function VorsPage() {
     }
   }
   const sortIndicator = (key) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
-
-  if (loading) {
-    return (
-      <div className="cost-plans-page vors-page">
-        <div className="page-header"><h2>ВОРы и РД</h2></div>
-        <div className="loading">Загрузка...</div>
-      </div>
-    )
-  }
 
   // Ключ ответственного для фильтра: СТО из реестра — по user_id, прежний
   // контакт — по id контакта, нет никого — UNASSIGNED.
@@ -563,6 +576,27 @@ function VorsPage() {
     : activeTab === 'in_progress' ? inProgress
     : notStarted
 
+  // Отрисовка порциями. Три сотни строк реестра — это около 12 000 узлов DOM;
+  // одним куском браузер считает их раскладку почти секунду, и переключение
+  // направления или вкладки выглядит как зависание. Сначала показываем первый
+  // экран, остальное дорисовывается следующими кадрами — данные, фильтры,
+  // поиск, счётчики и выгрузка при этом работают по полному набору строк.
+  useEffect(() => {
+    if (renderLimit >= visible.length) return undefined
+    const id = requestAnimationFrame(() => setRenderLimit(n => n + ROWS_STEP))
+    return () => cancelAnimationFrame(id)
+  }, [renderLimit, visible.length])
+  const renderedRows = renderLimit < visible.length ? visible.slice(0, renderLimit) : visible
+
+  if (loading) {
+    return (
+      <div className="cost-plans-page vors-page">
+        <div className="page-header"><h2>ВОРы и РД</h2></div>
+        <div className="loading">Загрузка...</div>
+      </div>
+    )
+  }
+
   return (
     <div className="cost-plans-page vors-page">
       <div className="page-header page-header-vors">
@@ -583,7 +617,7 @@ function VorsPage() {
               role="tab"
               aria-selected={scope === x.key}
               className={`vor-scope-btn${scope === x.key ? ' is-active' : ''}`}
-              onClick={() => { if (scope !== x.key) { setScope(x.key); setObjectFilterIds([]) } }}
+              onClick={() => { if (scope !== x.key) { setScope(x.key); setObjectFilterIds([]); setRenderLimit(ROWS_FIRST) } }}
             >
               {x.label}
             </button>
@@ -603,7 +637,7 @@ function VorsPage() {
       <div className="cost-plans-tabs">
         <button
           className={`tab ${activeTab === 'all' ? 'active' : ''}`}
-          onClick={() => setActiveTab('all')}
+          onClick={() => showTab('all')}
         >
           Все ВОРы и РД
           <span className="tab-count">{liveRows.length}</span>
@@ -622,28 +656,28 @@ function VorsPage() {
           <>
             <button
               className={`tab ${activeTab === 'not_started' ? 'active' : ''}`}
-              onClick={() => setActiveTab('not_started')}
+              onClick={() => showTab('not_started')}
             >
               Не начат
               <span className="tab-count">{notStarted.length}</span>
             </button>
             <button
               className={`tab ${activeTab === 'in_progress' ? 'active' : ''}`}
-              onClick={() => setActiveTab('in_progress')}
+              onClick={() => showTab('in_progress')}
             >
               В работе
               <span className="tab-count">{inProgress.length}</span>
             </button>
             <button
               className={`tab ${activeTab === 'completed' ? 'active' : ''}`}
-              onClick={() => setActiveTab('completed')}
+              onClick={() => showTab('completed')}
             >
               Завершено
               <span className="tab-count completed">{completed.length}</span>
             </button>
             <button
               className={`tab ${activeTab === 'not_required' ? 'active' : ''}`}
-              onClick={() => setActiveTab('not_required')}
+              onClick={() => showTab('not_required')}
             >
               Не требуется
               <span className="tab-count">{notRequired.length}</span>
@@ -653,7 +687,7 @@ function VorsPage() {
         {/* task 267: удалённые ВОРы (тендер удалён → сюда) */}
         <button
           className={`tab ${activeTab === 'deleted' ? 'active' : ''}`}
-          onClick={() => setActiveTab('deleted')}
+          onClick={() => showTab('deleted')}
         >
           Удалённые
           {deletedRows.length > 0 && <span className="tab-count">{deletedRows.length}</span>}
@@ -793,7 +827,7 @@ function VorsPage() {
                 </td>
               </tr>
             ) : (
-              visible.map((t) => (
+              renderedRows.map((t) => (
                 <tr key={t.id} className={t._kind === 'request' ? 'vor-request-row' : undefined}>
                   <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
                     {t._kind === 'request'
@@ -1019,10 +1053,10 @@ function VorsPage() {
             byName={userProfile?.full_name || null}
             onClose={() => setRequestModal(null)}
             onCreated={(row) => {
-              setTenders(prev => [{ ...row, _kind: 'request' }, ...prev])
+              setAllRows(prev => [{ ...row, _kind: 'request' }, ...prev])
               setRequestModal({ id: row.id })
             }}
-            onUpdated={(id, patch) => setTenders(prev => prev.map(x => (x.id === id ? { ...x, ...patch } : x)))}
+            onUpdated={(id, patch) => setAllRows(prev => prev.map(x => (x.id === id ? { ...x, ...patch } : x)))}
             onDocsChanged={() => refreshVorDocCount(request?.id)}
           />
         )

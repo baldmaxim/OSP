@@ -471,6 +471,26 @@ export function buildTables() {
     }
   }
 
+  // ?bulk=N — раздуть реестр до N тендеров: замеры «ВОРов и РД» и реестра на
+  // настоящем объёме (в проде их больше трёх сотен). Клонируем основные
+  // тендеры, каждый пятый — совместный, чтобы оба направления были непустыми.
+  const bulk = typeof location === 'undefined' ? 0 : Number(new URLSearchParams(location.search).get('bulk')) || 0
+  if (bulk > tenders.length) {
+    const sample = tenders.filter(t => t.tender_type === 'main')
+    for (let i = tenders.length; i < bulk; i += 1) {
+      const src = sample[i % sample.length]
+      tenders.push({
+        ...src,
+        id: `t-bulk-${i}`,
+        public_tender_number: 1000 + i,
+        department: i % 5 === 0 ? 'joint' : 'construction',
+        parent_tender_id: null,
+        materials_tender: null,
+        deleted_at: null,
+      })
+    }
+  }
+
   // Вложение тендерного пакета у № 769.
   const s3Documents = [
     {

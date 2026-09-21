@@ -161,6 +161,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // «Документы раздела» — окно с материалами и инструментами. Не вкладка
   // реестра: рядом со статусами тендеров ей не место.
   const [showDocsMenu, setShowDocsMenu] = useState(false)
+  // С какой вкладки открыть это окно: у совместных тендеров есть кнопка
+  // «Инструкция», которая ведёт сразу в их раздел инструкции.
+  const [docsInitialTab, setDocsInitialTab] = useState(null)
   // Справочник сотрудников сметно-технического отдела.
   // Предпросмотр вторничного напоминания — кнопка в шапке только у администратора.
   const [reminderPreview, setReminderPreview] = useState(false)
@@ -2652,11 +2655,26 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <button
               type="button"
               className="btn-view-toggle"
-              onClick={() => setShowDocsMenu(true)}
+              onClick={() => { setDocsInitialTab(null); setShowDocsMenu(true) }}
               title="Материалы и инструменты раздела: шаблон письма, структура хранения"
             >
               <IconDocsStack size={15} />
               <span>Документы</span>
+            </button>
+          )}
+          {/* Совместные тендеры идут по своему порядку (согласование списка с
+              Заказчиком и Застройщиком, комиссия, переторжка, ДС к ДГП) —
+              инструкция по нему вынесена отдельной кнопкой, чтобы её не искали
+              во вкладках. Общих тендеров эти правила не касаются. */}
+          {!isMaterialsView && department === 'joint' && (
+            <button
+              type="button"
+              className="btn-view-toggle"
+              onClick={() => { setDocsInitialTab('joint'); setShowDocsMenu(true) }}
+              title="Инструкция инженеру СУ-10 по совместным тендерам: порядок, документы, правила, контроль"
+            >
+              <IconJoint size={15} />
+              <span>Инструкция</span>
             </button>
           )}
           {/* У тендеров на материалы окна «Документы» нет, поэтому структура
@@ -4380,6 +4398,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       {showDocsMenu && !isMaterialsView && (
         <TenderDocsModal
           onClose={() => setShowDocsMenu(false)}
+          department={department}
+          initialTab={docsInitialTab || undefined}
           canPreviewReminder={isAdmin}
           onOpenLetterTemplate={() => { setShowDocsMenu(false); setActiveTab('template') }}
           onOpenStorageStructure={() => { setShowDocsMenu(false); setShowStorageStructure(true) }}

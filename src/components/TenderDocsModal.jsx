@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ESTIMATE_DEPT } from '../utils/estimateDept'
+import {
+  JOINT_GUIDE_SOURCE, JOINT_STEPS, JOINT_LONG_LIST, JOINT_PACKAGE,
+  JOINT_INCOMING, JOINT_RULES, JOINT_CHECKLIST, JOINT_OPEN_QUESTIONS,
+} from '../utils/jointTenderGuide'
 import { IconMail, IconFolderTree, IconPhone } from './icons/ToolbarIcons'
 import './TenderDocsModal.css'
 
@@ -7,6 +11,12 @@ import './TenderDocsModal.css'
 //   Материалы    — шаблон письма, структура хранения, предпросмотр напоминания;
 //   Инструкция   — порядок ведения тендера от запроса объекта до итогов;
 //   Сотрудники СТО — сметно-технический отдел по направлениям работ.
+//
+// В направлении «Совместные тендеры» добавляется четвёртая вкладка со своей
+// инструкцией (utils/jointTenderGuide.js). Она открывается там первой: правила
+// совместных тендеров другие, и общая инструкция выше их не заменяет. На
+// обычные тендеры эти правила не распространяются, поэтому вкладки в других
+// направлениях нет.
 //
 // Инструкция намеренно свёрстана разметкой, а не данными: в ней списки,
 // выделения и таблица, и держать это массивом было бы неудобнее, чем править.
@@ -68,8 +78,14 @@ export default function TenderDocsModal({
   onOpenStorageStructure,
   onOpenReminderPreview,
   canPreviewReminder = false,
+  department = 'construction',
+  initialTab,
 }) {
-  const [tab, setTab] = useState('materials')
+  const isJoint = department === 'joint'
+  // По кнопке «Документы» окно открывается как везде — на «Материалах»; на
+  // инструкцию по совместным тендерам ведёт отдельная кнопка в шапке раздела
+  // (initialTab='joint'), а её вкладка в любом случае стоит первой.
+  const [tab, setTab] = useState(initialTab || 'materials')
 
   useEffect(() => {
     const onKeydown = (e) => { if (e.key === 'Escape') onClose() }
@@ -90,6 +106,7 @@ export default function TenderDocsModal({
 
         <div className="tdm-tabs" role="tablist">
           {[
+            ...(isJoint ? [{ key: 'joint', label: 'Совместные тендеры' }] : []),
             { key: 'materials', label: 'Материалы' },
             { key: 'guide', label: 'Инструкция' },
             { key: 'sto', label: 'Сотрудники СТО' },
@@ -104,6 +121,153 @@ export default function TenderDocsModal({
             >{t.label}</button>
           ))}
         </div>
+
+        {/* ── Совместные тендеры ────────────────────────────────────────── */}
+        {tab === 'joint' && (
+          <div className="tdm-body tdm-body--guide">
+            <section className="tdm-section tdm-section--wide tdm-section--plain">
+              <h4 className="tdm-h4-plain">Совместные тендеры — инструкция инженеру СУ-10</h4>
+              <p><b>Область применения:</b> {JOINT_GUIDE_SOURCE.scope}</p>
+              <p className="tdm-note">
+                {JOINT_GUIDE_SOURCE.disclaimer} Источник — файл «<span className="tdm-filename">{JOINT_GUIDE_SOURCE.file}</span>»,
+                листы {JOINT_GUIDE_SOURCE.sheets.map(s => `«${s}»`).join(', ')}.
+                Там, где источник молчит, в инструкции стоит оговорка — додумывать сроки и
+                лимиты нельзя.
+              </p>
+            </section>
+
+            <section className="tdm-section tdm-section--wide">
+              <h4>Порядок работы</h4>
+              <div className="tdm-table-wrap">
+                <table className="tdm-table tdm-table--steps">
+                  <thead>
+                    <tr>
+                      <th scope="col">№</th>
+                      <th scope="col">Что делает инженер СУ-10</th>
+                      <th scope="col">Срок / результат</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {JOINT_STEPS.rows.map(step => (
+                      <tr key={step.n}>
+                        <td className="tdm-td-num">{step.n}</td>
+                        <td>{step.what}</td>
+                        <td>
+                          {step.when}
+                          {step.unclear && <span className="tdm-unclear">Требует уточнения: {step.unclear}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="tdm-src">Источник: {JOINT_STEPS.src}</p>
+            </section>
+
+            <section className="tdm-section">
+              <h4>Длинный список участников</h4>
+              <div className="tdm-table-wrap">
+                <table className="tdm-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Сумма закупки</th>
+                      <th scope="col" className="tdm-th-num">Минимум компаний</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {JOINT_LONG_LIST.rows.map(row => (
+                      <tr key={row.range}>
+                        <td>{row.range}</td>
+                        <td className="tdm-td-num">{row.min}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {JOINT_LONG_LIST.notes.map(note => (
+                <p key={note} className="tdm-callout">{note}</p>
+              ))}
+              {JOINT_LONG_LIST.unclear.map(note => (
+                <p key={note} className="tdm-note">{note}</p>
+              ))}
+              <p className="tdm-src">Источник: {JOINT_LONG_LIST.src}</p>
+            </section>
+
+            <section className="tdm-section">
+              <h4>Документы</h4>
+              <p className="tdm-label">{JOINT_PACKAGE.title}</p>
+              <p>{JOINT_PACKAGE.lead}</p>
+              <ol className="tdm-list">
+                {JOINT_PACKAGE.rows.map(row => (
+                  <li key={row.title}>
+                    <b>{row.title}</b>{row.note ? ` — ${row.note}` : ''}
+                  </li>
+                ))}
+              </ol>
+
+              <p className="tdm-label">{JOINT_INCOMING.title}</p>
+              <p>{JOINT_INCOMING.lead}</p>
+              <div className="tdm-table-wrap">
+                <table className="tdm-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Документ</th>
+                      <th scope="col">Требуемый вид</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {JOINT_INCOMING.rows.map(row => (
+                      <tr key={row.doc}>
+                        <td>{row.doc}</td>
+                        <td>{row.form}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {JOINT_INCOMING.unclear.map(note => (
+                <p key={note} className="tdm-note">{note}</p>
+              ))}
+              <p className="tdm-src">Источник: {JOINT_PACKAGE.src}; входящие документы — {JOINT_INCOMING.src}</p>
+            </section>
+
+            <section className="tdm-section">
+              <h4>Ключевые правила</h4>
+              {JOINT_RULES.rows.map(rule => (
+                <div key={rule.title} className="tdm-rule">
+                  <p className="tdm-rule-title">{rule.title}</p>
+                  <p>{rule.text}</p>
+                  {rule.unclear && <p className="tdm-note">{rule.unclear}</p>}
+                </div>
+              ))}
+              <p className="tdm-src">Источник: {JOINT_RULES.src}</p>
+            </section>
+
+            <section className="tdm-section">
+              <h4>Контроль инженера</h4>
+              <p className="tdm-label">Перед запуском</p>
+              <ul className="tdm-list tdm-list--check">
+                {JOINT_CHECKLIST.before.map(item => <li key={item}>{item}</li>)}
+              </ul>
+              <p className="tdm-label">Перед завершением</p>
+              <ul className="tdm-list tdm-list--check">
+                {JOINT_CHECKLIST.after.map(item => <li key={item}>{item}</li>)}
+              </ul>
+              <p className="tdm-src">Источник: {JOINT_CHECKLIST.src}</p>
+            </section>
+
+            <section className="tdm-section tdm-section--wide">
+              <h4>Что осталось неуточнённым</h4>
+              <p>
+                Эти места источник не закрывает. Портал их не додумывает: решение принимает
+                инженер по регламенту или уточняет у Заказчика.
+              </p>
+              <ul className="tdm-list tdm-list--warn">
+                {JOINT_OPEN_QUESTIONS.map(item => <li key={item}>{item}</li>)}
+              </ul>
+            </section>
+          </div>
+        )}
 
         {/* ── Материалы ─────────────────────────────────────────────────── */}
         {tab === 'materials' && (

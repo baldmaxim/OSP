@@ -21,13 +21,16 @@ export function isMissingVorRequestsTable(err) {
     || (msg.includes('vor_requests') && (msg.includes('does not exist') || msg.includes('schema cache')))
 }
 
-// Заявки направления ('construction' | 'joint'), включая удалённые — для вкладки «Удалённые».
+// Заявки направления ('construction' | 'joint'), включая удалённые — для вкладки
+// «Удалённые». Можно передать массив направлений: страница «ВОРы и РД» берёт
+// оба разом, чтобы переключатель направления не ходил в базу.
 // → { rows, supported }; supported=false — таблицы ещё нет.
 export async function fetchVorRequests(department) {
+  const departments = Array.isArray(department) ? department : [department]
   const { data, error } = await supabase
     .from(VOR_REQUESTS_TABLE)
     .select('*, objects(name, status)')
-    .eq('department', department)
+    .in('department', departments)
     .order('created_at', { ascending: false })
     .limit(5000)
   if (error) {
