@@ -416,7 +416,7 @@ function CostPlansPage() {
 
   if (loading) {
     return (
-      <div className="cost-plans-page ui-work">
+      <div className="cost-plans-page ui-work cp-dense">
         <div className="page-header"><h2>Планы затрат</h2></div>
         <div className="loading">Загрузка...</div>
       </div>
@@ -424,7 +424,7 @@ function CostPlansPage() {
   }
 
   return (
-    <div className="cost-plans-page ui-work">
+    <div className="cost-plans-page ui-work cp-dense">
       <div className="page-header page-header-cost-plans">
         <h2>
           <IconTile tone="green" className="page-icon-tile"><IconCoins /></IconTile>
