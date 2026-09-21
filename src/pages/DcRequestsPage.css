@@ -2777,3 +2777,257 @@
 [data-theme='dark'] .dc-requests-page.ui-work .dcr-tasks-pill-done .dcr-tasks-pill-counter { color: #86efac; }
 .dc-requests-page.ui-work .dcr-material-select.is-empty,
 .dc-requests-page.ui-work .dcr-docs-chev { color: var(--text-secondary); }
+
+/* ══ Плотный вариант реестра (.dcr-dense) ═══════════════════════════════════
+   Реестр заявок вернул плотность прежней версии: таблица 13/18, заголовки
+   колонок и статусы 12/16, ячейка 6px, 2–4px между элементами внутри ячейки,
+   тонкие вертикальные разделители. Шрифт — тот же Inter, без zoom/scale.
+   Класс ставится только на компьютере: телефон показывает карточки.
+   Все правила — только для шапки, вкладок, панели и таблицы (.table-container):
+   окна (.modal-overlay лежит внутри корня страницы и использует те же
+   карточки файлов и кнопки), всплывающие списки фильтров и меню статуса
+   остаются на обычной шкале 14/20 и в прежнем виде.
+   Префикс .dc-requests-page.ui-work.dcr-dense (3 класса) сильнее и workUi
+   (.ui-work.ui-work), и правил выше (.dc-requests-page.ui-work); ячейки —
+   через table.dcr-table, чтобы перебить workUi ':is(.dcr-table) > … > td'. */
+.dc-requests-page.ui-work.dcr-dense :is(.registry-header, .status-tabs, .dcr-toolbar, .table-container) {
+  --ui-title: 1.125rem;       /* 18 */
+  --ui-title-lh: 1.5rem;      /* 24 */
+  --ui-text: 0.8125rem;       /* 13 — данные, кнопки, фильтры, вкладки */
+  --ui-text-lh: 1.125rem;     /* 18 */
+  --ui-th: 0.75rem;           /* 12 — заголовки колонок, статусы */
+  --ui-th-lh: 1rem;           /* 16 */
+  --ui-hint: 0.75rem;         /* 12 — вторичные сведения */
+  --ui-hint-lh: 1rem;
+  --ui-control-h: 2rem;       /* 32 */
+  --ui-cell-py: 0.375rem;     /* 6 */
+  --ui-cell-px: 0.375rem;     /* 6 */
+}
+/* Меню статуса рисуется внутри ячейки — возвращаем ему обычную шкалу. */
+.dc-requests-page.ui-work.dcr-dense .dcr-status-popover { --ui-text: 0.875rem; --ui-text-lh: 1.25rem; }
+
+/* Шапка, вкладки, панель — ниже на 8–12px каждая. */
+.dc-requests-page.ui-work.dcr-dense .registry-header { padding: 0.5rem 1rem; gap: 0.375rem 0.75rem; }
+.dc-requests-page.ui-work.dcr-dense .registry-header h2 { gap: 0.5rem; }
+.dc-requests-page.ui-work.dcr-dense .registry-header :is(.btn-primary, .btn-secondary, .dcr-link-btn) { padding: 0 0.625rem; gap: 0.3125rem; }
+.dc-requests-page.ui-work.dcr-dense .status-tabs { padding: 0 0.5rem; }
+.dc-requests-page.ui-work.dcr-dense .status-tabs .status-tab { min-height: 2.25rem; padding: 0 0.625rem; }
+.dc-requests-page.ui-work.dcr-dense .status-tabs .tab-count { min-width: 1.125rem; height: 1.125rem; padding: 0 0.3125rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-toolbar { padding: 0.5rem 1rem; gap: 0.375rem 0.625rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-toolbar .fdrop-trigger { padding: 0 0.5rem; }
+
+/* Таблица: малоконтрастные вертикальные разделители между колонками, как в
+   прежней версии и в реестре тендеров; без переносов по слогам. Заголовок
+   «Действия» — видимый, как в прежней версии и в реестре тендеров. */
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th,
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr > td {
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+}
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th:last-child,
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr > td:last-child { border-right: 0; }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th { padding: 0.375rem var(--ui-cell-px); }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr > td { hyphens: manual; }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > thead > tr > th:last-child > .ui-sr-only {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: nowrap;
+}
+
+/* Сетка. Место отдано «Документам» (было 12.5rem — имена файлов шли столбиком
+   по 5–15 строк), «Сумме» (подпись и значение в строку) и «Статусу»
+   («Проверка по договору» в одну строку); «Действия» — три кнопки 24px.
+   Сумма фиксированных — 89.75rem; на 1920 описанию остаётся ≈ 13rem.
+   min-width 99.5rem — таблица помещается без прокрутки от ≈ 1870px окна
+   (1920 с открытой боковой панелью Edge); уже — прокручивается внутри себя. */
+.dc-requests-page.ui-work.dcr-dense .dcr-table { min-width: 99.5rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-num { width: 2.25rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-object { width: 11rem; }      /* значок + «Ориентировочный срок:» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-cp { width: 13rem; }          /* подпись 3.875rem + «Изменение ПСДЦ» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-dsnum { width: 5.75rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-amount { width: 13.25rem; }   /* «Было подано» и сумма до «999 999 999,99» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-status { width: 10.75rem; }   /* «Проверка по договору ▾» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-resp { width: 8rem; }        /* «Садовников Д. Ю.» в строку */
+.dc-requests-page.ui-work.dcr-dense .dcr-col-tasks { width: 4.75rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-docs { width: 16rem; }
+.dc-requests-page.ui-work.dcr-dense .dcr-col-actions { width: 5rem; }
+/* Меню статуса открывается вниз прямо из ячейки. Строки стали ниже, и у
+   короткой последней строки меню уходило за нижний край таблицы (карточка
+   раздела обрезает содержимое) — «Завершено» было не нажать. Пока меню
+   последней строки открыто, строка не ниже меню (height у tr — минимальная
+   высота): высокую строку это не меняет, короткая подрастает под меню. */
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr:last-child:has(.dcr-status-popover) { height: 13rem; }
+
+/* Дальше — содержимое ячеек; префикс с .table-container, чтобы не задеть
+   те же элементы в окнах (карточки файлов в «Результате проверки»). */
+
+/* Объект: название, под ним дата/автор и срок — без лишних отступов. */
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-meta-line, .dcr-meta-deadline) {
+  display: flex;
+  margin-top: 0.125rem;
+  gap: 0 0.25rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-meta-deadline-value { padding: 0 0.3125rem; line-height: var(--ui-hint-lh); }
+
+/* Контрагент: «Материал» и «Тип ДС» — подпись и поле в одну строку, как
+   встроенные поля таблицы, а не форма; поля обеих строк начинаются с одной
+   вертикали. Пустое поле — без подложки; цветные значения (давальческие,
+   тип ДС) сохраняют свой цвет. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-material-edit {
+  display: grid;
+  grid-template-columns: 3.875rem minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 0.375rem;
+  margin-top: 0.1875rem;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-material-edit-label { white-space: nowrap; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-wrap-select .dcr-wrap-select-face.dcr-material-select {
+  padding: 0.0625rem 0.875rem 0.0625rem 0.25rem;
+  line-height: var(--ui-hint-lh);
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-wrap-select .dcr-material-select.is-empty { background: none; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-wrap-select-chev { right: 0.125rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-material-badge, .dcr-tag) { margin-top: 0.1875rem; line-height: var(--ui-hint-lh); }
+
+/* Сумма: подпись и значение в строку, поля одной ширины и по правому краю —
+   значения читаются столбиком. Поле растёт по содержимому (field-sizing);
+   если значение с подписью не помещается (суммы от 1 млрд), поле уходит
+   строкой ниже — целиком, без обрезки. Без field-sizing — раскладка
+   столбиком, как раньше. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount { gap: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 0.375rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-input {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 7.125rem;        /* 114px — «999 999 999,99» */
+  max-width: 100%;
+  margin-left: auto;
+  padding: 0 0.25rem;
+  field-sizing: content;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-input::placeholder { color: var(--text-secondary); opacity: 1; }
+@supports not (field-sizing: content) {
+  .dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-input { flex-basis: 100%; }
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-value { width: auto; margin-left: auto; }
+/* Разница и процент — одной группой справа, под значениями. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-diff { margin-top: 0; gap: 0 0.25rem; min-height: 0; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-diff .dcr-diff-pct { padding: 0 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-amount-diff:empty { display: none; }
+
+/* Статус и итог проверки: плашки 12/16, итог — по содержимому, дата строкой
+   ниже. Текст итога — на ступень темнее (было 4,3:1). */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-status-chip { padding: 0.0625rem 0.25rem 0.0625rem 0.375rem; gap: 0.1875rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-add { margin-top: 0.3125rem; padding: 0 0.375rem; line-height: var(--ui-hint-lh); }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge { margin-top: 0.25rem; padding: 0.0625rem 0.375rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge.dcr-verdict-ok { color: #166534; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge.dcr-verdict-warn { color: #92400e; }
+[data-theme='dark'] .dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge.dcr-verdict-ok { color: #6ee7b7; }
+[data-theme='dark'] .dc-requests-page.ui-work.dcr-dense .table-container .dcr-verdict-badge.dcr-verdict-warn { color: #fcd34d; }
+
+/* Задачи: счётчик-кнопка 20px. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-tasks-pill { gap: 0.25rem; padding: 0.0625rem 0.4375rem; line-height: var(--ui-hint-lh); }
+
+/* Документы. Путь к папке, «Файлы: N» и «+ Документ» — кнопками 20px;
+   «Файлы» и «+ Документ» — рядом. Отчёт и итоговые документы — рамки с
+   заголовком и кнопкой добавления в одну строку, если помещаются. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path-add { margin-bottom: 0.25rem; padding: 0.0625rem 0.375rem; gap: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-docs { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-docs-toggle, .dcr-doc-add) { padding: 0.0625rem 0.5rem; gap: 0.3125rem; line-height: var(--ui-hint-lh); }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-final-docs {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.375rem;
+  margin-top: 0.375rem;
+  padding: 0.25rem 0.375rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-final-docs-title { flex: 1 1 auto; gap: 0.25rem; }
+/* Счётчик файлов — 12px, как остальной мелкий текст (было 10px). */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-final-docs-count { font-size: var(--ui-hint); line-height: 1; }
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-docs, .dcr-final-docs) > .dcr-doc-chips { flex: 1 0 100%; gap: 0.1875rem; }
+
+/* Путь к папке: кнопки «копировать» и «изменить» (20×19, между ними 4px) —
+   в правом верхнем углу, путь обтекает их в первой строке и дальше идёт на
+   всю ширину. Перенос — по пробелам и разделителям, внутри имени папки —
+   только если оно длиннее строки (было word-break: break-all — «ДС\2|026»).
+   В режиме правки — значок и поле в одну строку, текст 12px (было 11px). */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path:not(.is-edit) {
+  --dcr-path-acts: 1;
+  position: relative;
+  margin-bottom: 0.25rem;
+  padding: 0.1875rem 0.25rem 0.125rem;
+  gap: 0.25rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path:not(.is-edit):has(> .dcr-folder-path-copy + .dcr-folder-path-copy) { --dcr-path-acts: 2; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path:not(.is-edit) > .dcr-folder-path-copy {
+  position: absolute;
+  top: 0;
+  right: 0.1875rem;
+  width: 1.25rem;
+  height: 1.1875rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path:not(.is-edit) > .dcr-folder-path-copy:nth-last-child(2) { right: 1.6875rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path-text { word-break: normal; overflow-wrap: anywhere; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path-text::before {
+  content: '';
+  float: right;
+  width: calc(var(--dcr-path-acts) * 1.5rem - 0.1875rem);
+  height: 1rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path.is-edit { margin-bottom: 0.25rem; padding: 0.1875rem 0.25rem; gap: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-folder-path.is-edit .dcr-folder-path-input { flex-basis: calc(100% - 1.25rem); }
+.dc-requests-page.ui-work.dcr-dense .table-container :is(.dcr-folder-path-input, .dcr-folder-path-btn) { font-size: var(--ui-hint); }
+
+/* Файл: имя целиком, обычным текстом. Кнопки (просмотр, скачать, удалить,
+   24×20) прижаты к правому верхнему углу; имя обтекает их только в первой
+   строке, дальше идёт на всю ширину карточки — длинное имя занимает 2–4
+   строки, а не 5–15 узким столбиком. Место под кнопки держит пустой float в
+   начале имени, его ширина — по числу кнопок (--dcr-chip-acts). */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip { --dcr-chip-acts: 1; display: block; position: relative; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip:has(> :nth-child(3)) { --dcr-chip-acts: 2; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip:has(> :nth-child(4)) { --dcr-chip-acts: 3; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip-main {
+  display: flex;
+  width: 100%;
+  padding: 0.25rem 0.375rem 0.1875rem;
+  line-height: var(--ui-hint-lh);
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip-icon { margin-top: 0.125rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip-desc { flex: 1 1 auto; min-width: 0; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip-desc::before {
+  content: '';
+  float: right;
+  width: calc(var(--dcr-chip-acts) * 1.5rem - 0.125rem);
+  height: 1rem;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip > :is(.dcr-doc-chip-action, .dcr-doc-chip-del) {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1.5rem;
+  height: 1.25rem;
+  border-left: 0;
+  border-radius: 4px;
+}
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip > :nth-last-child(2):not(.dcr-doc-chip-main) { right: 1.5rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip > :nth-last-child(3):not(.dcr-doc-chip-main) { right: 3rem; }
+/* Карточка обрезает содержимое по скруглению — рамку фокуса рисуем внутри. */
+.dc-requests-page.ui-work.dcr-dense .table-container .dcr-doc-chip :focus-visible { outline-offset: -2px; }
+
+/* Описание и действия. Кнопки действий — 24px (у плотного реестра тендеров
+   26px): три в колонке 5rem. */
+.dc-requests-page.ui-work.dcr-dense .table-container .ui-clamp-toggle { margin-top: 0.0625rem; }
+.dc-requests-page.ui-work.dcr-dense table.dcr-table > tbody > tr > td.actions-cell { padding-left: 0.25rem; padding-right: 0.25rem; }
+.dc-requests-page.ui-work.dcr-dense .table-container .actions-cell .btn-icon { width: 1.5rem; height: 1.5rem; }

@@ -1489,7 +1489,9 @@ function DcRequestsPage() {
   }
 
   return (
-    <div className="dc-requests-page contract-registry ui-work">
+    // dcr-dense — плотный вариант реестра (DcRequestsPage.css, конец файла);
+    // на телефоне заявки идут карточками, их вид не меняем.
+    <div className={`dc-requests-page contract-registry ui-work${isPhone ? '' : ' dcr-dense'}`}>
       <div className="registry-header">
         <h2>
           <IconTile tone="coral" className="dcr-title-icon"><IconDcRequest /></IconTile>
