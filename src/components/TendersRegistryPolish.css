@@ -517,7 +517,7 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work.tp-dense .tp-grid.data-table--compact { min-width: 67.25rem; }
 .ui-work.ui-work.tp-dense .tp-c-num { width: 6rem; }   /* № + раскрытие, под ними «3/10 КП» */
 .ui-work.ui-work.tp-dense .tp-c-object { width: 10rem; }   /* название + «Показать адрес» */
-.ui-work.ui-work.tp-dense .tp-c-status { width: 8rem; }   /* «Идет тендерная процедура» в две строки */
+.ui-work.ui-work.tp-dense .tp-c-status { width: 8.5rem; }   /* «Идет тендерная процедура» в две строки */
 .ui-work.ui-work.tp-dense .tp-c-winner { width: 11rem; }
 .ui-work.ui-work.tp-dense .tp-c-period { width: 8.5rem; }   /* «17.09 — 21.09.2026» целиком */
 .ui-work.ui-work.tp-dense .tp-c-resp { width: 6.75rem; }   /* «Не назначен» и «Крюкова Ю. Д.» без переноса */
@@ -555,21 +555,22 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work.tp-dense .tp-grid .kp-counter { padding: 0 0.25rem; }
 .ui-work.ui-work.tp-dense .tp-grid .yandex-map-link { margin-top: 0.125rem; }
 /* Описание работ: текст занимает свою строку, а «Показать полностью», путь к
-   папке и отметки идут одной группой под ним и переносятся только при нехватке
-   ширины. Раньше каждый из них был отдельным блоком — три лишние строки на
-   запись, и высоту реестра задавало не содержание, а служебные подписи.
+   папке и отметки идут строчными группами под ним — в одну строку, с переносом
+   только при нехватке ширины. Раньше каждый из них был отдельным блоком — три
+   лишние строки на запись, и высоту реестра задавало не содержание, а служебные
+   подписи. Сама ячейка остаётся table-cell: у ячейки с display: flex браузер
+   создаёт анонимную обёртку, рамка рисуется по содержимому, и вертикальная
+   линия колонки не доходит до низа строки.
    Действия остаются разными: переход по тексту, раскрытие, папка, «ТГ». */
-.ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td.tender-desc-cell {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  column-gap: 0.375rem;
-  row-gap: 0.1875rem;
+.ui-work.ui-work.tp-dense .tp-grid .tender-desc-link { display: block; }
+.ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td.tender-desc-cell > :is(.ui-clamp-toggle, .fpath, .fpath-add, .tender-flags) {
+  display: inline-flex;
+  vertical-align: top;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0.1875rem 0.375rem 0 0;
 }
-.ui-work.ui-work.tp-dense .tp-grid .tender-desc-link { flex: 1 0 100%; }
-.ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td.tender-desc-cell > :is(.ui-clamp-toggle, .fpath, .fpath-add, .tender-flags) { margin-top: 0; }
-.ui-work.ui-work.tp-dense .tp-grid .tender-flags { margin-top: 0; gap: 0.1875rem; }
-.ui-work.ui-work.tp-dense .tp-grid > tbody > tr > td.tender-desc-cell > :is(.fpath, .fpath-add) { max-width: 100%; min-width: 0; }
+.ui-work.ui-work.tp-dense .tp-grid .tender-flags { gap: 0.1875rem; }
 
 /* Главный статус тендера — плашка 12/16; этапы — легче: без внутренних
    отступов по высоте. */
