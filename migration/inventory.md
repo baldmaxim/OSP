@@ -1,7 +1,6 @@
 # Инвентаризация Supabase — портал ОСП (этап 0)
 
-> **Статус на 2026-10-06:** код разобран. Данные из базы — после запуска запросов
-> [`inventory/q1`–`q4`](inventory/README.md); места для них помечены «⏳ из qN».
+> **Статус на 2026-10-08:** код разобран, данные из базы получены (q1–q4, раздел 10).
 > Персональных данных в этом файле нет и быть не должно: только счётчики и имена объектов.
 
 ## 1. Что из Supabase использует код
@@ -73,7 +72,7 @@
 Журналы изменений (`*_audit_log`, `document_check_request_history`) хранят **имя и роль** автора
 текстом, а не id — при смене входа их не трогаем.
 
-⏳ из q3: заполненность, число разных пользователей, «висячие» id по каждой колонке.
+✓ q3 (раздел 10): «висячих» id нет ни в одной колонке-владельце.
 
 ## 4. Права доступа: что нашлось (вход в релиз «закрытие RLS», этап 2 п. 4)
 
@@ -94,7 +93,8 @@
 
 Все 46 функций SECURITY DEFINER закрепляют `search_path` — это в порядке.
 
-⏳ из q2: фактические политики и права на проде (миграции могли быть применены не все).
+✓ q2 (раздел 10): на проде 104 политики, широкие — на 50 таблицах; у `anon` табличные права на все
+66 таблиц; 13 функций SECURITY DEFINER доступны анониму.
 
 ## 5. Цепочки запросов (этап 2 п. 5 — атомарные RPC)
 
@@ -199,7 +199,7 @@
 
 **pg_cron — одна задача:** `refresh-rates-registry` каждые 10 минут → `refresh_rates_registry()`
 (`REFRESH CONCURRENTLY` двух материализованных представлений). Больше расписаний, `pg_net` и вебхуков
-нет. ⏳ из q4: что на самом деле стоит в cron на проде.
+нет. ✓ q4: на проде ровно эта одна задача.
 
 **Realtime:** в публикации `tenders`, `tender_counterparties`, `contract_clauses`,
 `contract_clause_disputes`, `contract_clause_comments` (на `contract_clauses` никто не подписан).
@@ -219,13 +219,76 @@
 
 Изменение `user_roles` и `role_permissions` — сигнал «перечитать всё» этому пользователю или роли.
 
-## 10. Из базы — ⏳ после q1–q4
+## 10. Из базы (q1–q4 от 2026-10-08)
 
-- Версия PG, collation, timezone, расширения — q1.
-- Таблицы и объёмы, таблицы без PK, без `updated_at` — q1.
-- Политики, анонимные политики, права EXECUTE — q2.
-- Счётчики пользователей и категории входа — q3.
-- cron, Storage, применённые миграции (дрейф), кто подключается к базе — q4.
+Сырые ответы — `inventory/results/q*.json` (вне git). Здесь только счётчики и имена объектов.
+
+**Окружение (q1)**
+- PostgreSQL **17.6**, база **174 МБ**, UTF8, collation `en_US.UTF-8` через ICU (`en-US`), timezone UTC.
+- Расширения: `pg_trgm` — **в схеме `public`**; `pgcrypto`, `uuid-ossp`, `pg_stat_statements` — в
+  `extensions`; `pg_cron`, `supabase_vault`; работает воркер `pg_net`.
+- 74 таблицы (72 рабочие и 2 телеметрии). **RLS включён у всех**, FORCE RLS нет.
+- Без PK — одна таблица: `counterparties_inn_backup_2026_09_21` (резервная копия ИНН).
+- Крупнейшие таблицы: `tender_estimate_items` 47 МБ (64 тыс. строк), `tender_counterparty_proposals`
+  39 МБ (91 тыс.), `tender_audit_log` 7 МБ.
+- 12 представлений, из них 2 материализованных (реестр расценок); 4 enum; 5 последовательностей.
+  У `tenders_public_number_seq` нет колонки-владельца.
+- `DEFAULT auth.uid()` — одна колонка: `vor_requests.created_by`.
+- Триггеров на `auth.users` и FK в чужие схемы нет.
+
+**Права (q2)**
+- 104 политики: 102 — для `authenticated`, 2 — для `anon` (публичная витрина: `objects`, `tenders`).
+- **Широкие политики** (`USING (true)` или `auth.uid() IS NOT NULL`) — на **50 таблицах** → Р2b.
+- У `anon` есть **табличные права SELECT/INSERT/UPDATE/DELETE на все 66 таблиц** (гранты Supabase по
+  умолчанию). Защищает только RLS → Р2g: отозвать.
+- Функций 88:
+  - `SECURITY DEFINER` — 50, у всех закреплён `search_path`;
+  - `EXECUTE` есть у `anon` — 51, у `PUBLIC` — 41.
+- **`SECURITY DEFINER`, доступные анониму, — 13:** `admin_delete_user`, `can_see_task`,
+  `current_counterparty_id`, `is_admin`, `is_my_contract`, `is_my_tender`, `is_negotiation_employee`,
+  `is_portal_employee`, `is_task_participant`, `protect_dispute_columns`, `refresh_rates_registry`,
+  `touch_last_login`, `vor_requests_can_access`.
+  - Проверено по слепку: `admin_delete_user`, `get_auth_users` и `admin_confirm_user_email` внутри
+    проверяют администратора, аноним получает отказ.
+  - У `refresh_rates_registry` проверки нет (известно, Р2d).
+- Обращаются к `auth.users`: `admin_confirm_user_email`, `admin_delete_user`, `get_auth_users`,
+  `is_admin`, `vor_requests_can_access` → Р7, обёртки.
+- Материализованные представления реестра: SELECT только у `authenticated` — как задумано.
+- **Таймауты ролей:** `authenticated` — 30 с, `anon` — 3 с, `authenticator` — 8 с (`lock_timeout` 8 с).
+  Эти значения переносим в `osp_runtime` и pre-request.
+- Публикация Realtime: `tenders`, `tender_counterparties`, `contract_clauses`, `contract_clause_disputes`,
+  `contract_clause_comments`.
+
+**Пользователи (q3)**
+- `auth.users`: 85, у всех вход по email с паролем bcrypt. SSO, анонимных, удалённых и заблокированных в
+  Auth нет.
+  - Не подтвердили почту — 3, ни разу не входили — 3.
+  - Входили за 30 дней — 55, за 180 дней — 82.
+- `user_roles`: 85, у каждого есть строка в `auth.users`.
+  - Одобрено 74, не одобрено 11; заблокированы те же 11 (блокировка снимает одобрение).
+  - **Подрядчиков с организацией — 0.** Одна учётка с ролью `contractor` без организации — по текущим
+    хелперам она считается сотрудником (правило «подрядчика», Р2a).
+- Роли: `smetno` 30, `engineer` 11, `superuser` 7, `construction_manager` 7, `economist_object` 5,
+  `admin` 4, `otiz` 4, `lawyer` 3, `economist` 3, `guest` 2, `snabjenie` 2, `smetno_ruk` 2; по одному —
+  `garant`, `yurist`, `finance`, `udorojanie`, `contractor`.
+- **Колонки-владельцы:** «висячих» id нет ни в одной. Это `user_roles.user_id`, `s3_documents.uploaded_by`,
+  `general_documents.*_by`, `general_document_folders.*_by`, `tasks.*`, `task_participants.user_id`,
+  `task_comments.author_user_id`, `psdc.*_by`, `psdc_batches.created_by`, `tenders.vor_sto_user_id`,
+  `tenders.materials_resp_user_id`, `vor_requests.created_by`.
+  Колонки `*_contact_id` и `s3_documents.owner_id` ссылаются на сотрудников-контакты и сущности, а не на
+  пользователей, поэтому их «висячие» значения в q3 к переезду не относятся.
+
+**Сервисы (q4)**
+- cron: одна задача `refresh-rates-registry`, каждые 10 минут.
+- Storage: один публичный бакет `object-photos` — 20 файлов, 11,6 МБ.
+- Журнала применённых миграций нет: реальная схема известна только по слепку.
+- Секретов в Vault нет.
+- К базе подключены только службы Supabase (PostgREST — 11 соединений, Realtime, pg_cron, pg_net, Auth,
+  Supavisor) и наш запрос. **Внешних прямых подключений нет.**
+- Подготовленных транзакций нет. Слотов логической репликации два, оба Realtime.
+
+**Квота.** База (174 МБ из 500) и Storage (11,6 МБ из 1 ГБ) в пределах. Значит, превышены трафик или
+сообщения Realtime — ждём цифры Usage.
 
 ## 11. Ошибки, найденные по дороге (вне переезда)
 
@@ -241,8 +304,14 @@
 
 ## 12. Решения для СТОП 1
 
-1. Утвердить колонки-владельцы (раздел 3) и что делать с «висячими» id (после q3).
+1. Утвердить колонки-владельцы (раздел 3 и уточнённый список в разделе 10). «Висячих» id нет — решать
+   по ним нечего.
 2. RLS-прослойка `auth.uid()` поверх `app.user_id` — по умолчанию по плану.
 3. Вариант отката после открытия окна A: (а) исправление вперёд или (б) перенос дельты обратно.
 4. Суперадмин: роль вместо email в коде.
-5. Единое правило «подрядчик» (`counterparty_id` или `role`).
+5. Единое правило «подрядчик» (`counterparty_id` или `role`). Сейчас одна учётка с ролью `contractor`
+   без организации считается сотрудником.
+6. `counterparties_inn_backup_2026_09_21` — оставить как архив или удалить после отдельной копии. Таблица
+   без PK, для сверки при переезде нужна отдельная обработка.
+7. Табличные права `anon` на все 66 таблиц отзываются в Р2g. Публичная витрина переходит на функцию с
+   фиксированными колонками.
