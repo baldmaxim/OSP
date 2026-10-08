@@ -103,7 +103,19 @@ describe('Копия прода: снятие, проверка восстано
     assert.ok(!(res.stdout + res.stderr).includes(SECRET_EMAIL))
   })
 
+  it('backup.sh: нет подключения — понятное сообщение, файлов копии не остаётся', () => {
+    const outDir = path.join(tmp, 'dumps-noconn')
+    const res = run('backup.sh', [], { ...prodEnv(), PGPORT: '1', BACKUP_OUT_DIR: outDir })
+    assert.notEqual(res.status, 0)
+    assert.match(res.stdout, /Не удалось подключиться к базе/)
+    assert.ok(!fs.existsSync(outDir) || fs.readdirSync(outDir).length === 0, 'файлов быть не должно')
+  })
+
   it('verify.sh: копия восстанавливается без ошибок, число строк совпадает', () => {
+    // в .sha256 только имя файла; путь, записанный из другого каталога, тоже не мешает проверке
+    const sha = fs.readFileSync(`${dump}.sha256`, 'utf8')
+    assert.equal(sha.trim().split(/\s+/)[1], path.basename(dump))
+    fs.writeFileSync(`${dump}.sha256`, sha.replace(path.basename(dump), `migration/dumps/${path.basename(dump)}`))
     const res = run('verify.sh', [dump])
     assert.equal(res.status, 0, res.stdout + res.stderr)
     assert.match(res.stdout, /КОПИЯ ГОДНА: таблиц 3, строк 541/)

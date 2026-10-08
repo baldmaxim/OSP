@@ -33,14 +33,37 @@ if [ -z "${PGPASSWORD:-}" ]; then
   echo
 fi
 export PGPASSWORD
-trap 'unset PGPASSWORD' EXIT
+
+STAMP="$(date -u +%Y%m%d-%H%M%S)"
+BASE="$OUT_DIR/prod-$STAMP"
+DONE=0
+# Если скрипт не дошёл до конца — убрать недописанные файлы этой копии (имена явно, без шаблонов).
+cleanup() {
+  unset PGPASSWORD
+  if [ "$DONE" != 1 ]; then
+    rm -f -- "$BASE.counts-before.tsv" "$BASE.counts-after.tsv" "$BASE.dump" "$BASE.dump.partial" "$BASE.dump.sha256"
+  fi
+}
+trap cleanup EXIT
+
+# Пробное подключение до создания файлов. Сообщение — только первая строка ошибки (в ней
+# хост и имя пользователя, пароля там нет).
+if ! CONNECT_ERR="$(psql -X -q -At -c 'select 1' 2>&1 >/dev/null)"; then
+  echo "Не удалось подключиться к базе: $(printf '%s\n' "$CONNECT_ERR" | head -1)"
+  case "$CONNECT_ERR" in
+    *"password authentication failed"*)
+      echo "Пароль не принят. Вставьте его из буфера (правый клик или Ctrl+Shift+V) в английской раскладке."
+      echo "Если пароль только что сбрасывали, пулер Supabase несколько минут помнит прежний: подождите"
+      echo "и повторите один раз. Много попыток подряд временно блокируют IP (Circuit breaker open)." ;;
+    *"Circuit breaker"*)
+      echo "Пулер временно закрыл доступ с этого IP после неудачных попыток. Подождите 20 минут." ;;
+  esac
+  exit 1
+fi
 
 umask 077
 mkdir -p "$OUT_DIR"
 chmod 700 "$OUT_DIR"
-
-STAMP="$(date -u +%Y%m%d-%H%M%S)"
-BASE="$OUT_DIR/prod-$STAMP"
 
 counts() {
   psql -X -q -At -F $'\t' -v ON_ERROR_STOP=1 -c 'SET default_transaction_read_only = on' -f "$BACKUP_DIR/counts.sql" >"$1"
@@ -56,8 +79,9 @@ mv "$BASE.dump.partial" "$BASE.dump"
 echo "Подсчёт строк после копии…"
 counts "$BASE.counts-after.tsv"
 
-sha256sum "$BASE.dump" >"$BASE.dump.sha256"
+(cd "$OUT_DIR" && sha256sum "prod-$STAMP.dump" >"prod-$STAMP.dump.sha256")
 chmod 600 "$BASE".*
+DONE=1
 
 TABLES="$(wc -l <"$BASE.counts-before.tsv")"
 CHANGED="$(paste "$BASE.counts-before.tsv" "$BASE.counts-after.tsv" | awk -F'\t' '$2 != $4' | wc -l)"

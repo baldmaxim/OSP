@@ -21,9 +21,14 @@ for f in "$BASE.counts-before.tsv" "$BASE.counts-after.tsv"; do
   [ -f "$f" ] || { echo "Нет $f — копия снята не через backup.sh?"; exit 1; }
 done
 
+# Сравниваем само значение суммы: путь в .sha256 зависит от того, откуда запускали
+# backup.sh, и для проверки не важен.
 if [ -f "$DUMP.sha256" ]; then
-  (cd "$(dirname "$DUMP")" && sha256sum -c --quiet "$(basename "$DUMP").sha256") || {
-    echo "КОПИЯ ПОВРЕЖДЕНА: контрольная сумма не совпадает"; exit 1; }
+  EXPECTED="$(awk 'NR == 1 { print $1 }' "$DUMP.sha256")"
+  ACTUAL="$(sha256sum "$DUMP" | awk '{ print $1 }')"
+  if [ -z "$EXPECTED" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
+    echo "КОПИЯ ПОВРЕЖДЕНА: контрольная сумма не совпадает"; exit 1
+  fi
 fi
 
 TMP="$(mktemp -d)"
