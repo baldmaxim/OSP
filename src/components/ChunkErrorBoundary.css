@@ -1,0 +1,35 @@
+/* Сообщение вместо белого экрана при ошибке отрисовки страницы */
+.chunk-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 50vh;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+.chunk-error-title {
+  font-weight: 700;
+  font-size: 1.0625rem;
+  color: var(--text-primary);
+}
+.chunk-error-text {
+  max-width: 360px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.chunk-error-reload {
+  margin-top: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary-color, #0891b2);
+  cursor: pointer;
+}
+.chunk-error-reload:hover {
+  filter: brightness(1.08);
+}

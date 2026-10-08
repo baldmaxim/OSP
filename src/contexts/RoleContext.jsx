@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../supabase'
+import { ROLES, ROLE_LABELS, SECTIONS } from './roleConstants'
 
 // security fix: понятное сообщение при невозможности загрузить права (fail-closed).
 const ROLE_LOAD_ERROR = 'Не удалось загрузить права доступа. Обновите страницу или обратитесь к администратору.'
@@ -33,58 +34,12 @@ async function queryWithRetry(build) {
 
 const RoleContext = createContext()
 
-// Роли сотрудников
-export const ROLES = {
-  ADMIN: 'admin',
-  ENGINEER: 'engineer',
-  ECONOMIST: 'economist',
-  LAWYER: 'lawyer',
-  CONSTRUCTION_MANAGER: 'construction_manager',
-  CONTRACTOR: 'contractor'
-}
-
-export const ROLE_LABELS = {
-  admin: 'Администратор',
-  engineer: 'Инженер ОСП',
-  economist: 'Экономист ОСП',
-  lawyer: 'Юрист ОСП',
-  construction_manager: 'Руководитель строительства',
-  contractor: 'Подрядчик'
-}
+// Роли и разделы — в roleConstants.js (их берут и тестовые стенды); отсюда
+// реэкспортируются, чтобы прежние импорты из RoleContext не менялись.
+export { ROLES, ROLE_LABELS, SECTIONS }
 
 // Email суперадминов — автоподтверждение и роль admin без ожидания.
 const SUPER_ADMINS = ['sadovnikov.d.y@su10.ru']
-
-// Разделы приложения
-export const SECTIONS = {
-  objects: 'Объекты',
-  contacts: 'Контакты',
-  counterparties: 'Контрагенты',
-  // task 416: общие документы компании и полезные ссылки (Общая информация → Документы).
-  general_documents: 'Документы',
-  // task 433: задачи сотрудникам (канбан-доска + реестр).
-  tasks: 'Задачи',
-  tenders: 'Тендеры',
-  // ВОРы и РД — отдельный раздел (миграция 20260921): сметно-технический отдел
-  // работает только здесь, без доступа к самим тендерам.
-  vors: 'ВОРы и РД',
-  // Тендеры на материалы (миграция 20260924): рабочий раздел отдела снабжения,
-  // тоже без доступа к тендерам основного строительства.
-  tenders_materials: 'Тендеры на материалы',
-  contracts: 'Договоры',
-  // task 333: реестр заявок на ДС — отдельный раздел с настраиваемыми правами.
-  dc_requests: 'Заявка на ДС',
-  // Канбан проверки договоров и допсоглашений (раньше велась перепиской по почте).
-  doc_check_requests: 'Заявки на проверку ДП/ДС',
-  analysis_kp: 'Анализ КП',
-  // task 356: реестр расценок — общий список расценок из всех источников (КП, ДП/ДС, снабжение).
-  rates_registry: 'Реестр расценок',
-  reports: 'Отчёты',
-  // Все вкладки отчётов (миграция 20260930). Без этого права в «Отчётах» видны
-  // только отчёты рабочих разделов роли: «ВОРы и РД», «Тендеры на материалы».
-  reports_full: 'Отчёты: все вкладки',
-  admin: 'Администрирование'
-}
 
 export function RoleProvider({ children }) {
   // security fix (fail-closed): роль НЕ берём из localStorage как источник истины —

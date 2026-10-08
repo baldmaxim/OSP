@@ -4,8 +4,9 @@ import './utils/authRedirect'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.jsx'
 import { uuidv4Manual } from './utils/uuid'
+import { loadRuntimeConfig } from './config/runtime'
+import { installChunkRecovery, isChunkLoadError, reloadOnceForThisBuild } from './utils/chunkRecovery'
 
 // Полифил crypto.randomUUID — на http:// и в старых браузерах метод отсутствует,
 // и любая сторонняя зависимость, дёргающая его напрямую, падает с TypeError.
@@ -20,8 +21,26 @@ if (typeof globalThis !== 'undefined') {
   }
 }
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+// Вкладка, открытая до деплоя, при ошибке загрузки чанка один раз перезагружается.
+installChunkRecovery()
+
+// Сначала runtime-конфиг (/config.json: адреса и флаги), потом приложение: клиент
+// Supabase создаётся при импорте App и должен увидеть уже прочитанный конфиг.
+async function start() {
+  await loadRuntimeConfig()
+  const root = document.getElementById('root')
+  try {
+    const { default: App } = await import('./App.jsx')
+    createRoot(root).render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+  } catch (err) {
+    if (isChunkLoadError(err) && reloadOnceForThisBuild()) return
+    console.error('Не удалось запустить приложение:', err)
+    root.textContent = 'Не удалось загрузить портал. Обновите страницу.'
+  }
+}
+
+start()

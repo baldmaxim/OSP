@@ -18,7 +18,7 @@
 | Что | Где | Кто владеет | Зачем |
 |-----|-----|------------|-------|
 | **Исходники** проекта | `/home/danila/projects/<name>/` | `danila:danila` | Git, `npm`, разработка. Полные права у пользователя. |
-| **Готовая статика** (build output) | `/var/www/<name>/` | `www-data:www-data` | То, что отдаёт nginx. Read-only для всех, кроме `www-data`. |
+| **Готовая статика** (build output) | `/var/www/<name>/` | `danila:danila` (OSP с 2026-10, см. «Каталоги-релизы»); прежде `www-data:www-data` | То, что отдаёт nginx. `www-data` только читает. |
 
 Почему не отдавать nginx прямо из `~/projects/<name>/dist/`: на Ubuntu по умолчанию `/home/<user>` имеет права `0750` без `o+x` для других пользователей, поэтому `nginx` (user `www-data`) не может пройти внутрь и отдаёт `403`. Открывать `o+x` на home — портить безопасность сервера. Правильнее `deploy.sh` копирует собранный `dist/` в `/var/www/<name>/`, который доступен `www-data`.
 
@@ -140,7 +140,131 @@ sudo certbot --nginx \
   --no-eff-email
 ```
 
-## Текущий `deploy.sh` и что в нём улучшить
+## Каталоги-релизы и откат (страховочный релиз, с 2026-10)
+
+Новый деплой — скрипты в репозитории: [`deploy/deploy.sh`](../deploy/deploy.sh) (git pull → `npm ci` →
+сборка → выкладка), [`deploy/publish.sh`](../deploy/publish.sh) (выкладка готовой сборки),
+[`deploy/rollback.sh`](../deploy/rollback.sh) (откат). Проверяются тестом `npm run test:deploy`.
+
+**Зачем.** Прежний `deploy.sh` делал `rsync --delete` прямо в отдаваемый каталог: у вкладки, открытой до
+деплоя, при переходе на новую страницу пропадали файлы её сборки — белый экран. Отката не было.
+
+**Раскладка `/var/www/osp`:**
+
+```
+/var/www/osp/
+├── releases/<buildId>/     # сборка целиком, по каталогу на релиз (хранятся 5 последних)
+├── assets/                 # общие хэш-файлы недавних сборок — открытые вкладки догружают свои
+├── current -> releases/<buildId>   # то, что отдаёт nginx; переключается атомарно
+└── shared/config.json      # runtime-конфиг (необязателен), переживает релизы
+```
+
+Владелец — `danila`, nginx (`www-data`) только читает (файлы `644`, каталоги `755`). Деплой и откат
+идут **без sudo**: не нужны ни правила в `sudoers`, ни запись от имени `www-data`.
+
+### Переход (один раз)
+
+1. Владелец каталога — `danila`:
+   ```bash
+   # root#
+   chown -R danila:danila /var/www/osp
+   ```
+2. Первая выкладка новым скриптом. Сайт в это время продолжает отдавать прежнюю раскладку — nginx ещё
+   смотрит в `/var/www/osp`. Файлы прежней сборки уже лежат в `/var/www/osp/assets` и там остаются:
+   ```bash
+   # danila$
+   bash /home/danila/projects/OSP/deploy/deploy.sh
+   ls -l /var/www/osp/current          # → releases/<buildId>
+   ```
+3. Блок nginx `/etc/nginx/sites-available/osp.root.sx` — в серверном блоке 443 заменить `root` и
+   `location`-ы на:
+   ```nginx
+   root /var/www/osp/current;
+   index index.html;
+
+   # Хэш-файлы всех недавних сборок — общий каталог. ^~ важнее regex-локейшена ниже.
+   location ^~ /assets/ {
+       root /var/www/osp;
+       expires 30d;
+       add_header Cache-Control "public, immutable";
+       try_files $uri =404;
+   }
+   location = /index.html {
+       add_header Cache-Control "no-cache, no-store, must-revalidate";
+   }
+   location = /version.json {
+       add_header Cache-Control "no-cache, no-store, must-revalidate";
+       try_files $uri =404;
+   }
+   # Runtime-конфиг: нет файла → 404 (а не index.html), приложение берёт значения сборки.
+   location = /config.json {
+       root /var/www/osp/shared;
+       add_header Cache-Control "no-cache, no-store, must-revalidate";
+       try_files $uri =404;
+   }
+   location / {
+       try_files $uri $uri/ /index.html;
+   }
+   location ~* \.(?:js|css|woff2?|ttf|png|jpg|jpeg|svg|webp|ico)$ {
+       expires 30d;
+       add_header Cache-Control "public, immutable";
+       try_files $uri =404;
+   }
+   ```
+   ```bash
+   # root#
+   nginx -t && systemctl reload nginx
+   ```
+4. Проверка: сайт открывается, `https://osp.root.sx/version.json` показывает `buildId` из
+   `ls -l /var/www/osp/current`, `https://osp.root.sx/config.json` — 404.
+5. Прежний `deploy.sh` в `/home/danila/projects/OSP` больше не запускать (переименовать в
+   `deploy.sh.old`). Правило `/etc/sudoers.d/danila-deploy`, если создавалось, больше не нужно.
+
+Старые файлы в корне `/var/www/osp` (`index.html`, `version.json`, `fonts/`) после перехода не
+используются — их можно удалить через неделю.
+
+### Обычный деплой и откат
+
+```bash
+# danila$
+bash /home/danila/projects/OSP/deploy/deploy.sh      # выложить текущую ветку
+bash /home/danila/projects/OSP/deploy/rollback.sh    # вернуть предыдущий релиз
+bash /home/danila/projects/OSP/deploy/rollback.sh <buildId>   # вернуть конкретный
+```
+
+Откат — за секунды: переключается `current`, сборка не нужна. **Граница отката:** если релиз
+объявил в `release.json` `rollbackFloor` выше уровня совместимости цели, `rollback.sh` откажет —
+сервер уже убрал то, чем пользовалась старая сборка; исправление тогда только новым релизом.
+
+### Уровень совместимости (`release.json`)
+
+- `compat` поднимаем, когда релиз несовместим со старыми вкладками. У вкладки с меньшим уровнем окно
+  «Нужно обновить страницу» — без «Позже», его можно свернуть «Сначала сохраню» в полосу сверху.
+- `rollbackFloor` поднимаем вместе с миграцией, которая убирает старое на сервере.
+- Старое на сервере убираем, только когда старых вкладок не осталось. Вкладки, открытые до
+  страховочного релиза, опрашивают `/version.json?_=…`, новые — `/version.json?b=<buildId>&_=…`:
+  ```bash
+  # danila$ (с sudo — чтение логов)
+  sudo grep -c 'GET /version.json?_=' /var/log/nginx/osp-access.log          # вкладки до Р1
+  sudo grep -o 'GET /version.json?b=[0-9]*' /var/log/nginx/osp-access.log | sort | uniq -c
+  ```
+
+### Runtime-конфиг (`shared/config.json`)
+
+Необязателен. Без файла всё берётся из сборки (`.env` на VPS). Формат:
+
+```json
+{
+  "supabaseUrl": "https://<project>.supabase.co",
+  "supabaseAnonKey": "<публичный anon-ключ>",
+  "features": { "<имя-флага>": true }
+}
+```
+
+Флаги `features` включают новые операции рефакторинга: выключили флаг — вернулся прежний путь, без
+пересборки. Неизвестные поля и битый файл игнорируются.
+
+## Прежний `deploy.sh` (до перехода на каталоги-релизы)
 
 Файл `/home/danila/projects/OSP/deploy.sh` (после правки от 2026-05-20):
 
@@ -260,30 +384,37 @@ sudo tail -f /var/log/nginx/osp-access.log /var/log/nginx/osp-error.log
 sudo ss -tlnp | grep -E ':80 |:443 '            # кто слушает 80/443
 ```
 
-## Известные предупреждения
+## Node.js 24 LTS
 
-### Node.js 18 → Supabase требует 20+
+Проект собирается на Node.js 24: версия зафиксирована в `package.json` (`engines.node = 24.x`) и
+`.nvmrc`. Node 18 снят с поддержки, а `@supabase/supabase-js` и будущий `osp-api` требуют новее.
+Node на VPS нужен только для сборки: сайт отдаёт nginx из `/var/www/osp`.
 
-В `npm install` сейчас сыпятся предупреждения:
-```
-npm WARN EBADENGINE Unsupported engine {
-  package: '@supabase/supabase-js@2.80.0',
-  required: { node: '>=20.0.0' },
-  current: { node: 'v18.19.1', npm: '9.2.0' }
-}
-```
-
-Сборка проходит (Vite транспилирует код), но в перспективе апгрейд узла на VPS:
+**Переход — отдельным релизом, без других изменений.** Безопасно: если сборка на новом Node упадёт,
+`deploy.sh` (`set -e`) остановится до `rsync`, и сайт продолжит отдавать прежнюю сборку.
 
 ```bash
-# danila$ (с sudo) — установка Node.js 20 LTS через NodeSource
+# danila$ (с sudo) — установка Node.js 24 LTS через NodeSource
+node --version                    # запомнить текущую (было v18.x)
 sudo apt-get install -y ca-certificates curl gnupg
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x -o /tmp/nodesource_setup_24.sh
+sudo -E bash /tmp/nodesource_setup_24.sh
 sudo apt-get install -y nodejs
-node --version   # должно показать v20.x
+node --version                    # должно показать v24.x
+npm --version                     # 11.x
 ```
 
-После апгрейда — заново `npm ci && npm run build` в проекте OSP.
+Затем деплой: новым скриптом (`npm ci` уже внутри, см. «Каталоги-релизы») либо, если переход ещё не
+сделан, прежним `/home/danila/projects/OSP/deploy.sh`, заменив в нём `npm install` на **`npm ci`** —
+ставит ровно то, что в `package-lock.json`, и не меняет lock-файл.
+
+```bash
+# danila$
+bash /home/danila/projects/OSP/deploy/deploy.sh
+```
+
+Проверка: `deploy.sh` дошёл до `nginx -t` без ошибок; в браузере — жёсткое обновление страницы,
+вход, открыть тендер и договор.
 
 ## Условные обозначения для команд
 

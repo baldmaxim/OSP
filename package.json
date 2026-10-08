@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,7 +14,10 @@
     "test:psdc": "node --test --test-concurrency=1 \"tests/psdc/*.test.mjs\"",
     "bench:psdc": "node tests/psdc/perf.bench.mjs",
     "test:tender": "node --test --test-concurrency=1 \"tests/tender/*.test.mjs\"",
-    "bench:tender": "node tests/tender/bench-ui.mjs"
+    "bench:tender": "node tests/tender/bench-ui.mjs",
+    "test:release": "node --test --test-concurrency=1 \"tests/release/*.test.mjs\"",
+    "test:deploy": "node --test \"tests/deploy/*.test.mjs\"",
+    "test:backup": "node --test \"tests/backup/*.test.mjs\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.80.0",

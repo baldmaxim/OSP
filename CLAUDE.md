@@ -16,9 +16,22 @@ npm run dev          # Start dev server (http://localhost:5173)
 npm run build        # Production build to dist/
 npm run preview      # Preview production build
 npm run lint         # Run ESLint (--max-warnings 0)
+npm run test:psdc    # ПСДЦ: движок в БД, XLSX, UI (PostgreSQL + Chromium)
+npm run test:tender  # карточка тендера: производительность UI (Chromium)
+npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
+npm run test:deploy  # deploy/publish.sh и rollback.sh на временных каталогах
+npm run test:backup  # migration/backup: копия, проверка восстановлением, прогон миграций (Docker)
 ```
 
-**Note:** No test framework configured. Project relies on ESLint and manual testing.
+**Тесты** — встроенный `node --test`. Нужны PostgreSQL 17+ и Chromium:
+- PostgreSQL: серверные бинарники (`initdb`/`pg_ctl` в PATH или `PG_BIN`), а если их нет — Docker
+  (одноразовый контейнер `postgres:17-alpine`, `PG_TEST_MODE=docker|native` для явного выбора);
+- Chromium: сборка Playwright, Chrome/Edge или путь в `PSDC_BROWSER` (на удалённой машине —
+  `~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell`).
+
+Без них соответствующие наборы пропускаются (skip), а не падают. Стенды UI подменяют клиент Supabase и
+`RoleContext` подделками (`tests/*/ui/fake-*.js*`); константы ролей подделки берут из
+`src/contexts/roleConstants.js`.
 
 ## Environment Setup
 
@@ -389,7 +402,7 @@ curl -H "X-API-Key: <ключ>" \
 - Предел — 25 000 строк на ведомость (проверка укладывается в `statement_timeout` Supabase).
 - Старая таблица `contract_psdc_items` (float-расчёт) больше не используется интерфейсом.
 
-**Тесты** (`npm run test:psdc`): поднимают временный локальный PostgreSQL 17+ (`initdb/pg_ctl/psql` в PATH или `PG_BIN`) с настоящими миграциями 20260906 + 20260908, проверяют движок, XLSX, интеграцию с суммами и UI в Chrome/Edge через Playwright (`PSDC_BROWSER`). Замер: `npm run bench:psdc`.
+**Тесты** (`npm run test:psdc`): поднимают временный локальный PostgreSQL 17+ (`initdb/pg_ctl/psql` в PATH или `PG_BIN`, иначе Docker) с настоящими миграциями 20260906 + 20260908, проверяют движок, XLSX, интеграцию с суммами и UI в Chrome/Edge через Playwright (`PSDC_BROWSER`). Замер: `npm run bench:psdc`.
 
 ## Excel Import/Export (xlsx)
 

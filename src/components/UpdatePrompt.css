@@ -93,3 +93,33 @@
 @media (max-width: 640px) {
   .upd-prompt { max-width: none; padding: 1.5rem 1.25rem 1.25rem; }
 }
+
+/* Обязательное обновление, свёрнутое кнопкой «Сначала сохраню»: полоса сверху, не закрывается */
+.upd-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: #fff;
+  background: #b45309;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+}
+.upd-banner-reload {
+  padding: 0.25rem 0.875rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+  font-weight: 600;
+  color: #fff;
+  background: transparent;
+  cursor: pointer;
+}
+.upd-banner-reload:hover {
+  background: rgba(255, 255, 255, 0.15);
+}

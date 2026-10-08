@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { RoleProvider, useRole } from './contexts/RoleContext'
 import { NotificationsProvider } from './contexts/NotificationsContext'
@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar'
 import AccessError from './components/AccessError'
 import AccessDenied from './components/AccessDenied'
 import UpdatePrompt from './components/UpdatePrompt'
+import ChunkErrorBoundary from './components/ChunkErrorBoundary'
 import RolePreviewBar from './components/RolePreviewBar'
 import './App.css'
 // Глобальный мобильный слой — импортируется последним, чтобы перебивать базовые
@@ -91,6 +92,7 @@ const PageLoader = () => (
 // Компонент для защищённых маршрутов сотрудника
 function EmployeeLayout() {
   const { isEmployee, isLoggedIn, authLoading, roleError } = useRole()
+  const location = useLocation()
 
   if (authLoading) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-tertiary)' }}>Загрузка...</div>
@@ -108,6 +110,7 @@ function EmployeeLayout() {
     <div className="layout">
       <Sidebar />
       <main className="main-content">
+        <ChunkErrorBoundary resetKey={location.pathname}>
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<HomeRedirect />} />
@@ -160,6 +163,7 @@ function EmployeeLayout() {
             <Route path="*" element={<HomeRedirect />} />
           </Routes>
         </Suspense>
+        </ChunkErrorBoundary>
       </main>
     </div>
     </NotificationsProvider>
@@ -168,12 +172,14 @@ function EmployeeLayout() {
 
 function AuthRoutes() {
   const { isLoggedIn, isEmployee, isContractor, authLoading } = useRole()
+  const location = useLocation()
 
   if (authLoading) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-tertiary)' }}>Загрузка...</div>
   }
 
   return (
+    <ChunkErrorBoundary resetKey={location.pathname}>
     <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* Публичная страница тендеров — доступна без авторизации */}
@@ -205,6 +211,7 @@ function AuthRoutes() {
         <Route path="/*" element={<EmployeeLayout />} />
       </Routes>
     </Suspense>
+    </ChunkErrorBoundary>
   )
 }
 

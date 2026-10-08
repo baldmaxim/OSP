@@ -85,12 +85,10 @@ function AdminPage() {
     // в окне пользователя и в «Просмотре от имени роли».
     if (activeTab === 'preview') ensureCounterparties()
     if (activeTab === 'permissions') fetchPermissions()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
   useEffect(() => {
     if (editUser) ensureCounterparties()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editUser])
 
   // Debounce поиска (данные пользователей клиентские, но набор не дёргается на каждый символ).
@@ -329,11 +327,15 @@ function AdminPage() {
   const bulkUpdate = async (patch, successText) => {
     const ids = [...selected]
     if (ids.length === 0) return
+    // Статус ('active' / 'blocked') разворачивается в набор полей; роль и объект
+    // приходят готовым набором полей и пишутся как есть. Раньше они тоже шли через
+    // statusPatch и вместо назначения роли снимали подтверждение у выбранных.
+    const fields = typeof patch === 'string' ? statusPatch(patch, userProfile?.full_name || null) : patch
     try {
       // Обновляем только тех, у кого есть запись в user_roles (по user_id).
       const CHUNK = 100
       for (let i = 0; i < ids.length; i += CHUNK) {
-        const { error } = await supabase.from('user_roles').update(statusPatch(patch, userProfile?.full_name || null)).in('user_id', ids.slice(i, i + CHUNK))
+        const { error } = await supabase.from('user_roles').update(fields).in('user_id', ids.slice(i, i + CHUNK))
         if (error) throw error
       }
       await fetchUsers({ silent: true })

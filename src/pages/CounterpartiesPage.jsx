@@ -872,6 +872,13 @@ function CounterpartiesPage() {
     }
   }
 
+  // К организации привязаны логины подрядчиков: база не даёт её удалить
+  // (миграция 20261006, ON DELETE RESTRICT), иначе логины стали бы сотрудниками.
+  const hardDeleteErrorText = (error) =>
+    error?.code === '23503' && /user_roles/.test(error?.message || '')
+      ? 'К организации привязаны логины подрядчиков. Сначала отвяжите или удалите их в «Администрировании», затем удаляйте контрагента.'
+      : error?.message
+
   // task 197: безвозвратное удаление — только для администратора
   const handleHardDeleteCounterparty = async (id, name) => {
     if (!isAdmin) {
@@ -885,7 +892,7 @@ function CounterpartiesPage() {
       fetchCounterparties()
     } catch (error) {
       console.error('Ошибка безвозвратного удаления:', error.message)
-      alert('Ошибка: ' + error.message)
+      alert('Ошибка: ' + hardDeleteErrorText(error))
     }
   }
 
@@ -950,7 +957,7 @@ function CounterpartiesPage() {
       alert(`${isHardDelete ? 'Безвозвратно удалено' : 'Перемещено в «Удалённые»'}: ${selectedCounterpartyIds.length}`)
     } catch (error) {
       console.error('Ошибка массового удаления:', error.message)
-      alert('Ошибка удаления: ' + error.message)
+      alert('Ошибка удаления: ' + hardDeleteErrorText(error))
     }
   }
 

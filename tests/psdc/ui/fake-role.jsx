@@ -1,5 +1,7 @@
 // Подмена RoleContext для UI-стенда: права раздела «contracts» задаются
 // параметром адреса; окончательную проверку всё равно делает база.
+// Константы — настоящие, чтобы подделка не отставала от кода.
+export { ROLES, ROLE_LABELS, SECTIONS } from '../../../src/contexts/roleConstants.js'
 const params = new URLSearchParams(window.location.search)
 const edit = params.get('edit') !== '0'
 
