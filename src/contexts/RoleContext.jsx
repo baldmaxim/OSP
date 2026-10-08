@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { supabase } from '../supabase'
+import { db, auth } from '../api'
 import { ROLES, ROLE_LABELS, SECTIONS } from './roleConstants'
 
 // security fix: понятное сообщение при невозможности загрузить права (fail-closed).
@@ -26,7 +26,7 @@ async function queryWithRetry(build) {
     result = await build()
     if (!result.error || !isTransientError(result.error)) return result
     if (/PGRST301|JWT expired/i.test(`${result.error.code} ${result.error.message}`)) {
-      try { await supabase.auth.refreshSession() } catch { /* следующая попытка покажет */ }
+      try { await auth.refreshSession() } catch { /* следующая попытка покажет */ }
     }
   }
   return result
@@ -81,7 +81,7 @@ export function RoleProvider({ children }) {
 
   const fetchAvailableRoles = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('roles')
         .select('key, label, is_system')
         .order('is_system', { ascending: false })
@@ -115,7 +115,7 @@ export function RoleProvider({ children }) {
       return true
     }
     try {
-      const { data, error } = await queryWithRetry(() => supabase
+      const { data, error } = await queryWithRetry(() => db
         .from('role_permissions')
         .select('section, can_view, can_edit')
         .eq('role', userRole))
@@ -162,7 +162,7 @@ export function RoleProvider({ children }) {
       // select('*') — устойчиво к порядку миграций: колонка object_ids появляется
       // только после миграции 20260730; если её ещё нет, просто отсутствует в data,
       // а resolveObjectIds() откатывается на одиночный object_id. Так вход не ломается.
-      const { data, error } = await queryWithRetry(() => supabase
+      const { data, error } = await queryWithRetry(() => db
         .from('user_roles')
         .select('*')
         .eq('user_id', userId)
@@ -176,7 +176,7 @@ export function RoleProvider({ children }) {
           // (суперадмина пропускает RLS через is_admin() по email), и автоподтверждаем.
           // При RLS-блокировке update упадёт в catch → fail-closed, а не admin.
           if (data.role !== ROLES.ADMIN || !data.is_approved) {
-            await supabase
+            await db
               .from('user_roles')
               .update({ is_approved: true, role: 'admin' })
               .eq('user_id', userId)
@@ -187,11 +187,11 @@ export function RoleProvider({ children }) {
           return
         }
         if (data.is_blocked) {
-          await supabase.auth.signOut()
+          await auth.signOut()
           throw new Error('ACCOUNT_BLOCKED')
         }
         if (!data.is_approved) {
-          await supabase.auth.signOut()
+          await auth.signOut()
           throw new Error('PENDING_APPROVAL')
         }
         // Роль подтверждена БД. Грузим права; для НЕ-админа провал прав = fail-closed.
@@ -205,7 +205,7 @@ export function RoleProvider({ children }) {
       } else {
         if (isSuperAdmin) {
           // Суперадмин — создаём сразу подтверждённым (требует прав записи).
-          await supabase
+          await db
             .from('user_roles')
             .insert([{ user_id: userId, email: userEmail, role: 'admin', is_approved: true }])
           await fetchPermissions(ROLES.ADMIN)
@@ -213,11 +213,11 @@ export function RoleProvider({ children }) {
           return
         }
         // Обычный пользователь — заявка (pending), доступ закрыт до подтверждения админом.
-        await supabase
+        await db
           .from('user_roles')
           .insert([{ user_id: userId, email: userEmail, role: 'engineer', is_approved: false }])
 
-        await supabase.auth.signOut()
+        await auth.signOut()
         throw new Error('PENDING_APPROVAL')
       }
     } catch (err) {
@@ -234,7 +234,7 @@ export function RoleProvider({ children }) {
   // входа и подсказке localStorage, то есть любой подрядчик мог открыть чужие
   // тендеры, выбрав другую организацию.
   const resolveContractorCounterparty = useCallback(async (userId) => {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('user_roles')
       // '*' а не список: is_blocked есть только после миграции 20260920.
       .select('*')
@@ -243,7 +243,7 @@ export function RoleProvider({ children }) {
     if (error) throw error
     if (!data) return { row: null, counterparty: null }
     if (!data.counterparty_id) return { row: data, counterparty: null }
-    const { data: cp } = await supabase
+    const { data: cp } = await db
       .from('counterparties')
       .select('id, name')
       .eq('id', data.counterparty_id)
@@ -256,7 +256,7 @@ export function RoleProvider({ children }) {
 
   // Инициализация Supabase Auth
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    auth.getSession().then(async ({ data: { session } }) => {
       const u = session?.user ?? null
       setUser(u)
       if (u) {
@@ -302,7 +302,7 @@ export function RoleProvider({ children }) {
     // Реагируем только на ВЫХОД. Вход/обновление токена обрабатывают getSession (старт)
     // и функции входа — чтобы не сбросить authLoading в false до проверки роли (иначе
     // во время проверки могли бы отрендериться внутренние страницы с непроверенной ролью).
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = auth.onAuthStateChange((_event, session) => {
       const u = session?.user ?? null
       if (!u) {
         setUser(null)
@@ -328,7 +328,7 @@ export function RoleProvider({ children }) {
 
   // Вход сотрудника
   const loginWithPassword = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await auth.signInWithPassword({ email, password })
     if (error) throw error
     setUser(data.user)
     await fetchUserRole(data.user.id, email)
@@ -336,7 +336,7 @@ export function RoleProvider({ children }) {
     // Фиксируем момент входа через SECURITY DEFINER RPC — чтобы не выдавать
     // обычным пользователям прямой UPDATE на user_roles (RLS, security task).
     try {
-      const { error: loginErr } = await supabase.rpc('touch_last_login')
+      const { error: loginErr } = await db.rpc('touch_last_login')
       if (loginErr) console.error('Не удалось обновить last_login_at:', loginErr.message)
     } catch (err) {
       console.error('Не удалось обновить last_login_at:', err?.message || err)
@@ -348,7 +348,7 @@ export function RoleProvider({ children }) {
   // из user_roles.counterparty_id: иначе достаточно было выбрать в списке чужую
   // компанию, чтобы увидеть её тендеры и сметы.
   const loginAsContractor = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await auth.signInWithPassword({ email, password })
     if (error) throw error
 
     const { row, counterparty } = await resolveContractorCounterparty(data.user.id)
@@ -358,7 +358,7 @@ export function RoleProvider({ children }) {
       // Роль строго 'contractor' — политика БД другие роли при саморегистрации
       // не принимает, а привязку к организации ставит администратор.
       const meta = data.user.user_metadata || {}
-      await supabase
+      await db
         .from('user_roles')
         .insert([{
           user_id: data.user.id,
@@ -369,21 +369,21 @@ export function RoleProvider({ children }) {
           work_phone: meta.phone || null,
           requested_company: meta.company || null,
         }])
-      await supabase.auth.signOut()
+      await auth.signOut()
       throw new Error('PENDING_APPROVAL')
     }
     if (row.is_blocked) {
-      await supabase.auth.signOut()
+      await auth.signOut()
       throw new Error('ACCOUNT_BLOCKED')
     }
     if (!row.is_approved) {
-      await supabase.auth.signOut()
+      await auth.signOut()
       throw new Error('PENDING_APPROVAL')
     }
     if (!counterparty) {
       // Логин подтверждён, но не привязан к организации — кабинет показывать не от
       // чьего имени. Привязку ставит администратор в карточке пользователя.
-      await supabase.auth.signOut()
+      await auth.signOut()
       throw new Error('NO_COUNTERPARTY')
     }
 
@@ -392,7 +392,7 @@ export function RoleProvider({ children }) {
     setContractorInfo(counterparty)
     setPermissions({})
     try {
-      const { error: loginErr } = await supabase.rpc('touch_last_login')
+      const { error: loginErr } = await db.rpc('touch_last_login')
       if (loginErr) console.error('Не удалось обновить last_login_at:', loginErr.message)
     } catch (err) {
       console.error('Не удалось обновить last_login_at:', err?.message || err)
@@ -414,21 +414,21 @@ export function RoleProvider({ children }) {
   const signUp = async (email, password, meta = null) => {
     const options = { emailRedirectTo: confirmRedirectUrl(meta?.kind === 'contractor') }
     if (meta) options.data = meta
-    const { data, error } = await supabase.auth.signUp({ email, password, options })
+    const { data, error } = await auth.signUp({ email, password, options })
     if (error) throw error
     // Если в Supabase выключено подтверждение почты, signUp сразу отдаёт сессию.
     // Входить так нельзя — доступ открывает администратор (is_approved), а заявка
     // в user_roles создаётся при первом входе. Поэтому сессию закрываем, а экран
     // регистрации по флагу показывает, отправлялось ли письмо.
     const needsEmailConfirmation = !data?.session
-    if (data?.session) await supabase.auth.signOut()
+    if (data?.session) await auth.signOut()
     return { ...data, needsEmailConfirmation }
   }
 
   // Повторное письмо подтверждения: ссылка из прежнего письма устарела (срок
   // жизни ограничен) или отменена следующей попыткой регистрации.
   const resendConfirmation = async (email, { contractor = false } = {}) => {
-    const { error } = await supabase.auth.resend({
+    const { error } = await auth.resend({
       type: 'signup',
       email,
       options: { emailRedirectTo: confirmRedirectUrl(contractor) },
@@ -444,7 +444,7 @@ export function RoleProvider({ children }) {
     if (profileData.work_phone !== undefined) updates.work_phone = profileData.work_phone
     if (profileData.work_email !== undefined) updates.work_email = profileData.work_email
 
-    const { error } = await supabase
+    const { error } = await db
       .from('user_roles')
       .update(updates)
       .eq('user_id', user.id)
@@ -454,7 +454,7 @@ export function RoleProvider({ children }) {
 
   // Выход
   const logout = async () => {
-    await supabase.auth.signOut()
+    await auth.signOut()
     // Предпросмотр роли — состояние сессии администратора, при выходе снимаем.
     setPreview(null)
     setRole(null)
@@ -491,7 +491,7 @@ export function RoleProvider({ children }) {
     if (!previewRoleKey) throw new Error('Не выбрана роль')
     let perms = {}
     if (previewRoleKey !== ROLES.CONTRACTOR && previewRoleKey !== ROLES.ADMIN) {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('role_permissions')
         .select('section, can_view, can_edit')
         .eq('role', previewRoleKey)

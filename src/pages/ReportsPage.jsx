@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import { vorResponsibleName, withStoColumns } from '../services/stoEmployees'
@@ -215,7 +215,7 @@ function ReportsPage() {
       // страницу, а повторный .range() на одном и том же билдере supabase-js
       // переписал бы диапазон предыдущего.
       const tendersQuery = (stoCols) => (from, to) => {
-        let q = supabase
+        let q = db
         .from('tenders')
         .select(`
           id, object_id, status, end_date, created_at, responsible_contact_id, tender_type, deleted_at, department,
@@ -241,7 +241,7 @@ function ReportsPage() {
       // вместе с тендерами. Нет таблицы — отчёт строится без них.
       let vorRequests = []
       {
-        let q = supabase
+        let q = db
           .from('vor_requests')
           .select('id, department, object_id, vor_status, vor_end_date, vor_sto_user_id, vor_sto_name')
           .is('deleted_at', null)
@@ -253,7 +253,7 @@ function ReportsPage() {
       }
 
       const contractsQuery = (from, to) => {
-        let q = supabase
+        let q = db
           .from('contracts')
           .select('id, object_id, status, contract_amount, currency, counterparty_id, responsible_contact_id, deleted_at, objects(id, name, status), responsible:contacts!responsible_contact_id(id, full_name)')
           .is('deleted_at', null)   // удалённые (soft-delete) в отчёт не входят

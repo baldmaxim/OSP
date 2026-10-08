@@ -8,6 +8,11 @@
 
 ### Фронт (`src/`)
 
+> **С 2026-10-08 (Р3):** всё перечисленное ниже идёт только через адаптеры `src/api/` — `db` (488 `.from`,
+> 11 `.rpc`), `auth` (18), `invokeFunction` (2), `objectPhotos` (обложки), `subscribeTable` (Realtime).
+> Единственный `createClient` — `src/api/supabaseClient.js`; прямой доступ запрещён ESLint и
+> `npm run check:transport`. Таблица ниже — что именно делают адаптеры сейчас.
+
 | Что | Сколько | Где |
 |---|---|---|
 | Клиент Supabase импортируют | 58 файлов | — |

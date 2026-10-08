@@ -18,4 +18,19 @@ module.exports = {
     // HMR-only хинт; контексты в проекте намеренно держат провайдер + хук + константы в одном файле.
     'react-refresh/only-export-components': 'off',
   },
+  overrides: [
+    {
+      // Доступ к серверу — только через адаптеры src/api/ (Р3, migration/PLAN.md).
+      files: ['src/**/*.{js,jsx}'],
+      excludedFiles: ['src/api/**'],
+      rules: {
+        'no-restricted-imports': ['error', {
+          patterns: [
+            { group: ['@supabase/*'], message: 'Клиент Supabase — только в src/api/. Используйте db, auth, objectPhotos, invokeFunction, subscribeTable из src/api.' },
+            { group: ['**/api/supabaseClient', '**/api/supabaseClient.js'], message: 'Клиент напрямую не импортируется — используйте адаптеры из src/api.' },
+          ],
+        }],
+      },
+    },
+  ],
 }

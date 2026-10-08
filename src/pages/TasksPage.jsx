@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { useNotifications } from '../contexts/NotificationsContext'
 import { useIsPhone } from '../hooks/useMediaQuery'
@@ -112,24 +112,24 @@ function TasksPage() {
       // Счётчики чек-листа и обсуждения нужны на каждой карточке, поэтому берём
       // их одним махом и складываем в мапы, а не запросом на задачу.
       const [rows, checklist, comments, participation] = await Promise.all([
-        fetchAllRows((from, to) => supabase
+        fetchAllRows((from, to) => db
           .from('tasks')
           .select('*, objects(name), tenders(public_tender_number), contracts(contract_number)')
           .order('sort_order', { ascending: true })
           .order('created_at', { ascending: false })
           .order('id')                     // тайбрейкер: без него постраничная выборка теряет строки
           .range(from, to)),
-        fetchAllRows((from, to) => supabase
+        fetchAllRows((from, to) => db
           .from('task_checklist_items').select('task_id, is_done')
           .order('task_id').order('id').range(from, to)),
-        fetchAllRows((from, to) => supabase
+        fetchAllRows((from, to) => db
           .from('task_comments').select('task_id')
           .order('task_id').order('id').range(from, to)),
         // Участники всех доступных задач: нужны и для колонки «Исполнитель»
         // (соисполнители второй строкой), и чтобы отличить моё соисполнение от
         // наблюдения. RLS отдаёт строки только по видимым задачам.
         // Тайбрейкер постраничной выборки — весь составной PK: своего id у таблицы нет.
-        fetchAllRows((from, to) => supabase
+        fetchAllRows((from, to) => db
           .from('task_participants').select('task_id, user_id, kind')
           .order('task_id').order('user_id').order('kind').range(from, to)),
       ])
@@ -175,13 +175,13 @@ function TasksPage() {
     try {
       const [emp, objRes, tendersRes, contractsRes] = await Promise.all([
         fetchEmployees(),
-        supabase.from('objects').select('id, name').order('name', { ascending: true }),
-        supabase.from('tenders')
+        db.from('objects').select('id, name').order('name', { ascending: true }),
+        db.from('tenders')
           .select('id, public_tender_number, work_description')
           .is('deleted_at', null)
           .order('public_tender_number', { ascending: false, nullsFirst: false })
           .limit(LINK_OPTIONS_LIMIT),
-        supabase.from('contracts')
+        db.from('contracts')
           .select('id, contract_number, work_name')
           .is('deleted_at', null)
           .order('created_at', { ascending: false })
@@ -306,7 +306,7 @@ function TasksPage() {
         status: 'new',
         sort_order: 0,
       }
-      const { data, error } = await supabase.from('tasks').insert([payload]).select('id').single()
+      const { data, error } = await db.from('tasks').insert([payload]).select('id').single()
       if (error) throw error
       await setTaskParticipants(data.id, 'coassignee', participants.coassignees)
       await setTaskParticipants(data.id, 'watcher', participants.watchers)
@@ -357,7 +357,7 @@ function TasksPage() {
   const handleDelete = async (task) => {
     if (!confirm(`Удалить задачу «${task.title}»? Её можно будет восстановить во вкладке «Удалённые».`)) return
     try {
-      const { error } = await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', task.id)
+      const { error } = await db.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', task.id)
       if (error) throw error
       await logTaskEvent(task.id, 'soft_deleted', {}, author)
       closeTaskCard()
@@ -369,7 +369,7 @@ function TasksPage() {
 
   const handleRestore = async (task) => {
     try {
-      const { error } = await supabase.from('tasks').update({ deleted_at: null }).eq('id', task.id)
+      const { error } = await db.from('tasks').update({ deleted_at: null }).eq('id', task.id)
       if (error) throw error
       await logTaskEvent(task.id, 'restored', {}, author)
       await afterChange()

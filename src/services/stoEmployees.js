@@ -7,7 +7,7 @@
 // В тендере хранится vor_sto_user_id + vor_sto_name (ФИО на момент назначения).
 // Прежнее поле vor_responsible_id (справочник «Сотрудники») не удалено: пока СТО
 // не назначен, показываем его с пометкой.
-import { supabase } from '../supabase'
+import { db } from '../api'
 
 // Колонки СТО для явных select'ов. До применения миграции их нет — запрос
 // повторяется без них (см. isMissingStoColumnError).
@@ -26,7 +26,7 @@ let cache = null
 // → [{ user_id, display_name, role, role_label }]
 export async function fetchStoEmployees({ force = false } = {}) {
   if (cache && !force) return cache
-  const { data, error } = await supabase.rpc('list_sto_employees')
+  const { data, error } = await db.rpc('list_sto_employees')
   if (error) {
     const missing = error.code === 'PGRST202' || /list_sto_employees/.test(error.message || '')
     const e = new Error(missing ? STO_MIGRATION_HINT : error.message)

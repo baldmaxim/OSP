@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as XLSX from 'xlsx'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { requestDownloadUrl } from '../services/s3'
@@ -103,16 +103,16 @@ function ContractorCabinetPage() {
     setLoadError('')
     try {
       const [participations, ownContracts, partyRows] = await Promise.all([
-        supabase
+        db
           .from('tender_counterparties')
           .select('tender_id, status, notes, tenders(id, public_tender_number, work_description, status, tender_start_date, tender_end_date, objects(name, address))')
           .eq('counterparty_id', cpId),
-        supabase
+        db
           .from('contracts')
           .select('id, display_id, contract_number, contract_date, work_name, status, contract_amount, currency, objects(name), deleted_at')
           .eq('counterparty_id', cpId)
           .is('deleted_at', null),
-        supabase
+        db
           .from('contract_counterparties')
           .select('contract_id')
           .eq('counterparty_id', cpId),
@@ -132,7 +132,7 @@ function ContractorCabinetPage() {
       const missing = extraIds.filter(id => !known.has(id))
       let extra = []
       if (missing.length > 0) {
-        const { data } = await supabase
+        const { data } = await db
           .from('contracts')
           .select('id, display_id, contract_number, contract_date, work_name, status, contract_amount, currency, objects(name), deleted_at')
           .in('id', missing)
@@ -146,7 +146,7 @@ function ContractorCabinetPage() {
 
       // По каким договорам загружен текст — там доступно согласование.
       if (allContracts.length > 0) {
-        const { data: clauses } = await supabase
+        const { data: clauses } = await db
           .from('contract_clauses')
           .select('contract_id')
           .in('contract_id', allContracts.map(c => c.id))
@@ -172,21 +172,21 @@ function ContractorCabinetPage() {
     setTenderBusy(true)
     try {
       const [items, docs, lastProposal] = await Promise.all([
-        fetchAllRows((from, to) => supabase
+        fetchAllRows((from, to) => db
           .from('tender_estimate_items')
           .select('*')
           .eq('tender_id', activeTenderId)
           .order('row_number', { ascending: true })
           .order('id', { ascending: true })
           .range(from, to)),
-        supabase
+        db
           .from('s3_documents')
           .select('id, owner_id, doc_category, file_name, s3_key, mime_type, size_bytes, created_at')
           .eq('owner_type', 'tender')
           .eq('owner_id', activeTenderId)
           .in('doc_category', ['tender_package', 'rd', 'vor_statement', 'vor'])
           .order('created_at', { ascending: false }),
-        supabase
+        db
           .from('tender_counterparty_proposals')
           .select('created_at')
           .eq('tender_id', activeTenderId)
@@ -213,7 +213,7 @@ function ContractorCabinetPage() {
   useEffect(() => {
     let cancelled = false
     if (!activeContractId) { setContractDocs([]); return }
-    supabase
+    db
       .from('s3_documents')
       .select('id, owner_id, doc_category, file_name, s3_key, mime_type, size_bytes, created_at')
       .eq('owner_type', 'contract')
@@ -275,18 +275,18 @@ function ContractorCabinetPage() {
       }
 
       // Перезагрузка КП заменяет предыдущее целиком.
-      await supabase
+      await db
         .from('tender_counterparty_proposals')
         .delete()
         .eq('tender_id', activeTender.id)
         .eq('counterparty_id', cpId)
 
       const payload = rows.map(r => ({ ...r, tender_id: activeTender.id, counterparty_id: cpId }))
-      const { error } = await supabase.from('tender_counterparty_proposals').insert(payload)
+      const { error } = await db.from('tender_counterparty_proposals').insert(payload)
       if (error) throw error
 
       // Статус участия — значение ENUM tender_counterparty_status.
-      const { error: statusError } = await supabase
+      const { error: statusError } = await db
         .from('tender_counterparties')
         .update({ status: 'proposal_provided' })
         .eq('tender_id', activeTender.id)
@@ -313,7 +313,7 @@ function ContractorCabinetPage() {
     if (!activeTender || !cpId) return
     if (!window.confirm('Отказаться от участия в этом тендере? Отметку увидит отдел сопровождения подрядчиков.')) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tender_counterparties')
         .update({ status: 'declined' })
         .eq('tender_id', activeTender.id)

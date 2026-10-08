@@ -2,7 +2,7 @@
 // с ролью снабжения (миграция 20260925). Устроено так же, как «Ответственный
 // СТО» (stoEmployees.js): список отдаёт SECURITY DEFINER-функция, в тендере
 // хранятся materials_resp_user_id + materials_resp_name.
-import { supabase } from '../supabase'
+import { db } from '../api'
 
 export const SUPPLY_MIGRATION_HINT =
   'Недоступно: в базе не применена миграция 20260925_tender_materials_priority_supply.'
@@ -18,7 +18,7 @@ let cache = null
 // → [{ user_id, display_name, role, role_label }]
 export async function fetchSupplyEmployees({ force = false } = {}) {
   if (cache && !force) return cache
-  const { data, error } = await supabase.rpc('list_supply_employees')
+  const { data, error } = await db.rpc('list_supply_employees')
   if (error) {
     const missing = error.code === 'PGRST202' || /list_supply_employees/.test(error.message || '')
     throw new Error(missing ? SUPPLY_MIGRATION_HINT : error.message)

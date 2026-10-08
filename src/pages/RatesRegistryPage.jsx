@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import * as XLSX from 'xlsx'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import FilterDropdown from '../components/FilterDropdown'
 import './RatesRegistryPage.css'
 
@@ -174,7 +174,7 @@ function SupplyRegistrySection() {
     let cancelled = false
     const run = async () => {
       try {
-        let cq = supabase.from('supply_rates_registry').select('id', { count: 'exact', head: true })
+        let cq = db.from('supply_rates_registry').select('id', { count: 'exact', head: true })
         cq = applyFilters(cq)
         const { count, error } = await cq
         if (error) throw error
@@ -195,8 +195,8 @@ function SupplyRegistrySection() {
     const loadRefs = async () => {
       try {
         const [objRes, tRes] = await Promise.all([
-          supabase.from('supply_rates_registry_filter_objects').select('object_id, object_name'),
-          supabase.from('supply_rates_registry_filter_tenders').select('tender_id, tender_desc'),
+          db.from('supply_rates_registry_filter_objects').select('object_id, object_name'),
+          db.from('supply_rates_registry_filter_tenders').select('tender_id, tender_desc'),
         ])
         if (cancelled) return
         setObjects((objRes.data || [])
@@ -225,7 +225,7 @@ function SupplyRegistrySection() {
       try {
         const from = page * pageSize
         const to = from + pageSize - 1
-        let q = supabase.from('supply_rates_registry').select(SUPPLY_SELECT_COLS)
+        let q = db.from('supply_rates_registry').select(SUPPLY_SELECT_COLS)
         q = applyFilters(q)
         q = q
           .order(SUPPLY_SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
@@ -269,7 +269,7 @@ function SupplyRegistrySection() {
     setExporting(true)
     try {
       const rowsAll = await fetchAllRows((from, to) => {
-        let q = supabase.from('supply_rates_registry').select(SUPPLY_SELECT_COLS)
+        let q = db.from('supply_rates_registry').select(SUPPLY_SELECT_COLS)
         q = applyFilters(q)
         return q
           .order(SUPPLY_SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
@@ -537,7 +537,7 @@ function RatesRegistryPage() {
   // refresh_rates_registry в app_settings). Запрос лёгкий и не мешает данным.
   useEffect(() => {
     let cancelled = false
-    supabase
+    db
       .from('app_settings')
       .select('value')
       .eq('key', 'rates_registry_refreshed_at')
@@ -555,9 +555,9 @@ function RatesRegistryPage() {
     const loadRefs = async () => {
       try {
         const [objRes, cpRes, tRes] = await Promise.all([
-          supabase.from('kp_rates_registry_filter_objects').select('object_id, object_name'),
-          supabase.from('kp_rates_registry_filter_counterparties').select('counterparty_id, counterparty_name'),
-          supabase.from('kp_rates_registry_filter_tenders').select('tender_id, tender_desc'),
+          db.from('kp_rates_registry_filter_objects').select('object_id, object_name'),
+          db.from('kp_rates_registry_filter_counterparties').select('counterparty_id, counterparty_name'),
+          db.from('kp_rates_registry_filter_tenders').select('tender_id, tender_desc'),
         ])
         if (cancelled) return
         setObjects((objRes.data || [])
@@ -596,7 +596,7 @@ function RatesRegistryPage() {
         // Данные — без count: точный подсчёт по дедуп-вью иногда упирается в
         // statement_timeout и раньше ронял всю выборку. Теперь считаем отдельно
         // и best-effort — таймаут count не мешает показать строки.
-        let q = supabase
+        let q = db
           .from('kp_rates_registry')
           .select(SELECT_COLS)
           .eq('item_type', itemType)
@@ -637,7 +637,7 @@ function RatesRegistryPage() {
     const run = async () => {
       try {
         const mk = (type) => applyFilters(
-          supabase.from('kp_rates_registry').select('id', { count: 'exact', head: true }).eq('item_type', type)
+          db.from('kp_rates_registry').select('id', { count: 'exact', head: true }).eq('item_type', type)
         )
         const [m, w] = await Promise.all([mk('material'), mk('work')])
         if (cancelled) return
@@ -689,7 +689,7 @@ function RatesRegistryPage() {
     setExporting(true)
     try {
       const rowsAll = await fetchAllRows((from, to) => {
-        let q = supabase.from('kp_rates_registry').select(SELECT_COLS)
+        let q = db.from('kp_rates_registry').select(SELECT_COLS)
         q = applyFilters(q)
         return q
           .order(SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
@@ -728,7 +728,7 @@ function RatesRegistryPage() {
   const handleRefreshRegistry = async () => {
     setRefreshing(true)
     try {
-      const { data, error } = await supabase.rpc('refresh_rates_registry')
+      const { data, error } = await db.rpc('refresh_rates_registry')
       if (error) throw error
       setRefreshedAt(data || new Date().toISOString())
       // Перечитываем текущую страницу: заставляем эффект отработать заново.

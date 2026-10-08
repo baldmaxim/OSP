@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import './DocumentCheckPage.css'
 
@@ -67,13 +67,13 @@ function DocumentCheckPage() {
         // если FK отсутствует или schema cache PostgREST не перезагружен после миграции,
         // запрос падает с "Could not find a relationship". Собираем ответственного на клиенте
         // из загруженного списка contacts.
-        supabase
+        db
           .from('document_check_requests')
           .select('*, objects(name), counterparties(name)')
           .order('created_at', { ascending: true }),
-        supabase.from('objects').select('id, name').order('name'),
-        supabase.from('counterparties').select('id, name').eq('status', 'active').order('name'),
-        supabase.from('contacts').select('id, full_name, position').order('full_name'),
+        db.from('objects').select('id, name').order('name'),
+        db.from('counterparties').select('id, name').eq('status', 'active').order('name'),
+        db.from('contacts').select('id, full_name, position').order('full_name'),
       ])
       if (reqRes.error) throw reqRes.error
       const contactsList = contactsRes.data || []
@@ -104,7 +104,7 @@ function DocumentCheckPage() {
     if (!requestId) return
     try {
       const role = localStorage.getItem('userRole') || null
-      await supabase.from('document_check_request_history').insert([{
+      await db.from('document_check_request_history').insert([{
         request_id: requestId,
         event_type: payload.event_type,
         from_status: payload.from_status || null,
@@ -161,7 +161,7 @@ function DocumentCheckPage() {
     }
     try {
       if (editing) {
-        const { error } = await supabase
+        const { error } = await db
           .from('document_check_requests')
           .update(payload)
           .eq('id', editing.id)
@@ -192,7 +192,7 @@ function DocumentCheckPage() {
           })
         }
       } else {
-        const { data: created, error } = await supabase
+        const { data: created, error } = await db
           .from('document_check_requests')
           .insert([{ ...payload, status: 'new' }])
           .select()
@@ -217,7 +217,7 @@ function DocumentCheckPage() {
   const handleDelete = async (req) => {
     if (!window.confirm(`Удалить заявку «${req.doc_type} № ${req.doc_number}»?`)) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('document_check_requests')
         .delete()
         .eq('id', req.id)
@@ -233,7 +233,7 @@ function DocumentCheckPage() {
     const req = requests.find(r => r.id === reqId)
     if (!req || req.status === newStatus) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('document_check_requests')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', reqId)
@@ -258,7 +258,7 @@ function DocumentCheckPage() {
     const newName = newContact?.full_name || null
     if (oldName === newName) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('document_check_requests')
         .update({ responsible_contact_id: value, updated_at: new Date().toISOString() })
         .eq('id', req.id)
@@ -288,7 +288,7 @@ function DocumentCheckPage() {
     setHistoryOpen(true)
     setHistoryLoading(true)
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('document_check_request_history')
         .select('*')
         .eq('request_id', req.id)

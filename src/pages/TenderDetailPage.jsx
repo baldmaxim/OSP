@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
 import { normName, supplyKey } from '../utils/supplyRateHelpers'
@@ -737,7 +737,7 @@ function TenderDetailPage() {
 
   const refreshDocCount = async (category, setCount) => {
     try {
-      const { count, error } = await supabase
+      const { count, error } = await db
         .from('s3_documents')
         .select('id', { count: 'exact', head: true })
         .eq('owner_type', 'tender')
@@ -764,8 +764,8 @@ function TenderDetailPage() {
   const refreshTabCounts = async () => {
     try {
       const [supply, audit] = await Promise.all([
-        supabase.from('tender_vor_supply_rates').select('id', { count: 'exact', head: true }).eq('tender_id', tenderId),
-        supabase.from('tender_audit_log').select('id', { count: 'exact', head: true }).eq('tender_id', tenderId),
+        db.from('tender_vor_supply_rates').select('id', { count: 'exact', head: true }).eq('tender_id', tenderId),
+        db.from('tender_audit_log').select('id', { count: 'exact', head: true }).eq('tender_id', tenderId),
       ])
       setSupplyRatesCount(supply.count || 0)
       setAuditLogCount(audit.count || 0)
@@ -816,7 +816,7 @@ function TenderDetailPage() {
   // по нему одному неоднозначен — на границах страниц строки терялись/дублировались.
   const fetchEstimateItems = async () => {
     try {
-      const all = await fetchAllRowsParallel((from, to, withCount) => supabase
+      const all = await fetchAllRowsParallel((from, to, withCount) => db
         .from('tender_estimate_items')
         .select('*', withCount ? { count: 'exact' } : undefined)
         .eq('tender_id', tenderId)
@@ -837,7 +837,7 @@ function TenderDetailPage() {
       // ВОР (тысячи позиций) заметно больше — без пагинации загружалась только 1000,
       // из-за чего часть материалов оставалась без цены снабжения.
       // Тай-брейк по id — стабильный порядок между страницами.
-      const rows = await fetchAllRowsParallel((from, to, withCount) => supabase
+      const rows = await fetchAllRowsParallel((from, to, withCount) => db
         .from('tender_vor_supply_rates')
         .select('*', withCount ? { count: 'exact' } : undefined)
         .eq('tender_id', tenderId)
@@ -1039,7 +1039,7 @@ function TenderDetailPage() {
     const docName = (estDocName || '').trim() || 'Основная смета'
     setEstimateSaving(true)
     try {
-      const { error: delErr } = await supabase
+      const { error: delErr } = await db
         .from('tender_estimate_items')
         .delete()
         .eq('tender_id', tenderId)
@@ -1055,13 +1055,13 @@ function TenderDetailPage() {
       let insErr = null
       for (let i = 0; i < payload.length; i += CHUNK) {
         const chunk = payload.slice(i, i + CHUNK)
-        let { error: chunkErr } = await supabase
+        let { error: chunkErr } = await db
           .from('tender_estimate_items')
           .insert(chunk)
         // Подстраховка: миграция outline_level ещё не применена — сохраняем без него
         if (chunkErr && /outline_level/i.test(chunkErr.message || '')) {
           const stripped = chunk.map(({ outline_level, ...rest }) => rest) // eslint-disable-line no-unused-vars
-          const retry = await supabase.from('tender_estimate_items').insert(stripped)
+          const retry = await db.from('tender_estimate_items').insert(stripped)
           chunkErr = retry.error
         }
         // task 348: подстраховка для миграции original_row_number VARCHAR(20) → TEXT.
@@ -1073,7 +1073,7 @@ function TenderDetailPage() {
               ? String(it.original_row_number).slice(0, 20)
               : it.original_row_number,
           }))
-          const retry = await supabase.from('tender_estimate_items').insert(truncated)
+          const retry = await db.from('tender_estimate_items').insert(truncated)
           chunkErr = retry.error
         }
         if (chunkErr) {
@@ -1103,7 +1103,7 @@ function TenderDetailPage() {
       : `Удалить ВОР «${selectedDocName}»? Остальные документы останутся.`
     if (!window.confirm(msg)) return
     try {
-      let q = supabase.from('tender_estimate_items').delete().eq('tender_id', tenderId)
+      let q = db.from('tender_estimate_items').delete().eq('tender_id', tenderId)
       if (!isAll) q = q.eq('estimate_name', selectedDocName)
       const { error } = await q
       if (error) throw error
@@ -1254,14 +1254,14 @@ function TenderDetailPage() {
           unit: it.unit || null,
           supply_price: it.supply_price,
         }))
-        const { error } = await supabase.from('tender_vor_supply_rates').insert(payload)
+        const { error } = await db.from('tender_vor_supply_rates').insert(payload)
         if (error) errors.push(error.message)
         else added = payload.length
       }
       for (let idx = 0; idx < conflictItems.length; idx++) {
         const it = conflictItems[idx]
         if (supplyConflictDecisions[idx] === 'update') {
-          const { error } = await supabase
+          const { error } = await db
             .from('tender_vor_supply_rates')
             .update({ unit: it.unit || null, supply_price: it.supply_price })
             .eq('id', it.existingId)
@@ -1303,7 +1303,7 @@ function TenderDetailPage() {
     if (supplySelectedDoc === 'all') return
     if (!window.confirm(`Удалить всю стоимость материалов от снабжения для ВОР «${supplySelectedDoc}»?`)) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tender_vor_supply_rates')
         .delete()
         .eq('tender_id', tenderId)
@@ -1593,7 +1593,7 @@ function TenderDetailPage() {
     if (!tenderId || participants.length === 0) return
     const map = {}
     try {
-      const { data: files } = await supabase
+      const { data: files } = await db
         .from('tender_proposal_files')
         .select('counterparty_id, created_at')
         .eq('tender_id', tenderId)
@@ -1606,7 +1606,7 @@ function TenderDetailPage() {
         .map(p => p.counterparty_id)
         .filter(id => id && !map[id])
       const rows = await Promise.all(withoutFile.map(id =>
-        supabase
+        db
           .from('tender_counterparty_proposals')
           .select('counterparty_id, created_at')
           .eq('tender_id', tenderId)
@@ -1627,7 +1627,7 @@ function TenderDetailPage() {
   const fetchTenderData = async () => {
     setLoading(true)
     try {
-      const { data: tenderData, error: tenderError } = await supabase
+      const { data: tenderData, error: tenderError } = await db
         .from('tenders')
         .select('*, objects(name, status, address, map_link), responsible_contact:contacts!responsible_contact_id(id, full_name, position, phone), winner:counterparties!winner_counterparty_id(id, name), tender_winners(counterparty_id, scope_note, counterparties(id, name)), cost_plan_responsible:contacts!cost_plan_responsible_id(id, full_name), vor_responsible:contacts!vor_responsible_id(id, full_name), materials_tender:tenders!parent_tender_id(id, status, materials_proposal_deadline, materials_proposal_link, responsible_contact:contacts!responsible_contact_id(id, full_name))')
         .eq('id', tenderId)
@@ -1644,7 +1644,7 @@ function TenderDetailPage() {
       setTender(normalizedTender)
       setNotesDraft(tenderData?.notes || '')
 
-      const { data: counterpartiesData, error: cpError } = await supabase
+      const { data: counterpartiesData, error: cpError } = await db
         .from('tender_counterparties')
         .select(`
           *,
@@ -1680,7 +1680,7 @@ function TenderDetailPage() {
       const PAGE = 1000
       const rows = []
       for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('tender_audit_log')
           .select('*')
           .eq('tender_id', tenderId)
@@ -1711,7 +1711,7 @@ function TenderDetailPage() {
       setNotesSaving(true)
       // .select() отличает успешную запись от «0 строк» (истёкшая сессия: запрос уходит
       // как anon, RLS молча отсекает строку, ошибки при этом нет).
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('tenders')
         .update({ notes: newValue || null })
         .eq('id', tender.id)
@@ -1732,7 +1732,7 @@ function TenderDetailPage() {
 
       const role = localStorage.getItem('userRole') || null
       // История вторична: ошибку пишем в консоль, пользователя не тревожим.
-      const { error: logError } = await supabase.from('tender_audit_log').insert([{
+      const { error: logError } = await db.from('tender_audit_log').insert([{
         tender_id: tender.id,
         event_type: 'field_updated',
         field_name: 'notes',
@@ -1852,7 +1852,7 @@ function TenderDetailPage() {
   const logParticipantEvent = async (tenderCounterpartyId, eventType, payload) => {
     try {
       const role = localStorage.getItem('userRole') || null
-      const { error } = await supabase.from('tender_audit_log').insert([{
+      const { error } = await db.from('tender_audit_log').insert([{
         tender_id: tenderId,
         event_type: eventType,
         field_name: payload.fieldName,
@@ -1928,7 +1928,7 @@ function TenderDetailPage() {
       const PAGE = 1000
       const rows = []
       for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('counterparties')
           .select('id, name, work_type, inn, department')
           .eq('status', 'active')
@@ -1976,7 +1976,7 @@ function TenderDetailPage() {
       // — и свежедобавленные оказывались первыми.
       // Максимум берём из базы: другой инженер мог переставить участников, пока
       // окно выбора было открыто.
-      const { data: lastRow } = await supabase
+      const { data: lastRow } = await db
         .from('tender_counterparties')
         .select('sort_order')
         .eq('tender_id', tenderId)
@@ -1991,7 +1991,7 @@ function TenderDetailPage() {
         sort_order: maxOrder + (i + 1) * 10,
       }))
 
-      const { error } = await supabase
+      const { error } = await db
         .from('tender_counterparties')
         .insert(participantsToAdd)
 
@@ -2013,7 +2013,7 @@ function TenderDetailPage() {
         }
       })
       if (logRows.length > 0) {
-        await supabase.from('tender_audit_log').insert(logRows)
+        await db.from('tender_audit_log').insert(logRows)
       }
 
       setShowAddParticipantModal(false)
@@ -2041,7 +2041,7 @@ function TenderDetailPage() {
       .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)))
     try {
       await Promise.all(pairs.map(p =>
-        supabase.from('tender_counterparties').update({ sort_order: p.sort_order }).eq('id', p.id)
+        db.from('tender_counterparties').update({ sort_order: p.sort_order }).eq('id', p.id)
       ))
     } catch (err) {
       alert('Не удалось сохранить порядок участников: ' + (err.message || err))
@@ -2054,7 +2054,7 @@ function TenderDetailPage() {
     const oldStatus = tc?.status || 'request_sent'
     const cpName = tc?.counterparties?.name || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tender_counterparties')
         .update({ status: newStatus })
         .eq('id', tenderCounterpartyId)
@@ -2094,7 +2094,7 @@ function TenderDetailPage() {
     const oldNotes = sanitizeUserText(tc?.notes || '') || ''
     const cpName = tc?.counterparties?.name || null
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('tender_counterparties')
         .update({ notes: cleanNotes || null })
         .eq('id', tenderCounterpartyId)

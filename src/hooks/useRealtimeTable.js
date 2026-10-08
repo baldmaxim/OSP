@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '../supabase'
+import { subscribeTable } from '../api'
 
-// Подписка на изменения таблицы через Supabase Realtime.
+// Подписка на изменения таблицы (сейчас — Supabase Realtime, адаптер api/realtime.js).
 //
 // Зачем отдельный хук: над реестром тендеров одновременно работают несколько
 // инженеров, и правку коллеги было видно только после перезагрузки страницы.
@@ -46,23 +46,21 @@ export function useRealtimeTable({
     }
 
     const channelName = `rt:${schema}.${table}${filter ? `:${filter}` : ''}:${Math.random().toString(36).slice(2, 8)}`
-    const channel = supabase
-      .channel(channelName)
-      .on('postgres_changes',
-        { event: '*', schema, table, ...(filter ? { filter } : {}) },
-        (payload) => {
-          if (payload.eventType === 'UPDATE') {
-            if (onUpdateRef.current) onUpdateRef.current(payload.new, payload.old)
-            else scheduleStructural()
-          } else {
-            scheduleStructural()
-          }
-        })
-      .subscribe((status) => setConnected(status === 'SUBSCRIBED'))
+    const unsubscribe = subscribeTable(
+      { channelName, schema, table, filter },
+      (payload) => {
+        if (payload.eventType === 'UPDATE') {
+          if (onUpdateRef.current) onUpdateRef.current(payload.new, payload.old)
+          else scheduleStructural()
+        } else {
+          scheduleStructural()
+        }
+      },
+      (status) => setConnected(status === 'SUBSCRIBED'))
 
     return () => {
       if (timer.id) clearTimeout(timer.id)
-      supabase.removeChannel(channel)
+      unsubscribe()
       setConnected(false)
     }
   }, [table, schema, filter, enabled, debounceMs])

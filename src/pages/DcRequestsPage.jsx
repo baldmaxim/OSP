@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
 import S3DocumentPreview from '../components/S3DocumentPreview'
@@ -489,7 +489,7 @@ function DcRequestsPage() {
   const fetchRequests = async () => {
     try {
       setLoading(true)
-      let query = supabase
+      let query = db
         .from('dc_requests')
         .select(`
           *,
@@ -521,7 +521,7 @@ function DcRequestsPage() {
   const fetchObjects = async () => {
     // Оба отдела: основное строительство И гарантийный отдел. Сортируем по статусу
     // ('main_construction' < 'warranty_service'), затем по имени — в пикере ОС идут первыми.
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('objects')
       .select('id, name, status')
       .order('status', { ascending: true })
@@ -537,7 +537,7 @@ function DcRequestsPage() {
     const rows = []
     try {
       for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('counterparties')
           .select('id, name, inn')
           .is('deleted_at', null)   // удалённых не предлагаем к выбору
@@ -555,7 +555,7 @@ function DcRequestsPage() {
   }
 
   const fetchContacts = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('contacts')
       .select('id, full_name')
       .order('full_name', { ascending: true })
@@ -565,7 +565,7 @@ function DcRequestsPage() {
   // task 324: ссылка на общую таблицу с отделами.
   const fetchExternalLink = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('app_settings')
         .select('value')
         .eq('key', 'dc_requests_external_link')
@@ -587,7 +587,7 @@ function DcRequestsPage() {
     e.preventDefault()
     const value = linkInput.trim() || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('app_settings')
         .upsert({ key: 'dc_requests_external_link', value, updated_at: new Date().toISOString() })
       if (error) throw error
@@ -602,7 +602,7 @@ function DcRequestsPage() {
   const fetchAllDocs = async () => {
     try {
       // Хронологический порядок: первый загруженный — наверху, новые — снизу.
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('s3_documents')
         .select('*')
         .eq('owner_type', 'dc_request')
@@ -697,7 +697,7 @@ function DcRequestsPage() {
   const logDcEvent = async (dcRequestId, eventType, payload = {}) => {
     if (!dcRequestId || !eventType) return
     try {
-      await supabase.from('dc_request_audit_log').insert([{
+      await db.from('dc_request_audit_log').insert([{
         dc_request_id: dcRequestId,
         event_type: eventType,
         field_name: payload.fieldName || null,
@@ -746,7 +746,7 @@ function DcRequestsPage() {
     setHistoryLoading(true)
     setHistoryRows([])
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('dc_request_audit_log')
         .select('*')
         .eq('dc_request_id', req.id)
@@ -796,7 +796,7 @@ function DcRequestsPage() {
       if (editing) {
         // Статус в payload не кладём: им управляет только чип в таблице. Иначе
         // форма, открытая до смены статуса, вернула бы прежнее значение.
-        const { error } = await supabase.from('dc_requests').update(payload).eq('id', editing.id)
+        const { error } = await db.from('dc_requests').update(payload).eq('id', editing.id)
         if (error) throw error
         // История: по одной записи на каждое реально изменившееся поле («было → стало»).
         // Пишем параллельно: последовательные await по каждому полю давали столько
@@ -823,7 +823,7 @@ function DcRequestsPage() {
         await Promise.all(auditWrites)
       } else {
         // .select('id') нужен, чтобы записать в историю событие создания.
-        const { data, error } = await supabase.from('dc_requests').insert([{
+        const { data, error } = await db.from('dc_requests').insert([{
           ...payload,
           // Новая заявка всегда идёт на сверку с договором — выбора нет.
           status: 'contract_check',
@@ -851,7 +851,7 @@ function DcRequestsPage() {
     const next = newDate || null
     const prev = requests.find(r => r.id === id)?.expected_approval_date ?? null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('dc_requests')
         .update({ expected_approval_date: next, updated_at: new Date().toISOString() })
         .eq('id', id)
@@ -905,7 +905,7 @@ function DcRequestsPage() {
     if (nextStatus) patch.status = nextStatus
     setVerdictSaving(true)
     try {
-      const { error } = await supabase.from('dc_requests').update(patch).eq('id', req.id)
+      const { error } = await db.from('dc_requests').update(patch).eq('id', req.id)
       if (error) throw error
       setRequests(prev => prev.map(r => r.id === req.id ? { ...r, ...patch } : r))
       if (prevVerdict !== verdictModal.verdict) {
@@ -957,7 +957,7 @@ function DcRequestsPage() {
       return
     }
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('dc_requests')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', id)
@@ -984,7 +984,7 @@ function DcRequestsPage() {
     if (current && (current[field] ?? null) === num) return // без изменений
     const prevValue = current?.[field] ?? null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('dc_requests')
         .update({ [field]: num, updated_at: new Date().toISOString() })
         .eq('id', id)
@@ -1002,7 +1002,7 @@ function DcRequestsPage() {
     const prevValue = requests.find(r => r.id === id)?.material_type ?? null
     if (prevValue === next) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('dc_requests')
         .update({ material_type: next, updated_at: new Date().toISOString() })
         .eq('id', id)
@@ -1020,7 +1020,7 @@ function DcRequestsPage() {
     const prevValue = requests.find(r => r.id === id)?.ds_type ?? null
     if (prevValue === next) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('dc_requests')
         .update({ ds_type: next, updated_at: new Date().toISOString() })
         .eq('id', id)
@@ -1044,7 +1044,7 @@ function DcRequestsPage() {
     if (prevValue === next) { setPathEdit(null); return }
     setSavingPath(true)
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('dc_requests')
         .update({ folder_path: next, updated_at: new Date().toISOString() })
         .eq('id', id)
@@ -1063,7 +1063,7 @@ function DcRequestsPage() {
   const handleDelete = async (id) => {
     if (!window.confirm('Переместить заявку в «Удаленные»?')) return
     try {
-      const { error } = await supabase.from('dc_requests')
+      const { error } = await db.from('dc_requests')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', id)
       if (error) throw error
@@ -1077,7 +1077,7 @@ function DcRequestsPage() {
   // Восстановление из «Удаленных» (доступно редактору).
   const handleRestore = async (id) => {
     try {
-      const { error } = await supabase.from('dc_requests')
+      const { error } = await db.from('dc_requests')
         .update({ deleted_at: null })
         .eq('id', id)
       if (error) throw error
@@ -1096,7 +1096,7 @@ function DcRequestsPage() {
       for (const d of docs) {
         try { await deleteDocument(d) } catch { /* best effort */ }
       }
-      const { error } = await supabase.from('dc_requests').delete().eq('id', id)
+      const { error } = await db.from('dc_requests').delete().eq('id', id)
       if (error) throw error
       fetchRequests()
       fetchAllDocs()
@@ -1122,7 +1122,7 @@ function DcRequestsPage() {
       const maxOrder = (req?.dc_request_tasks || []).reduce(
         (m, t) => Math.max(m, t.order_number || 0), 0
       )
-      const { error } = await supabase.from('dc_request_tasks').insert([{
+      const { error } = await db.from('dc_request_tasks').insert([{
         request_id: requestId,
         task_text: text,
         order_number: maxOrder + 1,
@@ -1152,7 +1152,7 @@ function DcRequestsPage() {
           patch.responded_at = null
         }
       }
-      const { error } = await supabase
+      const { error } = await db
         .from('dc_request_tasks')
         .update(patch)
         .eq('id', taskId)
@@ -1171,7 +1171,7 @@ function DcRequestsPage() {
   const handleDeleteTask = async (taskId) => {
     if (!window.confirm('Удалить задачу?')) return
     try {
-      const { error } = await supabase.from('dc_request_tasks').delete().eq('id', taskId)
+      const { error } = await db.from('dc_request_tasks').delete().eq('id', taskId)
       if (error) throw error
       fetchRequests()
     } catch (err) {

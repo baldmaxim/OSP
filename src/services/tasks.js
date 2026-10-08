@@ -1,4 +1,4 @@
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL, formatDateRu } from '../utils/taskHelpers'
 
 // task 433: работа с задачами — запросы и запись истории в одном месте,
@@ -44,7 +44,7 @@ export function taskValueText(field, value, ctx = {}) {
 // Запись в историю. Best-effort: сбой лога не должен ронять само изменение задачи.
 export async function logTaskEvent(taskId, eventType, payload = {}, author = {}) {
   try {
-    await supabase.from('task_audit_log').insert([{
+    await db.from('task_audit_log').insert([{
       task_id: taskId,
       event_type: eventType,
       field_name: payload.fieldName || null,
@@ -70,7 +70,7 @@ export async function updateTask(task, updates, { author = {}, ctx = {} } = {}) 
     if (patch.status !== 'done' && task.status === 'done') patch.completed_at = null
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tasks')
     .update(patch)
     .eq('id', task.id)
@@ -97,7 +97,7 @@ export async function updateTask(task, updates, { author = {}, ctx = {} } = {}) 
 // Пересчёт порядка карточек в колонке доски после перетаскивания.
 // Пишем шагом 10 — чтобы будущие вставки не требовали переписывать всю колонку.
 export async function reorderTasks(orderedIds) {
-  const updates = orderedIds.map((id, index) => supabase
+  const updates = orderedIds.map((id, index) => db
     .from('tasks')
     .update({ sort_order: index * 10 })
     .eq('id', id))
@@ -109,14 +109,14 @@ export async function reorderTasks(orderedIds) {
 // Участники задачи: полностью переписываем набор нужного вида (соисполнители
 // или наблюдатели) — их единицы, диффить дороже, чем перезаписать.
 export async function setTaskParticipants(taskId, kind, userIds) {
-  const { error: delError } = await supabase
+  const { error: delError } = await db
     .from('task_participants')
     .delete()
     .eq('task_id', taskId)
     .eq('kind', kind)
   if (delError) throw delError
   if (!userIds?.length) return
-  const { error } = await supabase
+  const { error } = await db
     .from('task_participants')
     .insert(userIds.map(user_id => ({ task_id: taskId, user_id, kind })))
   if (error) throw error

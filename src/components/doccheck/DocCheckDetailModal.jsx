@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../../supabase'
+import { db } from '../../api'
 import S3DocumentList from '../S3DocumentList'
 import {
   DOC_CHECK_STATUSES,
@@ -39,7 +39,7 @@ export default function DocCheckDetailModal({ request, canEdit, onStatusChange, 
     let cancelled = false
     const load = async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('doc_check_request_audit_log')
           .select('*')
           .eq('request_id', request.id)

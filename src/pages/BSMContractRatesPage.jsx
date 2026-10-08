@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
@@ -45,7 +45,7 @@ function BSMContractRatesPage() {
   const fetchExistingBsmList = async () => {
     setBsmListLoading(true)
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('bsm_contract_rates')
         .select(`
           object_id,
@@ -77,7 +77,7 @@ function BSMContractRatesPage() {
   }
 
   const fetchObjects = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('objects')
       .select('id, name')
       .order('name')
@@ -92,7 +92,7 @@ function BSMContractRatesPage() {
     // Постранично: материалов на объекте бывает больше 1000, а PostgREST
     // молча отдаёт только первую тысячу — часть расценок просто исчезала.
     try {
-      const data = await fetchAllRows((from, to) => supabase
+      const data = await fetchAllRows((from, to) => db
         .from('bsm_contract_rates')
         .select('*')
         .eq('object_id', selectedObjectId)
@@ -160,7 +160,7 @@ function BSMContractRatesPage() {
 
     if (!confirm(`Удалить все расценки БСМ для объекта "${objName}"?`)) return
 
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contract_rates')
       .delete()
       .eq('object_id', objectId)
@@ -179,7 +179,7 @@ function BSMContractRatesPage() {
       return
     }
 
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contract_rates')
       .insert({
         object_id: selectedObjectId,
@@ -202,7 +202,7 @@ function BSMContractRatesPage() {
   }
 
   const handleUpdateRate = async (id, updates) => {
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contract_rates')
       .update(updates)
       .eq('id', id)
@@ -218,7 +218,7 @@ function BSMContractRatesPage() {
   const handleDeleteRate = async (id) => {
     if (!confirm('Удалить эту расценку?')) return
 
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contract_rates')
       .delete()
       .eq('id', id)
@@ -234,7 +234,7 @@ function BSMContractRatesPage() {
     if (!confirm(`Удалить ${selectedRates.size} выбранных расценок?`)) return
 
     const idsToDelete = Array.from(selectedRates)
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contract_rates')
       .delete()
       .in('id', idsToDelete)
@@ -333,7 +333,7 @@ function BSMContractRatesPage() {
         let errors = []
 
         for (const rate of newRates) {
-          const { data: existing, error: searchError } = await supabase
+          const { data: existing, error: searchError } = await db
             .from('bsm_contract_rates')
             .select('id')
             .eq('object_id', rate.object_id)
@@ -346,7 +346,7 @@ function BSMContractRatesPage() {
           }
 
           if (existing) {
-            const { error: updateError } = await supabase
+            const { error: updateError } = await db
               .from('bsm_contract_rates')
               .update({
                 unit: rate.unit,
@@ -360,7 +360,7 @@ function BSMContractRatesPage() {
               updatedCount++
             }
           } else {
-            const { error: insertError } = await supabase
+            const { error: insertError } = await db
               .from('bsm_contract_rates')
               .insert(rate)
 

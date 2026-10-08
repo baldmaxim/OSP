@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as XLSX from 'xlsx'
-import { supabase } from '../../supabase'
+import { db } from '../../api'
 import { fetchAllRows } from '../../utils/fetchAllRows'
 
 // Отчёт «Работа инженеров в тендерах».
@@ -104,7 +104,7 @@ function EngineersActivity({ scopedObjectIds = [] }) {
       const fromIso = new Date(`${dateFrom}T00:00:00`).toISOString()
       const toIso = shiftDays(new Date(`${dateTo}T00:00:00`), 1).toISOString()
 
-      const data = await fetchAllRows((from, to) => supabase
+      const data = await fetchAllRows((from, to) => db
         .from('tender_audit_log')
         .select(`
           id, tender_id, event_type, field_name, old_value, new_value, description,

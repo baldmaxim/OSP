@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from './RoleContext'
 
 // Уведомления о приближающемся завершении тендеров и договоров.
@@ -101,7 +101,7 @@ export function NotificationsProvider({ children }) {
       // Тендеры и договоры независимы — грузим параллельно (быстрее старт приложения).
       let tendersQ = null
       if (canTenders) {
-        tendersQ = supabase
+        tendersQ = db
           .from('tenders')
           .select('id, public_tender_number, work_description, tender_end_date, status, object_id, objects(name)')
           .is('deleted_at', null)
@@ -113,7 +113,7 @@ export function NotificationsProvider({ children }) {
         if (scopedObjectIds.length > 0) tendersQ = tendersQ.in('object_id', scopedObjectIds)
       }
       const contractsQ = canContracts
-        ? supabase
+        ? db
           .from('contracts')
           .select('id, contract_number, work_name, signed_date, status, objects(name)')
           .is('deleted_at', null)
@@ -130,7 +130,7 @@ export function NotificationsProvider({ children }) {
       if (canTenders) {
         const reviewSince = todayMidnight()
         reviewSince.setDate(reviewSince.getDate() - REVIEW_LOOKBACK_DAYS)
-        kpReviewQ = supabase
+        kpReviewQ = db
           .from('tender_proposal_files')
           .select('id, tender_id, review_status, review_note, reviewed_at, remarks_sent, remarks_send_required, summary_added, counterparties(name), tenders!inner(work_description, object_id, objects(name), responsible_contact:contacts!responsible_contact_id(full_name))')
           .eq('file_kind', 'commercial_proposal')
@@ -146,7 +146,7 @@ export function NotificationsProvider({ children }) {
       // ждут МОЕЙ приёмки (я — постановщик, исполнитель сдал работу). Два простых
       // запроса вместо одного с or(and(...)) — читаемее и надёжнее.
       const myTasksQ = canTasks && userId
-        ? supabase
+        ? db
           .from('tasks')
           .select('id, title, status, due_date, objects(name)')
           .is('deleted_at', null)
@@ -158,7 +158,7 @@ export function NotificationsProvider({ children }) {
           .limit(1000)
         : null
       const reviewTasksQ = canTasks && userId
-        ? supabase
+        ? db
           .from('tasks')
           .select('id, title, status, due_date, updated_at, assignee_user_id, objects(name)')
           .is('deleted_at', null)

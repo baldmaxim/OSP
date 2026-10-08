@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import { vorResponsibleName, withStoColumns } from '../services/stoEmployees'
@@ -78,7 +78,7 @@ function SummaryPage() {
       // Постранично и БЕЗ удалённых: раньше сводка показывала тендеры из вкладки
       // «Удалённые» и молча обрезалась на 1000 строк.
       const makeQuery = (stoCols) => (from, to) => {
-        let q = supabase
+        let q = db
         .from('tenders')
         .select(`
           id, object_id, status, start_date, end_date,

@@ -70,7 +70,8 @@ describe('ПСДЦ: интерфейс', { skip, timeout: 240000 }, () => {
           if (!importer) return null
           const resolved = path.resolve(path.dirname(importer), source)
           const norm = (p) => p.replace(/\\/g, '/').replace(/\.(js|jsx)$/, '')
-          if (norm(resolved) === norm(path.join(ROOT, 'src', 'supabase')) || norm(resolved) === norm(path.join(ROOT, 'src', 'supabase', 'index'))) {
+          // Единственный клиент — src/api/supabaseClient.js (его импортируют адаптеры src/api).
+          if (norm(resolved) === norm(path.join(ROOT, 'src', 'api', 'supabaseClient'))) {
             return path.join(UI, 'fake-supabase.js')
           }
           if (norm(resolved) === norm(path.join(ROOT, 'src', 'contexts', 'RoleContext'))) {

@@ -4,7 +4,7 @@
 // vor_end_date, vor_link), поэтому страница «ВОРы и РД» ведёт заявки и тендеры
 // одними и теми же обработчиками — отличается только таблица.
 // Файлы — s3_documents с owner_type='general', owner_id = id заявки.
-import { supabase } from '../supabase'
+import { db } from '../api'
 
 export const VOR_REQUESTS_TABLE = 'vor_requests'
 export const REQUEST_RD_CATEGORY = 'vor_request_rd'
@@ -27,7 +27,7 @@ export function isMissingVorRequestsTable(err) {
 // → { rows, supported }; supported=false — таблицы ещё нет.
 export async function fetchVorRequests(department) {
   const departments = Array.isArray(department) ? department : [department]
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from(VOR_REQUESTS_TABLE)
     .select('*, objects(name, status)')
     .in('department', departments)
@@ -41,7 +41,7 @@ export async function fetchVorRequests(department) {
 }
 
 export async function createVorRequest(payload) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from(VOR_REQUESTS_TABLE)
     .insert([payload])
     .select('*, objects(name, status)')
@@ -51,7 +51,7 @@ export async function createVorRequest(payload) {
 }
 
 export async function updateVorRequest(id, patch) {
-  const { error } = await supabase.from(VOR_REQUESTS_TABLE).update(patch).eq('id', id)
+  const { error } = await db.from(VOR_REQUESTS_TABLE).update(patch).eq('id', id)
   if (error) throw error
 }
 
@@ -62,7 +62,7 @@ export async function fetchVorRequestDocCounts(ids) {
   const chunks = []
   for (let i = 0; i < ids.length; i += 150) chunks.push(ids.slice(i, i + 150))
   const parts = await Promise.all(chunks.map(async (chunk) => {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('s3_documents')
       .select('owner_id')
       .eq('owner_type', REQUEST_OWNER_TYPE)
@@ -77,7 +77,7 @@ export async function fetchVorRequestDocCounts(ids) {
 }
 
 export async function countVorRequestDocs(id) {
-  const { count, error } = await supabase
+  const { count, error } = await db
     .from('s3_documents')
     .select('id', { count: 'exact', head: true })
     .eq('owner_type', REQUEST_OWNER_TYPE)

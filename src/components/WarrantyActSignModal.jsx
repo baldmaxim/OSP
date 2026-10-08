@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
 
 // task 357: модалка «Подписание акта» для строки гарантии.
@@ -54,7 +54,7 @@ function WarrantyActSignModal({ warranty, objectId, onClose, onSaved }) {
         }
       }
 
-      const { error } = await supabase
+      const { error } = await db
         .from('object_warranties')
         .update({ start_date: signDate, actual_start_document_id: newDocId })
         .eq('id', warranty.id)
@@ -73,7 +73,7 @@ function WarrantyActSignModal({ warranty, objectId, onClose, onSaved }) {
     try {
       // Сначала обнуляем ссылку в гарантии (чтобы ON DELETE SET NULL не сработал
       // при удалении s3_documents, на случай race — порядок безопаснее).
-      const { error: upErr } = await supabase
+      const { error: upErr } = await db
         .from('object_warranties')
         .update({ start_date: null, actual_start_document_id: null })
         .eq('id', warranty.id)

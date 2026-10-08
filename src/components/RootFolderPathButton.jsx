@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { copyToClipboard } from '../utils/clipboard'
 import { IconFolder } from './icons/ToolbarIcons'
 import './RootFolderPathButton.css'
@@ -95,7 +95,7 @@ export default function RootFolderPathButton({
       try {
         // Все ключи одним запросом: свой ключ вкладки, запасной общий и ссылка на Drive.
         const keys = [settingKey, fallbackKey, driveLinkKey].filter(Boolean)
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('app_settings')
           .select('key, value')
           .in('key', keys)
@@ -148,7 +148,7 @@ export default function RootFolderPathButton({
     if ((nextValue || '') === (value || '')) { setEditing(false); return }
     setSaving(true)
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('app_settings')
         .upsert({ key: settingKey, value: nextValue, updated_at: new Date().toISOString() })
       if (error) throw error
@@ -179,7 +179,7 @@ export default function RootFolderPathButton({
     }
     setSavingDrive(true)
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('app_settings')
         .upsert({ key: driveLinkKey, value: nextValue, updated_at: new Date().toISOString() })
       if (error) throw error

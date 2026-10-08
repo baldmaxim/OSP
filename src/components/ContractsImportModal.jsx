@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import XLSXStyle from 'xlsx-js-style'
 import PizZip from 'pizzip'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import {
@@ -147,7 +147,7 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
   // унаследовать условия. Грузим одним запросом, дерево строим в памяти.
   useEffect(() => {
     let cancelled = false
-    fetchAllRows((from, to) => supabase
+    fetchAllRows((from, to) => db
       .from('contracts')
       .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, counterparty_id, object_id, changed_fields, contract_amount, psdc_total, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period')
       .range(from, to))
@@ -304,14 +304,14 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
 
       for (const chunk of chunks(toCreate, CHUNK)) {
         const payloads = chunk.map((x) => x.result.payload)
-        const { data, error } = await supabase.from('contracts').insert(payloads).select('id, counterparty_id')
+        const { data, error } = await db.from('contracts').insert(payloads).select('id, counterparty_id')
         if (!error) {
           created += (data || []).length
           ;(data || []).forEach((d) => { if (d.counterparty_id) junction.push({ contract_id: d.id, counterparty_id: d.counterparty_id, sort_order: 0 }) })
         } else {
           // Изолируем сбойную строку — вставляем по одной, остальные из чанка сохраняются.
           for (const x of chunk) {
-            const { data: d, error: e } = await supabase.from('contracts').insert(x.result.payload).select('id, counterparty_id').single()
+            const { data: d, error: e } = await db.from('contracts').insert(x.result.payload).select('id, counterparty_id').single()
             if (e) { x.saveError = e.message; failed.push(x) }
             else { created++; if (d.counterparty_id) junction.push({ contract_id: d.id, counterparty_id: d.counterparty_id, sort_order: 0 }) }
           }
@@ -320,7 +320,7 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
 
       // Стороны договора (та же логика, что и в ручной форме): одна сторона, sort_order 0.
       for (const jchunk of chunks(junction, CHUNK)) {
-        const { error } = await supabase.from('contract_counterparties').insert(jchunk)
+        const { error } = await db.from('contract_counterparties').insert(jchunk)
         if (error) console.error('Ошибка записи сторон договора:', error.message)
       }
 

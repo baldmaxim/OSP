@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import DocCheckBoard from '../components/doccheck/DocCheckBoard'
 import DocCheckFormModal from '../components/doccheck/DocCheckFormModal'
@@ -64,7 +64,7 @@ export default function DocCheckRequestsPage() {
   const fetchRequests = useCallback(async () => {
     try {
       setLoading(true)
-      const rows = await fetchAllRows((from, to) => supabase
+      const rows = await fetchAllRows((from, to) => db
         .from('doc_check_requests')
         .select(SELECT)
         .order('sort_order', { ascending: true })
@@ -83,7 +83,7 @@ export default function DocCheckRequestsPage() {
   useEffect(() => {
     fetchRequests()
     // Объекты обоих отделов и контрагенты — для формы и фильтров.
-    supabase.from('objects').select('id, name, status')
+    db.from('objects').select('id, name, status')
       .order('status', { ascending: true }).order('name', { ascending: true })
       .then(({ data, error: e }) => { if (!e) setObjects(data || []) })
     fetchAllActiveCounterparties()
@@ -94,7 +94,7 @@ export default function DocCheckRequestsPage() {
   // ── История ───────────────────────────────────────────────────────────────
   const logEvent = useCallback(async (requestId, entry) => {
     try {
-      await supabase.from('doc_check_request_audit_log').insert({
+      await db.from('doc_check_request_audit_log').insert({
         request_id: requestId,
         changed_by_role: role,
         changed_by_name: author,
@@ -111,7 +111,7 @@ export default function DocCheckRequestsPage() {
     try {
       if (formFor?.request) {
         const prev = formFor.request
-        const { error: e } = await supabase
+        const { error: e } = await db
           .from('doc_check_requests')
           .update(payload)
           .eq('id', prev.id)
@@ -131,7 +131,7 @@ export default function DocCheckRequestsPage() {
         const maxOrder = requests
           .filter(r => r.status === 'new' && !r.deleted_at)
           .reduce((m, r) => Math.max(m, r.sort_order || 0), 0)
-        const { data, error: e } = await supabase
+        const { data, error: e } = await db
           .from('doc_check_requests')
           .insert({ ...payload, status: 'new', sort_order: maxOrder + 1, created_by_name: author })
           .select('id')
@@ -149,7 +149,7 @@ export default function DocCheckRequestsPage() {
   const handleStatusChange = async (request, status) => {
     if (request.status === status) return
     try {
-      const { error: e } = await supabase
+      const { error: e } = await db
         .from('doc_check_requests')
         .update({ status })
         .eq('id', request.id)
@@ -178,7 +178,7 @@ export default function DocCheckRequestsPage() {
     }))
     try {
       if (statusChanged) {
-        const { error: e } = await supabase
+        const { error: e } = await db
           .from('doc_check_requests').update({ status }).eq('id', request.id)
         if (e) throw e
         await logEvent(request.id, {
@@ -188,7 +188,7 @@ export default function DocCheckRequestsPage() {
           new_value: status,
         })
       }
-      await Promise.all(orderedIds.map((id, i) => supabase
+      await Promise.all(orderedIds.map((id, i) => db
         .from('doc_check_requests').update({ sort_order: i + 1 }).eq('id', id)))
     } catch (err) {
       alert('Не удалось переместить заявку: ' + (err.message || err))
@@ -199,7 +199,7 @@ export default function DocCheckRequestsPage() {
   const handleDelete = async (request) => {
     if (!confirm(`Удалить заявку «${docTitle(request)}»?`)) return
     try {
-      const { error: e } = await supabase
+      const { error: e } = await db
         .from('doc_check_requests')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', request.id)
@@ -214,7 +214,7 @@ export default function DocCheckRequestsPage() {
 
   const handleRestore = async (request) => {
     try {
-      const { error: e } = await supabase
+      const { error: e } = await db
         .from('doc_check_requests').update({ deleted_at: null }).eq('id', request.id)
       if (e) throw e
       await logEvent(request.id, { event_type: 'restored', description: 'Заявка восстановлена' })

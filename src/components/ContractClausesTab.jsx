@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRealtimeTable } from '../hooks/useRealtimeTable'
 import { useRole } from '../contexts/RoleContext'
 import AutoGrowTextarea from './AutoGrowTextarea'
@@ -263,14 +263,14 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
     setLoading(true)
     setLoadError('')
     try {
-      let dq = supabase.from('contract_clause_disputes').select('*').eq('contract_id', contractId)
+      let dq = db.from('contract_clause_disputes').select('*').eq('contract_id', contractId)
       if (!isEmployee && counterpartyId) dq = dq.eq('counterparty_id', counterpartyId)
       const { data: ds, error } = await dq.order('created_at', { ascending: true })
       if (error) throw error
       setDisputes(ds || [])
       const ids = (ds || []).map((d) => d.id)
       if (ids.length) {
-        const { data: cm } = await supabase
+        const { data: cm } = await db
           .from('contract_clause_comments').select('*').in('dispute_id', ids).order('created_at', { ascending: true })
         const map = {}
         ;(cm || []).forEach((c) => { (map[c.dispute_id] = map[c.dispute_id] || []).push(c) })
@@ -398,7 +398,7 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
     const numMatch = t.match(/^\s*(\d+(?:\.\d+)*)/)
     const label = numMatch ? `п. ${numMatch[1]}` : (t.slice(0, 40) + (t.length > 40 ? '…' : ''))
     try {
-      const { error } = await supabase.from('contract_clause_disputes')
+      const { error } = await db.from('contract_clause_disputes')
         .insert({ contract_id: contractId, counterparty_id: activeCpId, label, our_text: t, created_by_side: side })
       if (error) throw error
       setPopup(null)
@@ -410,20 +410,20 @@ function ContractClausesTab({ contractId, parties = [], contract = null, canEdit
   }
 
   async function saveDispute(id, patch) {
-    const { error } = await supabase.from('contract_clause_disputes').update(patch).eq('id', id)
+    const { error } = await db.from('contract_clause_disputes').update(patch).eq('id', id)
     if (error) alert('Ошибка: ' + error.message)
     else setDisputes((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)))
   }
   async function deleteDispute(id) {
     if (!window.confirm('Удалить разногласие из протокола?')) return
-    const { error } = await supabase.from('contract_clause_disputes').delete().eq('id', id)
+    const { error } = await db.from('contract_clause_disputes').delete().eq('id', id)
     if (error) return alert('Ошибка: ' + error.message)
     loadDisputes()
   }
   async function addComment(dispute) {
     const body = (replyDrafts[dispute.id] || '').trim()
     if (!body) return
-    const { error } = await supabase.from('contract_clause_comments').insert({
+    const { error } = await db.from('contract_clause_comments').insert({
       dispute_id: dispute.id, counterparty_id: dispute.counterparty_id,
       author_side: side, author_name: authorName, body,
     })

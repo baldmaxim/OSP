@@ -27,7 +27,7 @@ export function browserLaunchOptions() {
 
 export async function startStand(srcRoot) {
   const norm = (p) => p.replace(/\\/g, '/').replace(/\.(js|jsx)$/, '').toLowerCase()
-  const supabaseDir = norm(path.join(srcRoot, 'src', 'supabase'))
+  const supabaseClient = norm(path.join(srcRoot, 'src', 'api', 'supabaseClient'))
   const roleCtx = norm(path.join(srcRoot, 'src', 'contexts', 'RoleContext'))
   const port = 49000 + Math.floor(Math.random() * 900)
   const server = await createServer({
@@ -43,7 +43,7 @@ export async function startStand(srcRoot) {
         if (source.includes('src/index.css')) return path.join(srcRoot, 'src', 'index.css')
         if (!source.startsWith('.')) return null
         const resolved = norm(path.resolve(path.dirname(importer), source))
-        if (resolved === supabaseDir || resolved === `${supabaseDir}/index`) return path.join(UI, 'fake-supabase.js')
+        if (resolved === supabaseClient) return path.join(UI, 'fake-supabase.js')
         if (resolved === roleCtx) return path.join(UI, 'fake-role.jsx')
         return null
       },

@@ -7,7 +7,7 @@
 // owner_id здесь — id КАРТОЧКИ, а не тендера, поэтому файлы карточек не пересекаются с
 // VOR/пакетными файлами тендера (owner_id = tenders.id). Отдельный owner_type и правка
 // edge-функции s3-presign не нужны.
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { deleteDocument } from './s3'
 
 const OWNER_TYPE = 'tender'
@@ -16,7 +16,7 @@ const OWNER_TYPE = 'tender'
 async function attachFiles(docs) {
   const ids = (docs || []).map((d) => d.id)
   if (!ids.length) return docs.map((d) => ({ ...d, links: sortLinks(d), files: [] }))
-  const { data: files, error } = await supabase
+  const { data: files, error } = await db
     .from('s3_documents')
     .select('id, owner_id, s3_key, file_name, size_bytes, created_at, uploaded_by_name')
     .eq('owner_type', OWNER_TYPE)
@@ -36,7 +36,7 @@ function sortLinks(d) {
 
 // Все карточки документов тендера (итоговый — первым), с ссылками и файлами.
 export async function fetchTenderDocs(tenderId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_docs')
     .select('*, tender_doc_links(*)')
     .eq('tender_id', tenderId)
@@ -49,7 +49,7 @@ export async function fetchTenderDocs(tenderId) {
 
 // Итоговая карточка (is_final) с ссылками и файлами, либо null.
 export async function fetchTenderFinalDoc(tenderId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_docs')
     .select('*, tender_doc_links(*)')
     .eq('tender_id', tenderId)
@@ -65,7 +65,7 @@ export async function fetchTenderFinalDoc(tenderId) {
 export async function ensureTenderFinalDoc(tenderId, { userId = null, userName = null } = {}) {
   const existing = await fetchTenderFinalDoc(tenderId)
   if (existing) return existing
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_docs')
     .insert({
       tender_id: tenderId,
@@ -88,6 +88,6 @@ export async function deleteTenderDoc(doc) {
   for (const f of (doc.files || [])) {
     await deleteDocument(f)
   }
-  const { error } = await supabase.from('tender_docs').delete().eq('id', doc.id)
+  const { error } = await db.from('tender_docs').delete().eq('id', doc.id)
   if (error) throw error
 }

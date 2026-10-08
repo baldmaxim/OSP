@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import '../components/Tenders.css'
 import './PublicTendersPage.css'
 
@@ -36,7 +36,7 @@ function PublicTendersPage() {
   const fetchPublicTenders = async () => {
     try {
       setLoading(true)
-      const { data, error: err } = await supabase
+      const { data, error: err } = await db
         .from('tenders')
         .select('id, public_tender_number, work_description, start_date, end_date, tender_start_date, tender_end_date, status, tender_package_link, tender_type, deleted_at, objects(name, address, map_link, status)')
         .eq('status', 'Идет тендерная процедура')

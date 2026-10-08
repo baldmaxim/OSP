@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import './ContractRegistry.css'
 
 function ContractRegistry() {
@@ -25,7 +25,7 @@ function ContractRegistry() {
   const fetchContracts = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contracts')
         .select('*')
         .order('contract_date', { ascending: false })
@@ -47,7 +47,7 @@ function ContractRegistry() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
-      const { error } = await supabase.from('contracts').insert([formData])
+      const { error } = await db.from('contracts').insert([formData])
 
       if (error) throw error
 

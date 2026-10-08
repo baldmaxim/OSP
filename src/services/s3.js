@@ -1,11 +1,11 @@
 // Frontend-сервис для работы с S3 через Edge Function `s3-presign` (task 277).
 // Frontend никогда не получает access_key/secret — только presigned URL-ы.
-import { supabase } from '../supabase'
+import { db, auth, invokeFunction } from '../api'
 
 const FUNCTION_NAME = 's3-presign'
 
 async function invokePresign(action, payload) {
-  const { data, error } = await supabase.functions.invoke(FUNCTION_NAME, {
+  const { data, error } = await invokeFunction(FUNCTION_NAME, {
     body: { action, ...payload }
   })
   if (error) {
@@ -78,10 +78,10 @@ export async function uploadFile({ file, ownerType, ownerId, notes = null, categ
   let uploaded_by = null
   let uploaded_by_name = null
   try {
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user } } = await auth.getUser()
     uploaded_by = user?.id || null
     if (user) {
-      const { data: profile } = await supabase
+      const { data: profile } = await db
         .from('user_roles')
         .select('full_name')
         .eq('user_id', user.id)
@@ -90,7 +90,7 @@ export async function uploadFile({ file, ownerType, ownerId, notes = null, categ
     }
   } catch { /* без user — оставим null */ }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('s3_documents')
     .insert({
       owner_type: ownerType,
@@ -118,14 +118,14 @@ export async function uploadFile({ file, ownerType, ownerId, notes = null, categ
 // чтобы её можно было повторно удалить.
 export async function deleteDocument(doc) {
   await deleteS3Object(doc.s3_key)
-  const { error } = await supabase.from('s3_documents').delete().eq('id', doc.id)
+  const { error } = await db.from('s3_documents').delete().eq('id', doc.id)
   if (error) throw error
 }
 
 // Список документов по владельцу.
 // `category` (необязательно) — фильтр по `doc_category` (например 'vor').
 export async function fetchDocuments(ownerType, ownerId, category = null) {
-  let query = supabase
+  let query = db
     .from('s3_documents')
     .select('*')
     .eq('owner_type', ownerType)
@@ -146,7 +146,7 @@ export async function fetchCounterpartyDocSummary(ids = null) {
   const PAGE = 1000
   const rows = []
   for (let from = 0; ; from += PAGE) {
-    let query = supabase
+    let query = db
       .from('s3_documents')
       .select('owner_id, doc_category, created_at')
       .eq('owner_type', 'counterparty')

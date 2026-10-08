@@ -6,7 +6,7 @@
 //   'vor_statement' — ведомость объёмов работ;
 //   'vor'           — прежняя общая категория, файлы загружены до разделения.
 // Шифры — существующая таблица tender_rd_codes, связь — tender_rd_document_codes.
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { deleteDocument, uploadFile } from './s3'
 
 export const RD_CATEGORY = 'rd'
@@ -60,14 +60,14 @@ export async function loadVorRd(tenderId) {
   // файлы. Запросы supabase не бросают исключений (ошибка — в .error), поэтому
   // Promise.all дожидается обоих, а разбираем каждую часть отдельно.
   const [docsRes, codesRes] = await Promise.all([
-    withTimeout(supabase
+    withTimeout(db
       .from('s3_documents')
       .select(DOC_COLUMNS)
       .eq('owner_type', 'tender')
       .eq('owner_id', tenderId)
       .in('doc_category', VOR_RD_CATEGORIES)
       .order('created_at', { ascending: false })),
-    withTimeout(supabase
+    withTimeout(db
       .from('tender_rd_codes')
       .select('id, code, title, sort_order, created_at')
       .eq('tender_id', tenderId)
@@ -94,7 +94,7 @@ export async function loadVorRd(tenderId) {
   let linksMissing = false
   let linksError = null
   if (rdDocs.length > 0) {
-    const { data, error } = await withTimeout(supabase
+    const { data, error } = await withTimeout(db
       .from('tender_rd_document_codes')
       .select('document_id, rd_code_id')
       .in('document_id', rdDocs.map(d => d.id)))
@@ -131,7 +131,7 @@ export async function addRdCode(tenderId, { code, title }, existingCodes, byName
   const dup = existingCodes.find(c => c.code.trim().toLowerCase() === trimmed.toLowerCase())
   if (dup) return dup
   const maxSort = existingCodes.reduce((m, c) => Math.max(m, c.sort_order || 0), 0)
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_rd_codes')
     .insert([{
       tender_id: tenderId,
@@ -158,7 +158,7 @@ export async function uploadRdDocuments(tenderId, files, codeIds, byName, onProg
   for (let i = 0; i < files.length; i++) {
     onProgress?.(i + 1, files.length)
     const doc = await uploadFile({ file: files[i], ownerType: 'tender', ownerId: tenderId, category: RD_CATEGORY })
-    const { error } = await supabase
+    const { error } = await db
       .from('tender_rd_document_codes')
       .insert(codeIds.map(id => ({ document_id: doc.id, rd_code_id: id, created_by_name: byName || null })))
     if (error) {
@@ -180,13 +180,13 @@ export async function setDocumentCodes(documentId, nextCodeIds, prevCodeIds, byN
   // Сначала добавляем, потом удаляем: при сбое между шагами у файла не останется
   // пустого набора шифров.
   if (toAdd.length) {
-    const { error } = await supabase
+    const { error } = await db
       .from('tender_rd_document_codes')
       .insert(toAdd.map(id => ({ document_id: documentId, rd_code_id: id, created_by_name: byName || null })))
     if (error) throw error
   }
   if (toRemove.length) {
-    const { error } = await supabase
+    const { error } = await db
       .from('tender_rd_document_codes')
       .delete()
       .eq('document_id', documentId)
@@ -203,7 +203,7 @@ export async function fetchVorRdDocCounts(tenderIds) {
   const chunks = []
   for (let i = 0; i < tenderIds.length; i += 150) chunks.push(tenderIds.slice(i, i + 150))
   const parts = await Promise.all(chunks.map(async (chunk) => {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('s3_documents')
       .select('owner_id')
       .eq('owner_type', 'tender')
@@ -218,7 +218,7 @@ export async function fetchVorRdDocCounts(tenderIds) {
 }
 
 export async function countVorRdDocs(tenderId) {
-  const { count, error } = await supabase
+  const { count, error } = await db
     .from('s3_documents')
     .select('id', { count: 'exact', head: true })
     .eq('owner_type', 'tender')

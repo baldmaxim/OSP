@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import TenderProposalUploadModal from './TenderProposalUploadModal'
 import VirtualTableBody from './VirtualTableBody'
 import { normalizeKey, normalizeUnit } from '../utils/parseProposalExcel'
@@ -116,7 +116,7 @@ function TenderProposalsCompare({
     }
     const missing = [...new Set(rows.map((p) => p.counterparty_id))].filter((id) => id && !names.has(id))
     for (let i = 0; i < missing.length; i += 100) {
-      const { data, error } = await supabase.from('counterparties').select('id, name').in('id', missing.slice(i, i + 100))
+      const { data, error } = await db.from('counterparties').select('id, name').in('id', missing.slice(i, i + 100))
       if (error) throw error
       for (const cp of data || []) names.set(cp.id, cp.name)
     }
@@ -129,7 +129,7 @@ function TenderProposalsCompare({
     try {
       // task 399: пагинация — Supabase отдаёт максимум 1000 строк за запрос.
       // Страницы идут параллельно, тай-брейк по id — однозначный порядок страниц.
-      const all = await fetchAllRowsParallel((from, to, withCount) => supabase
+      const all = await fetchAllRowsParallel((from, to, withCount) => db
         .from('tender_counterparty_proposals')
         .select(PROPOSAL_COLUMNS, withCount ? { count: 'exact' } : undefined)
         .eq('tender_id', tenderId)
@@ -424,7 +424,7 @@ function TenderProposalsCompare({
       if (selectedDoc === 'all') {
         // Весь тендер: удаляем по tender_id, без огромного IN-списка
         // estimate_item_id (иначе URL переполняется → «Failed to fetch»).
-        const { error } = await supabase
+        const { error } = await db
           .from('tender_counterparty_proposals')
           .delete()
           .eq('tender_id', tenderId)
@@ -438,7 +438,7 @@ function TenderProposalsCompare({
         const CHUNK_DEL = 100
         for (let i = 0; i < ids.length; i += CHUNK_DEL) {
           const chunk = ids.slice(i, i + CHUNK_DEL)
-          const { error } = await supabase
+          const { error } = await db
             .from('tender_counterparty_proposals')
             .delete()
             .eq('counterparty_id', cpId)
@@ -447,14 +447,14 @@ function TenderProposalsCompare({
         }
       }
 
-      const { data: remaining } = await supabase
+      const { data: remaining } = await db
         .from('tender_counterparty_proposals')
         .select('id')
         .eq('tender_id', tenderId)
         .eq('counterparty_id', cpId)
         .limit(1)
       if (!remaining || remaining.length === 0) {
-        await supabase
+        await db
           .from('tender_counterparties')
           .update({ status: 'request_sent' })
           .eq('tender_id', tenderId)
@@ -474,7 +474,7 @@ function TenderProposalsCompare({
   const handleToggleCovered = useCallback(async (itemId, cpId, checked, note) => {
     try {
       if (checked) {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('tender_counterparty_proposals')
           .upsert({
             tender_id: tenderId,
@@ -493,12 +493,12 @@ function TenderProposalsCompare({
         const isFlagOnly = p && !(Number(p.total_cost) > 0) &&
           !(Number(p.unit_price_materials) > 0) && !(Number(p.unit_price_works) > 0)
         if (isFlagOnly) {
-          const { error } = await supabase
+          const { error } = await db
             .from('tender_counterparty_proposals').delete().eq('id', p.id)
           if (error) throw error
           mergeProposalRows([], [p.id])
         } else if (p) {
-          const { data, error } = await supabase
+          const { data, error } = await db
             .from('tender_counterparty_proposals')
             .update({ covered_elsewhere: false, coverage_note: null })
             .eq('id', p.id)
@@ -523,7 +523,7 @@ function TenderProposalsCompare({
         // примечания обновляем его и у уже помеченных.
         const toFlag = coverItems.filter(c => !c.hasPrice && (!c.covered || (c.note || '') !== (note || '')))
         if (toFlag.length > 0) {
-          const { data, error } = await supabase
+          const { data, error } = await db
             .from('tender_counterparty_proposals')
             .upsert(
               toFlag.map(c => ({
@@ -551,13 +551,13 @@ function TenderProposalsCompare({
         // Порции по 100 id — длинный IN-список в URL роняет запрос (task 402).
         for (let i = 0; i < flagOnlyIds.length; i += 100) {
           const chunk = flagOnlyIds.slice(i, i + 100)
-          const { error } = await supabase
+          const { error } = await db
             .from('tender_counterparty_proposals').delete().in('id', chunk)
           if (error) throw error
           mergeProposalRows([], chunk)
         }
         for (let i = 0; i < pricedIds.length; i += 100) {
-          const { data, error } = await supabase
+          const { data, error } = await db
             .from('tender_counterparty_proposals')
             .update({ covered_elsewhere: false, coverage_note: null })
             .in('id', pricedIds.slice(i, i + 100))

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
@@ -248,12 +248,12 @@ export default function GeneralDocumentsPage() {
     setLoading(true)
     try {
       const [docsRes, foldersRes] = await Promise.all([
-        supabase
+        db
           .from('general_documents')
           .select('*, general_document_links(*)')
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('created_at', { ascending: true }),
-        supabase
+        db
           .from('general_document_folders')
           .select('*')
           .order('sort_order', { ascending: true, nullsFirst: false })
@@ -267,7 +267,7 @@ export default function GeneralDocumentsPage() {
       const ids = (docs || []).map(d => d.id)
       let filesByDoc = {}
       if (ids.length) {
-        const { data: files, error: fErr } = await supabase
+        const { data: files, error: fErr } = await db
           .from('s3_documents')
           .select('id, owner_id, file_name, s3_key, size_bytes, created_at')
           .eq('owner_type', 'general_document')
@@ -492,7 +492,7 @@ export default function GeneralDocumentsPage() {
     try {
       let docId
       if (editing) {
-        const { error } = await supabase.from('general_documents')
+        const { error } = await db.from('general_documents')
           .update({
             title,
             description: form.description.trim() || null,
@@ -510,11 +510,11 @@ export default function GeneralDocumentsPage() {
         const oldLinkIds = (editing.links || []).map(l => l.id)
         if (validLinks.length) {
           const rows = validLinks.map((l, idx) => ({ general_document_id: docId, title: l.title || null, url: l.url, sort_order: idx }))
-          const { error: insErr } = await supabase.from('general_document_links').insert(rows)
+          const { error: insErr } = await db.from('general_document_links').insert(rows)
           if (insErr) throw insErr
         }
         if (oldLinkIds.length) {
-          const { error: delErr } = await supabase.from('general_document_links').delete().in('id', oldLinkIds)
+          const { error: delErr } = await db.from('general_document_links').delete().in('id', oldLinkIds)
           if (delErr) throw delErr
         }
 
@@ -527,7 +527,7 @@ export default function GeneralDocumentsPage() {
           }
         }
       } else {
-        const { data: created, error } = await supabase.from('general_documents')
+        const { data: created, error } = await db.from('general_documents')
           .insert({
             title,
             description: form.description.trim() || null,
@@ -547,7 +547,7 @@ export default function GeneralDocumentsPage() {
 
         if (validLinks.length) {
           const rows = validLinks.map((l, idx) => ({ general_document_id: docId, title: l.title || null, url: l.url, sort_order: idx }))
-          const { error: linkErr } = await supabase.from('general_document_links').insert(rows)
+          const { error: linkErr } = await db.from('general_document_links').insert(rows)
           if (linkErr) throw linkErr
         }
       }
@@ -605,7 +605,7 @@ export default function GeneralDocumentsPage() {
         await deleteDocument(f)
       }
       // Ссылки удалятся каскадом вместе с записью.
-      const { error } = await supabase.from('general_documents').delete().eq('id', doc.id)
+      const { error } = await db.from('general_documents').delete().eq('id', doc.id)
       if (error) throw error
       await fetchDocs()
     } catch (err) {
@@ -629,7 +629,7 @@ export default function GeneralDocumentsPage() {
     try {
       const parentId = folderForm.parentId || null
       if (folderForm.editing) {
-        const { error } = await supabase.from('general_document_folders')
+        const { error } = await db.from('general_document_folders')
           .update({
             name,
             parent_id: parentId,
@@ -639,7 +639,7 @@ export default function GeneralDocumentsPage() {
           .eq('id', folderForm.editing.id)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('general_document_folders')
+        const { error } = await db.from('general_document_folders')
           .insert({
             name,
             category: activeCat,
@@ -675,7 +675,7 @@ export default function GeneralDocumentsPage() {
     if (!window.confirm(`Удалить пустую папку «${folder.name}»?`)) return
     setDeletingFolderId(folder.id)
     try {
-      const { error } = await supabase.from('general_document_folders').delete().eq('id', folder.id)
+      const { error } = await db.from('general_document_folders').delete().eq('id', folder.id)
       if (error) throw error
       await fetchDocs()
     } catch (err) {

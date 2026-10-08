@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { CURRENCY_OPTIONS, formatMoney } from '../utils/estimateImport'
 import FilterDropdown from '../components/FilterDropdown'
@@ -445,7 +445,7 @@ function ContractRegistry() {
     if (!contractId || !eventType) return
     try {
       const role = localStorage.getItem('userRole') || null
-      await supabase.from('contract_audit_log').insert([{
+      await db.from('contract_audit_log').insert([{
         contract_id: contractId,
         event_type: eventType,
         field_name: payload.fieldName || null,
@@ -484,7 +484,7 @@ function ContractRegistry() {
       // Грузим ВЕСЬ реестр один раз (все статусы + удалённые), а по вкладкам фильтруем
       // в памяти — переключение вкладок мгновенное, без повторных запросов. Постранично
       // (fetchAllRows) — иначе потолок PostgREST в 1000 строк молча резал бы реестр.
-      const data = await fetchAllRows((from, to) => supabase
+      const data = await fetchAllRows((from, to) => db
         .from('contracts')
         .select('*, objects(name, status), counterparties(id, name, inn), contract_counterparties(counterparty_id, sort_order, counterparties(id, name, inn)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position)')
         .order('contract_date', { ascending: true, nullsFirst: false })
@@ -511,7 +511,7 @@ function ContractRegistry() {
       // «Приложения к Договору» — единая таблица (task 419).
       if (ids.length > 0) {
         try {
-          const apRows = await fetchAllRows((from, to) => supabase
+          const apRows = await fetchAllRows((from, to) => db
             .from('contract_appendices')
             .select('*')
             .in('contract_id', ids)
@@ -536,7 +536,7 @@ function ContractRegistry() {
       // Понятийные соглашения (несколько файлов на договор) — s3_documents по категории.
       if (ids.length > 0) {
         try {
-          const caRows = await fetchAllRows((from, to) => supabase
+          const caRows = await fetchAllRows((from, to) => db
             .from('s3_documents')
             .select('id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at')
             .eq('owner_type', 'contract')
@@ -580,7 +580,7 @@ function ContractRegistry() {
       // Оба отдела: основное строительство И гарантийное обслуживание — договор
       // можно завести на любой объект. Сортировка по статусу ('main_construction'
       // < 'warranty_service') ставит ОС первыми, затем по имени.
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('objects')
         .select('id, name, status')
         .order('status', { ascending: true })
@@ -599,7 +599,7 @@ function ContractRegistry() {
       // Колонки перечислены явно: в форме нужны только название и ИНН (поиск идёт
       // по ним же), а select('*') тянул ещё адреса, примечания и виды работ —
       // на нескольких тысячах строк это заметный лишний объём.
-      const data = await fetchAllRows((from, to) => supabase
+      const data = await fetchAllRows((from, to) => db
         .from('counterparties')
         .select('id, name, inn, deleted_at')
         .order('name', { ascending: true })
@@ -631,7 +631,7 @@ function ContractRegistry() {
 
   const fetchContacts = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contacts')
         .select('id, full_name, position, object_id')
         .order('full_name', { ascending: true })
@@ -644,7 +644,7 @@ function ContractRegistry() {
 
   const fetchTenders = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('tenders')
         .select('id, object_id, work_description, winner_counterparty_id, status')
         .order('created_at', { ascending: false })
@@ -659,7 +659,7 @@ function ContractRegistry() {
   const fetchObjectAttachments = async (objectId) => {
     if (!objectId) { setObjectAttachments([]); return }
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('object_contract_attachments')
         .select('*')
         .eq('object_id', objectId)
@@ -674,7 +674,7 @@ function ContractRegistry() {
   const handleAddAttachment = async () => {
     if (!attachmentsObjectId || !newAttachmentName.trim()) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('object_contract_attachments')
         .insert([{
           object_id: attachmentsObjectId,
@@ -700,7 +700,7 @@ function ContractRegistry() {
   const handleAddChildAttachment = async (parentId) => {
     if (!attachmentsObjectId) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('object_contract_attachments')
         .insert([{
           object_id: attachmentsObjectId,
@@ -722,7 +722,7 @@ function ContractRegistry() {
   const patchObjectAttachment = async (id, patch) => {
     setObjectAttachments(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
     try {
-      const { error } = await supabase.from('object_contract_attachments').update(patch).eq('id', id)
+      const { error } = await db.from('object_contract_attachments').update(patch).eq('id', id)
       if (error) throw error
     } catch (err) {
       console.error('Ошибка сохранения приложения:', err.message)
@@ -756,7 +756,7 @@ function ContractRegistry() {
     try {
       await Promise.all(updates.map(u => {
         const { id, ...fields } = u
-        return supabase.from('object_contract_attachments').update(fields).eq('id', id)
+        return db.from('object_contract_attachments').update(fields).eq('id', id)
       }))
     } catch (err) {
       alert('Не удалось изменить структуру приложений: ' + (err.message || err))
@@ -783,7 +783,7 @@ function ContractRegistry() {
     }))
     try {
       await Promise.all(pairs.map(p =>
-        supabase.from('object_contract_attachments').update({ sort_order: p.sort_order }).eq('id', p.id)
+        db.from('object_contract_attachments').update({ sort_order: p.sort_order }).eq('id', p.id)
       ))
     } catch (err) {
       alert('Не удалось сохранить порядок: ' + (err.message || err))
@@ -797,7 +797,7 @@ function ContractRegistry() {
   const addAppendixRow = async (contractId, parentId) => {
     const list = contractAppendicesMap[contractId] || []
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contract_appendices')
         .insert([{
           contract_id: contractId,
@@ -826,7 +826,7 @@ function ContractRegistry() {
       [contractId]: (prev[contractId] || []).map(a => a.id === appendixId ? { ...a, ...patch } : a),
     }))
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('contract_appendices')
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', appendixId)
@@ -870,7 +870,7 @@ function ContractRegistry() {
     try {
       await Promise.all(updates.map(u => {
         const { id, ...fields } = u
-        return supabase.from('contract_appendices').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)
+        return db.from('contract_appendices').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id)
       }))
     } catch (err) {
       alert('Не удалось изменить структуру приложений: ' + (err.message || err))
@@ -902,7 +902,7 @@ function ContractRegistry() {
     }))
     try {
       await Promise.all(pairs.map(p =>
-        supabase.from('contract_appendices').update({ sort_order: p.sort_order }).eq('id', p.id)
+        db.from('contract_appendices').update({ sort_order: p.sort_order }).eq('id', p.id)
       ))
     } catch (err) {
       alert('Не удалось сохранить порядок приложений: ' + (err.message || err))
@@ -919,7 +919,7 @@ function ContractRegistry() {
     if (!window.confirm(msg)) return
     try {
       // ON DELETE CASCADE удалит подпункты в БД; локально убираем строку и её детей.
-      const { error } = await supabase.from('contract_appendices').delete().eq('id', appendixId)
+      const { error } = await db.from('contract_appendices').delete().eq('id', appendixId)
       if (error) throw error
       setContractAppendicesMap(prev => ({
         ...prev,
@@ -970,7 +970,7 @@ function ContractRegistry() {
       // Чанкуем: длинный список id в .in() раздувает URL до отказа (задача 402).
       const CHUNK = 100
       for (let i = 0; i < rootIds.length; i += CHUNK) {
-        const { error } = await supabase
+        const { error } = await db
           .from('contract_appendices')
           .delete()
           .in('id', rootIds.slice(i, i + CHUNK))
@@ -991,7 +991,7 @@ function ContractRegistry() {
   const handleDeleteAttachment = async (id) => {
     if (!window.confirm('Удалить приложение из списка объекта?')) return
     try {
-      const { error } = await supabase.from('object_contract_attachments').delete().eq('id', id)
+      const { error } = await db.from('object_contract_attachments').delete().eq('id', id)
       if (error) throw error
       fetchObjectAttachments(attachmentsObjectId)
     } catch (err) {
@@ -1009,7 +1009,7 @@ function ContractRegistry() {
         return
       }
       try {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('object_contract_attachments')
           .select('*')
           .eq('object_id', formData.object_id)
@@ -1464,11 +1464,11 @@ function ContractRegistry() {
       const docWord = isDsForm ? DOC_TYPE_LABEL[formData.record_type] : 'договор'
       let contractId = editingContract?.id
       if (editingContract) {
-        const { error } = await supabase.from('contracts').update(payload).eq('id', editingContract.id)
+        const { error } = await db.from('contracts').update(payload).eq('id', editingContract.id)
         if (error) throw error
         await logContractEvent(contractId, 'field_updated', { description: `Обновлены данные документа (${docWord})` })
       } else {
-        const { data, error } = await supabase.from('contracts').insert([payload]).select('id, display_id').single()
+        const { data, error } = await db.from('contracts').insert([payload]).select('id, display_id').single()
         if (error) throw error
         contractId = data?.id
         const numberPart = payload.contract_number ? ` № ${payload.contract_number}` : ' (без номера)'
@@ -1503,20 +1503,20 @@ function ContractRegistry() {
               sort_order: (i + 1) * 10,
             }))
           if (seedRows.length > 0) {
-            const { error: apErr } = await supabase.from('contract_appendices').insert(seedRows)
+            const { error: apErr } = await db.from('contract_appendices').insert(seedRows)
             if (apErr) throw apErr
           }
         }
 
         // Стороны договора: полностью перезаписываем (порядок = sort_order).
-        await supabase.from('contract_counterparties').delete().eq('contract_id', contractId)
+        await db.from('contract_counterparties').delete().eq('contract_id', contractId)
         const cpRows = formCounterpartyIds.map((counterparty_id, i) => ({
           contract_id: contractId,
           counterparty_id,
           sort_order: i,
         }))
         if (cpRows.length > 0) {
-          const { error: ccErr } = await supabase.from('contract_counterparties').insert(cpRows)
+          const { error: ccErr } = await db.from('contract_counterparties').insert(cpRows)
           if (ccErr) throw ccErr
         }
       }
@@ -1587,7 +1587,7 @@ function ContractRegistry() {
   const handleSoftDeleteContract = async (id, contractNumber) => {
     if (!window.confirm(`Перенести договор ${contractLabel(contractNumber)} в «Удалённые»?`)) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('contracts')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', id)
@@ -1603,7 +1603,7 @@ function ContractRegistry() {
   // Task 183: восстановить из «Удалённых»
   const handleRestoreContract = async (id, contractNumber) => {
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('contracts')
         .update({ deleted_at: null })
         .eq('id', id)
@@ -1625,7 +1625,7 @@ function ContractRegistry() {
     if (!window.confirm(`Безвозвратно удалить договор ${contractLabel(contractNumber)}? Это действие нельзя отменить.`)) return
     try {
       const caDocs = conceptDocsByContract[id] || []
-      const { error } = await supabase.from('contracts').delete().eq('id', id)
+      const { error } = await db.from('contracts').delete().eq('id', id)
       if (error) throw error
       // Понятийные соглашения не удаляются каскадом (s3_documents.owner_id — свободный
       // UUID) — сносим явно, иначе останутся orphan-файлы в S3 после удаления договора.
@@ -1644,7 +1644,7 @@ function ContractRegistry() {
       // Постранично: обычный select отдаёт максимум 1000 строк, и после тысячного
       // договора «следующий номер» начал бы считаться по случайной части реестра
       // и предлагать уже занятые номера.
-      const data = await fetchAllRows((from, to) => supabase
+      const data = await fetchAllRows((from, to) => db
         .from('contracts')
         .select('contract_number')
         .is('deleted_at', null)
@@ -1678,7 +1678,7 @@ function ContractRegistry() {
     const contract = contracts.find(c => c.id === contractId)
     const oldStatus = contract?.status
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('contracts')
         .update({ status: newStatus })
         .eq('id', contractId)
@@ -1714,7 +1714,7 @@ function ContractRegistry() {
     const contract = contracts.find(c => c.id === contractId)
     if (!contract || (contract[field] ?? null) === value) return
     try {
-      const { error } = await supabase.from('contracts').update({ [field]: value }).eq('id', contractId)
+      const { error } = await db.from('contracts').update({ [field]: value }).eq('id', contractId)
       if (error) throw error
       setContracts(prev => prev.map(c => c.id === contractId ? { ...c, [field]: value } : c))
       await logContractEvent(contractId, 'field_updated', {
@@ -1744,7 +1744,7 @@ function ContractRegistry() {
       patch = { larix_entered: false, larix_number: null, larix_entered_at: null, larix_entered_by: null }
     }
     try {
-      const { error } = await supabase.from('contracts').update(patch).eq('id', contractId)
+      const { error } = await db.from('contracts').update(patch).eq('id', contractId)
       if (error) throw error
       setContracts(prev => prev.map(c => c.id === contractId ? { ...c, ...patch } : c))
       await logContractEvent(contractId, 'field_updated', {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
@@ -691,14 +691,14 @@ function ObjectDetailPage() {
       // и живут они в object_staff (запрос ниже). Старые одиночные колонки
       // objects.construction_manager_contact_id / economist_contact_id остались
       // в БД, но не читаются.
-      const objectRes = await supabase.from('objects').select('*').eq('id', objectId).single()
+      const objectRes = await db.from('objects').select('*').eq('id', objectId).single()
       if (objectRes.error) throw objectRes.error
       setObject(objectRes.data)
 
       // Ответственные — отдельной таблицей (миграция 20260831): на объекте их
       // может быть несколько. Запрос best-effort: до применения миграции таблицы
       // нет, и валить из-за неё всю карточку объекта не за что.
-      const staffRes = await supabase
+      const staffRes = await db
         .from('object_staff')
         .select('id, contact_id, staff_role, sort_order, contacts(id, full_name, position, phone, email)')
         .eq('object_id', objectId)
@@ -711,7 +711,7 @@ function ObjectDetailPage() {
         setStaff(staffRes.data || [])
       }
 
-      const { data: docsData, error: docsError } = await supabase
+      const { data: docsData, error: docsError } = await db
         .from('object_documents')
         .select('*, signed:s3_documents!signed_s3_document_id(*), editable:s3_documents!editable_s3_document_id(*)')
         .eq('object_id', objectId)
@@ -737,7 +737,7 @@ function ObjectDetailPage() {
 
       // Постранично — смета объекта может превышать потолок PostgREST в 1000 строк.
       try {
-        const estimateData = await fetchAllRows((from, to) => supabase
+        const estimateData = await fetchAllRows((from, to) => db
           .from('object_estimate_items').select('*').eq('object_id', objectId)
           .order('row_number').order('id').range(from, to))
         setEstimateItems(estimateData)
@@ -747,7 +747,7 @@ function ObjectDetailPage() {
 
       // task 357: подтягиваем s3-документ подписанного акта (если есть)
       //   как нэстед-поле actual_start_doc — отдельный SELECT не нужен.
-      const { data: warrantyData, error: warrantyError } = await supabase
+      const { data: warrantyData, error: warrantyError } = await db
         .from('object_warranties')
         .select('*, actual_start_doc:s3_documents!actual_start_document_id(*)')
         .eq('object_id', objectId)
@@ -755,7 +755,7 @@ function ObjectDetailPage() {
       if (!warrantyError) setWarranties(warrantyData || [])
 
       // task 372: площади объекта (плоский список, дерево строим в рендере).
-      const { data: areaData, error: areaError } = await supabase
+      const { data: areaData, error: areaError } = await db
         .from('object_areas')
         .select('*')
         .eq('object_id', objectId)
@@ -766,7 +766,7 @@ function ObjectDetailPage() {
       // task 364: подгружаем части выплат вместе с удержанием. payments отдельно
       //   сортируем по order_number — порядок дочерней relation Supabase
       //   гарантирует не всегда, надёжнее досортировать в JS.
-      const { data: retentionData, error: retentionError } = await supabase
+      const { data: retentionData, error: retentionError } = await db
         .from('object_warranty_retentions')
         .select('*, payments:object_warranty_retention_payments(*)')
         .eq('object_id', objectId)
@@ -820,7 +820,7 @@ function ObjectDetailPage() {
   // список нужен только в модалке редактирования, но он небольшой и статичный.
   useEffect(() => {
     let alive = true
-    supabase.from('contacts')
+    db.from('contacts')
       .select('id, full_name, position')
       .order('full_name', { ascending: true })
       .then(({ data, error }) => {
@@ -921,7 +921,7 @@ function ObjectDetailPage() {
       const s3Docs = collectS3DocsToDelete(docId, documents)
       // Сначала S3-файлы (best-effort: ошибки логируем, но не блокируем удаление документа).
       await Promise.allSettled(s3Docs.map(d => deleteDocument(d)))
-      const { error } = await supabase.from('object_documents').delete().eq('id', docId)
+      const { error } = await db.from('object_documents').delete().eq('id', docId)
       if (error) throw error
       fetchObjectData()
     } catch (error) {
@@ -976,7 +976,7 @@ function ObjectDetailPage() {
       // проверки частично не сохранившийся порядок оставался бы только на экране,
       // а после F5 возвращался к старому — и выглядело бы как «не сработало».
       const results = await Promise.all(ordered.map((a, idx) =>
-        supabase
+        db
           .from('object_documents')
           .update({ order_number: (idx + 1) * 10 })
           .eq('id', a.id)
@@ -1082,10 +1082,10 @@ function ObjectDetailPage() {
       }
 
       if (editingDocument) {
-        const { error } = await supabase.from('object_documents').update(dataToSave).eq('id', editingDocument.id)
+        const { error } = await db.from('object_documents').update(dataToSave).eq('id', editingDocument.id)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('object_documents').insert([dataToSave])
+        const { error } = await db.from('object_documents').insert([dataToSave])
         if (error) throw error
       }
 
@@ -1189,8 +1189,8 @@ function ObjectDetailPage() {
 
       if (items.length === 0) return alert('Не найдено позиций в файле')
 
-      await supabase.from('object_estimate_items').delete().eq('object_id', objectId)
-      const { error } = await supabase.from('object_estimate_items').insert(items)
+      await db.from('object_estimate_items').delete().eq('object_id', objectId)
+      const { error } = await db.from('object_estimate_items').insert(items)
       if (error) throw error
 
       fetchObjectData()
@@ -1204,7 +1204,7 @@ function ObjectDetailPage() {
 
   const handleDeleteEstimateItem = async (itemId) => {
     try {
-      const { error } = await supabase.from('object_estimate_items').delete().eq('id', itemId)
+      const { error } = await db.from('object_estimate_items').delete().eq('id', itemId)
       if (error) throw error
       setEstimateItems(prev => prev.filter(i => i.id !== itemId))
     } catch (error) {
@@ -1215,7 +1215,7 @@ function ObjectDetailPage() {
   const handleClearEstimate = async () => {
     if (!window.confirm('Удалить все позиции сметы?')) return
     try {
-      const { error } = await supabase.from('object_estimate_items').delete().eq('object_id', objectId)
+      const { error } = await db.from('object_estimate_items').delete().eq('object_id', objectId)
       if (error) throw error
       fetchObjectData()
     } catch (error) {
@@ -1225,7 +1225,7 @@ function ObjectDetailPage() {
 
   const handleApproveEstimate = async () => {
     try {
-      const { error } = await supabase.from('object_estimate_items')
+      const { error } = await db.from('object_estimate_items')
         .update({ is_approved: true }).eq('object_id', objectId)
       if (error) throw error
       setEstimateItems(prev => prev.map(i => ({ ...i, is_approved: true })))
@@ -1237,7 +1237,7 @@ function ObjectDetailPage() {
   const handleRevokeApproval = async () => {
     if (!window.confirm('Снять утверждение сметы? Станет доступно редактирование.')) return
     try {
-      const { error } = await supabase.from('object_estimate_items')
+      const { error } = await db.from('object_estimate_items')
         .update({ is_approved: false }).eq('object_id', objectId)
       if (error) throw error
       setEstimateItems(prev => prev.map(i => ({ ...i, is_approved: false })))
@@ -1384,7 +1384,7 @@ function ObjectDetailPage() {
   const handleSubmitInfo = async (e) => {
     e.preventDefault()
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('objects')
         .update({
           developer: infoFormData.developer.trim() || null,
@@ -1413,11 +1413,11 @@ function ObjectDetailPage() {
       const toRemove = staff.filter(s => !desiredKeys.has(keyOf(s))).map(s => s.id)
 
       if (toRemove.length > 0) {
-        const { error: delErr } = await supabase.from('object_staff').delete().in('id', toRemove)
+        const { error: delErr } = await db.from('object_staff').delete().in('id', toRemove)
         if (delErr) throw delErr
       }
       if (toAdd.length > 0) {
-        const { error: insErr } = await supabase
+        const { error: insErr } = await db
           .from('object_staff')
           .insert(toAdd.map(d => ({ ...d, object_id: objectId })))
         if (insErr) throw insErr
@@ -1468,7 +1468,7 @@ function ObjectDetailPage() {
   const handleDeleteWarranty = async (id) => {
     if (!window.confirm('Удалить запись?')) return
     try {
-      const { error } = await supabase.from('object_warranties').delete().eq('id', id)
+      const { error } = await db.from('object_warranties').delete().eq('id', id)
       if (error) throw error
       fetchObjectData()
     } catch (error) {
@@ -1526,10 +1526,10 @@ function ObjectDetailPage() {
         order_number: editingWarranty?.order_number ?? (warranties.length + 1)
       }
       if (editingWarranty) {
-        const { error } = await supabase.from('object_warranties').update(dataToSave).eq('id', editingWarranty.id)
+        const { error } = await db.from('object_warranties').update(dataToSave).eq('id', editingWarranty.id)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('object_warranties').insert([dataToSave])
+        const { error } = await db.from('object_warranties').insert([dataToSave])
         if (error) throw error
       }
       setShowWarrantyModal(false)
@@ -1576,7 +1576,7 @@ function ObjectDetailPage() {
       : 'Удалить площадь?'
     if (!window.confirm(msg)) return
     try {
-      const { error } = await supabase.from('object_areas').delete().eq('id', id)
+      const { error } = await db.from('object_areas').delete().eq('id', id)
       if (error) throw error
       fetchObjectData()
     } catch (error) {
@@ -1605,10 +1605,10 @@ function ObjectDetailPage() {
         updated_at: new Date().toISOString(),
       }
       if (editingArea) {
-        const { error } = await supabase.from('object_areas').update(dataToSave).eq('id', editingArea.id)
+        const { error } = await db.from('object_areas').update(dataToSave).eq('id', editingArea.id)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('object_areas').insert([dataToSave])
+        const { error } = await db.from('object_areas').insert([dataToSave])
         if (error) throw error
       }
       setShowAreaModal(false)
@@ -1648,7 +1648,7 @@ function ObjectDetailPage() {
   const handleDeleteRetention = async (id) => {
     if (!window.confirm('Удалить запись?')) return
     try {
-      const { error } = await supabase.from('object_warranty_retentions').delete().eq('id', id)
+      const { error } = await db.from('object_warranty_retentions').delete().eq('id', id)
       if (error) throw error
       fetchObjectData()
     } catch (error) {
@@ -1699,10 +1699,10 @@ function ObjectDetailPage() {
       // Получаем id записи (для UPDATE он известен, для INSERT — берём из inserted).
       let retentionId = editingRetention?.id
       if (editingRetention) {
-        const { error } = await supabase.from('object_warranty_retentions').update(dataToSave).eq('id', editingRetention.id)
+        const { error } = await db.from('object_warranty_retentions').update(dataToSave).eq('id', editingRetention.id)
         if (error) throw error
       } else {
-        const { data: inserted, error } = await supabase
+        const { data: inserted, error } = await db
           .from('object_warranty_retentions')
           .insert([dataToSave])
           .select('id')
@@ -1714,7 +1714,7 @@ function ObjectDetailPage() {
       //   т.к. порядок и количество частей пользователь меняет редко, а так
       //   не приходится синхронизировать по id.
       if (editingRetention) {
-        const { error: delErr } = await supabase
+        const { error: delErr } = await db
           .from('object_warranty_retention_payments')
           .delete()
           .eq('retention_id', retentionId)
@@ -1727,7 +1727,7 @@ function ObjectDetailPage() {
           condition_text: p.condition_text,
           order_number: i + 1
         }))
-        const { error: insErr } = await supabase
+        const { error: insErr } = await db
           .from('object_warranty_retention_payments')
           .insert(paymentsToInsert)
         if (insErr) throw insErr

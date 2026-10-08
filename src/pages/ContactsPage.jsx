@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { formatPhone } from '../utils/phoneFormat'
 import FilterDropdown from '../components/FilterDropdown'
@@ -82,7 +82,7 @@ function ContactsPage() {
 
   const fetchPositions = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('positions')
         .select('*')
         .order('name', { ascending: true })
@@ -120,20 +120,20 @@ function ContactsPage() {
     }
     try {
       if (editingPos) {
-        const { error } = await supabase
+        const { error } = await db
           .from('positions')
           .update(payload)
           .eq('id', editingPos.id)
         if (error) throw error
         // Если у должности было старое имя — обновим всех contacts с этим position
         if (editingPos.name !== name) {
-          await supabase
+          await db
             .from('contacts')
             .update({ position: name })
             .eq('position', editingPos.name)
         }
       } else {
-        const { error } = await supabase.from('positions').insert([payload])
+        const { error } = await db.from('positions').insert([payload])
         if (error) throw error
       }
       setShowPosModal(false)
@@ -157,7 +157,7 @@ function ContactsPage() {
       : `Удалить должность «${pos.name}»?`
     if (!window.confirm(msg)) return
     try {
-      const { error } = await supabase.from('positions').delete().eq('id', pos.id)
+      const { error } = await db.from('positions').delete().eq('id', pos.id)
       if (error) throw error
       fetchPositions()
     } catch (err) {
@@ -167,7 +167,7 @@ function ContactsPage() {
 
   const fetchDepartments = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('departments')
         .select('*')
         .order('name', { ascending: true })
@@ -204,13 +204,13 @@ function ContactsPage() {
     }
     try {
       if (editingDept) {
-        const { error } = await supabase
+        const { error } = await db
           .from('departments')
           .update(payload)
           .eq('id', editingDept.id)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('departments').insert([payload])
+        const { error } = await db.from('departments').insert([payload])
         if (error) throw error
       }
       setShowDeptModal(false)
@@ -230,7 +230,7 @@ function ContactsPage() {
   const handleDeleteDept = async (dept) => {
     if (!window.confirm(`Удалить отдел «${dept.name}»?`)) return
     try {
-      const { error } = await supabase.from('departments').delete().eq('id', dept.id)
+      const { error } = await db.from('departments').delete().eq('id', dept.id)
       if (error) throw error
       setDepartments(prev => prev.filter(d => d.id !== dept.id))
     } catch (err) {
@@ -247,7 +247,7 @@ function ContactsPage() {
       // ссылки objects.construction_manager_contact_id / economist_contact_id),
       // и короткое objects(name) стало неоднозначным: PostgREST отвечает PGRST201,
       // а список сотрудников оставался пустым.
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contacts')
         .select('*, objects!object_id(name), departments(id, name)')
         .order('full_name', { ascending: true })
@@ -264,7 +264,7 @@ function ContactsPage() {
 
   const fetchObjects = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('objects')
         .select('*')
         .order('name', { ascending: true })
@@ -289,14 +289,14 @@ function ContactsPage() {
       }
 
       if (editingContact) {
-        const { error } = await supabase
+        const { error } = await db
           .from('contacts')
           .update(dataToSave)
           .eq('id', editingContact.id)
 
         if (error) throw error
       } else {
-        const { error } = await supabase.from('contacts').insert([dataToSave])
+        const { error } = await db.from('contacts').insert([dataToSave])
         if (error) throw error
       }
 
@@ -337,7 +337,7 @@ function ContactsPage() {
   const handleDeleteContact = async (id, name) => {
     if (window.confirm(`Вы уверены, что хотите удалить контакт "${name}"?`)) {
       try {
-        const { error } = await supabase.from('contacts').delete().eq('id', id)
+        const { error } = await db.from('contacts').delete().eq('id', id)
         if (error) throw error
         fetchContacts()
       } catch (error) {

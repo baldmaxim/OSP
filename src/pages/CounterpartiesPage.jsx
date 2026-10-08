@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useDeferredValue, useTransition, useCallback } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import * as XLSX from 'xlsx'
 import { formatPhone } from '../utils/phoneFormat'
@@ -230,7 +230,7 @@ function CounterpartiesPage() {
       // Страницы — ПАРАЛЛЕЛЬНО: контрагентов несколько тысяч, и последовательный
       // обход по 1000 строк складывался в несколько полных задержек сети подряд
       // на каждом открытии раздела. Первый запрос заодно приносит общее число строк.
-      const data = await fetchAllRowsParallel((from, to, withCount) => supabase
+      const data = await fetchAllRowsParallel((from, to, withCount) => db
         .from('counterparties')
         .select(`
           *,
@@ -252,7 +252,7 @@ function CounterpartiesPage() {
       // Только doc_category='general' — чтобы документы СБ/Прочие (та же owner_type='counterparty',
       // категории 'sb_approval'/'other') не попадали в «карточку компании».
       try {
-        const cards = await fetchAllRowsParallel((from, to, withCount) => supabase
+        const cards = await fetchAllRowsParallel((from, to, withCount) => db
           .from('s3_documents')
           .select('id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at', withCount ? { count: 'exact' } : undefined)
           .eq('owner_type', 'counterparty')
@@ -288,7 +288,7 @@ function CounterpartiesPage() {
   const fetchRelations = async () => {
     try {
       // Постранично — связей может быть больше 1000.
-      const data = await fetchAllRows((from, to) => supabase
+      const data = await fetchAllRows((from, to) => db
         .from('counterparty_relations')
         .select('id, counterparty_id, related_counterparty_id')
         .order('id', { ascending: true })
@@ -302,7 +302,7 @@ function CounterpartiesPage() {
   // task 321: справочник видов работ.
   const fetchWorkTypesDirectory = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('work_types')
         .select('*')
         .order('name', { ascending: true })
@@ -340,7 +340,7 @@ function CounterpartiesPage() {
     }
     try {
       if (editingWorkType) {
-        const { error } = await supabase
+        const { error } = await db
           .from('work_types')
           .update(payload)
           .eq('id', editingWorkType.id)
@@ -360,14 +360,14 @@ function CounterpartiesPage() {
               .map(x => (x === old ? name : x))
               .filter(Boolean)
             const uniq = [...new Set(newList)]
-            await supabase
+            await db
               .from('counterparties')
               .update({ work_type: uniq.join(', ') })
               .eq('id', cp.id)
           }
         }
       } else {
-        const { error } = await supabase.from('work_types').insert([payload])
+        const { error } = await db.from('work_types').insert([payload])
         if (error) throw error
       }
       setShowWorkTypeModal(false)
@@ -394,7 +394,7 @@ function CounterpartiesPage() {
       : `Удалить вид работ «${wt.name}»?`
     if (!window.confirm(msg)) return
     try {
-      const { error } = await supabase.from('work_types').delete().eq('id', wt.id)
+      const { error } = await db.from('work_types').delete().eq('id', wt.id)
       if (error) throw error
       fetchWorkTypesDirectory()
     } catch (err) {
@@ -438,7 +438,7 @@ function CounterpartiesPage() {
     }
     try {
       // Пара сохраняется в одном направлении; группа собирается при чтении.
-      const { error } = await supabase
+      const { error } = await db
         .from('counterparty_relations')
         .insert([{ counterparty_id: counterpartyId, related_counterparty_id: relatedId }])
 
@@ -473,11 +473,11 @@ function CounterpartiesPage() {
       // Сначала сшиваем остаток группы, потом удаляем: при сбое удаления группа
       // останется целой, а не развалится на части.
       if (insertPairs.length > 0) {
-        const { error: insError } = await supabase.from('counterparty_relations').insert(insertPairs)
+        const { error: insError } = await db.from('counterparty_relations').insert(insertPairs)
         if (insError && insError.code !== '23505') throw insError
       }
       if (deleteIds.length > 0) {
-        const { error } = await supabase.from('counterparty_relations').delete().in('id', deleteIds)
+        const { error } = await db.from('counterparty_relations').delete().in('id', deleteIds)
         if (error) throw error
       }
       await fetchRelations()
@@ -493,7 +493,7 @@ function CounterpartiesPage() {
   const logCpEvent = async (counterpartyId, eventType, payload = {}) => {
     if (!counterpartyId || !eventType) return
     try {
-      const { error } = await supabase.from('counterparty_audit_log').insert([{
+      const { error } = await db.from('counterparty_audit_log').insert([{
         counterparty_id: counterpartyId,
         event_type: eventType,
         field_name: payload.fieldName || null,
@@ -569,7 +569,7 @@ function CounterpartiesPage() {
 
       if (editingCounterparty) {
         // Обновление существующего контрагента
-        const { error } = await supabase
+        const { error } = await db
           .from('counterparties')
           .update(dataToSave)
           .eq('id', editingCounterparty.id)
@@ -578,7 +578,7 @@ function CounterpartiesPage() {
         counterpartyId = editingCounterparty.id
       } else {
         // Создание нового контрагента
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('counterparties')
           .insert([dataToSave])
           .select()
@@ -600,7 +600,7 @@ function CounterpartiesPage() {
           counterparty_id: counterpartyId
         }))
 
-        const { error: contactsError } = await supabase
+        const { error: contactsError } = await db
           .from('counterparty_contacts')
           .insert(contactsToInsert)
 
@@ -613,7 +613,7 @@ function CounterpartiesPage() {
       // не потеряются. Раньше же удаление шло первым, и при ошибке вставки
       // все контакты исчезали.
       if (oldContactIds.length > 0) {
-        const { error: deleteError } = await supabase
+        const { error: deleteError } = await db
           .from('counterparty_contacts')
           .delete()
           .in('id', oldContactIds)
@@ -700,14 +700,14 @@ function CounterpartiesPage() {
       }
 
       if (editingContact) {
-        const { error } = await supabase
+        const { error } = await db
           .from('counterparty_contacts')
           .update(contactFormData)
           .eq('id', editingContact.id)
 
         if (error) throw error
       } else {
-        const { error } = await supabase
+        const { error } = await db
           .from('counterparty_contacts')
           .insert([contactData])
         if (error) throw error
@@ -842,7 +842,7 @@ function CounterpartiesPage() {
   const handleDeleteCounterparty = async (id, name) => {
     if (window.confirm(`Перенести контрагента «${name}» в «Удалённые»? Его можно будет восстановить.`)) {
       try {
-        const { error } = await supabase
+        const { error } = await db
           .from('counterparties')
           .update({ deleted_at: new Date().toISOString() })
           .eq('id', id)
@@ -859,7 +859,7 @@ function CounterpartiesPage() {
   // task 197: восстановить из «Удалённых»
   const handleRestoreCounterparty = async (id) => {
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('counterparties')
         .update({ deleted_at: null })
         .eq('id', id)
@@ -887,7 +887,7 @@ function CounterpartiesPage() {
     }
     if (!window.confirm(`Безвозвратно удалить контрагента «${name}»? Это действие нельзя отменить.`)) return
     try {
-      const { error } = await supabase.from('counterparties').delete().eq('id', id)
+      const { error } = await db.from('counterparties').delete().eq('id', id)
       if (error) throw error
       fetchCounterparties()
     } catch (error) {
@@ -939,8 +939,8 @@ function CounterpartiesPage() {
 
     try {
       const query = isHardDelete
-        ? supabase.from('counterparties').delete().in('id', selectedCounterpartyIds)
-        : supabase.from('counterparties').update({ deleted_at: new Date().toISOString() }).in('id', selectedCounterpartyIds)
+        ? db.from('counterparties').delete().in('id', selectedCounterpartyIds)
+        : db.from('counterparties').update({ deleted_at: new Date().toISOString() }).in('id', selectedCounterpartyIds)
       const { error } = await query
       if (error) throw error
 
@@ -965,7 +965,7 @@ function CounterpartiesPage() {
   const handleStatusChange = async (counterpartyId, newStatus) => {
     const prevStatus = counterparties.find(cp => cp.id === counterpartyId)?.status ?? null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('counterparties')
         .update({ status: newStatus })
         .eq('id', counterpartyId)
@@ -995,7 +995,7 @@ function CounterpartiesPage() {
     // в историю пустую правку.
     if ((prevNotes || '') === (notes || '')) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('counterparties')
         .update({ notes })
         .eq('id', counterpartyId)
@@ -1392,7 +1392,7 @@ function CounterpartiesPage() {
 
       for (const { contacts, ...cpData } of counterpartiesToInsert) {
         try {
-          const { data: inserted, error: cpError } = await supabase
+          const { data: inserted, error: cpError } = await db
             .from('counterparties')
             .insert([cpData])
             .select()
@@ -1404,7 +1404,7 @@ function CounterpartiesPage() {
           // Вставляем контакты
           if (contacts.length > 0 && inserted[0]) {
             const contactsToInsert = contacts.map(c => ({ ...c, counterparty_id: inserted[0].id }))
-            const { error: contactsErr } = await supabase
+            const { error: contactsErr } = await db
               .from('counterparty_contacts')
               .insert(contactsToInsert)
             if (contactsErr) {
@@ -1516,7 +1516,7 @@ function CounterpartiesPage() {
     if (tenderHistoryMap[counterpartyId]) return // уже загружено
     setTenderHistoryLoadingId(counterpartyId)
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('tender_counterparties')
         .select('status, tenders(id, work_description, tender_start_date, tender_end_date, objects(name))')
         .eq('counterparty_id', counterpartyId)
@@ -1549,7 +1549,7 @@ function CounterpartiesPage() {
     if (auditMap[counterpartyId]) return
     setAuditLoadingId(counterpartyId)
     try {
-      const rows = await fetchAllRows((from, to) => supabase
+      const rows = await fetchAllRows((from, to) => db
         .from('counterparty_audit_log')
         .select('*')
         .eq('counterparty_id', counterpartyId)

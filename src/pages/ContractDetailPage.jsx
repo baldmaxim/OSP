@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { formatMoney } from '../utils/estimateImport'
 import {
@@ -97,7 +97,7 @@ function ContractDetailPage() {
   // Универсальная запись в аудит-лог
   const logEvent = useCallback(async (eventType, payload = {}) => {
     try {
-      await supabase.from('contract_audit_log').insert([{
+      await db.from('contract_audit_log').insert([{
         contract_id: contractId,
         event_type: eventType,
         field_name: payload.fieldName || null,
@@ -114,7 +114,7 @@ function ContractDetailPage() {
 
   const fetchContract = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contracts')
         .select('*, objects(name), counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type), contract_counterparties(sort_order, counterparties(id, name, inn, kpp, legal_address, actual_address, website, work_type)), tenders(work_description), responsible:contacts!responsible_contact_id(id, full_name, position)')
         .eq('id', contractId)
@@ -123,7 +123,7 @@ function ContractDetailPage() {
       setContract(data)
       setNotesDraft(data?.notes || '')
 
-      const { data: caRows } = await supabase
+      const { data: caRows } = await db
         .from('contract_attachments')
         .select('object_contract_attachments(id, name, link, sort_order)')
         .eq('contract_id', contractId)
@@ -133,7 +133,7 @@ function ContractDetailPage() {
         .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
       setAttachments(list)
 
-      const { data: logRows } = await supabase
+      const { data: logRows } = await db
         .from('contract_audit_log')
         .select('*')
         .eq('contract_id', contractId)
@@ -151,7 +151,7 @@ function ContractDetailPage() {
   const fetchFamily = useCallback(async () => {
     if (!rootId) return
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contracts')
         .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, contract_date, contract_amount, psdc_total, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period, gen_director_name, phone, email, comments, changed_fields')
         .or(`id.eq.${rootId},root_contract_id.eq.${rootId}`)
@@ -183,7 +183,7 @@ function ContractDetailPage() {
   const branchCurrentAmount = selfDoc && terms.applied.length > 0 ? branchAmount(selfDoc, docIndex) : null
 
   const fetchAdvances = useCallback(async () => {
-    const { data } = await supabase
+    const { data } = await db
       .from('contract_advance_schedule')
       .select('*')
       .eq('contract_id', contractId)
@@ -234,7 +234,7 @@ function ContractDetailPage() {
     if ((contract?.notes || null) === next) return
     setSavingNotes(true)
     try {
-      const { error } = await supabase.from('contracts').update({ notes: next }).eq('id', contractId)
+      const { error } = await db.from('contracts').update({ notes: next }).eq('id', contractId)
       if (error) throw error
       await logEvent('field_updated', {
         fieldName: 'notes',
@@ -264,11 +264,11 @@ function ContractDetailPage() {
     }
     try {
       if (editingAdvId) {
-        const { error } = await supabase.from('contract_advance_schedule').update(payload).eq('id', editingAdvId)
+        const { error } = await db.from('contract_advance_schedule').update(payload).eq('id', editingAdvId)
         if (error) throw error
       } else {
         payload.sort_order = advances.length
-        const { error } = await supabase.from('contract_advance_schedule').insert([payload])
+        const { error } = await db.from('contract_advance_schedule').insert([payload])
         if (error) throw error
       }
       await logEvent('advance_updated', { description: editingAdvId ? 'Изменён транш авансирования' : 'Добавлен транш авансирования' })
@@ -293,7 +293,7 @@ function ContractDetailPage() {
   const handleDeleteAdvance = async (id) => {
     if (!window.confirm('Удалить транш?')) return
     try {
-      const { error } = await supabase.from('contract_advance_schedule').delete().eq('id', id)
+      const { error } = await db.from('contract_advance_schedule').delete().eq('id', id)
       if (error) throw error
       await logEvent('advance_updated', { description: 'Удалён транш авансирования' })
       if (editingAdvId === id) { setEditingAdvId(null); setAdvForm({ planned_date: '', amount: '', description: '', paid_date: '' }) }

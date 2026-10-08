@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole, SECTIONS } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
 import RoleBadge from '../components/admin/RoleBadge'
@@ -107,7 +107,7 @@ function AdminPage() {
 
   const fetchObjectsList = async () => {
     try {
-      const { data, error } = await supabase.from('objects').select('id, name').order('name', { ascending: true })
+      const { data, error } = await db.from('objects').select('id, name').order('name', { ascending: true })
       if (error) throw error
       loadedRef.current.objects = true
       setObjectsList(data || [])
@@ -140,10 +140,10 @@ function AdminPage() {
     try {
       // Оба запроса независимы — параллельно, а не друг за другом.
       const [rolesRes, authRes] = await Promise.all([
-        supabase.from('user_roles').select('*')
+        db.from('user_roles').select('*')
           .order('is_approved', { ascending: true })
           .order('created_at', { ascending: true }),
-        supabase.rpc('get_auth_users'),
+        db.rpc('get_auth_users'),
       ])
       // Ответ устарел (запущено новое обновление) — не перетираем свежие данные.
       if (requestId !== usersRequestRef.current) return
@@ -209,7 +209,7 @@ function AdminPage() {
   const fetchPermissions = async () => {
     setLoadingPerms(true)
     try {
-      const { data, error } = await supabase.from('role_permissions').select('*').order('role')
+      const { data, error } = await db.from('role_permissions').select('*').order('role')
       if (error) throw error
       setPermissions(data || [])
     } catch (err) {
@@ -225,11 +225,11 @@ function AdminPage() {
     const patch = statusPatch(status, userProfile?.full_name || null)
     try {
       if (!u.has_role) {
-        const { error } = await supabase.from('user_roles')
+        const { error } = await db.from('user_roles')
           .insert([{ user_id: u.user_id, email: u.email, role: u.role || 'engineer', ...patch }])
         if (error) throw error
       } else {
-        const { error } = await supabase.from('user_roles').update(patch).eq('user_id', u.user_id)
+        const { error } = await db.from('user_roles').update(patch).eq('user_id', u.user_id)
         if (error) throw error
       }
       await fetchUsers({ silent: true })
@@ -245,7 +245,7 @@ function AdminPage() {
   const handleConfirmEmail = async (u) => {
     if (!window.confirm(`Подтвердить почту ${u.email || ''} без ссылки из письма?`)) return
     try {
-      const { error } = await supabase.rpc('admin_confirm_user_email', { target_user_id: u.user_id })
+      const { error } = await db.rpc('admin_confirm_user_email', { target_user_id: u.user_id })
       if (error) {
         const missing = error.code === 'PGRST202' || /admin_confirm_user_email/.test(error.message || '')
         throw new Error(missing ? 'в базе не применена миграция 20261002_admin_email_confirmation' : error.message)
@@ -261,11 +261,11 @@ function AdminPage() {
     if (!u.user_id) return
     if (!window.confirm(`Полностью удалить пользователя ${u.email || ''}? Это действие необратимо: пользователь будет удалён из системы и больше не сможет войти.`)) return
     try {
-      const { error } = await supabase.rpc('admin_delete_user', { target_user_id: u.user_id })
+      const { error } = await db.rpc('admin_delete_user', { target_user_id: u.user_id })
       if (error) {
         if (/function .* does not exist/i.test(error.message)) {
           alert('RPC admin_delete_user не найдена в БД. Применяю частичное удаление: убирается роль (запись в user_roles), но запись в auth.users останется. Чтобы удалять полностью — примените миграцию 20260507_admin_delete_user_function.sql.')
-          const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', u.user_id)
+          const { error: delError } = await db.from('user_roles').delete().eq('user_id', u.user_id)
           if (delError) throw delError
         } else { throw error }
       }
@@ -300,8 +300,8 @@ function AdminPage() {
     // 20260730 не применена, код ошибки 42703), повторяем без неё — чтобы правка
     // имени/роли/статуса не блокировалась. Тогда сохранится одиночный object_id.
     const run = (p) => u.has_role
-      ? supabase.from('user_roles').update(p).eq('user_id', u.user_id)
-      : supabase.from('user_roles').insert([{ user_id: u.user_id, email: u.email, ...p }])
+      ? db.from('user_roles').update(p).eq('user_id', u.user_id)
+      : db.from('user_roles').insert([{ user_id: u.user_id, email: u.email, ...p }])
     let { error } = await run(payload)
     if (isBlockColumnMissing(error)) {
       // Без колонок блокировки сохраняем остальное; «заблокировать» так не выйдет.
@@ -335,7 +335,7 @@ function AdminPage() {
       // Обновляем только тех, у кого есть запись в user_roles (по user_id).
       const CHUNK = 100
       for (let i = 0; i < ids.length; i += CHUNK) {
-        const { error } = await supabase.from('user_roles').update(fields).in('user_id', ids.slice(i, i + CHUNK))
+        const { error } = await db.from('user_roles').update(fields).in('user_id', ids.slice(i, i + CHUNK))
         if (error) throw error
       }
       await fetchUsers({ silent: true })
@@ -355,7 +355,7 @@ function AdminPage() {
     if (!key || !label) { showRoleFeedback('err', 'Заполните машинный ключ и название роли'); return }
     if (!/^[a-z][a-z0-9_]*$/.test(key)) { showRoleFeedback('err', 'Ключ должен начинаться с латинской буквы и содержать только латиницу, цифры и нижнее подчёркивание'); return }
     try {
-      const { error } = await supabase.from('roles').insert([{ key, label, is_system: false }])
+      const { error } = await db.from('roles').insert([{ key, label, is_system: false }])
       if (error) throw error
       setNewRoleKey(''); setNewRoleLabel('')
       await refreshAvailableRoles()
@@ -370,7 +370,7 @@ function AdminPage() {
     const label = (newLabel || '').trim()
     if (!label) return
     try {
-      const { error } = await supabase.from('roles').update({ label }).eq('key', key)
+      const { error } = await db.from('roles').update({ label }).eq('key', key)
       if (error) throw error
       await refreshAvailableRoles()
       showRoleFeedback('ok', 'Сохранено')
@@ -379,9 +379,9 @@ function AdminPage() {
   const handleDeleteRole = async (key, label) => {
     if (!window.confirm(`Удалить роль «${label}»? Пользователи с этой ролью потеряют её, права в role_permissions останутся как сироты.`)) return
     try {
-      await supabase.from('role_permissions').delete().eq('role', key)
-      await supabase.from('user_roles').update({ role: 'engineer' }).eq('role', key)
-      const { error } = await supabase.from('roles').delete().eq('key', key).eq('is_system', false)
+      await db.from('role_permissions').delete().eq('role', key)
+      await db.from('user_roles').update({ role: 'engineer' }).eq('role', key)
+      const { error } = await db.from('roles').delete().eq('key', key).eq('is_system', false)
       if (error) throw error
       await refreshAvailableRoles()
       showRoleFeedback('ok', 'Роль удалена')
@@ -399,11 +399,11 @@ function AdminPage() {
     else { next.can_edit = !currentEdit; if (next.can_edit) next.can_view = true }
     try {
       if (existing) {
-        const { error } = await supabase.from('role_permissions').update(next).eq('id', existing.id)
+        const { error } = await db.from('role_permissions').update(next).eq('id', existing.id)
         if (error) throw error
         setPermissions(prev => prev.map(p => p.id === existing.id ? { ...p, ...next } : p))
       } else {
-        const { data, error } = await supabase.from('role_permissions').insert([{ role, section, ...next }]).select().single()
+        const { data, error } = await db.from('role_permissions').insert([{ role, section, ...next }]).select().single()
         if (error) throw error
         if (data) setPermissions(prev => [...prev, data])
       }

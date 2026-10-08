@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../../supabase'
+import { db } from '../../api'
 import FilterDropdown from '../FilterDropdown'
 import AutoGrowTextarea from '../AutoGrowTextarea'
 import S3DocumentList from '../S3DocumentList'
@@ -86,15 +86,15 @@ function TaskDetailModal({
 
   const loadDetails = useCallback(async () => {
     const [pRes, cRes, cmRes, hRes, fRes] = await Promise.all([
-      supabase.from('task_participants').select('user_id, kind').eq('task_id', task.id),
-      supabase.from('task_checklist_items').select('*').eq('task_id', task.id)
+      db.from('task_participants').select('user_id, kind').eq('task_id', task.id),
+      db.from('task_checklist_items').select('*').eq('task_id', task.id)
         .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
-      supabase.from('task_comments').select('*').eq('task_id', task.id)
+      db.from('task_comments').select('*').eq('task_id', task.id)
         .order('created_at', { ascending: true }),
-      supabase.from('task_audit_log').select('*').eq('task_id', task.id)
+      db.from('task_audit_log').select('*').eq('task_id', task.id)
         .order('changed_at', { ascending: false }).limit(200),
       // Только счётчик для бейджа вкладки — сами файлы грузит S3DocumentList.
-      supabase.from('s3_documents').select('id', { count: 'exact', head: true })
+      db.from('s3_documents').select('id', { count: 'exact', head: true })
         .eq('owner_type', 'task').eq('owner_id', task.id),
     ])
     if (pRes.error) console.error('Ошибка загрузки участников задачи:', pRes.error.message)
@@ -159,7 +159,7 @@ function TaskDetailModal({
   const addChecklistItem = async () => {
     const title = newChecklistItem.trim()
     if (!title) return
-    const { error } = await supabase.from('task_checklist_items').insert([{
+    const { error } = await db.from('task_checklist_items').insert([{
       task_id: task.id, title, sort_order: checklist.length * 10,
     }])
     if (error) { alert('Не удалось добавить пункт: ' + error.message); return }
@@ -168,14 +168,14 @@ function TaskDetailModal({
     await onChanged()
   }
   const toggleChecklistItem = async (item) => {
-    const { error } = await supabase.from('task_checklist_items')
+    const { error } = await db.from('task_checklist_items')
       .update({ is_done: !item.is_done }).eq('id', item.id)
     if (error) { alert('Не удалось изменить пункт: ' + error.message); return }
     await loadDetails()
     await onChanged()
   }
   const removeChecklistItem = async (item) => {
-    const { error } = await supabase.from('task_checklist_items').delete().eq('id', item.id)
+    const { error } = await db.from('task_checklist_items').delete().eq('id', item.id)
     if (error) { alert('Не удалось удалить пункт: ' + error.message); return }
     await loadDetails()
     await onChanged()
@@ -185,7 +185,7 @@ function TaskDetailModal({
   const addComment = async () => {
     const body = newComment.trim()
     if (!body) return
-    const { error } = await supabase.from('task_comments').insert([{
+    const { error } = await db.from('task_comments').insert([{
       task_id: task.id, author_user_id: currentUserId, author_name: author.name || null, body,
     }])
     if (error) { alert('Не удалось отправить сообщение: ' + error.message); return }

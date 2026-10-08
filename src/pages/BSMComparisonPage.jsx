@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import * as XLSX from 'xlsx'
 import './BSMComparisonPage.css'
@@ -21,7 +21,7 @@ function BSMComparisonPage() {
   }, [])
 
   const fetchObjects = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('objects')
       .select('id, name')
       .order('name')
@@ -37,7 +37,7 @@ function BSMComparisonPage() {
     // Загружаем обе таблицы параллельно
     // Постранично: сравнение цен теряло материалы после тысячной строки —
     // расхождение по ним просто не показывалось.
-    const page = (table) => fetchAllRows((from, to) => supabase
+    const page = (table) => fetchAllRows((from, to) => db
       .from(table)
       .select('*')
       .eq('object_id', selectedObjectId)

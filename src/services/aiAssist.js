@@ -1,6 +1,6 @@
 // Frontend-сервис ИИ-помощника (Edge Function `ai-assist`).
 // Ключ Anthropic живёт только в функции; фронт отправляет содержимое пункта.
-import { supabase } from '../supabase'
+import { invokeFunction } from '../api'
 
 const FUNCTION_NAME = 'ai-assist'
 
@@ -21,7 +21,7 @@ export async function suggestClause({
   contract,
   comments = [],
 }) {
-  const { data, error } = await supabase.functions.invoke(FUNCTION_NAME, {
+  const { data, error } = await invokeFunction(FUNCTION_NAME, {
     body: {
       action: 'clause_suggest',
       mode,

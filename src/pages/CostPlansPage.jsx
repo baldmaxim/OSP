@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect, useDeferredValue, memo } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import FolderPathCell from '../components/FolderPathCell'
@@ -45,7 +45,7 @@ function CostPlansPage() {
     if (!tenderId || !eventType) return
     try {
       const role = localStorage.getItem('userRole') || null
-      await supabase.from('tender_audit_log').insert([{
+      await db.from('tender_audit_log').insert([{
         tender_id: tenderId,
         event_type: eventType,
         field_name: payload.fieldName || null,
@@ -69,7 +69,7 @@ function CostPlansPage() {
     const prev = tenders.find(t => t.id === tenderId)?.folder_path ?? null
     if ((prev || null) === next) return
     try {
-      const { error } = await supabase.from('tenders').update({ folder_path: next }).eq('id', tenderId)
+      const { error } = await db.from('tenders').update({ folder_path: next }).eq('id', tenderId)
       if (error) throw error
       setTenders(list => list.map(t => (t.id === tenderId ? { ...t, folder_path: next } : t)))
       logTenderEvent(tenderId, 'field_updated', {
@@ -105,7 +105,7 @@ function CostPlansPage() {
 
   const fetchAllContacts = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contacts')
         .select('id, full_name, position')
         .order('full_name', { ascending: true })
@@ -121,7 +121,7 @@ function CostPlansPage() {
       setLoading(true)
       // Постранично: без .range() PostgREST молча отдал бы только первые 1000
       // тендеров, и часть реестра просто не появилась бы на странице.
-      const data = await fetchAllRows((from, to) => supabase
+      const data = await fetchAllRows((from, to) => db
         .from('tenders')
         .select(`
           id, object_id, public_tender_number, status, tender_type, department, cost_plan_status, cost_plan_link,
@@ -181,7 +181,7 @@ function CostPlansPage() {
       }
     }
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ cost_plan_status: newStatus })
         .eq('id', tenderId)
@@ -200,7 +200,7 @@ function CostPlansPage() {
     const c = value ? allContacts.find(x => x.id === value) : null
     const newName = c?.full_name || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ cost_plan_responsible_id: value })
         .eq('id', tenderId)
@@ -236,7 +236,7 @@ function CostPlansPage() {
     const { tenderId } = linkModal
     const value = linkModal.value.trim() || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ cost_plan_link: value })
         .eq('id', tenderId)
@@ -252,7 +252,7 @@ function CostPlansPage() {
   const handleChangeCostPlanDate = async (tenderId, field, value) => {
     const next = value || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ [field]: next })
         .eq('id', tenderId)
@@ -268,7 +268,7 @@ function CostPlansPage() {
   const handleChangeCostPlanNotes = async (tenderId, value) => {
     const next = value.trim() || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ cost_plan_notes: next })
         .eq('id', tenderId)

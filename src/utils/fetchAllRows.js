@@ -1,4 +1,4 @@
-import { supabase } from '../supabase'
+import { db } from '../api'
 
 // Обход потолка PostgREST в 1000 строк: тянем ВСЕ строки постранично.
 // `makeQuery(from, to)` должен КАЖДЫЙ раз создавать НОВЫЙ запрос с `.range(from, to)`
@@ -25,7 +25,7 @@ export { fetchAllRowsParallel } from './fetchPagesParallel'
 
 // Частый случай: все активные контрагенты для выпадашки (таблица >1000 строк).
 export async function fetchAllActiveCounterparties(select = 'id, name') {
-  return fetchAllRows((from, to) => supabase
+  return fetchAllRows((from, to) => db
     .from('counterparties')
     .select(select)
     .eq('status', 'active')

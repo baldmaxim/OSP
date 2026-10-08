@@ -4,7 +4,7 @@
 // там проверяются права, статус документа, выполняется расчёт и атомарное
 // применение. Здесь — только транспорт и сборка файлов.
 import { saveAs } from 'file-saver'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { requestDownloadUrl, uploadFile, deleteS3Object } from './s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import {
@@ -15,7 +15,7 @@ const ROWS_PER_REQUEST = 1000
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 async function rpc(name, args) {
-  const { data, error } = await supabase.rpc(name, args)
+  const { data, error } = await db.rpc(name, args)
   if (error) {
     const err = new Error(error.message || 'Ошибка запроса')
     err.code = error.code
@@ -123,7 +123,7 @@ export async function applyBatch(psdcIds, onProgress) {
 }
 
 export async function listPsdcBatches() {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('psdc_batches')
     .select('id, title, created_by_name, created_at')
     .order('created_at', { ascending: false })
@@ -134,7 +134,7 @@ export async function listPsdcBatches() {
 
 // Документы для ручного сопоставления и автопоиска (весь реестр, постранично).
 export function fetchMatchableDocuments() {
-  return fetchAllRows((from, to) => supabase
+  return fetchAllRows((from, to) => db
     .from('contracts')
     .select('id, display_id, record_type, contract_number, parent_contract_id, root_contract_id, status, deleted_at, object_id, counterparties(name)')
     .is('deleted_at', null)
@@ -144,7 +144,7 @@ export function fetchMatchableDocuments() {
 
 // Исходные байты загруженного XLSX из хранилища.
 export async function downloadSourceBytes(s3DocumentId) {
-  const { data, error } = await supabase.from('s3_documents').select('s3_key, file_name').eq('id', s3DocumentId).single()
+  const { data, error } = await db.from('s3_documents').select('s3_key, file_name').eq('id', s3DocumentId).single()
   if (error) throw error
   const { presigned_url } = await requestDownloadUrl(data.s3_key)
   const res = await fetch(presigned_url)

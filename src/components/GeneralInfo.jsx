@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { formatPhone } from '../utils/phoneFormat'
 import './GeneralInfo.css'
 
@@ -36,7 +36,7 @@ function GeneralInfo() {
   const fetchObjects = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('objects')
         .select('*')
         .order('name', { ascending: true })
@@ -56,7 +56,7 @@ function GeneralInfo() {
       // objects!object_id — связь указана явно: с миграции 20260822 между
       // contacts и objects несколько внешних ключей, и короткое objects(name)
       // становится неоднозначным (PGRST201).
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contacts')
         .select('*, objects!object_id(name)')
         .order('full_name', { ascending: true })
@@ -73,7 +73,7 @@ function GeneralInfo() {
   const handleObjectSubmit = async (e) => {
     e.preventDefault()
     try {
-      const { error } = await supabase.from('objects').insert([objectFormData])
+      const { error } = await db.from('objects').insert([objectFormData])
 
       if (error) throw error
 
@@ -89,7 +89,7 @@ function GeneralInfo() {
   const handleContactSubmit = async (e) => {
     e.preventDefault()
     try {
-      const { error } = await supabase.from('contacts').insert([contactFormData])
+      const { error } = await db.from('contacts').insert([contactFormData])
 
       if (error) throw error
 

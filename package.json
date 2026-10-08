@@ -11,6 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "check:transport": "node scripts/check-transport.mjs",
     "test:psdc": "node --test --test-concurrency=1 \"tests/psdc/*.test.mjs\"",
     "bench:psdc": "node tests/psdc/perf.bench.mjs",
     "test:tender": "node --test --test-concurrency=1 \"tests/tender/*.test.mjs\"",

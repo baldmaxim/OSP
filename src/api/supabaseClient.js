@@ -1,3 +1,7 @@
+// Единственный клиент Supabase в приложении. Импортируют его только адаптеры src/api/
+// (db, auth, files, functions, realtime) — остальной код ходит через них, это проверяют
+// ESLint (no-restricted-imports) и npm run check:transport. Так переход на свой API
+// (этап 3 плана migration/PLAN.md) меняет адаптеры, а не страницы.
 import { createClient } from '@supabase/supabase-js'
 import { getRuntimeConfig } from '../config/runtime'
 import { observingFetch } from './clientErrors'

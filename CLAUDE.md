@@ -16,6 +16,7 @@ npm run dev          # Start dev server (http://localhost:5173)
 npm run build        # Production build to dist/
 npm run preview      # Preview production build
 npm run lint         # Run ESLint (--max-warnings 0)
+npm run check:transport # доступ к серверу только через src/api/ (0 нарушений)
 npm run test:psdc    # ПСДЦ: движок в БД, XLSX, UI (PostgreSQL + Chromium)
 npm run test:tender  # карточка тендера: производительность UI (Chromium)
 npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
@@ -29,9 +30,9 @@ npm run test:backup  # migration/backup: копия, проверка восст
 - Chromium: сборка Playwright, Chrome/Edge или путь в `PSDC_BROWSER` (на удалённой машине —
   `~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell`).
 
-Без них соответствующие наборы пропускаются (skip), а не падают. Стенды UI подменяют клиент Supabase и
-`RoleContext` подделками (`tests/*/ui/fake-*.js*`); константы ролей подделки берут из
-`src/contexts/roleConstants.js`.
+Без них соответствующие наборы пропускаются (skip), а не падают. Стенды UI подменяют клиент Supabase
+(модуль `src/api/supabaseClient.js`) и `RoleContext` подделками (`tests/*/ui/fake-*.js*`); константы ролей
+подделки берут из `src/contexts/roleConstants.js`.
 
 ## Environment Setup
 
@@ -55,10 +56,15 @@ src/
 │   ├── Sidebar.jsx       # Navigation with 3-level collapsible sections
 │   └── *.css             # Component/page styles (e.g., TenderDetail.css)
 ├── pages/                # Self-contained CRUD pages (no shared state)
-└── supabase/
-    ├── index.js          # Re-exports supabase client
-    ├── client.js         # Supabase client init
-    └── hooks.js          # Auth hooks (unused - roles via localStorage)
+└── api/                  # ЕДИНСТВЕННЫЙ доступ к серверу (Р3 переезда, migration/PLAN.md)
+    ├── index.js          # db, auth, objectPhotos, invokeFunction, subscribeTable
+    ├── db.js             # таблицы и RPC: db.from(...), db.rpc(...) — построитель как у supabase-js
+    ├── auth.js           # вход (фаза A — Supabase Auth): только RoleContext и сервисы
+    ├── files.js          # Supabase Storage: обложки объектов (документы — services/s3.js, cloud.ru)
+    ├── functions.js      # invokeFunction(name, options) — Edge Functions
+    ├── realtime.js       # subscribeTable(...) — онлайн-обновления
+    ├── supabaseClient.js # единственный createClient; импортируют только адаптеры
+    └── clientErrors.js   # наблюдение за отказами для телеметрии
 
 supabase/                 # Database schemas (NOT in src/)
 ├── schemas/              # Table definitions (preferred for reading)
@@ -70,7 +76,7 @@ supabase/                 # Database schemas (NOT in src/)
 No centralized state management. Each page:
 1. Fetches data in `useEffect` on mount
 2. Manages local state with `useState`
-3. Calls Supabase directly for mutations
+3. Calls the server through `src/api` adapters (`db.from`, `db.rpc`) for mutations
 4. Re-fetches after mutations to sync UI
 
 ### Role-Based Access
@@ -136,12 +142,17 @@ CSS variables defined for `[data-theme="light"]` and `[data-theme="dark"]` in `i
 
 ### Client Usage
 
+Весь доступ к серверу — через адаптеры `src/api/`. Импорт `@supabase/*` и клиента вне `src/api/`
+запрещён ESLint (`no-restricted-imports`) и `npm run check:transport`: при переезде (этап 3,
+`migration/PLAN.md`) меняются адаптеры, а не страницы. `db` отдаёт тот же построитель и тот же ответ
+`{ data, error, count }`, что supabase-js.
+
 ```javascript
 // From pages/ directory:
-import { supabase } from '../supabase'
+import { db } from '../api'
 
 // Fetch with joins
-const { data } = await supabase
+const { data } = await db
   .from('contracts')
   .select('*, objects(name), counterparties(name)')
   .order('created_at', { ascending: false })
@@ -380,7 +391,7 @@ curl -H "X-API-Key: <ключ>" \
 
 **Права.** У материализованного представления нет RLS и не работает `security_invoker` — оно читается напрямую. Грант выдан **только `authenticated`**, у `anon` отозван явно. При правке этих объектов не возвращайте `grant ... to anon`: это откроет анонимам цены подрядчиков.
 
-**Обновление.** `refresh_rates_registry()` (security definer) делает `REFRESH MATERIALIZED VIEW CONCURRENTLY` обоих MV и пишет отметку в `app_settings('rates_registry_refreshed_at')`. Запускается расписанием pg_cron каждые 10 минут и кнопкой «Обновить» на странице (`supabase.rpc('refresh_rates_registry')`).
+**Обновление.** `refresh_rates_registry()` (security definer) делает `REFRESH MATERIALIZED VIEW CONCURRENTLY` обоих MV и пишет отметку в `app_settings('rates_registry_refreshed_at')`. Запускается расписанием pg_cron каждые 10 минут и кнопкой «Обновить» на странице (`db.rpc('refresh_rates_registry')`).
 
 **Требуется включить pg_cron** в Supabase → Database → Extensions. Если расширение недоступно, миграция не падает — просто не создаётся расписание, и реестр обновляется только кнопкой.
 
@@ -445,11 +456,11 @@ const cleanNumericValue = (value) => {
 
 ### Page Components
 
-Each page handles its own CRUD operations directly with Supabase. Pattern:
+Each page handles its own CRUD operations through the `src/api` adapters (`db`). Pattern:
 1. `useState` for data, loading, editing state
 2. `useEffect` to fetch on mount
 3. Form handling with local state
-4. Direct Supabase calls for mutations
+4. `db.from(...)` / `db.rpc(...)` calls for mutations
 
 **CSS Organization:** Pages with complex UI have dedicated CSS files (e.g., `BSMRatesPage.css`, `CounterpartiesPage.css`). Common styles in `GeneralInfo.css` are imported where needed. CSS files are in `src/components/` (shared) or `src/pages/` (page-specific).
 

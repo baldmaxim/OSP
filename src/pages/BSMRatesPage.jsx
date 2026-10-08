@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
@@ -32,7 +32,7 @@ function BSMRatesPage() {
   }, [])
 
   const fetchObjects = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('objects')
       .select('id, name')
       .order('name')
@@ -47,7 +47,7 @@ function BSMRatesPage() {
     // Постранично: материалов на объекте бывает больше 1000, а PostgREST
     // молча отдаёт только первую тысячу — часть расценок просто исчезала.
     try {
-      const data = await fetchAllRows((from, to) => supabase
+      const data = await fetchAllRows((from, to) => db
         .from('bsm_supply_rates')
         .select('*')
         .eq('object_id', selectedObjectId)
@@ -76,7 +76,7 @@ function BSMRatesPage() {
       return
     }
 
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_supply_rates')
       .insert({
         object_id: selectedObjectId,
@@ -100,7 +100,7 @@ function BSMRatesPage() {
   }
 
   const handleUpdateRate = async (id, updates) => {
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_supply_rates')
       .update(updates)
       .eq('id', id)
@@ -116,7 +116,7 @@ function BSMRatesPage() {
   const handleDeleteRate = async (id) => {
     if (!confirm('Удалить эту расценку?')) return
 
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_supply_rates')
       .delete()
       .eq('id', id)
@@ -132,7 +132,7 @@ function BSMRatesPage() {
     if (!confirm(`Удалить ${selectedRates.size} выбранных расценок?`)) return
 
     const idsToDelete = Array.from(selectedRates)
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_supply_rates')
       .delete()
       .in('id', idsToDelete)
@@ -273,7 +273,7 @@ function BSMRatesPage() {
         const conflictItems = [] // Позиции с разной ценой
 
         for (const rate of newRates) {
-          const { data: existing, error } = await supabase
+          const { data: existing, error } = await db
             .from('bsm_supply_rates')
             .select('id, material_name, unit, supply_price')
             .eq('object_id', rate.object_id)
@@ -357,7 +357,7 @@ function BSMRatesPage() {
 
     // 1. Добавляем новые позиции
     for (const item of importReport.newItems) {
-      const { error } = await supabase
+      const { error } = await db
         .from('bsm_supply_rates')
         .insert(item)
 
@@ -374,7 +374,7 @@ function BSMRatesPage() {
       const decision = conflictDecisions[idx]
 
       if (decision === 'update') {
-        const { error } = await supabase
+        const { error } = await db
           .from('bsm_supply_rates')
           .update({
             unit: item.unit,

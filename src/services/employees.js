@@ -1,4 +1,4 @@
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 
 // task 433: справочник сотрудников для выбора исполнителя задачи.
@@ -8,7 +8,7 @@ import { fetchAllRows } from '../utils/fetchAllRows'
 // поэтому без вью список исполнителей был бы пуст у всех, кроме админа.
 // Вью создаётся миграцией 20260818_tasks_foundation.sql.
 export async function fetchEmployees() {
-  return fetchAllRows((from, to) => supabase
+  return fetchAllRows((from, to) => db
     .from('employee_directory')
     .select('user_id, display_name, full_name, email, role')
     .order('display_name', { ascending: true })

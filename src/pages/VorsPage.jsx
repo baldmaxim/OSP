@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import VorRdModal from '../components/VorRdModal'
@@ -148,7 +148,7 @@ function VorsPage() {
     if (tendersRef.current.find(t => t.id === tenderId)?._kind === 'request') return
     try {
       const role = localStorage.getItem('userRole') || null
-      await supabase.from('tender_audit_log').insert([{
+      await db.from('tender_audit_log').insert([{
         tender_id: tenderId,
         event_type: eventType,
         field_name: payload.fieldName || null,
@@ -234,7 +234,7 @@ function VorsPage() {
       setLoading(true)
       // Постранично: без .range() PostgREST молча отдал бы только первые 1000
       // тендеров, и часть реестра просто не появилась бы на странице.
-      const load = (extraCols) => fetchAllRows((from, to) => supabase
+      const load = (extraCols) => fetchAllRows((from, to) => db
         .from('tenders')
         .select(`
           id, object_id, public_tender_number, status, tender_type, department, vor_status, vor_link,
@@ -352,7 +352,7 @@ function VorsPage() {
 
   useEffect(() => {
     let alive = true
-    supabase.from('app_settings').select('value').eq('key', DUTY_OVERRIDE_KEY).maybeSingle()
+    db.from('app_settings').select('value').eq('key', DUTY_OVERRIDE_KEY).maybeSingle()
       .then(({ data }) => { if (alive) setDutyOverride(parseDutyOverride(data?.value)) })
     return () => { alive = false }
   }, [])
@@ -365,7 +365,7 @@ function VorsPage() {
     setRequestModal({ mode: 'create' })
     if (formObjects) return
     try {
-      const { data, error } = await supabase.from('objects').select('id, name, status').order('name', { ascending: true })
+      const { data, error } = await db.from('objects').select('id, name, status').order('name', { ascending: true })
       if (error) throw error
       // У основного строительства — без объектов гарантийного отдела, как и у тендеров.
       setFormObjects(data || [])
@@ -382,7 +382,7 @@ function VorsPage() {
     const oldValue = tender?.vor_division || null
     if (oldValue === next) return
     try {
-      const { error } = await supabase.from(tableOf(tenderId)).update({ vor_division: next }).eq('id', tenderId)
+      const { error } = await db.from(tableOf(tenderId)).update({ vor_division: next }).eq('id', tenderId)
       if (error) throw error
       setAllRows(prev => prev.map(t => (t.id === tenderId ? { ...t, vor_division: next } : t)))
       const oldLabel = VOR_DIVISION_LABEL[oldValue] || null
@@ -411,7 +411,7 @@ function VorsPage() {
       }
     }
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from(tableOf(tenderId))
         .update({ vor_status: newStatus })
         .eq('id', tenderId)
@@ -436,7 +436,7 @@ function VorsPage() {
     const newName = emp?.display_name || null
     const patch = { vor_sto_user_id: value, vor_sto_name: newName }
     try {
-      const { error } = await supabase.from(tableOf(tenderId)).update(patch).eq('id', tenderId)
+      const { error } = await db.from(tableOf(tenderId)).update(patch).eq('id', tenderId)
       if (error) throw error
       setAllRows(prev => prev.map(t => (t.id === tenderId ? { ...t, ...patch } : t)))
       if (oldName !== newName) {
@@ -460,7 +460,7 @@ function VorsPage() {
     if (next === null) return
     const value = next.trim() || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from(tableOf(tenderId))
         .update({ vor_link: value })
         .eq('id', tenderId)
@@ -475,7 +475,7 @@ function VorsPage() {
   const handleChangeVorDate = async (tenderId, field, value) => {
     const next = value || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from(tableOf(tenderId))
         .update({ [field]: next })
         .eq('id', tenderId)

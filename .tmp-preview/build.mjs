@@ -112,7 +112,8 @@ function standPlugin(variantSrc) {
       // статический сервер из public/ — в бандл их тянуть не нужно.
       build.onResolve({ filter: /^\/[^/]/ }, (args) => ({ path: args.path, external: true }))
 
-      build.onResolve({ filter: /(^|[\\/])supabase([\\/](client|index)(\.js)?)?$/ }, (args) => {
+      // Клиент: в старых ревизиях — '../supabase', после Р3 — './supabaseClient' (src/api).
+      build.onResolve({ filter: /(^|[\\/])(supabase([\\/](client|index)(\.js)?)?|supabaseClient(\.js)?)$/ }, (args) => {
         if (args.path.startsWith('@supabase/')) return null
         return { path: stubSupabase }
       })

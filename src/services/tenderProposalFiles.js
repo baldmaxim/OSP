@@ -1,7 +1,7 @@
 // Сервис для работы с файлами КП/документов по тендеру (task 290).
 // Промежуточный слой поверх s3.js — добавляет метаданные file_kind / proposal_group_id /
 // version_label, чтобы выделять «коммерческое предложение» и группировать его версии.
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { deleteDocument, uploadFile } from './s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { STAGE_FIELDS } from '../utils/kpReviewStages'
@@ -26,7 +26,7 @@ export const KP_REVIEW_LABEL = {
 export async function fetchProposalFiles(tenderId, counterpartyId) {
   if (!tenderId || !counterpartyId) return { proposals: [], attachments: [] }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_proposal_files')
     .select('*, s3:s3_documents!s3_document_id(*), review_note_s3:s3_documents!review_note_s3_document_id(*)')
     .eq('tender_id', tenderId)
@@ -79,7 +79,7 @@ export async function addProposalFile({
       ? (proposalGroupId || crypto.randomUUID())
       : null
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_proposal_files')
     .insert({
       tender_id: tenderId,
@@ -150,7 +150,7 @@ export async function setProposalReview(fileId, {
     payload.remarks_sent_at = null
     payload.remarks_sent_by = null
   }
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_proposal_files')
     .update(payload)
     .eq('id', fileId)
@@ -204,7 +204,7 @@ export async function setReviewStage(fileId, stage, { author = '' } = {}) {
   payload.remarks_sent_at = fields.remarks_sent ? now : null
   payload.remarks_sent_by = fields.remarks_sent ? who : null
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_proposal_files')
     .update(payload)
     .eq('id', fileId)
@@ -218,7 +218,7 @@ export async function setSummaryAdded(fileId, { added, author = '' }) {
   const payload = added
     ? { summary_added: true, summary_added_at: new Date().toISOString(), summary_added_by: author?.trim() || null }
     : { summary_added: false, summary_added_at: null, summary_added_by: null }
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_proposal_files')
     .update(payload)
     .eq('id', fileId)
@@ -233,7 +233,7 @@ export async function setRemarksSent(fileId, { sent, sender = '' }) {
   const payload = sent
     ? { remarks_sent: true, remarks_sent_at: new Date().toISOString(), remarks_sent_by: sender?.trim() || null }
     : { remarks_sent: false, remarks_sent_at: null, remarks_sent_by: null }
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('tender_proposal_files')
     .update(payload)
     .eq('id', fileId)
@@ -248,7 +248,7 @@ export async function setRemarksSent(fileId, { sent, sender = '' }) {
 // statuses — массив статусов (null = все); objectIds — ограничение по объектам (scope сотрудника).
 export async function fetchProposalFilesForReview({ statuses = null, objectIds = null } = {}) {
   return fetchAllRows((from, to) => {
-    let q = supabase
+    let q = db
       .from('tender_proposal_files')
       .select(`id, tender_id, counterparty_id, version_label, created_at,
                review_status, review_note, reviewed_at, reviewed_by, review_required,

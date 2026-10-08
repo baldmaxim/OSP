@@ -1,4 +1,4 @@
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 
 // Загрузка данных для выгрузки объектов в Excel (построение листов —
@@ -15,7 +15,7 @@ const IN_FILTER_LIMIT = 50
 
 async function loadTable(table, select, objectIds, order) {
   return fetchAllRows((from, to) => {
-    let q = supabase.from(table).select(select)
+    let q = db.from(table).select(select)
     if (objectIds.length > 0 && objectIds.length <= IN_FILTER_LIMIT) q = q.in('object_id', objectIds)
     for (const col of order) q = q.order(col, { ascending: true })
     return q.order('id', { ascending: true }).range(from, to)
@@ -34,7 +34,7 @@ async function optional(label, promise, warnings) {
 }
 
 export async function loadObjectsExportData(objectIds = []) {
-  let q = supabase.from('objects').select('*').order('name', { ascending: true })
+  let q = db.from('objects').select('*').order('name', { ascending: true })
   if (objectIds.length > 0) q = q.in('id', objectIds)
   const { data: objects, error } = await q
   if (error) throw error

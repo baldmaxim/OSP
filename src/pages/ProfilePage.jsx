@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRole, ROLE_LABELS } from '../contexts/RoleContext'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { formatPhone } from '../utils/phoneFormat'
 import './ProfilePage.css'
 
@@ -25,7 +25,7 @@ function ProfilePage() {
     const fetchUserNumber = async () => {
       if (!user) return
       try {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('user_roles')
           .select('user_id, created_at')
           .order('created_at', { ascending: true })

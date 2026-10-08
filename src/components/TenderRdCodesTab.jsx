@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import './TenderRdCodesTab.css'
 
@@ -37,7 +37,7 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
     setLoading(true)
     setError(null)
     try {
-      const { data, error: err } = await supabase
+      const { data, error: err } = await db
         .from('tender_rd_codes')
         .select('*')
         .eq('tender_id', tenderId)
@@ -48,7 +48,7 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
       onCountChange?.(data?.length || 0)
       // Best-effort: без таблицы связей вкладка шифров работает как раньше.
       if (data?.length) {
-        const { data: links, error: linksErr } = await supabase
+        const { data: links, error: linksErr } = await db
           .from('tender_rd_document_codes')
           .select('rd_code_id')
           .in('rd_code_id', data.map(r => r.id))
@@ -94,7 +94,7 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
         // уже существующих, а не от их количества — иначе после удалений
         // строки начали бы конфликтовать по порядку.
         const maxSort = rows.reduce((m, r) => Math.max(m, r.sort_order || 0), 0)
-        const { error: err } = await supabase.from('tender_rd_codes').insert([{
+        const { error: err } = await db.from('tender_rd_codes').insert([{
           tender_id: tenderId,
           code,
           title: form.title.trim() || null,
@@ -104,7 +104,7 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
         }])
         if (err) throw err
       } else {
-        const { error: err } = await supabase
+        const { error: err } = await db
           .from('tender_rd_codes')
           .update({
             code,
@@ -132,7 +132,7 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
       : `Удалить шифр «${row.code}»?`
     if (!window.confirm(question)) return
     try {
-      const { error: err } = await supabase.from('tender_rd_codes').delete().eq('id', row.id)
+      const { error: err } = await db.from('tender_rd_codes').delete().eq('id', row.id)
       if (err) throw err
       await load()
     } catch (err) {
@@ -149,9 +149,9 @@ export default function TenderRdCodesTab({ tenderId, canEdit = false, onCountCha
     const a = rows[index]
     const b = rows[target]
     try {
-      const { error: e1 } = await supabase.from('tender_rd_codes')
+      const { error: e1 } = await db.from('tender_rd_codes')
         .update({ sort_order: b.sort_order }).eq('id', a.id)
-      const { error: e2 } = await supabase.from('tender_rd_codes')
+      const { error: e2 } = await db.from('tender_rd_codes')
         .update({ sort_order: a.sort_order }).eq('id', b.id)
       if (e1 || e2) throw (e1 || e2)
       await load()

@@ -9,7 +9,7 @@
 //   • планы затрат           — CostPlansPage;
 //   • тендеры на материалы   — TendersPage (tenderType='materials');
 //   • проверка КП            — fetchProposalFilesForReview() в tenderProposalFiles.js.
-import { supabase } from '../supabase'
+import { db } from '../api'
 
 // Статусы тендера (tenders.status) — текстовые, как в БД.
 const STATUS_NOT_STARTED = 'Не начат'
@@ -31,7 +31,7 @@ async function runCount(label, query) {
 // 'joint' | 'other'); null = без фильтра по направлению (тендеры на материалы
 // показываются все сразу).
 function tendersQuery({ tenderType, objectIds, department = null }) {
-  let q = supabase.from('tenders').select('id', { count: 'exact', head: true })
+  let q = db.from('tenders').select('id', { count: 'exact', head: true })
   if (department) q = q.eq('department', department)
   q = q.eq('tender_type', tenderType).is('deleted_at', null)
   if (objectIds?.length) q = q.in('object_id', objectIds)
@@ -40,7 +40,7 @@ function tendersQuery({ tenderType, objectIds, department = null }) {
 
 // Очередь «Проверка КП»: только КП, попадающие в очередь (review_required), со статусом pending.
 function kpPendingQuery(objectIds) {
-  let q = supabase
+  let q = db
     .from('tender_proposal_files')
     .select('id, tenders!inner(object_id)', { count: 'exact', head: true })
     .eq('file_kind', 'commercial_proposal')

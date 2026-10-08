@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import {
   parseByPosition,
   parseByAggregate,
@@ -235,7 +235,7 @@ function TenderProposalUploadModal({
       const CHUNK_DEL = 100
       for (let i = 0; i < itemIdsOfVor.length; i += CHUNK_DEL) {
         const chunk = itemIdsOfVor.slice(i, i + CHUNK_DEL)
-        const { error } = await supabase
+        const { error } = await db
           .from('tender_counterparty_proposals')
           .delete()
           .eq('counterparty_id', counterpartyId)
@@ -255,13 +255,13 @@ function TenderProposalUploadModal({
       let insErr = null
       for (let i = 0; i < payload.length; i += CHUNK_INS) {
         const chunk = payload.slice(i, i + CHUNK_INS)
-        let { error: chunkErr } = await supabase
+        let { error: chunkErr } = await db
           .from('tender_counterparty_proposals')
           .insert(chunk)
         // Подстраховка: миграция proposal_date ещё не применена — повторяем без поля.
         if (chunkErr && /proposal_date/i.test(chunkErr.message || '')) {
           const stripped = chunk.map(({ proposal_date, ...rest }) => rest) // eslint-disable-line no-unused-vars
-          const retry = await supabase.from('tender_counterparty_proposals').insert(stripped)
+          const retry = await db.from('tender_counterparty_proposals').insert(stripped)
           chunkErr = retry.error
         }
         if (chunkErr) {
@@ -272,7 +272,7 @@ function TenderProposalUploadModal({
       if (insErr) throw insErr
 
       // Обновляем статус участника на 'proposal_provided' (валидное значение ENUM).
-      const { error: statusErr } = await supabase
+      const { error: statusErr } = await db
         .from('tender_counterparties')
         .update({ status: 'proposal_provided' })
         .eq('tender_id', tenderId)

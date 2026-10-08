@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
 import { fetchAllActiveCounterparties, fetchAllRows } from '../utils/fetchAllRows'
@@ -81,7 +81,7 @@ function BSMContractorRatesPage() {
   const fetchExistingBsmList = async () => {
     setBsmListLoading(true)
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('bsm_contractor_rates')
         .select(`
           object_id,
@@ -117,7 +117,7 @@ function BSMContractorRatesPage() {
   }
 
   const fetchObjects = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('objects')
       .select('id, name')
       .order('name')
@@ -138,7 +138,7 @@ function BSMContractorRatesPage() {
     // Постранично: материалов на объекте бывает больше 1000, а PostgREST
     // молча отдаёт только первую тысячу — часть расценок просто исчезала.
     try {
-      const data = await fetchAllRows((from, to) => supabase
+      const data = await fetchAllRows((from, to) => db
         .from('bsm_contractor_rates')
         .select('*')
         .eq('object_id', selectedObjectId)
@@ -218,7 +218,7 @@ function BSMContractorRatesPage() {
 
     if (!confirm(`Удалить все расценки БСМ для объекта "${objName}" и подрядчика "${cpName}"?`)) return
 
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contractor_rates')
       .delete()
       .eq('object_id', objectId)
@@ -237,7 +237,7 @@ function BSMContractorRatesPage() {
       alert('Заполните наименование материала и цену')
       return
     }
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contractor_rates')
       .insert({
         object_id: selectedObjectId,
@@ -260,7 +260,7 @@ function BSMContractorRatesPage() {
   }
 
   const handleUpdateRate = async (id, updates) => {
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contractor_rates')
       .update(updates)
       .eq('id', id)
@@ -274,7 +274,7 @@ function BSMContractorRatesPage() {
 
   const handleDeleteRate = async (id) => {
     if (!confirm('Удалить эту расценку?')) return
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contractor_rates')
       .delete()
       .eq('id', id)
@@ -284,7 +284,7 @@ function BSMContractorRatesPage() {
   const handleDeleteSelected = async () => {
     if (selectedRates.size === 0) return
     if (!confirm(`Удалить ${selectedRates.size} выбранных расценок?`)) return
-    const { error } = await supabase
+    const { error } = await db
       .from('bsm_contractor_rates')
       .delete()
       .in('id', Array.from(selectedRates))
@@ -367,7 +367,7 @@ function BSMContractorRatesPage() {
         const conflictItems = []
 
         for (const rate of newRates) {
-          const { data: existing } = await supabase
+          const { data: existing } = await db
             .from('bsm_contractor_rates')
             .select('id, material_name, unit, contractor_price')
             .eq('object_id', rate.object_id)
@@ -416,7 +416,7 @@ function BSMContractorRatesPage() {
     const errors = []
 
     for (const item of importReport.newItems) {
-      const { error } = await supabase.from('bsm_contractor_rates').insert(item)
+      const { error } = await db.from('bsm_contractor_rates').insert(item)
       if (error) errors.push(`"${item.material_name}": ${error.message}`)
       else importedCount++
     }
@@ -424,7 +424,7 @@ function BSMContractorRatesPage() {
     for (let idx = 0; idx < importReport.conflictItems.length; idx++) {
       const item = importReport.conflictItems[idx]
       if (conflictDecisions[idx] === 'update') {
-        const { error } = await supabase
+        const { error } = await db
           .from('bsm_contractor_rates')
           .update({ unit: item.unit, contractor_price: item.contractor_price })
           .eq('id', item.existingId)

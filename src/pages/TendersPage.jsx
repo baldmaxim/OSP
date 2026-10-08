@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable'
 import { saveAs } from 'file-saver'
@@ -466,7 +466,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     const chunks = []
     for (let i = 0; i < targetIds.length; i += CHUNK_IDS) chunks.push(targetIds.slice(i, i + CHUNK_IDS))
 
-    const results = await Promise.allSettled(chunks.map(chunk => fetchAllRows((from, to) => supabase
+    const results = await Promise.allSettled(chunks.map(chunk => fetchAllRows((from, to) => db
       .from('tender_counterparties')
       .select('tender_id, status')
       .in('tender_id', chunk)
@@ -503,7 +503,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       // лишнее отбрасывалось уже после скачивания. Страницы — параллельно, с
       // тай-брейком по id (иначе больше 1000 тендеров молча обрезались бы).
       const data = await fetchAllRowsParallel((from, to, withCount) => {
-        let query = supabase
+        let query = db
           .from('tenders')
           .select(TENDER_LIST_SELECT, withCount ? { count: 'exact' } : undefined)
           .eq('tender_type', tenderType)
@@ -544,7 +544,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (isMaterialsView) {
         const parentIds = [...new Set(filteredTenders.map(t => t.parent_tender_id).filter(Boolean))]
         if (parentIds.length > 0) {
-          const { data: parents, error: parentsError } = await supabase
+          const { data: parents, error: parentsError } = await db
             .from('tenders')
             .select('id, public_tender_number, work_description, tender_start_date, tender_end_date, objects(name), responsible_contact:contacts!responsible_contact_id(id, full_name)')
             .in('id', parentIds)
@@ -567,7 +567,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             })
             if (toSync.length > 0) {
               await Promise.all(toSync.map(async (s) => {
-                const { error: upErr } = await supabase
+                const { error: upErr } = await db
                   .from('tenders')
                   .update({ work_description: s.work_description })
                   .eq('id', s.id)
@@ -600,7 +600,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       const chunks = []
       for (let i = 0; i < tenderIds.length; i += 150) chunks.push(tenderIds.slice(i, i + 150))
       const parts = await Promise.all(chunks.map(async (chunk) => {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('s3_documents')
           .select('owner_id, doc_category')
           .eq('owner_type', 'tender')
@@ -626,7 +626,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Пересчитать число документов одной категории для одного тендера (после загрузки/удаления)
   const refreshDocCount = async (tenderId, category, setCounts) => {
     try {
-      const { count, error } = await supabase
+      const { count, error } = await db
         .from('s3_documents')
         .select('id', { count: 'exact', head: true })
         .eq('owner_type', 'tender')
@@ -651,7 +651,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   const fetchObjects = async () => {
     try {
-      let query = supabase
+      let query = db
         .from('objects')
         .select('*')
         .order('name', { ascending: true })
@@ -679,7 +679,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       // уже больше — без пагинации обрезался хвост сортировки по названию (буква «Ф» и далее).
       // Тай-брейк по id обязателен: имена неуникальны, иначе страницы «плывут».
       // Только поля, которые показывает и ищет окно выбора.
-      const rows = await fetchAllRowsParallel((from, to, withCount) => supabase
+      const rows = await fetchAllRowsParallel((from, to, withCount) => db
         .from('counterparties')
         .select('id, name, work_type, inn', withCount ? { count: 'exact' } : undefined)
         .eq('status', 'active')
@@ -717,7 +717,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // Связь с пользователями сайта разорвана: список = только таблица contacts.
   const fetchResponsibleContacts = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contacts')
         .select('*, departments(name)')
         .order('full_name', { ascending: true })
@@ -827,7 +827,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const fetchTenderCounterparties = async (tenderId) => {
     setLoadingCounterparties(prev => new Set(prev).add(tenderId))
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('tender_counterparties')
         .select(`
           *,
@@ -891,7 +891,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       // — и свежедобавленные оказывались первыми.
       // Максимум спрашиваем у базы, а не у локального состояния: список участников
       // тендера мог быть ещё ни разу не раскрыт, и в памяти его просто нет.
-      const { data: lastRow } = await supabase
+      const { data: lastRow } = await db
         .from('tender_counterparties')
         .select('sort_order')
         .eq('tender_id', selectedTenderForCounterparty)
@@ -905,7 +905,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         sort_order: maxOrder + (i + 1) * 10,
       }))
 
-      const { error } = await supabase
+      const { error } = await db
         .from('tender_counterparties')
         .insert(inserts)
 
@@ -948,7 +948,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     const oldStatus = tc?.status || 'request_sent'
     const cpName = tc?.counterparties?.name || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tender_counterparties')
         .update({ status: newStatus })
         .eq('id', tenderCounterpartyId)
@@ -996,7 +996,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     const prev = tender?.materials_priority || null
     if (prev === next) return
     try {
-      const { error } = await supabase.from('tenders').update({ materials_priority: next }).eq('id', tenderId)
+      const { error } = await db.from('tenders').update({ materials_priority: next }).eq('id', tenderId)
       if (error) throw error
       setTenders(list => list.map(t => (t.id === tenderId ? { ...t, materials_priority: next } : t)))
       logTenderEvent(tenderId, 'field_updated', {
@@ -1020,7 +1020,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     if (value && !emp) { alert('Выберите сотрудника снабжения из списка.'); return }
     const patch = { materials_resp_user_id: value, materials_resp_name: emp?.display_name || null }
     try {
-      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
+      const { error } = await db.from('tenders').update(patch).eq('id', tenderId)
       if (error) throw error
       setTenders(list => list.map(t => (t.id === tenderId ? { ...t, ...patch } : t)))
       if (oldName !== patch.materials_resp_name) {
@@ -1041,7 +1041,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
   const handleUpdateMaterialsDeadline = async (tenderId, value) => {
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ materials_proposal_deadline: value || null })
         .eq('id', tenderId)
@@ -1059,7 +1059,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // прежнее поле materials_proposal_deadline, оно не меняется.
   const handleUpdateMaterialsStart = async (tenderId, value) => {
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ materials_proposal_start_date: value || null })
         .eq('id', tenderId)
@@ -1083,7 +1083,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     const prev = tenders.find(t => t.id === tenderId)?.folder_path ?? null
     if ((prev || null) === next) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ folder_path: next })
         .eq('id', tenderId)
@@ -1106,7 +1106,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     if (next === null) return
     const trimmed = next.trim()
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ materials_proposal_link: trimmed || null })
         .eq('id', tenderId)
@@ -1130,7 +1130,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       // .select() обязателен: без него не отличить успешную запись от «0 строк».
       // При истёкшей сессии запрос уходит как anon, RLS молча отсекает строку и
       // ошибки нет — раньше UI в этом случае рисовал сохранение как успешное.
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('tender_counterparties')
         .update({ notes: cleanNotes || null })
         .eq('id', tenderCounterpartyId)
@@ -1204,7 +1204,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
     setSavingNotes(true)
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('tenders')
         .update({ notes: cleanNotes || null })
         .eq('id', tender.id)
@@ -1245,7 +1245,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     const PAGE = 1000
     const rows = []
     for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('tender_audit_log')
         .select('*')
         .eq('tender_id', tenderId)
@@ -1306,7 +1306,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     const newContact = value ? responsibleContacts.find(c => c.id === value) : null
     const newName = newContact?.full_name || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ responsible_contact_id: value })
         .eq('id', tenderId)
@@ -1339,7 +1339,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       ? { tg_published: true, tg_published_at: new Date().toISOString(), tg_published_by: by }
       : { tg_published: false, tg_published_at: null, tg_published_by: null }
     try {
-      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
+      const { error } = await db.from('tenders').update(patch).eq('id', tenderId)
       if (error) throw error
       setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, ...patch } : t))
       logTenderEvent(tenderId, 'field_updated', {
@@ -1359,7 +1359,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       ? { rd_checked: true, rd_checked_at: new Date().toISOString(), rd_checked_by: by }
       : { rd_checked: false, rd_checked_at: null, rd_checked_by: null }
     try {
-      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
+      const { error } = await db.from('tenders').update(patch).eq('id', tenderId)
       if (error) throw error
       setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, ...patch } : t))
       logTenderEvent(tenderId, 'field_updated', {
@@ -1383,7 +1383,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       ? { completion_letter_sent: true, completion_letter_sent_at: new Date().toISOString(), completion_letter_sent_by: by }
       : { completion_letter_sent: false, completion_letter_sent_at: null, completion_letter_sent_by: null }
     try {
-      const { error } = await supabase.from('tenders').update(patch).eq('id', tenderId)
+      const { error } = await db.from('tenders').update(patch).eq('id', tenderId)
       if (error) throw error
       setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, ...patch } : t))
       logTenderEvent(tenderId, 'field_updated', {
@@ -1409,7 +1409,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     if (next === null) return
     const value = next.trim() || null
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ [field]: value })
         .eq('id', tenderId)
@@ -1481,7 +1481,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }))
     try {
       await Promise.all(pairs.map(p =>
-        supabase.from('tender_counterparties').update({ sort_order: p.sort_order }).eq('id', p.id)
+        db.from('tender_counterparties').update({ sort_order: p.sort_order }).eq('id', p.id)
       ))
     } catch (err) {
       alert('Не удалось сохранить порядок участников: ' + (err.message || err))
@@ -1498,7 +1498,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         ? { id: removed.counterparty_id, name: removed.counterparties?.name || null }
         : null
 
-      const { error} = await supabase
+      const { error} = await db
         .from('tender_counterparties')
         .delete()
         .eq('id', tenderCounterpartyId)
@@ -1566,7 +1566,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (editingTender) {
         // Update existing tender — отправляем все поля
         const updatePayload = { ...normalizePayload(formData), ...(resolveCustomObject() || {}) }
-        const { error } = await supabase
+        const { error } = await db
           .from('tenders')
           .update(updatePayload)
           .eq('id', editingTender.id)
@@ -1578,7 +1578,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         if ((editingTender.vor_sto_user_id || '') !== vorStoDraft) {
           const emp = vorStoDraft ? stoEmployees.find(x => x.user_id === vorStoDraft) : null
           const stoPatch = { vor_sto_user_id: vorStoDraft || null, vor_sto_name: emp?.display_name || null }
-          const { error: stoError } = await supabase.from('tenders').update(stoPatch).eq('id', editingTender.id)
+          const { error: stoError } = await db.from('tenders').update(stoPatch).eq('id', editingTender.id)
           if (stoError) {
             alert(isMissingStoColumnError(stoError) ? STO_MIGRATION_HINT : 'Ответственный СТО не сохранён: ' + stoError.message)
           } else {
@@ -1634,7 +1634,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             const mtPatch = {}
             if (statusChanged) mtPatch.status = materialsStatusDraft
             if (linkChanged) mtPatch.materials_proposal_link = nextLink
-            const { error: mtError } = await supabase
+            const { error: mtError } = await db
               .from('tenders')
               .update(mtPatch)
               .eq('id', materialsTender.id)
@@ -1671,7 +1671,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           let syncedCount = 0
 
           // 1) Основной путь: дочерние тендеры на материалы по parent_tender_id.
-          const { data: byParent, error: byParentErr } = await supabase
+          const { data: byParent, error: byParentErr } = await db
             .from('tenders')
             .update({ work_description: newDesc })
             .eq('parent_tender_id', editingTender.id)
@@ -1687,7 +1687,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           //    (parent_tender_id IS NULL) — обновляем описание и проставляем связь,
           //    чтобы дальше работал быстрый путь.
           if (syncedCount === 0 && editingTender.object_id) {
-            const { data: adopted, error: adoptErr } = await supabase
+            const { data: adopted, error: adoptErr } = await db
               .from('tenders')
               .update({ work_description: newDesc, parent_tender_id: editingTender.id })
               .eq('object_id', editingTender.object_id)
@@ -1740,7 +1740,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         // Вставка с автоматическим retry: если БД ругается на отсутствующие новые колонки
         // (миграция ещё не применена), отбрасываем эти поля и пробуем снова.
         const insertTenderWithRetry = async (payload) => {
-          const attempt = async (p) => await supabase
+          const attempt = async (p) => await db
             .from('tenders')
             .insert([p])
             .select('id')
@@ -1858,7 +1858,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (!target) {
         // Тендера может не быть в списке раздела (удалён, другое направление) —
         // берём его напрямую, форма от этого не зависит.
-        const { data, error } = await supabase.from('tenders').select(TENDER_LIST_SELECT).eq('id', editFromCardId).maybeSingle()
+        const { data, error } = await db.from('tenders').select(TENDER_LIST_SELECT).eq('id', editFromCardId).maybeSingle()
         if (!alive) return
         if (error || !data) {
           alert('Не удалось открыть тендер для редактирования' + (error ? ': ' + error.message : ''))
@@ -1934,13 +1934,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     ) {
       try {
         const delAt = new Date().toISOString()
-        const { error } = await supabase
+        const { error } = await db
           .from('tenders')
           .update({ deleted_at: delAt })
           .eq('id', id)
         if (error) throw error
         // task 267: дочерние тендеры на материалы тоже уходят в «Удалённые»
-        const { error: childErr } = await supabase
+        const { error: childErr } = await db
           .from('tenders')
           .update({ deleted_at: delAt })
           .eq('parent_tender_id', id)
@@ -1956,13 +1956,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const handleRestoreTender = async (id, objectName) => {
     if (!window.confirm(`Восстановить тендер "${objectName}"?`)) return
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ deleted_at: null })
         .eq('id', id)
       if (error) throw error
       // task 267: восстанавливаем и связанный тендер на материалы
-      const { error: childErr } = await supabase
+      const { error: childErr } = await db
         .from('tenders')
         .update({ deleted_at: null })
         .eq('parent_tender_id', id)
@@ -1981,7 +1981,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
     if (!window.confirm(`Удалить тендер "${objectName}" БЕЗВОЗВРАТНО? Это действие нельзя отменить.`)) return
     try {
-      const { error } = await supabase.from('tenders').delete().eq('id', id)
+      const { error } = await db.from('tenders').delete().eq('id', id)
       if (error) throw error
       fetchTenders()
     } catch (err) {
@@ -2047,7 +2047,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       const prev = tenders.find(t => t.id === tenderId)
       const oldStatus = prev?.status || null
 
-      const { error } = await supabase
+      const { error } = await db
         .from('tenders')
         .update({ status: newStatus })
         .eq('id', tenderId)
@@ -2106,7 +2106,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       const primaryWinnerId = selectedWinners[0]?.counterparty_id || null
 
       // Обновляем статус тендера и основного победителя
-      const { error: tenderError } = await supabase
+      const { error: tenderError } = await db
         .from('tenders')
         .update({
           status: 'Завершен',
@@ -2117,14 +2117,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       if (tenderError) throw tenderError
 
       // Пересобираем список победителей в junction-таблице
-      const { error: delError } = await supabase
+      const { error: delError } = await db
         .from('tender_winners')
         .delete()
         .eq('tender_id', tenderForWinnerSelection.id)
       if (delError) throw delError
 
       if (selectedWinners.length > 0) {
-        const { error: insError } = await supabase
+        const { error: insError } = await db
           .from('tender_winners')
           .insert(selectedWinners.map(w => ({
             tender_id: tenderForWinnerSelection.id,
@@ -2219,7 +2219,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       const role = localStorage.getItem('userRole') || null
       // supabase-js не бросает исключение — без проверки { error } провал вставки
       // исчезал бесследно, и история молча переставала писаться.
-      const { error } = await supabase.from('tender_audit_log').insert([{
+      const { error } = await db.from('tender_audit_log').insert([{
         tender_id: tenderId,
         event_type: eventType,
         field_name: payload.fieldName || null,
@@ -2286,7 +2286,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const { data } = await supabase
+      const { data } = await db
         .from('app_settings')
         .select('value')
         .eq('key', RESPONSIBLE_OVERRIDE_KEY)
@@ -2314,7 +2314,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const { name: currentResponsible, overridden: overrideActive } = currentDuty(responsibleOverride)
 
   const persistResponsibleOverride = async (value) => {
-    const { error } = await supabase
+    const { error } = await db
       .from('app_settings')
       .upsert({ key: RESPONSIBLE_OVERRIDE_KEY, value, updated_at: new Date().toISOString() })
     if (error) throw error
@@ -2566,7 +2566,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       const chunks = []
       for (let i = 0; i < rdTenderIds.length; i += 150) chunks.push(rdTenderIds.slice(i, i + 150))
       const parts = await Promise.all(chunks.map(async (chunk) => {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('tender_rd_codes')
           .select('tender_id, code, title, sort_order')
           .in('tender_id', chunk)

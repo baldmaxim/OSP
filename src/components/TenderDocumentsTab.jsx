@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase } from '../supabase'
+import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
 import { fetchTenderDocs, deleteTenderDoc } from '../services/tenderDocs'
@@ -196,7 +196,7 @@ export default function TenderDocumentsTab({ tenderId, canEdit = false, version 
     try {
       let docId
       if (editing) {
-        const { error } = await supabase.from('tender_docs')
+        const { error } = await db.from('tender_docs')
           .update({ title, description: form.description.trim() || null, updated_at: new Date().toISOString(), updated_by: user?.id || null, updated_by_name: currentUserName })
           .eq('id', editing.id)
         if (error) throw error
@@ -205,11 +205,11 @@ export default function TenderDocumentsTab({ tenderId, canEdit = false, version 
         const oldLinkIds = (editing.links || []).map((l) => l.id)
         if (validLinks.length) {
           const rows = validLinks.map((l, idx) => ({ tender_doc_id: docId, title: l.title || null, url: l.url, sort_order: idx }))
-          const { error: insErr } = await supabase.from('tender_doc_links').insert(rows)
+          const { error: insErr } = await db.from('tender_doc_links').insert(rows)
           if (insErr) throw insErr
         }
         if (oldLinkIds.length) {
-          const { error: delErr } = await supabase.from('tender_doc_links').delete().in('id', oldLinkIds)
+          const { error: delErr } = await db.from('tender_doc_links').delete().in('id', oldLinkIds)
           if (delErr) throw delErr
         }
 
@@ -221,14 +221,14 @@ export default function TenderDocumentsTab({ tenderId, canEdit = false, version 
           }
         }
       } else {
-        const { data: created, error } = await supabase.from('tender_docs')
+        const { data: created, error } = await db.from('tender_docs')
           .insert({ tender_id: tenderId, title, description: form.description.trim() || null, is_final: false, created_by: user?.id || null, created_by_name: currentUserName, updated_by: user?.id || null, updated_by_name: currentUserName })
           .select('id').single()
         if (error) throw error
         docId = created.id
         if (validLinks.length) {
           const rows = validLinks.map((l, idx) => ({ tender_doc_id: docId, title: l.title || null, url: l.url, sort_order: idx }))
-          const { error: linkErr } = await supabase.from('tender_doc_links').insert(rows)
+          const { error: linkErr } = await db.from('tender_doc_links').insert(rows)
           if (linkErr) throw linkErr
         }
       }

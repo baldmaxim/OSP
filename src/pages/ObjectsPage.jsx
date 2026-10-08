@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../supabase'
+import { db, objectPhotos } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { generateUUID } from '../utils/uuid'
 import * as XLSX from 'xlsx'
@@ -230,7 +230,7 @@ function ObjectsPage() {
   const fetchObjects = useCallback(async () => {
     try {
       setLoading(true)
-      let query = supabase
+      let query = db
         .from('objects')
         .select('*')
         .order('name', { ascending: true })
@@ -243,7 +243,7 @@ function ObjectsPage() {
       // Ответственные по объектам — одним запросом на весь список, а не по
       // запросу на карточку. Best-effort: до применения миграции 20260831
       // таблицы нет, и сетка объектов не должна из-за этого падать.
-      const staffRes = await supabase
+      const staffRes = await db
         .from('object_staff')
         .select('object_id, staff_role, sort_order, contacts(id, full_name)')
         .order('sort_order', { ascending: true })
@@ -308,14 +308,14 @@ function ObjectsPage() {
       }
 
       if (editingObject) {
-        const { error } = await supabase
+        const { error } = await db
           .from('objects')
           .update(payload)
           .eq('id', editingObject.id)
 
         if (error) throw error
       } else {
-        const { error } = await supabase.from('objects').insert([payload])
+        const { error } = await db.from('objects').insert([payload])
         if (error) throw error
       }
 
@@ -365,15 +365,11 @@ function ObjectsPage() {
       const ext = file.name.split('.').pop()
       const fileName = `${generateUUID()}.${ext}`
 
-      const { error: uploadError } = await supabase.storage
-        .from('object-photos')
-        .upload(fileName, file, { cacheControl: '3600', upsert: false })
+      const { error: uploadError } = await objectPhotos.upload(fileName, file, { cacheControl: '3600', upsert: false })
 
       if (uploadError) throw uploadError
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('object-photos')
-        .getPublicUrl(fileName)
+      const publicUrl = objectPhotos.publicUrl(fileName)
 
       setObjectFormData(prev => ({ ...prev, cover_image_url: publicUrl }))
     } catch (err) {
@@ -392,7 +388,7 @@ function ObjectsPage() {
   const handleDeleteObject = async (id, name) => {
     if (window.confirm(`Вы уверены, что хотите удалить объект "${name}"?`)) {
       try {
-        const { error } = await supabase.from('objects').delete().eq('id', id)
+        const { error } = await db.from('objects').delete().eq('id', id)
         if (error) throw error
         fetchObjects()
       } catch (error) {
@@ -483,7 +479,7 @@ function ObjectsPage() {
         return
       }
 
-      const { data: insertedData, error } = await supabase
+      const { data: insertedData, error } = await db
         .from('objects')
         .insert(validObjects)
         .select()

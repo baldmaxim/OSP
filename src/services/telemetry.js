@@ -8,9 +8,9 @@
 // Мягко: пока миграция не применена (функций в базе нет), первый же ответ
 // «функция не найдена» выключает отправку до перезагрузки — без ошибок на экране
 // и без повторных запросов. Только для вошедших пользователей; без персональных
-// данных (см. supabase/clientErrors.js).
-import { supabase } from '../supabase'
-import { onClientError } from '../supabase/clientErrors'
+// данных (см. api/clientErrors.js).
+import { db, auth } from '../api'
+import { onClientError } from '../api/clientErrors'
 
 const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
 const VERSION_INTERVAL_MS = 10 * 60 * 1000
@@ -30,7 +30,7 @@ function isMissingFunction(error, status) {
 
 async function hasSession() {
   try {
-    const { data } = await supabase.auth.getSession()
+    const { data } = await auth.getSession()
     return !!data?.session
   } catch {
     return false
@@ -43,7 +43,7 @@ export async function reportClientVersion() {
   if (now - lastVersionAt < VERSION_INTERVAL_MS) return
   lastVersionAt = now
   if (!(await hasSession())) return
-  const { error, status } = await supabase.rpc('report_client_version', { p_build_id: BUILD_ID })
+  const { error, status } = await db.rpc('report_client_version', { p_build_id: BUILD_ID })
   if (error && isMissingFunction(error, status)) disabled.version = true
 }
 
@@ -57,7 +57,7 @@ async function reportClientError({ section, code, status }) {
   lastErrorAt.set(key, now)
   sentThisMinute += 1
   if (!(await hasSession())) return
-  const res = await supabase.rpc('report_client_error', {
+  const res = await db.rpc('report_client_error', {
     p_build_id: BUILD_ID, p_section: section, p_code: code, p_status: status,
   })
   if (res.error && isMissingFunction(res.error, res.status)) disabled.error = true
