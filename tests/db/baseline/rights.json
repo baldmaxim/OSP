@@ -1,0 +1,4892 @@
+{
+  "copy": "prod-20261008-132415",
+  "classes": {
+    "admin": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "vor_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_disputes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "yes",
+        "insert": "no",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    },
+    "employee_full": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "vor_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_disputes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "yes",
+        "insert": "no",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    },
+    "employee_none": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "vor_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_disputes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "yes",
+        "insert": "no",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    },
+    "vors_only": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "vor_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_disputes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "yes",
+        "insert": "no",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    },
+    "contractor_own": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "vor_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "yes"
+      },
+      "tender_estimate_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_disputes": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "some",
+        "update": "no"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    },
+    "contractor_noorg": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "vor_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_disputes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    },
+    "unapproved": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "no",
+        "insert": "yes",
+        "select": "some",
+        "update": "no"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "vor_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_estimate_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_disputes": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "yes",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    },
+    "blocked": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "no",
+        "insert": "yes",
+        "select": "some",
+        "update": "no"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "vor_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_estimate_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_disputes": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "yes",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    },
+    "no_user_roles": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "all",
+        "update": "no"
+      },
+      "tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "vor_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_estimate_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_disputes": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "yes",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    },
+    "anon": {
+      "psdc": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
+      "roles": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "objects": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "tenders": {
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
+      },
+      "contacts": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contracts": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employees": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "positions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "psdc_rows": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
+      "user_roles": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "work_types": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "dc_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "departments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "object_areas": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "object_staff": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "psdc_batches": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
+      "s3_documents": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "vor_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
+      "client_errors": {
+        "select": "err:42501"
+      },
+      "task_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "task_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_winners": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "client_versions": {
+        "select": "err:42501"
+      },
+      "tender_rd_codes": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_supply_rates": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clauses": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "dc_request_tasks": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "psdc_source_rows": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "err:42501",
+        "update": "no"
+      },
+      "role_permissions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "kp_rates_registry": {
+        "select": "err:42501"
+      },
+      "object_warranties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "task_participants": {
+        "delete": "no",
+        "insert": "n/a",
+        "select": "none",
+        "update": "no"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "doc_check_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employee_directory": {
+        "select": "err:42501"
+      },
+      "contract_appendices": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "kp_rates_registry_mv": {
+        "select": "err:42501"
+      },
+      "task_checklist_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_contacts": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "object_estimate_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry": {
+        "select": "err:42501"
+      },
+      "tender_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_estimate_items": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "tender_proposal_files": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparty_relations": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "general_document_links": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_counterparties": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "err:42501"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_comments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_disputes": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "general_document_folders": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_mv": {
+        "select": "err:42501"
+      },
+      "tender_rd_document_codes": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "object_contract_attachments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_units": {
+        "select": "err:42501"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "err:42501"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "err:42501"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "err:42501"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "err:42501"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "err:42501"
+      }
+    },
+    "service_role": {
+      "psdc": {
+        "delete": "err:P0001",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "roles": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "objects": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tenders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contracts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employees": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "positions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_rows": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "user_roles": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "work_types": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "departments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_issues": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_docs": {
+        "select": "empty"
+      },
+      "app_settings": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_areas": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_staff": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_batches": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "s3_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "vor_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_errors": {
+        "select": "empty"
+      },
+      "task_comments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_winners": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "client_versions": {
+        "select": "empty"
+      },
+      "tender_rd_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clauses": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "dc_request_tasks": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_cost_plan": {
+        "select": "empty"
+      },
+      "object_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "psdc_source_rows": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "role_permissions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_doc_links": {
+        "select": "empty"
+      },
+      "tender_documents": {
+        "select": "empty"
+      },
+      "general_documents": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry": {
+        "select": "all"
+      },
+      "object_warranties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "task_participants": {
+        "delete": "yes",
+        "insert": "n/a",
+        "select": "all",
+        "update": "yes"
+      },
+      "bsm_contract_rates": {
+        "select": "empty"
+      },
+      "contract_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_requests": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "employee_directory": {
+        "select": "empty"
+      },
+      "contract_appendices": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_psdc_items": {
+        "select": "empty"
+      },
+      "bsm_contractor_rates": {
+        "select": "empty"
+      },
+      "contract_attachments": {
+        "select": "empty"
+      },
+      "dc_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "kp_rates_registry_mv": {
+        "select": "all"
+      },
+      "task_checklist_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_contacts": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry": {
+        "select": "all"
+      },
+      "tender_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_estimate_items": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "tender_proposal_files": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparty_relations": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_links": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_counterparties": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "document_check_requests": {
+        "select": "empty"
+      },
+      "kp_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_vor_supply_rates": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_comments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_disputes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "general_document_folders": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_mv": {
+        "select": "all"
+      },
+      "tender_rd_document_codes": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_advance_schedule": {
+        "select": "empty"
+      },
+      "object_warranty_retentions": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "doc_check_request_audit_log": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "object_contract_attachments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_units": {
+        "select": "all"
+      },
+      "tender_counterparty_proposals": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "contract_clause_dispute_clauses": {
+        "select": "empty"
+      },
+      "kp_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "object_warranty_retention_payments": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "counterparties_inn_backup_2026_09_21": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "supply_rates_registry_filter_objects": {
+        "select": "all"
+      },
+      "supply_rates_registry_filter_tenders": {
+        "select": "all"
+      },
+      "kp_rates_registry_filter_counterparties": {
+        "select": "all"
+      }
+    }
+  },
+  "anon_functions": {
+    "is_admin": "ok",
+    "can_see_task": "ok",
+    "is_my_tender": "ok",
+    "is_my_contract": "ok",
+    "touch_last_login": "ok",
+    "admin_delete_user": "err:P0001",
+    "is_portal_employee": "ok",
+    "is_task_participant": "ok",
+    "refresh_rates_registry": "ok",
+    "current_counterparty_id": "ok",
+    "is_negotiation_employee": "ok",
+    "vor_requests_can_access": "ok"
+  }
+}

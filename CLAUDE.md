@@ -22,6 +22,7 @@ npm run test:tender  # карточка тендера: производител
 npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
 npm run test:deploy  # deploy/publish.sh и rollback.sh на временных каталогах
 npm run test:backup  # migration/backup: копия, проверка восстановлением, прогон миграций (Docker)
+npm run test:db      # слепок схемы прода + «отпечаток» прав на копии прода против tests/db/baseline (Docker)
 ```
 
 **Тесты** — встроенный `node --test`. Нужны PostgreSQL 17+ и Chromium:
@@ -29,6 +30,10 @@ npm run test:backup  # migration/backup: копия, проверка восст
   (одноразовый контейнер `postgres:17-alpine`, `PG_TEST_MODE=docker|native` для явного выбора);
 - Chromium: сборка Playwright, Chrome/Edge или путь в `PSDC_BROWSER` (на удалённой машине —
   `~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell`).
+
+`test:db` берёт последнюю проверенную копию прода (`migration/dumps/*.dump` с `.verified`, вне git) и
+сравнивает права классов пользователей с эталоном `tests/db/baseline/rights.json`; закрытие дыр (Р2)
+оформляется строками `approved-fixes.json`, новый эталон после новой копии — `UPDATE_BASELINE=1`.
 
 Без них соответствующие наборы пропускаются (skip), а не падают. Стенды UI подменяют клиент Supabase
 (модуль `src/api/supabaseClient.js`) и `RoleContext` подделками (`tests/*/ui/fake-*.js*`); константы ролей

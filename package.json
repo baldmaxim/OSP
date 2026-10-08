@@ -18,7 +18,8 @@
     "bench:tender": "node tests/tender/bench-ui.mjs",
     "test:release": "node --test --test-concurrency=1 \"tests/release/*.test.mjs\"",
     "test:deploy": "node --test \"tests/deploy/*.test.mjs\"",
-    "test:backup": "node --test \"tests/backup/*.test.mjs\""
+    "test:backup": "node --test \"tests/backup/*.test.mjs\"",
+    "test:db": "node --test --test-concurrency=1 \"tests/db/*.test.mjs\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.80.0",

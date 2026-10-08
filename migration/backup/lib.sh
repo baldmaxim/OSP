@@ -62,6 +62,8 @@ install_extensions() {
 }
 
 # Восстановление копии. Возвращает число ошибок в RESTORE_ERRORS, журнал — в $2.
+# RESTORE_PRIVILEGES=1 — с правами (GRANT/REVOKE как на проде): нужно для проверки прав
+# (test:db). По умолчанию без них — для сверки строк права не важны.
 restore_dump() {
   local dump="$1" log="$2"
   local_psql -f "$BACKUP_DIR/stubs.sql" >/dev/null 2>&1
@@ -71,8 +73,10 @@ restore_dump() {
   local list
   list="$(mktemp)"
   pg_restore --list "$dump" | grep -v ' SCHEMA - public ' >"$list"
+  local privileges=--no-privileges
+  if [ "${RESTORE_PRIVILEGES:-0}" = "1" ]; then privileges=""; fi
   PGPASSWORD='' PGSSLMODE=disable pg_restore -h 127.0.0.1 -p "$LOCAL_PORT" -U postgres -d postgres \
-    --no-owner --no-privileges -j 4 -L "$list" "$dump" >"$log" 2>&1 || true
+    --no-owner $privileges -j 4 -L "$list" "$dump" >"$log" 2>&1 || true
   rm -f "$list"
   chmod 600 "$log"
   RESTORE_ERRORS="$(grep -c '^pg_restore: error' "$log" || true)"
