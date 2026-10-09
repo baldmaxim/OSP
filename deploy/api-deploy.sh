@@ -24,7 +24,14 @@ APP_USER="${APP_USER-danila}"
 if [ -z "${OSP_DEPLOY_TEST:-}" ] && [ "$(id -u)" -ne 0 ]; then
   echo "Запускать от root: bash $0"; exit 1
 fi
-as_app() { if [ -n "$APP_USER" ] && [ "$(id -un)" != "$APP_USER" ]; then runuser -u "$APP_USER" -- "$@"; else "$@"; fi; }
+# От danila — с его HOME: иначе npm ci пишет кэш в /root/.npm и падает на правах.
+as_app() {
+  if [ -n "$APP_USER" ] && [ "$(id -un)" != "$APP_USER" ]; then
+    runuser -u "$APP_USER" -- env HOME="$(getent passwd "$APP_USER" | cut -d: -f6)" "$@"
+  else
+    "$@"
+  fi
+}
 
 exec 9>"${TMPDIR:-/tmp}/osp-api-deploy.lock"
 flock -n 9 || { echo "Выкладка osp-api уже идёт"; exit 1; }
