@@ -156,28 +156,61 @@ sudo certbot --nginx \
 ├── releases/<buildId>/     # сборка целиком, по каталогу на релиз (хранятся 5 последних)
 ├── assets/                 # общие хэш-файлы недавних сборок — открытые вкладки догружают свои
 ├── current -> releases/<buildId>   # то, что отдаёт nginx; переключается атомарно
-└── shared/config.json      # runtime-конфиг (необязателен), переживает релизы
+├── shared/config.json      # runtime-конфиг (необязателен), переживает релизы
+└── index.html, version.json, fonts/, *.svg   # прежняя раскладка — до уборки (см. ниже)
 ```
 
-Владелец — `danila`, nginx (`www-data`) только читает (файлы `644`, каталоги `755`). Деплой и откат
-идут **без sudo**: не нужны ни правила в `sudoers`, ни запись от имени `www-data`.
+Владелец — `danila`, nginx (`www-data`) только читает: `publish.sh` выкладывает файлы `644`, каталоги
+`755` при любом `umask`. Деплой и откат идут **без sudo**: не нужны ни правила в `sudoers`, ни запись от
+имени `www-data`.
 
 ### Переход (один раз)
 
-1. Владелец каталога — `danila`:
+Сайт не прерывается. До шага 5 nginx отдаёт прежнюю сборку из корня `/var/www/osp`, а новый скрипт её
+файлы не трогает: пока в корне лежит прежний `index.html`, чистка общего каталога `assets/` отложена
+(`publish.sh`, п. 5). Без этого первая же выкладка удалила бы файлы прежней сборки старше 14 дней — белый
+экран у всех. Шаг 5 — правка nginx, его лучше делать в тихое время.
+
+0. Проверки — только чтение, вывод прислать (секретов в нём нет):
+   ```bash
+   # danila$
+   node --version
+   git -C /home/danila/projects/OSP branch --show-current    # → main
+   git -C /home/danila/projects/OSP status --short           # пусто или только package-lock.json
+   pgrep -c node                                              # 0 — Node сейчас ничем не занят
+   df -h /var/www /home
+   ```
+   Изменённые файлы, кроме `package-lock.json` (его менял прежний `npm install`), — стоп, сначала
+   разобраться.
+1. Node.js 24, если `node --version` не `v24`, — раздел «Node.js 24 LTS» ниже. На сайт не влияет: Node
+   нужен только для сборки.
+2. Прежний `deploy.sh` — из обращения, **до всего остального**: после перехода его
+   `sudo rsync --delete` стёр бы `releases/` и `current` — сайт лёг бы.
+   ```bash
+   # danila$
+   mv /home/danila/projects/OSP/deploy.sh /home/danila/projects/OSP/deploy.sh.old
+   git -C /home/danila/projects/OSP checkout -- package-lock.json   # только если он был в status
+   ```
+3. Владелец каталога — `danila`. Режимы файлов не меняются, nginx читает как прежде:
    ```bash
    # root#
    chown -R danila:danila /var/www/osp
    ```
-2. Первая выкладка новым скриптом. Сайт в это время продолжает отдавать прежнюю раскладку — nginx ещё
-   смотрит в `/var/www/osp`. Файлы прежней сборки уже лежат в `/var/www/osp/assets` и там остаются:
+4. Первая выкладка новым скриптом. Пользователи по-прежнему на прежней сборке — nginx ещё смотрит в
+   `/var/www/osp`:
    ```bash
    # danila$
    bash /home/danila/projects/OSP/deploy/deploy.sh
    ls -l /var/www/osp/current          # → releases/<buildId>
    ```
-3. Блок nginx `/etc/nginx/sites-available/osp.root.sx` — в серверном блоке 443 заменить `root` и
-   `location`-ы на:
+   В конце вывода — «Выложен релиз <buildId>» и «чистка общих хэш-файлов отложена».
+5. Блок nginx `/etc/nginx/sites-available/osp.root.sx`. Сначала копия:
+   ```bash
+   # root#
+   cp /etc/nginx/sites-available/osp.root.sx /root/osp.root.sx.before-releases
+   ```
+   Затем в серверном блоке 443 заменить `root`, `index` и все `location`-ы на текст ниже; `listen`,
+   `server_name`, `ssl_*`, `include`, логи — не трогать:
    ```nginx
    root /var/www/osp/current;
    index index.html;
@@ -215,13 +248,40 @@ sudo certbot --nginx \
    # root#
    nginx -t && systemctl reload nginx
    ```
-4. Проверка: сайт открывается, `https://osp.root.sx/version.json` показывает `buildId` из
-   `ls -l /var/www/osp/current`, `https://osp.root.sx/config.json` — 404.
-5. Прежний `deploy.sh` в `/home/danila/projects/OSP` больше не запускать (переименовать в
-   `deploy.sh.old`). Правило `/etc/sudoers.d/danila-deploy`, если создавалось, больше не нужно.
+6. Проверка:
+   - `https://osp.root.sx/version.json` — `buildId` из `ls -l /var/www/osp/current`;
+   - `https://osp.root.sx/config.json` — 404;
+   - в браузере, где уже вошли, обновить страницу: сессия на месте, тендер, договор, объект и
+     администрирование открываются;
+   - вкладка, открытая до переключения: переход в другой раздел работает, появляется окно о новой версии.
+7. Если что-то не так — вернуть прежний блок; сайт снова отдаёт прежнюю сборку из корня:
+   ```bash
+   # root#
+   cp /root/osp.root.sx.before-releases /etc/nginx/sites-available/osp.root.sx && nginx -t && systemctl reload nginx
+   ```
 
-Старые файлы в корне `/var/www/osp` (`index.html`, `version.json`, `fonts/`) после перехода не
-используются — их можно удалить через неделю.
+Правило `/etc/sudoers.d/danila-deploy`, если создавалось, после перехода больше не нужно.
+
+### Уборка прежней раскладки (через 1–2 недели после перехода)
+
+Файлы прежней сборки в корне `/var/www/osp` после перехода не отдаются, но пока там лежит `index.html`,
+`publish.sh` не чистит общий каталог `assets/` — его хэш-файлы нужны вкладкам, открытым до перехода.
+Убирать, когда таких вкладок не осталось: последний опрос `version.json?_=` в логе — больше суток назад.
+
+```bash
+# danila$ (с sudo — чтение логов)
+sudo grep 'GET /version.json?_=' /var/log/nginx/osp-access.log | tail -1
+```
+
+```bash
+# danila$ — сначала посмотреть, что будет удалено (releases, assets, current, shared остаются)
+find /var/www/osp -mindepth 1 -maxdepth 1 ! -name releases ! -name assets ! -name current ! -name shared
+# затем удалить ровно это
+find /var/www/osp -mindepth 1 -maxdepth 1 ! -name releases ! -name assets ! -name current ! -name shared -exec rm -rf {} +
+```
+
+Со следующей выкладки чистка общего каталога возобновится: удаляются файлы старше 14 дней, не нужные ни
+одному хранимому релизу.
 
 ### Обычный деплой и откат
 
@@ -390,8 +450,8 @@ sudo ss -tlnp | grep -E ':80 |:443 '            # кто слушает 80/443
 `.nvmrc`. Node 18 снят с поддержки, а `@supabase/supabase-js` и будущий `osp-api` требуют новее.
 Node на VPS нужен только для сборки: сайт отдаёт nginx из `/var/www/osp`.
 
-**Переход — отдельным релизом, без других изменений.** Безопасно: если сборка на новом Node упадёт,
-`deploy.sh` (`set -e`) остановится до `rsync`, и сайт продолжит отдавать прежнюю сборку.
+**Установка на сайт не влияет**: Node нужен только для сборки. Если сборка на новом Node упадёт,
+`deploy/deploy.sh` (`set -e`) остановится до выкладки, и сайт продолжит отдавать прежний релиз.
 
 ```bash
 # danila$ (с sudo) — установка Node.js 24 LTS через NodeSource
@@ -404,17 +464,16 @@ node --version                    # должно показать v24.x
 npm --version                     # 11.x
 ```
 
-Затем деплой: новым скриптом (`npm ci` уже внутри, см. «Каталоги-релизы») либо, если переход ещё не
-сделан, прежним `/home/danila/projects/OSP/deploy.sh`, заменив в нём `npm install` на **`npm ci`** —
-ставит ровно то, что в `package-lock.json`, и не меняет lock-файл.
+Затем деплой новым скриптом — при переходе на каталоги-релизы это его шаг 4. Внутри `npm ci`: ставит
+ровно то, что в `package-lock.json`, и не меняет lock-файл.
 
 ```bash
 # danila$
 bash /home/danila/projects/OSP/deploy/deploy.sh
 ```
 
-Проверка: `deploy.sh` дошёл до `nginx -t` без ошибок; в браузере — жёсткое обновление страницы,
-вход, открыть тендер и договор.
+Проверка: в конце вывода «Выложен релиз <buildId>»; в браузере — обновить страницу, вход, открыть
+тендер и договор.
 
 ## Условные обозначения для команд
 

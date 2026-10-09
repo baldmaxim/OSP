@@ -35,7 +35,7 @@ fi
 
 # Файлы цели могли быть вычищены из общего каталога — возвращаем.
 if [ -d "$WEB_ROOT/releases/$TARGET/assets" ]; then
-  rsync -a "$WEB_ROOT/releases/$TARGET/assets/" "$WEB_ROOT/assets/"
+  rsync -a --chmod=D755,F644 "$WEB_ROOT/releases/$TARGET/assets/" "$WEB_ROOT/assets/"
 fi
 ln -sfn "releases/$TARGET" "$WEB_ROOT/.current.tmp"
 mv -T "$WEB_ROOT/.current.tmp" "$WEB_ROOT/current"

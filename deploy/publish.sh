@@ -9,7 +9,8 @@
 #   assets/              — общий каталог хэш-файлов недавних сборок: вкладка, открытая
 #                          до деплоя, догружает чанки своей сборки (раньше rsync --delete
 #                          их удалял — белый экран). Чистятся файлы старше ASSET_TTL_DAYS,
-#                          которых нет ни в одном хранимом релизе.
+#                          которых нет ни в одном хранимом релизе, — и только когда из
+#                          корня убрана прежняя раскладка (п. 5).
 #   current -> releases/<buildId>   — то, что отдаёт nginx; переключается атомарно
 #   shared/config.json   — runtime-конфиг (необязателен), переживает релизы
 #
@@ -29,16 +30,19 @@ BUILD_ID="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.a
 [[ "$BUILD_ID" =~ ^[0-9A-Za-z_-]+$ ]] || { echo "Неожиданный buildId: '$BUILD_ID'"; exit 1; }
 
 mkdir -p "$WEB_ROOT/releases" "$WEB_ROOT/assets" "$WEB_ROOT/shared"
+# nginx (www-data) только читает: каталоги 755, файлы 644 — при любом umask сборки.
+chmod 755 "$WEB_ROOT/releases" "$WEB_ROOT/assets" "$WEB_ROOT/shared"
+PERMS='--chmod=D755,F644'
 
 # 1. Хэш-файлы — в общий каталог, ничего не удаляя.
 if [ -d "$DIST/assets" ]; then
-  rsync -a "$DIST/assets/" "$WEB_ROOT/assets/"
+  rsync -a "$PERMS" "$DIST/assets/" "$WEB_ROOT/assets/"
 fi
 
 # 2. Релиз — во временный каталог, затем переименование: недописанный релиз не виден.
 STAGE="$WEB_ROOT/releases/.$BUILD_ID.tmp"
 rm -rf "$STAGE"
-rsync -a "$DIST/" "$STAGE/"
+rsync -a "$PERMS" "$DIST/" "$STAGE/"
 rm -rf "$WEB_ROOT/releases/$BUILD_ID"
 mv -T "$STAGE" "$WEB_ROOT/releases/$BUILD_ID"
 
@@ -59,8 +63,20 @@ for r in "${RELEASES[@]}"; do
 done
 
 # 5. Чистка общих хэш-файлов: старше ASSET_TTL_DAYS и не нужных ни одному хранимому релизу.
+#    Пока в корне лежит index.html прежней раскладки (прежний deploy.sh клал сборку прямо в
+#    WEB_ROOT), чистки нет: хэш-файлы той сборки ни одному релизу не принадлежат, а время у
+#    них — время той сборки. Удалить их — белый экран и у сайта, который nginx до
+#    переключения отдаёт из корня, и у вкладок, открытых до перехода. Прежние файлы корня
+#    убирают вручную, когда таких вкладок не осталось (docs/DEPLOYMENT.md, «Переход»).
+if [ -e "$WEB_ROOT/index.html" ]; then
+  echo "В $WEB_ROOT лежит index.html прежней раскладки — чистка общих хэш-файлов отложена"
+  exit 0
+fi
 KEPT="$(mktemp)"
 trap 'rm -f "$KEPT"' EXIT
-find "$WEB_ROOT/releases" -mindepth 3 -maxdepth 3 -path '*/assets/*' -type f ! -path '*/.*' -printf '%f\n' | sort -u > "$KEPT"
-find "$WEB_ROOT/assets" -maxdepth 1 -type f -mtime +"$ASSET_TTL_DAYS" -printf '%f\n' | sort | comm -23 - "$KEPT" |
+find "$WEB_ROOT/releases" -mindepth 3 -maxdepth 3 -path '*/assets/*' -type f ! -path '*/.*' -printf '%f\n' > "$KEPT"
+# Разность списков — awk, без sort/comm: не зависит ни от локали, ни от реализации coreutils
+# (comm из uutils 0.8 на сотнях строк из stdin ложно сообщает «not in sorted order»).
+find "$WEB_ROOT/assets" -maxdepth 1 -type f -mtime +"$ASSET_TTL_DAYS" -printf '%f\n' |
+  awk -v kept="$KEPT" 'BEGIN { while ((getline f < kept) > 0) keep[f] = 1 } !($0 in keep)' |
   while IFS= read -r f; do rm -f "${WEB_ROOT:?}/assets/$f"; done

@@ -101,4 +101,102 @@ describe('Деплой: каталоги-релизы и откат', { skip }, 
     assert.notEqual(res.status, 0)
     assert.equal(current(), '4000')
   })
+
+  it('права для nginx: файлы 644, каталоги 755 при любом umask сборки', () => {
+    const dist = makeDist(path.join(tmp, 'd5'), { buildId: '5000', compat: 2, rollbackFloor: 2, assets: ['App-e.js'] })
+    fs.chmodSync(path.join(dist, 'index.html'), 0o600)
+    fs.chmodSync(path.join(dist, 'assets', 'App-e.js'), 0o600)
+    fs.chmodSync(path.join(dist, 'assets'), 0o700)
+    fs.chmodSync(dist, 0o700)
+    const res = sh(PUBLISH, [dist, web])
+    assert.equal(res.status, 0, res.stderr)
+    const mode = (p) => (fs.statSync(path.join(web, p)).mode & 0o777).toString(8)
+    assert.equal(mode('releases/5000'), '755')
+    assert.equal(mode('releases/5000/index.html'), '644')
+    assert.equal(mode('releases/5000/assets'), '755')
+    assert.equal(mode('assets/App-e.js'), '644')
+    for (const d of ['releases', 'assets', 'shared']) assert.equal(mode(d), '755', d)
+  })
+})
+
+// Чистка на сборке настоящего размера: сотни имён как у Vite (регистр, «_», «-»). На малых
+// списках расхождения порядка sort/comm (локаль, comm из uutils со stdin) не проявлялись.
+describe('Деплой: чистка общих файлов на сборке реального размера', { skip }, () => {
+  let tmp
+  let web
+  const old = new Date(Date.now() - 30 * 24 * 3600 * 1000)
+  const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'
+  let seed = 7
+  const hash = () => Array.from({ length: 8 }, () => ABC[(seed = (seed * 48271) % 2147483647) % ABC.length]).join('')
+  const names = (n, prefix) => Array.from({ length: n }, (_, i) =>
+    `${i % 7 === 0 ? '_' : ''}${prefix}${['Page', 'Cell', 'icons', 'Modal'][i % 4]}${i}-${hash()}.${i % 3 ? 'js' : 'css'}`)
+
+  before(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-deploy-size-'))
+    web = path.join(tmp, 'www')
+    fs.mkdirSync(web)
+  })
+  after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+
+  it('удаляются ровно ничейные старые файлы, выкладка завершается без ошибки', () => {
+    const shared = names(20, 'Shared')
+    const r1 = [...names(150, 'One'), ...shared]
+    const r2 = [...names(150, 'Two'), ...shared]
+    assert.equal(sh(PUBLISH, [makeDist(path.join(tmp, 'd1'), { buildId: '1000', assets: r1 }), web]).status, 0)
+    assert.equal(sh(PUBLISH, [makeDist(path.join(tmp, 'd2'), { buildId: '2000', assets: r2 }), web]).status, 0)
+    for (const f of fs.readdirSync(path.join(web, 'assets'))) fs.utimesSync(path.join(web, 'assets', f), old, old)
+    const r3 = names(10, 'Three')
+    const res = sh(PUBLISH, [makeDist(path.join(tmp, 'd3'), { buildId: '3000', assets: r3 }), web], { KEEP_RELEASES: '2' })
+    assert.equal(res.status, 0, res.stderr)
+    const left = new Set(fs.readdirSync(path.join(web, 'assets')))
+    assert.deepEqual([...left].sort(), [...new Set([...r2, ...r3])].sort(), 'остались файлы хранимых релизов 2000 и 3000')
+  })
+})
+
+// Первая выкладка на сервере со старой раскладкой: прежний deploy.sh клал сборку прямо в
+// WEB_ROOT, и nginx до переключения отдаёт сайт оттуда. Хэш-файлы той сборки ни одному релизу
+// не принадлежат, а время у них — время той сборки (rsync -a его сохраняет).
+describe('Деплой: переход с прежней раскладки', { skip }, () => {
+  let tmp
+  let web
+  const current = () => path.basename(fs.readlinkSync(path.join(web, 'current')))
+  const old = new Date(Date.now() - 30 * 24 * 3600 * 1000)
+  const legacy = ['index-legacy.js', 'App-legacy.js']
+
+  before(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-deploy-legacy-'))
+    web = makeDist(path.join(tmp, 'www'), { buildId: '500', assets: legacy })
+    for (const f of legacy) fs.utimesSync(path.join(web, 'assets', f), old, old)
+  })
+  after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+
+  it('первая выкладка не трогает прежнюю сборку, даже если она старше срока чистки', () => {
+    const dist = makeDist(path.join(tmp, 'd1'), { buildId: '1000', assets: ['index-a.js'] })
+    const res = sh(PUBLISH, [dist, web])
+    assert.equal(res.status, 0, res.stderr)
+    assert.equal(current(), '1000')
+    assert.ok(fs.existsSync(path.join(web, 'index.html')), 'index.html прежней сборки на месте')
+    for (const f of legacy) assert.ok(fs.existsSync(path.join(web, 'assets', f)), f)
+    assert.match(res.stdout, /отложена/)
+  })
+
+  it('пока прежний index.html в корне, общие хэш-файлы не чистятся и при следующих выкладках', () => {
+    fs.utimesSync(path.join(web, 'assets', 'index-a.js'), old, old)
+    const dist = makeDist(path.join(tmp, 'd2'), { buildId: '2000', assets: ['index-b.js'] })
+    const res = sh(PUBLISH, [dist, web], { KEEP_RELEASES: '1' })
+    assert.equal(res.status, 0, res.stderr)
+    assert.deepEqual(fs.readdirSync(path.join(web, 'releases')), ['2000'])
+    for (const f of [...legacy, 'index-a.js']) assert.ok(fs.existsSync(path.join(web, 'assets', f)), f)
+  })
+
+  it('прежние файлы корня убраны — чистка возобновляется', () => {
+    fs.rmSync(path.join(web, 'index.html'))
+    const dist = makeDist(path.join(tmp, 'd3'), { buildId: '3000', assets: ['index-c.js'] })
+    const res = sh(PUBLISH, [dist, web], { KEEP_RELEASES: '2' })
+    assert.equal(res.status, 0, res.stderr)
+    assert.doesNotMatch(res.stdout, /отложена/)
+    for (const f of [...legacy, 'index-a.js']) assert.ok(!fs.existsSync(path.join(web, 'assets', f)), `${f} удалён`)
+    assert.ok(fs.existsSync(path.join(web, 'assets', 'index-b.js')), 'файл хранимого релиза остаётся')
+    assert.ok(fs.existsSync(path.join(web, 'assets', 'index-c.js')))
+  })
 })
