@@ -185,11 +185,15 @@ sudo certbot --nginx \
 1. Node.js 24, если `node --version` не `v24`, — раздел «Node.js 24 LTS» ниже. На сайт не влияет: Node
    нужен только для сборки.
 2. Прежний `deploy.sh` — из обращения, **до всего остального**: после перехода его
-   `sudo rsync --delete` стёр бы `releases/` и `current` — сайт лёг бы.
+   `sudo rsync --delete` стёр бы `releases/` и `current` — сайт лёг бы. Затем новый код: каталог
+   `deploy/` с новыми скриптами приходит только с ним (сам `deploy/deploy.sh` тоже делает `git pull`, но
+   при переходе его на сервере ещё нет). Сайт это не затрагивает — nginx отдаёт `/var/www/osp`:
    ```bash
    # danila$
    mv /home/danila/projects/OSP/deploy.sh /home/danila/projects/OSP/deploy.sh.old
    git -C /home/danila/projects/OSP checkout -- package-lock.json   # только если он был в status
+   git -C /home/danila/projects/OSP pull --ff-only origin main
+   ls /home/danila/projects/OSP/deploy                               # deploy.sh publish.sh rollback.sh
    ```
 3. Владелец каталога — `danila`. Режимы файлов не меняются, nginx читает как прежде:
    ```bash
