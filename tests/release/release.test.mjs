@@ -105,6 +105,20 @@ describe('Страховочный релиз: обновление, ошибк�
     await page.close()
   })
 
+  it('?features= включает флаг только в этом браузере и убирается из адреса; «-флаг» снимает', async () => {
+    Object.assign(state, { root: distA, version: null, config: null })
+    const { page } = await openPage()
+    await page.goto(`${base}/login?features=ospApiFunctions,bad name!,x`)
+    await page.locator('.login-form').first().waitFor({ timeout: 30000 })
+    assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('osp.features'))), { ospApiFunctions: true, x: true })
+    assert.equal(await page.evaluate(() => window.location.search), '')
+    assert.equal(new URL(page.url()).pathname, '/login')
+    await page.goto(`${base}/login?features=-ospApiFunctions,-x`)
+    await page.locator('.login-form').first().waitFor({ timeout: 30000 })
+    assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('osp.features'))), {})
+    await page.close()
+  })
+
   it('после деплоя старая вкладка один раз перезагружается и получает новую сборку', async () => {
     Object.assign(state, { root: distA, version: null, config: null })
     const { page, loads } = await openPage()

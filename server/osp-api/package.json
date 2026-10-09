@@ -1,0 +1,20 @@
+{
+  "name": "osp-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Свой API портала ОСП: маршруты вместо Edge Functions Supabase (этап 3, migration/PLAN.md)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.68.0",
+    "@aws-sdk/client-s3": "3.658.0",
+    "@aws-sdk/s3-request-presigner": "3.658.0",
+    "@supabase/supabase-js": "2.80.0",
+    "fastify": "5.12.5"
+  }
+}

@@ -20,6 +20,11 @@ module.exports = {
   },
   overrides: [
     {
+      // Свой API (server/osp-api) — Node, не браузер.
+      files: ['server/**/*.js'],
+      env: { node: true, browser: false, es2022: true },
+    },
+    {
       // Доступ к серверу — только через адаптеры src/api/ (Р3, migration/PLAN.md).
       files: ['src/**/*.{js,jsx}'],
       excludedFiles: ['src/api/**'],

@@ -1,0 +1,401 @@
+// osp-api (server/osp-api): маршруты вместо Edge Functions Supabase. Проверяем, что перенос
+// повторяет поведение функций (тот же запрос, ответ, коды, проверка доступа), а отличия — только
+// задуманные: ai-assist — только сотрудникам; rates-api без limit / price_min / price_max работает по
+// документации (в функции Number(null) = 0 давало limit 1 и фильтр «цена ≤ 0»).
+//
+// supabase-js в osp-api настоящий и ходит в подделку «как Supabase» (tests/osp-api/lib/fakes.mjs).
+// Нужны зависимости сервера: npm ci --prefix server/osp-api — без них набор пропускается.
+import { describe, it, before, after, beforeEach } from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { startFakeSupabase, startFakeS3 } from './lib/fakes.mjs'
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const SERVER = path.join(ROOT, 'server', 'osp-api')
+const skip = fs.existsSync(path.join(SERVER, 'node_modules', 'fastify')) ? false : 'нет зависимостей: npm ci --prefix server/osp-api'
+
+const U = {
+  emp: { token: 'tok-emp', id: '11111111-1111-4111-8111-111111111111' },
+  admin: { token: 'tok-admin', id: '22222222-2222-4222-8222-222222222222' },
+  unapproved: { token: 'tok-unapproved', id: '33333333-3333-4333-8333-333333333333' },
+  contractor: { token: 'tok-contractor', id: '44444444-4444-4444-8444-444444444444' },
+  contractorNoOrg: { token: 'tok-cnoorg', id: '55555555-5555-4555-8555-555555555555' },
+  noRole: { token: 'tok-norole', id: '66666666-6666-4666-8666-666666666666' },
+}
+const CONTRACT_MINE = 'c0000000-0000-4000-8000-000000000001'
+const CONTRACT_OTHER = 'c0000000-0000-4000-8000-000000000002'
+
+function supabaseState() {
+  return {
+    users: Object.fromEntries(Object.values(U).map((u) => [u.token, { id: u.id }])),
+    roles: {
+      [U.emp.id]: { role: 'engineer', counterparty_id: null, is_approved: true },
+      [U.admin.id]: { role: 'admin', counterparty_id: null, is_approved: true },
+      [U.unapproved.id]: { role: 'engineer', counterparty_id: null, is_approved: false },
+      [U.contractor.id]: { role: 'contractor', counterparty_id: 'cp-1', is_approved: true },
+      [U.contractorNoOrg.id]: { role: 'contractor', counterparty_id: null, is_approved: true },
+    },
+    docs: {
+      'tenders/t1/a-plan.pdf': { row: { id: 'd1', owner_type: 'tender', owner_id: 't1' }, visibleTo: [U.emp.id, U.admin.id] },
+      [`contracts/${CONTRACT_MINE}/x.docx`]: { row: { id: 'd2', owner_type: 'contract', owner_id: CONTRACT_MINE }, visibleTo: 'all' },
+      [`contracts/${CONTRACT_OTHER}/y.docx`]: { row: { id: 'd3', owner_type: 'contract', owner_id: CONTRACT_OTHER }, visibleTo: 'all' },
+      'tenders/t2/shared.pdf': { row: { id: 'd4', owner_type: 'tender', owner_id: 't2' }, visibleTo: 'all' },
+    },
+    myContracts: { [U.contractor.id]: [CONTRACT_MINE] },
+    views: {
+      kp_rates_registry: Array.from({ length: 3 }, (_, i) => ({
+        id: `k${i}`, object_id: 'o1', object_name: 'Объект', counterparty_id: 'cp-1', counterparty_name: 'ООО «Тест»; филиал',
+        tender_id: 't1', tender_desc: 'Описание "в кавычках"', item_type: i % 2 ? 'work' : 'material',
+        item_name: `Позиция ${i}`, unit: 'м3', price: 100 + i, proposal_date: '2026-09-01', secret_col: 'не отдавать',
+      })),
+      supply_rates_registry: [{ id: 's0', object_id: 'o1', object_name: 'Объект', tender_id: 't1', tender_desc: 'd', item_name: 'Бетон', unit: 'м3', price: 50, rate_date: '2026-09-02' }],
+    },
+    viewTotal: 3,
+  }
+}
+
+describe('osp-api: маршруты вместо Edge Functions', { skip }, () => {
+  let buildApp
+  let supa
+  let s3
+  let state
+  let app
+  let logs
+  let aiCalls
+  let aiResponse
+
+  const config = (over = {}) => ({
+    host: '127.0.0.1', port: 0,
+    supabaseUrl: supa.url, supabaseAnonKey: 'anon-test-key', supabaseServiceKey: 'service-test-key',
+    s3: { endpoint: s3.url, region: 'ru-central-1', bucket: 'osp', accessKeyId: 'AKIDTEST', secretAccessKey: 'secret-test' },
+    anthropicApiKey: 'anthropic-test-key',
+    ratesApiKeys: ['rk-one', 'rk-two'],
+    ...over,
+  })
+
+  async function makeApp(over = {}) {
+    const { defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))
+    const deps = {
+      ...defaultDeps,
+      createAnthropic: () => ({
+        beta: { messages: { create: async (params) => { aiCalls.push(params); if (aiResponse instanceof Error) throw aiResponse; return aiResponse } } },
+      }),
+    }
+    await app?.close()
+    app = buildApp({ config: config(over), deps, logger: { level: 'info', stream: { write: (line) => logs.push(line) } } })
+    await app.ready()
+    return app
+  }
+
+  const fn = (name, who, body, raw) => app.inject({
+    method: 'POST', url: `/api/fn/${name}`,
+    headers: { 'content-type': 'application/json', ...(who ? { authorization: `Bearer ${who.token}` } : {}) },
+    payload: raw ?? JSON.stringify(body ?? {}),
+  })
+
+  before(async () => {
+    ;({ buildApp } = await import(path.join(SERVER, 'src', 'app.js')))
+    state = supabaseState()
+    supa = await startFakeSupabase(state)
+    s3 = await startFakeS3()
+  })
+  after(async () => {
+    await app?.close()
+    await supa?.close()
+    await s3?.close()
+  })
+  beforeEach(async () => {
+    logs = []
+    aiCalls = []
+    aiResponse = { model: 'claude-opus-5', stop_reason: 'end_turn', content: [{ type: 'text', text: 'ПРЕДЛАГАЕМАЯ РЕДАКЦИЯ:\n1.1 …' }], usage: { input_tokens: 10, output_tokens: 20 } }
+    supa.reset()
+    s3.requests.length = 0
+    await makeApp()
+  })
+
+  it('health: что настроено — да/нет, без значений секретов', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/health' })
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(res.json(), { ok: true, service: 'osp-api', configured: { supabase: true, supabaseService: true, s3: true, anthropic: true, rates: true } })
+    for (const secret of ['anon-test-key', 'service-test-key', 'secret-test', 'anthropic-test-key', 'rk-one']) {
+      assert.ok(!res.body.includes(secret), secret)
+    }
+  })
+
+  describe('s3-presign', () => {
+    it('без токена и с чужим токеном — 401', async () => {
+      assert.equal((await fn('s3-presign', null, { action: 'upload' })).statusCode, 401)
+      assert.equal((await fn('s3-presign', { token: 'forged' }, { action: 'upload' })).statusCode, 401)
+    })
+
+    it('неодобренный и учётка без роли — 403', async () => {
+      for (const who of [U.unapproved, U.noRole]) {
+        const res = await fn('s3-presign', who, { action: 'upload', owner_type: 'tender', owner_id: 't1', file_name: 'a.pdf' })
+        assert.equal(res.statusCode, 403, who.token)
+        assert.deepEqual(res.json(), { error: 'Forbidden' })
+      }
+    })
+
+    it('строки базы читаются под токеном пользователя (действует RLS), не служебным ключом', async () => {
+      await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' })
+      const rest = supa.requests.filter((r) => r.path.startsWith('/rest/v1/'))
+      assert.ok(rest.length >= 2)
+      for (const r of rest) {
+        assert.equal(r.auth, `Bearer ${U.emp.token}`, r.path)
+        assert.equal(r.apikey, 'anon-test-key', r.path)
+      }
+    })
+
+    it('upload: ключ «каталог/владелец/uuid-имя», кириллица — латиницей, PUT на 15 минут', async () => {
+      const res = await fn('s3-presign', U.emp, { action: 'upload', owner_type: 'general_document', owner_id: 'g-1', file_name: 'Акт №5 (итог).pdf', mime_type: 'application/pdf' })
+      assert.equal(res.statusCode, 200, res.body)
+      const out = res.json()
+      assert.match(out.s3_key, /^general-documents\/g-1\/[0-9a-f-]{36}-Akt_5_itog_\.pdf$/)
+      assert.equal(out.expires_in, 900)
+      const url = new URL(out.presigned_url)
+      assert.equal(url.origin, s3.url)
+      assert.equal(decodeURIComponent(url.pathname), `/osp/${out.s3_key}`)
+      assert.equal(url.searchParams.get('X-Amz-Expires'), '900')
+      assert.ok(url.searchParams.get('X-Amz-Signature'))
+    })
+
+    it('upload: неизвестный owner_type, нет owner_id или имени — 400 с тем же текстом', async () => {
+      const cases = [
+        [{ owner_type: 'secret', owner_id: 'x', file_name: 'a' }, 'Unsupported owner_type: secret'],
+        [{ owner_type: 'constructor', owner_id: 'x', file_name: 'a' }, 'Unsupported owner_type: constructor'],
+        [{ owner_type: 'tender', file_name: 'a' }, 'Missing owner_id'],
+        [{ owner_type: 'tender', owner_id: 'x' }, 'Missing file_name'],
+      ]
+      for (const [body, error] of cases) {
+        const res = await fn('s3-presign', U.emp, { action: 'upload', ...body })
+        assert.equal(res.statusCode, 400)
+        assert.deepEqual(res.json(), { error })
+      }
+    })
+
+    it('download: только файл из s3_documents, видимый пользователю; GET на 60 минут', async () => {
+      const hidden = await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t9/guess.pdf' })
+      assert.equal(hidden.statusCode, 404)
+      assert.deepEqual(hidden.json(), { error: 'Файл не найден' })
+      const ok = await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' })
+      assert.equal(ok.statusCode, 200)
+      const url = new URL(ok.json().presigned_url)
+      assert.equal(url.searchParams.get('X-Amz-Expires'), '3600')
+      assert.equal(url.searchParams.get('response-content-disposition'), null, 'превью — без attachment')
+    })
+
+    it('download с download=true — исходное имя: ASCII и UTF-8', async () => {
+      const res = await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf', file_name: 'План работ.pdf', download: true })
+      const cd = new URL(res.json().presigned_url).searchParams.get('response-content-disposition')
+      assert.equal(cd, `attachment; filename="Plan_rabot.pdf"; filename*=UTF-8''${encodeURIComponent('План работ.pdf')}`)
+    })
+
+    it('подрядчик: только скачивание и только файлов своих договоров', async () => {
+      const up = await fn('s3-presign', U.contractor, { action: 'upload', owner_type: 'contract', owner_id: CONTRACT_MINE, file_name: 'a.pdf' })
+      assert.equal(up.statusCode, 403)
+      assert.deepEqual(up.json(), { error: 'Действие доступно только сотрудникам' })
+      const del = await fn('s3-presign', U.contractor, { action: 'delete', s3_key: `contracts/${CONTRACT_MINE}/x.docx` })
+      assert.equal(del.statusCode, 403)
+      assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: `contracts/${CONTRACT_MINE}/x.docx` })).statusCode, 200)
+      assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: `contracts/${CONTRACT_OTHER}/y.docx` })).statusCode, 404, 'чужой договор')
+      assert.equal((await fn('s3-presign', U.contractor, { action: 'download', s3_key: 'tenders/t2/shared.pdf' })).statusCode, 404, 'не договор')
+      assert.equal(s3.requests.length, 0)
+    })
+
+    it('delete: удаляет в S3 только видимый файл', async () => {
+      const miss = await fn('s3-presign', U.emp, { action: 'delete', s3_key: 'tenders/t9/guess.pdf' })
+      assert.equal(miss.statusCode, 404)
+      assert.equal(s3.requests.length, 0)
+      const ok = await fn('s3-presign', U.emp, { action: 'delete', s3_key: 'tenders/t1/a-plan.pdf' })
+      assert.equal(ok.statusCode, 200)
+      assert.deepEqual(ok.json(), { ok: true })
+      assert.deepEqual(s3.requests.map((r) => `${r.method} ${r.path}`), ['DELETE /osp/tenders/t1/a-plan.pdf'])
+      assert.match(s3.requests[0].auth, /^AWS4-HMAC-SHA256 Credential=AKIDTEST\//)
+    })
+
+    it('неизвестное действие и неверный JSON — 400', async () => {
+      assert.deepEqual((await fn('s3-presign', U.emp, { action: 'list' })).json(), { error: 'Unknown action: list' })
+      const bad = await fn('s3-presign', U.emp, null, '{oops')
+      assert.equal(bad.statusCode, 400)
+      assert.deepEqual(bad.json(), { error: 'Invalid JSON' })
+      const notObject = await fn('s3-presign', U.emp, null, '[1,2]')
+      assert.equal(notObject.statusCode, 400)
+    })
+
+    it('не настроены Supabase или S3 — 500 с тем же текстом, что у функции', async () => {
+      await makeApp({ supabaseUrl: '' })
+      assert.deepEqual((await fn('s3-presign', U.emp, { action: 'upload' })).json(), { error: 'Supabase env not configured' })
+      await makeApp({ s3: { endpoint: '', region: 'x', bucket: '', accessKeyId: '', secretAccessKey: '' } })
+      const res = await fn('s3-presign', U.emp, { action: 'upload', owner_type: 'tender', owner_id: 't', file_name: 'a' })
+      assert.equal(res.statusCode, 500)
+      assert.match(res.json().error, /^S3 secrets are not configured/)
+    })
+  })
+
+  describe('ai-assist', () => {
+    const body = { action: 'clause_suggest', mode: 'risks', clause_label: '5.2', our_text: 'Срок 10 дней', counterparty_text: 'Срок 30 дней', counterparty_name: 'ООО Ромашка', contract: { number: 'Д-1' }, comments: [{ side: 'employee', name: 'Юрист', body: 'Не согласны' }] }
+
+    it('только одобренный сотрудник (и администратор): иначе 401 / 403', async () => {
+      assert.equal((await fn('ai-assist', null, body)).statusCode, 401)
+      for (const who of [U.unapproved, U.contractor, U.contractorNoOrg, U.noRole]) {
+        const res = await fn('ai-assist', who, body)
+        assert.equal(res.statusCode, 403, who.token)
+        assert.deepEqual(res.json(), { error: 'ИИ-помощник доступен только сотрудникам' })
+      }
+      for (const who of [U.emp, U.admin]) assert.equal((await fn('ai-assist', who, body)).statusCode, 200, who.token)
+      assert.equal(aiCalls.length, 2, 'в модель ушли только запросы сотрудников')
+    })
+
+    it('ответ и запрос к модели — как у функции', async () => {
+      const res = await fn('ai-assist', U.emp, body)
+      assert.deepEqual(res.json(), { text: 'ПРЕДЛАГАЕМАЯ РЕДАКЦИЯ:\n1.1 …', model: 'claude-opus-5', usage: { input_tokens: 10, output_tokens: 20 } })
+      const p = aiCalls[0]
+      assert.equal(p.model, 'claude-opus-5')
+      assert.equal(p.max_tokens, 16000)
+      assert.deepEqual(p.output_config, { effort: 'medium' })
+      assert.deepEqual(p.betas, ['server-side-fallback-2026-07-01'])
+      assert.equal(p.fallbacks, 'default')
+      assert.match(p.system, /юрист строительной компании СУ-10/)
+      const prompt = p.messages[0].content
+      assert.match(prompt, /ПУНКТ: 5\.2/)
+      assert.match(prompt, /РЕДАКЦИЯ ООО РОМАШКА:\nСрок 30 дней/)
+      assert.match(prompt, /— СУ-10, Юрист: Не согласны/)
+      assert.match(prompt, /РИСКИ:/)
+    })
+
+    it('ошибки — те же коды и тексты', async () => {
+      assert.deepEqual((await fn('ai-assist', U.emp, { ...body, action: 'x' })).json(), { error: 'Unknown action: x' })
+      assert.equal((await fn('ai-assist', U.emp, { ...body, our_text: '', counterparty_text: '' })).statusCode, 400)
+      aiResponse = { ...aiResponse, stop_reason: 'refusal', content: [] }
+      assert.equal((await fn('ai-assist', U.emp, body)).statusCode, 422)
+      aiResponse = { ...aiResponse, stop_reason: 'end_turn', content: [{ type: 'text', text: '  ' }] }
+      assert.equal((await fn('ai-assist', U.emp, body)).statusCode, 502)
+      aiResponse = new Error('overloaded')
+      const fail = await fn('ai-assist', U.emp, body)
+      assert.equal(fail.statusCode, 500)
+      assert.deepEqual(fail.json(), { error: 'overloaded' })
+      await makeApp({ anthropicApiKey: '' })
+      assert.deepEqual((await fn('ai-assist', U.emp, body)).json(), { error: 'ANTHROPIC_API_KEY не задан в секретах функции' })
+    })
+  })
+
+  describe('rates-api → /api/rates', () => {
+    const get = (url, headers = {}) => app.inject({ method: 'GET', url, headers })
+
+    it('ключ: заголовок или ?key=, неверный — 401; CORS как у функции', async () => {
+      const none = await get('/api/rates/kp')
+      assert.equal(none.statusCode, 401)
+      assert.equal(none.headers['access-control-allow-origin'], '*')
+      assert.equal((await get('/api/rates/kp', { 'x-api-key': 'rk-wrong' })).statusCode, 401)
+      assert.equal((await get('/api/rates/kp', { 'x-api-key': 'rk-two' })).statusCode, 200)
+      assert.equal((await get('/api/rates/kp?key=rk-one')).statusCode, 200)
+      const pre = await app.inject({ method: 'OPTIONS', url: '/api/rates/kp' })
+      assert.equal(pre.statusCode, 200)
+      assert.equal(pre.headers['access-control-allow-headers'], 'x-api-key, content-type')
+    })
+
+    it('health и неизвестный ресурс', async () => {
+      assert.deepEqual((await get('/api/rates/health?key=rk-one')).json(), { ok: true, resources: ['kp', 'supply'] })
+      assert.deepEqual((await get('/api/rates?key=rk-one')).json(), { ok: true, resources: ['kp', 'supply'] })
+      assert.equal((await get('/api/rates/users?key=rk-one')).statusCode, 404)
+    })
+
+    it('kp: явные колонки, фильтры, порядок, страница; служебный ключ, а не пользователь', async () => {
+      const res = await get('/api/rates/kp?key=rk-one&search=бетон&type=work&counterparty=cp-1&object=o1&tender=t1&price_min=10&price_max=500&date_from=2026-01-01&date_to=2026-12-31&limit=2&offset=1')
+      assert.equal(res.statusCode, 200, res.body)
+      const out = res.json()
+      assert.equal(out.limit, 2)
+      assert.equal(out.offset, 1)
+      assert.equal(out.count, 3)
+      assert.equal(out.has_more, true)
+      assert.ok(!('secret_col' in out.rows[0]), 'колонки — только из списка')
+      const [data, head] = supa.requests
+      assert.equal(data.path, '/rest/v1/kp_rates_registry')
+      assert.equal(data.auth, 'Bearer service-test-key')
+      const q = data.params
+      assert.equal(q.get('select').replace(/\s+/g, ''), 'id,object_id,object_name,counterparty_id,counterparty_name,tender_id,tender_desc,item_type,item_name,unit,price,proposal_date')
+      assert.equal(q.get('item_name'), 'ilike.%бетон%')
+      assert.equal(q.get('item_type'), 'eq.work')
+      assert.equal(q.get('counterparty_id'), 'eq.cp-1')
+      assert.equal(q.get('object_id'), 'eq.o1')
+      assert.equal(q.get('tender_id'), 'eq.t1')
+      assert.deepEqual(q.getAll('price'), ['gte.10', 'lte.500'])
+      assert.deepEqual(q.getAll('proposal_date'), ['gte.2026-01-01', 'lte.2026-12-31'])
+      assert.equal(q.get('order'), 'item_name.asc,id.asc')
+      assert.equal(q.get('offset'), '1')
+      assert.equal(q.get('limit'), '2')
+      assert.equal(head.method, 'HEAD')
+      assert.match(head.prefer, /count=exact/)
+    })
+
+    it('без limit / price_* — 500 строк и без фильтра цены (исправление ошибки функции)', async () => {
+      await get('/api/rates/kp?key=rk-one')
+      const q = supa.requests[0].params
+      assert.equal(q.get('limit'), '500')
+      assert.equal(q.get('offset'), '0')
+      assert.deepEqual(q.getAll('price'), [])
+      await get('/api/rates/kp?key=rk-one&limit=5000')
+      assert.equal(supa.requests.at(-2).params.get('limit'), '1000')
+    })
+
+    it('supply: дата — rate_date, тип и контрагент не применяются', async () => {
+      const res = await get('/api/rates/supply?key=rk-one&type=work&counterparty=cp-1&date_from=2026-01-01')
+      assert.equal(res.statusCode, 200)
+      const q = supa.requests[0].params
+      assert.equal(supa.requests[0].path, '/rest/v1/supply_rates_registry')
+      assert.equal(q.get('item_type'), null)
+      assert.equal(q.get('counterparty_id'), null)
+      assert.equal(q.get('rate_date'), 'gte.2026-01-01')
+    })
+
+    it('подсчёт не уложился — count: null, строки отдаются', async () => {
+      state.countFails = true
+      try {
+        const out = (await get('/api/rates/kp?key=rk-one')).json()
+        assert.equal(out.count, null)
+        assert.equal(out.rows.length, 3)
+      } finally {
+        state.countFails = false
+      }
+    })
+
+    it('csv: BOM, «;», экранирование, имя файла', async () => {
+      const res = await get('/api/rates/kp?key=rk-one&format=csv&limit=1')
+      assert.equal(res.headers['content-type'], 'text/csv; charset=utf-8')
+      assert.equal(res.headers['content-disposition'], 'attachment; filename="kp_rates_registry.csv"')
+      assert.ok(res.body.startsWith('﻿id;object_id;'))
+      assert.match(res.body, /;"ООО «Тест»; филиал";/)
+      assert.match(res.body, /;"Описание ""в кавычках""";/)
+    })
+
+    it('нет представления (42P01) — 503 с понятным текстом', async () => {
+      state.missingView = true
+      try {
+        const res = await get('/api/rates/kp?key=rk-one')
+        assert.equal(res.statusCode, 503)
+        assert.deepEqual(res.json(), { error: 'Представление kp_rates_registry недоступно — не применены миграции реестра расценок' })
+      } finally {
+        state.missingView = false
+      }
+    })
+
+    it('не настроен служебный ключ — 500 с тем же текстом', async () => {
+      await makeApp({ supabaseServiceKey: '' })
+      assert.deepEqual((await get('/api/rates/kp?key=rk-one')).json(), { error: 'Функция не настроена: нет SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY' })
+    })
+  })
+
+  it('журнал: ни ключа из ?key=, ни токена, ни текста договора', async () => {
+    await app.inject({ method: 'GET', url: '/api/rates/kp?key=rk-one&search=x' })
+    await fn('ai-assist', U.emp, { action: 'clause_suggest', our_text: 'КОНФИДЕНЦИАЛЬНЫЙ ПУНКТ', counterparty_text: 'x' })
+    await fn('s3-presign', U.emp, null, '{oops')
+    const all = logs.join('')
+    assert.ok(logs.length >= 3, 'по строке на запрос')
+    for (const secret of ['rk-one', U.emp.token, 'КОНФИДЕНЦИАЛЬНЫЙ', 'anon-test-key', 'service-test-key']) {
+      assert.ok(!all.includes(secret), `в журнале: ${secret}`)
+    }
+    assert.match(all, /"route":"\/api\/rates\/\*"/)
+  })
+})

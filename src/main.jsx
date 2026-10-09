@@ -5,7 +5,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { uuidv4Manual } from './utils/uuid'
-import { loadRuntimeConfig } from './config/runtime'
+import { applyFeatureParam, loadRuntimeConfig } from './config/runtime'
 import { installChunkRecovery, isChunkLoadError, reloadOnceForThisBuild } from './utils/chunkRecovery'
 
 // Полифил crypto.randomUUID — на http:// и в старых браузерах метод отсутствует,
@@ -27,6 +27,7 @@ installChunkRecovery()
 // Сначала runtime-конфиг (/config.json: адреса и флаги), потом приложение: клиент
 // Supabase создаётся при импорте App и должен увидеть уже прочитанный конфиг.
 async function start() {
+  applyFeatureParam()
   await loadRuntimeConfig()
   const root = document.getElementById('root')
   try {

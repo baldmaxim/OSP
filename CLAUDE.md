@@ -23,6 +23,7 @@ npm run test:release # страховочный релиз: обновление
 npm run test:deploy  # deploy/publish.sh и rollback.sh на временных каталогах
 npm run test:backup  # migration/backup: копия, проверка восстановлением, прогон миграций (Docker)
 npm run test:db      # слепок схемы прода + «отпечаток» прав на копии прода против tests/db/baseline (Docker)
+npm run test:api     # свой API server/osp-api (нужен npm ci --prefix server/osp-api; MinIO — если есть образ)
 ```
 
 **Тесты** — встроенный `node --test`. Нужны PostgreSQL 17+ и Chromium:
@@ -66,11 +67,13 @@ src/
     ├── db.js             # таблицы и RPC: db.from(...), db.rpc(...) — построитель как у supabase-js
     ├── auth.js           # вход (фаза A — Supabase Auth): только RoleContext и сервисы
     ├── files.js          # Supabase Storage: обложки объектов (документы — services/s3.js, cloud.ru)
-    ├── functions.js      # invokeFunction(name, options) — Edge Functions
+    ├── functions.js      # invokeFunction(name, options) — Edge Functions или osp-api (флаг ospApiFunctions)
+    ├── ospApi.js         # вызов своего API /api/fn/<имя> с ответом как у functions.invoke
     ├── realtime.js       # subscribeTable(...) — онлайн-обновления
     ├── supabaseClient.js # единственный createClient; импортируют только адаптеры
     └── clientErrors.js   # наблюдение за отказами для телеметрии
 
+server/osp-api/           # свой API (Node, Fastify): маршруты вместо Edge Functions, README там же
 supabase/                 # Database schemas (NOT in src/)
 ├── schemas/              # Table definitions (preferred for reading)
 └── migrations/           # Chronological schema changes
@@ -351,6 +354,11 @@ supabase functions deploy ai-assist
 Без секрета функция отвечает 500 «ANTHROPIC_API_KEY не задан в секретах функции».
 
 ## API реестра расценок (Edge Function `rates-api`)
+
+> **Переезд:** те же маршруты есть в своём API — `https://osp.root.sx/api/rates/{kp,supply,health}`
+> ([server/osp-api](server/osp-api/README.md)). В функции без `limit` / `price_max` выдача шла по 1
+> строке и только с ценой 0 (`Number(null)` = 0); в osp-api это исправлено. Правки логики делать в обоих
+> местах, пока функция жива.
 
 Выдача расценок смежному отделу (тендерный отдел, работающий с заказчиками) машинно, по ключу, **только на чтение**. Отдельная функция, а не прямой доступ к Supabase REST: ключ проекта открыл бы не реестр расценок, а всё, до чего дотягиваются политики, — здесь же наружу выставлены ровно два представления и одна операция.
 
