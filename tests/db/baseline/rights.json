@@ -256,10 +256,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "delete": "yes",
-        "insert": "yes",
+        "delete": "no",
+        "insert": "no",
         "select": "visible",
-        "update": "yes"
+        "update": "no"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -702,10 +702,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "delete": "yes",
-        "insert": "yes",
+        "delete": "no",
+        "insert": "no",
         "select": "visible",
-        "update": "yes"
+        "update": "no"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -1148,10 +1148,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "delete": "yes",
-        "insert": "yes",
+        "delete": "no",
+        "insert": "no",
         "select": "visible",
-        "update": "yes"
+        "update": "no"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -1594,10 +1594,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "delete": "yes",
-        "insert": "yes",
+        "delete": "no",
+        "insert": "no",
         "select": "visible",
-        "update": "yes"
+        "update": "no"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -2486,10 +2486,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "delete": "yes",
-        "insert": "yes",
+        "delete": "no",
+        "insert": "no",
         "select": "visible",
-        "update": "yes"
+        "update": "no"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -4924,13 +4924,13 @@
     "vor_requests_can_access": "ok"
   },
   "self_promote": {
-    "employee_full": "admin",
-    "employee_none": "admin",
-    "vors_only": "admin",
-    "contractor_own": "not_admin",
-    "contractor_noorg": "not_admin",
-    "unapproved": "not_admin",
-    "blocked": "not_admin",
-    "no_user_roles": "not_admin"
+    "employee_full": "err:42501",
+    "employee_none": "err:42501",
+    "vors_only": "err:42501",
+    "contractor_own": "err:42501",
+    "contractor_noorg": "err:42501",
+    "unapproved": "err:42501",
+    "blocked": "err:42501",
+    "no_user_roles": "err:42501"
   }
 }
