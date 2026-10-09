@@ -1,9 +1,10 @@
 // Блок nginx для сайта и /api/ (deploy/nginx/osp.root.sx.conf) — тот самый файл, что ставится на VPS,
 // на nginx 1.24 (как в Ubuntu 24.04) в Docker, с HTTPS и файлами Certbot. Вместо osp-api — заглушка на
 // 127.0.0.1:8787 в той же сетевой среде. Проверяем то, что требует рецензия: ключ из ?key= не попадает
-// ни в access, ни в error log; 429 при всплеске; 413 больше 2 МБ; ровно один Cache-Control: no-store;
-// X-Forwarded-For доходит до сервиса (по нему /api/ready закрыт снаружи); без службы /api/ — 502, а сайт
-// работает. Без Docker, образов или openssl набор пропускается.
+// ни в access, ни в error log — и по HTTPS, и по HTTP (порт 80: /api/ не перенаправляется); 429 при
+// всплеске; 413 больше 2 МБ; ровно один Cache-Control: no-store; X-Forwarded-For доходит до сервиса (по
+// нему /api/ready закрыт снаружи); без службы /api/ — 502, а сайт работает. Без Docker, образов или
+// openssl набор пропускается.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -42,10 +43,10 @@ require('http').createServer((req, res) => {
 `
 
 describe('nginx: сайт и /api/ по файлу из репозитория', { skip, timeout: 180000 }, () => {
-  let tmp, nginx, stub, base, resolve
+  let tmp, nginx, stub, base, httpBase, resolve, resolve80
   const KEY = 'SECRET-RATES-KEY-123'
 
-  const curl = (args) => spawnSync('curl', ['-sk', '--resolve', resolve, ...args], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
+  const curl = (args) => spawnSync('curl', ['-sk', '--resolve', resolve, '--resolve', resolve80, ...args], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
   const code = (args) => curl(['-o', '/dev/null', '-w', '%{http_code}', ...args]).stdout
   const logs = (file) => docker(['exec', nginx, 'cat', `/var/log/nginx/${file}`]).stdout
 
@@ -73,16 +74,20 @@ describe('nginx: сайт и /api/ по файлу из репозитория',
     fs.copyFileSync(CONF, path.join(confD, 'osp.root.sx.conf'))
     for (const d of ['www', 'letsencrypt', 'conf.d']) spawnSync('chmod', ['-R', 'a+rX', path.join(tmp, d)])
 
-    const run = docker(['run', '-d', '--sysctl', 'net.ipv6.conf.all.disable_ipv6=0', '-p', '127.0.0.1::443',
+    const run = docker(['run', '-d', '--sysctl', 'net.ipv6.conf.all.disable_ipv6=0', '-p', '127.0.0.1::443', '-p', '127.0.0.1::80',
       '-v', `${path.join(tmp, 'www')}:/var/www:ro`, '-v', `${confD}:/etc/nginx/conf.d:ro`, '-v', `${le}:/etc/letsencrypt:ro`, NGINX_IMAGE])
     assert.equal(run.status, 0, run.stderr)
     nginx = run.stdout.trim()
     const s = docker(['run', '-d', '--network', `container:${nginx}`, NODE_IMAGE, 'node', '-e', STUB])
     assert.equal(s.status, 0, s.stderr)
     stub = s.stdout.trim()
-    const port = docker(['port', nginx, '443/tcp']).stdout.trim().split('\n')[0].split(':').pop()
+    const hostPort = (p) => docker(['port', nginx, p]).stdout.trim().split('\n')[0].split(':').pop()
+    const port = hostPort('443/tcp')
+    const port80 = hostPort('80/tcp')
     resolve = `osp.root.sx:${port}:127.0.0.1`
+    resolve80 = `osp.root.sx:${port80}:127.0.0.1`
     base = `https://osp.root.sx:${port}`
+    httpBase = `http://osp.root.sx:${port80}`
     for (let i = 0; i < 50 && code([`${base}/api/health`]) !== '200'; i++) await new Promise((r) => setTimeout(r, 200))
   })
 
@@ -137,6 +142,23 @@ describe('nginx: сайт и /api/ по файлу из репозитория',
     const codes = r.stdout.trim().split('\n')
     assert.ok(codes.filter((c) => c === '429').length > 0, `нет 429: ${[...new Set(codes)]}`)
     assert.ok(codes.filter((c) => c === '200').length >= 40, 'запас burst пропущен')
+  })
+
+  it('HTTP (порт 80): /api/ — 403 без перенаправления, журнал без ключа; сайт перенаправляется как раньше', () => {
+    const api = curl(['-D', '-', '-o', '/dev/null', `${httpBase}/api/rates/kp?key=${KEY}`]).stdout
+    assert.match(api, /^HTTP\/1\.1 403/)
+    assert.ok(!/^location:/im.test(api), 'ключ не возвращается в Location')
+    assert.equal(code([`${httpBase}/api?key=${KEY}`]), '403')
+    assert.equal(code([`${base}/api?key=${KEY}`]), '404', '/api без слэша по HTTPS')
+    const site = curl(['-D', '-', '-o', '/dev/null', `${httpBase}/tenders/5?x=1`]).stdout
+    assert.match(site, /^HTTP\/1\.1 301/)
+    assert.match(site, /^location: https:\/\/osp\.root\.sx\/tenders\/5\?x=1\r?$/im)
+    // Общий журнал образа (/var/log/nginx/access.log) — это stdout контейнера.
+    const out = docker(['logs', nginx])
+    assert.match(out.stdout, /"GET \/api\/rates\/kp HTTP\/1\.1" 403/)
+    assert.ok(!(out.stdout + out.stderr).includes(KEY), 'ключ в журнале порта 80')
+    assert.match(logs('osp-access.log'), /"GET \/api HTTP\/1\.1" 404/)
+    assert.ok(!logs('osp-access.log').includes(KEY), 'ключ в access log HTTPS')
   })
 
   it('служба остановлена — /api/ 502, ключ не попадает в error log, сайт работает', () => {

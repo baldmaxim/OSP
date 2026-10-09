@@ -502,7 +502,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     it('все настроенные зависимости отвечают — 200; S3 — запись и удаление служебного объекта', async () => {
       const res = await ready()
       assert.equal(res.statusCode, 200, res.body)
-      assert.deepEqual(res.json(), { ok: true, checks: { supabase: 'ok', s3: 'ok', anthropic: 'ok' } })
+      assert.deepEqual(res.json(), { ok: true, checks: { supabase: 'ok', s3: 'ok', anthropic: 'ok' }, required: ['supabase', 's3', 'anthropic'] })
       assert.deepEqual(s3.requests.map((r) => `${r.method} ${r.path}`), ['PUT /osp/osp-api/ready-check', 'DELETE /osp/osp-api/ready-check'])
     })
 
@@ -511,7 +511,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       try {
         const res = await ready()
         assert.equal(res.statusCode, 503)
-        assert.deepEqual(res.json(), { ok: false, checks: { supabase: 'ok', s3: 'ok', anthropic: 'fail' } })
+        assert.deepEqual(res.json(), { ok: false, checks: { supabase: 'ok', s3: 'ok', anthropic: 'fail' }, required: ['supabase', 's3', 'anthropic'] })
       } finally {
         anthropicDown = false
       }
@@ -521,9 +521,27 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.equal(down.json().checks.supabase, 'fail')
     })
 
-    it('не настроенное не проверяется; через nginx (X-Forwarded-For) — 404', async () => {
-      await makeApp({ anthropicApiKey: '', s3: { endpoint: '', region: 'x', bucket: '', accessKeyId: '', secretAccessKey: '' } })
-      assert.deepEqual((await ready()).json(), { ok: true, checks: { supabase: 'ok', s3: 'not_configured', anthropic: 'not_configured' } })
+    it('обязательная не настроена — 503 (рецензия 2, п. 2); суженный явно список — 200', async () => {
+      const noKeys = { anthropicApiKey: '', s3: { endpoint: '', region: 'x', bucket: '', accessKeyId: '', secretAccessKey: '' } }
+      await makeApp(noKeys)
+      const res = await ready()
+      assert.equal(res.statusCode, 503)
+      assert.deepEqual(res.json(), { ok: false, checks: { supabase: 'ok', s3: 'not_configured', anthropic: 'not_configured' }, required: ['supabase', 's3', 'anthropic'] })
+      await makeApp({ ...noKeys, required: ['supabase'] })
+      assert.equal((await ready()).statusCode, 200)
+      // Необязательная проверяется и видна, но не решает.
+      anthropicDown = true
+      try {
+        await makeApp({ required: ['supabase', 's3'] })
+        const partial = await ready()
+        assert.equal(partial.statusCode, 200)
+        assert.deepEqual(partial.json(), { ok: true, checks: { supabase: 'ok', s3: 'ok', anthropic: 'fail' }, required: ['supabase', 's3'] })
+      } finally {
+        anthropicDown = false
+      }
+    })
+
+    it('через nginx (X-Forwarded-For) — 404', async () => {
       assert.equal((await ready({ 'x-forwarded-for': '203.0.113.5' })).statusCode, 404)
     })
   })
@@ -571,5 +589,29 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.ok(!all.includes(secret), `в журнале: ${secret}`)
     }
     assert.match(all, /"route":"\/api\/rates\/\*"/)
+  })
+})
+
+describe('osp-api: настройки готовности (OSP_API_REQUIRE)', () => {
+  let parseRequired, loadConfig
+  before(async () => {
+    ({ parseRequired, loadConfig } = await import(path.join(SERVER, 'src', 'config.js')))
+  })
+
+  it('по умолчанию и пустая строка — все три', () => {
+    assert.deepEqual(parseRequired(undefined), ['supabase', 's3', 'anthropic'])
+    assert.deepEqual(parseRequired(''), ['supabase', 's3', 'anthropic'])
+    assert.deepEqual(loadConfig({}).required, ['supabase', 's3', 'anthropic'])
+  })
+
+  it('явный список — как задан, порядок и повторы не важны', () => {
+    assert.deepEqual(parseRequired(' s3 , supabase,s3'), ['supabase', 's3'])
+    assert.deepEqual(loadConfig({ OSP_API_REQUIRE: 'supabase' }).required, ['supabase'])
+  })
+
+  it('опечатка или без supabase — служба не запускается', () => {
+    assert.throws(() => parseRequired('supabase,anthropc'), /неизвестные зависимости anthropc/)
+    assert.throws(() => parseRequired('s3,anthropic'), /supabase обязателен/)
+    assert.throws(() => loadConfig({ OSP_API_REQUIRE: 'rates' }), /OSP_API_REQUIRE/)
   })
 })

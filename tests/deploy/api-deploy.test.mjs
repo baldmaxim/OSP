@@ -1,5 +1,6 @@
 // Выкладка osp-api (deploy/api-deploy.sh) на временных каталогах: релизы, атомарное переключение,
 // автоматический возврат, если новый релиз не ответил на /api/health, ручной --rollback, чистка.
+// Первый релиз без прежнего: при отказе служба останавливается, current не остаётся.
 // Служба — подделка: systemctl только записывает вызов, а «здоровье» отвечает по файлу HEALTH
 // в текущем релизе. Нужны bash, git, npm, rsync, curl, flock.
 import { describe, it, before, after } from 'node:test'
@@ -73,6 +74,15 @@ describe('Выкладка osp-api: релизы, проверка, возвра
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true })
   })
 
+  it('первый релиз не прошёл проверку — возвращать некуда: служба остановлена, current нет', async () => {
+    commit('bad')
+    const res = await deploy()
+    assert.equal(res.status, 1)
+    assert.match(res.stdout, /Прежнего релиза нет — служба остановлена/)
+    assert.ok(!fs.existsSync(path.join(apiRoot, 'current')), 'current убран')
+    assert.ok(fs.readFileSync(path.join(tmp, 'systemctl.log'), 'utf8').trim().split('\n').includes('stop osp-api'))
+  })
+
   it('первый релиз: каталог с зависимостями по lock-файлу, current, без node_modules из исходников', async () => {
     commit('ok')
     const res = await deploy()
@@ -81,7 +91,7 @@ describe('Выкладка osp-api: релизы, проверка, возвра
     assert.match(id, /^\d{8}-\d{6}-\d{3}-[0-9a-f]{12}$/)
     assert.ok(fs.existsSync(path.join(apiRoot, 'releases', id, 'src', 'server.js')))
     assert.ok(!fs.existsSync(path.join(apiRoot, 'releases', id, 'node_modules', 'junk')), 'node_modules исходников не копируются')
-    assert.equal(previous(), null)
+    assert.equal(previous(), null, 'неудачный первый релиз не стал previous')
     assert.match(res.stdout, /osp-api работает/)
   })
 

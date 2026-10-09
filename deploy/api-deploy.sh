@@ -6,8 +6,10 @@
 #
 # Как у фронта (deploy/publish.sh): каждый релиз — свой каталог $API_ROOT/releases/<время-коммит>,
 # служба (deploy/osp-api.service, пользователь osp-api) запускается из $API_ROOT/current; переключение
-# атомарное. Новый релиз не прошёл /api/ready (зависимости отвечают с текущими ключами) — current
-# возвращается на прежний и служба перезапускается. Файлы релизов пишет danila, служба только читает.
+# атомарное. Новый релиз не прошёл /api/ready (обязательные зависимости отвечают с текущими ключами) —
+# current возвращается на прежний и служба перезапускается. Прежнего нет (первый релиз в $API_ROOT) —
+# служба останавливается, а current убирается: непроверенный релиз не работает и не станет previous.
+# Файлы релизов пишет danila, служба только читает.
 # Сайт это не прерывает: пока флаги ospApiAi / ospApiFiles выключены, osp-api никто не вызывает.
 set -euo pipefail
 
@@ -80,6 +82,10 @@ switch_to() { # switch_to <релиз>; при отказе — назад на 
     point current "$before"
     "$SYSTEMCTL" restart "$SERVICE"
     if healthy; then echo "Возвращён прежний релиз $before — работает"; else echo "Прежний релиз $before тоже не отвечает"; fi
+  elif [ -z "$before" ]; then
+    "$SYSTEMCTL" stop "$SERVICE" || true
+    as_app rm -f "$API_ROOT/current"
+    echo "Прежнего релиза нет — служба остановлена. Флаги ospApiAi / ospApiFiles не включать"
   fi
   echo "Причина — в журнале: journalctl -u $SERVICE -n 50 --no-pager"
   return 1

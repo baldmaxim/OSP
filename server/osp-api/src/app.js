@@ -9,7 +9,7 @@ import Fastify, { LogController } from 'fastify'
 import { createClient } from '@supabase/supabase-js'
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import Anthropic from '@anthropic-ai/sdk'
-import { configuredParts } from './config.js'
+import { configuredParts, READY_PARTS } from './config.js'
 import { bearerToken } from './lib/keys.js'
 import { createRateLimit, createConcurrency, DEFAULT_LIMITS } from './lib/limits.js'
 import { registerS3Presign } from './routes/s3Presign.js'
@@ -146,8 +146,10 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
 
   app.get('/api/health', async () => ({ ok: true, service: 'osp-api', configured: configuredParts(config) }))
 
-  // Готовность: настроенные зависимости действительно отвечают с текущими ключами. Только изнутри
-  // сервера (api-deploy.sh, ручная проверка): через nginx (есть X-Forwarded-For) — 404.
+  // Готовность: зависимости действительно отвечают с текущими ключами. 200 — только если каждая
+  // обязательная (config.required, OSP_API_REQUIRE) ответила «ok»; необязательные проверяются и
+  // показываются, но не решают. Только изнутри сервера (api-deploy.sh, ручная проверка): через nginx
+  // (есть X-Forwarded-For) — 404.
   app.get('/api/ready', async (request, reply) => {
     if (request.headers['x-forwarded-for'] || !LOOPBACK.has(request.socket.remoteAddress)) {
       return reply.code(404).send({ error: 'Not found' })
@@ -171,8 +173,9 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
       run('s3', parts.s3, () => deps.checkS3(getS3(), config.s3.bucket)),
       run('anthropic', parts.anthropic, () => deps.checkAnthropic(getAnthropic())),
     ])
-    const ok = !Object.values(checks).includes('fail')
-    return reply.code(ok ? 200 : 503).send({ ok, checks })
+    const required = config.required || READY_PARTS
+    const ok = required.every((name) => checks[name] === 'ok')
+    return reply.code(ok ? 200 : 503).send({ ok, checks, required })
   })
 
   const ctx = { config, authenticate, getS3, getAnthropic, getServiceClient, limiters }

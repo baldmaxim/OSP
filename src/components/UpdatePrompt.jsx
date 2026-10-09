@@ -1,5 +1,6 @@
 /* global __BUILD_ID__, __BUILD_COMPAT__ */
 import { useEffect, useRef, useState } from 'react'
+import { refreshRuntimeFeatures } from '../config/runtime'
 import { reportClientVersion } from '../services/telemetry'
 import './UpdatePrompt.css'
 
@@ -34,6 +35,8 @@ export default function UpdatePrompt() {
     let timer = null
 
     const check = async () => {
+      // Флаги config.json — и в открытой вкладке: явное false выключает новый путь без перезагрузки.
+      refreshRuntimeFeatures().catch(() => {})
       if (forced.current) return
       reportClientVersion().catch(() => {})
       try {

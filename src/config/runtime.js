@@ -1,13 +1,15 @@
-// Runtime-конфиг: /config.json рядом с сайтом, читается один раз до старта
-// приложения (main.jsx). Позволяет переключать адреса и флаги без пересборки —
-// это нужно на этапах переезда (свой API, вход через Keycloak) и для отката новых
-// операций флагом.
+// Runtime-конфиг: /config.json рядом с сайтом, читается до старта приложения
+// (main.jsx). Позволяет переключать адреса и флаги без пересборки — это нужно на
+// этапах переезда (свой API, вход через Keycloak) и для отката новых операций
+// флагом. Флаги (features) перечитываются и в уже открытой вкладке —
+// refreshRuntimeFeatures из проверки версии (UpdatePrompt): явное false выключает
+// новый путь без перезагрузки. Адреса и ключ — только при старте: клиент уже создан.
 //
 // Файла может не быть — тогда всё как раньше: адрес и ключ Supabase из сборки
 // (VITE_*), флаги выключены. Битый файл, чужие поля, HTML вместо JSON (nginx без
 // отдельного location отдаёт index.html) — тоже не ошибка, берутся значения сборки.
 
-import { resolveFeature } from './features'
+import { nextFeatures, parseFeatures, resolveFeature } from './features'
 
 const LOAD_TIMEOUT_MS = 3000
 
@@ -29,27 +31,36 @@ function apply(raw) {
   if (isNonEmptyString(raw.supabaseAnonKey)) config.supabaseAnonKey = raw.supabaseAnonKey.trim()
   if (isNonEmptyString(raw.authStorageKey)) config.authStorageKey = raw.authStorageKey.trim()
   if (raw.features && typeof raw.features === 'object' && !Array.isArray(raw.features)) {
-    const features = {}
-    for (const [name, value] of Object.entries(raw.features)) {
-      if (typeof value === 'boolean') features[name] = value
-    }
-    config.features = features
+    config.features = parseFeatures(raw.features)
   }
 }
 
-export async function loadRuntimeConfig() {
+// { status: 'ok', raw } | { status: 'absent' } — файла нет | { status: 'error' } — сбой, таймаут.
+async function readConfigFile() {
   const controller = typeof AbortController === 'function' ? new AbortController() : null
   const timer = controller ? setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS) : null
   try {
     const res = await fetch('/config.json', { cache: 'no-store', signal: controller?.signal })
-    if (!res.ok) return
-    if (!/json/i.test(res.headers.get('content-type') || '')) return
-    apply(await res.json())
+    if (res.status === 404) return { status: 'absent' }
+    if (!res.ok) return { status: 'error' }
+    if (!/json/i.test(res.headers.get('content-type') || '')) return { status: 'absent' }
+    return { status: 'ok', raw: await res.json() }
   } catch {
-    // нет файла / таймаут / не JSON — работаем со значениями сборки
+    return { status: 'error' }
   } finally {
     if (timer) clearTimeout(timer)
   }
+}
+
+export async function loadRuntimeConfig() {
+  const result = await readConfigFile()
+  // нет файла / таймаут / не JSON — работаем со значениями сборки
+  if (result.status === 'ok') apply(result.raw)
+}
+
+// Только флаги: адрес и ключ Supabase после старта не меняются (клиент уже создан).
+export async function refreshRuntimeFeatures() {
+  config.features = nextFeatures(config.features, await readConfigFile())
 }
 
 export function getRuntimeConfig() {

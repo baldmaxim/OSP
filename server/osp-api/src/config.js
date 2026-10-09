@@ -1,5 +1,23 @@
 // Настройки osp-api — только из окружения (на VPS — файл EnvironmentFile службы, права 600).
 // Значения секретов никуда не выводятся: /api/health отдаёт лишь «задано / не задано».
+
+// Зависимости, которые проверяет /api/ready. Обязательные (OSP_API_REQUIRE) должны ответить «ok»,
+// «не настроено» у обязательной — тоже отказ. По умолчанию — все три: без них не работают маршруты
+// браузера. Сузить можно только явно (например, supabase,s3 — если Anthropic недоступен с сервера;
+// тогда ospApiAi не включать). Опечатка или список без supabase — служба не запускается.
+export const READY_PARTS = ['supabase', 's3', 'anthropic']
+
+export function parseRequired(raw) {
+  const names = String(raw ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+  if (!names.length) return [...READY_PARTS]
+  const unknown = names.filter((n) => !READY_PARTS.includes(n))
+  if (unknown.length) {
+    throw new Error(`OSP_API_REQUIRE: неизвестные зависимости ${unknown.join(', ')} (допустимы ${READY_PARTS.join(', ')})`)
+  }
+  if (!names.includes('supabase')) throw new Error('OSP_API_REQUIRE: supabase обязателен — без него не работает ни один маршрут')
+  return READY_PARTS.filter((n) => names.includes(n))
+}
+
 export function loadConfig(env = process.env) {
   const list = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean)
   return {
@@ -17,6 +35,7 @@ export function loadConfig(env = process.env) {
     },
     anthropicApiKey: env.ANTHROPIC_API_KEY || '',
     ratesApiKeys: list(env.RATES_API_KEYS),
+    required: parseRequired(env.OSP_API_REQUIRE),
   }
 }
 

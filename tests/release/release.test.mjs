@@ -3,7 +3,8 @@
 //     перезагружается и получает новую сборку — без белого экрана;
 //   • если файл не появился и после перезагрузки — сообщение, а не цикл перезагрузок;
 //   • уровень совместимости выше вшитого — окно без «Позже», сворачивается в полосу;
-//   • /config.json отсутствует (nginx отдаёт index.html) — приложение стартует.
+//   • /config.json отсутствует (nginx отдаёт index.html) — приложение стартует;
+//   • флаги config.json перечитываются в открытой вкладке (выключатель без перезагрузки).
 // Сервер стенда подменяет то, что отдаёт nginx: корень сборки, version.json, config.json.
 // Supabase в сборке указывает на закрытый порт — страницам хватает того, что они рисуются.
 import { describe, it, before, after } from 'node:test'
@@ -116,6 +117,22 @@ describe('Страховочный релиз: обновление, ошибк�
     await page.goto(`${base}/login?features=-ospApiFiles,-x`)
     await page.locator('.login-form').first().waitFor({ timeout: 30000 })
     assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('osp.features'))), {})
+    await page.close()
+  })
+
+  it('флаги config.json перечитываются в открытой вкладке — при фокусе, без перезагрузки', async () => {
+    Object.assign(state, { root: distA, version: null, config: JSON.stringify({ features: { ospApiAi: true } }) })
+    const { page, loads } = await openPage()
+    await page.goto(`${base}/login`)
+    await page.locator('.login-form').first().waitFor({ timeout: 30000 })
+    const configReads = () => state.requests.filter((u) => u.startsWith('/config.json')).length
+    const before = configReads()
+    assert.ok(before >= 1, 'прочитан при старте')
+    state.config = JSON.stringify({ features: { ospApiAi: false } })
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    for (let i = 0; i < 50 && configReads() === before; i++) await new Promise((r) => setTimeout(r, 100))
+    assert.ok(configReads() > before, 'перечитан по фокусу')
+    assert.equal(loads(), 1, 'без перезагрузки')
     await page.close()
   })
 

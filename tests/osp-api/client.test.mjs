@@ -4,7 +4,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { callOspFunction, OSP_API_BASE } from '../../src/api/ospApi.js'
-import { resolveFeature } from '../../src/config/features.js'
+import { nextFeatures, parseFeatures, resolveFeature } from '../../src/config/features.js'
 
 describe('src/config/features.js — флаги: config.json и браузер', () => {
   it('по умолчанию выключено; config.json true — включено всем', () => {
@@ -20,6 +20,18 @@ describe('src/config/features.js — флаги: config.json и браузер',
   })
   it('значения не boolean игнорируются', () => {
     assert.equal(resolveFeature('ospApiAi', { ospApiAi: 'yes' }, { ospApiAi: 1 }), false)
+  })
+  it('parseFeatures: из config.json — только логические значения', () => {
+    assert.deepEqual(parseFeatures({ ospApiAi: true, ospApiFiles: false, x: 'yes', y: 1 }), { ospApiAi: true, ospApiFiles: false })
+    for (const bad of [null, undefined, 'str', [true], 5]) assert.deepEqual(parseFeatures(bad), {})
+  })
+  it('повторное чтение в открытой вкладке: false выключает; файла нет — всё выключено; сбой — прежнее', () => {
+    const current = { ospApiAi: true }
+    assert.deepEqual(nextFeatures(current, { status: 'ok', raw: { features: { ospApiAi: false } } }), { ospApiAi: false })
+    assert.deepEqual(nextFeatures(current, { status: 'ok', raw: { supabaseUrl: 'https://x' } }), {}, 'нет поля features')
+    assert.deepEqual(nextFeatures(current, { status: 'absent' }), {})
+    assert.equal(nextFeatures(current, { status: 'error' }), current)
+    assert.equal(nextFeatures(current, undefined), current)
   })
 })
 

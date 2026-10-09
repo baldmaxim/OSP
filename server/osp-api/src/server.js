@@ -3,7 +3,14 @@
 import { buildApp } from './app.js'
 import { loadConfig } from './config.js'
 
-const config = loadConfig()
+let config
+try {
+  config = loadConfig()
+} catch (err) {
+  // Неверная настройка (например, OSP_API_REQUIRE): не запускаемся — выкладка увидит отказ.
+  console.error(`osp-api: ${err.message}`)
+  process.exit(1)
+}
 const app = buildApp({ config })
 
 let stopping = false

@@ -344,9 +344,10 @@ bash /home/danila/projects/OSP/deploy/rollback.sh <buildId>   # вернуть �
 Флаг запоминается только в этом браузере (`localStorage`), параметр убирается из адреса. Снять своё
 значение: `?features=-<флаг>`.
 
-Изменение `config.json` вступает в силу при следующей загрузке страницы. **Явное `false` сильнее флага
-браузера** — это выключатель для всех, включая пилотные браузеры (`src/config/features.js`). Записывать от
-`danila`:
+Флаги из `config.json` действуют и в уже открытых вкладках: вкладка перечитывает файл каждые 2 минуты и
+при возврате на неё (`refreshRuntimeFeatures`, `src/config/runtime.js`). Адреса и ключ — только при следующей
+загрузке страницы. **Явное `false` сильнее флага браузера** — это выключатель для всех, включая пилотные
+браузеры (`src/config/features.js`). Записывать от `danila`:
 ```bash
 # danila$
 cat > /var/www/osp/shared/config.json <<'EOF'
@@ -368,9 +369,9 @@ EOF
 | Процесс | системный пользователь `osp-api`, без входа и домашнего каталога: его окружение (секреты) не видно процессам `danila` |
 | Секреты | `/etc/osp-api/osp-api.env` — `root`, права `600`; шаблон — `server/osp-api/osp-api.env.example` |
 | Служба | `/etc/systemd/system/osp-api.service` из `deploy/osp-api.service` |
-| nginx | `/etc/nginx/sites-available/osp.root.sx` из `deploy/nginx/osp.root.sx.conf`, sha256 рядом; проверяется `tests/deploy/nginx.test.mjs` |
-| Журнал | `journalctl -u osp-api` — без ключей, токенов и текстов запросов; в журналах nginx адреса `/api/` без параметров |
-| Готовность | `curl -s http://127.0.0.1:8787/api/ready` — только с самого сервера; проверяет Supabase, S3 (пишет и удаляет `osp-api/ready-check`), Anthropic |
+| nginx | `/etc/nginx/sites-available/osp.root.sx` из `deploy/nginx/osp.root.sx.conf`, sha256 рядом; проверяется `tests/deploy/nginx.test.mjs`. По HTTP `/api/` — 403, без перенаправления (иначе ключ из `?key=` вернулся бы в `Location`) |
+| Журнал | `journalctl -u osp-api` — без ключей, токенов и текстов запросов; в журналах nginx адреса `/api/` и все запросы по HTTP — без параметров |
+| Готовность | `curl -s http://127.0.0.1:8787/api/ready` — только с самого сервера; проверяет Supabase, S3 (пишет и удаляет `osp-api/ready-check`), Anthropic. 200 — только если ответили все обязательные: `OSP_API_REQUIRE`, по умолчанию все три |
 
 ### Установка (один раз)
 
@@ -391,8 +392,8 @@ EOF
    install -m 600 /home/danila/projects/OSP/server/osp-api/osp-api.env.example /etc/osp-api/osp-api.env
    nano /etc/osp-api/osp-api.env
    ```
-4. Служба и выкладка. Скрипт проверяет `/api/ready`; если зависимости не отвечают, выкладка не
-   засчитывается:
+4. Служба и выкладка. Скрипт проверяет `/api/ready`; если обязательные зависимости не отвечают (или не
+   заданы), выкладка не засчитывается. Для первого релиза возвращать некуда — служба останавливается:
    ```bash
    cp /home/danila/projects/OSP/deploy/osp-api.service /etc/systemd/system/osp-api.service
    systemctl daemon-reload && systemctl enable osp-api
@@ -405,20 +406,30 @@ EOF
    cp /etc/nginx/sites-available/osp.root.sx /root/osp.root.sx.before-api
    install -m 644 osp.root.sx.conf /etc/nginx/sites-available/osp.root.sx
    nginx -t && systemctl reload nginx && sleep 2 && curl -s https://osp.root.sx/api/health; echo
+   curl -s -o /dev/null -w '%{http_code}\n' http://osp.root.sx/api/health   # 403: по HTTP /api/ закрыт
    ```
    Возврат:
    ```bash
    cp /root/osp.root.sx.before-api /etc/nginx/sites-available/osp.root.sx && nginx -t && systemctl reload nginx
    ```
 
-**Перенос установки 2026-10-09** (служба от `danila`, код в `/home/danila/osp-api`) — от `root`, после шагов
-1–2:
-```bash
-cp /home/danila/projects/OSP/deploy/osp-api.service /etc/systemd/system/osp-api.service
-systemctl daemon-reload
-bash /home/danila/projects/OSP/deploy/api-deploy.sh   # первый релиз в /opt/osp-api
-```
-Старый каталог `/home/danila/osp-api` больше не нужен.
+**Перенос установки 2026-10-09** (служба от `danila`, код в `/home/danila/osp-api`, в секретах только
+Supabase) — от `root`, после шагов 1–2:
+1. Доступен ли Anthropic с сервера (без ключа): `curl -s -o /dev/null -w '%{http_code}\n'
+   https://api.anthropic.com/v1/models`.
+   - 401 — сеть есть.
+   - 403 — регион закрыт: в `/etc/osp-api/osp-api.env` строка `OSP_API_REQUIRE=supabase,s3`, ИИ остаётся
+     на функции Supabase, `ospApiAi` не включать.
+2. Ключи S3 и Anthropic дописываются в `/etc/osp-api/osp-api.env` из `.env` ноутбука. Значения на экран не
+   выводятся, копия стирается.
+3. Служба и первый релиз в `/opt/osp-api`:
+   ```bash
+   cp /home/danila/projects/OSP/deploy/osp-api.service /etc/systemd/system/osp-api.service
+   systemctl daemon-reload
+   bash /home/danila/projects/OSP/deploy/api-deploy.sh
+   ```
+
+Старый каталог `/home/danila/osp-api` после проверки больше не нужен.
 
 ### Включение и откат
 
@@ -429,13 +440,15 @@ bash /home/danila/projects/OSP/deploy/api-deploy.sh   # первый релиз 
    - Затем `client_errors` по разделам `fn:*` (`migration/monitoring.md`).
 2. **Всем:** `config.json` → `true` для проверенного флага (раздел выше).
 3. **Откат** — явное `false` в `config.json`: все, включая пилотные браузеры, снова на функциях Supabase.
-   Пересборка не нужна.
+   Открытые вкладки переходят в течение 2 минут или при возврате на вкладку. Пересборка и перезагрузка
+   не нужны.
 4. **Новая версия osp-api:**
    ```bash
    # root#
    bash /home/danila/projects/OSP/deploy/api-deploy.sh
    ```
-   Если версия не прошла `/api/ready`, скрипт сам вернёт прежний релиз. Вручную:
+   Если версия не прошла `/api/ready`, скрипт сам вернёт прежний релиз (когда он есть; первый релиз —
+   служба останавливается). Вручную:
    ```bash
    # root#
    bash /home/danila/projects/OSP/deploy/api-deploy.sh --rollback
