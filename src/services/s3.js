@@ -1,6 +1,9 @@
 // Frontend-сервис для работы с S3 через Edge Function `s3-presign` (task 277).
 // Frontend никогда не получает access_key/secret — только presigned URL-ы.
-import { db, auth, invokeFunction } from '../api'
+// С флагом ospApiFilesV2 — через свой API osp-api с ключом операции (src/api/ospFiles.js): повтор не
+// создаёт второй документ, удаление — сначала строка, затем объект. Путь выбирается один раз, в начале
+// операции; без флага всё как прежде.
+import { db, auth, invokeFunction, filesViaOspApi, ospFiles } from '../api'
 
 const FUNCTION_NAME = 's3-presign'
 
@@ -40,6 +43,7 @@ export async function requestUploadUrl({ ownerType, ownerId, fileName, mimeType 
 // проставит Content-Disposition с оригинальным именем (иначе браузер сохраняет файл
 // под именем S3-ключа с uuid-префиксом, т.к. cross-origin игнорирует a.download).
 export async function requestDownloadUrl(s3Key, { fileName = null, download = false } = {}) {
+  if (filesViaOspApi()) return ospFiles.downloadUrl(s3Key, { fileName, download })
   return invokePresign('download', {
     s3_key: s3Key,
     ...(download ? { download: true } : {}),
@@ -47,7 +51,9 @@ export async function requestDownloadUrl(s3Key, { fileName = null, download = fa
   })
 }
 
+// Через osp-api удаляет и строку s3_documents (сначала её), и объект — строки без файла не остаётся.
 export async function deleteS3Object(s3Key) {
+  if (filesViaOspApi()) return ospFiles.remove(s3Key)
   return invokePresign('delete', { s3_key: s3Key })
 }
 
@@ -56,6 +62,7 @@ export async function deleteS3Object(s3Key) {
 // `category` (task 370) — опциональная категория документа (например 'final').
 // Если не передана, в БД пишется default 'general'.
 export async function uploadFile({ file, ownerType, ownerId, notes = null, category = null }) {
+  if (filesViaOspApi()) return ospFiles.upload({ file, ownerType, ownerId, notes, category })
   const mimeType = file.type || 'application/octet-stream'
 
   const { s3_key, presigned_url } = await requestUploadUrl({
@@ -108,16 +115,20 @@ export async function uploadFile({ file, ownerType, ownerId, notes = null, categ
     .single()
   if (error) {
     // Откат: пробуем удалить уже загруженный объект, чтобы не оставлять «сирот».
-    try { await deleteS3Object(s3_key) } catch { /* лучшее усилие */ }
+    try { await invokePresign('delete', { s3_key }) } catch { /* лучшее усилие */ }
     throw error
   }
   return data
 }
 
 // Удаление: сначала из S3, потом из БД. Если S3 упал — DB-запись не трогаем,
-// чтобы её можно было повторно удалить.
+// чтобы её можно было повторно удалить. Через osp-api — одним запросом (строка, затем объект).
 export async function deleteDocument(doc) {
-  await deleteS3Object(doc.s3_key)
+  if (filesViaOspApi()) {
+    await ospFiles.remove(doc.s3_key)
+    return
+  }
+  await invokePresign('delete', { s3_key: doc.s3_key })
   const { error } = await db.from('s3_documents').delete().eq('id', doc.id)
   if (error) throw error
 }

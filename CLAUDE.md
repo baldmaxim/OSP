@@ -67,7 +67,8 @@ src/
     ├── db.js             # таблицы и RPC: db.from(...), db.rpc(...) — построитель как у supabase-js
     ├── auth.js           # вход (фаза A — Supabase Auth): только RoleContext и сервисы
     ├── files.js          # Supabase Storage: обложки объектов (документы — services/s3.js, cloud.ru)
-    ├── functions.js      # invokeFunction(name, options) — Edge Functions или osp-api (флаги ospApiAi, ospApiFiles)
+    ├── functions.js      # invokeFunction(name, options) — Edge Functions или osp-api (флаг ospApiAi); файлы — ospFiles (флаг ospApiFilesV2)
+    ├── ospFiles.js       # файлы через osp-api с ключом операции: upload → PUT → confirm, удаление — строка, затем объект
     ├── ospApi.js         # вызов своего API /api/fn/<имя> с ответом как у functions.invoke
     ├── realtime.js       # subscribeTable(...) — онлайн-обновления
     ├── supabaseClient.js # единственный createClient; импортируют только адаптеры
@@ -231,6 +232,11 @@ Task 277. Универсальное хранение файлов в S3-сов�
 
 - Таблица `s3_documents` — единая для всех разделов. Привязка через `(owner_type, owner_id)`. Поддерживаемые типы: `'tender'`, `'contract'`, `'object'`, `'customer'`, `'general'` (расширяется в `FOLDER_BY_OWNER` в edge-функции).
 - Edge Function `supabase/functions/s3-presign/index.ts` — операции `upload` / `download` / `delete`. Требует Authorization (Supabase JWT).
+- **Переезд (заход Б):** с флагом `ospApiFilesV2` файлы идут через свой API — `/api/fn/s3-presign` в
+  [server/osp-api](server/osp-api/README.md): ключ операции (UUIDv7 = `s3_documents.id`) делает повтор
+  безопасным, удаление — сначала строка, затем объект, загрузка и удаление проверяют право раздела
+  (`osp_can`). Фронт — [src/api/ospFiles.js](src/api/ospFiles.js); `services/s3.js` выбирает путь в начале
+  операции, вызовы страниц не меняются.
 - Frontend сервис [src/services/s3.js](src/services/s3.js): `uploadFile`, `fetchDocuments`, `requestDownloadUrl`, `deleteDocument`, `deleteS3Object`.
 - Универсальный UI-компонент [src/components/S3DocumentList.jsx](src/components/S3DocumentList.jsx): список + загрузка + удаление + превью. Принимает props `{ownerType, ownerId, title, canEdit?}`. По умолчанию `canEdit = isEmployee`, подрядчики только смотрят.
 - Модалка просмотра [src/components/S3DocumentPreview.jsx](src/components/S3DocumentPreview.jsx) — PDF через iframe, изображения через `<img>`, прочие типы — fallback с кнопкой скачать.
@@ -330,8 +336,11 @@ curl -i -X OPTIONS https://s3.cloud.ru/osp \
 
 ### Adding a new owner type
 
-1. Добавить ключ в `FOLDER_BY_OWNER` в [supabase/functions/s3-presign/index.ts](supabase/functions/s3-presign/index.ts).
-2. Передавать новый `ownerType` в `<S3DocumentList>`.
+1. Добавить ключ в `FOLDER_BY_OWNER` в [supabase/functions/s3-presign/index.ts](supabase/functions/s3-presign/index.ts)
+   и в osp-api ([server/osp-api/src/routes/s3Presign.js](server/osp-api/src/routes/s3Presign.js)): `FOLDER_BY_OWNER`,
+   таблицу владельца в `OWNER_TABLES` и право в `WRITE_RULES` — как гейт загрузки в интерфейсе.
+2. Передавать новый `ownerType` в `<S3DocumentList>` (или в `uploadFile`) и добавить место загрузки в
+   `tests/osp-api/lib/upload-sites.mjs` — иначе `npm run test:api` упадёт.
 3. Никаких миграций БД не нужно — `owner_type` это свободный TEXT.
 
 ## ИИ-помощник по протоколу разногласий (Edge Function `ai-assist`)

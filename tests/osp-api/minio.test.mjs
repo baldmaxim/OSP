@@ -1,11 +1,14 @@
 // s3-presign в osp-api против настоящего S3-сервера (MinIO в Docker, path-style, как cloud.ru):
 // подписанные ссылки действительно работают — загрузка PUT, превью и скачивание под исходным именем,
-// удаление; подделанная ссылка отклоняется. Без Docker или образа набор пропускается.
+// удаление; подделанная ссылка отклоняется. Загрузка с ключом операции (заход Б): повтор PUT и
+// подтверждения — один объект и одна строка; чужой отпечаток — 409; удаление — строка и объект,
+// повтор безопасен. Без Docker или образа набор пропускается.
 // Образ: OSP_MINIO_IMAGE (по умолчанию cgr.dev/chainguard/minio:latest).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,6 +29,7 @@ const skip = skipReason()
 
 const USER = { token: 'tok-emp', id: '11111111-1111-4111-8111-111111111111' }
 const TENDER = 'a0000000-0000-4000-8000-000000000001'
+const OP = '0190a000-0000-7000-8000-000000000001'
 const ACCESS = 'ospminio'
 const SECRET = 'ospminio-secret-123'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -37,12 +41,14 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
   let state
   let app
 
+  let listKeys
+  const send = (body) => app.inject({
+    method: 'POST', url: '/api/fn/s3-presign',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${USER.token}` },
+    payload: JSON.stringify(body),
+  })
   const call = async (body) => {
-    const res = await app.inject({
-      method: 'POST', url: '/api/fn/s3-presign',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${USER.token}` },
-      payload: JSON.stringify(body),
-    })
+    const res = await send(body)
     assert.equal(res.statusCode, 200, res.body)
     return res.json()
   }
@@ -61,8 +67,14 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
     const { S3Client, CreateBucketCommand } = req('@aws-sdk/client-s3')
     const admin = new S3Client({ endpoint, region: 'ru-central-1', forcePathStyle: true, credentials: { accessKeyId: ACCESS, secretAccessKey: SECRET } })
     await admin.send(new CreateBucketCommand({ Bucket: 'osp' }))
+    const { ListObjectsV2Command } = req('@aws-sdk/client-s3')
+    listKeys = async (prefix) => ((await admin.send(new ListObjectsV2Command({ Bucket: 'osp', Prefix: prefix }))).Contents || []).map((o) => o.Key)
 
-    state = { users: { [USER.token]: { id: USER.id } }, roles: { [USER.id]: { role: 'engineer', counterparty_id: null, is_approved: true } }, docs: {}, myContracts: {}, owners: { tenders: { [TENDER]: 'all' } } }
+    state = {
+      users: { [USER.token]: { id: USER.id } },
+      roles: { [USER.id]: { role: 'engineer', counterparty_id: null, is_approved: true, is_blocked: false, full_name: 'Инженер' } },
+      docs: {}, myContracts: {}, can: { [USER.id]: ['tenders:view'] }, owners: { tenders: { [TENDER]: 'all' } },
+    }
     supa = await startFakeSupabase(state)
     const { buildApp } = await import(path.join(SERVER, 'src', 'app.js'))
     app = buildApp({
@@ -82,12 +94,29 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
     if (container) docker(['rm', '-f', container])
   })
 
-  it('загрузка, превью, скачивание под исходным именем, удаление', async () => {
+  it('загрузка с повторами, превью, скачивание под исходным именем, удаление', async () => {
     const content = 'Акт сверки, строка 1\nстрока 2'
-    const up = await call({ action: 'upload', owner_type: 'tender', owner_id: TENDER, file_name: 'Отчёт.txt', mime_type: 'text/plain; charset=utf-8' })
-    const put = await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: content })
-    assert.equal(put.status, 200, await put.text())
-    state.docs[up.s3_key] = { row: { id: 'd1', owner_type: 'tender', owner_id: TENDER }, visibleTo: 'all' }
+    const file = {
+      operation_id: OP, owner_type: 'tender', owner_id: TENDER, file_name: 'Отчёт.txt', mime_type: 'text/plain; charset=utf-8',
+      size_bytes: Buffer.byteLength(content), sha256: crypto.createHash('sha256').update(content).digest('hex'),
+    }
+    // Повтор загрузки до подтверждения (потерян ответ PUT): тот же ключ — один объект.
+    for (let i = 0; i < 2; i++) {
+      const up = await call({ action: 'upload', ...file })
+      const put = await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': file.mime_type }, body: content })
+      assert.equal(put.status, 200, await put.text())
+    }
+    const prefix = `tenders/${TENDER}/`
+    assert.deepEqual(await listKeys(prefix), [`${prefix}${OP}-Otchet.txt`])
+    const { document } = await call({ action: 'confirm', ...file })
+    const up = { s3_key: document.s3_key }
+    assert.equal(document.id, OP)
+    assert.deepEqual(await call({ action: 'confirm', ...file }), { already: true, document }, 'повтор подтверждения')
+    assert.deepEqual(await call({ action: 'upload', ...file }), { already: true, document }, 'повтор загрузки')
+    const reuse = await send({ action: 'confirm', ...file, size_bytes: file.size_bytes + 1 })
+    assert.equal(reuse.statusCode, 409)
+    assert.equal(reuse.json().code, 'OSP_KEY_REUSE')
+    assert.equal(Object.keys(state.docs).length, 1, 'одна строка')
 
     const preview = await call({ action: 'download', s3_key: up.s3_key })
     const got = await fetch(preview.presigned_url)
@@ -96,9 +125,9 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
     assert.equal(got.headers.get('content-disposition'), null)
 
     const dl = await call({ action: 'download', s3_key: up.s3_key, file_name: 'Отчёт.txt', download: true })
-    const file = await fetch(dl.presigned_url)
-    assert.equal(file.status, 200)
-    assert.equal(file.headers.get('content-disposition'), `attachment; filename="Otchet.txt"; filename*=UTF-8''${encodeURIComponent('Отчёт.txt')}`)
+    const saved = await fetch(dl.presigned_url)
+    assert.equal(saved.status, 200)
+    assert.equal(saved.headers.get('content-disposition'), `attachment; filename="Otchet.txt"; filename*=UTF-8''${encodeURIComponent('Отчёт.txt')}`)
 
     const tampered = new URL(dl.presigned_url)
     tampered.pathname = tampered.pathname.replace('Otchet', 'Other')
@@ -106,5 +135,15 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
 
     assert.deepEqual(await call({ action: 'delete', s3_key: up.s3_key }), { ok: true })
     assert.equal((await fetch(preview.presigned_url)).status, 404, 'файл удалён из хранилища')
+    assert.deepEqual(state.docs, {}, 'строка удалена')
+    assert.deepEqual(await listKeys(prefix), [])
+    assert.deepEqual(await call({ action: 'delete', s3_key: up.s3_key }), { ok: true, already: true }, 'повтор удаления')
+  })
+
+  it('подтверждение без загруженного объекта — 409, строки нет', async () => {
+    const res = await send({ action: 'confirm', operation_id: '0190a000-0000-7000-8000-000000000002', owner_type: 'tender', owner_id: TENDER, file_name: 'a.txt', mime_type: 'text/plain', size_bytes: 1 })
+    assert.equal(res.statusCode, 409)
+    assert.equal(res.json().code, 'OSP_NOT_UPLOADED')
+    assert.deepEqual(state.docs, {})
   })
 })

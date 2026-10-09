@@ -351,7 +351,7 @@ bash /home/danila/projects/OSP/deploy/rollback.sh <buildId>   # вернуть �
 ```bash
 # danila$
 cat > /var/www/osp/shared/config.json <<'EOF'
-{ "features": { "ospApiAi": true } }
+{ "features": { "ospApiAi": true, "ospApiFiles": false } }
 EOF
 ```
 
@@ -359,7 +359,9 @@ EOF
 
 Вместо Edge Functions Supabase: `/api/fn/s3-presign`, `/api/fn/ai-assist`, `/api/rates/*`. Подробно —
 [server/osp-api/README.md](../server/osp-api/README.md). Служба слушает только `127.0.0.1:8787`, наружу
-выходит через nginx. Портал переходит на неё флагами: `ospApiAi` — ИИ-помощник, `ospApiFiles` — файлы.
+выходит через nginx. Портал переходит на неё флагами: `ospApiAi` — ИИ-помощник, `ospApiFilesV2` — файлы
+(с ключом операции). Прежний `ospApiFiles` (сборки до захода Б) не включать — в `config.json` держать
+явное `false`.
 Пока флаги выключены, пользователи работают с функциями Supabase, как раньше. `/api/rates` в работе нет:
 потребители остаются на функции Supabase до переноса базы.
 
@@ -435,8 +437,9 @@ Supabase) — от `root`, после шагов 1–2:
 
 1. **Проверка в одном браузере:**
    - **ИИ** (`ospApiAi`): открыть `https://osp.root.sx/?features=ospApiAi` и запросить подсказку в договоре.
-   - **Файлы** (`ospApiFiles`) — после захода Б (идемпотентная загрузка): загрузить, открыть, скачать и
-     удалить файл.
+   - **Файлы** (`ospApiFilesV2`) — только когда на проде применены Р2a/b (`osp_can`) и миграция `20261011`
+     (`sha256`). Открыть `https://osp.root.sx/?features=ospApiFilesV2` и в каждом разделе с файлами
+     загрузить, открыть, скачать и удалить файл (разделы — `tests/osp-api/lib/upload-sites.mjs`).
    - Затем `client_errors` по разделам `fn:*` (`migration/monitoring.md`).
 2. **Всем:** `config.json` → `true` для проверенного флага (раздел выше).
 3. **Откат** — явное `false` в `config.json`: все, включая пилотные браузеры, снова на функциях Supabase.

@@ -2,5 +2,5 @@
 export { db } from './db'
 export { auth } from './auth'
 export { objectPhotos } from './files'
-export { invokeFunction } from './functions'
+export { invokeFunction, filesViaOspApi, ospFiles } from './functions'
 export { subscribeTable } from './realtime'

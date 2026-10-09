@@ -3,3 +3,4 @@
 # После применения на проде миграция переезжает в migration/schema/applied-after.txt,
 # отсюда удаляется, эталон снимается заново (UPDATE_BASELINE=1) со свежей копии.
 20261010_r2ab_employee_only.sql
+20261011_s3_documents_sha256.sql
