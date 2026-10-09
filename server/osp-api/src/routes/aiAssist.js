@@ -80,7 +80,7 @@ export function isEmployeeRole(row) {
   return !!row && row.is_approved === true && !row.counterparty_id && row.role !== 'contractor'
 }
 
-export function registerAiAssist(app, { config, authenticate, getAnthropic }) {
+export function registerAiAssist(app, { config, authenticate, getAnthropic, limiters }) {
   app.post('/api/fn/ai-assist', async (request, reply) => {
     const auth = await authenticate(request, reply)
     if (!auth) return reply
@@ -105,6 +105,20 @@ export function registerAiAssist(app, { config, authenticate, getAnthropic }) {
     }
     if (!body.our_text && !body.counterparty_text) {
       return reply.code(400).send({ error: 'Нет текста пункта — нечего анализировать.' })
+    }
+
+    // Платный ИИ: не чаще limits.aiPerUser, один ответ за раз на пользователя, всего — aiConcurrentTotal.
+    const releaseUser = limiters.aiUser.acquire(user.id)
+    if (!releaseUser) return reply.code(429).send({ error: 'ИИ уже готовит ответ — дождитесь его' })
+    const releaseTotal = limiters.aiTotal.acquire('all')
+    if (!releaseTotal) {
+      releaseUser()
+      return reply.code(429).send({ error: 'ИИ сейчас занят — попробуйте через минуту' })
+    }
+    if (!limiters.aiRate.take(user.id)) {
+      releaseUser()
+      releaseTotal()
+      return reply.code(429).send({ error: 'Слишком много запросов к ИИ — подождите минуту' })
     }
 
     try {
@@ -143,6 +157,9 @@ export function registerAiAssist(app, { config, authenticate, getAnthropic }) {
     } catch (e) {
       request.log.error({ msg: e?.message }, 'ai-assist')
       return reply.code(500).send({ error: e?.message || 'Ошибка обращения к ИИ' })
+    } finally {
+      releaseUser()
+      releaseTotal()
     }
   })
 }

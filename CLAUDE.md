@@ -67,7 +67,7 @@ src/
     ├── db.js             # таблицы и RPC: db.from(...), db.rpc(...) — построитель как у supabase-js
     ├── auth.js           # вход (фаза A — Supabase Auth): только RoleContext и сервисы
     ├── files.js          # Supabase Storage: обложки объектов (документы — services/s3.js, cloud.ru)
-    ├── functions.js      # invokeFunction(name, options) — Edge Functions или osp-api (флаг ospApiFunctions)
+    ├── functions.js      # invokeFunction(name, options) — Edge Functions или osp-api (флаги ospApiAi, ospApiFiles)
     ├── ospApi.js         # вызов своего API /api/fn/<имя> с ответом как у functions.invoke
     ├── realtime.js       # subscribeTable(...) — онлайн-обновления
     ├── supabaseClient.js # единственный createClient; импортируют только адаптеры

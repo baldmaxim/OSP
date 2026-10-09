@@ -1,9 +1,8 @@
-# Служба своего API портала (server/osp-api). Установка — один раз, от root (docs/DEPLOYMENT.md, «osp-api»):
-#   cp /home/danila/projects/OSP/deploy/osp-api.service /etc/systemd/system/osp-api.service
-#   systemctl daemon-reload && systemctl enable osp-api
-# Секреты — /etc/osp-api/osp-api.env (root, права 600; читает systemd, процесс получает переменные).
-# Код — /home/danila/osp-api/current (deploy/api-deploy.sh). Слушает только 127.0.0.1:8787,
-# снаружи — через nginx (location ^~ /api/).
+# Служба своего API портала (server/osp-api). Установка — docs/DEPLOYMENT.md, «Свой API (osp-api)».
+# Процесс — от отдельного системного пользователя osp-api: его переменные окружения (секреты) не видны
+# процессам danila и других пользователей. Код — /opt/osp-api/current: пишет только выкладка (danila),
+# служба читает. Секреты — /etc/osp-api/osp-api.env (root, 600; читает systemd до запуска процесса).
+# Слушает только 127.0.0.1:8787, снаружи — через nginx (deploy/nginx/osp.root.sx.conf, location ^~ /api/).
 [Unit]
 Description=OSP API (osp-api)
 After=network-online.target
@@ -11,9 +10,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=danila
-Group=danila
-WorkingDirectory=/home/danila/osp-api/current
+User=osp-api
+Group=osp-api
+WorkingDirectory=/opt/osp-api/current
 EnvironmentFile=/etc/osp-api/osp-api.env
 Environment=NODE_ENV=production HOST=127.0.0.1 PORT=8787
 ExecStart=/usr/bin/node src/server.js
@@ -23,8 +22,9 @@ TimeoutStopSec=20
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=read-only
+ProtectHome=true
 ProtectKernelTunables=true
+ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true

@@ -43,22 +43,29 @@ export function toCsv(rows) {
   return [headers.join(';'), ...rows.map((r) => headers.map((h) => esc(r[h])).join(';'))].join('\n')
 }
 
-function keyAllowed(config, request, params) {
-  if (config.ratesApiKeys.length === 0) return false
+// Номер совпавшего ключа (для лимитов — без самого ключа) или -1.
+function keyIndex(config, request, params) {
+  if (config.ratesApiKeys.length === 0) return -1
   const provided = String(request.headers['x-api-key'] || params.get('key') || '').trim()
-  if (!provided) return false
-  return config.ratesApiKeys.some((k) => safeEqual(k, provided))
+  if (!provided) return -1
+  let found = -1
+  config.ratesApiKeys.forEach((k, i) => { if (safeEqual(k, provided) && found < 0) found = i })
+  return found
 }
 
-export function registerRates(app, { config, getServiceClient }) {
+export function registerRates(app, { config, getServiceClient, limiters }) {
   const handler = async (request, reply) => {
     reply.headers(CORS_HEADERS)
     if (request.method === 'OPTIONS') return reply.type('text/plain; charset=utf-8').send('ok')
 
     const url = new URL(request.url, 'http://localhost')
     const p = url.searchParams
-    if (!keyAllowed(config, request, p)) {
+    const key = keyIndex(config, request, p)
+    if (key < 0) {
       return reply.code(401).send({ error: 'Неверный или отсутствующий ключ доступа (X-API-Key)' })
+    }
+    if (!limiters.ratesRate.take(`key${key}`)) {
+      return reply.code(429).send({ error: 'Слишком много запросов — не чаще 60 в минуту на ключ' })
     }
 
     const segments = url.pathname.split('/').filter(Boolean)
@@ -107,6 +114,8 @@ export function registerRates(app, { config, getServiceClient }) {
       return out
     }
 
+    const release = limiters.ratesKey.acquire(`key${key}`)
+    if (!release) return reply.code(429).send({ error: 'Предыдущие запросы этого ключа ещё выполняются — повторите позже' })
     try {
       const { data, error } = await applyFilters(supabase.from(view).select(isKp ? KP_COLS : SUPPLY_COLS))
         .order('item_name', { ascending: true })
@@ -140,6 +149,8 @@ export function registerRates(app, { config, getServiceClient }) {
       return reply.code(missingView ? 503 : 500).send({
         error: missingView ? `Представление ${view} недоступно — не применены миграции реестра расценок` : message,
       })
+    } finally {
+      release()
     }
   }
 

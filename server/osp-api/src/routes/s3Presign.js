@@ -8,17 +8,18 @@
 // Доступ: токен пользователя Supabase. Строку user_roles и запись s3_documents читаем ПОД ЕГО ЖЕ
 // токеном — действуют те же политики RLS, что и в браузере; ссылку по «угаданному» ключу не выдаём.
 // Подрядчику — только скачивание файлов своих договоров (is_my_contract).
+// Отличие от функции (план: «файлы 1:1 + проверка owner_id»): загрузка — только к существующей и
+// видимой пользователю сущности, owner_id — uuid. Права разделов на запись — с Р2c (osp_can).
 import { randomUUID } from 'node:crypto'
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { sanitizeFileName } from '../lib/files.js'
 
-// owner_type → каталог в бакете. Расширять вместе с s3_documents.owner_type.
+// owner_type → каталог в бакете. Расширять вместе с s3_documents.owner_type и OWNER_TABLES.
 export const FOLDER_BY_OWNER = {
   tender: 'tenders',
   contract: 'contracts',
   object: 'objects',
-  customer: 'customers',
   counterparty: 'counterparties',
   dc_request: 'dc-requests',
   doc_check_request: 'doc-check-requests',
@@ -27,14 +28,43 @@ export const FOLDER_BY_OWNER = {
   task: 'tasks',
 }
 
+// Где искать владельца файла: загрузка разрешена, только если сущность существует и видна
+// пользователю (чтение под его токеном — RLS). 'general' — исходники ПСДЦ и файлы заявок на ВОР.
+// 'customer' из функции Supabase не используется нигде — не поддерживается.
+export const OWNER_TABLES = {
+  tender: ['tenders'],
+  contract: ['contracts'],
+  object: ['objects'],
+  counterparty: ['counterparties'],
+  dc_request: ['dc_requests'],
+  doc_check_request: ['doc_check_requests'],
+  general: ['psdc', 'vor_requests'],
+  general_document: ['general_documents'],
+  task: ['tasks'],
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export const UPLOAD_TTL_SEC = 15 * 60
 export const DOWNLOAD_TTL_SEC = 60 * 60
 
-export function registerS3Presign(app, { config, authenticate, getS3 }) {
+async function ownerVisible(supabase, ownerType, ownerId) {
+  for (const table of OWNER_TABLES[ownerType]) {
+    const { data, error } = await supabase.from(table).select('id').eq('id', ownerId).maybeSingle()
+    if (error) throw error
+    if (data) return true
+  }
+  return false
+}
+
+export function registerS3Presign(app, { config, authenticate, getS3, limiters }) {
   app.post('/api/fn/s3-presign', async (request, reply) => {
     const auth = await authenticate(request, reply)
     if (!auth) return reply
     const { supabase, user } = auth
+    if (!limiters.presignRate.take(user.id)) {
+      return reply.code(429).send({ error: 'Слишком много запросов к файлам — подождите минуту' })
+    }
 
     const { data: roleRow } = await supabase
       .from('user_roles')
@@ -87,6 +117,12 @@ export function registerS3Presign(app, { config, authenticate, getS3 }) {
           if (!folder) return reply.code(400).send({ error: `Unsupported owner_type: ${ownerType}` })
           if (!ownerId) return reply.code(400).send({ error: 'Missing owner_id' })
           if (!fileName) return reply.code(400).send({ error: 'Missing file_name' })
+          // owner_id — только uuid (все владельцы — uuid-сущности; s3_documents.owner_id uuid): ни
+          // составных значений, ни «путей» в ключе бакета. И сущность должна быть видна пользователю.
+          if (!UUID_RE.test(ownerId)) return reply.code(400).send({ error: 'Invalid owner_id' })
+          if (!await ownerVisible(supabase, ownerType, ownerId)) {
+            return reply.code(404).send({ error: 'Владелец файла не найден' })
+          }
           // uuid-префикс — против совпадения имён у одного владельца.
           const s3Key = `${folder}/${ownerId}/${randomUUID()}-${sanitizeFileName(fileName)}`
           const cmd = new PutObjectCommand({ Bucket: bucket, Key: s3Key, ContentType: mimeType })

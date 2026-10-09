@@ -344,75 +344,104 @@ bash /home/danila/projects/OSP/deploy/rollback.sh <buildId>   # вернуть �
 Флаг запоминается только в этом браузере (`localStorage`), параметр убирается из адреса. Снять своё
 значение: `?features=-<флаг>`.
 
-Изменение `config.json` вступает в силу при следующей загрузке страницы. Записывать от `danila`:
+Изменение `config.json` вступает в силу при следующей загрузке страницы. **Явное `false` сильнее флага
+браузера** — это выключатель для всех, включая пилотные браузеры (`src/config/features.js`). Записывать от
+`danila`:
 ```bash
 # danila$
 cat > /var/www/osp/shared/config.json <<'EOF'
-{ "features": { "ospApiFunctions": true } }
+{ "features": { "ospApiAi": true } }
 EOF
 ```
 
 ## Свой API (osp-api)
 
-Вместо Edge Functions Supabase: `/api/fn/s3-presign`, `/api/fn/ai-assist`, `/api/rates/*` (подробно —
-[server/osp-api/README.md](../server/osp-api/README.md)). Служба слушает только `127.0.0.1:8787`, наружу —
-через nginx. Портал переходит на неё флагом `ospApiFunctions`; пока флаг выключен, пользователи работают
-с функциями Supabase как раньше.
+Вместо Edge Functions Supabase: `/api/fn/s3-presign`, `/api/fn/ai-assist`, `/api/rates/*`. Подробно —
+[server/osp-api/README.md](../server/osp-api/README.md). Служба слушает только `127.0.0.1:8787`, наружу
+выходит через nginx. Портал переходит на неё флагами: `ospApiAi` — ИИ-помощник, `ospApiFiles` — файлы.
+Пока флаги выключены, пользователи работают с функциями Supabase, как раньше. `/api/rates` в работе нет:
+потребители остаются на функции Supabase до переноса базы.
 
 | Что | Где |
 |---|---|
-| Код релизов | `/home/danila/osp-api/releases/<время-коммит>`, рабочий — `current`, предыдущий — `previous` |
-| Секреты | `/etc/osp-api/osp-api.env` — владелец `root`, права `600`; шаблон — `server/osp-api/osp-api.env.example` |
-| Служба | `/etc/systemd/system/osp-api.service` (из `deploy/osp-api.service`), процесс от `danila` |
-| Журнал | `journalctl -u osp-api` — без ключей, токенов и текстов запросов |
+| Код релизов | `/opt/osp-api/releases/<время-коммит>`, рабочий — `current`, предыдущий — `previous`; пишет `danila`, служба только читает |
+| Процесс | системный пользователь `osp-api`, без входа и домашнего каталога: его окружение (секреты) не видно процессам `danila` |
+| Секреты | `/etc/osp-api/osp-api.env` — `root`, права `600`; шаблон — `server/osp-api/osp-api.env.example` |
+| Служба | `/etc/systemd/system/osp-api.service` из `deploy/osp-api.service` |
+| nginx | `/etc/nginx/sites-available/osp.root.sx` из `deploy/nginx/osp.root.sx.conf`, sha256 рядом; проверяется `tests/deploy/nginx.test.mjs` |
+| Журнал | `journalctl -u osp-api` — без ключей, токенов и текстов запросов; в журналах nginx адреса `/api/` без параметров |
+| Готовность | `curl -s http://127.0.0.1:8787/api/ready` — только с самого сервера; проверяет Supabase, S3 (пишет и удаляет `osp-api/ready-check`), Anthropic |
 
 ### Установка (один раз)
 
-1. Node для службы: `ExecStart=/usr/bin/node`. Проверить, что он там:
+Всё от `root`.
+
+1. Node службы — 20 или новее:
    ```bash
-   # root#
-   runuser -u danila -- which node     # /usr/bin/node
+   /usr/bin/node --version
    ```
-2. Секреты — значения те же, что у функций Supabase и во фронтовом `.env`. В чат и в git не попадают:
+2. Пользователь службы и каталог кода:
    ```bash
-   # root#
+   id osp-api 2>/dev/null || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin osp-api
+   install -d -o danila -g danila -m 755 /opt/osp-api
+   ```
+3. Секреты — значения те же, что у функций Supabase. В чат и в git они не попадают:
+   ```bash
    install -d -m 700 /etc/osp-api
    install -m 600 /home/danila/projects/OSP/server/osp-api/osp-api.env.example /etc/osp-api/osp-api.env
-   nano /etc/osp-api/osp-api.env       # заполнить значения
+   nano /etc/osp-api/osp-api.env
    ```
-3. Служба:
+4. Служба и выкладка. Скрипт проверяет `/api/ready`; если зависимости не отвечают, выкладка не
+   засчитывается:
    ```bash
-   # root#
    cp /home/danila/projects/OSP/deploy/osp-api.service /etc/systemd/system/osp-api.service
    systemctl daemon-reload && systemctl enable osp-api
-   ```
-4. Первая выкладка (код ветки, зависимости по lock-файлу, запуск, проверка `/api/health`):
-   ```bash
-   # root#
    bash /home/danila/projects/OSP/deploy/api-deploy.sh
-   curl -s http://127.0.0.1:8787/api/health; echo     # configured: все true
+   curl -s http://127.0.0.1:8787/api/ready; echo
    ```
-5. nginx — в блоке 443 `location ^~ /api/` (готовый текст файла и контрольная сумма — по запросу, как
-   при переходе на каталоги-релизы). Обязательно `proxy_read_timeout 180s`: ответ ИИ идёт дольше 60 с.
-   Затем `nginx -t && systemctl reload nginx`, через 2 с — `curl -s https://osp.root.sx/api/health`.
+5. nginx — файл из репозитория, со сверкой контрольной суммы и копией прежнего:
+   ```bash
+   cd /home/danila/projects/OSP/deploy/nginx && sha256sum -c osp.root.sx.conf.sha256
+   cp /etc/nginx/sites-available/osp.root.sx /root/osp.root.sx.before-api
+   install -m 644 osp.root.sx.conf /etc/nginx/sites-available/osp.root.sx
+   nginx -t && systemctl reload nginx && sleep 2 && curl -s https://osp.root.sx/api/health; echo
+   ```
+   Возврат:
+   ```bash
+   cp /root/osp.root.sx.before-api /etc/nginx/sites-available/osp.root.sx && nginx -t && systemctl reload nginx
+   ```
+
+**Перенос установки 2026-10-09** (служба от `danila`, код в `/home/danila/osp-api`) — от `root`, после шагов
+1–2:
+```bash
+cp /home/danila/projects/OSP/deploy/osp-api.service /etc/systemd/system/osp-api.service
+systemctl daemon-reload
+bash /home/danila/projects/OSP/deploy/api-deploy.sh   # первый релиз в /opt/osp-api
+```
+Старый каталог `/home/danila/osp-api` больше не нужен.
 
 ### Включение и откат
 
-1. **Проверка в одном браузере:** открыть `https://osp.root.sx/?features=ospApiFunctions`, затем:
-   - загрузить, открыть, скачать и удалить файл в любом разделе;
-   - подсказка ИИ в договоре;
-   - `client_errors` по разделам `fn:*` — `migration/monitoring.md`.
-2. **Всем:** `config.json` → `"ospApiFunctions": true` (раздел выше).
-3. **Откат** — `false` в `config.json`: пользователи снова на функциях Supabase, без пересборки.
+1. **Проверка в одном браузере:**
+   - **ИИ** (`ospApiAi`): открыть `https://osp.root.sx/?features=ospApiAi` и запросить подсказку в договоре.
+   - **Файлы** (`ospApiFiles`) — после захода Б (идемпотентная загрузка): загрузить, открыть, скачать и
+     удалить файл.
+   - Затем `client_errors` по разделам `fn:*` (`migration/monitoring.md`).
+2. **Всем:** `config.json` → `true` для проверенного флага (раздел выше).
+3. **Откат** — явное `false` в `config.json`: все, включая пилотные браузеры, снова на функциях Supabase.
+   Пересборка не нужна.
 4. **Новая версия osp-api:**
    ```bash
    # root#
    bash /home/danila/projects/OSP/deploy/api-deploy.sh
    ```
-   Не ответила на `/api/health` — скрипт сам возвращает прежний релиз. Вручную:
-   `bash /home/danila/projects/OSP/deploy/api-deploy.sh --rollback`.
+   Если версия не прошла `/api/ready`, скрипт сам вернёт прежний релиз. Вручную:
+   ```bash
+   # root#
+   bash /home/danila/projects/OSP/deploy/api-deploy.sh --rollback
+   ```
 
-Если служба остановлена, `/api/` отвечает 502, а сайт работает. Поэтому перед остановкой службы флаг
+Если служба остановлена, `/api/` отвечает 502, а сайт работает. Поэтому перед остановкой службы флаги
 нужно выключить.
 
 ## Прежний `deploy.sh` (до перехода на каталоги-релизы)

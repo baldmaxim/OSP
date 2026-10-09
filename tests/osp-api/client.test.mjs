@@ -4,6 +4,24 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { callOspFunction, OSP_API_BASE } from '../../src/api/ospApi.js'
+import { resolveFeature } from '../../src/config/features.js'
+
+describe('src/config/features.js — флаги: config.json и браузер', () => {
+  it('по умолчанию выключено; config.json true — включено всем', () => {
+    assert.equal(resolveFeature('ospApiAi', {}, {}), false)
+    assert.equal(resolveFeature('ospApiAi', { ospApiAi: true }, {}), true)
+  })
+  it('пилот: браузер включает, пока в config.json нет значения или там true', () => {
+    assert.equal(resolveFeature('ospApiAi', {}, { ospApiAi: true }), true)
+    assert.equal(resolveFeature('ospApiAi', { ospApiAi: true }, { ospApiAi: false }), false, 'браузер может выключить у себя')
+  })
+  it('явное false в config.json — выключатель для всех, включая пилотные браузеры', () => {
+    assert.equal(resolveFeature('ospApiAi', { ospApiAi: false }, { ospApiAi: true }), false)
+  })
+  it('значения не boolean игнорируются', () => {
+    assert.equal(resolveFeature('ospApiAi', { ospApiAi: 'yes' }, { ospApiAi: 1 }), false)
+  })
+})
 
 function fakeFetch(respond) {
   const calls = []

@@ -25,6 +25,7 @@ function skipReason() {
 const skip = skipReason()
 
 const USER = { token: 'tok-emp', id: '11111111-1111-4111-8111-111111111111' }
+const TENDER = 'a0000000-0000-4000-8000-000000000001'
 const ACCESS = 'ospminio'
 const SECRET = 'ospminio-secret-123'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -61,7 +62,7 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
     const admin = new S3Client({ endpoint, region: 'ru-central-1', forcePathStyle: true, credentials: { accessKeyId: ACCESS, secretAccessKey: SECRET } })
     await admin.send(new CreateBucketCommand({ Bucket: 'osp' }))
 
-    state = { users: { [USER.token]: { id: USER.id } }, roles: { [USER.id]: { role: 'engineer', counterparty_id: null, is_approved: true } }, docs: {}, myContracts: {} }
+    state = { users: { [USER.token]: { id: USER.id } }, roles: { [USER.id]: { role: 'engineer', counterparty_id: null, is_approved: true } }, docs: {}, myContracts: {}, owners: { tenders: { [TENDER]: 'all' } } }
     supa = await startFakeSupabase(state)
     const { buildApp } = await import(path.join(SERVER, 'src', 'app.js'))
     app = buildApp({
@@ -83,10 +84,10 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
 
   it('загрузка, превью, скачивание под исходным именем, удаление', async () => {
     const content = 'Акт сверки, строка 1\nстрока 2'
-    const up = await call({ action: 'upload', owner_type: 'tender', owner_id: 't1', file_name: 'Отчёт.txt', mime_type: 'text/plain; charset=utf-8' })
+    const up = await call({ action: 'upload', owner_type: 'tender', owner_id: TENDER, file_name: 'Отчёт.txt', mime_type: 'text/plain; charset=utf-8' })
     const put = await fetch(up.presigned_url, { method: 'PUT', headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: content })
     assert.equal(put.status, 200, await put.text())
-    state.docs[up.s3_key] = { row: { id: 'd1', owner_type: 'tender', owner_id: 't1' }, visibleTo: 'all' }
+    state.docs[up.s3_key] = { row: { id: 'd1', owner_type: 'tender', owner_id: TENDER }, visibleTo: 'all' }
 
     const preview = await call({ action: 'download', s3_key: up.s3_key })
     const got = await fetch(preview.presigned_url)

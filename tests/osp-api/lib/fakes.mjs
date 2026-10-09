@@ -48,6 +48,9 @@ export async function startFakeSupabase(state) {
       res.end(obj === undefined ? '' : JSON.stringify(obj))
     }
 
+    if (url.pathname === '/auth/v1/health') {
+      return req.headers.apikey ? send(200, { name: 'GoTrue' }) : send(401, { message: 'no apikey' })
+    }
     if (url.pathname === '/auth/v1/user') {
       const u = state.users[token]
       return u ? send(200, { id: u.id, aud: 'authenticated', role: 'authenticated' })
@@ -69,6 +72,14 @@ export async function startFakeSupabase(state) {
       const { contract_uuid: id } = JSON.parse(body || '{}')
       return send(200, Boolean(uid && state.myContracts[uid]?.includes(id)))
     }
+    // Таблицы владельцев файлов: { owners: { tenders: { <id>: 'all' | [userId] } } } — «видна ли строка».
+    const ownerTable = url.pathname.replace('/rest/v1/', '')
+    if (state.owners && Object.hasOwn(state.owners, ownerTable)) {
+      const id = eqParam(url, 'id')
+      const vis = state.owners[ownerTable][id]
+      const visible = vis && (vis === 'all' || (uid && vis.includes(uid)))
+      return send(200, visible ? [{ id }] : [])
+    }
     const view = url.pathname.replace('/rest/v1/', '')
     if (state.views && Object.hasOwn(state.views, view)) {
       if (state.missingView) {
@@ -78,6 +89,7 @@ export async function startFakeSupabase(state) {
         if (state.countFails) return send(500, { code: '57014', message: 'canceling statement due to statement timeout' })
         return send(200, undefined, { 'content-range': `*/${state.viewTotal ?? 0}` })
       }
+      if (state.viewDelayMs) await new Promise((r) => setTimeout(r, state.viewDelayMs))
       const select = url.searchParams.get('select')
       const offset = Number(url.searchParams.get('offset') || 0)
       const limit = Number(url.searchParams.get('limit') || 1e9)

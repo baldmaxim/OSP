@@ -26,6 +26,11 @@ const U = {
 }
 const CONTRACT_MINE = 'c0000000-0000-4000-8000-000000000001'
 const CONTRACT_OTHER = 'c0000000-0000-4000-8000-000000000002'
+const TENDER_1 = 'a0000000-0000-4000-8000-000000000001'
+const TENDER_HIDDEN = 'a0000000-0000-4000-8000-000000000002'
+const GDOC_1 = 'b0000000-0000-4000-8000-000000000001'
+const PSDC_1 = 'd0000000-0000-4000-8000-000000000001'
+const VOR_1 = 'e0000000-0000-4000-8000-000000000001'
 
 function supabaseState() {
   return {
@@ -44,6 +49,13 @@ function supabaseState() {
       'tenders/t2/shared.pdf': { row: { id: 'd4', owner_type: 'tender', owner_id: 't2' }, visibleTo: 'all' },
     },
     myContracts: { [U.contractor.id]: [CONTRACT_MINE] },
+    owners: {
+      tenders: { [TENDER_1]: [U.emp.id, U.admin.id], [TENDER_HIDDEN]: [U.admin.id] },
+      general_documents: { [GDOC_1]: 'all' },
+      psdc: { [PSDC_1]: [U.emp.id] },
+      vor_requests: { [VOR_1]: [U.emp.id] },
+      contracts: { [CONTRACT_MINE]: 'all' },
+    },
     views: {
       kp_rates_registry: Array.from({ length: 3 }, (_, i) => ({
         id: `k${i}`, object_id: 'o1', object_name: 'Объект', counterparty_id: 'cp-1', counterparty_name: 'ООО «Тест»; филиал',
@@ -75,16 +87,25 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     ...over,
   })
 
-  async function makeApp(over = {}) {
+  let aiGate = null // промис: ответ модели ждёт его (проверка одновременности)
+  let anthropicDown = false
+
+  async function makeApp(over = {}, { limits } = {}) {
     const { defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))
     const deps = {
       ...defaultDeps,
       createAnthropic: () => ({
-        beta: { messages: { create: async (params) => { aiCalls.push(params); if (aiResponse instanceof Error) throw aiResponse; return aiResponse } } },
+        beta: { messages: { create: async (params) => {
+          aiCalls.push(params)
+          if (aiGate) await aiGate
+          if (aiResponse instanceof Error) throw aiResponse
+          return aiResponse
+        } } },
+        models: { list: async () => { if (anthropicDown) throw new Error('401 invalid x-api-key'); return { data: [] } } },
       }),
     }
     await app?.close()
-    app = buildApp({ config: config(over), deps, logger: { level: 'info', stream: { write: (line) => logs.push(line) } } })
+    app = buildApp({ config: config(over), deps, ...(limits ? { limits } : {}), logger: { level: 'info', stream: { write: (line) => logs.push(line) } } })
     await app.ready()
     return app
   }
@@ -149,10 +170,10 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     })
 
     it('upload: ключ «каталог/владелец/uuid-имя», кириллица — латиницей, PUT на 15 минут', async () => {
-      const res = await fn('s3-presign', U.emp, { action: 'upload', owner_type: 'general_document', owner_id: 'g-1', file_name: 'Акт №5 (итог).pdf', mime_type: 'application/pdf' })
+      const res = await fn('s3-presign', U.emp, { action: 'upload', owner_type: 'general_document', owner_id: GDOC_1, file_name: 'Акт №5 (итог).pdf', mime_type: 'application/pdf' })
       assert.equal(res.statusCode, 200, res.body)
       const out = res.json()
-      assert.match(out.s3_key, /^general-documents\/g-1\/[0-9a-f-]{36}-Akt_5_itog_\.pdf$/)
+      assert.match(out.s3_key, new RegExp(`^general-documents/${GDOC_1}/[0-9a-f-]{36}-Akt_5_itog_\\.pdf$`))
       assert.equal(out.expires_in, 900)
       const url = new URL(out.presigned_url)
       assert.equal(url.origin, s3.url)
@@ -384,6 +405,159 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
     it('не настроен служебный ключ — 500 с тем же текстом', async () => {
       await makeApp({ supabaseServiceKey: '' })
       assert.deepEqual((await get('/api/rates/kp?key=rk-one')).json(), { error: 'Функция не настроена: нет SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY' })
+    })
+  })
+
+  describe('загрузка: владелец файла (рецензия, п. 2)', () => {
+    const up = (who, ownerType, ownerId) => fn('s3-presign', who, { action: 'upload', owner_type: ownerType, owner_id: ownerId, file_name: 'a.pdf' })
+
+    it('owner_id — только uuid', async () => {
+      for (const bad of ['t1', 'x/../y', `${TENDER_1},${TENDER_HIDDEN}`, `${TENDER_1}/sub`]) {
+        const res = await up(U.emp, 'tender', bad)
+        assert.equal(res.statusCode, 400, bad)
+        assert.deepEqual(res.json(), { error: 'Invalid owner_id' })
+      }
+    })
+
+    it('сущность должна существовать и быть видна пользователю (под его токеном)', async () => {
+      assert.equal((await up(U.emp, 'tender', TENDER_1)).statusCode, 200)
+      for (const id of [TENDER_HIDDEN, 'a0000000-0000-4000-8000-0000000000ff']) {
+        const res = await up(U.emp, 'tender', id)
+        assert.equal(res.statusCode, 404, id)
+        assert.deepEqual(res.json(), { error: 'Владелец файла не найден' })
+      }
+      assert.equal((await up(U.admin, 'tender', TENDER_HIDDEN)).statusCode, 200, 'админу видна')
+      const lookups = supa.requests.filter((r) => r.path === '/rest/v1/tenders')
+      assert.ok(lookups.length >= 3)
+      for (const r of lookups) assert.match(r.auth, /^Bearer tok-(emp|admin)$/)
+    })
+
+    it("'general' — ПСДЦ или заявка на ВОР; 'customer' не поддерживается", async () => {
+      assert.equal((await up(U.emp, 'general', PSDC_1)).statusCode, 200)
+      assert.equal((await up(U.emp, 'general', VOR_1)).statusCode, 200)
+      assert.equal((await up(U.emp, 'general', GDOC_1)).statusCode, 404, 'документ раздела — не владелец general')
+      assert.deepEqual((await up(U.emp, 'customer', GDOC_1)).json(), { error: 'Unsupported owner_type: customer' })
+    })
+  })
+
+  describe('лимиты (рецензия, п. 4)', () => {
+    const tiny = {
+      aiPerUser: { max: 2, windowMs: 60_000 }, aiConcurrentPerUser: 1, aiConcurrentTotal: 1,
+      presignPerUser: { max: 2, windowMs: 60_000 }, ratesPerKey: { max: 2, windowMs: 60_000 }, ratesConcurrentPerKey: 1,
+    }
+    const aiBody = { action: 'clause_suggest', our_text: 'a', counterparty_text: 'b' }
+
+    it('presign — частота на пользователя', async () => {
+      await makeApp({}, { limits: tiny })
+      const body = { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' }
+      assert.equal((await fn('s3-presign', U.emp, body)).statusCode, 200)
+      assert.equal((await fn('s3-presign', U.emp, body)).statusCode, 200)
+      const third = await fn('s3-presign', U.emp, body)
+      assert.equal(third.statusCode, 429)
+      assert.match(third.json().error, /подождите минуту/)
+      assert.equal((await fn('s3-presign', U.admin, body)).statusCode, 200, 'у другого пользователя свой счётчик')
+    })
+
+    it('ИИ — частота на пользователя, один ответ за раз, общий предел', async () => {
+      await makeApp({}, { limits: tiny })
+      let open
+      aiGate = new Promise((r) => { open = r })
+      const first = fn('ai-assist', U.emp, aiBody)
+      await new Promise((r) => setTimeout(r, 50))
+      const same = await fn('ai-assist', U.emp, aiBody)
+      assert.equal(same.statusCode, 429)
+      assert.match(same.json().error, /уже готовит ответ/)
+      const other = await fn('ai-assist', U.admin, aiBody)
+      assert.equal(other.statusCode, 429)
+      assert.match(other.json().error, /занят/)
+      open()
+      aiGate = null
+      assert.equal((await first).statusCode, 200)
+      assert.equal((await fn('ai-assist', U.emp, aiBody)).statusCode, 200)
+      const third = await fn('ai-assist', U.emp, aiBody)
+      assert.equal(third.statusCode, 429, 'третий за минуту')
+      assert.equal(aiCalls.length, 2, 'в модель ушли только разрешённые запросы')
+    })
+
+    it('реестр — частота и одновременность на ключ', async () => {
+      await makeApp({}, { limits: tiny })
+      state.viewDelayMs = 150
+      try {
+        const a = app.inject({ method: 'GET', url: '/api/rates/kp?key=rk-one' })
+        await new Promise((r) => setTimeout(r, 30))
+        const b = await app.inject({ method: 'GET', url: '/api/rates/kp?key=rk-one' })
+        assert.equal(b.statusCode, 429, 'второй одновременный')
+        assert.equal((await a).statusCode, 200)
+        assert.equal((await app.inject({ method: 'GET', url: '/api/rates/kp?key=rk-two' })).statusCode, 200, 'другой ключ')
+        assert.equal((await app.inject({ method: 'GET', url: '/api/rates/kp?key=rk-one' })).statusCode, 429, 'третий за минуту')
+      } finally {
+        state.viewDelayMs = 0
+      }
+    })
+  })
+
+  describe('готовность /api/ready (рецензия, п. 5)', () => {
+    const ready = (headers = {}) => app.inject({ method: 'GET', url: '/api/ready', headers })
+
+    it('все настроенные зависимости отвечают — 200; S3 — запись и удаление служебного объекта', async () => {
+      const res = await ready()
+      assert.equal(res.statusCode, 200, res.body)
+      assert.deepEqual(res.json(), { ok: true, checks: { supabase: 'ok', s3: 'ok', anthropic: 'ok' } })
+      assert.deepEqual(s3.requests.map((r) => `${r.method} ${r.path}`), ['PUT /osp/osp-api/ready-check', 'DELETE /osp/osp-api/ready-check'])
+    })
+
+    it('неверный ключ или недоступная зависимость — 503 и что именно', async () => {
+      anthropicDown = true
+      try {
+        const res = await ready()
+        assert.equal(res.statusCode, 503)
+        assert.deepEqual(res.json(), { ok: false, checks: { supabase: 'ok', s3: 'ok', anthropic: 'fail' } })
+      } finally {
+        anthropicDown = false
+      }
+      await makeApp({ supabaseUrl: 'http://127.0.0.1:9' })
+      const down = await ready()
+      assert.equal(down.statusCode, 503)
+      assert.equal(down.json().checks.supabase, 'fail')
+    })
+
+    it('не настроенное не проверяется; через nginx (X-Forwarded-For) — 404', async () => {
+      await makeApp({ anthropicApiKey: '', s3: { endpoint: '', region: 'x', bucket: '', accessKeyId: '', secretAccessKey: '' } })
+      assert.deepEqual((await ready()).json(), { ok: true, checks: { supabase: 'ok', s3: 'not_configured', anthropic: 'not_configured' } })
+      assert.equal((await ready({ 'x-forwarded-for': '203.0.113.5' })).statusCode, 404)
+    })
+  })
+
+  describe('ответы и запросы (рецензия, прочее)', () => {
+    it('Cache-Control: no-store во всех ответах', async () => {
+      for (const res of [
+        await app.inject({ method: 'GET', url: '/api/health' }),
+        await fn('s3-presign', U.emp, { action: 'download', s3_key: 'tenders/t1/a-plan.pdf' }),
+        await app.inject({ method: 'GET', url: '/api/rates/kp?key=rk-one' }),
+        await app.inject({ method: 'GET', url: '/api/nope' }),
+      ]) assert.equal(res.headers['cache-control'], 'no-store')
+    })
+
+    it('тело до 2 МБ принимается (длинный пункт договора), больше — 413 JSON', async () => {
+      const big = 'Пункт договора. '.repeat(50_000) // ≈ 1,5 МБ в UTF-8
+      const ok = await fn('ai-assist', U.emp, { action: 'clause_suggest', our_text: big, counterparty_text: 'x' })
+      assert.equal(ok.statusCode, 200, ok.body.slice(0, 200))
+      const tooBig = await fn('ai-assist', U.emp, { action: 'clause_suggest', our_text: big + big, counterparty_text: 'x' })
+      assert.equal(tooBig.statusCode, 413)
+      assert.deepEqual(tooBig.json(), { error: 'Слишком большой запрос' })
+    })
+
+    it('без устаревших опций Fastify (FSTDEP)', async () => {
+      const warnings = []
+      const onWarning = (w) => warnings.push(w)
+      process.on('warning', onWarning)
+      try {
+        await makeApp()
+        await new Promise((r) => setImmediate(r))
+      } finally {
+        process.off('warning', onWarning)
+      }
+      assert.deepEqual(warnings.filter((w) => String(w.code || '').startsWith('FSTDEP')).map((w) => w.code), [])
     })
   })
 

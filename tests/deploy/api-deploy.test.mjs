@@ -55,7 +55,7 @@ describe('Выкладка osp-api: релизы, проверка, возвра
     health = http.createServer((req, res) => {
       let state = 'none'
       try { state = fs.readFileSync(path.join(apiRoot, 'current', 'HEALTH'), 'utf8').trim() } catch { /* нет релиза */ }
-      res.writeHead(state === 'ok' ? 200 : 500)
+      res.writeHead(state === 'ok' ? 200 : 503)
       res.end(state)
     })
     await new Promise((r) => health.listen(0, '127.0.0.1', r))
@@ -63,7 +63,7 @@ describe('Выкладка osp-api: релизы, проверка, возвра
     fs.writeFileSync(fakeSystemctl, `#!/usr/bin/env bash\necho "$@" >> "${path.join(tmp, 'systemctl.log')}"\n`, { mode: 0o755 })
     env = {
       ...process.env, OSP_DEPLOY_TEST: '1', APP_USER: '', SKIP_PULL: '1', TMPDIR: tmp,
-      PROJECT_DIR: project, API_ROOT: apiRoot, SYSTEMCTL: fakeSystemctl,
+      PROJECT_DIR: project, API_ROOT: apiRoot, SYSTEMCTL: fakeSystemctl, NODE_BIN: process.execPath,
       HEALTH_URL: `http://127.0.0.1:${health.address().port}/api/health`, HEALTH_TRIES: '2', KEEP_RELEASES: '2',
     }
     restarts.push(() => fs.existsSync(path.join(tmp, 'systemctl.log')) ? fs.readFileSync(path.join(tmp, 'systemctl.log'), 'utf8').trim().split('\n').length : 0)
@@ -112,6 +112,23 @@ describe('Выкладка osp-api: релизы, проверка, возвра
     assert.equal(previous(), cur)
     assert.equal((await deploy('--rollback')).status, 0)
     assert.equal(current(), cur)
+  })
+
+  it('Node службы не годится — отказ до выкладки, current не меняется', async () => {
+    const cur = current()
+    const before = releases()
+    commit('ok   ')
+    const saved = env.NODE_BIN
+    env.NODE_BIN = '/bin/false'
+    try {
+      const res = await deploy()
+      assert.equal(res.status, 1)
+      assert.match(res.stdout, /Нужен Node 20 или новее/)
+    } finally {
+      env.NODE_BIN = saved
+    }
+    assert.equal(current(), cur)
+    assert.deepEqual(releases(), before, 'новый релиз не создавался')
   })
 
   it('чистка: хранятся KEEP_RELEASES последних, current и previous — всегда', async () => {

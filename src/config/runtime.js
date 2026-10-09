@@ -7,6 +7,8 @@
 // (VITE_*), флаги выключены. Битый файл, чужие поля, HTML вместо JSON (nginx без
 // отдельного location отдаёт index.html) — тоже не ошибка, берутся значения сборки.
 
+import { resolveFeature } from './features'
+
 const LOAD_TIMEOUT_MS = 3000
 
 const config = {
@@ -55,9 +57,10 @@ export function getRuntimeConfig() {
 }
 
 // Флаги одного браузера — проверить новый путь на проде, прежде чем включать всем в config.json:
-//   /?features=ospApiFunctions   — включить в этом браузере;
-//   /?features=-ospApiFunctions  — снять своё значение (снова как в config.json).
-// Хранятся в localStorage 'osp.features'; параметр убирается из адресной строки.
+//   /?features=ospApiAi          — включить в этом браузере;
+//   /?features=-ospApiAi         — снять своё значение (снова как в config.json).
+// Хранятся в localStorage 'osp.features'; параметр убирается из адресной строки. Явное false в
+// config.json сильнее локального значения — выключатель для всех (config/features.js).
 const LOCAL_FEATURES_KEY = 'osp.features'
 
 function readLocalFeatures() {
@@ -90,8 +93,5 @@ export function applyFeatureParam() {
 }
 
 export function isFeatureEnabled(name, fallback = false) {
-  const local = readLocalFeatures()
-  if (typeof local[name] === 'boolean') return local[name]
-  const value = config.features[name]
-  return typeof value === 'boolean' ? value : fallback
+  return resolveFeature(name, config.features, readLocalFeatures(), fallback)
 }
