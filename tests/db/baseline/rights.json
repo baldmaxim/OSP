@@ -1,5 +1,6 @@
 {
-  "copy": "prod-20261008-132415",
+  "copy": "prod-20261009-063004",
+  "candidates": [],
   "classes": {
     "admin": {
       "psdc": {
@@ -255,7 +256,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "yes",
+        "insert": "yes",
+        "select": "visible",
+        "update": "yes"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -698,7 +702,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "yes",
+        "insert": "yes",
+        "select": "visible",
+        "update": "yes"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -1141,7 +1148,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "yes",
+        "insert": "yes",
+        "select": "visible",
+        "update": "yes"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -1584,7 +1594,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "yes",
+        "insert": "yes",
+        "select": "visible",
+        "update": "yes"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -2027,7 +2040,10 @@
         "update": "no"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "n/a",
+        "insert": "n/a",
+        "select": "empty",
+        "update": "n/a"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -2470,7 +2486,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "yes",
+        "insert": "yes",
+        "select": "visible",
+        "update": "yes"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -2913,7 +2932,10 @@
         "update": "no"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "n/a",
+        "insert": "n/a",
+        "select": "empty",
+        "update": "n/a"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -3356,7 +3378,10 @@
         "update": "no"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "n/a",
+        "insert": "n/a",
+        "select": "empty",
+        "update": "n/a"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -3799,7 +3824,10 @@
         "update": "no"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "n/a",
+        "insert": "n/a",
+        "select": "empty",
+        "update": "n/a"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -4242,7 +4270,10 @@
         "update": "no"
       },
       "employee_directory": {
-        "select": "err:42501"
+        "delete": "n/a",
+        "insert": "n/a",
+        "select": "err:42501",
+        "update": "n/a"
       },
       "contract_appendices": {
         "delete": "no",
@@ -4685,7 +4716,10 @@
         "update": "yes"
       },
       "employee_directory": {
-        "select": "empty"
+        "delete": "n/a",
+        "insert": "n/a",
+        "select": "empty",
+        "update": "n/a"
       },
       "contract_appendices": {
         "delete": "yes",
@@ -4888,5 +4922,15 @@
     "current_counterparty_id": "ok",
     "is_negotiation_employee": "ok",
     "vor_requests_can_access": "ok"
+  },
+  "self_promote": {
+    "employee_full": "admin",
+    "employee_none": "admin",
+    "vors_only": "admin",
+    "contractor_own": "not_admin",
+    "contractor_noorg": "not_admin",
+    "unapproved": "not_admin",
+    "blocked": "not_admin",
+    "no_user_roles": "not_admin"
   }
 }

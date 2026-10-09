@@ -1,1 +1,209 @@
-[]
+[
+  {
+    "release": "Р2-0",
+    "class": "admin",
+    "table": "employee_directory",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "admin",
+    "table": "employee_directory",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "admin",
+    "table": "employee_directory",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "employee_full",
+    "table": "employee_directory",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "employee_full",
+    "table": "employee_directory",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "employee_full",
+    "table": "employee_directory",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "employee_none",
+    "table": "employee_directory",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "employee_none",
+    "table": "employee_directory",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "employee_none",
+    "table": "employee_directory",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "vors_only",
+    "table": "employee_directory",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "vors_only",
+    "table": "employee_directory",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "vors_only",
+    "table": "employee_directory",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "contractor_noorg",
+    "table": "employee_directory",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "contractor_noorg",
+    "table": "employee_directory",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "contractor_noorg",
+    "table": "employee_directory",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись через представление шла в user_roles мимо RLS; интерфейс только читает"
+  },
+  {
+    "release": "Р2-0",
+    "class": "employee_full",
+    "table": "*self_promote*",
+    "action": "self_promote",
+    "from": "admin",
+    "to": "err:42501",
+    "why": "сотрудник не может назначить себе роль admin через employee_directory"
+  },
+  {
+    "release": "Р2-0",
+    "class": "employee_none",
+    "table": "*self_promote*",
+    "action": "self_promote",
+    "from": "admin",
+    "to": "err:42501",
+    "why": "сотрудник не может назначить себе роль admin через employee_directory"
+  },
+  {
+    "release": "Р2-0",
+    "class": "vors_only",
+    "table": "*self_promote*",
+    "action": "self_promote",
+    "from": "admin",
+    "to": "err:42501",
+    "why": "сотрудник не может назначить себе роль admin через employee_directory"
+  },
+  {
+    "release": "Р2-0",
+    "class": "contractor_own",
+    "table": "*self_promote*",
+    "action": "self_promote",
+    "from": "not_admin",
+    "to": "err:42501",
+    "why": "запись в employee_directory отклоняется правами ещё до поиска строк"
+  },
+  {
+    "release": "Р2-0",
+    "class": "contractor_noorg",
+    "table": "*self_promote*",
+    "action": "self_promote",
+    "from": "not_admin",
+    "to": "err:42501",
+    "why": "запись в employee_directory отклоняется правами ещё до поиска строк"
+  },
+  {
+    "release": "Р2-0",
+    "class": "unapproved",
+    "table": "*self_promote*",
+    "action": "self_promote",
+    "from": "not_admin",
+    "to": "err:42501",
+    "why": "запись в employee_directory отклоняется правами ещё до поиска строк"
+  },
+  {
+    "release": "Р2-0",
+    "class": "blocked",
+    "table": "*self_promote*",
+    "action": "self_promote",
+    "from": "not_admin",
+    "to": "err:42501",
+    "why": "запись в employee_directory отклоняется правами ещё до поиска строк"
+  },
+  {
+    "release": "Р2-0",
+    "class": "no_user_roles",
+    "table": "*self_promote*",
+    "action": "self_promote",
+    "from": "not_admin",
+    "to": "err:42501",
+    "why": "запись в employee_directory отклоняется правами ещё до поиска строк"
+  }
+]

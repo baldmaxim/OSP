@@ -131,6 +131,10 @@ DECLARE
   v_upd_col text;
   v_visible_ctid text;
   v_ins text;
+  v_key_col text;
+  v_key_uuid boolean;
+  v_key text;
+  v_row_text text;
 BEGIN
   FOR r IN
     SELECT c.oid, c.relname, c.relkind
@@ -144,6 +148,8 @@ BEGIN
     v_sel := osp_test.try_as(p_class, 'value', format('SELECT count(*)::text FROM public.%I', r.relname));
     item := jsonb_build_object('select', CASE
       WHEN v_sel NOT LIKE 'ok:%' THEN v_sel
+      -- Представление, строки которого зависят от пользователя (суперпользователь без JWT видит 0).
+      WHEN v_total = 0 AND r.relkind = 'v' AND substr(v_sel, 4)::bigint > 0 THEN 'visible'
       WHEN v_total = 0 THEN 'empty'
       WHEN substr(v_sel, 4)::bigint = 0 THEN 'none'
       WHEN substr(v_sel, 4)::bigint >= v_total THEN 'all'
@@ -198,6 +204,39 @@ BEGIN
              format('UPDATE public.%I SET %I = %I WHERE ctid = $1', r.relname, v_upd_col, v_upd_col), v_ctid)))
         || jsonb_build_object('delete', osp_test.write_verdict(osp_test.try_as(p_class, 'count',
              format('DELETE FROM public.%I WHERE ctid = $1', r.relname), v_ctid)));
+
+    -- Обновляемое представление (PostgreSQL сам переводит запись в базовую таблицу — с правами
+    -- владельца представления, мимо RLS базовой таблицы). Строка — первая видимая классу, по первому
+    -- столбцу. Нет видимых строк — n/a.
+    ELSIF r.relkind = 'v' AND (pg_relation_is_updatable(r.oid, true) & 4) = 4 THEN
+      SELECT a.attname, a.atttypid = 'uuid'::regtype INTO v_key_col, v_key_uuid
+      FROM pg_attribute a WHERE a.attrelid = r.oid AND a.attnum = 1;
+      v_key := osp_test.try_as(p_class, 'value',
+        format('SELECT %I::text FROM public.%I ORDER BY 1 LIMIT 1', v_key_col, r.relname));
+      IF v_key LIKE 'ok:_%' THEN
+        v_key := substr(v_key, 4);
+        v_row_text := osp_test.try_as(p_class, 'value',
+          format('SELECT to_jsonb(t)::text FROM public.%I t WHERE %I::text = %L LIMIT 1', r.relname, v_key_col, v_key));
+        SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position),
+               string_agg(CASE WHEN column_name = v_key_col AND v_key_uuid THEN 'gen_random_uuid()'
+                               ELSE 'x.' || quote_ident(column_name) END, ', ' ORDER BY ordinal_position)
+          INTO v_cols, v_vals
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = r.relname AND is_updatable = 'YES';
+        item := item
+          || jsonb_build_object('insert', CASE
+               WHEN NOT v_key_uuid OR v_row_text NOT LIKE 'ok:_%' OR (pg_relation_is_updatable(r.oid, true) & 8) <> 8 THEN 'n/a'
+               ELSE osp_test.write_verdict(osp_test.try_as(p_class, 'count',
+                 format('INSERT INTO public.%I (%s) SELECT %s FROM jsonb_populate_record(NULL::public.%I, $2) x',
+                        r.relname, v_cols, v_vals, r.relname), NULL, substr(v_row_text, 4)::jsonb)) END)
+          || jsonb_build_object('update', osp_test.write_verdict(osp_test.try_as(p_class, 'count',
+               format('UPDATE public.%I SET %I = %I WHERE %I::text = %L', r.relname, v_key_col, v_key_col, v_key_col, v_key))))
+          || jsonb_build_object('delete', CASE WHEN (pg_relation_is_updatable(r.oid, true) & 16) <> 16 THEN 'n/a'
+               ELSE osp_test.write_verdict(osp_test.try_as(p_class, 'count',
+                 format('DELETE FROM public.%I WHERE %I::text = %L', r.relname, v_key_col, v_key))) END);
+      ELSE
+        item := item || jsonb_build_object('insert', 'n/a', 'update', 'n/a', 'delete', 'n/a');
+      END IF;
     END IF;
     res := res || jsonb_build_object(r.relname, item);
   END LOOP;
@@ -228,4 +267,32 @@ BEGIN
     res := res || jsonb_build_object(f.proname, CASE WHEN v_res LIKE 'ok:%' THEN 'ok' ELSE v_res END);
   END LOOP;
   RETURN res;
+END $$;
+
+-- Самоповышение до администратора через employee_directory: класс меняет себе role на 'admin' и
+-- спрашивает is_admin(). Всё в откатываемой транзакции. 'admin' — дыра, 'not_admin' — закрыта,
+-- err:<код> — отказ на запись.
+CREATE OR REPLACE FUNCTION osp_test.self_promote(p_class text) RETURNS text LANGUAGE plpgsql AS $$
+DECLARE
+  u osp_test.users%ROWTYPE;
+  v_admin boolean;
+  v_state text;
+  v_detail text;
+BEGIN
+  SELECT * INTO u FROM osp_test.users WHERE class = p_class;
+  IF u.id IS NULL OR u.class = 'admin' THEN RETURN 'n/a'; END IF;
+  BEGIN
+    PERFORM set_config('request.jwt.claims', json_build_object('sub', u.id, 'role', u.db_role)::text, true);
+    PERFORM set_config('request.jwt.claim.sub', u.id::text, true);
+    PERFORM set_config('statement_timeout', '30s', true);
+    EXECUTE format('SET LOCAL ROLE %I', u.db_role);
+    EXECUTE 'UPDATE public.employee_directory SET role = ''admin'' WHERE user_id = auth.uid()';
+    EXECUTE 'SELECT public.is_admin()' INTO v_admin;
+    RAISE EXCEPTION 'osp_test rollback' USING ERRCODE = 'OSP01',
+      DETAIL = CASE WHEN v_admin THEN 'admin' ELSE 'not_admin' END;
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_detail = PG_EXCEPTION_DETAIL;
+    IF v_state = 'OSP01' THEN RETURN v_detail; END IF;
+    RETURN 'err:' || v_state;
+  END;
 END $$;

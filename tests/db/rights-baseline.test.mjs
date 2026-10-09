@@ -20,6 +20,8 @@ import { SECTIONS } from '../../src/contexts/roleConstants.js'
 const BASELINE_DIR = path.join(ROOT, 'tests', 'db', 'baseline')
 const BASELINE = path.join(BASELINE_DIR, 'rights.json')
 const FIXES = path.join(BASELINE_DIR, 'approved-fixes.json')
+const CANDIDATES = fs.readFileSync(path.join(BASELINE_DIR, 'candidate-migrations.txt'), 'utf8')
+  .split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
 const UPDATE = process.env.UPDATE_BASELINE === '1'
 const CLASSES = ['admin', 'employee_full', 'employee_none', 'vors_only', 'contractor_own', 'contractor_noorg',
   'unapproved', 'blocked', 'no_user_roles', 'anon', 'service_role']
@@ -31,6 +33,7 @@ function expected(baseline, fixes) {
   const exp = structuredClone(baseline)
   for (const f of fixes) {
     if (f.table === '*functions*') { exp.anon_functions[f.action] = f.to; continue }
+    if (f.table === '*self_promote*') { exp.self_promote[f.class] = f.to; continue }
     exp.classes[f.class][f.table][f.action] = f.to
   }
   return exp
@@ -48,6 +51,11 @@ function diff(exp, act) {
       }
     }
   }
+  for (const c of new Set([...Object.keys(exp.self_promote || {}), ...Object.keys(act.self_promote || {})])) {
+    if (exp.self_promote?.[c] !== act.self_promote?.[c]) {
+      out.push(`${c} / самоповышение до администратора: ожидалось ${exp.self_promote?.[c] ?? '—'}, стало ${act.self_promote?.[c] ?? '—'}`)
+    }
+  }
   for (const fn of new Set([...Object.keys(exp.anon_functions), ...Object.keys(act.anon_functions)])) {
     if (exp.anon_functions[fn] !== act.anon_functions[fn]) {
       out.push(`anon / функция ${fn}: ожидалось ${exp.anon_functions[fn] ?? '—'}, стало ${act.anon_functions[fn] ?? '—'}`)
@@ -60,14 +68,22 @@ describe('Права на копии прода: отпечаток против
   let db
   let actual
   before(() => {
+    // Эталон снимается только с прода как есть — без миграций-кандидатов.
+    if (UPDATE && CANDIDATES.length) throw new Error('UPDATE_BASELINE=1 при непустом candidate-migrations.txt')
     const dump = latestVerifiedCopy()
     db = startCopy(dump)
+    for (const m of CANDIDATES) psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     psqlAt(db.port, null, { file: path.join(ROOT, 'tests', 'db', 'fingerprint.sql') })
     const sections = Object.keys(SECTIONS).map((s) => `'${s.replace(/'/g, "''")}'`).join(',')
     psqlAt(db.port, `select osp_test.setup(array[${sections}]::text[])`)
-    actual = { copy: path.basename(dump, '.dump'), classes: {}, anon_functions: {} }
+    actual = { copy: path.basename(dump, '.dump'), candidates: CANDIDATES, classes: {}, anon_functions: {} }
     for (const c of CLASSES) actual.classes[c] = JSON.parse(psqlAt(db.port, `select osp_test.fingerprint('${c}')::text`))
     actual.anon_functions = JSON.parse(psqlAt(db.port, 'select osp_test.anon_functions()::text'))
+    actual.self_promote = {}
+    for (const c of CLASSES) {
+      const r = psqlAt(db.port, `select osp_test.self_promote('${c}')`)
+      if (r !== 'n/a') actual.self_promote[c] = r
+    }
   })
   after(() => db?.stop())
 
@@ -84,20 +100,16 @@ describe('Права на копии прода: отпечаток против
     assert.deepEqual(problems, [], `Права изменились вне утверждённого списка:\n${problems.join('\n')}`)
   })
 
-  it('контрольные точки инвентаризации: дыры зафиксированы, витрина и реестр как задуманы', () => {
+  it('инварианты, которые должны держаться всегда — и до Р2, и после', () => {
     const c = actual.classes
-    // Широкие политики (q2): неодобренный и заблокированный читают таблицы сотрудников — дыра для Р2b.
-    assert.equal(c.unapproved.objects.select, 'all')
-    assert.equal(c.blocked.objects.select, 'all')
-    // Аноним видит только витрину (часть тендеров) и ничего из реестра расценок.
+    // Аноним: ничего из договоров и реестра расценок, витрина — только часть тендеров.
     assert.notEqual(c.anon.tenders.select, 'all')
     assert.equal(c.anon.contracts.select, 'none')
     assert.equal(c.anon.kp_rates_registry_mv.select, 'err:42501')
-    // Администратор видит всё.
+    // Администратор видит всё рабочее.
     assert.equal(c.admin.tenders.select, 'all')
     assert.equal(c.admin.contracts.select, 'all')
-    // Функции: удаление пользователя анониму отказано, обновление реестра — дыра для Р2d.
+    // Удалить пользователя аноним не может.
     assert.equal(actual.anon_functions.admin_delete_user, 'err:P0001')
-    assert.equal(actual.anon_functions.refresh_rates_registry, 'ok')
   })
 })

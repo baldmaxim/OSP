@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict zeomz01kDjSZyRlDPphhb0fnvNolwktWyA7XjIEzn8DvbIM7jP4bk2PMRTfBaW0
+\restrict EMAUI6767DCT6AtdVJNjnJWdHCdfQtCdQwcz0pJbvprL2pnXJpGueNJk5F4L9Vb
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)
@@ -3140,6 +3140,58 @@ COMMENT ON FUNCTION public.refresh_rates_registry() IS 'Пересчитывае
 
 
 --
+-- Name: report_client_error(text, text, text, integer); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.report_client_error(p_build_id text, p_section text, p_code text, p_status integer) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF auth.uid() IS NULL
+     OR p_build_id IS NULL OR length(p_build_id) > 40
+     OR p_section IS NULL OR length(p_section) > 100
+     OR p_code IS NULL OR length(p_code) > 40 THEN
+    RETURN;
+  END IF;
+  IF (SELECT count(*) FROM public.client_errors
+      WHERE user_id = auth.uid() AND at > now() - interval '10 minutes') >= 100 THEN
+    RETURN;
+  END IF;
+  INSERT INTO public.client_errors (user_id, build_id, section, code, status)
+  VALUES (auth.uid(), p_build_id, p_section, p_code, p_status);
+  IF random() < 0.01 THEN
+    DELETE FROM public.client_errors WHERE at < now() - interval '30 days';
+  END IF;
+END
+$$;
+
+
+ALTER FUNCTION public.report_client_error(p_build_id text, p_section text, p_code text, p_status integer) OWNER TO postgres;
+
+--
+-- Name: report_client_version(text); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.report_client_version(p_build_id text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF auth.uid() IS NULL OR p_build_id IS NULL OR length(p_build_id) > 40 THEN
+    RETURN;
+  END IF;
+  INSERT INTO public.client_versions (user_id, build_id, last_seen_at)
+  VALUES (auth.uid(), p_build_id, now())
+  ON CONFLICT (user_id) DO UPDATE
+    SET build_id = EXCLUDED.build_id, last_seen_at = EXCLUDED.last_seen_at;
+END
+$$;
+
+
+ALTER FUNCTION public.report_client_version(p_build_id text) OWNER TO postgres;
+
+--
 -- Name: sync_tenders_department_from_object(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -4565,6 +4617,71 @@ COMMENT ON COLUMN public.bsm_supply_rates.applied_at IS 'Дата примене
 
 
 --
+-- Name: client_errors; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.client_errors (
+    id bigint NOT NULL,
+    at timestamp with time zone DEFAULT now() NOT NULL,
+    user_id uuid,
+    build_id text NOT NULL,
+    section text NOT NULL,
+    code text NOT NULL,
+    status integer
+);
+
+
+ALTER TABLE public.client_errors OWNER TO postgres;
+
+--
+-- Name: TABLE client_errors; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.client_errors IS 'Коды отказов сервера по разделам, без персональных данных (телеметрия релизов)';
+
+
+--
+-- Name: client_errors_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.client_errors_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.client_errors_id_seq OWNER TO postgres;
+
+--
+-- Name: client_errors_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.client_errors_id_seq OWNED BY public.client_errors.id;
+
+
+--
+-- Name: client_versions; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.client_versions (
+    user_id uuid NOT NULL,
+    build_id text NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.client_versions OWNER TO postgres;
+
+--
+-- Name: TABLE client_versions; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.client_versions IS 'Какая сборка фронта открыта у пользователя (телеметрия релизов)';
+
+
+--
 -- Name: contacts; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -5716,7 +5833,7 @@ COMMENT ON COLUMN public.user_roles.object_ids IS 'Объекты, к котор
 -- Name: COLUMN user_roles.counterparty_id; Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON COLUMN public.user_roles.counterparty_id IS 'Организация-контрагент, к которой привязан логин (NULL = сотрудник СУ-10)';
+COMMENT ON COLUMN public.user_roles.counterparty_id IS 'Организация-контрагент, к которой привязан логин (NULL = сотрудник СУ-10). ON DELETE RESTRICT: удаление организации не должно превращать её логины в сотрудников';
 
 
 --
@@ -8407,6 +8524,13 @@ ALTER TABLE ONLY auth.refresh_tokens ALTER COLUMN id SET DEFAULT nextval('auth.r
 
 
 --
+-- Name: client_errors id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.client_errors ALTER COLUMN id SET DEFAULT nextval('public.client_errors_id_seq'::regclass);
+
+
+--
 -- Name: contracts display_id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -8785,6 +8909,22 @@ ALTER TABLE ONLY public.bsm_contractor_rates
 
 ALTER TABLE ONLY public.bsm_contractor_rates
     ADD CONSTRAINT bsm_contractor_rates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: client_errors client_errors_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.client_errors
+    ADD CONSTRAINT client_errors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: client_versions client_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.client_versions
+    ADD CONSTRAINT client_versions_pkey PRIMARY KEY (user_id);
 
 
 --
@@ -10011,6 +10151,20 @@ CREATE INDEX idx_clause_disputes_contract_id ON public.contract_clause_disputes 
 --
 
 CREATE INDEX idx_clause_disputes_counterparty_id ON public.contract_clause_disputes USING btree (counterparty_id);
+
+
+--
+-- Name: idx_client_errors_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_client_errors_at ON public.client_errors USING btree (at);
+
+
+--
+-- Name: idx_client_versions_last_seen; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_client_versions_last_seen ON public.client_versions USING btree (last_seen_at);
 
 
 --
@@ -12756,7 +12910,7 @@ ALTER TABLE ONLY public.tenders
 --
 
 ALTER TABLE ONLY public.user_roles
-    ADD CONSTRAINT user_roles_counterparty_id_fkey FOREIGN KEY (counterparty_id) REFERENCES public.counterparties(id) ON DELETE SET NULL;
+    ADD CONSTRAINT user_roles_counterparty_id_fkey FOREIGN KEY (counterparty_id) REFERENCES public.counterparties(id) ON DELETE RESTRICT;
 
 
 --
@@ -13190,6 +13344,32 @@ CREATE POLICY clauses_contractor_read ON public.contract_clauses FOR SELECT TO a
 --
 
 CREATE POLICY clauses_employee_all ON public.contract_clauses TO authenticated USING (public.is_negotiation_employee()) WITH CHECK (public.is_negotiation_employee());
+
+
+--
+-- Name: client_errors; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.client_errors ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: client_errors client_errors_select_admin; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY client_errors_select_admin ON public.client_errors FOR SELECT TO authenticated USING (( SELECT public.is_admin() AS is_admin));
+
+
+--
+-- Name: client_versions; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.client_versions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: client_versions client_versions_select_admin; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY client_versions_select_admin ON public.client_versions FOR SELECT TO authenticated USING (( SELECT public.is_admin() AS is_admin));
 
 
 --
@@ -14630,6 +14810,24 @@ GRANT ALL ON FUNCTION public.refresh_rates_registry() TO service_role;
 
 
 --
+-- Name: FUNCTION report_client_error(p_build_id text, p_section text, p_code text, p_status integer); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.report_client_error(p_build_id text, p_section text, p_code text, p_status integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.report_client_error(p_build_id text, p_section text, p_code text, p_status integer) TO authenticated;
+GRANT ALL ON FUNCTION public.report_client_error(p_build_id text, p_section text, p_code text, p_status integer) TO service_role;
+
+
+--
+-- Name: FUNCTION report_client_version(p_build_id text); Type: ACL; Schema: public; Owner: postgres
+--
+
+REVOKE ALL ON FUNCTION public.report_client_version(p_build_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.report_client_version(p_build_id text) TO authenticated;
+GRANT ALL ON FUNCTION public.report_client_version(p_build_id text) TO service_role;
+
+
+--
 -- Name: FUNCTION sync_tenders_department_from_object(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -15155,6 +15353,31 @@ GRANT ALL ON TABLE public.bsm_contractor_rates TO service_role;
 GRANT ALL ON TABLE public.bsm_supply_rates TO anon;
 GRANT ALL ON TABLE public.bsm_supply_rates TO authenticated;
 GRANT ALL ON TABLE public.bsm_supply_rates TO service_role;
+
+
+--
+-- Name: TABLE client_errors; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.client_errors TO service_role;
+GRANT SELECT ON TABLE public.client_errors TO authenticated;
+
+
+--
+-- Name: SEQUENCE client_errors_id_seq; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON SEQUENCE public.client_errors_id_seq TO anon;
+GRANT ALL ON SEQUENCE public.client_errors_id_seq TO authenticated;
+GRANT ALL ON SEQUENCE public.client_errors_id_seq TO service_role;
+
+
+--
+-- Name: TABLE client_versions; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.client_versions TO service_role;
+GRANT SELECT ON TABLE public.client_versions TO authenticated;
 
 
 --
@@ -15974,5 +16197,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict zeomz01kDjSZyRlDPphhb0fnvNolwktWyA7XjIEzn8DvbIM7jP4bk2PMRTfBaW0
+\unrestrict EMAUI6767DCT6AtdVJNjnJWdHCdfQtCdQwcz0pJbvprL2pnXJpGueNJk5F4L9Vb
 
