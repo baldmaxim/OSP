@@ -2,3 +2,4 @@
 # «отпечатком» прав и сравнивает результат с эталоном + approved-fixes.json.
 # После применения на проде миграция переезжает в migration/schema/applied-after.txt,
 # отсюда удаляется, эталон снимается заново (UPDATE_BASELINE=1) со свежей копии.
+20261010_r2ab_employee_only.sql

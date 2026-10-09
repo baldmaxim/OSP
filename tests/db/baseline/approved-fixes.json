@@ -1,1 +1,6536 @@
-[]
+[
+  {
+    "release": "Р2a+Р2b",
+    "class": "admin",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "employee_full",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "employee_none",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "vors_only",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "app_settings",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "app_settings",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "app_settings",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "bsm_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "bsm_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "bsm_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "bsm_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contract_appendices",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contract_appendices",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contract_appendices",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contract_appendices",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contract_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contract_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contract_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "contract_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "some",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_relations",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_relations",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_relations",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "counterparty_relations",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_request_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_request_tasks",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_request_tasks",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_request_tasks",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_request_tasks",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_requests",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_requests",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_requests",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "dc_requests",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "departments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "departments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "departments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "departments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "employees",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "employees",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "employees",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "employees",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_document_folders",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_document_folders",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_document_folders",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_document_folders",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_document_links",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_document_links",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_document_links",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_document_links",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "general_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_areas",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_areas",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_areas",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_areas",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_contract_attachments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_contract_attachments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_contract_attachments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_contract_attachments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_estimate_items",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_estimate_items",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_estimate_items",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_estimate_items",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_staff",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_staff",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_staff",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_staff",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranty_retention_payments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranty_retention_payments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranty_retention_payments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranty_retention_payments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranty_retentions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranty_retentions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranty_retentions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "object_warranty_retentions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "objects",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "objects",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "objects",
+    "action": "select",
+    "from": "all",
+    "to": "some",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "objects",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "positions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "positions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "positions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "positions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_proposal_files",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_proposal_files",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_proposal_files",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_proposal_files",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_rd_codes",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_rd_codes",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_rd_codes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_rd_codes",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_vor_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_vor_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_vor_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_winners",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_winners",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_winners",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "tender_winners",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "work_types",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "work_types",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "work_types",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_own",
+    "table": "work_types",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "подрядчик: данные сотрудников закрыты, на objects/counterparties действуют подрядческие политики"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "app_settings",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "app_settings",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "app_settings",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "bsm_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "bsm_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "bsm_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "bsm_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_appendices",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_appendices",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_appendices",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_appendices",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clause_comments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clause_comments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clause_comments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clause_comments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clause_disputes",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clause_disputes",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clause_disputes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clause_disputes",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clauses",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clauses",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clauses",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_clauses",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_counterparties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_counterparties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contract_counterparties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contracts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contracts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contracts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "contracts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_relations",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_relations",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_relations",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "counterparty_relations",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_request_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_request_tasks",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_request_tasks",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_request_tasks",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_request_tasks",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_requests",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_requests",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_requests",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "dc_requests",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "departments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "departments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "departments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "departments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "doc_check_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "doc_check_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "doc_check_request_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "doc_check_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "doc_check_requests",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "doc_check_requests",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "doc_check_requests",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "doc_check_requests",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "employee_directory",
+    "action": "delete",
+    "from": "no",
+    "to": "n/a",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "employee_directory",
+    "action": "insert",
+    "from": "no",
+    "to": "n/a",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "employee_directory",
+    "action": "select",
+    "from": "visible",
+    "to": "empty",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "employee_directory",
+    "action": "update",
+    "from": "no",
+    "to": "n/a",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "employees",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "employees",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "employees",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "employees",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_document_folders",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_document_folders",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_document_folders",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_document_folders",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_document_links",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_document_links",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_document_links",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_document_links",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "general_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_areas",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_areas",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_areas",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_areas",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_contract_attachments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_contract_attachments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_contract_attachments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_contract_attachments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_estimate_items",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_estimate_items",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_estimate_items",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_estimate_items",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_staff",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_staff",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_staff",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_staff",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranty_retention_payments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranty_retention_payments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranty_retention_payments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranty_retention_payments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranty_retentions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranty_retentions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranty_retentions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "object_warranty_retentions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "objects",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "objects",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "objects",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "objects",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "positions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "positions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "positions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "positions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "s3_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "s3_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "s3_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "s3_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_counterparties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_counterparties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_counterparties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_counterparty_proposals",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_counterparty_proposals",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_counterparty_proposals",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_counterparty_proposals",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_estimate_items",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_estimate_items",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_estimate_items",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_estimate_items",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_proposal_files",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_proposal_files",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_proposal_files",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_proposal_files",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_rd_codes",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_rd_codes",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_rd_codes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_rd_codes",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_rd_document_codes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_vor_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_vor_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_vor_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_winners",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_winners",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_winners",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tender_winners",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tenders",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tenders",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tenders",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "tenders",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "work_types",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "work_types",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "work_types",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "contractor_noorg",
+    "table": "work_types",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "роль contractor без организации больше не считается сотрудником (единое правило)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "app_settings",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "app_settings",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "app_settings",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "bsm_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "bsm_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "bsm_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "bsm_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contract_appendices",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contract_appendices",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contract_appendices",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contract_appendices",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contract_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contract_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contract_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "contract_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_relations",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_relations",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_relations",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "counterparty_relations",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_request_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_request_tasks",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_request_tasks",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_request_tasks",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_request_tasks",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_requests",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_requests",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_requests",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "dc_requests",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "departments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "departments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "departments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "departments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "employees",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "employees",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "employees",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "employees",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_document_folders",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_document_folders",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_document_folders",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_document_folders",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_document_links",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_document_links",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_document_links",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_document_links",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "general_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_areas",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_areas",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_areas",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_areas",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_contract_attachments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_contract_attachments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_contract_attachments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_contract_attachments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_estimate_items",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_estimate_items",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_estimate_items",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_estimate_items",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_staff",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_staff",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_staff",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_staff",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranty_retention_payments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranty_retention_payments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranty_retention_payments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranty_retention_payments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranty_retentions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranty_retentions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranty_retentions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "object_warranty_retentions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "objects",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "objects",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "objects",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "objects",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "positions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "positions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "positions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "positions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_proposal_files",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_proposal_files",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_proposal_files",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_proposal_files",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_rd_codes",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_rd_codes",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_rd_codes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_rd_codes",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_rd_document_codes",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_rd_document_codes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_vor_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_vor_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_vor_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_winners",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_winners",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_winners",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "tender_winners",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "work_types",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "work_types",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "work_types",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "unapproved",
+    "table": "work_types",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "неодобренный: данные сотрудников закрыты (широкие политики → только сотрудник)"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "app_settings",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "app_settings",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "app_settings",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "bsm_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "bsm_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "bsm_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "bsm_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contract_appendices",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contract_appendices",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contract_appendices",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contract_appendices",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contract_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contract_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contract_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "contract_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_relations",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_relations",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_relations",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "counterparty_relations",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_request_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_request_tasks",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_request_tasks",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_request_tasks",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_request_tasks",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_requests",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_requests",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_requests",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "dc_requests",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "departments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "departments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "departments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "departments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "employees",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "employees",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "employees",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "employees",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_document_folders",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_document_folders",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_document_folders",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_document_folders",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_document_links",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_document_links",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_document_links",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_document_links",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "general_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_areas",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_areas",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_areas",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_areas",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_contract_attachments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_contract_attachments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_contract_attachments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_contract_attachments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_estimate_items",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_estimate_items",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_estimate_items",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_estimate_items",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_staff",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_staff",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_staff",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_staff",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranty_retention_payments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranty_retention_payments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranty_retention_payments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranty_retention_payments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranty_retentions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranty_retentions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranty_retentions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "object_warranty_retentions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "objects",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "objects",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "objects",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "objects",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "positions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "positions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "positions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "positions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_proposal_files",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_proposal_files",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_proposal_files",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_proposal_files",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_rd_codes",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_rd_codes",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_rd_codes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_rd_codes",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_rd_document_codes",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_rd_document_codes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_vor_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_vor_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_vor_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_winners",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_winners",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_winners",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "tender_winners",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "user_roles",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "work_types",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "work_types",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "work_types",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "blocked",
+    "table": "work_types",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "заблокированный: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "app_settings",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "app_settings",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "app_settings",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "bsm_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "bsm_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "bsm_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "bsm_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contract_appendices",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contract_appendices",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contract_appendices",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contract_appendices",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contract_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contract_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contract_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "contract_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_contacts",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_contacts",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_contacts",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_contacts",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_relations",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_relations",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_relations",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "counterparty_relations",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_request_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_request_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_request_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_request_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_request_tasks",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_request_tasks",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_request_tasks",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_request_tasks",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_requests",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_requests",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_requests",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "dc_requests",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "departments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "departments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "departments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "departments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "employees",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "employees",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "employees",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "employees",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_document_folders",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_document_folders",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_document_folders",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_document_folders",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_document_links",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_document_links",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_document_links",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_document_links",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "general_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_areas",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_areas",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_areas",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_areas",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_contract_attachments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_contract_attachments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_contract_attachments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_contract_attachments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_documents",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_documents",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_documents",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_documents",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_estimate_items",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_estimate_items",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_estimate_items",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_estimate_items",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_staff",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_staff",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_staff",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_staff",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranties",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranties",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranties",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranties",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranty_retention_payments",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranty_retention_payments",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranty_retention_payments",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranty_retention_payments",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranty_retentions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranty_retentions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranty_retentions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "object_warranty_retentions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "objects",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "objects",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "objects",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "objects",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "positions",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "positions",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "positions",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "positions",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_audit_log",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_audit_log",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_audit_log",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_audit_log",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_proposal_files",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_proposal_files",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_proposal_files",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_proposal_files",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_rd_codes",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_rd_codes",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_rd_codes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_rd_codes",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_rd_document_codes",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_rd_document_codes",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_vor_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_vor_supply_rates",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_vor_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_winners",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_winners",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_winners",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "tender_winners",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "work_types",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "work_types",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "work_types",
+    "action": "select",
+    "from": "all",
+    "to": "none",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "no_user_roles",
+    "table": "work_types",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "вошедший без строки в user_roles: данные сотрудников закрыты"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "anon",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  },
+  {
+    "release": "Р2a+Р2b",
+    "class": "service_role",
+    "table": "superadmins",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица superadmins: клиентам недоступна, у service_role пуста"
+  }
+]

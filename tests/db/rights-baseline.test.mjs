@@ -34,7 +34,7 @@ function expected(baseline, fixes) {
   for (const f of fixes) {
     if (f.table === '*functions*') { exp.anon_functions[f.action] = f.to; continue }
     if (f.table === '*self_promote*') { exp.self_promote[f.class] = f.to; continue }
-    exp.classes[f.class][f.table][f.action] = f.to
+    ;(exp.classes[f.class][f.table] ??= {})[f.action] = f.to  // новая таблица — добавить запись
   }
   return exp
 }
@@ -72,7 +72,8 @@ describe('Права на копии прода: отпечаток против
     if (UPDATE && CANDIDATES.length) throw new Error('UPDATE_BASELINE=1 при непустом candidate-migrations.txt')
     const dump = latestVerifiedCopy()
     db = startCopy(dump)
-    for (const m of CANDIDATES) psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
+    // Кандидат — имя миграции из supabase/migrations или путь от корня (например, SQL отката).
+    for (const m of CANDIDATES) psqlAt(db.port, null, { file: path.join(ROOT, m.includes('/') ? m : path.join('supabase', 'migrations', m)) })
     psqlAt(db.port, null, { file: path.join(ROOT, 'tests', 'db', 'fingerprint.sql') })
     const sections = Object.keys(SECTIONS).map((s) => `'${s.replace(/'/g, "''")}'`).join(',')
     psqlAt(db.port, `select osp_test.setup(array[${sections}]::text[])`)
@@ -88,6 +89,8 @@ describe('Права на копии прода: отпечаток против
   after(() => db?.stop())
 
   it('совпадает с эталоном с учётом утверждённых исправлений', () => {
+    // ACTUAL_OUT=<файл> — сохранить фактический отпечаток (для разбора и составления approved-fixes).
+    if (process.env.ACTUAL_OUT) fs.writeFileSync(process.env.ACTUAL_OUT, JSON.stringify(actual, null, 2) + '\n')
     if (UPDATE || !fs.existsSync(BASELINE)) {
       fs.mkdirSync(BASELINE_DIR, { recursive: true })
       fs.writeFileSync(BASELINE, JSON.stringify(actual, null, 2) + '\n')
