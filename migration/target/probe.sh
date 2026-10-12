@@ -33,34 +33,9 @@ if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
 fi
 command -v psql >/dev/null || { echo "Нужен psql" >&2; exit 1; }
 
-# Подключение — только из файла: то, что уже есть в окружении, сюда не попадает.
-unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGPASSWORD PGSSLMODE PGSSLROOTCERT PGSERVICE PGOPTIONS PGPASSFILE
-while IFS= read -r line || [ -n "$line" ]; do
-  line="${line%$'\r'}"
-  if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?(PGHOST|PGPORT|PGDATABASE|PGUSER|PGPASSWORD|PGSSLMODE|PGSSLROOTCERT)=(.*)$ ]]; then
-    key="${BASH_REMATCH[2]}"
-    val="${BASH_REMATCH[3]}"
-    if [[ "$val" =~ ^\"(.*)\"$ ]] || [[ "$val" =~ ^\'(.*)\'$ ]]; then val="${BASH_REMATCH[1]}"; fi
-    # Хвостовые пробелы — частая ошибка копирования; в пароле не трогаем.
-    if [ "$key" != PGPASSWORD ]; then val="${val%"${val##*[![:space:]]}"}"; fi
-    printf -v "$key" '%s' "$val"
-    export "${key?}"
-  fi
-done < "$ENV_FILE"
-
-for key in PGHOST PGPORT PGDATABASE PGUSER; do
-  [ -n "${!key:-}" ] || { echo "В файле нет $key" >&2; exit 1; }
-done
-ENV_DIR="$(cd "$(dirname "$ENV_FILE")" && pwd)"
-if [ -z "${PGSSLROOTCERT:-}" ] && [ -f "$ENV_DIR/root.crt" ]; then
-  export PGSSLROOTCERT="$ENV_DIR/root.crt"
-fi
-if [ -z "${PGPASSWORD:-}" ]; then
-  read -rsp 'Пароль базы (не отображается): ' PGPASSWORD
-  echo
-  export PGPASSWORD
-fi
-export PGCONNECT_TIMEOUT="${PROBE_CONNECT_TIMEOUT:-10}"
+# shellcheck source=lib/conn.sh
+. "$HERE/lib/conn.sh"
+target_conn "$ENV_FILE" || exit 1
 export PGAPPNAME=osp-probe-readonly
 
 ERR="$(mktemp)"
@@ -74,16 +49,6 @@ trap cleanup EXIT
 say() {
   REPORT+="$1"$'\n'
   printf '%s\n' "$1"
-}
-
-# Текст ошибки psql без значений из файла и без IP-адресов.
-mask() {
-  local text value
-  text="$(cat)"
-  for value in "${PGPASSWORD:-}" ${PGHOST//,/ } "${PGUSER:-}" "${PGDATABASE:-}"; do
-    if [ -n "$value" ]; then text="${text//"$value"/***}"; fi
-  done
-  printf '%s\n' "$text" | sed -E 's/([0-9]{1,3}\.){3}[0-9]{1,3}/***/g; s/[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{0,4}){3,7}/***/g; s/port [0-9]+/port ***/g'
 }
 
 save_report() {
@@ -147,7 +112,7 @@ connect_failed() {
     *'too many connections'* | *'connection limit exceeded'*)
       say 'FAIL лимит соединений исчерпан' ;;
     *)
-      say "FAIL ошибка подключения: $(head -n 3 "$ERR" | mask | tr '\n' ' ')" ;;
+      say "FAIL ошибка подключения: $(head -n 3 "$ERR" | target_mask | tr '\n' ' ')" ;;
   esac
 }
 
@@ -182,7 +147,7 @@ if out="$(psql -X -q -At -v ON_ERROR_STOP=1 -f "$HERE/probe.sql" 2>"$ERR")"; the
     esac
   done <<< "$out"
 else
-  say "FAIL разведка прервана: $(head -n 3 "$ERR" | mask | tr '\n' ' ')"
+  say "FAIL разведка прервана: $(head -n 3 "$ERR" | target_mask | tr '\n' ' ')"
   status=2
 fi
 

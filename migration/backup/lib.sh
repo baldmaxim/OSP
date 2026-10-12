@@ -8,6 +8,9 @@
 
 BACKUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PG_IMAGE="${PG_IMAGE:-postgres:17-alpine}"
+# PG_INITDB_ARGS — правила сортировки временной базы. По умолчанию builtin C.UTF-8 (быстро и одинаково
+# везде); migration/target/verify.sh задаёт ICU en-US, как на проде: от сортировки зависит содержимое
+# материализованных представлений (DISTINCT ON … ORDER BY по тексту).
 LOCAL_PORT=""
 LOCAL_CONTAINER=""
 
@@ -20,7 +23,7 @@ pg_start() {
   LOCAL_CONTAINER="osp-backup-check-$$-$LOCAL_PORT"
   docker run -d --rm --name "$LOCAL_CONTAINER" -p "127.0.0.1:$LOCAL_PORT:5432" \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
-    -e 'POSTGRES_INITDB_ARGS=-E UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8' \
+    -e "POSTGRES_INITDB_ARGS=${PG_INITDB_ARGS:--E UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8}" \
     "$PG_IMAGE" -c fsync=off -c max_connections=40 >/dev/null
   local i
   for i in $(seq 1 240); do
