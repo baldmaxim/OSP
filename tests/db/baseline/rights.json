@@ -1,5 +1,5 @@
 {
-  "copy": "prod-20261012-143016",
+  "copy": "prod-20261012-151429",
   "candidates": [],
   "classes": {
     "admin": {
@@ -91,6 +91,12 @@
         "delete": "no",
         "insert": "no",
         "select": "all",
+        "update": "no"
+      },
+      "superadmins": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
         "update": "no"
       },
       "tender_docs": {
@@ -542,6 +548,12 @@
         "select": "all",
         "update": "no"
       },
+      "superadmins": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
       "tender_docs": {
         "select": "empty"
       },
@@ -989,6 +1001,12 @@
         "delete": "no",
         "insert": "no",
         "select": "none",
+        "update": "no"
+      },
+      "superadmins": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
         "update": "no"
       },
       "tender_docs": {
@@ -1440,6 +1458,12 @@
         "select": "none",
         "update": "no"
       },
+      "superadmins": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
       "tender_docs": {
         "select": "empty"
       },
@@ -1818,10 +1842,10 @@
         "update": "no"
       },
       "objects": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
       },
       "tenders": {
         "delete": "no",
@@ -1830,10 +1854,10 @@
         "update": "no"
       },
       "contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contracts": {
         "delete": "no",
@@ -1842,16 +1866,16 @@
         "update": "no"
       },
       "employees": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "positions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_rows": {
         "delete": "no",
@@ -1866,22 +1890,22 @@
         "update": "no"
       },
       "work_types": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "dc_requests": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "departments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_issues": {
         "delete": "no",
@@ -1889,26 +1913,32 @@
         "select": "none",
         "update": "no"
       },
+      "superadmins": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
       "tender_docs": {
         "select": "empty"
       },
       "app_settings": {
-        "delete": "yes",
+        "delete": "no",
         "insert": "n/a",
-        "select": "all",
-        "update": "yes"
+        "select": "none",
+        "update": "no"
       },
       "object_areas": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_staff": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_batches": {
         "delete": "no",
@@ -1938,10 +1968,10 @@
         "update": "no"
       },
       "counterparties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "some",
+        "update": "no"
       },
       "task_audit_log": {
         "delete": "no",
@@ -1950,10 +1980,10 @@
         "update": "no"
       },
       "tender_winners": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "client_versions": {
         "delete": "no",
@@ -1962,16 +1992,16 @@
         "update": "no"
       },
       "tender_rd_codes": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "bsm_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clauses": {
         "delete": "no",
@@ -1980,19 +2010,19 @@
         "update": "no"
       },
       "dc_request_tasks": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_cost_plan": {
         "select": "empty"
       },
       "object_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_source_rows": {
         "delete": "no",
@@ -2007,10 +2037,10 @@
         "update": "no"
       },
       "tender_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_doc_links": {
         "select": "empty"
@@ -2019,19 +2049,19 @@
         "select": "empty"
       },
       "general_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry": {
         "select": "all"
       },
       "object_warranties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_participants": {
         "delete": "no",
@@ -2043,10 +2073,10 @@
         "select": "empty"
       },
       "contract_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "doc_check_requests": {
         "delete": "no",
@@ -2061,10 +2091,10 @@
         "update": "n/a"
       },
       "contract_appendices": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_psdc_items": {
         "select": "empty"
@@ -2076,10 +2106,10 @@
         "select": "empty"
       },
       "dc_request_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry_mv": {
         "select": "all"
@@ -2091,16 +2121,16 @@
         "update": "no"
       },
       "counterparty_contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_estimate_items": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry": {
         "select": "all"
@@ -2118,28 +2148,28 @@
         "update": "no"
       },
       "tender_proposal_files": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_relations": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "general_document_links": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_counterparties": {
         "delete": "no",
@@ -2154,10 +2184,10 @@
         "select": "all"
       },
       "tender_vor_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clause_comments": {
         "delete": "no",
@@ -2172,10 +2202,10 @@
         "update": "no"
       },
       "general_document_folders": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_mv": {
         "select": "all"
@@ -2190,10 +2220,10 @@
         "select": "empty"
       },
       "object_warranty_retentions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "doc_check_request_audit_log": {
         "delete": "no",
@@ -2202,10 +2232,10 @@
         "update": "no"
       },
       "object_contract_attachments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_units": {
         "select": "all"
@@ -2226,10 +2256,10 @@
         "select": "all"
       },
       "object_warranty_retention_payments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparties_inn_backup_2026_09_21": {
         "delete": "no",
@@ -2267,40 +2297,40 @@
         "update": "no"
       },
       "objects": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tenders": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contracts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "employees": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "positions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_rows": {
         "delete": "no",
@@ -2315,22 +2345,22 @@
         "update": "no"
       },
       "work_types": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "dc_requests": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "departments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_issues": {
         "delete": "no",
@@ -2338,26 +2368,32 @@
         "select": "none",
         "update": "no"
       },
+      "superadmins": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
       "tender_docs": {
         "select": "empty"
       },
       "app_settings": {
-        "delete": "yes",
+        "delete": "no",
         "insert": "n/a",
-        "select": "all",
-        "update": "yes"
+        "select": "none",
+        "update": "no"
       },
       "object_areas": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_staff": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_batches": {
         "delete": "no",
@@ -2366,10 +2402,10 @@
         "update": "no"
       },
       "s3_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "vor_requests": {
         "delete": "no",
@@ -2387,10 +2423,10 @@
         "update": "no"
       },
       "counterparties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_audit_log": {
         "delete": "no",
@@ -2399,10 +2435,10 @@
         "update": "no"
       },
       "tender_winners": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "client_versions": {
         "delete": "no",
@@ -2411,37 +2447,37 @@
         "update": "no"
       },
       "tender_rd_codes": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "bsm_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clauses": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "dc_request_tasks": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_cost_plan": {
         "select": "empty"
       },
       "object_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_source_rows": {
         "delete": "no",
@@ -2456,10 +2492,10 @@
         "update": "no"
       },
       "tender_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_doc_links": {
         "select": "empty"
@@ -2468,19 +2504,19 @@
         "select": "empty"
       },
       "general_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry": {
         "select": "all"
       },
       "object_warranties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_participants": {
         "delete": "no",
@@ -2492,28 +2528,28 @@
         "select": "empty"
       },
       "contract_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
-      },
-      "doc_check_requests": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
-      },
-      "employee_directory": {
         "delete": "no",
         "insert": "no",
-        "select": "visible",
+        "select": "none",
         "update": "no"
       },
+      "doc_check_requests": {
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
+      },
+      "employee_directory": {
+        "delete": "n/a",
+        "insert": "n/a",
+        "select": "empty",
+        "update": "n/a"
+      },
       "contract_appendices": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_psdc_items": {
         "select": "empty"
@@ -2525,10 +2561,10 @@
         "select": "empty"
       },
       "dc_request_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry_mv": {
         "select": "all"
@@ -2540,61 +2576,61 @@
         "update": "no"
       },
       "counterparty_contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_estimate_items": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry": {
         "select": "all"
       },
       "tender_counterparties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_estimate_items": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_proposal_files": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_relations": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "general_document_links": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_counterparties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "document_check_requests": {
         "select": "empty"
@@ -2603,28 +2639,28 @@
         "select": "all"
       },
       "tender_vor_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clause_comments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clause_disputes": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "general_document_folders": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_mv": {
         "select": "all"
@@ -2632,38 +2668,38 @@
       "tender_rd_document_codes": {
         "delete": "no",
         "insert": "no",
-        "select": "all",
+        "select": "none",
         "update": "no"
       },
       "contract_advance_schedule": {
         "select": "empty"
       },
       "object_warranty_retentions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "doc_check_request_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_contract_attachments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_units": {
         "select": "all"
       },
       "tender_counterparty_proposals": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clause_dispute_clauses": {
         "select": "empty"
@@ -2675,10 +2711,10 @@
         "select": "all"
       },
       "object_warranty_retention_payments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparties_inn_backup_2026_09_21": {
         "delete": "no",
@@ -2716,10 +2752,10 @@
         "update": "no"
       },
       "objects": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tenders": {
         "delete": "no",
@@ -2728,10 +2764,10 @@
         "update": "no"
       },
       "contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contracts": {
         "delete": "no",
@@ -2740,16 +2776,16 @@
         "update": "no"
       },
       "employees": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "positions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_rows": {
         "delete": "no",
@@ -2764,22 +2800,22 @@
         "update": "no"
       },
       "work_types": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "dc_requests": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "departments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_issues": {
         "delete": "no",
@@ -2787,26 +2823,32 @@
         "select": "none",
         "update": "no"
       },
+      "superadmins": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
       "tender_docs": {
         "select": "empty"
       },
       "app_settings": {
-        "delete": "yes",
+        "delete": "no",
         "insert": "n/a",
-        "select": "all",
-        "update": "yes"
+        "select": "none",
+        "update": "no"
       },
       "object_areas": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_staff": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_batches": {
         "delete": "no",
@@ -2836,10 +2878,10 @@
         "update": "no"
       },
       "counterparties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_audit_log": {
         "delete": "no",
@@ -2848,10 +2890,10 @@
         "update": "no"
       },
       "tender_winners": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "client_versions": {
         "delete": "no",
@@ -2860,16 +2902,16 @@
         "update": "no"
       },
       "tender_rd_codes": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "bsm_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clauses": {
         "delete": "no",
@@ -2878,19 +2920,19 @@
         "update": "no"
       },
       "dc_request_tasks": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_cost_plan": {
         "select": "empty"
       },
       "object_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_source_rows": {
         "delete": "no",
@@ -2905,10 +2947,10 @@
         "update": "no"
       },
       "tender_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_doc_links": {
         "select": "empty"
@@ -2917,19 +2959,19 @@
         "select": "empty"
       },
       "general_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry": {
         "select": "all"
       },
       "object_warranties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_participants": {
         "delete": "no",
@@ -2941,10 +2983,10 @@
         "select": "empty"
       },
       "contract_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "doc_check_requests": {
         "delete": "no",
@@ -2959,10 +3001,10 @@
         "update": "n/a"
       },
       "contract_appendices": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_psdc_items": {
         "select": "empty"
@@ -2974,10 +3016,10 @@
         "select": "empty"
       },
       "dc_request_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry_mv": {
         "select": "all"
@@ -2989,16 +3031,16 @@
         "update": "no"
       },
       "counterparty_contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_estimate_items": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry": {
         "select": "all"
@@ -3016,28 +3058,28 @@
         "update": "no"
       },
       "tender_proposal_files": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_relations": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "general_document_links": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_counterparties": {
         "delete": "no",
@@ -3052,10 +3094,10 @@
         "select": "all"
       },
       "tender_vor_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clause_comments": {
         "delete": "no",
@@ -3070,28 +3112,28 @@
         "update": "no"
       },
       "general_document_folders": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_mv": {
         "select": "all"
       },
       "tender_rd_document_codes": {
-        "delete": "yes",
+        "delete": "no",
         "insert": "no",
-        "select": "all",
+        "select": "none",
         "update": "no"
       },
       "contract_advance_schedule": {
         "select": "empty"
       },
       "object_warranty_retentions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "doc_check_request_audit_log": {
         "delete": "no",
@@ -3100,10 +3142,10 @@
         "update": "no"
       },
       "object_contract_attachments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_units": {
         "select": "all"
@@ -3124,10 +3166,10 @@
         "select": "all"
       },
       "object_warranty_retention_payments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparties_inn_backup_2026_09_21": {
         "delete": "no",
@@ -3165,10 +3207,10 @@
         "update": "no"
       },
       "objects": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tenders": {
         "delete": "no",
@@ -3177,10 +3219,10 @@
         "update": "no"
       },
       "contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contracts": {
         "delete": "no",
@@ -3189,16 +3231,16 @@
         "update": "no"
       },
       "employees": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "positions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_rows": {
         "delete": "no",
@@ -3208,27 +3250,27 @@
       },
       "user_roles": {
         "delete": "no",
-        "insert": "yes",
+        "insert": "no",
         "select": "some",
         "update": "no"
       },
       "work_types": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "dc_requests": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "departments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_issues": {
         "delete": "no",
@@ -3236,26 +3278,32 @@
         "select": "none",
         "update": "no"
       },
+      "superadmins": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
       "tender_docs": {
         "select": "empty"
       },
       "app_settings": {
-        "delete": "yes",
+        "delete": "no",
         "insert": "n/a",
-        "select": "all",
-        "update": "yes"
+        "select": "none",
+        "update": "no"
       },
       "object_areas": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_staff": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_batches": {
         "delete": "no",
@@ -3285,10 +3333,10 @@
         "update": "no"
       },
       "counterparties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_audit_log": {
         "delete": "no",
@@ -3297,10 +3345,10 @@
         "update": "no"
       },
       "tender_winners": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "client_versions": {
         "delete": "no",
@@ -3309,16 +3357,16 @@
         "update": "no"
       },
       "tender_rd_codes": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "bsm_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clauses": {
         "delete": "no",
@@ -3327,19 +3375,19 @@
         "update": "no"
       },
       "dc_request_tasks": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_cost_plan": {
         "select": "empty"
       },
       "object_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_source_rows": {
         "delete": "no",
@@ -3354,10 +3402,10 @@
         "update": "no"
       },
       "tender_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_doc_links": {
         "select": "empty"
@@ -3366,19 +3414,19 @@
         "select": "empty"
       },
       "general_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry": {
         "select": "all"
       },
       "object_warranties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_participants": {
         "delete": "no",
@@ -3390,10 +3438,10 @@
         "select": "empty"
       },
       "contract_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "doc_check_requests": {
         "delete": "no",
@@ -3408,10 +3456,10 @@
         "update": "n/a"
       },
       "contract_appendices": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_psdc_items": {
         "select": "empty"
@@ -3423,10 +3471,10 @@
         "select": "empty"
       },
       "dc_request_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry_mv": {
         "select": "all"
@@ -3438,16 +3486,16 @@
         "update": "no"
       },
       "counterparty_contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_estimate_items": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry": {
         "select": "all"
@@ -3465,28 +3513,28 @@
         "update": "no"
       },
       "tender_proposal_files": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_relations": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "general_document_links": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_counterparties": {
         "delete": "no",
@@ -3501,10 +3549,10 @@
         "select": "all"
       },
       "tender_vor_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clause_comments": {
         "delete": "no",
@@ -3519,28 +3567,28 @@
         "update": "no"
       },
       "general_document_folders": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_mv": {
         "select": "all"
       },
       "tender_rd_document_codes": {
-        "delete": "yes",
+        "delete": "no",
         "insert": "no",
-        "select": "all",
+        "select": "none",
         "update": "no"
       },
       "contract_advance_schedule": {
         "select": "empty"
       },
       "object_warranty_retentions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "doc_check_request_audit_log": {
         "delete": "no",
@@ -3549,10 +3597,10 @@
         "update": "no"
       },
       "object_contract_attachments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_units": {
         "select": "all"
@@ -3573,10 +3621,10 @@
         "select": "all"
       },
       "object_warranty_retention_payments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparties_inn_backup_2026_09_21": {
         "delete": "no",
@@ -3614,10 +3662,10 @@
         "update": "no"
       },
       "objects": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tenders": {
         "delete": "no",
@@ -3626,10 +3674,10 @@
         "update": "no"
       },
       "contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contracts": {
         "delete": "no",
@@ -3638,16 +3686,16 @@
         "update": "no"
       },
       "employees": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "positions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_rows": {
         "delete": "no",
@@ -3662,22 +3710,22 @@
         "update": "no"
       },
       "work_types": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "dc_requests": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "departments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_issues": {
         "delete": "no",
@@ -3685,26 +3733,32 @@
         "select": "none",
         "update": "no"
       },
+      "superadmins": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
       "tender_docs": {
         "select": "empty"
       },
       "app_settings": {
-        "delete": "yes",
+        "delete": "no",
         "insert": "n/a",
-        "select": "all",
-        "update": "yes"
+        "select": "none",
+        "update": "no"
       },
       "object_areas": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_staff": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_batches": {
         "delete": "no",
@@ -3734,10 +3788,10 @@
         "update": "no"
       },
       "counterparties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_audit_log": {
         "delete": "no",
@@ -3746,10 +3800,10 @@
         "update": "no"
       },
       "tender_winners": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "client_versions": {
         "delete": "no",
@@ -3758,16 +3812,16 @@
         "update": "no"
       },
       "tender_rd_codes": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "bsm_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clauses": {
         "delete": "no",
@@ -3776,19 +3830,19 @@
         "update": "no"
       },
       "dc_request_tasks": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_cost_plan": {
         "select": "empty"
       },
       "object_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "psdc_source_rows": {
         "delete": "no",
@@ -3803,10 +3857,10 @@
         "update": "no"
       },
       "tender_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_doc_links": {
         "select": "empty"
@@ -3815,19 +3869,19 @@
         "select": "empty"
       },
       "general_documents": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry": {
         "select": "all"
       },
       "object_warranties": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_participants": {
         "delete": "no",
@@ -3839,10 +3893,10 @@
         "select": "empty"
       },
       "contract_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "doc_check_requests": {
         "delete": "no",
@@ -3857,10 +3911,10 @@
         "update": "n/a"
       },
       "contract_appendices": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_psdc_items": {
         "select": "empty"
@@ -3872,10 +3926,10 @@
         "select": "empty"
       },
       "dc_request_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "kp_rates_registry_mv": {
         "select": "all"
@@ -3887,16 +3941,16 @@
         "update": "no"
       },
       "counterparty_contacts": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "object_estimate_items": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry": {
         "select": "all"
@@ -3914,28 +3968,28 @@
         "update": "no"
       },
       "tender_proposal_files": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_audit_log": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparty_relations": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "general_document_links": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_counterparties": {
         "delete": "no",
@@ -3950,10 +4004,10 @@
         "select": "all"
       },
       "tender_vor_supply_rates": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "contract_clause_comments": {
         "delete": "no",
@@ -3968,28 +4022,28 @@
         "update": "no"
       },
       "general_document_folders": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_mv": {
         "select": "all"
       },
       "tender_rd_document_codes": {
-        "delete": "yes",
+        "delete": "no",
         "insert": "no",
-        "select": "all",
+        "select": "none",
         "update": "no"
       },
       "contract_advance_schedule": {
         "select": "empty"
       },
       "object_warranty_retentions": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "doc_check_request_audit_log": {
         "delete": "no",
@@ -3998,10 +4052,10 @@
         "update": "no"
       },
       "object_contract_attachments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "supply_rates_registry_units": {
         "select": "all"
@@ -4022,10 +4076,10 @@
         "select": "all"
       },
       "object_warranty_retention_payments": {
-        "delete": "yes",
-        "insert": "yes",
-        "select": "all",
-        "update": "yes"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "counterparties_inn_backup_2026_09_21": {
         "delete": "no",
@@ -4129,6 +4183,12 @@
         "update": "no"
       },
       "psdc_issues": {
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
+      },
+      "superadmins": {
         "delete": "no",
         "insert": "no",
         "select": "err:42501",
@@ -4578,6 +4638,12 @@
         "update": "yes"
       },
       "psdc_issues": {
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
+      },
+      "superadmins": {
         "delete": "yes",
         "insert": "yes",
         "select": "all",
