@@ -24,6 +24,7 @@ npm run test:deploy  # deploy/publish.sh и rollback.sh на временных 
 npm run test:backup  # migration/backup: копия, проверка восстановлением, прогон миграций; migration/target: разведка базы (Docker)
 npm run test:db      # слепок схемы прода + «отпечаток» прав на копии прода против tests/db/baseline (Docker)
 npm run test:api     # свой API server/osp-api (нужен npm ci --prefix server/osp-api; MinIO — если есть образ)
+npm run hooks:install # один раз на машине: проверки перед git push (lint, check:transport, test:api)
 ```
 
 **Тесты** — встроенный `node --test`. Нужны PostgreSQL 17+ и Chromium:
@@ -74,7 +75,10 @@ src/
     ├── supabaseClient.js # единственный createClient; импортируют только адаптеры
     └── clientErrors.js   # наблюдение за отказами для телеметрии
 
-server/osp-api/           # свой API (Node, Fastify): маршруты вместо Edge Functions, README там же
+server/osp-api/           # свой API (Node, Fastify): маршруты вместо Edge Functions, README там же.
+                          # Права — на маршруте (src/lib/access.js): без config.access маршрут не
+                          # регистрируется; открытые адреса — только из src/open-routes.js; тело — по схеме
+                          # zod. Эталоны прав — tests/osp-api/baseline (UPDATE_BASELINE=1 npm run test:api)
 supabase/                 # Database schemas (NOT in src/)
 ├── schemas/              # Table definitions (preferred for reading)
 └── migrations/           # Chronological schema changes

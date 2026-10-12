@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Проверки перед отправкой в GitHub: стиль, доступ к серверу только через src/api/, права на маршрутах
+# своего API. Включается один раз на машине: npm run hooks:install. Обойти в аварии: git push --no-verify.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+if [ ! -d server/osp-api/node_modules/fastify ]; then
+  echo "pre-push: нет зависимостей своего API — без них права маршрутов не проверить." >&2
+  echo "          Выполните: npm ci --prefix server/osp-api" >&2
+  exit 1
+fi
+echo "pre-push: lint…";            npm run --silent lint
+echo "pre-push: check:transport…"; npm run --silent check:transport
+echo "pre-push: test:api…";        npm run --silent test:api > /tmp/osp-pre-push.$$.log 2>&1 || {
+  grep -E '^✖|✖|not ok|Error' /tmp/osp-pre-push.$$.log | head -n 30 >&2
+  rm -f /tmp/osp-pre-push.$$.log
+  echo "pre-push: тесты своего API не прошли — отправка остановлена" >&2
+  exit 1
+}
+rm -f /tmp/osp-pre-push.$$.log
+echo "pre-push: всё зелёное"

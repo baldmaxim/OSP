@@ -4,6 +4,8 @@
 // Ключ — заголовок X-API-Key или параметр ?key= (ради Excel/Power Query). Ключи — RATES_API_KEYS,
 // через запятую. Адрес с ?key= не логируется (app.js пишет в журнал только шаблон маршрута).
 import { safeEqual } from '../lib/keys.js'
+import { access } from '../lib/access.js'
+import { OPEN_ROUTES } from '../open-routes.js'
 
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -54,19 +56,31 @@ function keyIndex(config, request, params) {
 }
 
 export function registerRates(app, { config, getServiceClient, limiters }) {
-  const handler = async (request, reply) => {
-    reply.headers(CORS_HEADERS)
-    if (request.method === 'OPTIONS') return reply.type('text/plain; charset=utf-8').send('ok')
+  app.decorateRequest('ratesKey', -1)
 
-    const url = new URL(request.url, 'http://localhost')
-    const p = url.searchParams
-    const key = keyIndex(config, request, p)
+  // Проверка ключа объявлена на маршруте (lib/access.js) и выполняется до обработчика. Заголовки CORS —
+  // и на отказе: Excel и браузер должны увидеть текст ошибки.
+  const checkKey = async (request, reply) => {
+    reply.headers(CORS_HEADERS)
+    const key = keyIndex(config, request, new URL(request.url, 'http://localhost').searchParams)
     if (key < 0) {
-      return reply.code(401).send({ error: 'Неверный или отсутствующий ключ доступа (X-API-Key)' })
+      reply.code(401).send({ error: 'Неверный или отсутствующий ключ доступа (X-API-Key)' })
+      return false
     }
     if (!limiters.ratesRate.take(`key${key}`)) {
-      return reply.code(429).send({ error: 'Слишком много запросов — не чаще 60 в минуту на ключ' })
+      reply.code(429).send({ error: 'Слишком много запросов — не чаще 60 в минуту на ключ' })
+      return false
     }
+    request.ratesKey = key
+    return true
+  }
+
+  const preflight = async (request, reply) => reply.headers(CORS_HEADERS).type('text/plain; charset=utf-8').send('ok')
+
+  const handler = async (request, reply) => {
+    const url = new URL(request.url, 'http://localhost')
+    const p = url.searchParams
+    const key = request.ratesKey
 
     const segments = url.pathname.split('/').filter(Boolean)
     const resource = segments[segments.length - 1] || ''
@@ -154,8 +168,9 @@ export function registerRates(app, { config, getServiceClient, limiters }) {
     }
   }
 
+  const reason = (method, url) => OPEN_ROUTES.find((r) => r.method === method && r.url === url).reason
   for (const url of ['/api/rates', '/api/rates/*']) {
-    app.get(url, handler)
-    app.options(url, handler)
+    app.route({ method: 'GET', url, config: { access: access.apiKey({ reason: reason('GET', url), check: checkKey }) }, handler })
+    app.route({ method: 'OPTIONS', url, config: { access: access.open(reason('OPTIONS', url)) }, handler: preflight })
   }
 }

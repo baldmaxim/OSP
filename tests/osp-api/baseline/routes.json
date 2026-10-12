@@ -1,0 +1,89 @@
+[
+  {
+    "method": "POST",
+    "url": "/api/fn/ai-assist",
+    "kind": "user",
+    "require": "employee",
+    "reason": null,
+    "body": [
+      "action",
+      "clause_label",
+      "comments",
+      "contract",
+      "counterparty_name",
+      "counterparty_text",
+      "final_text",
+      "mode",
+      "our_text"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/fn/s3-presign",
+    "kind": "user",
+    "require": "approved",
+    "reason": null,
+    "body": [
+      "action",
+      "category",
+      "download",
+      "file_name",
+      "mime_type",
+      "notes",
+      "operation_id",
+      "owner_id",
+      "owner_type",
+      "s3_key",
+      "sha256",
+      "size_bytes"
+    ]
+  },
+  {
+    "method": "GET",
+    "url": "/api/health",
+    "kind": "open",
+    "require": null,
+    "reason": "Проверка «служба жива» для выкладки и мониторинга: отдаёт только признаки настройки, без данных",
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/rates",
+    "kind": "apiKey",
+    "require": null,
+    "reason": "Реестр расценок для смежного отдела: межсистемный ключ X-API-Key, только чтение, колонки перечислены в коде",
+    "body": null
+  },
+  {
+    "method": "OPTIONS",
+    "url": "/api/rates",
+    "kind": "open",
+    "require": null,
+    "reason": "CORS-предзапрос к реестру расценок: данных не отдаёт",
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/rates/*",
+    "kind": "apiKey",
+    "require": null,
+    "reason": "Реестр расценок для смежного отдела: межсистемный ключ X-API-Key, только чтение, колонки перечислены в коде",
+    "body": null
+  },
+  {
+    "method": "OPTIONS",
+    "url": "/api/rates/*",
+    "kind": "open",
+    "require": null,
+    "reason": "CORS-предзапрос к реестру расценок: данных не отдаёт",
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/ready",
+    "kind": "open",
+    "require": null,
+    "reason": "Проверка зависимостей при выкладке: отвечает только запросам с самого сервера, через nginx — 404",
+    "body": null
+  }
+]

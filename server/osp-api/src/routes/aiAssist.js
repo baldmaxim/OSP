@@ -4,8 +4,13 @@
 //   action=clause_suggest { mode, clause_label, our_text, counterparty_text, final_text,
 //                           counterparty_name, contract, comments } → { text, model, usage }
 //
+// Права объявлены на маршруте (lib/access.js): вошедший сотрудник; тело — по схеме AI_BODY.
 // Отличие от функции — доступ: функция пускала любого вошедшего (inventory § 1), здесь только
 // одобренного сотрудника, как и в интерфейсе (кнопка «ИИ» видна только сотруднику).
+import { z } from 'zod'
+import { access, isEmployeeRole } from '../lib/access.js'
+
+export { isEmployeeRole }
 export const MODEL = 'claude-opus-5'
 // Юридическая формулировка — задача не длинная: обычного запроса достаточно, 16k с запасом.
 export const MAX_TOKENS = 16000
@@ -74,26 +79,28 @@ export function buildUserPrompt(b) {
   return lines.join('\n')
 }
 
-// Сотрудник — одобрен, без организации-контрагента и не с ролью подрядчика (правило
-// osp_is_employee из миграции 20261010). Администратор одобрен и без организации.
-export function isEmployeeRole(row) {
-  return !!row && row.is_approved === true && !row.counterparty_id && row.role !== 'contractor'
-}
+// Поля запроса — явным перечнем: остальное отбрасывается до обработчика. Значения проверяет обработчик
+// (тексты отказов — как у прежней функции).
+const any = z.unknown().optional()
+export const AI_BODY = z.object({
+  action: any,
+  mode: any,
+  clause_label: any,
+  our_text: any,
+  counterparty_text: any,
+  final_text: any,
+  counterparty_name: any,
+  contract: z.object({ number: any, date: any, object: any, work: any }).optional().catch(undefined),
+  comments: z.array(z.object({ side: any, name: any, body: any }).catch({})).optional().catch(undefined),
+})
 
-export function registerAiAssist(app, { config, authenticate, getAnthropic, limiters }) {
-  app.post('/api/fn/ai-assist', async (request, reply) => {
-    const auth = await authenticate(request, reply)
-    if (!auth) return reply
-    const { supabase, user } = auth
-
-    const { data: roleRow } = await supabase
-      .from('user_roles')
-      .select('role, counterparty_id, is_approved')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    if (!isEmployeeRole(roleRow)) {
-      return reply.code(403).send({ error: 'ИИ-помощник доступен только сотрудникам' })
-    }
+export function registerAiAssist(app, { config, getAnthropic, limiters }) {
+  app.route({ method: 'POST', url: '/api/fn/ai-assist', config: {
+    // Только сотрудник: одобрен, не заблокирован, не подрядчик.
+    access: access.user({ require: 'employee', deny: 'ИИ-помощник доступен только сотрудникам' }),
+    body: AI_BODY,
+  }, handler: async (request, reply) => {
+    const { user } = request.auth
 
     if (!config.anthropicApiKey) {
       return reply.code(500).send({ error: 'ANTHROPIC_API_KEY не задан в секретах функции' })
@@ -161,5 +168,5 @@ export function registerAiAssist(app, { config, authenticate, getAnthropic, limi
       releaseUser()
       releaseTotal()
     }
-  })
+  } })
 }

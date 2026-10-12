@@ -12,6 +12,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { configuredParts, READY_PARTS } from './config.js'
 import { bearerToken } from './lib/keys.js'
 import { createRateLimit, createConcurrency, DEFAULT_LIMITS } from './lib/limits.js'
+import { access, installAccess } from './lib/access.js'
+import { OPEN_ROUTES } from './open-routes.js'
 import { registerS3Presign } from './routes/s3Presign.js'
 import { registerAiAssist } from './routes/aiAssist.js'
 import { registerRates } from './routes/rates.js'
@@ -144,13 +146,23 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     }, 'request')
   })
 
-  app.get('/api/health', async () => ({ ok: true, service: 'osp-api', configured: configuredParts(config) }))
+  // Права — на маршруте: без config.access маршрут не регистрируется (закрыто по умолчанию),
+  // открытые адреса — только из утверждённого списка. Ставится до первого маршрута.
+  installAccess(app, { authenticate, limiters, openRoutes: OPEN_ROUTES })
+  const openReason = (method, url) => OPEN_ROUTES.find((r) => r.method === method && r.url === url).reason
+
+  app.route({
+    method: 'GET',
+    url: '/api/health',
+    config: { access: access.open(openReason('GET', '/api/health')) },
+    handler: async () => ({ ok: true, service: 'osp-api', configured: configuredParts(config) }),
+  })
 
   // Готовность: зависимости действительно отвечают с текущими ключами. 200 — только если каждая
   // обязательная (config.required, OSP_API_REQUIRE) ответила «ok»; необязательные проверяются и
   // показываются, но не решают. Только изнутри сервера (api-deploy.sh, ручная проверка): через nginx
   // (есть X-Forwarded-For) — 404.
-  app.get('/api/ready', async (request, reply) => {
+  app.route({ method: 'GET', url: '/api/ready', config: { access: access.open(openReason('GET', '/api/ready')) }, handler: async (request, reply) => {
     if (request.headers['x-forwarded-for'] || !LOOPBACK.has(request.socket.remoteAddress)) {
       return reply.code(404).send({ error: 'Not found' })
     }
@@ -176,9 +188,9 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     const required = config.required || READY_PARTS
     const ok = required.every((name) => checks[name] === 'ok')
     return reply.code(ok ? 200 : 503).send({ ok, checks, required })
-  })
+  } })
 
-  const ctx = { config, authenticate, getS3, getAnthropic, getServiceClient, limiters }
+  const ctx = { config, getS3, getAnthropic, getServiceClient, limiters }
   registerS3Presign(app, ctx)
   registerAiAssist(app, ctx)
   registerRates(app, ctx)

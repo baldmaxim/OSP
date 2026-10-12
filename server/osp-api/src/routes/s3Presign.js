@@ -21,6 +21,8 @@
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { sanitizeFileName } from '../lib/files.js'
+import { z } from 'zod'
+import { access } from '../lib/access.js'
 
 // owner_type → каталог в бакете. Расширять вместе с OWNER_TABLES и WRITE_RULES.
 export const FOLDER_BY_OWNER = {
@@ -131,24 +133,39 @@ const sameFile = (row, file) => FINGERPRINT.every((k) => String(row[k] ?? '') ==
 const keyFor = (file) =>
   `${FOLDER_BY_OWNER[file.owner_type]}/${file.owner_id}/${file.operation_id}-${sanitizeFileName(file.file_name)}`
 
-export function registerS3Presign(app, { config, authenticate, getS3, limiters }) {
-  app.post('/api/fn/s3-presign', async (request, reply) => {
-    const auth = await authenticate(request, reply)
-    if (!auth) return reply
-    const { supabase, user } = auth
-    if (!limiters.presignRate.take(user.id)) {
-      return reply.code(429).send({ error: 'Слишком много запросов к файлам — подождите минуту' })
-    }
+// Поля запроса — явным перечнем: остальное отбрасывается до обработчика. Значения проверяет обработчик
+// (readFile и ветки действий; тексты отказов — как у прежней функции).
+const any = z.unknown().optional()
+export const PRESIGN_BODY = z.object({
+  action: any,
+  owner_type: any,
+  owner_id: any,
+  file_name: any,
+  operation_id: any,
+  size_bytes: any,
+  sha256: any,
+  category: any,
+  mime_type: any,
+  notes: any,
+  s3_key: any,
+  download: any,
+})
 
-    const { data: roleRow } = await supabase
-      .from('user_roles')
-      .select('counterparty_id, is_approved, is_blocked, full_name')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    if (!roleRow || roleRow.is_approved === false || roleRow.is_blocked === true) {
-      return reply.code(403).send({ error: 'Forbidden' })
-    }
-    const isContractor = !!roleRow.counterparty_id
+export function registerS3Presign(app, { config, getS3 }) {
+  app.route({ method: 'POST', url: '/api/fn/s3-presign', config: {
+    // Вошедший, одобренный и не заблокированный: сотрудник или подрядчик. Что именно ему можно с
+    // конкретным файлом (чужой договор, право раздела) — ниже, по данным записи.
+    access: access.user({
+      require: 'approved',
+      deny: 'Forbidden',
+      rate: { limiter: 'presignRate', deny: 'Слишком много запросов к файлам — подождите минуту' },
+    }),
+    body: PRESIGN_BODY,
+  }, handler: async (request, reply) => {
+    const { supabase, user, roleRow } = request.auth
+    // Подрядчик — по организации или по роли: учётка с ролью подрядчика без организации не получает
+    // действий сотрудника (раньше её останавливала только проверка права раздела в базе).
+    const isContractor = !!roleRow.counterparty_id || roleRow.role === 'contractor'
 
     const body = request.body
     if (isContractor && body.action !== 'download') {
@@ -346,5 +363,5 @@ export function registerS3Presign(app, { config, authenticate, getS3, limiters }
       request.log.error({ msg: e?.message }, 's3-presign')
       return reply.code(500).send({ error: e?.message || 'Internal error' })
     }
-  })
+  } })
 }
