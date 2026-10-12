@@ -1,5 +1,6 @@
 -- Проверки перед загрузкой: только чтение. Каждая строка — «OK …» или «FAIL …»; при любом FAIL
 -- load.sh не начинает загрузку. Имена чужих объектов не выводятся — только счётчики.
+-- Переменные psql: with_rights (1 — права и политики загружаются, 0 — нет), runtime_role.
 \set ON_ERROR_STOP on
 BEGIN TRANSACTION READ ONLY;
 
@@ -10,6 +11,23 @@ select case when d.datdba = r.oid then 'OK' else 'FAIL' end || ' роль под
 from pg_database d, pg_roles r
 where d.datname = current_database() and r.rolname = current_user;
 
+-- Кластер общий: кто, кроме владельца, дотянется до базы. Права на саму базу ведёт консоль Яндекса —
+-- здесь они только проверяются. (Что база — та самая, проверяет отпечаток: lib/conn.sh, pin.sh.)
+select case when not has_database_privilege('public', current_database(), 'CONNECT') then 'OK' else 'FAIL' end
+    || ' право подключения к базе у «всех» (PUBLIC) снято';
+
+select case when not has_schema_privilege('public', 'public', 'CREATE') then 'OK' else 'FAIL' end
+    || ' создавать объекты в схеме public «все» не могут';
+
+-- Не отказ: новые объекты создаются без выданных прав, чужой сеанс их не получит. Но знать нужно.
+select case when s.n = 0 then 'OK сеансов других обычных учёток в базе нет'
+            else 'ВНИМАНИЕ в базе сеансы других обычных учёток: ' || s.n || ' (имена не показываю)' end
+from (select count(*) as n
+      from pg_stat_activity a join pg_roles r on r.oid = a.usesysid
+      where a.datid = (select oid from pg_database where datname = current_database())
+        and a.pid <> pg_backend_pid() and r.rolname <> current_user and not r.rolsuper) s;
+
+\if :with_rights
 select case when exists (select 1 from pg_roles where rolname = :'runtime_role') then 'OK' else 'FAIL' end
     || ' роль приложения ' || :'runtime_role' || ' существует (создаётся пользователем в консоли Яндекса)';
 
@@ -19,6 +37,7 @@ select case when :'runtime_role' <> current_user
                                from pg_roles where rolname = :'runtime_role'), false)
             then 'OK' else 'FAIL' end
     || ' роль приложения — не владелец, не суперпользователь, не обходит RLS и не состоит в роли владельца';
+\endif
 
 select case when e.extname is not null then 'OK' else 'FAIL' end
     || ' расширение ' || x.name || ' включено (включается в консоли Яндекса)'

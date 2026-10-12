@@ -56,7 +56,7 @@ describe('ПСДЦ: интерфейс', { skip, timeout: 240000 }, () => {
     db = setupDatabase()
     lawyer = createUser(db, { role: 'lawyer', canEdit: true, name: 'Юрист Тестов' })
     viewer = createUser(db, { role: 'economist', canView: true, canEdit: false, name: 'Экономист' })
-    const apiPort = 47000 + Math.floor(Math.random() * 1000)
+    const apiPort = 31000 + Math.floor(Math.random() * 500) // ниже портов исходящих соединений (32768–60999)
     api = await startApiServer(db, { port: apiPort })
 
     vite = await createServer({
@@ -81,7 +81,7 @@ describe('ПСДЦ: интерфейс', { skip, timeout: 240000 }, () => {
         },
         transformIndexHtml: (html) => html.replace('<head>', `<head><script>window.__PSDC_API__ = 'http://127.0.0.1:${apiPort}/'</script>`),
       }],
-      server: { host: '127.0.0.1', port: 48000 + Math.floor(Math.random() * 1000), strictPort: true, fs: { allow: [ROOT] } },
+      server: { host: '127.0.0.1', port: 31500 + Math.floor(Math.random() * 500), strictPort: true, fs: { allow: [ROOT] } },
       optimizeDeps: { include: ['react', 'react-dom/client', 'react-router-dom', 'xlsx', 'xlsx-js-style', 'pizzip', 'file-saver'] },
     })
     await vite.listen()

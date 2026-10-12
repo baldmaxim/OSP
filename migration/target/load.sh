@@ -4,18 +4,26 @@
 #
 #   bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal
 #   bash migration/target/load.sh <файл подключения> <копия.dump> --status final
+#   bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal --without-rights
 #
 # rehearsal — репетиция: загруженное можно убрать (reset.sh). final — настоящий перенос: после него
 # reset.sh отказывает всегда.
+# --without-rights — без роли приложения: данные и структура загружаются целиком, политики и выдача
+# прав — нет, а право «всем» на функции и типы снимается (sql/load-lockdown.sql): обычные учётки
+# кластера данные портала не читают и его функции не вызывают. Только для репетиции: настоящий перенос
+# в таком виде — отдельным решением.
 #
 # Что делает:
-#   1. Проверки без записи (sql/load-preflight.sql): роль — владелец базы; роль приложения есть и не
-#      владеет ничем; расширения включены; база пустая. Любой отказ — загрузка не начинается.
+#   0. База — та, что закреплена отпечатком (pin.sh): учётка открывает несколько баз кластера.
+#   1. Проверки без записи (sql/load-preflight.sql): роль — владелец базы; подключение к базе у «всех»
+#      снято; роль приложения есть и не владеет ничем (если права загружаются); расширения включены;
+#      база пустая. Любой отказ — загрузка не начинается.
 #   2. Копия — только проверенная (рядом лежит отметка .verified от migration/backup/verify.sh).
 #   3. Данные, таблицы, функции, индексы — как в копии, без правок. Права и политики — с заменой роли
 #      Supabase authenticated на роль приложения; anon и service_role не переносятся (lib/rewrite.mjs).
 #   4. Одна транзакция: схема auth (compat/auth.sql), отметка и часовой пояс UTC (sql/load-begin.sql),
-#      копия, права, перечень созданного (sql/load-end.sql).
+#      копия, права (sql/load-rights.sql и права из копии) либо закрытие функций (sql/load-lockdown.sql),
+#      перечень созданного (sql/load-end.sql).
 # Ролей и расширений не создаёт: в Яндексе это делается в консоли.
 # В вывод и отчёт (migration/target/reports/load-<время>.txt) идут только счётчики и имена объектов.
 # Выход: 0 — загружено; 1 — ошибка запуска; 2 — нет подключения; 3 — проверки не пройдены;
@@ -29,7 +37,7 @@ REPORT_DIR="${PROBE_REPORT_DIR:-$HERE/reports}"
 . "$HERE/lib/conn.sh"
 
 usage() {
-  echo "Использование: bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal|final [--runtime-role osp_runtime]" >&2
+  echo "Использование: bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal|final [--runtime-role osp_runtime | --without-rights]" >&2
   exit 1
 }
 
@@ -38,16 +46,29 @@ DUMP="${2:-}"
 [ -n "$ENV_FILE" ] && [ -n "$DUMP" ] || usage
 shift 2
 STATUS=""
-RUNTIME_ROLE="osp_runtime"
+RUNTIME_ROLE=""
+WITH_RIGHTS=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --status) STATUS="${2:-}"; shift 2 ;;
-    --runtime-role) RUNTIME_ROLE="${2:-}"; shift 2 ;;
+    --runtime-role) RUNTIME_ROLE="${2:-}"; [ -n "$RUNTIME_ROLE" ] || usage; shift 2 ;;
+    --without-rights) WITH_RIGHTS=0; shift ;;
     *) usage ;;
   esac
 done
 case "$STATUS" in rehearsal | final) ;; *) usage ;; esac
-[[ "$RUNTIME_ROLE" =~ ^[a-z_][a-z0-9_]*$ ]] || { echo "Недопустимое имя роли приложения" >&2; exit 1; }
+if [ "$WITH_RIGHTS" = 0 ]; then
+  [ -z "$RUNTIME_ROLE" ] || { echo "--without-rights и --runtime-role вместе не задаются: без прав роль приложения не нужна" >&2; exit 1; }
+  if [ "$STATUS" = final ]; then
+    echo "Настоящий перенос (final) без прав не выполняется: такая база годится в работу, только когда права проверяет backend, — это отдельное решение" >&2
+    exit 1
+  fi
+  RIGHTS=skipped
+else
+  RUNTIME_ROLE="${RUNTIME_ROLE:-osp_runtime}"
+  [[ "$RUNTIME_ROLE" =~ ^[a-z_][a-z0-9_]*$ ]] || { echo "Недопустимое имя роли приложения" >&2; exit 1; }
+  RIGHTS=loaded
+fi
 for bin in psql pg_restore node sha256sum; do
   command -v "$bin" >/dev/null || { echo "Нужен $bin" >&2; exit 1; }
 done
@@ -90,10 +111,26 @@ first_error() {
 SHA="$(sha256sum "$DUMP" | cut -d' ' -f1)"
 COMMIT="$(git -C "$ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
 say "Загрузка копии в выданную базу — статус $STATUS. $(date -u '+%Y-%m-%d %H:%M') UTC"
-say "ИНФО копия: $(basename "$DUMP"), sha256 ${SHA:0:12}…; роль приложения: $RUNTIME_ROLE"
+if [ "$WITH_RIGHTS" = 1 ]; then
+  say "ИНФО копия: $(basename "$DUMP"), sha256 ${SHA:0:12}…; роль приложения: $RUNTIME_ROLE"
+else
+  say "ИНФО копия: $(basename "$DUMP"), sha256 ${SHA:0:12}…; без прав: роли приложения нет"
+fi
+
+# 0. Та ли это база.
+pin_rc=0
+target_pin_check "$ENV_FILE" || pin_rc=$?
+case "$pin_rc" in
+  0) say "OK база — та, что закреплена отпечатком" ;;
+  1) say "FAIL база не закреплена: сначала bash migration/target/pin.sh <файл подключения> --confirm"
+     say "Загрузка не начата: в базе ничего не изменилось."; save_report; exit 3 ;;
+  2) say "FAIL нет подключения: отпечаток базы не прочитан"; save_report; exit 2 ;;
+  *) say "FAIL это другая база: отпечаток не совпадает с закреплённым (адрес, база или владелец не те)"
+     say "Загрузка не начата: в базе ничего не изменилось."; save_report; exit 3 ;;
+esac
 
 # 1. Проверки без записи.
-if ! pre="$(psql -X -q -At -v ON_ERROR_STOP=1 -v runtime_role="$RUNTIME_ROLE" -f "$HERE/sql/load-preflight.sql" 2>"$WORK/err")"; then
+if ! pre="$(psql -X -q -At -v ON_ERROR_STOP=1 -v with_rights="$WITH_RIGHTS" -v runtime_role="$RUNTIME_ROLE" -f "$HERE/sql/load-preflight.sql" 2>"$WORK/err")"; then
   say "FAIL нет подключения или проверки не выполнились: $(first_error "$WORK/err")"
   save_report
   exit 2
@@ -101,7 +138,7 @@ fi
 failed=0
 while IFS= read -r line; do
   case "$line" in
-    OK*) say "$line" ;;
+    OK* | ВНИМАНИЕ*) say "$line" ;;
     FAIL*) say "$line"; failed=1 ;;
   esac
 done <<< "$pre"
@@ -111,10 +148,14 @@ if [ "$failed" = 1 ]; then
   exit 3
 fi
 
-# 2. Копия → SQL: основное без правок, права — с заменой ролей.
+# 2. Копия → SQL: основное без правок, права — с заменой ролей (или не загружаются вовсе).
 pg_restore --list "$DUMP" > "$WORK/toc"
 node "$HERE/lib/rewrite.mjs" split "$WORK/toc" "$WORK/main.list" "$WORK/acl.list" "$WORK/split.json"
 pg_restore --no-owner -L "$WORK/main.list" -f "$WORK/main.sql" "$DUMP"
+if [ "$WITH_RIGHTS" = 0 ]; then
+  say "ИНФО записей в копии: $(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).entries)' "$WORK/split.json"); политики и выдача прав не загружаются: записей о них в копии — $(grep -c '^[0-9]' "$WORK/acl.list" || true)"
+  say "ИНФО право «всем» на функции и типы снимается: обычным учёткам кластера данные и функции портала закрыты"
+else
 pg_restore --no-owner -L "$WORK/acl.list" -f "$WORK/acl.raw.sql" "$DUMP"
 node "$HERE/lib/rewrite.mjs" acl "$WORK/acl.raw.sql" "$WORK/acl.sql" "$WORK/acl.json" "$RUNTIME_ROLE"
 say "ИНФО $(node -e '
@@ -125,9 +166,16 @@ say "ИНФО $(node -e '
     ` (${a.policies.dropped.map((p) => `${p.table} для ${p.roles.join("+")}`).join("; ") || "—"})`)
   console.log(`ИНФО выдач прав роли приложения: ${a.grants.toRuntime}; не перенесено выдач: ${dropped}; прав по умолчанию Supabase: ${s.skipped.defaultAcl}`)
 ' "$WORK/split.json" "$WORK/acl.json")"
+fi
 
 # 3. Одна транзакция. OSP_LOAD_TEST_INJECT_FAILURE — только для теста «всё или ничего»: ошибка в конце.
-files=(-f "$HERE/compat/auth.sql" -f "$HERE/sql/load-begin.sql" -f "$WORK/main.sql" -f "$WORK/acl.sql" -f "$HERE/sql/load-end.sql")
+files=(-f "$HERE/compat/auth.sql" -f "$HERE/sql/load-begin.sql" -f "$WORK/main.sql")
+if [ "$WITH_RIGHTS" = 1 ]; then
+  files+=(-f "$HERE/sql/load-rights.sql" -f "$WORK/acl.sql")
+else
+  files+=(-f "$HERE/sql/load-lockdown.sql")
+fi
+files+=(-f "$HERE/sql/load-end.sql")
 if [ -n "${OSP_LOAD_TEST_INJECT_FAILURE:-}" ]; then
   echo 'SELECT 1/0;' > "$WORK/fail.sql"
   files+=(-f "$WORK/fail.sql")
@@ -135,7 +183,7 @@ fi
 started="$(date +%s)"
 if ! psql -X -q -v ON_ERROR_STOP=1 -1 \
     -v status="$STATUS" -v source_name="$(basename "$DUMP")" -v source_sha256="$SHA" \
-    -v tool_commit="$COMMIT" -v runtime_role="$RUNTIME_ROLE" \
+    -v tool_commit="$COMMIT" -v rights="$RIGHTS" -v runtime_role="$RUNTIME_ROLE" \
     "${files[@]}" > "$WORK/out" 2> "$WORK/err"; then
   say "FAIL загрузка прервана, транзакция отменена — в базе ничего не изменилось"
   say "ИНФО причина: $(first_error "$WORK/err")"
@@ -152,7 +200,7 @@ summary="$(psql -X -q -At -c "
       || ', представлений — ' || (select count(*) from pg_views where schemaname = 'public')
       || ', материализованных — ' || (select count(*) from pg_matviews where schemaname = 'public')
   union all
-  select 'ИНФО отметка: статус ' || status || ', часовой пояс базы — '
+  select 'ИНФО отметка: статус ' || status || ', права — ' || case rights when 'loaded' then 'загружены' else 'не загружались' end || ', часовой пояс базы — '
       || coalesce((select split_part(c, '=', 2) from pg_db_role_setting s join pg_database d on d.oid = s.setdatabase,
                    unnest(s.setconfig) c where d.datname = current_database() and s.setrole = 0 and c like 'TimeZone=%'), 'не задан')
   from osp_meta.load_log order by 1" 2>"$WORK/err")" || summary="ВНИМАНИЕ итог прочитать не удалось: $(first_error "$WORK/err")"

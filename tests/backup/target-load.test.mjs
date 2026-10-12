@@ -166,6 +166,7 @@ describe('Загрузка копии в базу без Supabase: всё или
     return res.stdout.trim()
   }
   const asRuntime = (sql) => psql(targetPort, 'osp_runtime', RUNTIME_PASS, 'osp_target', sql)
+  const asOwner = (sql) => psql(targetPort, 'target_owner', OWNER_PASS, 'osp_target', sql)
   const prodEnv = () => ({ ...process.env, PGHOST: '127.0.0.1', PGPORT: String(prodPort), PGUSER: 'postgres',
     PGDATABASE: 'postgres', PGSSLMODE: 'disable', PGPASSWORD: 'test-only', BACKUP_OUT_DIR: path.join(tmp, 'dumps') })
   const run = (script, args, env = {}) => {
@@ -187,8 +188,9 @@ describe('Загрузка копии в базу без Supabase: всё или
         || ':' || (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
                    and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'))
         || ':' || (select count(*) from pg_db_role_setting s join pg_database d on d.oid = s.setdatabase where d.datname = current_database())
-        || ':' || (select string_agg(extname, ',' order by extname) from pg_extension where extname <> 'plpgsql')`)
-  const EMPTY = '0:0:0:0:pg_trgm,pgcrypto'
+        || ':' || (select string_agg(extname, ',' order by extname) from pg_extension where extname <> 'plpgsql')
+        || ':' || (select count(*) from pg_default_acl)`)
+  const EMPTY = '0:0:0:0:pg_trgm,pgcrypto:0'
   const waitFor = (probe, what) => {
     const deadline = Date.now() + 120000
     while (!probe()) {
@@ -200,8 +202,8 @@ describe('Загрузка копии в базу без Supabase: всё или
 
   before(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-load-'))
-    prodPort = 50000 + Math.floor(Math.random() * 2000)
-    targetPort = 52000 + Math.floor(Math.random() * 2000)
+    prodPort = 23000 + Math.floor(Math.random() * 1000) // свои диапазоны (наборы идут параллельно), ниже портов исходящих соединений
+    targetPort = 24000 + Math.floor(Math.random() * 1000)
     let started = spawnSync('docker', ['run', '-d', '--rm', '--name', prodContainer, '-p', `127.0.0.1:${prodPort}:5432`,
       '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', 'postgres:17-alpine', '-c', 'fsync=off'], { encoding: 'utf8' })
     assert.equal(started.status, 0, started.stderr)
@@ -218,6 +220,12 @@ describe('Загрузка копии в базу без Supabase: всё или
       `create role target_owner login password '${OWNER_PASS}' nosuperuser nocreaterole nocreatedb`,
       `create role osp_runtime login password '${RUNTIME_PASS}'`,
       "create database osp_target owner target_owner template template0 encoding 'UTF8' locale_provider icu icu_locale 'en-US'",
+      // Как в Яндексе: подключение к базе у «всех» снято, соседней учётке выдано явно.
+      'revoke connect on database osp_target from public',
+      'grant connect on database osp_target to osp_runtime',
+      // Вторая база той же учётки: загрузка и очистка не должны в неё попасть.
+      "create database neighbour_db owner target_owner template template0 encoding 'UTF8' locale_provider icu icu_locale 'en-US'",
+      'revoke connect on database neighbour_db from public',
     ]) assert.equal(psql(targetPort, 'postgres', ADMIN_PASS, 'postgres', sql).status, 0, sql)
     admin('create extension pg_trgm')
     admin('create extension pgcrypto')
@@ -233,6 +241,45 @@ describe('Загрузка копии в базу без Supabase: всё или
     assert.equal(res.status, 0, res.stdout + res.stderr)
     assert.ok(fs.existsSync(dump.replace(/\.dump$/, '.verified')), 'отметка проверенной копии')
     assert.equal(stateOfTarget(), EMPTY)
+  })
+  const pin = (file, args = ['--confirm']) => run(path.join(TARGET, 'pin.sh'), [file, ...args])
+  const objectsIn = (db) => psql(targetPort, 'postgres', ADMIN_PASS, db,
+    "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind in ('r','v','m','S') and n.nspname not in ('pg_catalog','information_schema') and n.nspname !~ '^pg_'").stdout.trim()
+
+  it('отпечаток базы: без него и в другую базу той же учётки — отказ до первой записи', () => {
+    const unpinned = load(['--status', 'rehearsal'])
+    assert.equal(unpinned.status, 3, unpinned.all)
+    assert.match(unpinned.stdout, /^FAIL база не закреплена: сначала bash migration\/target\/pin\.sh/m)
+
+    const shown = pin(envFile, [])
+    assert.equal(shown.status, 0, shown.all)
+    assert.match(shown.stdout, /ИНФО в имени базы есть «osp»: да; роль — владелец базы: да/)
+    assert.match(shown.stdout, /Не закреплено\. Если это база портала — повторите с --confirm/)
+    assert.ok(!fs.existsSync(`${envFile}.pin`), 'без --confirm файл не пишется')
+
+    const pinned = pin(envFile)
+    assert.equal(pinned.status, 0, pinned.all)
+    assert.match(pinned.stdout, /^OK база закреплена: target\.env\.pin/m)
+    assert.equal(fs.statSync(`${envFile}.pin`).mode & 0o777, 0o600)
+    assert.match(fs.readFileSync(`${envFile}.pin`, 'utf8'), /^[0-9a-f]{64}\n$/)
+    assert.match(pin(envFile).stdout, /^OK эта база уже закреплена$/m)
+
+    // Опечатка в файле подключения: та же учётка, другая база — отпечаток прежний, значит отказ.
+    const wrong = path.join(tmp, 'wrong.env')
+    fs.writeFileSync(wrong, fs.readFileSync(envFile, 'utf8').replace('PGDATABASE=osp_target', 'PGDATABASE=neighbour_db'), { mode: 0o600 })
+    fs.copyFileSync(`${envFile}.pin`, `${wrong}.pin`)
+    const other = run(path.join(TARGET, 'load.sh'), [wrong, dump, '--status', 'rehearsal'])
+    assert.equal(other.status, 3, other.all)
+    assert.match(other.stdout, /^FAIL это другая база: отпечаток не совпадает с закреплённым/m)
+    const otherReset = run(path.join(TARGET, 'reset.sh'), [wrong, '--yes-drop-rehearsal'])
+    assert.equal(otherReset.status, 3, otherReset.all)
+    assert.match(otherReset.stdout, /это другая база — отпечаток не совпадает/)
+    const repin = pin(wrong)
+    assert.equal(repin.status, 3, repin.all)
+    assert.match(repin.stdout, /^FAIL закреплена другая база/m)
+    assert.equal(objectsIn('neighbour_db'), '0', 'в соседней базе ничего не создано')
+    assert.equal(stateOfTarget(), EMPTY)
+    for (const r of [unpinned, shown, pinned, other, otherReset, repin]) noSecrets(r)
   })
   after(() => {
     spawnSync('docker', ['rm', '-f', prodContainer, targetContainer], { stdio: 'ignore' })
@@ -253,6 +300,7 @@ describe('Загрузка копии в базу без Supabase: всё или
 
     const notOwner = path.join(tmp, 'runtime.env')
     fs.writeFileSync(notOwner, fs.readFileSync(envFile, 'utf8').replace('PGUSER=target_owner', 'PGUSER=osp_runtime').replace(OWNER_PASS, RUNTIME_PASS))
+    fs.copyFileSync(`${envFile}.pin`, `${notOwner}.pin`) // база та же — отпечаток тот же
     const asApp = run(path.join(TARGET, 'load.sh'), [notOwner, dump, '--status', 'rehearsal'])
     assert.equal(asApp.status, 3, asApp.all)
     assert.match(asApp.stdout, /^FAIL роль подключения — владелец базы/m)
@@ -276,12 +324,15 @@ describe('Загрузка копии в базу без Supabase: всё или
   it('загрузка: одной транзакцией; политики и права — у роли приложения; anon и service_role не перенесены', () => {
     const res = load(['--status', 'rehearsal'])
     assert.equal(res.status, 0, res.all)
+    assert.match(res.stdout, /^OK база — та, что закреплена отпечатком$/m)
+    assert.match(res.stdout, /^OK право подключения к базе у «всех» \(PUBLIC\) снято$/m)
+    assert.match(res.stdout, /^OK сеансов других обычных учёток в базе нет$/m)
     assert.match(res.stdout, /^OK база пустая$/m)
     assert.match(res.stdout, /политик перенесено: 2, не перенесено: 2 \(/)
     for (const t of ['public.tenders для anon', 'public.showcase для anon']) assert.ok(res.stdout.includes(t), t)
     assert.match(res.stdout, /не перенесено выдач: .*anon — \d+.*service_role — \d+.*прав по умолчанию Supabase: \d/)
     assert.match(res.stdout, /^OK загружено одной транзакцией за \d+ с$/m)
-    assert.match(res.stdout, /статус rehearsal, часовой пояс базы — UTC/)
+    assert.match(res.stdout, /статус rehearsal, права — загружены, часовой пояс базы — UTC/)
     noSecrets(res)
 
     assert.equal(admin("select count(*) from pg_policies where schemaname = 'public'"), '2')
@@ -353,6 +404,71 @@ describe('Загрузка копии в базу без Supabase: всё или
     const noMark = reset()
     assert.equal(noMark.status, 3)
     assert.match(noMark.stdout, /нет отметки загрузчика/)
+  })
+
+  it('без прав: роль приложения не нужна, соседней учётке кластера всё закрыто, сверка и очистка работают', () => {
+    const finalNoRights = load(['--status', 'final', '--without-rights'])
+    assert.equal(finalNoRights.status, 1, finalNoRights.all)
+    assert.match(finalNoRights.stderr, /Настоящий перенос \(final\) без прав не выполняется/)
+    assert.equal(load(['--status', 'rehearsal', '--without-rights', '--runtime-role', 'osp_runtime']).status, 1, 'оба флага вместе')
+    assert.equal(stateOfTarget(), EMPTY)
+
+    const res = load(['--status', 'rehearsal', '--without-rights'])
+    assert.equal(res.status, 0, res.all)
+    assert.match(res.stdout, /без прав: роли приложения нет/)
+    assert.match(res.stdout, /политики и выдача прав не загружаются: записей о них в копии — \d+/)
+    assert.doesNotMatch(res.stdout, /роль приложения osp_runtime/)
+    assert.match(res.stdout, /статус rehearsal, права — не загружались, часовой пояс базы — UTC/)
+    noSecrets(res)
+
+    assert.equal(admin("select count(*) from pg_policies where schemaname = 'public'"), '0')
+    assert.equal(admin("select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relrowsecurity"), '3', 'защита строк — часть структуры, загружена')
+    assert.equal(admin("select rights || ':' || coalesce(runtime_role, 'нет') from osp_meta.load_log"), 'skipped:нет')
+    assert.equal(asOwner('select count(*) from public.tenders').stdout.trim(), '300', 'владелец читает')
+
+    // Соседняя учётка кластера: подключиться может, а до данных и функций портала не дотянется.
+    assert.equal(asRuntime('select 1').stdout.trim(), '1', 'подключение ей открыто — как двум учёткам в Яндексе')
+    for (const sql of [
+      'select count(*) from public.tenders', 'select * from public.tender_titles', 'select * from public.tenders_mv',
+      "select nextval('public.tender_number_seq')", 'select public.is_admin()', 'select auth.uid()',
+      'select * from osp_meta.load_log', 'create table public.intruder(i int)', "insert into public.showcase values (9, 'x')",
+    ]) {
+      const denied = asRuntime(sql)
+      assert.notEqual(denied.status, 0, `соседней учётке должно быть закрыто: ${sql}`)
+      assert.match(denied.stderr, /permission denied/, sql)
+    }
+    // Функция, созданная позже (миграцией): «всем» по умолчанию не открыта.
+    assert.equal(asOwner('create function public.later_fn() returns int language sql as $$ select 1 $$').status, 0)
+    assert.match(asRuntime('select public.later_fn()').stderr, /permission denied for function/)
+    assert.equal(asOwner('drop function public.later_fn()').status, 0)
+
+    const ok = verify()
+    assert.equal(ok.status, 0, ok.all)
+    for (const line of [
+      'без прав',
+      'OK контрольные суммы данных: 4 — совпадают',
+      'OK защита строк на таблицах: 3 — совпадают',
+      'ВНИМАНИЕ политики и выданные права не сверялись: загрузка была без прав',
+      'OK база закрыта для обычных учёток кластера: политик 0, выдач не владельцу 0, функций и типов, открытых «всем», 0',
+      'ИНФО подключиться к базе могут ещё обычных учёток: 1 ',
+      'РАСХОЖДЕНИЙ НЕТ: данные и структура — ровно как в копии; права не загружались, база закрыта.',
+    ]) assert.ok(ok.stdout.includes(line), `нет строки: ${line}\n${ok.stdout}`)
+    assert.doesNotMatch(ok.stdout, /^(OK|FAIL) (политики|выданные права)/m)
+    assert.doesNotMatch(ok.stdout, /^FAIL/m)
+    noSecrets(ok)
+
+    // Сверка ловит и подмену данных, и приоткрытую базу.
+    admin("update public.tenders set title = title || '!' where number = 7")
+    admin('grant select on public.showcase to osp_runtime')
+    admin('grant execute on function public.is_admin() to public')
+    const bad = verify()
+    assert.equal(bad.status, 4, bad.all)
+    assert.match(bad.stdout, /^FAIL контрольные суммы данных: .*tenders/m)
+    assert.match(bad.stdout, /^FAIL база не закрыта: политик — 0; выдач на таблицы и счётчики не владельцу — 1, на колонки — 0; функций, открытых не только владельцу, — 1;/m)
+
+    const cleared = reset()
+    assert.equal(cleared.status, 0, cleared.all)
+    assert.equal(stateOfTarget(), EMPTY, 'база пустая, права по умолчанию возвращены')
   })
 
   it('сверка ловит подмену: строку, пропажу, счётчик, политику, право, колонку', () => {

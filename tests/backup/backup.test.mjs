@@ -69,7 +69,7 @@ describe('Копия прода: снятие, проверка восстано
 
   before(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-backup-'))
-    port = 50000 + Math.floor(Math.random() * 4000)
+    port = 21000 + Math.floor(Math.random() * 1000) // свой диапазон (наборы идут параллельно), ниже портов исходящих соединений
     const started = spawnSync('docker', ['run', '-d', '--rm', '--name', container, '-p', `127.0.0.1:${port}:5432`,
       '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', 'postgres:17-alpine', '-c', 'fsync=off'], { encoding: 'utf8' })
     assert.equal(started.status, 0, started.stderr)

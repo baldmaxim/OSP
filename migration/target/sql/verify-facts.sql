@@ -4,8 +4,9 @@
 -- суммы, в ключах — имена объектов: данных пользователей в выводе нет.
 --
 -- Переменные psql:
---   acl_role   — чьи права сравниваем: authenticated на эталоне, роль приложения на загруженной базе;
---   drop_roles — роли, которые не переносятся (через запятую): политики только для них пропускаются.
+--   with_rights — 1: политики и выданные права сравниваются; 0: загрузка была без прав, раздел пропущен;
+--   acl_role    — чьи права сравниваем: authenticated на эталоне, роль приложения на загруженной базе;
+--   drop_roles  — роли, которые не переносятся (через запятую): политики только для них пропускаются.
 -- Только чтение: транзакция READ ONLY.
 \set ON_ERROR_STOP on
 BEGIN TRANSACTION READ ONLY;
@@ -92,12 +93,14 @@ where n.nspname = 'public' and t.typtype in ('e', 'd', 'r')
   and not exists (select 1 from pg_depend d where d.classid = 'pg_type'::regclass and d.objid = t.oid and d.deptype = 'e')
 order by 1;
 
--- 4. Права. Политики: включена ли защита строк, команда, роли, условия.
+-- 4. Права. Включена ли защита строк — часть структуры, сравнивается всегда.
 select 'rls' || E'\t' || c.relname || E'\t' || c.relrowsecurity::text || ':' || c.relforcerowsecurity::text
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public' and c.relkind in ('r', 'p')
 order by 1;
 
+\if :with_rights
+-- Политики: команда, роли, условия.
 select 'policy' || E'\t' || p.tablename || '.' || p.policyname || E'\t'
     || md5(p.cmd::text || '|' || p.permissive::text || '|'
            || array_to_string(array(
@@ -145,5 +148,6 @@ order by 1;
 select 'grant' || E'\t' || 'schema:public' || E'\t'
     || 'USAGE:' || has_schema_privilege(:'acl_role', 'public', 'USAGE')::text
     || ';CREATE:' || has_schema_privilege(:'acl_role', 'public', 'CREATE')::text;
+\endif
 
 ROLLBACK;

@@ -63,7 +63,8 @@ function sleepMs(ms) {
 export class TestDatabase {
   constructor() {
     this.mode = pgMode()
-    this.port = 55000 + Math.floor(Math.random() * 5000)
+    // Ниже диапазона, который система раздаёт исходящим соединениям (32768–60999): там порт бывает занят.
+    this.port = 30000 + Math.floor(Math.random() * 1000)
     this.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psdc-pg-'))
     this.data = path.join(this.dir, 'data')
     this.container = null
@@ -103,12 +104,22 @@ export class TestDatabase {
   // Одноразовый контейнер: порт только на 127.0.0.1, вход без пароля (trust) —
   // наружу контейнер не виден, и после stop() удаляется вместе с данными.
   startDocker() {
-    this.container = `osp-test-pg-${process.pid}-${this.port}`
-    this.run('docker', ['run', '-d', '--rm', '--name', this.container,
-      '-p', `127.0.0.1:${this.port}:5432`,
-      '-e', 'POSTGRES_HOST_AUTH_METHOD=trust',
-      '-e', 'POSTGRES_INITDB_ARGS=-E UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8',
-      DOCKER_IMAGE, '-c', 'fsync=off', '-c', 'max_connections=40'])
+    // Порт занят — берём другой, до пяти попыток; иная ошибка — сразу наружу.
+    for (let attempt = 1; ; attempt++) {
+      this.container = `osp-test-pg-${process.pid}-${this.port}`
+      try {
+        this.run('docker', ['run', '-d', '--rm', '--name', this.container,
+          '-p', `127.0.0.1:${this.port}:5432`,
+          '-e', 'POSTGRES_HOST_AUTH_METHOD=trust',
+          '-e', 'POSTGRES_INITDB_ARGS=-E UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8',
+          DOCKER_IMAGE, '-c', 'fsync=off', '-c', 'max_connections=40'])
+        break
+      } catch (error) {
+        spawnSync(findBin('docker'), ['rm', '-f', this.container], { stdio: 'ignore' })
+        if (attempt >= 5 || !/address already in use|port is already allocated/i.test(String(error.message))) throw error
+        this.port = 30000 + Math.floor(Math.random() * 1000)
+      }
+    }
     // Образ сначала поднимает временный сервер только на сокете, затем
     // перезапускается на TCP: готов, когда отвечает через проброшенный порт.
     const deadline = Date.now() + 120000

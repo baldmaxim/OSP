@@ -89,7 +89,7 @@ describe('Разведка выданной базы: только чтение,
 
   before(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-probe-'))
-    port = 50000 + Math.floor(Math.random() * 4000)
+    port = 22000 + Math.floor(Math.random() * 1000) // свой диапазон (наборы идут параллельно), ниже портов исходящих соединений
     // Свой центр сертификации, сертификат сервера на 127.0.0.1 и «чужой» центр — для отказа.
     certs = path.join(tmp, 'certs')
     fs.mkdirSync(certs)
@@ -149,6 +149,10 @@ describe('Разведка выданной базы: только чтение,
       'ИНФО пулер: признаков режима транзакций нет',
     ]) assert.ok(r.stdout.includes(line), `нет строки: ${line}\n${r.stdout}`)
     assert.match(r.stdout, /^OK часовой пояс: (UTC|Etc\/UTC)/m)
+    // В тестовом кластере подключение открыто всем — разведка обязана это заметить.
+    assert.match(r.stdout, /^ВНИМАНИЕ подключение к этой базе открыто всем учёткам кластера \(PUBLIC\)$/m)
+    assert.match(r.stdout, /^ИНФО к этой базе могут подключиться другие учётки: обычных — \d+, суперпользователей — 1 \(имена не показываю\)$/m)
+    assert.match(r.stdout, /^ИНФО подключений учётки сейчас: \d+ из лимита без лимита; из них в других базах — 0$/m)
     assert.match(r.stdout, /^OK подключение установлено; шифрование TLSv1\.[23]$/m)
     assert.doesNotMatch(r.stdout, /^FAIL/m)
     noSecrets(r, [...FOREIGN_NAMES, '127.0.0.1', String(port)])

@@ -138,4 +138,20 @@ select 'ИНФО других баз в кластере видно: ' || count(
 from pg_database
 where not datistemplate and datname <> current_database();
 
+-- Кластер общий: кто ещё дотянется до этой базы и сколько подключений учётки уже занято.
+select case when has_database_privilege('public', current_database(), 'CONNECT')
+            then 'ВНИМАНИЕ подключение к этой базе открыто всем учёткам кластера (PUBLIC)'
+            else 'OK подключение к этой базе у «всех» (PUBLIC) снято' end;
+
+select 'ИНФО к этой базе могут подключиться другие учётки: обычных — '
+    || count(*) filter (where not r.rolsuper) || ', суперпользователей — ' || count(*) filter (where r.rolsuper)
+    || ' (имена не показываю)'
+from pg_roles r
+where r.rolcanlogin and r.rolname <> current_user and has_database_privilege(r.oid, current_database(), 'CONNECT');
+
+select 'ИНФО подключений учётки сейчас: ' || count(*) || ' из лимита '
+    || (select case when rolconnlimit < 0 then 'без лимита' else rolconnlimit::text end from pg_roles where rolname = current_user)
+    || '; из них в других базах — ' || count(*) filter (where datname is distinct from current_database())
+from pg_stat_activity where usename = current_user;
+
 ROLLBACK;

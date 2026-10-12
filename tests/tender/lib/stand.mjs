@@ -29,7 +29,7 @@ export async function startStand(srcRoot) {
   const norm = (p) => p.replace(/\\/g, '/').replace(/\.(js|jsx)$/, '').toLowerCase()
   const supabaseClient = norm(path.join(srcRoot, 'src', 'api', 'supabaseClient'))
   const roleCtx = norm(path.join(srcRoot, 'src', 'contexts', 'RoleContext'))
-  const port = 49000 + Math.floor(Math.random() * 900)
+  const port = 32000 + Math.floor(Math.random() * 300) // ниже портов исходящих соединений (32768–60999)
   const server = await createServer({
     configFile: false,
     root: UI,

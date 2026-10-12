@@ -64,7 +64,7 @@ export function startCopy(dump) {
 // Слепок схемы прода без данных: роли Supabase, pg_trgm в public, слепок. Миграции, применённые
 // после слепка (appliedAfter), тест накатывает сам — чтобы сначала сверить слепок с файлом.
 export function startSnapshot() {
-  const port = 51000 + Math.floor(Math.random() * 3000)
+  const port = 20000 + Math.floor(Math.random() * 1000) // ниже портов исходящих соединений (32768–60999)
   const container = `osp-test-db-${process.pid}-${port}`
   const run = spawnSync('docker', ['run', '-d', '--rm', '--name', container, '-p', `127.0.0.1:${port}:5432`,
     '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', 'postgres:17-alpine', '-c', 'fsync=off'], { encoding: 'utf8' })

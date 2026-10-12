@@ -19,12 +19,29 @@ local_psql() {
 }
 
 pg_start() {
-  LOCAL_PORT=$((55000 + RANDOM % 5000))
-  LOCAL_CONTAINER="osp-backup-check-$$-$LOCAL_PORT"
-  docker run -d --rm --name "$LOCAL_CONTAINER" -p "127.0.0.1:$LOCAL_PORT:5432" \
-    -e POSTGRES_HOST_AUTH_METHOD=trust \
-    -e "POSTGRES_INITDB_ARGS=${PG_INITDB_ARGS:--E UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8}" \
-    "$PG_IMAGE" -c fsync=off -c max_connections=40 >/dev/null
+  # Порт — ниже диапазона, который система раздаёт исходящим соединениям (32768–60999): там случайный
+  # порт бывает занят. Занят и здесь — берём другой, до пяти попыток.
+  local attempt err
+  err="$(mktemp)"
+  for attempt in 1 2 3 4 5; do
+    LOCAL_PORT=$((25000 + RANDOM % 5000))
+    LOCAL_CONTAINER="osp-backup-check-$$-$LOCAL_PORT"
+    if docker run -d --rm --name "$LOCAL_CONTAINER" -p "127.0.0.1:$LOCAL_PORT:5432" \
+        -e POSTGRES_HOST_AUTH_METHOD=trust \
+        -e "POSTGRES_INITDB_ARGS=${PG_INITDB_ARGS:--E UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8}" \
+        "$PG_IMAGE" -c fsync=off -c max_connections=40 >/dev/null 2>"$err"; then
+      break
+    fi
+    docker rm -f "$LOCAL_CONTAINER" >/dev/null 2>&1 || true
+    if [ "$attempt" = 5 ] || ! grep -q -i -E 'address already in use|port is already allocated' "$err"; then
+      cat "$err" >&2
+      rm -f -- "$err"
+      LOCAL_CONTAINER=""
+      echo "Временный PostgreSQL не запустился" >&2
+      return 1
+    fi
+  done
+  rm -f -- "$err"
   local i
   for i in $(seq 1 240); do
     if [ "$(local_psql -At -c 'select 1' 2>/dev/null)" = "1" ]; then return 0; fi

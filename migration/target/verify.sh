@@ -12,6 +12,9 @@
 #   • политики (команда, условия, роли) и выданные права: роль приложения в загруженной базе против
 #     роли authenticated в эталоне. Политики только для anon / service_role не переносятся и в сверке
 #     не участвуют.
+# Если загрузка была без прав (load.sh --without-rights), вместо сверки политик и прав проверяется, что
+# база закрыта для обычных учёток кластера (sql/verify-closed.sql): политик нет, выдач не владельцу нет,
+# функции и типы «всем» не открыты.
 # Дополнительно: число строк против подсчёта на проде в момент снятия копии (.counts-after.tsv),
 # часовой пояс базы и порядок сортировки кириллицы.
 # В вывод и отчёт (migration/target/reports/verify-<время>.txt) идут только имена объектов и числа.
@@ -72,18 +75,24 @@ say "Сверка загруженной базы с копией $(basename "$D
 
 # 1. Что загружено: отметка загрузчика должна указывать на эту же копию.
 SHA="$(sha256sum "$DUMP" | cut -d' ' -f1)"
-if ! mark="$(target_psql -F $'\t' -c "select status, source_sha256, runtime_role, (finished_at is not null) from osp_meta.load_log order by id desc limit 1" 2>"$WORK/err")"; then
+if ! mark="$(target_psql -F $'\t' -c "select status, source_sha256, rights, coalesce(runtime_role, '-'), (finished_at is not null) from osp_meta.load_log order by id desc limit 1" 2>"$WORK/err")"; then
   say "FAIL нет подключения или в базе нет отметки загрузки (osp_meta.load_log): $(head -n 1 "$WORK/err" | target_mask | cut -c1-200)"
   save_report
   exit 2
 fi
-IFS=$'\t' read -r STATUS LOADED_SHA RUNTIME_ROLE FINISHED <<< "$mark"
+IFS=$'\t' read -r STATUS LOADED_SHA RIGHTS RUNTIME_ROLE FINISHED <<< "$mark"
 if [ "$LOADED_SHA" != "$SHA" ] || [ "$FINISHED" != t ]; then
   say "FAIL в базу загружена другая копия или загрузка не завершена — сверять не с чем"
   save_report
   exit 4
 fi
-say "ИНФО отметка загрузки: статус $STATUS, копия та же (sha256 ${SHA:0:12}…), роль приложения $RUNTIME_ROLE"
+if [ "$RIGHTS" = loaded ]; then
+  WITH_RIGHTS=1
+  say "ИНФО отметка загрузки: статус $STATUS, копия та же (sha256 ${SHA:0:12}…), роль приложения $RUNTIME_ROLE"
+else
+  WITH_RIGHTS=0
+  say "ИНФО отметка загрузки: статус $STATUS, копия та же (sha256 ${SHA:0:12}…), без прав"
+fi
 
 # 2. Эталон: та же копия во временном PostgreSQL, с правами и с правилами сортировки прода (ICU en-US):
 #    от сортировки зависит содержимое материализованных представлений.
@@ -97,13 +106,13 @@ if [ "$RESTORE_ERRORS" != 0 ]; then
 fi
 
 # 3. Факты с обеих сторон.
-if ! local_psql -At -v acl_role=authenticated -v drop_roles="$DROP_ROLES" -f "$HERE/sql/verify-facts.sql" > "$WORK/reference.raw" 2>"$WORK/err"; then
+if ! local_psql -At -v with_rights="$WITH_RIGHTS" -v acl_role=authenticated -v drop_roles="$DROP_ROLES" -f "$HERE/sql/verify-facts.sql" > "$WORK/reference.raw" 2>"$WORK/err"; then
   say "FAIL сверка на эталоне прервана: $(grep -m 1 -E 'ERROR|FATAL|error' "$WORK/err" | sed -E 's/"[^"]*"/"…"/g' | cut -c1-200)"
   save_report
   exit 1
 fi
 LC_ALL=C sort "$WORK/reference.raw" > "$WORK/reference.tsv"
-if ! target_psql -v acl_role="$RUNTIME_ROLE" -v drop_roles="$DROP_ROLES" -f "$HERE/sql/verify-facts.sql" 2>"$WORK/err" > "$WORK/target.raw"; then
+if ! target_psql -v with_rights="$WITH_RIGHTS" -v acl_role="$RUNTIME_ROLE" -v drop_roles="$DROP_ROLES" -f "$HERE/sql/verify-facts.sql" 2>"$WORK/err" > "$WORK/target.raw"; then
   say "FAIL сверка на загруженной базе прервана: $(grep -m 1 -E 'ERROR|FATAL|error' "$WORK/err" | sed -E 's/"[^"]*"/"…"/g' | target_mask | cut -c1-200)"
   save_report
   exit 2
@@ -120,6 +129,13 @@ diff_keys_of() {
       for (x in tgt) if (!(x in ref)) print x
     }' "$WORK/reference.tsv" "$WORK/target.tsv" | LC_ALL=C sort -u
 }
+KINDS="$(printf '%s\n' \
+  'rows:число строк по таблицам' 'sum:контрольные суммы данных' 'seq:счётчики номеров' 'col:колонки' \
+  'con:ограничения' 'idx:индексы' 'trg:триггеры' 'fn:функции' 'view:представления' 'type:типы' \
+  'rls:защита строк на таблицах')"
+if [ "$WITH_RIGHTS" = 1 ]; then
+  KINDS+=$'\npolicy:политики\ngrant:выданные права'
+fi
 problems=0
 while IFS= read -r pair; do
   kind="${pair%%:*}"
@@ -134,10 +150,26 @@ while IFS= read -r pair; do
     problems=$((problems + 1))
     say "FAIL $title: расхождений — $n (в эталоне $ref_n, в базе $tgt_n): $(printf '%s\n' "$diff_keys" | head -n 8 | tr '\n' ' ')"
   fi
-done <<< "$(printf '%s\n' \
-  'rows:число строк по таблицам' 'sum:контрольные суммы данных' 'seq:счётчики номеров' 'col:колонки' \
-  'con:ограничения' 'idx:индексы' 'trg:триггеры' 'fn:функции' 'view:представления' 'type:типы' \
-  'rls:защита строк на таблицах' 'policy:политики' 'grant:выданные права')"
+done <<< "$KINDS"
+
+# 3а. Загрузка без прав: политики и выдачи не сверяются — вместо этого база обязана быть закрытой.
+if [ "$WITH_RIGHTS" = 0 ]; then
+  say "ВНИМАНИЕ политики и выданные права не сверялись: загрузка была без прав"
+  if closed="$(target_psql -F $'\t' -f "$HERE/sql/verify-closed.sql" 2>"$WORK/err")"; then
+    IFS=$'\t' read -r c_pol c_rel c_col c_fn c_type c_sch c_def <<< "$(printf '%s\n' "$closed" | grep -v '^info' | head -n 1)"
+    IFS=$'\t' read -r _ c_can c_sess <<< "$(printf '%s\n' "$closed" | grep '^info' | head -n 1)"
+    if [ "$c_pol:$c_rel:$c_col:$c_fn:$c_type:$c_sch:$c_def" = "0:0:0:0:0:0:0" ]; then
+      say "OK база закрыта для обычных учёток кластера: политик 0, выдач не владельцу 0, функций и типов, открытых «всем», 0"
+    else
+      problems=$((problems + 1))
+      say "FAIL база не закрыта: политик — $c_pol; выдач на таблицы и счётчики не владельцу — $c_rel, на колонки — $c_col; функций, открытых не только владельцу, — $c_fn; типов, открытых «всем», — $c_type; выдач на служебные схемы — $c_sch; нет запрета по умолчанию для будущих функций или типов — $c_def"
+    fi
+    say "ИНФО подключиться к базе могут ещё обычных учёток: ${c_can:-?} (имена и тексты функций им видны, данные — нет); их сеансов сейчас: ${c_sess:-?}"
+  else
+    problems=$((problems + 1))
+    say "FAIL проверка «база закрыта» прервана: $(grep -m 1 -E 'ERROR|FATAL|error' "$WORK/err" | sed -E 's/"[^"]*"/"…"/g' | target_mask | cut -c1-200)"
+  fi
+fi
 
 # 4. Число строк против прода: backup.sh считает строки до копии и сразу после неё.
 #    Репетиция: число в базе — между «до» и «после» (во время копии люди работали — как в
@@ -194,6 +226,11 @@ else
   say "FAIL порядок сортировки строк отличается от Supabase (ICU en-US)"
 fi
 
+if [ "$problems" = 0 ] && [ "$WITH_RIGHTS" = 0 ]; then
+  say "РАСХОЖДЕНИЙ НЕТ: данные и структура — ровно как в копии; права не загружались, база закрыта."
+  save_report
+  exit 0
+fi
 if [ "$problems" = 0 ]; then
   say "РАСХОЖДЕНИЙ НЕТ: в базе ровно то, что в копии."
   save_report

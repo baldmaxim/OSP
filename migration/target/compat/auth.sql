@@ -3,7 +3,8 @@
 -- настроек транзакции request.jwt.claims, которые ставит PostgREST по токену. Поэтому политики и
 -- функции портала работают без правок.
 -- Таблицы auth.users здесь нет: её заменяет отдельный шаг (вход), см. migration/PLAN.md.
--- Выполняется внутри общей транзакции загрузки (migration/target/load.sh).
+-- Выполняется внутри общей транзакции загрузки (migration/target/load.sh). Доступ к схеме роли
+-- приложения выдаёт sql/load-rights.sql — только при загрузке с правами.
 CREATE SCHEMA auth;
 
 CREATE FUNCTION auth.uid() RETURNS uuid
@@ -45,5 +46,3 @@ CREATE FUNCTION auth.email() RETURNS text
     (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'email')
   )::text
 $$;
-
-GRANT USAGE ON SCHEMA auth TO :"runtime_role";

@@ -12,6 +12,7 @@ SET LOCAL search_path = '';
 DO $reset$
 DECLARE
   v_status text;
+  v_rights text;
   v_role text;
   v_extra bigint;
   r record;
@@ -19,7 +20,7 @@ BEGIN
   IF to_regclass('osp_meta.load_log') IS NULL OR to_regclass('osp_meta.manifest') IS NULL THEN
     RAISE EXCEPTION 'OSP_RESET_NO_MARK';
   END IF;
-  EXECUTE 'SELECT status, runtime_role FROM osp_meta.load_log ORDER BY id DESC LIMIT 1' INTO v_status, v_role;
+  EXECUTE 'SELECT status, rights, runtime_role FROM osp_meta.load_log ORDER BY id DESC LIMIT 1' INTO v_status, v_rights, v_role;
   IF v_status IS DISTINCT FROM 'rehearsal' THEN
     RAISE EXCEPTION 'OSP_RESET_FINAL';
   END IF;
@@ -68,6 +69,11 @@ BEGIN
   DROP SCHEMA auth CASCADE;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_role) THEN
     EXECUTE format('REVOKE ALL ON SCHEMA public FROM %I', v_role);
+  END IF;
+  -- Загрузка без прав снимала у будущих функций и типов право «всем» (load-lockdown.sql) — возвращаем.
+  IF v_rights = 'skipped' THEN
+    EXECUTE 'ALTER DEFAULT PRIVILEGES GRANT EXECUTE ON ROUTINES TO PUBLIC';
+    EXECUTE 'ALTER DEFAULT PRIVILEGES GRANT USAGE ON TYPES TO PUBLIC';
   END IF;
   EXECUTE format('ALTER DATABASE %I RESET timezone', current_database());
   DROP SCHEMA osp_meta CASCADE;
