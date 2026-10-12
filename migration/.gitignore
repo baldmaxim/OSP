@@ -10,3 +10,4 @@ secrets/
 *.passphrase
 # Сырые ответы запросов инвентаризации — сначала просматриваем, в git идёт только inventory.md.
 inventory/results/
+target/reports/
