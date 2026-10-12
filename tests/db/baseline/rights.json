@@ -1,5 +1,5 @@
 {
-  "copy": "prod-20261009-063004",
+  "copy": "prod-20261012-143016",
   "candidates": [],
   "classes": {
     "admin": {
@@ -160,7 +160,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "yes",
@@ -606,7 +609,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "yes",
@@ -1052,7 +1058,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "yes",
@@ -1498,7 +1507,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "yes",
@@ -1944,7 +1956,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "yes",
@@ -2390,7 +2405,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "yes",
@@ -2836,7 +2854,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "yes",
@@ -3282,7 +3303,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "yes",
@@ -3728,7 +3752,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "yes",
@@ -4174,7 +4201,10 @@
         "update": "no"
       },
       "client_versions": {
-        "select": "err:42501"
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
       },
       "tender_rd_codes": {
         "delete": "no",
@@ -4620,7 +4650,10 @@
         "update": "yes"
       },
       "client_versions": {
-        "select": "empty"
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
       },
       "tender_rd_codes": {
         "delete": "yes",
