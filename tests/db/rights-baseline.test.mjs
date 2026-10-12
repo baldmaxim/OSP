@@ -32,7 +32,11 @@ const skip = skipReason({ needCopy: true })
 function expected(baseline, fixes) {
   const exp = structuredClone(baseline)
   for (const f of fixes) {
-    if (f.table === '*functions*') { exp.anon_functions[f.action] = f.to; continue }
+    // to: null — функция анониму больше не выдана и из замера исчезает.
+    if (f.table === '*functions*') {
+      if (f.to === null) delete exp.anon_functions[f.action]; else exp.anon_functions[f.action] = f.to
+      continue
+    }
     if (f.table === '*self_promote*') { exp.self_promote[f.class] = f.to; continue }
     ;(exp.classes[f.class][f.table] ??= {})[f.action] = f.to  // новая таблица — добавить запись
   }

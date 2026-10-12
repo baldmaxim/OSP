@@ -1,3 +1,6 @@
+-- Права (Р2d, supabase/migrations/20261013_r2d_rates_registry_employee_only.sql): представления supply_rates_registry
+-- отдают строки только при (SELECT public.osp_registry_reader()) — сотруднику и служебному ключу; у
+-- материализованных представлений право чтения — только у service_role. Действующие определения — в миграции.
 -- task 412: «Расценки от снабжения СУ-10» в «Общем реестре расценок».
 -- Не таблица, а ПРЕДСТАВЛЕНИЕ над tender_vor_supply_rates (источник истины — миграция
 -- supabase/migrations/20260611_add_supply_rates_registry.sql). Серверная

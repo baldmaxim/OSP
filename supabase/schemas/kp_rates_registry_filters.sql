@@ -1,3 +1,6 @@
+-- Права (Р2d, supabase/migrations/20261013_r2d_rates_registry_employee_only.sql): представления фильтров реестра
+-- отдают строки только при (SELECT public.osp_registry_reader()) — сотруднику и служебному ключу; у
+-- материализованных представлений право чтения — только у service_role. Действующие определения — в миграции.
 -- task 413: справочники фильтров вкладки «Расценки от подрядчиков (КП)».
 -- Источник истины — миграция supabase/migrations/20260612_add_rates_registry_filter_options.sql.
 --

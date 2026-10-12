@@ -1,1 +1,983 @@
-[]
+[
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "kp_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "supply_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "admin",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "kp_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "supply_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_full",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "kp_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "supply_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "employee_none",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "kp_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "supply_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "vors_only",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "kp_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "supply_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_own",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "kp_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "supply_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "contractor_noorg",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "kp_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "supply_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "unapproved",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "kp_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "supply_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "blocked",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "kp_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "supply_rates_registry_mv",
+    "action": "select",
+    "from": "all",
+    "to": "err:42501",
+    "why": "материализованное представление реестра напрямую читает только служебный ключ"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "no_user_roles",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "empty",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "service_role",
+    "table": "kp_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "service_role",
+    "table": "supply_rates_registry",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "service_role",
+    "table": "kp_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "service_role",
+    "table": "supply_rates_registry_units",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "service_role",
+    "table": "kp_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "service_role",
+    "table": "kp_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "service_role",
+    "table": "supply_rates_registry_filter_objects",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "service_role",
+    "table": "supply_rates_registry_filter_tenders",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "service_role",
+    "table": "kp_rates_registry_filter_counterparties",
+    "action": "select",
+    "from": "all",
+    "to": "visible",
+    "why": "реестр расценок отдаётся только сотруднику и служебному ключу"
+  },
+  {
+    "release": "Р2d",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "refresh_rates_registry",
+    "from": "ok",
+    "to": null,
+    "why": "пересчёт реестра и новая функция без входа не вызываются"
+  }
+]
