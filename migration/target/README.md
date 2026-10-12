@@ -49,11 +49,19 @@ chmod 600 ~/.osp-secrets/target.env
 - режим пулера. Ветка «режим транзакций» на настоящем пулере не проверялась — образа пулера для теста
   нет; окончательный ответ — настройка роли у владельца кластера.
 
-Для `verify-full` нужен корневой сертификат Яндекса:
+Для `verify-full` нужен корневой сертификат Яндекса. Он кладётся **рядом с файлом подключения** — скрипт
+найдёт его сам (порядок: `PGSSLROOTCERT` из файла → `root.crt` рядом → место libpq по умолчанию):
 
 ```bash
-mkdir -p ~/.postgresql && curl -fsS https://storage.yandexcloud.net/cloud-certs/CA.pem -o ~/.postgresql/root.crt && chmod 600 ~/.postgresql/root.crt
+curl -fsS https://storage.yandexcloud.net/cloud-certs/CA.pem -o ~/.osp-secrets/root.crt && chmod 600 ~/.osp-secrets/root.crt
 ```
+
+В `~/.postgresql/root.crt`, как советует документация Яндекса, на этой машине класть **нельзя**: при этом
+файле libpq проверяет сертификат и у подключений с `sslmode=require`. Сломаются копии Supabase
+(`migration/backup/backup.sh`, `counts.sh`) и подключения других проектов под тем же пользователем.
+
+Если имя базы или роли не из заявки, отчёт его не покажет, но скажет, есть ли в нём «osp» и похоже ли
+оно на стенд (`stage`, `test`, `dev`) или на боевую (`prod`).
 
 ## Что дальше
 

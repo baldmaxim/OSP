@@ -33,13 +33,20 @@ select 'ИНФО база: ' || case current_database()
   when 'osp_db' then 'osp_db — БОЕВАЯ база данных портала'
   when 'osp_ops_db' then 'osp_ops_db — БОЕВАЯ служебная база'
   when 'postgres' then 'postgres (имя по умолчанию)'
-  else 'имя не из нашей заявки (не показываю)' end;
+  else 'имя не из нашей заявки (не показываю)'
+    || case when current_database() ~* 'osp' then '; в имени есть «osp»' else '; «osp» в имени нет' end
+    || case when current_database() ~* '(stage|stand|test|dev|sandbox)' then '; по имени похожа на стенд'
+            when current_database() ~* 'prod' then '; по имени похожа на боевую'
+            else '; стенд или боевая — по имени не видно' end
+  end;
 
 -- current_user — тип name (63 байта): без ::text вся ветка CASE стала бы name и обрезала русский текст.
 select 'ИНФО роль: ' || case
   when current_user in ('osp_migration', 'osp_runtime', 'osp_authenticator', 'osp_ro', 'osp_backup', 'postgres')
     then current_user::text
-  else 'имя не из нашей заявки (не показываю)' end
+  else 'имя не из нашей заявки (не показываю)'
+    || case when current_user ~* 'osp' then '; в имени есть «osp»' else '; «osp» в имени нет' end
+  end
     || case when session_user <> current_user then ' (вход выполнен под другой ролью)' else '' end;
 
 select 'ИНФО права роли: суперпользователь — ' || case when rolsuper then 'да' else 'нет' end

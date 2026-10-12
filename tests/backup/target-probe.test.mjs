@@ -22,13 +22,15 @@ const ADMIN_PASS = 'Admin-Pass-zz1-secret'
 const STAGE_PASS = 'Stage-Pass-zz7-secret'
 const OTHER_PASS = 'Other-Pass-zz8-secret'
 const SECRETS = [ADMIN_PASS, STAGE_PASS, OTHER_PASS]
-const FOREIGN_NAMES = ['zz_private_db', 'zz_private_role', 'zz_secret_table']
+const FOREIGN_NAMES = ['zz_private_db', 'zz_private_role', 'zz_secret_table', 'zz_osp_test_db', 'zz_osp_role']
 
 const SETUP_SQL = `
 create role osp_migration login password '${STAGE_PASS}';
 create database osp_stage_db owner osp_migration encoding 'UTF8' template template0;
 create role zz_private_role login password '${OTHER_PASS}';
 create database zz_private_db owner zz_private_role;
+create role zz_osp_role login password '${OTHER_PASS}';
+create database zz_osp_test_db owner zz_osp_role;
 -- «как Supabase» — в базе postgres
 create role anon nologin; create role authenticated nologin; create role service_role nologin;
 create schema auth;
@@ -128,7 +130,7 @@ describe('Разведка выданной базы: только чтение,
     for (const line of [
       'ИНФО адрес: эта же машина; порт нестандартный (не показываю)',
       'ВНИМАНИЕ TLS в файле: require — шифрование есть, сертификат сервера не проверяется',
-      'ИНФО verify-full не пробовали: на этой машине нет корневого сертификата',
+      'ИНФО verify-full не пробовали: корневого сертификата нет ни рядом с файлом подключения, ни в ~/.postgresql',
       'ИНФО это не Supabase',
       'OK версия сервера: PostgreSQL 17',
       'ИНФО база: osp_stage_db — СТЕНД данных портала',
@@ -143,7 +145,7 @@ describe('Разведка выданной базы: только чтение,
       'OK расширение uuid-ossp: включено',
       'ИНФО расширение pg_stat_statements: не включено (необязательное)',
       'OK база пустая: таблиц и представлений нет',
-      'ИНФО других баз в кластере видно: 2 (имена не показываю)',
+      'ИНФО других баз в кластере видно: 3 (имена не показываю)',
       'ИНФО пулер: признаков режима транзакций нет',
     ]) assert.ok(r.stdout.includes(line), `нет строки: ${line}\n${r.stdout}`)
     assert.match(r.stdout, /^OK часовой пояс: (UTC|Etc\/UTC)/m)
@@ -157,10 +159,19 @@ describe('Разведка выданной базы: только чтение,
   it('чужая база и роль: имена не показываются, чужие таблицы — только счётчиком', () => {
     const r = probe(envFile(conn({ PGDATABASE: 'zz_private_db', PGUSER: 'zz_private_role', PGPASSWORD: OTHER_PASS })))
     assert.equal(r.status, 0, r.all)
-    assert.ok(r.stdout.includes('ИНФО база: имя не из нашей заявки (не показываю)'))
-    assert.ok(r.stdout.includes('ИНФО роль: имя не из нашей заявки (не показываю)'))
+    assert.ok(r.stdout.includes('ИНФО база: имя не из нашей заявки (не показываю); «osp» в имени нет; стенд или боевая — по имени не видно'))
+    assert.ok(r.stdout.includes('ИНФО роль: имя не из нашей заявки (не показываю); «osp» в имени нет'))
     assert.ok(r.stdout.includes('ВНИМАНИЕ в базе есть таблицы, и это не таблицы портала: 1 (имена не показываю)'))
     assert.ok(r.stdout.includes('ВНИМАНИЕ расширение pg_trgm: доступно, но не включено'))
+    noSecrets(r, FOREIGN_NAMES)
+  })
+
+  it('имя не из заявки: само не показывается, но видно, что оно про портал и похоже на стенд', () => {
+    const r = probe(envFile(conn({ PGDATABASE: 'zz_osp_test_db', PGUSER: 'zz_osp_role', PGPASSWORD: OTHER_PASS })))
+    assert.equal(r.status, 0, r.all)
+    assert.ok(r.stdout.includes('ИНФО база: имя не из нашей заявки (не показываю); в имени есть «osp»; по имени похожа на стенд'))
+    assert.ok(r.stdout.includes('ИНФО роль: имя не из нашей заявки (не показываю); в имени есть «osp»'))
+    assert.ok(r.stdout.includes('OK роль — владелец этой базы'))
     noSecrets(r, FOREIGN_NAMES)
   })
 
@@ -194,6 +205,21 @@ describe('Разведка выданной базы: только чтение,
     assert.equal(noCa.status, 2, noCa.all)
     assert.ok(noCa.stdout.includes('FAIL нет корневого сертификата для проверки TLS на этой машине'))
     assert.ok(noCa.stdout.includes('storage.yandexcloud.net/cloud-certs/CA.pem'), 'подсказка, где взять сертификат Яндекса')
+    assert.ok(noCa.stdout.includes(`-o ${tmp}/root.crt`), 'сертификат — рядом с файлом подключения')
+    assert.ok(noCa.stdout.includes('в ~/.postgresql/root.crt его не класть'))
+
+    // Сертификат рядом с файлом подключения подхватывается сам; в ~/.postgresql ничего не появляется.
+    const dir = path.join(tmp, 'secrets-dir')
+    fs.mkdirSync(dir)
+    fs.copyFileSync(ca, path.join(dir, 'root.crt'))
+    const beside = path.join(dir, 'target.env')
+    fs.writeFileSync(beside, conn({ PGSSLMODE: 'verify-full' }).join('\n') + '\n', { mode: 0o600 })
+    n += 1
+    const adjacent = probe(beside)
+    assert.equal(adjacent.status, 0, adjacent.all)
+    assert.match(adjacent.stdout, /^OK подключение установлено; шифрование TLSv1\.[23]$/m)
+    assert.ok(!fs.existsSync(path.join(tmp, '.postgresql')), 'в ~/.postgresql ничего не пишется')
+    noSecrets(adjacent)
 
     const wrongCa = probe(envFile([...conn({ PGSSLMODE: 'verify-full' }), `PGSSLROOTCERT=${path.join(certs, 'other.crt')}`]))
     assert.equal(wrongCa.status, 2, wrongCa.all)

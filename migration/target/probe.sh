@@ -8,6 +8,11 @@
 # PGSSLROOTCERT). Он разбирается, а не исполняется; остальные строки игнорируются. Нет PGPASSWORD —
 # пароль спрашивается скрыто.
 #
+# Корневой сертификат для verify-full: PGSSLROOTCERT из файла, иначе root.crt РЯДОМ с файлом
+# подключения, иначе место libpq по умолчанию. В ~/.postgresql/root.crt его класть нельзя: при этом
+# файле libpq проверяет сертификат и у подключений с sslmode=require — сломаются копии Supabase
+# (migration/backup) и подключения других проектов под тем же пользователем.
+#
 # Что делает: подключается к ОДНОЙ базе — той, что в файле, — и читает системные каталоги внутри
 # транзакции «только чтение» (probe.sql). Ничего не создаёт и не меняет: в кластере рядом базы других
 # порталов.
@@ -46,6 +51,10 @@ done < "$ENV_FILE"
 for key in PGHOST PGPORT PGDATABASE PGUSER; do
   [ -n "${!key:-}" ] || { echo "В файле нет $key" >&2; exit 1; }
 done
+ENV_DIR="$(cd "$(dirname "$ENV_FILE")" && pwd)"
+if [ -z "${PGSSLROOTCERT:-}" ] && [ -f "$ENV_DIR/root.crt" ]; then
+  export PGSSLROOTCERT="$ENV_DIR/root.crt"
+fi
 if [ -z "${PGPASSWORD:-}" ]; then
   read -rsp 'Пароль базы (не отображается): ' PGPASSWORD
   echo
@@ -117,7 +126,8 @@ connect_failed() {
   case "$text" in
     *'root certificate file'*'does not exist'*)
       say 'FAIL нет корневого сертификата для проверки TLS на этой машине'
-      say 'ИНФО сертификат Яндекса: mkdir -p ~/.postgresql && curl -fsS https://storage.yandexcloud.net/cloud-certs/CA.pem -o ~/.postgresql/root.crt && chmod 600 ~/.postgresql/root.crt' ;;
+      say "ИНФО сертификат Яндекса кладётся рядом с файлом подключения: curl -fsS https://storage.yandexcloud.net/cloud-certs/CA.pem -o $ENV_DIR/root.crt && chmod 600 $ENV_DIR/root.crt"
+      say 'ИНФО в ~/.postgresql/root.crt его не класть: с этим файлом сертификат начнут проверять и подключения с sslmode=require' ;;
     *'certificate verify failed'* | *'server certificate'* | *'SSL error'*)
       say 'FAIL проверка TLS-сертификата сервера не прошла' ;;
     *'server does not support SSL'*)
@@ -156,7 +166,7 @@ fi
 if [ "${PGSSLMODE:-}" != verify-full ]; then
   ca="${PGSSLROOTCERT:-$HOME/.postgresql/root.crt}"
   if [ ! -f "$ca" ]; then
-    say 'ИНФО verify-full не пробовали: на этой машине нет корневого сертификата (~/.postgresql/root.crt)'
+    say 'ИНФО verify-full не пробовали: корневого сертификата нет ни рядом с файлом подключения, ни в ~/.postgresql'
   elif PGSSLMODE=verify-full PGSSLROOTCERT="$ca" psql -X -q -At -c 'select 1' >/dev/null 2>&1; then
     say 'OK с проверкой сертификата (verify-full) подключение тоже проходит — режим в файле можно ужесточить'
   else
