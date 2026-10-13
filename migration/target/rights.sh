@@ -111,9 +111,12 @@ SQL
 } > "$WORK/rows-after.sql"
 
 started="$(date +%s)"
-# Отметка пропуска — на сеанс: после включения правил владелец без неё не видит ни строки.
-if ! PGAPPNAME='osp:internal' psql -X -q -v ON_ERROR_STOP=1 -1 \
-    -f "$WORK/rows-before.sql" -f "$WORK/acl.sql" -f "$HERE/sql/load-single-owner.sql" -f "$WORK/rows-after.sql" -f "$HERE/sql/rights-end.sql" \
+# Отметка пропуска — командой внутри транзакции: после включения правил владелец без неё не видит ни
+# строки. Задать её именем подключения (PGAPPNAME) нельзя: пулер Яндекса дописывает к имени адрес клиента,
+# и отметка не совпадает. Заодно это значит, что параметрами подключения пропуск получить невозможно.
+echo "SET LOCAL application_name = 'osp:internal';" > "$WORK/mark.sql"
+if ! PGAPPNAME=osp-rights psql -X -q -v ON_ERROR_STOP=1 -1 \
+    -f "$WORK/mark.sql" -f "$WORK/rows-before.sql" -f "$WORK/acl.sql" -f "$HERE/sql/load-single-owner.sql" -f "$WORK/rows-after.sql" -f "$HERE/sql/rights-end.sql" \
     > "$WORK/out" 2> "$WORK/err"; then
   say "FAIL применение прервано, транзакция отменена — в базе ничего не изменилось"
   say "ИНФО причина: $(first_error "$WORK/err")"
