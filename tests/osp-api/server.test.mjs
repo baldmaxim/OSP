@@ -171,7 +171,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
   it('health: что настроено — да/нет, без значений секретов', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' })
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(res.json(), { ok: true, service: 'osp-api', configured: { supabase: true, supabaseService: true, s3: true, anthropic: true, rates: true } })
+    assert.deepEqual(res.json(), { ok: true, service: 'osp-api', configured: { supabase: true, supabaseService: true, s3: true, anthropic: true, rates: true, db: false, token: false } })
     for (const secret of ['anon-test-key', 'service-test-key', 'secret-test', 'anthropic-test-key', 'rk-one']) {
       assert.ok(!res.body.includes(secret), secret)
     }
@@ -719,11 +719,13 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
 
   describe('готовность /api/ready (рецензия, п. 5)', () => {
     const ready = (headers = {}) => app.inject({ method: 'GET', url: '/api/ready', headers })
+    // Своя база и проверка токена на сервере здесь не настроены (их набор — tests/osp-api/identity.test.mjs).
+    const OFF = { db: 'not_configured', token: 'not_configured' }
 
     it('все настроенные зависимости отвечают — 200; S3 — запись и удаление служебного объекта', async () => {
       const res = await ready()
       assert.equal(res.statusCode, 200, res.body)
-      assert.deepEqual(res.json(), { ok: true, checks: { supabase: 'ok', s3: 'ok', anthropic: 'ok' }, required: ['supabase', 's3', 'anthropic'] })
+      assert.deepEqual(res.json(), { ok: true, checks: { supabase: 'ok', s3: 'ok', anthropic: 'ok', ...OFF }, required: ['supabase', 's3', 'anthropic'] })
       assert.deepEqual(s3.requests.map((r) => `${r.method} ${r.path}`), ['PUT /osp/osp-api/ready-check', 'DELETE /osp/osp-api/ready-check'])
     })
 
@@ -732,7 +734,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       try {
         const res = await ready()
         assert.equal(res.statusCode, 503)
-        assert.deepEqual(res.json(), { ok: false, checks: { supabase: 'ok', s3: 'ok', anthropic: 'fail' }, required: ['supabase', 's3', 'anthropic'] })
+        assert.deepEqual(res.json(), { ok: false, checks: { supabase: 'ok', s3: 'ok', anthropic: 'fail', ...OFF }, required: ['supabase', 's3', 'anthropic'] })
       } finally {
         anthropicDown = false
       }
@@ -747,7 +749,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       await makeApp(noKeys)
       const res = await ready()
       assert.equal(res.statusCode, 503)
-      assert.deepEqual(res.json(), { ok: false, checks: { supabase: 'ok', s3: 'not_configured', anthropic: 'not_configured' }, required: ['supabase', 's3', 'anthropic'] })
+      assert.deepEqual(res.json(), { ok: false, checks: { supabase: 'ok', s3: 'not_configured', anthropic: 'not_configured', ...OFF }, required: ['supabase', 's3', 'anthropic'] })
       await makeApp({ ...noKeys, required: ['supabase'] })
       assert.equal((await ready()).statusCode, 200)
       // Необязательная проверяется и видна, но не решает.
@@ -756,7 +758,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
         await makeApp({ required: ['supabase', 's3'] })
         const partial = await ready()
         assert.equal(partial.statusCode, 200)
-        assert.deepEqual(partial.json(), { ok: true, checks: { supabase: 'ok', s3: 'ok', anthropic: 'fail' }, required: ['supabase', 's3'] })
+        assert.deepEqual(partial.json(), { ok: true, checks: { supabase: 'ok', s3: 'ok', anthropic: 'fail', ...OFF }, required: ['supabase', 's3'] })
       } finally {
         anthropicDown = false
       }
@@ -828,6 +830,8 @@ describe('osp-api: настройки готовности (OSP_API_REQUIRE)', (
   it('явный список — как задан, порядок и повторы не важны', () => {
     assert.deepEqual(parseRequired(' s3 , supabase,s3'), ['supabase', 's3'])
     assert.deepEqual(loadConfig({ OSP_API_REQUIRE: 'supabase' }).required, ['supabase'])
+    // Своя база и проверка токена — только по явному требованию.
+    assert.deepEqual(parseRequired('token,db,supabase'), ['supabase', 'db', 'token'])
   })
 
   it('опечатка или без supabase — служба не запускается', () => {

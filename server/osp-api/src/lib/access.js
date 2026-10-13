@@ -6,7 +6,8 @@
 // Право на конкретную запись (чей договор, чей файл) решает обработчик: для него нужны данные записи.
 //
 // Объявление: app.route({ method, url, config: { access: access.user({...}), body: z.object({...}) }, handler }).
-// Обработчик получает request.auth = { supabase, user, roleRow }.
+// Обработчик получает request.auth = { supabase, user, who, roleRow }; who = { userId, email } — для
+// операций с базой (src/lib/db.js).
 
 // Строка user_roles нужна и требованию, и обработчику — читается один раз.
 const ROLE_COLUMNS = 'role, counterparty_id, is_approved, is_blocked, full_name'
@@ -36,7 +37,9 @@ export const access = {
 
 const routeKey = (method, url) => `${method === 'HEAD' ? 'GET' : method} ${url}`
 
-export function installAccess(app, { authenticate, limiters, openRoutes }) {
+// userStatus (src/lib/userStatus.js) — статус учётки из своей базы; не задан — строка читается из
+// Supabase под токеном пользователя, как раньше.
+export function installAccess(app, { authenticate, limiters, openRoutes, userStatus = null }) {
   const table = []
   const approved = new Map(openRoutes.map((r) => [routeKey(r.method, r.url), r]))
   app.decorate('accessTable', table)
@@ -67,8 +70,19 @@ export function installAccess(app, { authenticate, limiters, openRoutes }) {
         if (declared.rate && !limiters[declared.rate.limiter].take(auth.user.id)) {
           return reply.code(429).send({ error: declared.rate.deny })
         }
-        const { data } = await auth.supabase.from('user_roles').select(ROLE_COLUMNS).eq('user_id', auth.user.id).maybeSingle()
-        const roleRow = data || null
+        let roleRow
+        if (userStatus) {
+          try {
+            roleRow = await userStatus.get(auth.user.id)
+          } catch (err) {
+            // База не ответила — это не «прав нет»: клиент может повторить.
+            request.log.error({ route: route.url, code: err?.code, msg: String(err?.message || err).slice(0, 200) }, 'user status')
+            return reply.code(503).send({ error: 'Сервис временно недоступен, повторите запрос' })
+          }
+        } else {
+          const { data } = await auth.supabase.from('user_roles').select(ROLE_COLUMNS).eq('user_id', auth.user.id).maybeSingle()
+          roleRow = data || null
+        }
         if (!requirement(roleRow)) return reply.code(403).send({ error: declared.deny })
         request.auth = { ...auth, roleRow }
       })

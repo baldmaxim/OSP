@@ -6,16 +6,21 @@
 // браузера. Сузить можно только явно (например, supabase,s3 — если Anthropic недоступен с сервера;
 // тогда ospApiAi не включать). Опечатка или список без supabase — служба не запускается.
 export const READY_PARTS = ['supabase', 's3', 'anthropic']
+// Проверяются, только если настроены: своё подключение к базе (db) и секрет подписи токенов (token).
+// Настроенная и не ответившая — отказ готовности и без OSP_API_REQUIRE; в списке обязательных —
+// «не настроено» тоже отказ.
+export const READY_OPTIONAL = ['db', 'token']
 
 export function parseRequired(raw) {
   const names = String(raw ?? '').split(',').map((s) => s.trim()).filter(Boolean)
   if (!names.length) return [...READY_PARTS]
-  const unknown = names.filter((n) => !READY_PARTS.includes(n))
+  const known = [...READY_PARTS, ...READY_OPTIONAL]
+  const unknown = names.filter((n) => !known.includes(n))
   if (unknown.length) {
-    throw new Error(`OSP_API_REQUIRE: неизвестные зависимости ${unknown.join(', ')} (допустимы ${READY_PARTS.join(', ')})`)
+    throw new Error(`OSP_API_REQUIRE: неизвестные зависимости ${unknown.join(', ')} (допустимы ${known.join(', ')})`)
   }
   if (!names.includes('supabase')) throw new Error('OSP_API_REQUIRE: supabase обязателен — без него не работает ни один маршрут')
-  return READY_PARTS.filter((n) => names.includes(n))
+  return known.filter((n) => names.includes(n))
 }
 
 export function loadConfig(env = process.env) {
@@ -26,6 +31,9 @@ export function loadConfig(env = process.env) {
     supabaseUrl: env.SUPABASE_URL || '',
     supabaseAnonKey: env.SUPABASE_ANON_KEY || '',
     supabaseServiceKey: env.SUPABASE_SERVICE_ROLE_KEY || '',
+    // Секрет подписи токенов Supabase Auth. Задан — вход проверяется на сервере (src/lib/token.js),
+    // без запроса к Supabase на каждое обращение; пусто — как раньше, запросом к Supabase.
+    supabaseJwtSecret: env.SUPABASE_JWT_SECRET || '',
     s3: {
       endpoint: env.S3_ENDPOINT || '',
       region: env.S3_REGION || 'ru-central-1',
@@ -55,5 +63,7 @@ export function configuredParts(config) {
     s3: Boolean(s3.endpoint && s3.bucket && s3.accessKeyId && s3.secretAccessKey),
     anthropic: Boolean(config.anthropicApiKey),
     rates: config.ratesApiKeys.length > 0,
+    db: Boolean(config.db?.url),
+    token: Boolean(config.supabaseJwtSecret),
   }
 }

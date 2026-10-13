@@ -373,7 +373,7 @@ EOF
 | Служба | `/etc/systemd/system/osp-api.service` из `deploy/osp-api.service` |
 | nginx | `/etc/nginx/sites-available/osp.root.sx` из `deploy/nginx/osp.root.sx.conf`, sha256 рядом; проверяется `tests/deploy/nginx.test.mjs`. По HTTP `/api/` — 403, без перенаправления (иначе ключ из `?key=` вернулся бы в `Location`) |
 | Журнал | `journalctl -u osp-api` — без ключей, токенов и текстов запросов; в журналах nginx адреса `/api/` и все запросы по HTTP — без параметров |
-| Готовность | `curl -s http://127.0.0.1:8787/api/ready` — только с самого сервера; проверяет Supabase, S3 (пишет и удаляет `osp-api/ready-check`), Anthropic. 200 — только если ответили все обязательные: `OSP_API_REQUIRE`, по умолчанию все три |
+| Готовность | `curl -s http://127.0.0.1:8787/api/ready` — только с самого сервера; проверяет Supabase, S3 (пишет и удаляет `osp-api/ready-check`), Anthropic. 200 — только если ответили все обязательные: `OSP_API_REQUIRE`, по умолчанию все три. Своя база (`db`) и секрет подписи токенов (`token`) проверяются, если заданы: заданная и не прошедшая проверку — тоже отказ |
 
 ### Установка (один раз)
 

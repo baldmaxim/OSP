@@ -9,8 +9,9 @@ export function safeEqual(a, b) {
   return timingSafeEqual(x, y)
 }
 
-// Токен из заголовка Authorization: «Bearer <jwt>».
+// Токен из заголовка Authorization: «Bearer <jwt>». Только знаки, допустимые в токене (RFC 6750):
+// иное токеном быть не может, а в заголовке запроса к Supabase вызвало бы ошибку вместо отказа 401.
 export function bearerToken(header) {
-  const m = /^Bearer\s+(.+)$/i.exec(String(header || '').trim())
-  return m ? m[1].trim() : ''
+  const m = /^Bearer\s+([A-Za-z0-9._~+/=-]+)$/i.exec(String(header || '').trim())
+  return m ? m[1] : ''
 }

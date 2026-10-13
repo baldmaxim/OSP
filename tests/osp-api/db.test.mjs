@@ -42,7 +42,7 @@ describe('osp-api: обёртка транзакции — единственн�
   let pgdb
   let createDb
   let url
-  const open = (over = {}) => createDb({ connectionString: url, max: 1, ...over })
+  const open = (over = {}) => createDb({ url, max: 1, ...over })
   const state = (tx) => tx.query(`select current_user as usr,
       coalesce(current_setting('request.jwt.claims', true), '') as claims,
       current_setting('statement_timeout') as st, current_setting('transaction_read_only') as ro,
@@ -184,6 +184,6 @@ describe('osp-api: обёртка транзакции — единственн�
 
   it('без строки подключения и с недопустимым именем роли обёртка не создаётся', () => {
     assert.throws(() => createDb({}), /не задана строка подключения/)
-    assert.throws(() => createDb({ connectionString: url, secondLockRole: 'authenticated; drop' }), /недопустимое имя роли/)
+    assert.throws(() => createDb({ url, secondLockRole: 'authenticated; drop' }), /недопустимое имя роли/)
   })
 })

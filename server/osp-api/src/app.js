@@ -3,14 +3,21 @@
 // Supabase (под токеном пользователя, RLS действует как в браузере); на этапе переноса базы меняется
 // только источник, маршруты остаются.
 //
+// Кто вошёл. Задан SUPABASE_JWT_SECRET — токен проверяется здесь (src/lib/token.js); задан OSP_DB_URL —
+// статус учётки читается из базы с коротким кэшем (src/lib/userStatus.js). Не заданы — как раньше:
+// оба шага запросами к Supabase. Вернуть прежний путь — убрать ключ из окружения и перезапустить.
+//
 // Журнал: метод, ШАБЛОН маршрута, код, время. Ни адреса с параметрами (в ?key= ключ rates-api), ни
 // заголовков, ни тел запросов (в них текст договоров) в журнал не попадает. Ответы не кешируются.
 import Fastify, { LogController } from 'fastify'
 import { createClient } from '@supabase/supabase-js'
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import Anthropic from '@anthropic-ai/sdk'
-import { configuredParts, READY_PARTS } from './config.js'
+import { configuredParts, READY_PARTS, READY_OPTIONAL } from './config.js'
 import { bearerToken } from './lib/keys.js'
+import { createDb } from './lib/db.js'
+import { createTokenVerifier } from './lib/token.js'
+import { createUserStatus, STATUS_DEFAULTS } from './lib/userStatus.js'
 import { createRateLimit, createConcurrency, DEFAULT_LIMITS } from './lib/limits.js'
 import { access, installAccess } from './lib/access.js'
 import { OPEN_ROUTES } from './open-routes.js'
@@ -36,6 +43,7 @@ export const defaultDeps = {
     forcePathStyle: true, // cloud.ru — path-style адреса
   }),
   createAnthropic: (apiKey) => new Anthropic({ apiKey, timeout: AI_TIMEOUT_MS }),
+  createDb: (options) => createDb(options),
   // Проверки готовности — каждая бросает при отказе.
   checkSupabase: async (config, signal) => {
     const res = await fetch(`${config.supabaseUrl}/auth/v1/health`, { headers: { apikey: config.supabaseAnonKey }, signal })
@@ -68,6 +76,17 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     bodyLimit: BODY_LIMIT,
   })
 
+  // Своё подключение к базе — если задано. Неверная настройка (нет сертификата, не та строка)
+  // останавливает запуск; доступность базы проверяет /api/ready.
+  const db = config.db?.url
+    ? deps.createDb({ url: config.db.url, caFile: config.db.caFile, max: config.db.poolMax, secondLockRole: config.db.secondLockRole || '', logger: app.log })
+    : null
+  if (db) app.addHook('onClose', async () => { await db.close() })
+  const userStatus = db ? createUserStatus({ db, ttlMs: config.userStatusTtlMs ?? STATUS_DEFAULTS.ttlMs }) : null
+  const verifier = config.supabaseJwtSecret
+    ? createTokenVerifier({ secret: config.supabaseJwtSecret, supabaseUrl: config.supabaseUrl })
+    : null
+
   // Пользователь по его токену Supabase; клиент — от его имени, чтобы действовал RLS.
   const authenticate = async (request, reply) => {
     const authHeader = request.headers.authorization
@@ -81,14 +100,24 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
       global: { headers: { Authorization: `Bearer ${token}` } },
       auth: SERVER_AUTH,
     })
-    const { data, error } = await supabase.auth.getUser(token)
-    if (error || !data?.user) { reply.code(401).send({ error: 'Unauthorized' }); return null }
+    let user
+    if (verifier) {
+      try {
+        user = await verifier.verify(token)
+      } catch {
+        reply.code(401).send({ error: 'Unauthorized' }); return null
+      }
+    } else {
+      const { data, error } = await supabase.auth.getUser(token)
+      if (error || !data?.user) { reply.code(401).send({ error: 'Unauthorized' }); return null }
+      user = data.user
+    }
     // Тело — объект JSON (как ждали Edge Functions); иначе — «Invalid JSON».
     const body = request.body
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       reply.code(400).send({ error: 'Invalid JSON' }); return null
     }
-    return { supabase, user: data.user }
+    return { supabase, user, who: { userId: user.id, email: user.email || '' } }
   }
 
   let s3Client = null
@@ -148,7 +177,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
 
   // Права — на маршруте: без config.access маршрут не регистрируется (закрыто по умолчанию),
   // открытые адреса — только из утверждённого списка. Ставится до первого маршрута.
-  installAccess(app, { authenticate, limiters, openRoutes: OPEN_ROUTES })
+  installAccess(app, { authenticate, limiters, openRoutes: OPEN_ROUTES, userStatus })
   const openReason = (method, url) => OPEN_ROUTES.find((r) => r.method === method && r.url === url).reason
 
   app.route({
@@ -184,13 +213,20 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
       run('supabase', parts.supabase, (signal) => deps.checkSupabase(config, signal)),
       run('s3', parts.s3, () => deps.checkS3(getS3(), config.s3.bucket)),
       run('anthropic', parts.anthropic, () => deps.checkAnthropic(getAnthropic())),
+      run('db', Boolean(db), () => db.read(null, (tx) => tx.query('select 1'))),
     ])
+    // Секрет подписи сверяется с публичным ключом сайта: чужой секрет дал бы 401 на каждый вход.
+    if (!verifier) checks.token = 'not_configured'
+    else {
+      const match = await verifier.matchesProjectKey(config.supabaseAnonKey)
+      checks.token = match === null ? 'unchecked' : match ? 'ok' : 'fail'
+    }
     const required = config.required || READY_PARTS
-    const ok = required.every((name) => checks[name] === 'ok')
+    const ok = required.every((name) => checks[name] === 'ok') && READY_OPTIONAL.every((name) => checks[name] !== 'fail')
     return reply.code(ok ? 200 : 503).send({ ok, checks, required })
   } })
 
-  const ctx = { config, getS3, getAnthropic, getServiceClient, limiters }
+  const ctx = { config, getS3, getAnthropic, getServiceClient, limiters, db }
   registerS3Presign(app, ctx)
   registerAiAssist(app, ctx)
   registerRates(app, ctx)

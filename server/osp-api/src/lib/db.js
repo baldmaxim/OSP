@@ -1,6 +1,6 @@
 // Единственный путь osp-api к базе: каждая операция — одна транзакция через эту обёртку.
 //
-//   const db = createDb({ connectionString, max, … })
+//   const db = createDb({ url, caFile, max, … })
 //   await db.read(who, async (tx) => (await tx.query('select … where id = $1', [id])).rows)
 //   await db.write(who, async (tx) => { await tx.query('insert …', […]) })
 //
@@ -10,7 +10,9 @@
 //     на том же подключении пула;
 //   • любая ошибка — ROLLBACK; не удался ROLLBACK — подключение уничтожается, в пул не возвращается;
 //   • запрос — одна параметризованная команда: несколько команд в одной строке сервер не примет;
-//   • подключений не больше max: учётка базы общая с другими системами, у неё общий лимит.
+//   • подключений не больше max: учётка базы общая с другими системами, у неё общий лимит;
+//   • сертификат и имя сервера базы проверяются всегда, кроме базы на этой же машине: строка
+//     подключения проверку не ослабляет (dbConnection, tests/osp-api/db-tls.test.mjs).
 //
 // who — { userId, email } из проверенного сервером входа либо null (служебная операция без пользователя).
 // В базу уходит минимальный контекст, собранный здесь, а не содержимое исходного токена: функции базы
@@ -18,6 +20,7 @@
 //
 // secondLockRole (пока база в Supabase — authenticated): транзакция пользователя выполняется под этой
 // ролью, и правила по строкам действуют вторым замком. В базе Яндекса роли приложения нет — пусто.
+import fs from 'node:fs'
 import pg from 'pg'
 
 const IDENT = /^[a-z_][a-z0-9_]*$/
@@ -32,15 +35,49 @@ export const DB_DEFAULTS = {
   idlePoolTimeoutMs: 30_000,
 }
 
+const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost'])
+
+// Параметры подключения из строки (OSP_DB_URL) и файла корневого сертификата (OSP_DB_CA_FILE).
+// Правило одно: к базе не на этой машине — только с проверкой сертификата и имени сервера (verify-full).
+// Параметры строки подключения, кроме sslmode=verify-full, не принимаются: драйвер молча отдаёт им
+// приоритет над настройками кода, и «sslmode=require» в адресе выключил бы проверку.
+// В текстах ошибок нет ни адреса, ни учётки, ни пароля.
+export function dbConnection({ url, caFile = '' }, readFile = fs.readFileSync) {
+  let u
+  try { u = new URL(String(url)) } catch { throw new Error('osp-api: строка подключения к базе не разобрана') }
+  if (u.protocol !== 'postgres:' && u.protocol !== 'postgresql:') throw new Error('osp-api: строка подключения к базе — postgres://…')
+  const host = u.hostname.replace(/^\[|\]$/g, '')
+  let user, password, database
+  try {
+    user = decodeURIComponent(u.username)
+    password = decodeURIComponent(u.password)
+    database = decodeURIComponent(u.pathname.replace(/^\//, ''))
+  } catch { throw new Error('osp-api: строка подключения к базе не разобрана') }
+  if (!host || !user || !database || database.includes('/')) throw new Error('osp-api: в строке подключения нужны адрес, учётка и имя базы')
+  // Имя параметра в ошибку не идёт: при неэкранированном «?» в пароле параметром стал бы его остаток.
+  for (const name of u.searchParams.keys()) {
+    if (name !== 'sslmode') throw new Error('osp-api: в строке подключения к базе допустим только параметр sslmode=verify-full')
+  }
+  const mode = u.searchParams.get('sslmode')
+  if (mode !== null && mode !== 'verify-full') throw new Error('osp-api: sslmode в строке подключения — только verify-full')
+
+  let ssl = false
+  if (caFile) ssl = { ca: readFile(caFile, 'utf8'), rejectUnauthorized: true }
+  else if (mode === 'verify-full' || !LOCAL_HOSTS.has(host)) {
+    throw new Error('osp-api: подключение к базе без проверки сертификата запрещено — задайте OSP_DB_CA_FILE')
+  }
+  return { host, port: Number(u.port) || 5432, user, password, database, ssl }
+}
+
 export function createDb(options) {
   const o = { ...DB_DEFAULTS, ...options }
-  if (!o.connectionString) throw new Error('osp-api: не задана строка подключения к базе')
+  if (!o.url) throw new Error('osp-api: не задана строка подключения к базе')
+  const connection = dbConnection({ url: o.url, caFile: o.caFile }, o.readFile)
   if (o.secondLockRole && !IDENT.test(o.secondLockRole)) throw new Error('osp-api: недопустимое имя роли второго замка')
   const log = o.logger || { warn() {}, error() {} }
 
   const pool = new pg.Pool({
-    connectionString: o.connectionString,
-    ssl: o.ssl,
+    ...connection,
     max: o.max,
     connectionTimeoutMillis: o.connectionTimeoutMs,
     idleTimeoutMillis: o.idlePoolTimeoutMs,
