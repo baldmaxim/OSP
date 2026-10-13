@@ -128,7 +128,14 @@ bash migration/target/neighbors.sh ~/.osp-secrets/target.env --compare          
 `migration/cutover/02-supabase-readonly-rollback.sql` в SQL Editor. Портал снова работает с Supabase.
 
 **После шага 8** возврата на Supabase нет: в нём не будет новых записей. Исправление — только вперёд.
-Копия базы Яндекса снимается каждую ночь; Supabase остаётся замороженным (только чтение) 30 дней.
+Supabase остаётся замороженным (только чтение) 30 дней.
+
+**Копия базы Яндекса** — сразу после шага 9 и затем каждую ночь (только чтение, чужие базы не трогает):
+```bash
+bash migration/target/export.sh ~/.osp-secrets/target.env            # снимок всех таблиц одной транзакцией
+bash migration/target/export-verify.sh migration/dumps/yandex-<время>  # проверка восстановлением
+```
+Обычный `pg_dump` данных здесь не подходит: правила по строкам действуют и на владельца.
 
 ## Готово, когда есть четыре доказательства
 1. Браузер не обращается к базе Supabase: в Usage и в журнале портала нет запросов к таблицам.

@@ -6,7 +6,8 @@
 //   • материализованное представление уходит в закрытую схему, пересчёт и представление над ним работают;
 //   • через представление записать нельзя; шаг прав не меняет ни одной строки и повторно не применяется;
 //   • соседняя база той же учётки не тронута ни загрузкой, ни очисткой; пропажу соседней базы проверка видит;
-//   • репетицию можно убрать, настоящий перенос — нельзя.
+//   • репетицию можно убрать, настоящий перенос — нельзя;
+//   • копия такой базы (export.sh) снимается целиком и проверяется восстановлением.
 // Нужны Docker, psql, pg_dump, pg_restore.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -277,5 +278,28 @@ describe('Перенос под одну учётку: правила дейст
     // Без --single-owner настоящий перенос без прав по-прежнему запрещён.
     const refused = run('load.sh', [envFile, dump, '--status', 'final', '--without-rights'])
     assert.equal(refused.status, 1, refused.all)
+  })
+
+  it('копия базы под одной учёткой: снимается одним снимком и проверяется восстановлением', () => {
+    const out = path.join(tmp, 'exports')
+    const exported = run('export.sh', [envFile], { BACKUP_OUT_DIR: out })
+    assert.equal(exported.status, 0, exported.all)
+    assert.match(exported.stdout, /OK копия снята: таблиц — \d+, строк — \d+, статус базы — final/)
+    const dir = path.join(out, fs.readdirSync(out).find((d) => d.startsWith('yandex-')))
+    // Правила по строкам копии не помешали: в перечне — все строки, а не только видимые без входа.
+    const manifest = Object.fromEntries(fs.readFileSync(path.join(dir, 'manifest.tsv'), 'utf8').trim().split('\n').map((l) => l.split('\t').slice(0, 2)))
+    assert.deepEqual([manifest['public.tenders'], manifest['public.notes'], manifest['public.user_roles']], ['40', '10', '3'])
+    assert.equal(fs.statSync(dir).mode & 0o077, 0, 'каталог копии закрыт от других пользователей')
+    const verify = (d) => spawnSync('bash', [path.join(TARGET, 'export-verify.sh'), d], { encoding: 'utf8', cwd: ROOT, timeout: 400000 })
+    const good = verify(dir)
+    assert.equal(good.status, 0, good.stdout + good.stderr)
+    assert.match(good.stdout, /КОПИЯ ГОДНА: таблиц \d+, строк \d+; число строк и контрольные суммы всех таблиц совпали со снимком/)
+    assert.ok(fs.existsSync(path.join(dir, '.verified')))
+    for (const s of [OWNER_PASS, ADMIN_PASS, 'заметка 1', 'Тендер 1']) assert.ok(!(exported.all + good.stdout + good.stderr).includes(s), `в выводе: ${s}`)
+    // Испорченный файл данных — копия не годна.
+    fs.appendFileSync(path.join(dir, 'data', 'public.notes.copy'), `999\t${ANNA}\tподмена\n`)
+    const bad = verify(dir)
+    assert.notEqual(bad.status, 0)
+    assert.match(bad.stdout, /КОПИЯ ПОВРЕЖДЕНА/)
   })
 })
