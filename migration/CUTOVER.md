@@ -39,10 +39,13 @@ bash migration/target/neighbors.sh ~/.osp-secrets/target.env --compare   # по�
 
 ## А. Подготовка сервера портала — в любое время, пользователи не затронуты
 
-1. **Сеть до базы Яндекса** (danila). Адрес — из файла подключения на удалённой машине, в чат не
-   пересылается. Нужен ответ `open`:
+Файлы настроек уже собраны на удалённой машине (`bash migration/target/server-env.sh`): каталог
+`~/.osp-secrets/server` — `postgrest.env`, `osp-api.add.env`, `db-host`. В них пароль базы и внутренний
+секрет шлюза: переносить только по `scp`, на экран не выводить, в чат не вставлять.
+
+1. **Сеть до базы Яндекса** — с сервера портала (danila). Адрес и порт — из файла `db-host`. Нужен `open`:
    ```bash
-   timeout 5 bash -c '</dev/tcp/АДРЕС_БАЗЫ/6432' && echo open || echo closed
+   read -r DBHOST DBPORT < ~/db-host && timeout 5 bash -c "</dev/tcp/$DBHOST/$DBPORT" && echo open || echo closed
    ```
    `closed` — внешний блокер: администратор кластера должен открыть доступ с адреса сервера портала.
 2. **Корневой сертификат базы** (root) — не секрет:
@@ -51,27 +54,24 @@ bash migration/target/neighbors.sh ~/.osp-secrets/target.env --compare   # по�
    curl -fsS https://storage.yandexcloud.net/cloud-certs/CA.pem -o /etc/ssl/osp/yandex-root.crt && chmod 644 /etc/ssl/osp/yandex-root.crt
    ```
 3. **Свежий код** (danila): `cd /home/danila/projects/OSP && git pull`.
-4. **PostgREST** (root):
+4. **PostgREST** (root) — установка и готовый файл настроек:
    ```bash
    bash /home/danila/projects/OSP/deploy/postgrest/install.sh
-   openssl rand -base64 48        # внутренний секрет шлюза — в оба файла ниже, в чат не пересылать
-   nano /etc/osp-api/postgrest.env
+   install -m 600 -o root -g root /home/danila/postgrest.env /etc/osp-api/postgrest.env && shred -u /home/danila/postgrest.env
+   systemctl enable --now postgrest && sleep 3 && systemctl is-active postgrest
    ```
-   В `postgrest.env`: строка подключения к базе Яндекса (`PGRST_DB_URI`, с
-   `sslmode=verify-full&sslrootcert=/etc/ssl/osp/yandex-root.crt`) и `PGRST_JWT_SECRET`.
-   Запускать PostgREST — после шага Б (в пустой базе ему нечего читать).
-5. **osp-api** (root) — в `/etc/osp-api/osp-api.env` дописать (шаблон — `server/osp-api/osp-api.env.example`):
-   - `OSP_PGRST_URL=http://127.0.0.1:3001`, `OSP_PGRST_JWT_SECRET` (тот же секрет), `OSP_PGRST_DB_ROLE`
-     (имя учётки базы), `OSP_DB_READONLY_FILE=/var/lib/osp-api/db-readonly`;
-   - `OSP_DB_URL` (строка подключения к базе Яндекса), `OSP_DB_CA_FILE=/etc/ssl/osp/yandex-root.crt`,
-     `OSP_DB_POOL_MAX=4` (у учётки общий лимит подключений с другими системами), `OSP_REGISTRY_REFRESH=1`;
-   - `SUPABASE_JWT_SECRET` (Supabase → настройки проекта → JWT Keys → Legacy JWT Secret; кнопку «Migrate»
-     не нажимать) — вход проверяется на сервере, без запроса к Supabase на каждое обращение;
-   - ключи S3 и Anthropic, если ещё не внесены (файлы и ИИ после переключения идут только через osp-api).
+5. **osp-api** (root) — дописать строки шлюза в `/etc/osp-api/osp-api.env` и выложить службу:
    ```bash
+   cat /home/danila/osp-api.add.env >> /etc/osp-api/osp-api.env && shred -u /home/danila/osp-api.add.env
    cp /home/danila/projects/OSP/deploy/osp-api.service /etc/systemd/system/osp-api.service && systemctl daemon-reload
    bash /home/danila/projects/OSP/deploy/api-deploy.sh
+   curl -s http://127.0.0.1:8787/api/ready; echo
    ```
+   В ответе готовности должны быть `"db":"ok"` и `"gateway":"ok"`. Дополнительно в том же файле:
+   - `SUPABASE_JWT_SECRET` (Supabase → настройки проекта → JWT Keys → Legacy JWT Secret; кнопку «Migrate»
+     не нажимать) — вход проверяется на сервере, без запроса к Supabase на каждое обращение; тогда в
+     готовности появится `"token":"ok"`;
+   - ключи S3 и Anthropic, если ещё не внесены (файлы и ИИ после переключения идут только через osp-api).
 6. **nginx** (root) — как в `docs/DEPLOYMENT.md`, «Установка», шаг 5 (сверка суммы, копия прежнего файла,
    `nginx -t`, перезагрузка). В файле появился блок `/api/db/`.
 7. **Портал** (как обычно): выложить текущую сборку. Флаг `ospDb` выключен — для пользователей ничего не меняется.
@@ -88,8 +88,13 @@ bash migration/target/verify.sh ~/.osp-secrets/target.env <копия.dump>     
 bash migration/target/rights.sh ~/.osp-secrets/target.env <копия.dump>               # права под одну учётку
 bash migration/target/neighbors.sh ~/.osp-secrets/target.env --compare              # соседи не пострадали
 ```
-Затем на сервере портала (root): `systemctl enable --now postgrest && systemctl restart osp-api`, проверка
-`curl -s http://127.0.0.1:8787/api/ready; echo` — в ответе `"db":"ok"`, `"token":"ok"`, `"gateway":"ok"`.
+После загрузки новой копии PostgREST перечитывает описание структуры базы (root):
+`systemctl kill -s SIGUSR1 postgrest`; проверка — `curl -s http://127.0.0.1:8787/api/ready; echo`.
+
+**Состояние на 2026-10-13, 12:00 UTC.** Репетиция выполнена: копия `prod-20261013-094329` загружена за 99 с,
+сверка — одно ожидаемое расхождение (`kp_rates_registry_mv`, исправляется шагом В.2), права применены за
+7 с, проверки — 10 из 10; что видит каждый вид пользователя — совпало со стендом, где права сверены с
+продом (595 замеров); соседние базы без изменений.
 
 **Проверка в одном браузере** (владелец портала): открыть `https://osp.root.sx/?features=ospDb` — этот
 браузер работает с репетиционной копией в базе Яндекса, остальные — с Supabase. Пройти под сотрудником,
