@@ -103,14 +103,17 @@ describe('osp-api: права объявлены на маршруте, закр
     assert.ok(!app.accessTable.some((r) => r.url.startsWith('/api/new') || r.url === '/api/x' || r.url === '/api/y'), 'отказанные маршруты в таблицу не попали')
   })
 
-  it('снимок «маршрут → права»: новый маршрут, новое открытое право или новое поле тела видны в diff', () => {
+  it('снимок «маршрут → права»: новый маршрут, новое открытое право или новое поле тела видны в diff', async () => {
+    await app.ready() // шлюз данных регистрируется со своим разбором тела — виден после запуска
     const table = [...app.accessTable].sort((a, b) => `${a.url} ${a.method}`.localeCompare(`${b.url} ${b.method}`))
     compareWithBaseline('routes.json', table)
     // Утверждённый список и зарегистрированные открытые маршруты совпадают в обе стороны.
     const open = table.filter((r) => r.kind !== 'user').map((r) => `${r.method} ${r.url} ${r.kind}`).sort()
     assert.deepEqual(open, OPEN_ROUTES.map((r) => `${r.method} ${r.url} ${r.kind}`).sort())
     for (const r of OPEN_ROUTES) assert.ok(r.reason && r.reason.length > 20, `у открытого маршрута нет обоснования: ${r.method} ${r.url}`)
-    for (const r of table.filter((x) => x.method === 'POST')) assert.ok(Array.isArray(r.body), `у ${r.url} нет схемы тела`)
+    // Шлюз данных передаёт запрос в PostgREST как есть: схемы тела у него нет, зато есть список
+    // разрешённого (allow.json) и правила по строкам в базе — принятое исключение, docs/API_RULES.md.
+    for (const r of table.filter((x) => x.method === 'POST' && x.url !== '/api/db/*')) assert.ok(Array.isArray(r.body), `у ${r.url} нет схемы тела`)
   })
 
   it('замер «кто → маршрут → код ответа»: каждый класс пользователей на каждом маршруте, включая запрос без входа', async () => {
@@ -149,6 +152,14 @@ describe('osp-api: права объявлены на маршруте, закр
     measured['GET /api/rates'] = {
       'без ключа': await code('GET', '/api/rates'),
       'верный ключ': await code('GET', '/api/rates', { 'x-api-key': 'rk-one' }),
+    }
+    // Шлюз данных здесь не настроен (данные в Supabase): маршрут закрыт для всех. Права самого шлюза —
+    // tests/osp-api/db-gateway.test.mjs.
+    for (const method of ['GET', 'POST', 'PATCH', 'DELETE']) {
+      measured[`${method} /api/db/*`] = {
+        'без токена': await code(method, '/api/db/tenders?select=id'),
+        'администратор': await code(method, '/api/db/tenders?select=id', { authorization: `Bearer ${U.admin.token}` }),
+      }
     }
     measured['OPTIONS /api/rates/*'] = { 'без ключа': await code('OPTIONS', '/api/rates/kp') }
     measured['OPTIONS /api/rates'] = { 'без ключа': await code('OPTIONS', '/api/rates') }

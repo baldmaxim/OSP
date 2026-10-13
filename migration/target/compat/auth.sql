@@ -22,6 +22,9 @@ CREATE FUNCTION auth.role() RETURNS text
     AS $$
   select
   coalesce(
+    -- Шлюз osp-api кладёт роль пользователя в osp_role: поле role в токене для PostgREST занято именем
+    -- учётки базы (PostgREST подставляет туда роль, под которой выполняет запрос).
+    nullif(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'osp_role', ''),
     nullif(current_setting('request.jwt.claim.role', true), ''),
     (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role')
   )::text

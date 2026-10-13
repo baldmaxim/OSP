@@ -296,7 +296,7 @@ describe('osp-api: вход без обращения к Supabase на кажд�
     const ready = () => app.inject({ method: 'GET', url: '/api/ready' })
     const ok = await ready()
     assert.equal(ok.statusCode, 200, ok.body)
-    assert.deepEqual(ok.json().checks, { supabase: 'ok', s3: 'not_configured', anthropic: 'not_configured', db: 'ok', token: 'ok' })
+    assert.deepEqual(ok.json().checks, { supabase: 'ok', s3: 'not_configured', anthropic: 'not_configured', db: 'ok', token: 'ok', gateway: 'not_configured' })
 
     await makeApp({ supabaseJwtSecret: OTHER_SECRET })
     const wrongSecret = await ready()
@@ -351,7 +351,7 @@ describe('osp-api: вход без обращения к Supabase на кажд�
     await employee(token(U.blocked))
     await approved(projectKey('anon'))
     const health = await app.inject({ method: 'GET', url: '/api/health' })
-    assert.deepEqual(health.json().configured, { supabase: true, supabaseService: true, s3: false, anthropic: false, rates: false, db: true, token: true })
+    assert.deepEqual(health.json().configured, { supabase: true, supabaseService: true, s3: false, anthropic: false, rates: false, db: true, token: true, gateway: false })
     const ready = await app.inject({ method: 'GET', url: '/api/ready' })
     await makeApp({ db: { url: `postgres://api_login:${DB_PASSWORD}@127.0.0.1:9/psdc_test`, caFile: '', poolMax: 2, secondLockRole: '' } })
     const failed = await employee(bearer)

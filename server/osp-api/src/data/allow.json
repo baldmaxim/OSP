@@ -1,0 +1,975 @@
+{
+  "tables": {
+    "app_settings": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "bsm_contract_rates": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "bsm_contractor_rates": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "bsm_supply_rates": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "client_errors": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "client_versions": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "contacts": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_advance_schedule": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_appendices": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_attachments": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_audit_log": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_clause_comments": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_clause_dispute_clauses": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_clause_disputes": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_clauses": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_counterparties": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contract_psdc_items": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "contracts": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "counterparties": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "counterparties_inn_backup_2026_09_21": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "counterparty_audit_log": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "counterparty_contacts": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "counterparty_relations": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "dc_request_audit_log": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "dc_request_tasks": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "dc_requests": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "departments": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "doc_check_request_audit_log": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "doc_check_requests": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "document_check_requests": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "employee_directory": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "employees": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "general_document_folders": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "general_document_links": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "general_documents": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "kp_rates_registry": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "kp_rates_registry_filter_counterparties": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "kp_rates_registry_filter_objects": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "kp_rates_registry_filter_tenders": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "kp_rates_registry_units": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "object_areas": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "object_contract_attachments": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "object_cost_plan": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "object_documents": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "object_estimate_items": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "object_staff": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "object_warranties": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "object_warranty_retention_payments": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "object_warranty_retentions": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "objects": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "positions": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "psdc": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "psdc_batches": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "psdc_issues": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "psdc_rows": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "psdc_source_rows": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "role_permissions": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "roles": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "s3_documents": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "supply_rates_registry": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "supply_rates_registry_filter_objects": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "supply_rates_registry_filter_tenders": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "supply_rates_registry_units": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "task_audit_log": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "task_checklist_items": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "task_comments": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "task_participants": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tasks": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_audit_log": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_counterparties": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_counterparty_proposals": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_doc_links": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_docs": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_documents": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_estimate_items": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_proposal_files": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_rd_codes": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_rd_document_codes": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_vor_supply_rates": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tender_winners": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "tenders": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "user_roles": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "vor_requests": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "work_types": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    }
+  },
+  "rpc": {
+    "admin_confirm_user_email": [
+      "authenticated"
+    ],
+    "admin_delete_user": [
+      "authenticated"
+    ],
+    "can_see_task": [
+      "authenticated"
+    ],
+    "current_counterparty_id": [
+      "authenticated"
+    ],
+    "get_auth_users": [
+      "authenticated"
+    ],
+    "is_admin": [
+      "authenticated"
+    ],
+    "is_my_contract": [
+      "authenticated"
+    ],
+    "is_my_tender": [
+      "authenticated"
+    ],
+    "is_negotiation_employee": [
+      "authenticated"
+    ],
+    "is_portal_employee": [
+      "authenticated"
+    ],
+    "is_task_participant": [
+      "authenticated"
+    ],
+    "kp_norm_name": [
+      "authenticated"
+    ],
+    "kp_norm_unit": [
+      "authenticated"
+    ],
+    "list_sto_employees": [
+      "authenticated"
+    ],
+    "list_supply_employees": [
+      "authenticated"
+    ],
+    "osp_can": [
+      "authenticated"
+    ],
+    "osp_counterparty_id": [
+      "authenticated"
+    ],
+    "osp_is_employee": [
+      "authenticated"
+    ],
+    "osp_registry_reader": [
+      "authenticated"
+    ],
+    "psdc_add_rows": [
+      "authenticated"
+    ],
+    "psdc_apply": [
+      "authenticated"
+    ],
+    "psdc_batch_apply": [
+      "authenticated"
+    ],
+    "psdc_batch_create": [
+      "authenticated"
+    ],
+    "psdc_batch_issues": [
+      "authenticated"
+    ],
+    "psdc_batch_items": [
+      "authenticated"
+    ],
+    "psdc_batch_set_documents": [
+      "authenticated"
+    ],
+    "psdc_batch_set_notes": [
+      "authenticated"
+    ],
+    "psdc_can_view_document": [
+      "authenticated"
+    ],
+    "psdc_cancel": [
+      "authenticated"
+    ],
+    "psdc_cell_value": [
+      "authenticated"
+    ],
+    "psdc_compare": [
+      "authenticated"
+    ],
+    "psdc_contracts_permission": [
+      "authenticated"
+    ],
+    "psdc_create": [
+      "authenticated"
+    ],
+    "psdc_delete": [
+      "authenticated"
+    ],
+    "psdc_document_state": [
+      "authenticated"
+    ],
+    "psdc_feature_started_at": [
+      "authenticated"
+    ],
+    "psdc_get": [
+      "authenticated"
+    ],
+    "psdc_get_rows": [
+      "authenticated"
+    ],
+    "psdc_log_export": [
+      "authenticated"
+    ],
+    "psdc_norm_header": [
+      "authenticated"
+    ],
+    "psdc_number_message": [
+      "authenticated"
+    ],
+    "psdc_parse_decimal": [
+      "authenticated"
+    ],
+    "psdc_set_source_file": [
+      "authenticated"
+    ],
+    "psdc_validate": [
+      "authenticated"
+    ],
+    "psdc_visible": [
+      "authenticated"
+    ],
+    "refresh_rates_registry": [
+      "authenticated"
+    ],
+    "report_client_error": [
+      "authenticated"
+    ],
+    "report_client_version": [
+      "authenticated"
+    ],
+    "touch_last_login": [
+      "authenticated"
+    ],
+    "vor_requests_can_access": [
+      "authenticated"
+    ]
+  }
+}

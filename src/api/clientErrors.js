@@ -15,7 +15,8 @@ export function onClientError(fn) {
   listener = fn
 }
 
-// Раздел по пути: /rest/v1/<таблица>, /rest/v1/rpc/<функция>, /functions/v1/<функция>, /api/fn/<функция>.
+// Раздел по пути: /rest/v1/<таблица>, /rest/v1/rpc/<функция>, /functions/v1/<функция>, /api/fn/<функция>,
+// /api/db/<таблица>, /api/db/rpc/<функция>.
 function sectionOf(url) {
   let path
   try {
@@ -25,6 +26,10 @@ function sectionOf(url) {
   }
   let m = path.match(/^\/api\/fn\/([^/]+)/) // свой API (osp-api) — те же разделы, что у функций
   if (m) return `fn:${m[1]}`
+  m = path.match(/^\/api\/db\/rpc\/([^/]+)/) // свой шлюз данных — те же разделы, что у PostgREST Supabase
+  if (m) return `rpc:${m[1]}`
+  m = path.match(/^\/api\/db\/([^/]+)/)
+  if (m) return m[1]
   m = path.match(/\/rest\/v1\/rpc\/([^/]+)/)
   if (m) return `rpc:${m[1]}`
   m = path.match(/\/rest\/v1\/([^/]+)/)

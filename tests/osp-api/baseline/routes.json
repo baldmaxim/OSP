@@ -1,5 +1,37 @@
 [
   {
+    "method": "DELETE",
+    "url": "/api/db/*",
+    "kind": "open",
+    "require": null,
+    "reason": "шлюз данных: вход и права проверяет сам, аноним — только чтение по списку allow.json",
+    "body": null
+  },
+  {
+    "method": "GET",
+    "url": "/api/db/*",
+    "kind": "open",
+    "require": null,
+    "reason": "шлюз данных: вход и права проверяет сам, аноним — только чтение по списку allow.json",
+    "body": null
+  },
+  {
+    "method": "PATCH",
+    "url": "/api/db/*",
+    "kind": "open",
+    "require": null,
+    "reason": "шлюз данных: вход и права проверяет сам, аноним — только чтение по списку allow.json",
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/db/*",
+    "kind": "open",
+    "require": null,
+    "reason": "шлюз данных: вход и права проверяет сам, аноним — только чтение по списку allow.json",
+    "body": null
+  },
+  {
     "method": "POST",
     "url": "/api/fn/ai-assist",
     "kind": "user",

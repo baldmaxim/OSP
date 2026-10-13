@@ -46,7 +46,7 @@ BEGIN
     ) extra $q$ INTO v_extra;
   SELECT v_extra + count(*) INTO v_extra
   FROM pg_namespace
-  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public', 'auth', 'osp_meta') AND nspname !~ '^pg_(toast|temp)';
+  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public', 'auth', 'osp_meta', 'osp_private') AND nspname !~ '^pg_(toast|temp)';
   IF v_extra > 0 THEN
     RAISE EXCEPTION 'OSP_RESET_EXTRA %', v_extra;
   END IF;
@@ -67,11 +67,13 @@ BEGIN
   END LOOP;
 
   DROP SCHEMA auth CASCADE;
+  -- Права под одну учётку (rights.sh): закрытая схема с материализованными представлениями и проверками.
+  DROP SCHEMA IF EXISTS osp_private CASCADE;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_role) THEN
     EXECUTE format('REVOKE ALL ON SCHEMA public FROM %I', v_role);
   END IF;
   -- Загрузка без прав снимала у будущих функций и типов право «всем» (load-lockdown.sql) — возвращаем.
-  IF v_rights = 'skipped' THEN
+  IF v_rights IN ('skipped', 'single') THEN
     EXECUTE 'ALTER DEFAULT PRIVILEGES GRANT EXECUTE ON ROUTINES TO PUBLIC';
     EXECUTE 'ALTER DEFAULT PRIVILEGES GRANT USAGE ON TYPES TO PUBLIC';
   END IF;

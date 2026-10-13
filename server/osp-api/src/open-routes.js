@@ -2,6 +2,8 @@
 // Открытый маршрут не из этого списка сервер зарегистрировать откажется (src/lib/access.js), а тест
 // tests/osp-api/access.test.mjs сверяет список со снимком в репозитории: новый открытый адрес — это
 // решение, а не правка. Меняется вместе со снимком tests/osp-api/baseline/routes.json.
+import { GATEWAY_METHODS, GATEWAY_URL, GATEWAY_REASON } from './routes/dbGateway.js'
+
 export const OPEN_ROUTES = [
   {
     method: 'GET', url: '/api/health', kind: 'open',
@@ -27,4 +29,8 @@ export const OPEN_ROUTES = [
     method: 'OPTIONS', url: '/api/rates/*', kind: 'open',
     reason: 'CORS-предзапрос к реестру расценок: данных не отдаёт',
   },
+  // Шлюз данных (src/routes/dbGateway.js): вход и права проверяет сам. Без входа — только чтение таблиц,
+  // выданных анониму на проде (список allow.json); строки анониму отдаёт лишь публичная витрина.
+  // HEAD отдельной строкой не ведётся — как и у остальных маршрутов, он следует за GET.
+  ...GATEWAY_METHODS.filter((m) => m !== 'HEAD').map((method) => ({ method, url: GATEWAY_URL, kind: 'open', reason: GATEWAY_REASON })),
 ]

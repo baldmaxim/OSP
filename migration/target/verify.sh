@@ -86,6 +86,12 @@ if [ "$LOADED_SHA" != "$SHA" ] || [ "$FINISHED" != t ]; then
   save_report
   exit 4
 fi
+if [ "$RIGHTS" = single ]; then
+  say "FAIL права под одну учётку уже применены (rights.sh): структура намеренно отличается от копии."
+  say "Сверка данных и структуры делается до rights.sh; права проверяет bash migration/target/rights.sh <файл подключения> --check"
+  save_report
+  exit 4
+fi
 if [ "$RIGHTS" = loaded ]; then
   WITH_RIGHTS=1
   say "ИНФО отметка загрузки: статус $STATUS, копия та же (sha256 ${SHA:0:12}…), роль приложения $RUNTIME_ROLE"

@@ -12,6 +12,7 @@
 // Запуск (его делает migration/target/load.sh):
 //   node rewrite.mjs split <оглавление pg_restore --list> <основное.list> <права.list> <отчёт.json>
 //   node rewrite.mjs acl   <права.sql> <права.готово.sql> <отчёт.json> <роль приложения>
+//   node rewrite.mjs acl-single-owner <права.sql> <права.готово.sql> <отчёт.json>
 // Модуль чистый — проверяется в tests/backup/target-load.test.mjs.
 import fs from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -181,6 +182,73 @@ export function rewriteAcl(sql, runtimeRole) {
   return { sql: out.join('\n'), report }
 }
 
+// Режим «одна учётка» (load.sh --single-owner): роли приложения в базе нет, ролей Supabase тоже.
+// Политики загружаются как есть, но «для всех» (TO PUBLIC); для каких ролей Supabase они были написаны,
+// записывается в таблицу osp_meta.policy_roles — по ней sql/load-single-owner.sql дописывает в условие
+// каждой политики проверку роли из токена. Выдача прав (GRANT/REVOKE) не переносится вовсе: в базе одна
+// учётка, а что можно анониму и вошедшему, решает шлюз osp-api по своему списку.
+// Роли: authenticated и anon — в условие; политика для любой другой роли — отказ.
+const SINGLE_OWNER_ROLES = new Set(['authenticated', 'anon'])
+const sqlText = (text) => `'${String(text).replace(/'/g, "''")}'`
+
+export function rewriteAclSingleOwner(sql) {
+  const out = []
+  const roles = []
+  const report = { policies: { kept: 0, byRole: {} }, grants: { droppedByRole: {} } }
+  let type = null
+  let inPolicy = false
+  const lines = sql.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const where = `строка ${i + 1}`
+    const header = HEADER_RE.exec(line)
+    if (header && !inPolicy) {
+      type = header[2]
+      if (!ACL_TYPES.has(type)) fail(`${where}: запись вида «${type}» в файле прав`)
+      if (type === 'POLICY') out.push(line)
+      continue
+    }
+    if (inPolicy) {
+      if (line === '--' && HEADER_RE.test(lines[i + 1] || '')) { inPolicy = false; out.push(line); continue }
+      out.push(line)
+      continue
+    }
+    if (line.startsWith('CREATE POLICY ')) {
+      if (type !== 'POLICY') fail(`${where}: CREATE POLICY вне записи POLICY`)
+      // Разбор первой строки — тем же кодом, что и для роли приложения; сюда она идёт «для всех».
+      const p = rewritePolicyHead(line, 'public')
+      for (const role of p.roles) {
+        if (!SINGLE_OWNER_ROLES.has(role)) fail(`политика «${p.name}»: роль «${role}» в режиме одной учётки не поддерживается`)
+        report.policies.byRole[role] = (report.policies.byRole[role] || 0) + 1
+      }
+      const head = /^(CREATE POLICY .*?) TO /.exec(line)
+      if (!head) fail(`политика «${p.name}»: нет роли (TO) в первой строке`)
+      // Остаток после списка ролей — как в исходной строке (rewritePolicyHead его уже проверил).
+      const rest = line.slice(line.indexOf(' TO ', head[1].length) + 4).replace(/^("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)(, ("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*))*/, '')
+      out.push(`${head[1]} TO PUBLIC${rest}`)
+      const [schema, table] = p.table.split('.')
+      roles.push(`(${sqlText(schema)}, ${sqlText(table)}, ${sqlText(p.name)}, ARRAY[${[...new Set(p.roles)].sort().map(sqlText).join(', ')}])`)
+      report.policies.kept += 1
+      inPolicy = true
+      continue
+    }
+    const grant = GRANT_RE.exec(line)
+    if (grant) {
+      if (type !== 'ACL') fail(`${where}: выдача прав вне записи ACL`)
+      const role = grant[4].startsWith('"') ? readIdent(grant[4])[0] : grant[4]
+      if (role !== 'PUBLIC' && !Object.hasOwn(ROLE_RULES, role)) fail(`${where}: незнакомая роль «${role}»`)
+      report.grants.droppedByRole[role] = (report.grants.droppedByRole[role] || 0) + 1
+      continue
+    }
+    if (PASS_RE.test(line)) { if (type === 'POLICY') out.push(line); continue }
+    fail(`${where}: строка не похожа ни на одну известную форму: «${line.slice(0, 80)}»`)
+  }
+  out.push('', '-- Для каких ролей Supabase написана каждая политика (читает sql/load-single-owner.sql).')
+  out.push('CREATE TABLE osp_meta.policy_roles (schema_name text NOT NULL, table_name text NOT NULL, policy_name text NOT NULL, roles text[] NOT NULL, PRIMARY KEY (schema_name, table_name, policy_name));')
+  if (roles.length) out.push(`INSERT INTO osp_meta.policy_roles VALUES\n  ${roles.join(',\n  ')};`)
+  return { sql: out.join('\n') + '\n', report }
+}
+
 function main(argv) {
   const [mode, ...args] = argv
   if (mode === 'split' && args.length === 4) {
@@ -192,6 +260,12 @@ function main(argv) {
   }
   if (mode === 'acl' && args.length === 4) {
     const { sql, report } = rewriteAcl(fs.readFileSync(args[0], 'utf8'), args[3])
+    fs.writeFileSync(args[1], sql)
+    fs.writeFileSync(args[2], JSON.stringify(report))
+    return
+  }
+  if (mode === 'acl-single-owner' && args.length === 3) {
+    const { sql, report } = rewriteAclSingleOwner(fs.readFileSync(args[0], 'utf8'))
     fs.writeFileSync(args[1], sql)
     fs.writeFileSync(args[2], JSON.stringify(report))
     return

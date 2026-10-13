@@ -5,6 +5,11 @@
 --
 -- Каждое действие выполняется во вложенной транзакции под ролью класса (SET LOCAL ROLE +
 -- claims, как ставит PostgREST) и откатывается вместе со сменой роли и настройками.
+--
+-- Режим «одна учётка» (база как в Яндексе: ролей Supabase нет, правила действуют на владельца —
+-- migration/target/sql/load-single-owner.sql). Включается настройкой сеанса osp_test.single_owner = on;
+-- сам стенд работает с отметкой пропуска (application_name = 'osp:internal'), а на время действия
+-- класса отметка снимается — остаются только claims, как при запросе через шлюз.
 
 CREATE SCHEMA IF NOT EXISTS osp_test;
 
@@ -18,6 +23,10 @@ CREATE TABLE IF NOT EXISTS osp_test.users (
   blocked      boolean,
   with_org     boolean        -- подрядчик своей организации
 );
+
+CREATE OR REPLACE FUNCTION osp_test.single_owner() RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT coalesce(current_setting('osp_test.single_owner', true), '') = 'on'
+$$;
 
 CREATE OR REPLACE FUNCTION osp_test.setup(p_sections text[]) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
@@ -91,7 +100,11 @@ BEGIN
     -- Таймауты ролей как на проде (q2): authenticated 30 с, anon 3 с.
     PERFORM set_config('statement_timeout',
       CASE u.db_role WHEN 'anon' THEN '3s' WHEN 'authenticated' THEN '30s' ELSE '0' END, true);
-    EXECUTE format('SET LOCAL ROLE %I', u.db_role);
+    IF osp_test.single_owner() THEN
+      PERFORM set_config('application_name', 'osp-test-client', true);
+    ELSE
+      EXECUTE format('SET LOCAL ROLE %I', u.db_role);
+    END IF;
     IF p_mode = 'value' THEN
       EXECUTE p_sql INTO v_out USING p_ctid, p_row;
     ELSE
@@ -252,6 +265,8 @@ DECLARE
   v_args text;
   v_res text;
 BEGIN
+  -- В режиме одной учётки роли anon в базе нет: кому какие функции можно вызывать, решает шлюз.
+  IF osp_test.single_owner() THEN RETURN res; END IF;
   FOR f IN
     SELECT p.oid, p.proname, p.pronargs, p.proargtypes
     FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
@@ -285,7 +300,12 @@ BEGIN
     PERFORM set_config('request.jwt.claims', json_build_object('sub', u.id, 'role', u.db_role)::text, true);
     PERFORM set_config('request.jwt.claim.sub', u.id::text, true);
     PERFORM set_config('statement_timeout', '30s', true);
-    EXECUTE format('SET LOCAL ROLE %I', u.db_role);
+    IF osp_test.single_owner() THEN
+      PERFORM set_config('request.jwt.claim.role', u.db_role, true);
+      PERFORM set_config('application_name', 'osp-test-client', true);
+    ELSE
+      EXECUTE format('SET LOCAL ROLE %I', u.db_role);
+    END IF;
     EXECUTE 'UPDATE public.employee_directory SET role = ''admin'' WHERE user_id = auth.uid()';
     EXECUTE 'SELECT public.is_admin()' INTO v_admin;
     RAISE EXCEPTION 'osp_test rollback' USING ERRCODE = 'OSP01',

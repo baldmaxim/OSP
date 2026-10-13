@@ -5,6 +5,7 @@
 #   bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal
 #   bash migration/target/load.sh <файл подключения> <копия.dump> --status final
 #   bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal --without-rights
+#   bash migration/target/load.sh <файл подключения> <копия.dump> --status final --single-owner
 #
 # rehearsal — репетиция: загруженное можно убрать (reset.sh). final — настоящий перенос: после него
 # reset.sh отказывает всегда.
@@ -12,6 +13,8 @@
 # прав — нет, а право «всем» на функции и типы снимается (sql/load-lockdown.sql): обычные учётки
 # кластера данные портала не читают и его функции не вызывают. Только для репетиции: настоящий перенос
 # в таком виде — отдельным решением.
+# --single-owner — то же, что --without-rights, но как первый шаг переноса под одну учётку: после сверки
+# (verify.sh) права применяются отдельным шагом rights.sh. В этом виде разрешён и настоящий перенос (final).
 #
 # Что делает:
 #   0. База — та, что закреплена отпечатком (pin.sh): учётка открывает несколько баз кластера.
@@ -37,7 +40,7 @@ REPORT_DIR="${PROBE_REPORT_DIR:-$HERE/reports}"
 . "$HERE/lib/conn.sh"
 
 usage() {
-  echo "Использование: bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal|final [--runtime-role osp_runtime | --without-rights]" >&2
+  echo "Использование: bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal|final [--runtime-role osp_runtime | --without-rights | --single-owner]" >&2
   exit 1
 }
 
@@ -48,18 +51,20 @@ shift 2
 STATUS=""
 RUNTIME_ROLE=""
 WITH_RIGHTS=1
+SINGLE_OWNER=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --status) STATUS="${2:-}"; shift 2 ;;
     --runtime-role) RUNTIME_ROLE="${2:-}"; [ -n "$RUNTIME_ROLE" ] || usage; shift 2 ;;
     --without-rights) WITH_RIGHTS=0; shift ;;
+    --single-owner) WITH_RIGHTS=0; SINGLE_OWNER=1; shift ;;
     *) usage ;;
   esac
 done
 case "$STATUS" in rehearsal | final) ;; *) usage ;; esac
 if [ "$WITH_RIGHTS" = 0 ]; then
   [ -z "$RUNTIME_ROLE" ] || { echo "--without-rights и --runtime-role вместе не задаются: без прав роль приложения не нужна" >&2; exit 1; }
-  if [ "$STATUS" = final ]; then
+  if [ "$STATUS" = final ] && [ "$SINGLE_OWNER" = 0 ]; then
     echo "Настоящий перенос (final) без прав не выполняется: такая база годится в работу, только когда права проверяет backend, — это отдельное решение" >&2
     exit 1
   fi
@@ -206,4 +211,5 @@ summary="$(psql -X -q -At -c "
   from osp_meta.load_log order by 1" 2>"$WORK/err")" || summary="ВНИМАНИЕ итог прочитать не удалось: $(first_error "$WORK/err")"
 while IFS= read -r line; do say "$line"; done <<< "$summary"
 say "Дальше — сверка: bash migration/target/verify.sh <файл подключения> $DUMP"
+if [ "$SINGLE_OWNER" = 1 ]; then say "Затем — права под одну учётку: bash migration/target/rights.sh <файл подключения> $DUMP"; fi
 save_report

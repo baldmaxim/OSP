@@ -6,8 +6,9 @@
 //
 // Что гарантирует обёртка (tests/osp-api/db.test.mjs):
 //   • read — транзакция READ ONLY: читающая операция не может изменить данные, даже по ошибке в коде;
-//   • «кто вошёл» и таймауты действуют только до конца транзакции и не переходят к следующему запросу
-//     на том же подключении пула;
+//   • «кто вошёл», таймауты и часовой пояс (UTC) действуют только до конца транзакции и не переходят
+//     к следующему запросу на том же подключении пула; пояс задаётся заново каждый раз, потому что
+//     пулер может выдать подключение с настройками прежнего сеанса;
 //   • любая ошибка — ROLLBACK; не удался ROLLBACK — подключение уничтожается, в пул не возвращается;
 //   • запрос — одна параметризованная команда: несколько команд в одной строке сервер не примет;
 //   • подключений не больше max: учётка базы общая с другими системами, у неё общий лимит;
@@ -24,6 +25,12 @@ import fs from 'node:fs'
 import pg from 'pg'
 
 const IDENT = /^[a-z_][a-z0-9_]*$/
+const APP_NAME = 'osp-api'
+// Отметка служебной операции. В базе с правами под одну учётку (migration/target/sql/load-single-owner.sql)
+// правила по строкам действуют и на владельца; служебная операция сервера (без пользователя) проходит
+// по этой отметке — как раньше проходила просто потому, что учётка владела таблицами. У операции
+// пользователя отметка всегда снята явно: имя подключения ставится заново в каждой транзакции.
+const INTERNAL_MARK = 'osp:internal'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const DB_DEFAULTS = {
@@ -81,7 +88,7 @@ export function createDb(options) {
     max: o.max,
     connectionTimeoutMillis: o.connectionTimeoutMs,
     idleTimeoutMillis: o.idlePoolTimeoutMs,
-    application_name: 'osp-api',
+    application_name: APP_NAME,
   })
   // Обрыв простаивающего подключения — не повод ронять службу: пул откроет новое.
   pool.on('error', (err) => log.warn({ msg: err?.message }, 'db pool'))
@@ -95,7 +102,7 @@ export function createDb(options) {
     return client.query({ text, values, queryMode: 'extended' })
   }
 
-  async function transaction(mode, who, fn) {
+  async function transaction(mode, who, fn, opts = {}) {
     if (who != null && !UUID.test(String(who.userId || ''))) throw new TypeError('osp-api: у вошедшего нет идентификатора')
     const client = await pool.connect()
     let broken = null
@@ -114,8 +121,11 @@ export function createDb(options) {
           set_config('request.jwt.claims', $4, true),
           set_config('request.jwt.claim.sub', '', true),
           set_config('request.jwt.claim.role', '', true),
-          set_config('request.jwt.claim.email', '', true)`,
-        [String(o.statementTimeoutMs), String(o.lockTimeoutMs), String(o.idleInTransactionTimeoutMs), claims])
+          set_config('request.jwt.claim.email', '', true),
+          set_config('TimeZone', 'UTC', true),
+          set_config('application_name', $5, true)`,
+        [String(opts.statementTimeoutMs ?? o.statementTimeoutMs), String(o.lockTimeoutMs), String(o.idleInTransactionTimeoutMs), claims,
+          who ? APP_NAME : INTERNAL_MARK])
       // Второй замок — только у операций пользователя: служебные идут под учёткой подключения.
       if (who && o.secondLockRole) await run(client, "select set_config('role', $1, true)", [o.secondLockRole])
 
@@ -138,8 +148,8 @@ export function createDb(options) {
   }
 
   return {
-    read: (who, fn) => transaction('read', who, fn),
-    write: (who, fn) => transaction('write', who, fn),
+    read: (who, fn, opts) => transaction('read', who, fn, opts),
+    write: (who, fn, opts) => transaction('write', who, fn, opts),
     stats: () => ({ max: o.max, total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }),
     close: () => pool.end(),
   }

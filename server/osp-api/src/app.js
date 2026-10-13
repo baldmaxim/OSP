@@ -3,14 +3,20 @@
 // Supabase (под токеном пользователя, RLS действует как в браузере); на этапе переноса базы меняется
 // только источник, маршруты остаются.
 //
+// Данные. Задан OSP_PGRST_URL — работает шлюз /api/db (src/routes/dbGateway.js): портал читает и пишет
+// базу Яндекса через PostgREST на этом сервере, маршруты файлов, ИИ и расценок берут данные там же.
+// Не задан — шлюза нет, данные в Supabase.
+//
 // Кто вошёл. Задан SUPABASE_JWT_SECRET — токен проверяется здесь (src/lib/token.js); задан OSP_DB_URL —
 // статус учётки читается из базы с коротким кэшем (src/lib/userStatus.js). Не заданы — как раньше:
 // оба шага запросами к Supabase. Вернуть прежний путь — убрать ключ из окружения и перезапустить.
 //
 // Журнал: метод, ШАБЛОН маршрута, код, время. Ни адреса с параметрами (в ?key= ключ rates-api), ни
 // заголовков, ни тел запросов (в них текст договоров) в журнал не попадает. Ответы не кешируются.
+import fs from 'node:fs'
 import Fastify, { LogController } from 'fastify'
 import { createClient } from '@supabase/supabase-js'
+import { PostgrestClient } from '@supabase/postgrest-js'
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import Anthropic from '@anthropic-ai/sdk'
 import { configuredParts, READY_PARTS, READY_OPTIONAL } from './config.js'
@@ -24,6 +30,15 @@ import { OPEN_ROUTES } from './open-routes.js'
 import { registerS3Presign } from './routes/s3Presign.js'
 import { registerAiAssist } from './routes/aiAssist.js'
 import { registerRates } from './routes/rates.js'
+import { registerDbGateway, createInternalTokens, createRemoteVerifier } from './routes/dbGateway.js'
+import { createAuthAdmin, createAuthUsersMirror } from './lib/authUsers.js'
+
+// Список разрешённого шлюзу данных — выдача прав прода как есть (scripts/build-db-allow.mjs).
+const ALLOW = JSON.parse(fs.readFileSync(new URL('./data/allow.json', import.meta.url), 'utf8'))
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Функции портала, которые меняют учётку во входе Supabase Auth, а не только строки базы.
+const AUTH_ADMIN_RPC = { admin_delete_user: 'deleteUser', admin_confirm_user_email: 'confirmEmail' }
+const REGISTRY_REFRESH_MS = 10 * 60_000
 
 // Ответ ИИ ждём меньше, чем nginx ждёт нас (proxy_read_timeout 180 с, deploy/nginx/osp.root.sx.conf).
 export const AI_TIMEOUT_MS = 170_000
@@ -87,6 +102,31 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     ? createTokenVerifier({ secret: config.supabaseJwtSecret, supabaseUrl: config.supabaseUrl })
     : null
 
+  // Чей это токен входа → { id, email } либо null. Проверка на сервере, если задан секрет подписи;
+  // иначе — запросом к Supabase с памятью на минуту (шлюз данных зовёт это на каждый запрос).
+  const remoteVerify = createRemoteVerifier({ getUser: async (token) => {
+    const client = deps.createSupabase(config.supabaseUrl, config.supabaseAnonKey, { auth: SERVER_AUTH })
+    const { data, error } = await client.auth.getUser(token)
+    return error ? null : data?.user || null
+  } })
+  const verifyUserToken = async (token) => {
+    if (verifier) { try { return await verifier.verify(token) } catch { return null } }
+    if (!config.supabaseUrl || !config.supabaseAnonKey) return null
+    return remoteVerify(token)
+  }
+
+  // Шлюз данных: PostgREST на этом сервере. Клиент данных для маршрутов — тот же построитель запросов,
+  // что у supabase-js, но к своему PostgREST и с внутренним токеном (кто, роль), выпускаемым на запрос.
+  const gatewayOn = Boolean(config.dbGateway?.upstream)
+  const mint = gatewayOn ? createInternalTokens({ secret: config.dbGateway.secret, dbRole: config.dbGateway.dbRole }) : null
+  const dataClient = (who) => new PostgrestClient(config.dbGateway.upstream.replace(/\/+$/, ''), {
+    fetch: async (input, init = {}) => {
+      const headers = new Headers(init.headers)
+      headers.set('authorization', `Bearer ${await mint(who)}`)
+      return fetch(input, { ...init, headers })
+    },
+  })
+
   // Пользователь по его токену Supabase; клиент — от его имени, чтобы действовал RLS.
   const authenticate = async (request, reply) => {
     const authHeader = request.headers.authorization
@@ -96,21 +136,29 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     }
     const token = bearerToken(authHeader)
     if (!token) { reply.code(401).send({ error: 'Unauthorized' }); return null }
-    const supabase = deps.createSupabase(config.supabaseUrl, config.supabaseAnonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth: SERVER_AUTH,
-    })
     let user
-    if (verifier) {
-      try {
-        user = await verifier.verify(token)
-      } catch {
-        reply.code(401).send({ error: 'Unauthorized' }); return null
-      }
+    let supabase
+    if (gatewayOn) {
+      // Данные — в базе Яндекса: клиент маршрута ходит в свой PostgREST от имени этого пользователя.
+      user = await verifyUserToken(token)
+      if (!user) { reply.code(401).send({ error: 'Unauthorized' }); return null }
+      supabase = dataClient({ role: 'authenticated', user })
     } else {
-      const { data, error } = await supabase.auth.getUser(token)
-      if (error || !data?.user) { reply.code(401).send({ error: 'Unauthorized' }); return null }
-      user = data.user
+      supabase = deps.createSupabase(config.supabaseUrl, config.supabaseAnonKey, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+        auth: SERVER_AUTH,
+      })
+      if (verifier) {
+        try {
+          user = await verifier.verify(token)
+        } catch {
+          reply.code(401).send({ error: 'Unauthorized' }); return null
+        }
+      } else {
+        const { data, error } = await supabase.auth.getUser(token)
+        if (error || !data?.user) { reply.code(401).send({ error: 'Unauthorized' }); return null }
+        user = data.user
+      }
     }
     // Тело — объект JSON (как ждали Edge Functions); иначе — «Invalid JSON».
     const body = request.body
@@ -133,9 +181,58 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   let anthropicClient = null
   const getAnthropic = () => (anthropicClient ??= deps.createAnthropic(config.anthropicApiKey))
 
+  // Клиент Supabase со служебным ключом: данные (пока они там) и действия с учётками входа.
   let serviceClient = null
-  const getServiceClient = () =>
+  const getSupabaseService = () =>
     (serviceClient ??= deps.createSupabase(config.supabaseUrl, config.supabaseServiceKey, { auth: SERVER_AUTH }))
+  // Служебное чтение данных: при шлюзе — свой PostgREST с ролью service_role во внутреннем токене.
+  const getServiceClient = () => (gatewayOn ? dataClient({ role: 'service_role' }) : getSupabaseService())
+
+  const authAdmin = deps.createAuthAdmin ? deps.createAuthAdmin(config) : createAuthAdmin(getSupabaseService)
+  const usersMirror = db ? createAuthUsersMirror({ db, authAdmin }) : null
+  // Перед запросом шлюза: действия, которым мало базы.
+  const beforeGateway = async ({ kind, name, who, request }) => {
+    if (kind !== 'rpc' || who.role !== 'authenticated') return null
+    if (name === 'get_auth_users') {
+      // Список пользователей читает копию учёток в базе — освежаем её (сбой — покажем прежнюю).
+      if (usersMirror && config.supabaseServiceKey) {
+        await usersMirror.sync().catch((err) => request.log.warn({ msg: String(err?.message || err).slice(0, 120) }, 'auth users sync'))
+      }
+      return null
+    }
+    const action = AUTH_ADMIN_RPC[name]
+    if (!action) return null
+    // Вправе ли — тот же вопрос базе, что задаёт сама функция. Нет — пусть откажет она.
+    const { data: isAdmin, error } = await dataClient(who).rpc('is_admin')
+    if (error || isAdmin !== true) return null
+    let args = null
+    try { args = JSON.parse(Buffer.from(request.body || '').toString('utf8')) } catch { /* базе решать */ }
+    const id = args && typeof args.target_user_id === 'string' && UUID.test(args.target_user_id) ? args.target_user_id : null
+    if (!id) return null
+    try {
+      await authAdmin[action](id)
+    } catch (err) {
+      request.log.error({ route: '/api/db/*', msg: String(err?.message || err).slice(0, 120) }, 'auth admin')
+      return { status: 502, body: { code: 'OSP_AUTH', details: null, hint: null,
+        message: 'Не удалось изменить учётку во входе. Данные портала не изменены — повторите действие.' } }
+    }
+    return null
+  }
+
+  // Пересчёт реестра расценок по расписанию. Защита от двойного запуска — блокировка в базе:
+  // вторая копия службы (или параллельный запуск) пересчёт пропустит.
+  const refreshRegistry = () => db.write(null, async (tx) => {
+    const { rows } = await tx.query('select pg_try_advisory_xact_lock(hashtext($1)) as ok', ['osp:registry-refresh'])
+    if (rows[0].ok) await tx.query('select public.refresh_rates_registry()')
+    return rows[0].ok
+  }, { statementTimeoutMs: 180_000 })
+  if (db && config.registryRefresh) {
+    const timer = setInterval(() => {
+      refreshRegistry().catch((err) => app.log.warn({ code: err?.code, msg: String(err?.message || err).slice(0, 120) }, 'registry refresh'))
+    }, REGISTRY_REFRESH_MS)
+    timer.unref()
+    app.addHook('onClose', async () => clearInterval(timer))
+  }
 
   const limiters = {
     aiRate: createRateLimit(limits.aiPerUser),
@@ -214,6 +311,11 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
       run('s3', parts.s3, () => deps.checkS3(getS3(), config.s3.bucket)),
       run('anthropic', parts.anthropic, () => deps.checkAnthropic(getAnthropic())),
       run('db', Boolean(db), () => db.read(null, (tx) => tx.query('select 1'))),
+      // Шлюз: PostgREST отвечает, его секрет и учётка совпадают с нашими, база за ним читается.
+      run('gateway', gatewayOn, async () => {
+        const { error } = await dataClient({ role: 'service_role' }).from('app_settings').select('key').limit(1)
+        if (error) throw new Error(`gateway ${error.code || error.message}`)
+      }),
     ])
     // Секрет подписи сверяется с публичным ключом сайта: чужой секрет дал бы 401 на каждый вход.
     if (!verifier) checks.token = 'not_configured'
@@ -226,7 +328,9 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     return reply.code(ok ? 200 : 503).send({ ok, checks, required })
   } })
 
-  const ctx = { config, getS3, getAnthropic, getServiceClient, limiters, db }
+  const ctx = { config, getS3, getAnthropic, getServiceClient, limiters, db, refreshRegistry,
+    verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn }
+  registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)
   registerAiAssist(app, ctx)
   registerRates(app, ctx)

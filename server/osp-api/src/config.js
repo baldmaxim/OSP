@@ -9,7 +9,7 @@ export const READY_PARTS = ['supabase', 's3', 'anthropic']
 // Проверяются, только если настроены: своё подключение к базе (db) и секрет подписи токенов (token).
 // Настроенная и не ответившая — отказ готовности и без OSP_API_REQUIRE; в списке обязательных —
 // «не настроено» тоже отказ.
-export const READY_OPTIONAL = ['db', 'token']
+export const READY_OPTIONAL = ['db', 'token', 'gateway']
 
 export function parseRequired(raw) {
   const names = String(raw ?? '').split(',').map((s) => s.trim()).filter(Boolean)
@@ -51,6 +51,17 @@ export function loadConfig(env = process.env) {
       // Пока база в Supabase — authenticated (правила по строкам вторым замком); в базе Яндекса — пусто.
       secondLockRole: env.OSP_DB_SECOND_LOCK_ROLE || '',
     },
+    // Шлюз данных /api/db → PostgREST на этом сервере (src/routes/dbGateway.js). Пусто — шлюза нет,
+    // маршруты файлов, ИИ и расценок читают данные из Supabase, как раньше.
+    dbGateway: {
+      upstream: env.OSP_PGRST_URL || '',
+      secret: env.OSP_PGRST_JWT_SECRET || '',
+      dbRole: env.OSP_PGRST_DB_ROLE || '',
+      // Файл-переключатель барьера записи: есть файл — шлюз только читает.
+      readOnlyFile: env.OSP_DB_READONLY_FILE || '',
+    },
+    // Пересчёт реестра расценок раз в 10 минут (в Supabase это делало расписание pg_cron).
+    registryRefresh: env.OSP_REGISTRY_REFRESH === '1',
     required: parseRequired(env.OSP_API_REQUIRE),
   }
 }
@@ -65,5 +76,6 @@ export function configuredParts(config) {
     rates: config.ratesApiKeys.length > 0,
     db: Boolean(config.db?.url),
     token: Boolean(config.supabaseJwtSecret),
+    gateway: Boolean(config.dbGateway?.upstream && config.dbGateway?.secret && config.dbGateway?.dbRole),
   }
 }

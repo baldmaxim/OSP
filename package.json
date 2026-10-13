@@ -25,6 +25,7 @@
     "hooks:install": "git config core.hooksPath scripts/git-hooks"
   },
   "dependencies": {
+    "@supabase/postgrest-js": "2.80.0",
     "@supabase/supabase-js": "^2.80.0",
     "docx-preview": "^0.3.7",
     "docxtemplater": "^3.68.3",
