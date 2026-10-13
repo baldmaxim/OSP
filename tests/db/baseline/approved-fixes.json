@@ -979,5 +979,104 @@
     "from": "ok",
     "to": null,
     "why": "пересчёт реестра и новая функция без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "is_admin",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "can_see_task",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "is_my_tender",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "is_my_contract",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "touch_last_login",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "admin_delete_user",
+    "from": "err:P0001",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "is_portal_employee",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "is_task_participant",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "current_counterparty_id",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "is_negotiation_employee",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
+  },
+  {
+    "release": "Р2g",
+    "class": "anon",
+    "table": "*functions*",
+    "action": "vor_requests_can_access",
+    "from": "ok",
+    "to": null,
+    "why": "функции портала без входа не вызываются"
   }
 ]

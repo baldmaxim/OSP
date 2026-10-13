@@ -21,11 +21,14 @@ checks(n, ok, what) as (
                              and not has_table_privilege('anon', 'public.' || name, 'SELECT')) from v),
          'представления реестра: вошедшему — только чтение, анониму — ничего'
   union all
-  select 5, (select p.prosecdef from pg_proc p where p.oid = 'public.osp_registry_reader()'::regprocedure)
-        and has_function_privilege('authenticated', 'public.osp_registry_reader()', 'EXECUTE')
-        and has_function_privilege('service_role', 'public.osp_registry_reader()', 'EXECUTE')
-        and not has_function_privilege('anon', 'public.osp_registry_reader()', 'EXECUTE')
-        and not has_function_privilege('public', 'public.osp_registry_reader()', 'EXECUTE'),
+  -- to_regprocedure: до миграции функции нет — строка должна быть FAIL, а не ошибка запроса
+  -- (restore-copy.sh по этой проверке решает, применена ли миграция в копии).
+  select 5, coalesce((select p.prosecdef
+                        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('public', p.oid, 'EXECUTE')
+                      from pg_proc p where p.oid = to_regprocedure('public.osp_registry_reader()')), false),
          'osp_registry_reader: SECURITY DEFINER, вызывают вошедший и служебный ключ, аноним — нет'
   union all
   select 6, not has_function_privilege('anon', 'public.refresh_rates_registry()', 'EXECUTE')
@@ -37,7 +40,9 @@ checks(n, ok, what) as (
                 and pg_get_functiondef('public.refresh_rates_registry()'::regprocedure) ~ '60 seconds'),
          'пересчёт реестра: только сотрудник, не чаще раза в минуту'
   union all
-  select 8, (select count(*) from public.kp_rates_registry_mv) >= 0 and (select count(*) from public.supply_rates_registry_mv) >= 0,
-         'материализованные представления на месте и читаются владельцем'
+  -- По каталогу, без чтения строк: на слепке схемы без данных представления не наполнены.
+  select 8, (select count(*) from pg_matviews where schemaname = 'public'
+               and matviewname in ('kp_rates_registry_mv', 'supply_rates_registry_mv')) = 2,
+         'материализованные представления реестра на месте'
 )
 select case when ok then 'OK ' else 'FAIL ' end || what from checks order by n;

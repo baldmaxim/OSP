@@ -116,7 +116,7 @@ describe('Права на копии прода: отпечаток против
     // Администратор видит всё рабочее.
     assert.equal(c.admin.tenders.select, 'all')
     assert.equal(c.admin.contracts.select, 'all')
-    // Удалить пользователя аноним не может.
-    assert.equal(actual.anon_functions.admin_delete_user, 'err:P0001')
+    // Удалить пользователя аноним не может: функция отказывает сама (до Р2g) или ему не выдана (после).
+    assert.notEqual(actual.anon_functions.admin_delete_user, 'ok')
   })
 })
