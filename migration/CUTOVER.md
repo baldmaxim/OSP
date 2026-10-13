@@ -13,6 +13,30 @@ Claude с удалённой машины, по слову владельца. �
 **Правило.** Любой шаг дал отказ или расхождение — остановка. Переключение пользователей — только когда
 выполнены все четыре доказательства из раздела «Готово».
 
+## Соседи по кластеру не должны пострадать — требование владельца портала
+
+В кластере Яндекса рядом с базой портала — базы других систем (сейчас 20), учётка у нас общая с ними.
+Ни одна чужая таблица и ни одна чужая строка не должны измениться. Чем это обеспечено:
+
+| Что могло бы задеть соседей | Почему не заденет | Чем проверяется |
+|---|---|---|
+| Запись не в ту базу | каждый шаг записи (`load.sh`, `rights.sh`, `reset.sh`) сверяет отпечаток базы (кластер, номер базы, имя, владелец) и при несовпадении отказывает до первой команды; переменные окружения с адресом не используются | `tests/backup/target-load.test.mjs` |
+| Затирание существующего | загрузка идёт только в пустую базу, одной транзакцией | там же |
+| Удаление лишнего | очистка убирает только объекты из собственного перечня загрузки и только репетицию; нашла что-то сверх перечня — отказ; после настоящего переноса — отказ всегда | там же |
+| Команды уровня кластера | их нет: учётка не создаёт и не меняет роли и базы; настройки (`ALTER DATABASE`, права по умолчанию) задаются только базе портала | `tests/osp-api/no-ddl.test.mjs`, тексты `sql/*.sql` |
+| Нехватка подключений у других систем | у общей учётки лимит 30, другими системами занято 6. Портал берёт не больше 10: PostgREST — 6 (`PGRST_DB_POOL`), `osp-api` — 4 (`OSP_DB_POOL_MAX=4`) | `neighbors.sh --compare`: предупреждение, если занято больше 70 % лимита |
+
+**Проверка по факту — до и после каждого шага записи** (только чтение, в чужие базы не подключается):
+```bash
+bash migration/target/neighbors.sh ~/.osp-secrets/target.env --save      # снимок: один раз, до работ
+bash migration/target/neighbors.sh ~/.osp-secrets/target.env --compare   # после каждого шага
+```
+Сравнение показывает: ни одна соседняя база не пропала, не сменила владельца и не уменьшилась заметно,
+состав учёток прежний, подключений хватает. `FAIL` — остановка и разбор до любых дальнейших действий.
+
+Чего это не закрывает: пароль общей учётки будет лежать на сервере портала (решение «одна учётка»);
+доступ к серверу и права 600 на файлы настроек — единственная защита соседних баз от его утечки.
+
 ## А. Подготовка сервера портала — в любое время, пользователи не затронуты
 
 1. **Сеть до базы Яндекса** (danila). Адрес — из файла подключения на удалённой машине, в чат не
@@ -40,7 +64,7 @@ Claude с удалённой машины, по слову владельца. �
    - `OSP_PGRST_URL=http://127.0.0.1:3001`, `OSP_PGRST_JWT_SECRET` (тот же секрет), `OSP_PGRST_DB_ROLE`
      (имя учётки базы), `OSP_DB_READONLY_FILE=/var/lib/osp-api/db-readonly`;
    - `OSP_DB_URL` (строка подключения к базе Яндекса), `OSP_DB_CA_FILE=/etc/ssl/osp/yandex-root.crt`,
-     `OSP_REGISTRY_REFRESH=1`;
+     `OSP_DB_POOL_MAX=4` (у учётки общий лимит подключений с другими системами), `OSP_REGISTRY_REFRESH=1`;
    - `SUPABASE_JWT_SECRET` (Supabase → настройки проекта → JWT Keys → Legacy JWT Secret; кнопку «Migrate»
      не нажимать) — вход проверяется на сервере, без запроса к Supabase на каждое обращение;
    - ключи S3 и Anthropic, если ещё не внесены (файлы и ИИ после переключения идут только через osp-api).
@@ -54,12 +78,15 @@ Claude с удалённой машины, по слову владельца. �
 
 ## Б. Репетиция в базе Яндекса — в любое время
 
-Claude, по слову владельца портала:
+Claude, по отдельному «да» владельца портала на каждую запись в базу Яндекса (утверждение плана таким
+«да» не считается):
 ```bash
+bash migration/target/neighbors.sh ~/.osp-secrets/target.env --save                 # снимок кластера до работ
 bash migration/target/reset.sh  ~/.osp-secrets/target.env --yes-drop-rehearsal      # убрать прежнюю репетицию
 bash migration/target/load.sh   ~/.osp-secrets/target.env <копия.dump> --status rehearsal --single-owner
 bash migration/target/verify.sh ~/.osp-secrets/target.env <копия.dump>               # данные и структура
 bash migration/target/rights.sh ~/.osp-secrets/target.env <копия.dump>               # права под одну учётку
+bash migration/target/neighbors.sh ~/.osp-secrets/target.env --compare              # соседи не пострадали
 ```
 Затем на сервере портала (root): `systemctl enable --now postgrest && systemctl restart osp-api`, проверка
 `curl -s http://127.0.0.1:8787/api/ready; echo` — в ответе `"db":"ok"`, `"token":"ok"`, `"gateway":"ok"`.
@@ -78,8 +105,8 @@ bash migration/target/rights.sh ~/.osp-secrets/target.env <копия.dump>     
    - `supabase/migrations/20261011_s3_documents_sha256.sql` → `migration/backup/checks/20261011.sql`;
    - `supabase/migrations/20261015_rates_registry_deterministic.sql` → `migration/backup/checks/20261015.sql`.
 3. **Финальная копия** (Cursor): `backup.sh`; Claude — `verify.sh` копии.
-4. **Загрузка** (Claude): `reset.sh` репетиции → `load.sh … --status final --single-owner` → `verify.sh`
-   (расхождений быть не должно) → `rights.sh`.
+4. **Загрузка** (Claude): `neighbors.sh --save` → `reset.sh` репетиции → `load.sh … --status final --single-owner`
+   → `verify.sh` (расхождений быть не должно) → `rights.sh` → `neighbors.sh --compare` (без `FAIL`).
 5. **Сервер портала** (root): барьер записи шлюза и перезапуск:
    ```bash
    touch /var/lib/osp-api/db-readonly
