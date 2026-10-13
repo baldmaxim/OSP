@@ -12,7 +12,9 @@
 #   SHA256SUMS           — контрольные суммы всех файлов: на сервере сверяются до загрузки образов.
 # Каталог переносится на сервер целиком; там — bash deploy.sh install <каталог> (deploy/docker/README.md).
 #
-# Образ собирается только из закоммиченного: с несохранёнными правками в путях сборки — отказ.
+# Образ собирается только из закоммиченного: исходники берутся не из рабочего каталога, а выгружаются из
+# коммита (git archive) во временный каталог. Чьи-то несохранённые правки в рабочем каталоге в образ не
+# попадают; о них скрипт только предупреждает.
 # Адрес и публичный ключ Supabase для сайта — из файла (две строки VITE_SUPABASE_URL=…,
 # VITE_SUPABASE_ANON_KEY=…; по умолчанию ~/.osp-secrets/web-build.env). Это не секреты (они вшиты в
 # любую сборку сайта), но на экран не выводятся. Секретов сервера в образах и в выпуске нет.
@@ -31,12 +33,20 @@ for bin in docker git sha256sum gzip; do command -v "$bin" >/dev/null || { echo 
 
 # Пути, из которых собираются образы и берутся файлы установки.
 BUILD_PATHS=(src public server/osp-api index.html vite.config.js release.json package.json package-lock.json deploy/publish.sh deploy/docker .dockerignore)
-if [ -z "${OSP_BUILD_DIRTY:-}" ] && [ -n "$(git -C "$ROOT" status --porcelain -- "${BUILD_PATHS[@]}")" ]; then
-  echo "FAIL в путях сборки есть несохранённые правки — выпуск собирается только из коммита:" >&2
-  git -C "$ROOT" status --short -- "${BUILD_PATHS[@]}" >&2
-  exit 1
-fi
 COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+# Источник сборки. Обычно — выгрузка коммита; OSP_BUILD_DIRTY=1 (только для тестов) — рабочий каталог.
+if [ -n "${OSP_BUILD_DIRTY:-}" ]; then
+  SRC="$ROOT"
+else
+  if [ -n "$(git -C "$ROOT" status --porcelain -- "${BUILD_PATHS[@]}")" ]; then
+    echo "ВНИМАНИЕ в рабочем каталоге есть несохранённые правки в путях сборки — в выпуск они НЕ войдут (собирается коммит ${COMMIT:0:12}):"
+    git -C "$ROOT" status --short -- "${BUILD_PATHS[@]}"
+  fi
+  SRC="$(mktemp -d)"
+  trap 'rm -rf -- "${SRC:?}"' EXIT
+  git -C "$ROOT" archive "$COMMIT" -- "${BUILD_PATHS[@]}" | tar -x -C "$SRC"
+fi
+SRC_DOCKER="$SRC/deploy/docker"
 TAG="${COMMIT:0:12}"
 # Идентификатор сборки сайта — время коммита в миллисекундах: один и тот же коммит даёт ту же сборку.
 BUILD_ID="$(($(git -C "$ROOT" show -s --format=%ct HEAD) * 1000))"
@@ -51,7 +61,7 @@ if [ -z "$SUPA_URL" ] || [ -z "$SUPA_KEY" ]; then
 fi
 
 # PostgREST: версия и отпечаток образа закреплены в репозитории (deploy/docker/postgrest.image).
-PGRST="$(grep -v '^#' "$HERE/postgrest.image" | head -n 1)"
+PGRST="$(grep -v '^#' "$SRC_DOCKER/postgrest.image" | head -n 1)"
 PGRST_REF="${PGRST%@*}"; PGRST_DIGEST="${PGRST#*@}"
 docker image inspect "$PGRST_REF" >/dev/null 2>&1 || docker pull -q "$PGRST" >/dev/null
 docker image inspect "$PGRST_REF" --format '{{join .RepoDigests "\n"}}' | grep -q "@$PGRST_DIGEST\$" || {
@@ -59,16 +69,16 @@ docker image inspect "$PGRST_REF" --format '{{join .RepoDigests "\n"}}' | grep -
 
 echo "Сборка выпуска $TAG (сборка сайта $BUILD_ID)…"
 LABELS=(--label "org.opencontainers.image.revision=$COMMIT" --label "org.opencontainers.image.title=osp")
-docker build -q -f "$HERE/api.Dockerfile" -t "osp-api:$TAG" "${LABELS[@]}" "$ROOT" >/dev/null
-docker build -q -f "$HERE/web.Dockerfile" -t "osp-web:$TAG" "${LABELS[@]}" \
-  --build-arg "VITE_SUPABASE_URL=$SUPA_URL" --build-arg "VITE_SUPABASE_ANON_KEY=$SUPA_KEY" --build-arg "OSP_BUILD_ID=$BUILD_ID" "$ROOT" >/dev/null
+docker build -q -f "$SRC_DOCKER/api.Dockerfile" -t "osp-api:$TAG" "${LABELS[@]}" "$SRC" >/dev/null
+docker build -q -f "$SRC_DOCKER/web.Dockerfile" -t "osp-web:$TAG" "${LABELS[@]}" \
+  --build-arg "VITE_SUPABASE_URL=$SUPA_URL" --build-arg "VITE_SUPABASE_ANON_KEY=$SUPA_KEY" --build-arg "OSP_BUILD_ID=$BUILD_ID" "$SRC" >/dev/null
 
 REL="$OUT/osp-release-$TAG"
 rm -rf "$REL"; mkdir -p "$REL/infra-nginx"
-cp "$HERE/compose.yml" "$HERE/deploy.sh" "$HERE/neighbors.sh" "$REL/"
-cp "$HERE/infra-nginx/site.conf.template" "$HERE/infra-nginx/render.sh" "$REL/infra-nginx/"
+cp "$SRC_DOCKER/compose.yml" "$SRC_DOCKER/deploy.sh" "$SRC_DOCKER/neighbors.sh" "$REL/"
+cp "$SRC_DOCKER/infra-nginx/site.conf.template" "$SRC_DOCKER/infra-nginx/render.sh" "$REL/infra-nginx/"
 printf '%s\n' "OSP_TAG=$TAG" "OSP_API_IMAGE=osp-api:$TAG" "OSP_WEB_IMAGE=osp-web:$TAG" "OSP_POSTGREST_IMAGE=$PGRST_REF" > "$REL/release.env"
-print_of() { bash "$HERE/deploy.sh" fingerprint "$1"; }
+print_of() { bash "$SRC_DOCKER/deploy.sh" fingerprint "$1"; }
 {
   echo "commit=$COMMIT"
   echo "tag=$TAG"
