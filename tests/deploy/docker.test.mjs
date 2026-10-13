@@ -41,6 +41,9 @@ const PROXY_NET = `osp-test-proxy-${P}`
 const DB_NET = `osp-test-db-${P}`
 const INFRA = `osp-test-infra-${P}`
 const NEIGHBOUR = `osp-test-neighbour-${P}`
+// Сосед с собственным API в той же общей сети. Имена «web» и «api» — самые обычные для чужого проекта.
+const NEIGHBOUR_API = `osp-test-neighbour-api-${P}`
+const FOREIGN = `osp-test-foreign-${P}`
 const SUPABASE = `osp-test-supabase-${P}`
 const SUPABASE_URL = 'http://supabase:8080'
 const GATEWAY_SECRET = 'docker-test-gateway-secret-0123456789abcdefgh'
@@ -61,6 +64,12 @@ describe('Портал в Docker: связка для общего сервер�
   const neighbors = (mode) => sh('bash', [path.join(release, 'neighbors.sh'), mode], { env: env() })
   const containerOf = (service) => docker(['compose', '-p', PROJECT, 'ps', '-q', service]).stdout.trim()
   const renderNginx = (args) => ok(sh('bash', [path.join(DOCKER_DIR, 'infra-nginx', 'render.sh'), ...args]), 'render.sh').stdout
+  // Запись в «общем nginx» ставит тот же скрипт, что на сервере.
+  const confDir = () => path.join(tmp, 'conf.d')
+  const nginxInstall = (args, extra = {}) => sh('bash', [path.join(DOCKER_DIR, 'infra-nginx', 'install.sh'), ...args],
+    { env: { ...process.env, INFRA_NGINX: INFRA, INFRA_CONF_DIR: confDir(), ...extra } })
+  // Сайт соседа через общий nginx: его запись ищет контейнер по имени «web».
+  const neighbourSite = () => sh('curl', ['-s', '-m', '10', '--resolve', `neighbour.test:${p80}:127.0.0.1`, `http://neighbour.test:${p80}/`]).stdout
   const inspect = (id, format) => docker(['inspect', id, '--format', format]).stdout.trim()
   const current = () => (fs.existsSync(path.join(home, 'current')) ? path.basename(fs.readlinkSync(path.join(home, 'current'))) : null)
   // Запросы через «общий nginx сервера»: настоящее имя сайта, HTTPS.
@@ -120,16 +129,26 @@ describe('Портал в Docker: связка для общего сервер�
     // Вместо Supabase Auth — заглушка: готовность osp-api проверяет его «здоровье».
     ok(docker(['run', '-d', '--rm', '--name', SUPABASE, '--network', DB_NET, '--network-alias', 'supabase', NODE_IMAGE, 'node', '-e',
       "require('http').createServer((q, s) => { s.writeHead(200, { 'content-type': 'application/json' }); s.end('{}') }).listen(8080, '0.0.0.0')"]), 'заглушка входа')
-    // Соседний проект сервера и общий nginx с записью портала — запущены ДО установки портала.
-    ok(docker(['run', '-d', '--name', NEIGHBOUR, '--network', PROXY_NET, NGINX_IMAGE]), 'сосед')
-    // Запись портала — сначала «только HTTP»: сертификата имени ещё нет, как при настоящей установке.
-    // Каталоги общего nginx — как на сервере: сертификаты в /etc/letsencrypt, проверка — /var/www/certbot.
-    fs.writeFileSync(path.join(tmp, 'osp.root.sx.conf'), renderNginx(['osp.root.sx', '--http-only']))
+    // Соседний проект сервера — запущен ДО установки портала. В общей сети у него обычные имена «web» и
+    // «api»; его запись в общем nginx ищет сайт по имени «web».
+    ok(docker(['run', '-d', '--name', NEIGHBOUR, '--network', PROXY_NET, '--network-alias', 'web', NGINX_IMAGE]), 'сосед')
+    ok(docker(['run', '-d', '--name', NEIGHBOUR_API, '--network', PROXY_NET, '--network-alias', 'api', NODE_IMAGE, 'node', '-e',
+      "require('http').createServer((q, s) => { console.log('HIT ' + q.url); s.end('neighbour-api') }).listen(8787, '0.0.0.0')"]), 'API соседа')
+    // Общий nginx — как на сервере: каталог записей, сертификаты в /etc/letsencrypt, проверка — /var/www/certbot.
+    fs.mkdirSync(confDir())
+    fs.writeFileSync(path.join(confDir(), 'neighbour.conf'), `server {
+    listen 80;
+    server_name neighbour.test;
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $web http://web:80;
+    location / { proxy_pass $web; }
+}
+`)
     fs.mkdirSync(path.join(tmp, 'le'))
     fs.mkdirSync(path.join(tmp, 'certbot', '.well-known', 'acme-challenge'), { recursive: true })
     fs.writeFileSync(path.join(tmp, 'certbot', '.well-known', 'acme-challenge', 'probe'), 'acme-ok')
     ok(docker(['run', '-d', '--name', INFRA, '--network', PROXY_NET, '-p', `127.0.0.1:${p443}:443`, '-p', `127.0.0.1:${p80}:80`,
-      '-v', `${path.join(tmp, 'osp.root.sx.conf')}:/etc/nginx/conf.d/osp.root.sx.conf:ro`, '-v', `${path.join(tmp, 'le')}:/etc/letsencrypt/live:ro`,
+      '-v', `${confDir()}:/etc/nginx/conf.d:ro`, '-v', `${path.join(tmp, 'le')}:/etc/letsencrypt/live:ro`,
       '-v', `${path.join(tmp, 'certbot')}:/var/www/certbot:ro`, NGINX_IMAGE]), 'общий nginx')
 
     // 3. Каталог портала на «сервере»: настройки, сертификат базы, флаги.
@@ -149,9 +168,9 @@ describe('Портал в Docker: связка для общего сервер�
     for (const d of ['shared', 'state']) fs.chmodSync(path.join(home, d), 0o755)
     // Только для теста: сеть до базы-контейнера и порт сайта для клиента портала.
     fs.writeFileSync(path.join(home, 'compose.server.yml'), `services:
-  api: { networks: [internal, dbnet] }
-  postgrest: { networks: [internal, dbnet] }
-  web: { ports: ["127.0.0.1:${pweb}:8080"] }
+  osp-api: { networks: [internal, dbnet] }
+  osp-postgrest: { networks: [internal, dbnet] }
+  osp-web: { ports: ["127.0.0.1:${pweb}:8080"] }
 networks:
   dbnet: { external: true, name: ${DB_NET} }
 `)
@@ -174,7 +193,9 @@ networks:
 
   after(() => {
     docker(['compose', '-p', PROJECT, 'down', '--volumes', '--remove-orphans'])
-    docker(['rm', '-f', INFRA, NEIGHBOUR, SUPABASE])
+    docker(['rm', '-f', INFRA, NEIGHBOUR, NEIGHBOUR_API, FOREIGN, SUPABASE])
+    docker(['volume', 'rm', `${PROJECT}_www`])
+    docker(['network', 'rm', `${PROJECT}_internal`])
     db?.stop()
     docker(['network', 'rm', PROXY_NET, DB_NET])
     docker(['image', 'rm', `osp-api:${OTHER_TAG}`, `osp-web:${OTHER_TAG}`, `osp-api:${BAD_TAG}`, `osp-web:${BAD_TAG}`, ...builtHere])
@@ -182,7 +203,7 @@ networks:
   })
 
   it('выпуск: образы, файлы установки и контрольные суммы; в контекст сборки попадает только разрешённое', () => {
-    for (const f of ['images.tar.gz', 'compose.yml', 'deploy.sh', 'neighbors.sh', 'infra-nginx/site.conf.template', 'infra-nginx/render.sh', 'release.env', 'MANIFEST', 'SHA256SUMS']) {
+    for (const f of ['images.tar.gz', 'compose.yml', 'deploy.sh', 'neighbors.sh', 'infra-nginx/site.conf.template', 'infra-nginx/render.sh', 'infra-nginx/install.sh', 'release.env', 'MANIFEST', 'SHA256SUMS']) {
       assert.ok(fs.existsSync(path.join(release, f)), f)
     }
     ok(sh('sha256sum', ['--quiet', '-c', 'SHA256SUMS'], { cwd: release }), 'суммы выпуска')
@@ -199,20 +220,56 @@ networks:
   })
 
   // Запись портала ставится в два шага: блок HTTPS ссылается на сертификат, которого сначала нет.
+  // Ставит её скрипт: общий nginx ни в какой момент не остаётся с негодными настройками.
   it('запись в общем nginx, шаг 1 — только HTTP: принимается без сертификата, отдаёт проверку Let’s Encrypt', () => {
+    assert.match(neighbourSite(), /Welcome to nginx/, 'сайт соседа работает до нас')
     const http = renderNginx(['osp.root.sx', '--http-only'])
     assert.ok(!/ssl_certificate|listen 443|__[A-Z]+__|#@https/.test(http), 'в записи «только HTTP» нет ни HTTPS, ни незаполненных мест')
-    ok(docker(['exec', INFRA, 'nginx', '-t']), 'настройки общего nginx без сертификата портала')
+    // В записи только блоки server этого имени: ни общих настроек, ни форматов журнала, ни зон.
+    const full = renderNginx(['osp.213-171-26-249.nip.io'])
+    for (const text of [http, full]) {
+      assert.ok(!/^\s*(log_format|limit_req_zone|upstream|map|proxy_cache_path|include)\b/m.test(text), 'общих настроек в записи нет')
+      assert.ok(/access_log off;/.test(text) && !/access_log \//.test(text), 'в общий журнал запросы портала не пишутся')
+    }
+    assert.match(full, /server_name osp\.213-171-26-249\.nip\.io;/)
+    assert.match(full, /ssl_certificate \/etc\/letsencrypt\/live\/osp\.213-171-26-249\.nip\.io\/fullchain\.pem;/)
+    assert.notEqual(sh('bash', [path.join(DOCKER_DIR, 'infra-nginx', 'render.sh'), 'bad name;']).status, 0, 'имя сайта проверяется')
+
+    const res = nginxInstall(['osp.root.sx', '--http-only'])
+    ok(res, 'install.sh --http-only')
+    assert.match(res.stdout, /OK запись osp\.root\.sx \(только HTTP\) в общем nginx, настройки перечитаны/)
+    assert.equal(fs.readFileSync(path.join(confDir(), 'osp.root.sx.conf'), 'utf8'), http)
     assert.equal(curl([`http://osp.root.sx:${p80}/.well-known/acme-challenge/probe`]).stdout, 'acme-ok')
     assert.equal(code(`http://osp.root.sx:${p80}/api/health`), '403')
     assert.equal(code(`http://osp.root.sx:${p80}/`), '301')
-    // У двух имён сайта — две независимые записи: формат журнала у каждой свой, имена не пересекаются.
-    const other = renderNginx(['osp.213-171-26-249.nip.io'])
-    assert.match(other, /server_name osp\.213-171-26-249\.nip\.io;/)
-    assert.match(other, /ssl_certificate \/etc\/letsencrypt\/live\/osp\.213-171-26-249\.nip\.io\/fullchain\.pem;/)
-    assert.match(other, /log_format osp_noargs_osp_213_171_26_249_nip_io /)
-    assert.ok(!other.includes('osp_noargs_osp_root_sx'))
-    assert.notEqual(sh('bash', [path.join(DOCKER_DIR, 'infra-nginx', 'render.sh'), 'bad name;']).status, 0, 'имя сайта проверяется')
+    assert.match(neighbourSite(), /Welcome to nginx/, 'сайт соседа работает после нас')
+    assert.equal(inspect(INFRA, '{{.State.Status}} {{.RestartCount}}'), 'running 0')
+  })
+
+  it('негодная запись откатывается сама: общий nginx остаётся с прежними настройками, чужая запись не трогается', () => {
+    const before = fs.readFileSync(path.join(confDir(), 'osp.root.sx.conf'), 'utf8')
+    const neighbourConf = fs.readFileSync(path.join(confDir(), 'neighbour.conf'), 'utf8')
+    // Полная запись до выпуска сертификата: файлов сертификата ещё нет — nginx её не примет.
+    const res = nginxInstall(['osp.root.sx'])
+    assert.equal(res.status, 3, res.stdout + res.stderr)
+    assert.match(res.stdout, /FAIL общий nginx не принял запись osp\.root\.sx/)
+    assert.match(res.stdout, /Прежнее состояние возвращено, настройки общего nginx годны; перечитывания не было/)
+    assert.equal(fs.readFileSync(path.join(confDir(), 'osp.root.sx.conf'), 'utf8'), before, 'на месте прежняя запись «только HTTP»')
+    ok(docker(['exec', INFRA, 'nginx', '-t']), 'настройки общего nginx годны')
+    assert.deepEqual(fs.readdirSync(confDir()).sort(), ['neighbour.conf', 'osp.root.sx.conf'], 'временных файлов не осталось')
+    // Имя, которое уже есть в чужой записи, — отказ до любых изменений.
+    const taken = nginxInstall(['neighbour.test', '--http-only'])
+    assert.equal(taken.status, 1)
+    assert.match(taken.stderr, /имя neighbour\.test уже есть в другой записи общего nginx: neighbour\.conf/)
+    assert.equal(fs.readFileSync(path.join(confDir(), 'neighbour.conf'), 'utf8'), neighbourConf)
+    assert.ok(!fs.existsSync(path.join(confDir(), 'neighbour.test.conf')))
+    // Запись, которой ещё не было, после отказа не остаётся вовсе.
+    const fresh = nginxInstall(['osp.example.test'])
+    assert.equal(fresh.status, 3)
+    assert.ok(!fs.existsSync(path.join(confDir(), 'osp.example.test.conf')))
+    ok(docker(['exec', INFRA, 'nginx', '-t']), 'настройки общего nginx годны')
+    assert.match(neighbourSite(), /Welcome to nginx/, 'сайт соседа всё это время работает')
+    assert.equal(inspect(INFRA, '{{.State.Status}} {{.RestartCount}}'), 'running 0')
   })
 
   // Главное для соседей: запись портала в общем nginx не мешает ему работать, когда портал остановлен.
@@ -223,16 +280,34 @@ networks:
     fs.copyFileSync(path.join(tmp, 'tls', 'site.crt'), path.join(live, 'fullchain.pem'))
     fs.copyFileSync(path.join(tmp, 'tls', 'site.key'), path.join(live, 'privkey.pem'))
     for (const f of ['fullchain.pem', 'privkey.pem']) fs.chmodSync(path.join(live, f), 0o644)
-    const full = renderNginx(['osp.root.sx'])
-    assert.ok(!/__[A-Z]+__|#@https/.test(full), 'в полной записи не осталось незаполненных мест')
-    fs.writeFileSync(path.join(tmp, 'osp.root.sx.conf'), full) // тот же файл: содержимое заменено на месте
-    ok(docker(['exec', INFRA, 'nginx', '-t']), 'настройки общего nginx с полной записью портала')
-    ok(docker(['exec', INFRA, 'nginx', '-s', 'reload']), 'перечитывание настроек без перезапуска')
-    spawnSync('sleep', ['1'])
+    const res = nginxInstall(['osp.root.sx'])
+    ok(res, 'install.sh')
+    assert.match(res.stdout, /OK запись osp\.root\.sx в общем nginx, настройки перечитаны/)
+    assert.ok(!/__[A-Z]+__|#@https/.test(fs.readFileSync(path.join(confDir(), 'osp.root.sx.conf'), 'utf8')), 'в полной записи не осталось незаполненных мест')
     assert.equal(inspect(INFRA, '{{.State.Status}} {{.RestartCount}}'), 'running 0')
     assert.equal(code(`https://osp.root.sx:${p443}/`), '502')
     assert.equal(curl([`http://osp.root.sx:${p80}/.well-known/acme-challenge/probe`]).stdout, 'acme-ok', 'продление сертификата продолжит работать')
+    assert.match(neighbourSite(), /Welcome to nginx/)
     ok(neighbors('--save'), 'снимок соседей')
+  })
+
+  it('первая установка — только на чистое место: проектом, томом или сетью с тем же именем выкладка не управляет', () => {
+    const refused = (what) => {
+      const res = deploy(['install', release])
+      assert.notEqual(res.status, 0, what)
+      assert.match(res.stderr, new RegExp(`на сервере уже есть ${what}`))
+      assert.equal(current(), null)
+    }
+    ok(docker(['run', '-d', '--name', FOREIGN, '--label', `com.docker.compose.project=${PROJECT}`, NGINX_IMAGE]), 'чужой контейнер')
+    refused('контейнеры проекта')
+    assert.equal(inspect(FOREIGN, '{{.State.Status}}'), 'running', 'чужой контейнер не тронут')
+    ok(docker(['rm', '-f', FOREIGN]), 'убрать')
+    ok(docker(['volume', 'create', `${PROJECT}_www`]), 'чужой том')
+    refused('том проекта')
+    ok(docker(['volume', 'rm', `${PROJECT}_www`]), 'убрать')
+    ok(docker(['network', 'create', `${PROJECT}_internal`]), 'чужая сеть')
+    refused('сеть')
+    ok(docker(['network', 'rm', `${PROJECT}_internal`]), 'убрать')
   })
 
   it('первая установка: суммы сверены, образы загружены, готовность пройдена', () => {
@@ -248,7 +323,7 @@ networks:
     assert.match(status.stdout, new RegExp(`Выпуск: ${tag}`))
     assert.ok(fs.existsSync(path.join(home, 'neighbors.sh')))
     // Готовность изнутри: база и шлюз отвечают; сервер видит, что копия — репетиция.
-    const ready = JSON.parse(docker(['compose', '-p', PROJECT, 'exec', '-T', 'api', 'node', '-e',
+    const ready = JSON.parse(docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-api', 'node', '-e',
       'fetch("http://127.0.0.1:8787/api/ready").then(async (r) => process.stdout.write(await r.text()))']).stdout)
     assert.deepEqual([ready.ok, ready.checks.db, ready.checks.gateway, ready.checks.token, ready.data], [true, 'ok', 'ok', 'ok', 'rehearsal'])
     for (const s of [GATEWAY_SECRET, SECRET, db.ownerPass]) assert.ok(!res.stdout.includes(s) && !res.stderr.includes(s), 'секрет в выводе выкладки')
@@ -259,7 +334,7 @@ networks:
     assert.equal(JSON.parse(https('/version.json').stdout).buildId, buildId)
     assert.equal(JSON.parse(https('/config.json').stdout).marker, 'osp-docker-test', 'флаги — файл на сервере, вне образа')
     assert.match(https('/tenders/construction').stdout, /<div id="root">/, 'адреса страниц отдают сайт')
-    const asset = docker(['compose', '-p', PROJECT, 'exec', '-T', 'web', 'sh', '-c', 'ls /var/www/osp/assets | head -n 1']).stdout.trim()
+    const asset = docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-web', 'sh', '-c', 'ls /var/www/osp/assets | head -n 1']).stdout.trim()
     assert.match(https(`/assets/${asset}`, ['-D', '-', '-o', '/dev/null']).stdout, /cache-control: public, immutable/i)
     assert.equal(code(`https://osp.root.sx:${p443}/assets/no-such-file.js`), '404')
     // /api: только по HTTPS, не кешируется, готовность снаружи закрыта.
@@ -282,10 +357,34 @@ networks:
     assert.match(https(`/api/rates/health?key=${RATES_KEY}`).stdout, /"ok":true/)
     https(`/api/rates/kp?key=${RATES_KEY}&limit=1`)
     code(`http://osp.root.sx:${p80}/api/rates/health?key=${RATES_KEY}`)
-    const logs = [docker(['logs', INFRA]), docker(['compose', '-p', PROJECT, 'logs', '--no-color'])].map((r) => r.stdout + r.stderr).join('\n')
-    assert.ok(logs.includes('/api/rates/health'), 'запросы в журнале есть')
+    const infraLog = docker(['logs', INFRA])
+    const ownLog = docker(['compose', '-p', PROJECT, 'logs', '--no-color'])
+    const logs = [infraLog, ownLog].map((r) => r.stdout + r.stderr).join('\n')
+    assert.ok((ownLog.stdout + ownLog.stderr).includes('/api/rates/health'), 'запросы пишет контейнер сайта — в свой журнал')
     assert.ok(!logs.includes(RATES_KEY), 'ключ в журнале')
     for (const s of [GATEWAY_SECRET, SECRET, db.ownerPass]) assert.ok(!logs.includes(s), 'секрет в журнале')
+    // Общий журнал сервера за счёт портала не растёт: его запросов там нет вовсе.
+    assert.ok(!(infraLog.stdout + infraLog.stderr).includes('/api/rates'), 'запросы портала в общем журнале')
+  })
+
+  // Имя службы Docker делает именем в каждой сети, куда она подключена. У соседа в общей сети имена
+  // «web» и «api» — будь такие же у служб портала, запросы перемешались бы в обе стороны.
+  it('имена в общей сети: запросы соседа не попадают в портал, запросы портала — к соседу', () => {
+    const aliases = inspect(containerOf('osp-web'), `{{json (index .NetworkSettings.Networks "${PROXY_NET}").Aliases}}`)
+    assert.ok(aliases.includes('"osp-web"'), aliases)
+    assert.ok(!/"(web|api|postgrest)"/.test(aliases), `в общей сети у портала только свои имена: ${aliases}`)
+    // Сайт соседа ищет «web»: каждый раз отвечает сосед, ни разу — сайт портала.
+    for (let i = 0; i < 20; i++) {
+      const page = neighbourSite()
+      assert.match(page, /Welcome to nginx/, `запрос ${i}: сайт соседа`)
+      assert.ok(!page.includes('<div id="root">'), `запрос ${i}: ответил сайт портала`)
+    }
+    // Портал ищет свой API по своему имени: каждый раз отвечает osp-api, API соседа не получил ни запроса.
+    for (let i = 0; i < 20; i++) assert.match(https('/api/health').stdout, /"service":"osp-api"/, `запрос ${i}`)
+    assert.ok(!docker(['logs', NEIGHBOUR_API]).stdout.includes('HIT'), 'до API соседа запросы портала не дошли')
+    assert.ok(!/(?<!osp-)api:8787|http:\/\/api\b|(?<!osp-)postgrest:3001/.test(fs.readFileSync(path.join(DOCKER_DIR, 'web', 'site.conf'), 'utf8')
+      + fs.readFileSync(path.join(DOCKER_DIR, 'compose.yml'), 'utf8').replace(/^\s*#.*$/gm, '')), 'в настройках портала нет обращений по общим именам')
+    assert.match(fs.readFileSync(path.join(DOCKER_DIR, 'compose.yml'), 'utf8'), /^  osp-web:\n[\s\S]*^  osp-api:\n[\s\S]*^  osp-postgrest:\n/m)
   })
 
   it('данные: клиент портала → сайт → API → PostgREST → база — столько же строк, сколько даёт база', async () => {
@@ -305,8 +404,10 @@ networks:
     assert.equal(JSON.parse(viaInfra.stdout).length, 1)
     // PostgREST и API доступны только внутри проекта: из общей сети сервера сосед до них не дотягивается.
     const fromNeighbour = (host) => docker(['exec', NEIGHBOUR, 'sh', '-c', `wget -q -T 3 -O /dev/null http://${host}/ ; echo $?`]).stdout.trim()
-    assert.notEqual(fromNeighbour('postgrest:3001'), '0')
-    assert.notEqual(fromNeighbour('api:8787'), '0')
+    assert.notEqual(fromNeighbour('osp-postgrest:3001'), '0')
+    assert.notEqual(fromNeighbour('osp-api:8787'), '0')
+    // А свой «api» сосед находит по-прежнему — и это его контейнер, не портала.
+    assert.equal(docker(['exec', NEIGHBOUR, 'sh', '-c', 'wget -q -T 3 -O - http://api:8787/']).stdout, 'neighbour-api')
   })
 
   it('барьер записи — файл на сервере: запись через шлюз закрыта, чтение работает', async () => {
@@ -324,7 +425,7 @@ networks:
   })
 
   it('контейнеры: не от root, файловая система только на чтение, потолок памяти, портов на сервере нет', () => {
-    for (const service of ['web', 'api', 'postgrest']) {
+    for (const service of ['osp-web', 'osp-api', 'osp-postgrest']) {
       const id = containerOf(service)
       assert.equal(inspect(id, '{{.HostConfig.ReadonlyRootfs}}'), 'true', `${service}: только чтение`)
       assert.ok(Number(inspect(id, '{{.HostConfig.Memory}}')) > 0, `${service}: потолок памяти`)
@@ -335,12 +436,19 @@ networks:
       assert.ok(!/^(0|root)(:|$)/.test(inspect(id, '{{.Config.User}}')), `${service}: не root`)
       assert.equal(inspect(id, '{{.HostConfig.LogConfig.Config}}').includes('max-size'), true, `${service}: журнал ограничен`)
     }
-    assert.equal(docker(['compose', '-p', PROJECT, 'exec', '-T', 'web', 'sh', '-c', 'id -u; touch /probe 2>/dev/null; echo $?']).stdout.trim(), '101\n1')
-    assert.equal(docker(['compose', '-p', PROJECT, 'exec', '-T', 'api', 'sh', '-c', 'id -u; touch /app/probe 2>/dev/null; echo $?']).stdout.trim(), '1000\n1')
+    assert.equal(docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-web', 'sh', '-c', 'id -u; touch /probe 2>/dev/null; echo $?']).stdout.trim(), '101\n1')
+    assert.equal(docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-api', 'sh', '-c', 'id -u; touch /app/probe 2>/dev/null; echo $?']).stdout.trim(), '1000\n1')
     // Порты на сервере: у API и PostgREST — ни одного (порт сайта здесь открыт только правкой теста).
-    for (const service of ['api', 'postgrest']) assert.equal(docker(['port', containerOf(service)]).stdout.trim(), '', `${service}: порт наружу`)
-    assert.ok(!inspect(containerOf('api'), '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}').includes(PROXY_NET), 'API не в общей сети сервера')
-    assert.ok(!inspect(containerOf('postgrest'), '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}').includes(PROXY_NET))
+    for (const service of ['osp-api', 'osp-postgrest']) assert.equal(docker(['port', containerOf(service)]).stdout.trim(), '', `${service}: порт наружу`)
+    assert.ok(!inspect(containerOf('osp-api'), '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}').includes(PROXY_NET), 'API не в общей сети сервера')
+    assert.ok(!inspect(containerOf('osp-postgrest'), '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}').includes(PROXY_NET))
+    // Процессор: в сумме не больше одного ядра, приоритет вдвое ниже обычного — соседи получают его первыми.
+    const services = ['osp-web', 'osp-api', 'osp-postgrest']
+    const cpu = services.reduce((sum, service) => sum + Number(inspect(containerOf(service), '{{.HostConfig.NanoCpus}}')), 0)
+    assert.ok(cpu > 0 && cpu <= 1e9, `потолки процессора в сумме: ${cpu / 1e9} ядра`)
+    const memory = services.reduce((sum, service) => sum + Number(inspect(containerOf(service), '{{.HostConfig.Memory}}')), 0)
+    assert.ok(memory <= 800 * 1024 * 1024, `потолки памяти в сумме: ${Math.round(memory / 1024 / 1024)} МБ`)
+    for (const service of services) assert.equal(inspect(containerOf(service), '{{.HostConfig.CpuShares}}'), '512', `${service}: приоритет`)
     // В выпуске порт сайта не публикуется: сайт доступен только общему nginx по сети.
     assert.ok(!/^\s*ports:/m.test(fs.readFileSync(path.join(release, 'compose.yml'), 'utf8')))
   })
@@ -358,18 +466,18 @@ networks:
 
   it('новый выпуск и возврат: том сайта переживает смену образа, rollback возвращает предыдущий', () => {
     // Файл «прежней сборки» в общем каталоге: вкладка, открытая до выкладки, должна его догрузить.
-    ok(docker(['compose', '-p', PROJECT, 'exec', '-T', 'web', 'sh', '-c', 'echo "console.log(1)" > /var/www/osp/assets/old-build-abc123.js']), 'файл прежней сборки')
+    ok(docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-web', 'sh', '-c', 'echo "console.log(1)" > /var/www/osp/assets/old-build-abc123.js']), 'файл прежней сборки')
     const other = makeRelease(OTHER_TAG)
     const res = deploy(['install', other])
     ok(res, 'install другого выпуска')
     assert.equal(current(), OTHER_TAG)
     assert.equal(path.basename(fs.readlinkSync(path.join(home, 'previous'))), tag)
-    assert.equal(inspect(containerOf('web'), '{{.Config.Image}}'), `osp-web:${OTHER_TAG}`)
+    assert.equal(inspect(containerOf('osp-web'), '{{.Config.Image}}'), `osp-web:${OTHER_TAG}`)
     assert.equal(code(`https://osp.root.sx:${p443}/assets/old-build-abc123.js`), '200', 'файл прежней сборки на месте')
     const back = deploy(['rollback'])
     ok(back, 'rollback')
     assert.equal(current(), tag)
-    assert.equal(inspect(containerOf('api'), '{{.Config.Image}}'), `osp-api:${tag}`)
+    assert.equal(inspect(containerOf('osp-api'), '{{.Config.Image}}'), `osp-api:${tag}`)
     assert.match(https('/api/health').stdout, /osp-api/)
   })
 
@@ -381,7 +489,7 @@ networks:
     assert.match(res.stdout, new RegExp(`Выпуск ${BAD_TAG} не прошёл проверку`))
     assert.match(res.stdout, new RegExp(`Возвращён прежний выпуск ${tag} — работает`))
     assert.equal(current(), tag)
-    assert.equal(inspect(containerOf('api'), '{{.Config.Image}}'), `osp-api:${tag}`)
+    assert.equal(inspect(containerOf('osp-api'), '{{.Config.Image}}'), `osp-api:${tag}`)
     assert.match(https('/api/health').stdout, /osp-api/)
   })
 
@@ -392,6 +500,13 @@ networks:
     assert.match(res.stdout, /OK порты сервера: все \d+ из снимка слушаются/)
     assert.ok(!res.stdout.includes(PROJECT), 'контейнеры самого портала в сравнение не входят')
     assert.equal(inspect(NEIGHBOUR, '{{.State.Status}} {{.RestartCount}}'), 'running 0')
+    assert.equal(inspect(INFRA, '{{.State.Status}} {{.RestartCount}}'), 'running 0')
+    // Запись портала убирается тем же скриптом; сайт соседа это не задевает.
+    const removed = nginxInstall(['osp.root.sx', '--remove'])
+    ok(removed, 'install.sh --remove')
+    assert.ok(!fs.existsSync(path.join(confDir(), 'osp.root.sx.conf')))
+    ok(docker(['exec', INFRA, 'nginx', '-t']), 'настройки общего nginx годны')
+    assert.match(neighbourSite(), /Welcome to nginx/)
     assert.equal(inspect(INFRA, '{{.State.Status}} {{.RestartCount}}'), 'running 0')
     // Кто-то (не выкладка) остановил соседа — сравнение обязано это показать.
     ok(docker(['stop', '-t', '1', NEIGHBOUR]), 'остановка соседа')

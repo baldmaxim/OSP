@@ -1,22 +1,23 @@
 # Запись портала ОСП в общем nginx сервера для одного имени сайта — __NAME__.
-# Собирается из deploy/docker/infra-nginx/site.conf.template (render.sh); вручную не править.
-# Один файл на имя; остальные сайты сервера он не затрагивает. Ставится один раз, выкладки портала его
-# не меняют. Проверяется в tests/deploy/docker.test.mjs.
+# Собирается из deploy/docker/infra-nginx/site.conf.template (render.sh), ставится install.sh; вручную не
+# править. Один файл на имя; остальные сайты сервера он не затрагивает: в нём только блоки server этого
+# имени — ни общих настроек, ни форматов журнала, ни зон. Ставится один раз, выкладки портала его не
+# меняют. Проверяется в tests/deploy/docker.test.mjs.
 #
 # Здесь только приём HTTPS и пересылка в контейнер сайта (osp-web:8080 в сети общего nginx).
 # Правила самого сайта и /api — в контейнере (deploy/docker/web/site.conf).
 #
 # Имя osp-web ищется при каждом запросе, а не при запуске nginx: если контейнеры ОСП остановлены, общий
 # nginx запускается и перечитывает настройки как обычно, а 502 получает только сайт ОСП.
-
-# В журнал — без строки параметров: ключ выдачи расценок может прийти как ?key=.
-log_format osp_noargs___ID__ '$remote_addr - $remote_user [$time_local] "$request_method $uri $server_protocol" '
-                             '$status $body_bytes_sent "$http_referer" "$http_user_agent"';
+#
+# Журнал запросов здесь выключен: портал опрашивает сервер каждые 20 секунд с каждой вкладки, и общий
+# журнал сервера рос бы за счёт ОСП. Запросы пишет контейнер сайта — в свой журнал с ограничением размера
+# и без строки параметров (в ней может прийти ключ выдачи расценок).
 
 server {
     listen 80;
     server_name __NAME__;
-    access_log /var/log/nginx/access.log osp_noargs___ID__;
+    access_log off;
 
     # Проверка Let's Encrypt — как у остальных сайтов сервера.
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
@@ -36,7 +37,7 @@ server {
 #@https     ssl_certificate /etc/letsencrypt/live/__NAME__/fullchain.pem;
 #@https     ssl_certificate_key /etc/letsencrypt/live/__NAME__/privkey.pem;
 #@https
-#@https     access_log /var/log/nginx/access.log osp_noargs___ID__;
+#@https     access_log off;
 #@https     # Ошибки соединения пишут строку запроса целиком (с ?key=): только критические.
 #@https     error_log /var/log/nginx/error.log crit;
 #@https

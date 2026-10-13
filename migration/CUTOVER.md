@@ -65,7 +65,8 @@ bash migration/target/neighbors.sh ~/.osp-secrets/target.env --compare   # по�
    JWT Secret; кнопку «Migrate» не нажимать), ключи S3 и Anthropic, служебный ключ Supabase, ключи выдачи
    расценок. Если Anthropic с сервера недоступен — `OSP_API_REQUIRE=supabase,s3`, флаг `ospApiAi` не включать.
 5. **Запись в общем nginx** — отдельный файл на каждое имя сайта, в два шага: «только HTTP» → сертификат →
-   полная запись (`deploy/docker/README.md`, «Запись в общем nginx»). Сеть общего nginx на corp — `edge`.
+   полная запись; ставит её скрипт с проверкой и возвратом (`deploy/docker/README.md`, «Запись в общем
+   nginx»). Сеть общего nginx на corp — `edge`. Соседние порталы не должны быть задеты — там же, первый раздел.
 6. **Проверка под запасным именем** `https://osp.213-171-26-249.nip.io` — оно уже указывает на corp, нынешний
    сервер не затрагивается: сайт с выключенными флагами (данные Supabase), вход, чтение; затем раздел Б.
    Загрузка файлов под этим именем не работает — хранилище принимает её только с `osp.root.sx`.
@@ -100,7 +101,7 @@ bash migration/target/visibility.sh ~/.osp-secrets/target.env --compare <фай�
 bash migration/target/stand.sh down
 ```
 После загрузки новой копии PostgREST перечитывает описание структуры базы (corpsu@corp):
-`docker compose -p osp kill -s SIGUSR1 postgrest`; проверка — `bash /opt/portals/osp/deploy.sh status`.
+`docker compose -p osp kill -s SIGUSR1 osp-postgrest`; проверка — `bash /opt/portals/osp/deploy.sh status`.
 
 **Состояние на 2026-10-13, 14:45 UTC.** В базе Яндекса — проверочная копия `prod-20261013-134911`
 (снимок 13:49 UTC; 75 таблиц, 196 815 строк): загружена за 143 с, сверка — одно ожидаемое расхождение
@@ -161,7 +162,7 @@ bash migration/target/stand.sh down
 5. **Сервер портала** (corpsu@corp): барьер записи шлюза и перезапуск:
    ```bash
    touch /opt/portals/osp/state/db-readonly
-   docker compose -p osp kill -s SIGUSR1 postgrest && docker compose -p osp restart api
+   docker compose -p osp kill -s SIGUSR1 osp-postgrest && docker compose -p osp restart osp-api
    bash /opt/portals/osp/deploy.sh status
    ```
    В ответе должно быть `"data":"final"`: сервер видит рабочую копию. `rehearsal` или `unknown` —

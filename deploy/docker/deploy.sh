@@ -91,10 +91,10 @@ READY_JS='fetch("http://127.0.0.1:8787/api/ready").then(async (r) => { process.s
 healthy() {
   local tag="$1" i out rc fails=0
   for ((i = 0; i < HEALTH_TRIES; i++)); do
-    rc=0; out="$(dc "$tag" exec -T api node -e "$READY_JS" 2>/dev/null)" || rc=$?
+    rc=0; out="$(dc "$tag" exec -T osp-api node -e "$READY_JS" 2>/dev/null)" || rc=$?
     if [ "$rc" = 0 ]; then
-      if dc "$tag" exec -T web wget -q -O /dev/null http://127.0.0.1:8080/version.json 2>/dev/null \
-        && dc "$tag" exec -T web wget -q -O /dev/null http://127.0.0.1:8080/api/health 2>/dev/null; then
+      if dc "$tag" exec -T osp-web wget -q -O /dev/null http://127.0.0.1:8080/version.json 2>/dev/null \
+        && dc "$tag" exec -T osp-web wget -q -O /dev/null http://127.0.0.1:8080/api/health 2>/dev/null; then
         echo "Готовность: $out"
         return 0
       fi
@@ -128,7 +128,7 @@ switch_to() { # switch_to <метка>; при отказе — назад на 
     rm -f "$OSP_HOME/current"
     echo "Прежнего выпуска нет — проект остановлен"
   fi
-  echo "Причина — в журналах: docker compose -p $PROJECT logs --tail 50 api postgrest web"
+  echo "Причина — в журналах: docker compose -p $PROJECT logs --tail 50 osp-api osp-postgrest osp-web"
   return 1
 }
 
@@ -153,6 +153,16 @@ case "${1:-}" in
     [ -n "$REL" ] && [ -d "$REL" ] || die "укажите каталог выпуска: bash deploy.sh install <каталог>"
     REL="$(cd "$REL" && pwd)"
     preflight
+    # Первая установка — только на чистое место. Проект, том или сеть с нашим именем, которых выкладка
+    # не создавала, — чужие: управлять ими она не будет.
+    if [ -z "$(release_of current)" ]; then
+      [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")" ] \
+        || die "на сервере уже есть контейнеры проекта «$PROJECT», которых эта выкладка не создавала"
+      [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT")" ] && ! docker volume inspect "${PROJECT}_www" >/dev/null 2>&1 \
+        || die "на сервере уже есть том проекта «$PROJECT», которого эта выкладка не создавала"
+      ! docker network inspect "${PROJECT}_internal" >/dev/null 2>&1 \
+        || die "на сервере уже есть сеть «${PROJECT}_internal», которую эта выкладка не создавала"
+    fi
     # 1. Выпуск дошёл целиком и без изменений.
     (cd "$REL" && sha256sum --quiet -c SHA256SUMS) || die "контрольные суммы выпуска не совпали — файлы повреждены при переносе"
     TAG="$(grep -m 1 -E '^tag=' "$REL/MANIFEST" | cut -d= -f2)"

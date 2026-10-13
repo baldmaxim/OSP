@@ -1,18 +1,24 @@
 # Портал ОСП на общем сервере: один проект Docker Compose, три контейнера.
 #
-#   web        — nginx с сайтом и правилами /api (deploy/docker/web). К нему обращается только общий
-#                nginx сервера — по внешней сети OSP_PROXY_NETWORK, под именем osp-web:8080.
-#   api        — свой API (osp-api). Только во внутренней сети проекта: наружу и соседям недоступен.
-#   postgrest  — PostgREST за шлюзом osp-api. Только во внутренней сети; запрос без внутреннего
-#                токена шлюза отклоняет.
+#   osp-web        — nginx с сайтом и правилами /api (deploy/docker/web). К нему обращается только
+#                    общий nginx сервера — по внешней сети OSP_PROXY_NETWORK, под именем osp-web:8080.
+#   osp-api        — свой API. Только во внутренней сети проекта: наружу и соседям недоступен.
+#   osp-postgrest  — PostgREST за шлюзом osp-api. Только во внутренней сети; запрос без внутреннего
+#                    токена шлюза отклоняет.
+#
+# Имена служб — с приставкой osp-, и это не украшение. Docker делает имя службы именем в каждой сети,
+# куда она подключена, а сайт подключён к общей сети сервера. Служба с именем «web» или «api» получила
+# бы там имя, которое может быть и у соседнего проекта: часть его запросов ушла бы в контейнер ОСП, а
+# запросы ОСП к «api» — в чужой контейнер вместе с токенами пользователей.
 #
 # Портов на сервере проект не занимает. Запускает и обновляет его deploy/docker/deploy.sh:
 #   docker compose -p osp --project-directory /opt/portals/osp -f <выпуск>/compose.yml --env-file <выпуск>/release.env up -d
 # Пути ниже — от каталога проекта (/opt/portals/osp): secrets/, certs/, shared/, state/ создаются один
 # раз при установке и выкладкой не меняются.
 #
-# Соседи по серверу: у каждого контейнера потолок памяти и процессора, журнал ограничен по размеру,
-# прав суперпользователя и лишних возможностей ядра нет, файловая система только на чтение.
+# Соседи по серверу: у каждого контейнера потолок памяти и процессора (в сумме — одно ядро и 0,8 ГБ),
+# при нехватке процессора соседи получают его первыми (cpu_shares вдвое ниже обычного), журнал ограничен
+# по размеру, прав суперпользователя и лишних возможностей ядра нет, файловая система только на чтение.
 name: osp
 
 x-hardening: &hardening
@@ -21,42 +27,40 @@ x-hardening: &hardening
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
   pids_limit: 256
+  cpu_shares: 512
   logging:
     driver: json-file
     options: { max-size: "10m", max-file: "5" }
 
 services:
-  web:
+  osp-web:
     <<: *hardening
     image: ${OSP_WEB_IMAGE:?образ сайта}
     mem_limit: 128m
     memswap_limit: 128m
-    cpus: 0.5
+    cpus: 0.25
     tmpfs: ["/tmp:size=64m,mode=1777"]
     volumes:
       - www:/var/www/osp
       # Флаги портала (config.json): правятся на сервере без пересборки.
       - ./shared:/etc/osp/shared:ro
-    networks:
-      internal: {}
-      proxy:
-        aliases: [osp-web]
+    networks: [internal, proxy]
     depends_on:
-      api: { condition: service_started }
+      osp-api: { condition: service_started }
 
-  api:
+  osp-api:
     <<: *hardening
     image: ${OSP_API_IMAGE:?образ osp-api}
     mem_limit: 384m
     memswap_limit: 384m
-    cpus: 1.0
+    cpus: 0.45
     tmpfs: ["/tmp:size=32m,mode=1777"]
     env_file: ./secrets/osp-api.env
     environment:
       HOST: 0.0.0.0
       PORT: "8787"
       # Адреса внутри проекта задаются здесь, а не в файле секретов.
-      OSP_PGRST_URL: http://postgrest:3001
+      OSP_PGRST_URL: http://osp-postgrest:3001
       OSP_DB_CA_FILE: /etc/ssl/osp/yandex-root.crt
       OSP_DB_READONLY_FILE: /var/lib/osp-api/db-readonly
     volumes:
@@ -65,15 +69,15 @@ services:
       - ./state:/var/lib/osp-api:ro
     networks: [internal]
     depends_on:
-      postgrest: { condition: service_started }
+      osp-postgrest: { condition: service_started }
 
-  postgrest:
+  osp-postgrest:
     <<: *hardening
     # Версия и отпечаток закреплены: та же сборка, на которой проверены права (tests/db/single-owner.test.mjs).
     image: ${OSP_POSTGREST_IMAGE:?образ PostgREST}
     mem_limit: 256m
     memswap_limit: 256m
-    cpus: 1.0
+    cpus: 0.3
     env_file: ./secrets/postgrest.env
     environment:
       PGRST_SERVER_HOST: 0.0.0.0

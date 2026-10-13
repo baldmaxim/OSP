@@ -76,7 +76,7 @@ docker build -q -f "$SRC_DOCKER/web.Dockerfile" -t "osp-web:$TAG" "${LABELS[@]}"
 REL="$OUT/osp-release-$TAG"
 rm -rf "$REL"; mkdir -p "$REL/infra-nginx"
 cp "$SRC_DOCKER/compose.yml" "$SRC_DOCKER/deploy.sh" "$SRC_DOCKER/neighbors.sh" "$REL/"
-cp "$SRC_DOCKER/infra-nginx/site.conf.template" "$SRC_DOCKER/infra-nginx/render.sh" "$REL/infra-nginx/"
+cp "$SRC_DOCKER/infra-nginx/site.conf.template" "$SRC_DOCKER/infra-nginx/render.sh" "$SRC_DOCKER/infra-nginx/install.sh" "$REL/infra-nginx/"
 printf '%s\n' "OSP_TAG=$TAG" "OSP_API_IMAGE=osp-api:$TAG" "OSP_WEB_IMAGE=osp-web:$TAG" "OSP_POSTGREST_IMAGE=$PGRST_REF" > "$REL/release.env"
 print_of() { bash "$SRC_DOCKER/deploy.sh" fingerprint "$1"; }
 {

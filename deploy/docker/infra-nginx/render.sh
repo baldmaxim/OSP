@@ -12,9 +12,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAME="${1:-}"; MODE="${2:-}"
 [[ "$NAME" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || { echo "Использование: bash render.sh <имя сайта> [--http-only]" >&2; exit 1; }
 [ -z "$MODE" ] || [ "$MODE" = --http-only ] || { echo "Использование: bash render.sh <имя сайта> [--http-only]" >&2; exit 1; }
-ID="${NAME//[^a-z0-9]/_}"
+TEMPLATE="${OSP_NGINX_TEMPLATE:-$HERE/site.conf.template}"
 if [ "$MODE" = --http-only ]; then
-  grep -v '^#@https' "$HERE/site.conf.template"
+  grep -v '^#@https' "$TEMPLATE"
 else
-  sed -E 's/^#@https ?//' "$HERE/site.conf.template"
-fi | sed -e "s/__NAME__/$NAME/g" -e "s/__ID__/$ID/g"
+  sed -E 's/^#@https ?//' "$TEMPLATE"
+fi | sed -e "s/__NAME__/$NAME/g"
