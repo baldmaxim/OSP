@@ -1,0 +1,3 @@
+# Образ PostgREST для сервера портала: версия и отпечаток закреплены. Версия — та же, что в
+# deploy/postgrest/install.sh и в тестах прав (tests/db/single-owner.test.mjs); менять только вместе.
+postgrest/postgrest:v14.18@sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf

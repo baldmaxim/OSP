@@ -357,6 +357,12 @@ EOF
 
 ## Свой API (osp-api)
 
+> **Переезд на общий сервер (решение от 2026-10-13).** Портал целиком — сайт, `osp-api` и PostgREST —
+> переезжает на сервер `corp` в образах Docker; адрес сайта прежний. Сборка выпуска, установка, выкладка и
+> проверка «соседние проекты не пострадали» — [deploy/docker/README.md](../deploy/docker/README.md),
+> порядок перевода — [migration/CUTOVER.md](../migration/CUTOVER.md), раздел А. Ниже описан нынешний сервер
+> (службы systemd); он работает до перевода адреса.
+
 Вместо Edge Functions Supabase: `/api/fn/s3-presign`, `/api/fn/ai-assist`, `/api/rates/*`. Подробно —
 [server/osp-api/README.md](../server/osp-api/README.md). Служба слушает только `127.0.0.1:8787`, наружу
 выходит через nginx. Портал переходит на неё флагами: `ospApiAi` — ИИ-помощник, `ospApiFilesV2` — файлы

@@ -1,0 +1,92 @@
+# Портал ОСП на общем сервере: один проект Docker Compose, три контейнера.
+#
+#   web        — nginx с сайтом и правилами /api (deploy/docker/web). К нему обращается только общий
+#                nginx сервера — по внешней сети OSP_PROXY_NETWORK, под именем osp-web:8080.
+#   api        — свой API (osp-api). Только во внутренней сети проекта: наружу и соседям недоступен.
+#   postgrest  — PostgREST за шлюзом osp-api. Только во внутренней сети; запрос без внутреннего
+#                токена шлюза отклоняет.
+#
+# Портов на сервере проект не занимает. Запускает и обновляет его deploy/docker/deploy.sh:
+#   docker compose -p osp --project-directory /opt/portals/osp -f <выпуск>/compose.yml --env-file <выпуск>/release.env up -d
+# Пути ниже — от каталога проекта (/opt/portals/osp): secrets/, certs/, shared/, state/ создаются один
+# раз при установке и выкладкой не меняются.
+#
+# Соседи по серверу: у каждого контейнера потолок памяти и процессора, журнал ограничен по размеру,
+# прав суперпользователя и лишних возможностей ядра нет, файловая система только на чтение.
+name: osp
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 256
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  web:
+    <<: *hardening
+    image: ${OSP_WEB_IMAGE:?образ сайта}
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    volumes:
+      - www:/var/www/osp
+      # Флаги портала (config.json): правятся на сервере без пересборки.
+      - ./shared:/etc/osp/shared:ro
+    networks:
+      internal: {}
+      proxy:
+        aliases: [osp-web]
+    depends_on:
+      api: { condition: service_started }
+
+  api:
+    <<: *hardening
+    image: ${OSP_API_IMAGE:?образ osp-api}
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 1.0
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    env_file: ./secrets/osp-api.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8787"
+      # Адреса внутри проекта задаются здесь, а не в файле секретов.
+      OSP_PGRST_URL: http://postgrest:3001
+      OSP_DB_CA_FILE: /etc/ssl/osp/yandex-root.crt
+      OSP_DB_READONLY_FILE: /var/lib/osp-api/db-readonly
+    volumes:
+      - ./certs/yandex-root.crt:/etc/ssl/osp/yandex-root.crt:ro
+      # Барьер записи: файл state/db-readonly на сервере — «только чтение». Службе достаточно его видеть.
+      - ./state:/var/lib/osp-api:ro
+    networks: [internal]
+    depends_on:
+      postgrest: { condition: service_started }
+
+  postgrest:
+    <<: *hardening
+    # Версия и отпечаток закреплены: та же сборка, на которой проверены права (tests/db/single-owner.test.mjs).
+    image: ${OSP_POSTGREST_IMAGE:?образ PostgREST}
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1.0
+    env_file: ./secrets/postgrest.env
+    environment:
+      PGRST_SERVER_HOST: 0.0.0.0
+      PGRST_SERVER_PORT: "3001"
+    volumes:
+      - ./certs/yandex-root.crt:/etc/ssl/osp/yandex-root.crt:ro
+    networks: [internal]
+
+networks:
+  internal: {}
+  proxy:
+    external: true
+    name: ${OSP_PROXY_NETWORK:?сеть общего nginx сервера}
+
+volumes:
+  www: {}

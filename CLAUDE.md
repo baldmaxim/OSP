@@ -21,7 +21,7 @@ npm run test:psdc    # ПСДЦ: движок в БД, XLSX, UI (PostgreSQL + Ch
 npm run test:tender  # карточка тендера: производительность UI (Chromium)
 npm run test:contracts # договоры: путь к Larix.CPM, импорт из Excel (без базы и браузера)
 npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
-npm run test:deploy  # deploy/publish.sh и rollback.sh на временных каталогах
+npm run test:deploy  # deploy/publish.sh и rollback.sh на временных каталогах; портал в Docker (deploy/docker): связка из трёх контейнеров на копии прода, выкладка с возвратом (Docker)
 npm run test:backup  # migration/backup: копия, проверка восстановлением, прогон миграций; migration/target: разведка базы (Docker)
 npm run test:db      # слепок схемы прода + «отпечаток» прав на копии прода против tests/db/baseline; права под одну учётку и цепочка шлюза с настоящим PostgREST (Docker)
 npm run test:api     # свой API server/osp-api (нужен npm ci --prefix server/osp-api; MinIO — если есть образ)

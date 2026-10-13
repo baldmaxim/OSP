@@ -144,3 +144,6 @@ vite.config.ts.timestamp-*
 # MCP configuration with secrets
 .mcp.json
 .vercel
+
+# Собранные выпуски портала (образы Docker) — вне git
+deploy/docker/out/

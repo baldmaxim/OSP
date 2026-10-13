@@ -6,9 +6,13 @@ Supabase). Страницы не переписываются: путь выби
 
 Как это устроено — `server/osp-api/README.md` («Шлюз данных») и `migration/target/sql/load-single-owner.sql`.
 
-**Кто что делает.** Команды на сервере портала — владелец портала или Cursor; пользователь указан перед
-каждой командой. Запросы в Supabase SQL Editor — владелец портала. Загрузку в базу Яндекса и сверку —
-Claude с удалённой машины, по слову владельца. Значения секретов в чат и в git не попадают.
+**Где работает портал.** Решение владельца от 2026-10-13: портал целиком — сайт, `osp-api` и PostgREST —
+переезжает на общий сервер `corp`, у которого есть доступ к базе Яндекса, в образах Docker
+(`deploy/docker/README.md`). Адрес `osp.root.sx` прежний. Нынешний сервер под базу не готовится.
+
+**Кто что делает.** Команды на сервере — Cursor, пользователь `corpsu`. Запросы в Supabase SQL Editor —
+владелец портала. Загрузку в базу Яндекса и сверку — Claude с удалённой машины, по слову владельца.
+Значения секретов в чат и в git не попадают.
 
 **Правило.** Любой шаг дал отказ или расхождение — остановка. Переключение пользователей — только когда
 выполнены все четыре доказательства из раздела «Готово».
@@ -34,48 +38,40 @@ bash migration/target/neighbors.sh ~/.osp-secrets/target.env --compare   # по�
 Сравнение показывает: ни одна соседняя база не пропала, не сменила владельца и не уменьшилась заметно,
 состав учёток прежний, подключений хватает. `FAIL` — остановка и разбор до любых дальнейших действий.
 
-Чего это не закрывает: пароль общей учётки будет лежать на сервере портала (решение «одна учётка»);
-доступ к серверу и права 600 на файлы настроек — единственная защита соседних баз от его утечки.
+Чего это не закрывает: пароль общей учётки будет лежать на сервере `corp`, где работают другие проекты
+(решение «одна учётка»). Доступ к нему есть у каждого, у кого на сервере права администратора или права
+на Docker; права 600 на файлы настроек — единственная защита соседних баз от его утечки.
 
-## А. Подготовка сервера портала — в любое время, пользователи не затронуты
+## А. Портал на сервере corp — в любое время, пользователи не затронуты
 
-Файлы настроек уже собраны на удалённой машине (`bash migration/target/server-env.sh`): каталог
-`~/.osp-secrets/server` — `postgrest.env`, `osp-api.add.env`, `db-host`. В них пароль базы и внутренний
-секрет шлюза: переносить только по `scp`, на экран не выводить, в чат не вставлять.
+Установка, выкладка и правило «соседние проекты на сервере не должны пострадать» —
+`deploy/docker/README.md`; вся связка проверяется тестом `tests/deploy/docker.test.mjs`. Порядок:
 
-1. **Сеть до базы Яндекса** — с сервера портала (danila). Адрес и порт — из файла `db-host`. Нужен `open`:
+1. **Выпуск** — на машине сборки (на сервере ничего не собирается): `bash deploy/docker/build.sh`.
+   Нужен файл `~/.osp-secrets/web-build.env` с адресом и публичным ключом Supabase для сайта.
+2. **Перенос на corp** (Cursor): каталог выпуска и файлы настроек из `~/.osp-secrets/server`
+   (`bash migration/target/server-env.sh`): `postgrest.env`, `osp-api.add.env`. В них пароль базы и
+   внутренний секрет шлюза — только по `scp`, на экран не выводить, в чат не вставлять.
+3. **Сеть до базы Яндекса** — с corp, адрес и порт из файла `db-host`. Нужен `open`:
    ```bash
-   read -r DBHOST DBPORT < ~/db-host && timeout 5 bash -c "</dev/tcp/$DBHOST/$DBPORT" && echo open || echo closed
+   # corpsu@corp$
+   read -r DBHOST DBPORT < ~/db-host && docker run --rm --entrypoint sh nginx:alpine -c "nc -z -w 5 $DBHOST $DBPORT && echo open || echo closed"; rm -f ~/db-host
    ```
-   `closed` — внешний блокер: администратор кластера должен открыть доступ с адреса сервера портала.
-2. **Корневой сертификат базы** (root) — не секрет:
-   ```bash
-   install -d -m 755 /etc/ssl/osp
-   curl -fsS https://storage.yandexcloud.net/cloud-certs/CA.pem -o /etc/ssl/osp/yandex-root.crt && chmod 644 /etc/ssl/osp/yandex-root.crt
-   ```
-3. **Свежий код** (danila): `cd /home/danila/projects/OSP && git pull`.
-4. **PostgREST** (root) — установка и готовый файл настроек:
-   ```bash
-   bash /home/danila/projects/OSP/deploy/postgrest/install.sh
-   install -m 600 -o root -g root /home/danila/postgrest.env /etc/osp-api/postgrest.env && shred -u /home/danila/postgrest.env
-   systemctl enable --now postgrest && sleep 3 && systemctl is-active postgrest
-   ```
-5. **osp-api** (root) — дописать строки шлюза в `/etc/osp-api/osp-api.env` и выложить службу:
-   ```bash
-   cat /home/danila/osp-api.add.env >> /etc/osp-api/osp-api.env && shred -u /home/danila/osp-api.add.env
-   cp /home/danila/projects/OSP/deploy/osp-api.service /etc/systemd/system/osp-api.service && systemctl daemon-reload
-   bash /home/danila/projects/OSP/deploy/api-deploy.sh
-   curl -s http://127.0.0.1:8787/api/ready; echo
-   ```
-   В ответе готовности должны быть `"db":"ok"` и `"gateway":"ok"`. Дополнительно в том же файле:
-   - `SUPABASE_JWT_SECRET` (Supabase → настройки проекта → JWT Keys → Legacy JWT Secret; кнопку «Migrate»
-     не нажимать) — вход проверяется на сервере, без запроса к Supabase на каждое обращение; тогда в
-     готовности появится `"token":"ok"`;
-   - ключи S3 и Anthropic, если ещё не внесены: файлы после переключения идут только через osp-api, ИИ —
-     через него при флаге `ospApiAi`.
-6. **nginx** (root) — как в `docs/DEPLOYMENT.md`, «Установка», шаг 5 (сверка суммы, копия прежнего файла,
-   `nginx -t`, перезагрузка). В файле появился блок `/api/db/`.
-7. **Портал** (как обычно): выложить текущую сборку. Флаг `ospDb` выключен — для пользователей ничего не меняется.
+4. **Первая установка** — `deploy/docker/README.md`, «Первая установка на сервере»: снимок соседей, файлы
+   настроек (права 600), сертификат базы, установка, сравнение с соседями. В готовности — `"db":"ok"`,
+   `"gateway":"ok"`, `"data":"rehearsal"`. С этого шага служба сама пишет в проверочную копию ОСП (копия
+   учёток, пересчёт реестра раз в 10 минут) — только в базу ОСП; запуск — по отдельному «да» владельца.
+   В `secrets/osp-api.env` также: `SUPABASE_JWT_SECRET` (Supabase → настройки проекта → JWT Keys → Legacy
+   JWT Secret; кнопку «Migrate» не нажимать), ключи S3 и Anthropic, служебный ключ Supabase, ключи выдачи
+   расценок. Если Anthropic с сервера недоступен — `OSP_API_REQUIRE=supabase,s3`, флаг `ospApiAi` не включать.
+5. **Запись в общем nginx** — один файл `osp.conf`, разово (там же, шаг 6).
+6. **Проверка без перевода адреса** — на компьютере владельца имя `osp.root.sx` временно указывает на corp:
+   сайт с выключенными флагами (данные Supabase), затем раздел Б.
+7. **Перевод адреса** — в нерабочее время, по слову владельца: нынешний nginx пересылает запросы на corp →
+   проверка → запись DNS. Откат — вернуть прежний файл nginx на нынешнем сервере.
+
+Пока адрес не переведён, пользователи работают с нынешним сервером; сборку с исправлением лишних запросов
+реестра тендеров на нём выкладывают как обычно (`deploy/deploy.sh`, пользователь danila).
 
 ## Б. Репетиция в базе Яндекса — в любое время
 
@@ -98,8 +94,8 @@ bash migration/target/visibility.sh migration/target/reports/stand/stand.env    
 bash migration/target/visibility.sh ~/.osp-secrets/target.env --compare <файл замера стенда>
 bash migration/target/stand.sh down
 ```
-После загрузки новой копии PostgREST перечитывает описание структуры базы (root):
-`systemctl kill -s SIGUSR1 postgrest`; проверка — `curl -s http://127.0.0.1:8787/api/ready; echo`.
+После загрузки новой копии PostgREST перечитывает описание структуры базы (corpsu@corp):
+`docker compose -p osp kill -s SIGUSR1 postgrest`; проверка — `bash /opt/portals/osp/deploy.sh status`.
 
 **Состояние на 2026-10-13, 13:10 UTC.** Репетиция выполнена: копия `prod-20261013-094329` загружена за 99 с,
 сверка — одно ожидаемое расхождение (`kp_rates_registry_mv`, исправляется шагом В.2), права применены за
@@ -123,8 +119,8 @@ bash migration/target/stand.sh down
 | Удаление файла, загруженного в самой проверке | удаляется целиком — и строка, и файл | там же |
 | Удаление пользователя, подтверждение почты («Администрирование») | отказ «Проверочная копия данных…»: учётки входа не меняются | там же, `tests/db/single-owner.test.mjs` |
 
-Отметка не читается — сервер считает копию репетицией. В готовности сервера (root:
-`curl -s http://127.0.0.1:8787/api/ready; echo`) видно, с какой копией он работает: `"data":"rehearsal"`.
+Отметка не читается — сервер считает копию репетицией. В готовности сервера (corpsu@corp:
+`bash /opt/portals/osp/deploy.sh status`) видно, с какой копией он работает: `"data":"rehearsal"`.
 
 Чего защита не отменяет: файл, загруженный в проверке и не удалённый там же, останется в хранилище без
 строки — удалите его в той же проверке; обложка объекта, загруженная в проверке, и регистрация новой
@@ -147,20 +143,21 @@ bash migration/target/stand.sh down
 3. **Финальная копия** (Cursor): `backup.sh`; Claude — `verify.sh` копии.
 4. **Загрузка** (Claude): `neighbors.sh --save` → `reset.sh` репетиции → `load.sh … --status final --single-owner`
    → `verify.sh` (расхождений быть не должно) → `rights.sh` → `neighbors.sh --compare` (без `FAIL`).
-5. **Сервер портала** (root): барьер записи шлюза и перезапуск:
+5. **Сервер портала** (corpsu@corp): барьер записи шлюза и перезапуск:
    ```bash
-   touch /var/lib/osp-api/db-readonly
-   systemctl kill -s SIGUSR1 postgrest && systemctl restart osp-api && curl -s http://127.0.0.1:8787/api/ready; echo
+   touch /opt/portals/osp/state/db-readonly
+   docker compose -p osp kill -s SIGUSR1 postgrest && docker compose -p osp restart api
+   bash /opt/portals/osp/deploy.sh status
    ```
    В ответе должно быть `"data":"final"`: сервер видит рабочую копию. `rehearsal` или `unknown` —
    остановка: загрузка шага 4 не завершена или сервер смотрит не в ту базу.
    Барьер закрывает запись через шлюз и загрузку, подтверждение и удаление файлов; чтение и скачивание работают.
-6. **Флаги** (root) — в `/var/www/osp/shared/config.json`: `"ospDb": true, "ospApiFilesV2": true, "ospApiAi": true`.
+6. **Флаги** (corpsu@corp) — в `/opt/portals/osp/shared/config.json`: `"ospDb": true, "ospApiFilesV2": true, "ospApiAi": true`.
    `ospApiAi` — только если в готовности `"anthropic":"ok"`; если Anthropic с сервера недоступен, ИИ остаётся
    на функции Supabase (она данные не читает) — этот флаг не включать.
    Открытые вкладки перейдут в течение двух минут. Портал читает базу Яндекса, запись закрыта барьером.
 7. **Проверка чтения** (владелец портала): вход и основные разделы под тремя ролями.
-8. **Снять барьер шлюза** (root): `rm /var/lib/osp-api/db-readonly`. С этого момента записи идут в базу Яндекса.
+8. **Снять барьер шлюза** (corpsu@corp): `rm /opt/portals/osp/state/db-readonly`. С этого момента записи идут в базу Яндекса.
 9. **Проверка записи** под тремя ролями: создать, изменить, удалить запись; загрузить и скачать файл.
 10. **Смежному отделу** — новый адрес выдачи расценок: `https://osp.root.sx/api/rates/…` с прежним ключом.
 

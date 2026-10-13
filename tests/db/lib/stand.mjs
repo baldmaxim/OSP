@@ -158,7 +158,9 @@ export function startSingleOwner(dump) {
     const rights = tool('rights.sh', [envFile, dump])
     psql('postgres', adminPass, 'osp_target', 'analyze')
     return {
-      port, owner, ownerPass, envFile, rights, stop, tool,
+      port, owner, ownerPass, envFile, rights, stop, tool, container,
+      // Под суперпользователем временной базы — только настройка самого стенда (например, TLS).
+      adminSql: (text) => psql('postgres', adminPass, 'postgres', text),
       url: `postgres://${owner}:${ownerPass}@127.0.0.1:${port}/osp_target`,
       // Запрос под учёткой-владельцем. appName 'osp:internal' — служебная операция (мимо правил по строкам).
       sql: (text, opts) => psql(owner, ownerPass, 'osp_target', text, opts),

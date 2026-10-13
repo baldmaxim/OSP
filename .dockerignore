@@ -1,0 +1,20 @@
+# Контекст сборки образов (deploy/docker). Список РАЗРЕШЁННОГО, а не запрещённого: в контекст попадает
+# только то, что нужно сборке. Копии базы (migration/dumps), отчёты, тесты, секреты и всё, что появится в
+# репозитории позже, в образ попасть не могут. Проверяется в tests/deploy/docker.test.mjs.
+*
+
+# Сайт
+!package.json
+!package-lock.json
+!index.html
+!vite.config.js
+!release.json
+!src/
+!public/
+!deploy/publish.sh
+!deploy/docker/web/
+
+# Свой API
+!server/osp-api/package.json
+!server/osp-api/package-lock.json
+!server/osp-api/src/
