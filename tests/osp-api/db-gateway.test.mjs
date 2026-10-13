@@ -4,7 +4,8 @@
 //   • что можно: таблица, действие, функция и связанные таблицы в select — по списку (allow.json);
 //   • в PostgREST уходит свой короткоживущий токен, токен браузера дальше шлюза не идёт;
 //   • запрос и ответ передаются как есть (тело — байт в байт, диапазоны, коды и ошибки PostgREST);
-//   • барьер записи; действия с учётками входа; сбой PostgREST — понятный отказ.
+//   • барьер записи (шлюз и файлы); действия с учётками входа; сбой PostgREST — понятный отказ;
+//   • репетиция переноса: файлы и учётки входа рабочего портала сервер не трогает.
 // Права по строкам (их держит база) проверяются на копии прода: tests/db и migration/target.
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
@@ -15,6 +16,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { SECRET, userToken, projectKey } from './lib/tokens.mjs'
+import { startFakeS3 } from './lib/fakes.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const SERVER = path.join(ROOT, 'server', 'osp-api')
@@ -25,6 +27,12 @@ const SUPABASE_URL = 'https://testproject.supabase.co'
 const ADMIN = '11111111-1111-4111-8111-111111111111'
 const USER = '22222222-2222-4222-8222-222222222222'
 const TARGET = '33333333-3333-4333-8333-333333333333'
+const TENDER = 'a0000000-0000-4000-8000-000000000001'
+const DOC_KEY = 'tenders/t1/a-plan.pdf'
+// Копия загружена в 09:45; документ «до» пришёл с рабочими данными, «после» — создан уже в репетиции.
+const LOADED_AT = new Date('2026-10-13T09:45:00Z')
+const BEFORE_LOAD = '2026-09-01T08:00:00+00:00'
+const AFTER_LOAD = '2026-10-13T12:00:00.123456+00:00'
 
 // Список разрешённого — как у прода по форме: полный доступ, только чтение, только вошедшему.
 const ALLOW = {
@@ -102,6 +110,8 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
   let tmp
   let authAdminCalls
   let authAdminFails
+  let s3
+  let loadState
 
   const decode = (token) => JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'))
   const validInternal = (token) => {
@@ -110,7 +120,8 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
   }
   const config = (over = {}) => ({
     host: '127.0.0.1', port: 0, supabaseUrl: SUPABASE_URL, supabaseAnonKey: projectKey('anon'), supabaseServiceKey: projectKey('service_role'),
-    supabaseJwtSecret: SECRET, s3: {}, anthropicApiKey: '', ratesApiKeys: [], required: ['supabase'],
+    supabaseJwtSecret: SECRET, anthropicApiKey: '', ratesApiKeys: [], required: ['supabase'],
+    s3: { endpoint: s3.url, region: 'ru-central-1', bucket: 'osp', accessKeyId: 'AKIDTEST', secretAccessKey: 'secret-test' },
     dbGateway: { upstream: upstream.url, secret: GATEWAY_SECRET, dbRole: 'portal_owner', readOnlyFile: path.join(tmp, 'db-readonly') },
     ...over,
   })
@@ -119,7 +130,7 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     logs = []
     const { defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))
     app = buildApp({ config: config(over), logger: { level: 'info', stream: { write: (l) => logs.push(l) } },
-      deps: { ...defaultDeps, allow: ALLOW, createAuthAdmin: () => ({
+      deps: { ...defaultDeps, allow: ALLOW, createLoadStatus: () => ({ current: async () => loadState }), createAuthAdmin: () => ({
         deleteUser: async (id) => { authAdminCalls.push(['deleteUser', id, seen.length]); if (authAdminFails) throw new Error('auth 500') },
         confirmEmail: async (id) => { authAdminCalls.push(['confirmEmail', id, seen.length]); if (authAdminFails) throw new Error('auth 500') },
         listUsers: async () => [],
@@ -132,10 +143,25 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
   })
   const user = (id = USER, over) => userToken(SUPABASE_URL, id, over)
   const tableRequests = () => seen.filter((r) => !r.url.startsWith('/rpc/is_admin'))
+  // Маршрут файлов. «PostgREST» отвечает: сотрудник одобрен, документ виден, право раздела есть.
+  const files = (body, token = user()) => app.inject({ method: 'POST', url: '/api/fn/s3-presign', payload: body,
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' } })
+  const filesUpstream = (doc) => (r) => {
+    if (r.url.startsWith('/user_roles')) return { body: JSON.stringify([{ role: 'engineer', counterparty_id: null, is_approved: true, is_blocked: false, full_name: 'Инженер' }]) }
+    if (r.url.startsWith('/s3_documents')) return { body: JSON.stringify(doc ? [doc] : []) }
+    if (r.url.startsWith('/tenders')) return { body: JSON.stringify([{ id: TENDER }]) }
+    if (r.url.startsWith('/rpc/osp_can')) return { body: 'true' }
+    return {}
+  }
+  const doc = (createdAt) => ({ id: 'd1', owner_type: 'tender', owner_id: TENDER, ...(createdAt ? { created_at: createdAt } : {}) })
+  const objectPath = `/osp/${DOC_KEY}`
+  const storageDeletes = () => s3.requests.filter((r) => r.method === 'DELETE' && r.path === objectPath).length
+  const rowDeletes = () => seen.filter((r) => r.method === 'DELETE' && r.url.startsWith('/s3_documents')).length
 
   before(async () => {
     ;({ buildApp } = await import(path.join(SERVER, 'src', 'app.js')))
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-gateway-'))
+    s3 = await startFakeS3()
     seen = []
     const server = http.createServer((req, res) => {
       const chunks = []
@@ -154,12 +180,17 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
   after(async () => {
     await app?.close()
     await upstream?.close()
+    await s3?.close()
     fs.rmSync(tmp, { recursive: true, force: true })
   })
   beforeEach(async () => {
     seen.length = 0
     authAdminCalls = []
     authAdminFails = false
+    // По умолчанию за шлюзом рабочая копия: защита репетиции выключена.
+    loadState = { status: 'final', loadedAt: LOADED_AT }
+    s3.requests.length = 0
+    s3.objects.clear()
     reply = (r) => (r.url.startsWith('/rpc/is_admin') ? { body: 'false' } : {})
     fs.rmSync(path.join(tmp, 'db-readonly'), { force: true })
     await makeApp()
@@ -298,11 +329,124 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     assert.equal(failed.statusCode, 502)
     assert.equal(failed.json().code, 'OSP_AUTH')
     assert.deepEqual(seen.map((r) => r.url), ['/rpc/is_admin'])
-    // Без идентификатора в теле во вход не ходим.
+    // Учётка не названа (не идентификатор, не JSON): ни во вход, ни в функцию базы не ходим — иначе
+    // строки портала изменились бы, а учётка входа осталась.
     authAdminFails = false
-    authAdminCalls = []
-    await call('POST', '/api/db/rpc/admin_delete_user', { token: user(ADMIN), body: '{"target_user_id":"1 or 1=1"}' })
-    assert.deepEqual(authAdminCalls, [])
+    for (const [body, headers] of [['{"target_user_id":"1 or 1=1"}', {}], ['{}', {}], [`target_user_id=${TARGET}`, { 'content-type': 'application/x-www-form-urlencoded' }]]) {
+      authAdminCalls = []
+      seen.length = 0
+      const res = await call('POST', '/api/db/rpc/admin_delete_user', { token: user(ADMIN), body, headers })
+      assert.deepEqual([res.statusCode, res.json().code], [400, 'OSP_AUTH_TARGET'], body)
+      assert.deepEqual(authAdminCalls, [])
+      assert.deepEqual(seen.map((r) => r.url), ['/rpc/is_admin'], 'функция базы не вызвана')
+    }
+  })
+
+  // У репетиционной копии вход общий с рабочим порталом: удалённая учётка — настоящая.
+  it('репетиция и нечитаемая отметка: учётки входа не меняются — отказ до входа и до базы', async () => {
+    const args = JSON.stringify({ target_user_id: TARGET })
+    reply = (r) => (r.url.startsWith('/rpc/is_admin') ? { body: 'true' } : { status: 204, body: '' })
+    for (const state of [{ status: 'rehearsal', loadedAt: LOADED_AT }, { status: 'unknown', loadedAt: null }, null]) {
+      loadState = state
+      for (const name of ['admin_delete_user', 'admin_confirm_user_email']) {
+        for (const who of [ADMIN, USER]) {
+          const res = await call('POST', `/api/db/rpc/${name}`, { token: user(who), body: args })
+          assert.deepEqual([res.statusCode, res.json().code], [409, 'OSP_REHEARSAL'], `${state?.status} ${name}`)
+          assert.match(res.json().message, /Проверочная копия/)
+        }
+      }
+    }
+    assert.deepEqual(authAdminCalls, [], 'во вход не ходили')
+    assert.deepEqual(seen, [], 'до базы не дошло ничего — даже вопрос «администратор ли»')
+    // Остальное в репетиции работает как обычно.
+    loadState = { status: 'rehearsal', loadedAt: LOADED_AT }
+    assert.equal((await call('POST', '/api/db/rpc/psdc_validate', { token: user(), body: '{}' })).statusCode, 204)
+    assert.equal((await call('GET', '/api/db/tenders?select=id', { token: user() })).statusCode, 204)
+  })
+
+  // Хранилище файлов у репетиции тоже общее. Строки проверочной копии потом стираются, а удалённый
+  // объект — настоящий: у рабочего портала остался бы документ без файла.
+  it('репетиция: файл рабочих данных из хранилища не удаляется; загруженный в репетиции — удаляется целиком', async () => {
+    loadState = { status: 'rehearsal', loadedAt: LOADED_AT }
+    s3.objects.set(objectPath, 5)
+    reply = filesUpstream(doc(BEFORE_LOAD))
+    const kept = await files({ action: 'delete', s3_key: DOC_KEY })
+    assert.equal(kept.statusCode, 200)
+    assert.deepEqual(kept.json(), { ok: true, object_deleted: false, rehearsal: true })
+    assert.equal(rowDeletes(), 1, 'строка проверочной копии удалена')
+    assert.equal(storageDeletes(), 0, 'объект рабочих данных не тронут')
+    assert.ok(s3.objects.has(objectPath))
+    assert.ok(logs.some((l) => l.includes('rehearsal: s3 object kept')))
+    // Документ создан уже в репетиции — обычное удаление: строка и объект.
+    seen.length = 0
+    reply = filesUpstream(doc(AFTER_LOAD))
+    const gone = await files({ action: 'delete', s3_key: DOC_KEY })
+    assert.deepEqual([gone.statusCode, gone.json()], [200, { ok: true }])
+    assert.deepEqual([rowDeletes(), storageDeletes()], [1, 1])
+    assert.ok(!s3.objects.has(objectPath))
+  })
+
+  it('отметка загрузки не читается или у документа нет даты — объект остаётся (считаем репетицией)', async () => {
+    const cases = [
+      [{ status: 'unknown', loadedAt: null }, AFTER_LOAD],
+      [null, AFTER_LOAD],
+      [{ status: 'rehearsal', loadedAt: null }, AFTER_LOAD],
+      [{ status: 'rehearsal', loadedAt: LOADED_AT }, undefined],
+      [{ status: 'rehearsal', loadedAt: LOADED_AT }, 'не дата'],
+      [{ status: 'rehearsal', loadedAt: LOADED_AT }, LOADED_AT.toISOString()],
+    ]
+    for (const [state, createdAt] of cases) {
+      loadState = state
+      s3.objects.set(objectPath, 5)
+      reply = filesUpstream(doc(createdAt))
+      const res = await files({ action: 'delete', s3_key: DOC_KEY })
+      assert.equal(res.json().object_deleted, false, `${state?.status} ${createdAt}`)
+      assert.ok(s3.objects.has(objectPath))
+    }
+    assert.equal(storageDeletes(), 0)
+  })
+
+  it('рабочая копия (final): удаление убирает и строку, и объект — как раньше', async () => {
+    s3.objects.set(objectPath, 5)
+    reply = filesUpstream(doc(BEFORE_LOAD))
+    const res = await files({ action: 'delete', s3_key: DOC_KEY })
+    assert.deepEqual([res.statusCode, res.json()], [200, { ok: true }])
+    assert.deepEqual([rowDeletes(), storageDeletes()], [1, 1])
+    assert.ok(!s3.objects.has(objectPath))
+  })
+
+  it('барьер записи действует и на файлы: загрузка, подтверждение и удаление — 503, скачивание работает', async () => {
+    fs.writeFileSync(path.join(tmp, 'db-readonly'), '')
+    await new Promise((r) => setTimeout(r, 1100))
+    s3.objects.set(objectPath, 5)
+    reply = filesUpstream(doc(BEFORE_LOAD))
+    const file = { operation_id: '0190a000-0000-7000-8000-000000000001', owner_type: 'tender', owner_id: TENDER, file_name: 'a.pdf', mime_type: 'application/pdf', size_bytes: 5 }
+    for (const body of [{ action: 'upload', ...file }, { action: 'confirm', ...file }, { action: 'delete', s3_key: DOC_KEY }]) {
+      const res = await files(body)
+      assert.deepEqual([res.statusCode, res.json().code], [503, 'OSP_READONLY'], body.action)
+      assert.match(res.json().error, /Идёт перенос данных/)
+    }
+    assert.ok(seen.every((r) => r.url.startsWith('/user_roles')), 'до строк документов и владельцев не дошло')
+    assert.deepEqual([s3.requests.length, s3.objects.has(objectPath)], [0, true], 'хранилище не тронуто')
+    const down = await files({ action: 'download', s3_key: DOC_KEY })
+    assert.equal(down.statusCode, 200)
+    assert.match(down.json().presigned_url, /a-plan\.pdf/)
+    // Барьер снят — удаление проходит.
+    fs.rmSync(path.join(tmp, 'db-readonly'))
+    await new Promise((r) => setTimeout(r, 1100))
+    assert.deepEqual((await files({ action: 'delete', s3_key: DOC_KEY })).json(), { ok: true })
+  })
+
+  it('готовность показывает, с какой копией работает сервер', async () => {
+    reply = () => ({ body: '[{"key":"x"}]' })
+    for (const [state, shown] of [[{ status: 'final', loadedAt: LOADED_AT }, 'final'], [{ status: 'rehearsal', loadedAt: LOADED_AT }, 'rehearsal'], [{ status: 'unknown', loadedAt: null }, 'unknown']]) {
+      loadState = state
+      const ready = await app.inject({ method: 'GET', url: '/api/ready' })
+      assert.deepEqual([ready.json().checks.gateway, ready.json().data], ['ok', shown])
+    }
+    // Шлюза нет (данные в Supabase) — поля нет: ответ готовности прежний.
+    await makeApp({ dbGateway: { upstream: '', secret: '', dbRole: '', readOnlyFile: '' } })
+    assert.equal('data' in (await app.inject({ method: 'GET', url: '/api/ready' })).json(), false)
   })
 
   it('PostgREST не отвечает — 503 «повторите»; шлюз не настроен — маршрут закрыт', async () => {

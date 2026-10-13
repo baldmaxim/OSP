@@ -32,6 +32,8 @@ import { registerAiAssist } from './routes/aiAssist.js'
 import { registerRates } from './routes/rates.js'
 import { registerDbGateway, createInternalTokens, createRemoteVerifier } from './routes/dbGateway.js'
 import { createAuthAdmin, createAuthUsersMirror } from './lib/authUsers.js'
+import { createWriteBarrier } from './lib/writeBarrier.js'
+import { createLoadStatus, isFinalLoad } from './lib/loadStatus.js'
 
 // Список разрешённого шлюзу данных — выдача прав прода как есть (scripts/build-db-allow.mjs).
 const ALLOW = JSON.parse(fs.readFileSync(new URL('./data/allow.json', import.meta.url), 'utf8'))
@@ -119,6 +121,11 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   // что у supabase-js, но к своему PostgREST и с внутренним токеном (кто, роль), выпускаемым на запрос.
   const gatewayOn = Boolean(config.dbGateway?.upstream)
   const mint = gatewayOn ? createInternalTokens({ secret: config.dbGateway.secret, dbRole: config.dbGateway.dbRole }) : null
+  // Барьер записи на время переноса — один на шлюз и на маршрут файлов.
+  const isReadOnly = createWriteBarrier({ file: config.dbGateway?.readOnlyFile, enabled: gatewayOn })
+  // Какая копия данных за шлюзом: репетиция переноса или рабочая. У репетиции хранилище файлов и вход
+  // общие с рабочим порталом — пока копия не рабочая, сервер их не меняет (src/lib/loadStatus.js).
+  const loadStatus = deps.createLoadStatus ? deps.createLoadStatus({ db }) : createLoadStatus({ db, logger: app.log })
   const dataClient = (who) => new PostgrestClient(config.dbGateway.upstream.replace(/\/+$/, ''), {
     fetch: async (input, init = {}) => {
       const headers = new Headers(init.headers)
@@ -202,13 +209,24 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     }
     const action = AUTH_ADMIN_RPC[name]
     if (!action) return null
+    // Репетиция переноса: вход у неё общий с рабочим порталом. Ни учётку входа, ни её строки в
+    // проверочной копии не трогаем — отказ до обращения ко входу и к базе, кому бы то ни было.
+    if (!isFinalLoad(await loadStatus.current())) {
+      return { status: 409, body: { code: 'OSP_REHEARSAL', details: null, hint: null,
+        message: 'Проверочная копия данных: учётки входа не изменяются. Действие станет доступно после переноса.' } }
+    }
     // Вправе ли — тот же вопрос базе, что задаёт сама функция. Нет — пусть откажет она.
     const { data: isAdmin, error } = await dataClient(who).rpc('is_admin')
     if (error || isAdmin !== true) return null
     let args = null
-    try { args = JSON.parse(Buffer.from(request.body || '').toString('utf8')) } catch { /* базе решать */ }
+    try { args = JSON.parse(Buffer.from(request.body || '').toString('utf8')) } catch { /* ниже — отказ */ }
     const id = args && typeof args.target_user_id === 'string' && UUID.test(args.target_user_id) ? args.target_user_id : null
-    if (!id) return null
+    // Учётку не удалось назвать (не JSON, нет идентификатора): функцию базы не зовём — иначе строки
+    // портала изменились бы, а учётка входа осталась прежней.
+    if (!id) {
+      return { status: 400, body: { code: 'OSP_AUTH_TARGET', details: null, hint: null,
+        message: 'Не указана учётка: нужен target_user_id в теле запроса (JSON).' } }
+    }
     try {
       await authAdmin[action](id)
     } catch (err) {
@@ -325,11 +343,14 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     }
     const required = config.required || READY_PARTS
     const ok = required.every((name) => checks[name] === 'ok') && READY_OPTIONAL.every((name) => checks[name] !== 'fail')
-    return reply.code(ok ? 200 : 503).send({ ok, checks, required })
+    // С какой копией данных работает сервер за шлюзом: rehearsal — репетиция (файлы и учётки входа
+    // рабочего портала защищены), final — рабочая, unknown — отметка не читается (защита включена).
+    const data = gatewayOn ? { data: (await loadStatus.current())?.status || 'unknown' } : {}
+    return reply.code(ok ? 200 : 503).send({ ok, checks, required, ...data })
   } })
 
   const ctx = { config, getS3, getAnthropic, getServiceClient, limiters, db, refreshRegistry,
-    verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn }
+    verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus }
   registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)
   registerAiAssist(app, ctx)

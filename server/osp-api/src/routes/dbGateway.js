@@ -15,12 +15,11 @@
 // Строки делит база: правила по строкам действуют и на владельца (migration/target/sql/load-single-owner.sql).
 //
 // Отказы шлюза имеют тот же вид и коды, что отказы PostgREST: портал уже умеет их показывать.
-import fs from 'node:fs'
-import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { SignJWT } from 'jose'
 import { access } from '../lib/access.js'
 import { bearerToken } from '../lib/keys.js'
+import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
 
 export const GATEWAY_METHODS = ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE']
 export const GATEWAY_URL = '/api/db/*'
@@ -128,25 +127,11 @@ export function createInternalTokens({ secret, dbRole }) {
 
 export function registerDbGateway(app, ctx) {
   const { config, verifyUserToken, allow, mint } = ctx
-  const gw = config.dbGateway || {}
-  const upstream = String(gw.upstream || '').replace(/\/+$/, '')
+  const upstream = String(config.dbGateway?.upstream || '').replace(/\/+$/, '')
   const fetchImpl = ctx.fetch || fetch
 
-  // Барьер записи: файл есть — только чтение. Проверяем не чаще раза в секунду. Каталог файла должен
-  // быть доступен службе: иначе «файла нет» и «файл не виден» неразличимы, и барьер молча не сработал бы.
-  if (ctx.gatewayOn && gw.readOnlyFile) {
-    try {
-      fs.accessSync(path.dirname(gw.readOnlyFile), fs.constants.R_OK | fs.constants.X_OK)
-    } catch {
-      throw new Error('osp-api: каталог файла-переключателя барьера записи (OSP_DB_READONLY_FILE) недоступен службе')
-    }
-  }
-  let readOnly = { at: 0, value: false }
-  const isReadOnly = () => {
-    if (!gw.readOnlyFile) return false
-    if (Date.now() - readOnly.at > 1000) readOnly = { at: Date.now(), value: fs.existsSync(gw.readOnlyFile) }
-    return readOnly.value
-  }
+  // Барьер записи — общий с маршрутом файлов (src/lib/writeBarrier.js).
+  const isReadOnly = ctx.isReadOnly || (() => false)
 
   const handler = async (request, reply) => {
     const send = (status, body) => reply.code(status).type('application/json; charset=utf-8').send(body)
@@ -179,7 +164,7 @@ export function registerDbGateway(app, ctx) {
 
     // 4. Барьер записи: читать можно, менять — нет (вызов функции — тоже возможное изменение).
     if (isReadOnly() && (kind === 'rpc' ? method === 'POST' : method !== 'GET' && method !== 'HEAD')) {
-      return send(503, pgError('OSP_READONLY', 'Идёт перенос данных: запись временно недоступна. Повторите через несколько минут.'))
+      return send(503, pgError(READONLY_CODE, READONLY_TEXT))
     }
 
     // Действия, которым нужно что-то сверх базы (учётки во входе Supabase) — до запроса.

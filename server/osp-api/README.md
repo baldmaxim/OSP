@@ -113,7 +113,7 @@ app.route({ method: 'POST', url: '/api/fn/пример', config: {
 ## Путь к базе
 
 Маршруты данных ходят в базу только через обёртку транзакции `src/lib/db.js` (маршруты файлов, ИИ и
-расценок пока идут через Supabase — как раньше):
+расценок без шлюза идут через Supabase, со шлюзом — через PostgREST на этом сервере):
 
 ```js
 const rows = await db.read(who, async (tx) => (await tx.query('select … where id = $1', [id])).rows)
@@ -153,20 +153,33 @@ await db.write(who, async (tx) => { await tx.query('update … set … where id 
 - Запрос и ответ передаются как есть: тело — байт в байт, диапазоны, коды и ошибки PostgREST. Отказы самого
   шлюза имеют тот же вид (`{ code, message, details, hint }`): `42501` — не разрешено, `PGRST205` / `PGRST202` —
   такой таблицы или функции для шлюза нет.
-- **Барьер записи:** есть файл `OSP_DB_READONLY_FILE` — шлюз только читает (запись и вызовы функций — 503
-  `OSP_READONLY`). Включить: `touch /var/lib/osp-api/db-readonly`, выключить: `rm`.
+- **Барьер записи:** есть файл `OSP_DB_READONLY_FILE` — сервер только читает: запись и вызовы функций через
+  шлюз, а также загрузка, подтверждение и удаление файлов (`/api/fn/s3-presign`) — 503 `OSP_READONLY`;
+  чтение и скачивание работают (`src/lib/writeBarrier.js`). Включить: `touch /var/lib/osp-api/db-readonly`,
+  выключить: `rm`.
 - **Учётки входа** остаются в Supabase Auth. `admin_delete_user` и `admin_confirm_user_email` сначала меняют
   учётку там (служебным ключом, только если база подтвердила, что вызывает администратор), затем строки в
-  базе. Список пользователей для администратора читает копию `auth.users` в базе; копия обновляется из
-  Supabase Auth перед показом (`src/lib/authUsers.js`).
+  базе. Учётка не названа (нет `target_user_id`, тело не JSON) — 400 `OSP_AUTH_TARGET`, функция базы не
+  вызывается. Список пользователей для администратора читает копию `auth.users` в базе; копия обновляется
+  из Supabase Auth перед показом (`src/lib/authUsers.js`).
+- **Репетиция переноса.** Сервер сам читает, какая копия лежит в базе (`osp_meta.load_log`, отметку ставит
+  `migration/target/load.sh --status rehearsal | final`; `src/lib/loadStatus.js`). У репетиционной копии
+  хранилище файлов и вход — те же, что у рабочего портала, поэтому, пока копия не `final`:
+  - удаление документа убирает строку, а объект из хранилища — только если документ создан уже в
+    репетиции; объект, пришедший с рабочими данными, остаётся (`{ ok, object_deleted: false, rehearsal: true }`);
+  - `admin_delete_user` и `admin_confirm_user_email` — 409 `OSP_REHEARSAL`, до обращения ко входу и к базе.
+
+  Отметка не читается (нет подключения, нет таблицы, загрузка не завершена) — считается репетицией.
+  `/api/ready` показывает режим: `"data": "rehearsal" | "final" | "unknown"`.
 - **Реестр расценок** пересчитывается раз в 10 минут самой службой (`OSP_REGISTRY_REFRESH=1`) — в Supabase
   это делало расписание pg_cron.
 - Маршруты файлов, ИИ и расценок при включённом шлюзе читают данные через тот же PostgREST.
 - **Принятые отступления** (`docs/API_RULES.md`): браузер называет таблицы, у шлюза нет схемы тела, права по
   строкам — в базе. Так же устроен портал в Supabase сегодня; перевод разделов на отдельные операции — после.
 
-Тесты: `tests/osp-api/db-gateway.test.mjs`, `tests/osp-api/client-db.test.mjs`. Порядок переноса —
-`migration/CUTOVER.md`.
+Тесты: `tests/osp-api/db-gateway.test.mjs`, `tests/osp-api/load-status.test.mjs`,
+`tests/osp-api/client-db.test.mjs`; вся цепочка с настоящим PostgREST на копии прода —
+`tests/db/single-owner.test.mjs`. Порядок переноса — `migration/CUTOVER.md`.
 
 ## Кто вошёл
 
@@ -192,7 +205,10 @@ await db.write(who, async (tx) => { await tx.query('update … set … where id 
 
 ## Включение на портале
 
-Фронт вызывает функции через `invokeFunction` (`src/api/functions.js`), у каждой свой флаг:
+Фронт вызывает функции через `invokeFunction` (`src/api/functions.js`), у каждой свой флаг. **С данными в
+базе Яндекса (`ospDb`) файлы идут через osp-api при любом значении `ospApiFilesV2`**, функция файлов
+Supabase не вызывается вовсе (`src/api/serverPath.js`): она работает с базой Supabase и удалила бы из
+хранилища файл, на который ссылается другая база. ИИ к данным не привязан и идёт по своему флагу.
 - `ospApiAi` — для `ai-assist`;
 - `ospApiFilesV2` — файлы. Включать только после Р2a/b (`osp_can`) и миграции `20261011` (колонка `sha256`)
   на проде.

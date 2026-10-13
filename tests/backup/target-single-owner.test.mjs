@@ -16,6 +16,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { LOAD_STATUS_SQL } from '../../server/osp-api/src/lib/loadStatus.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const BACKUP = path.join(ROOT, 'migration', 'backup')
@@ -108,6 +109,12 @@ describe('Перенос под одну учётку: правила дейст
     const lines = res.stdout.trim().split('\n').filter((l) => l !== claims)
     return res.status === 0 ? (lines.at(-1) ?? '') : `err:${/ERROR:\s*(.*)/.exec(res.stderr)?.[1] || res.stderr.trim()}`
   }
+  // Отметку загрузки сервер портала читает сам — тем же запросом, читающей транзакцией, под той же
+  // учёткой (server/osp-api/src/lib/loadStatus.js): по ней он бережёт файлы и учётки входа в репетиции.
+  const serverLoadStatus = () => {
+    const res = psql(targetPort, 'target_owner', OWNER_PASS, 'osp_target', `begin transaction read only; ${LOAD_STATUS_SQL}; rollback;`)
+    return res.status === 0 ? res.stdout.trim() : 'не читается'
+  }
   const run = (script, args, env = {}) => {
     const res = spawnSync('bash', [path.join(TARGET, script), ...args], { encoding: 'utf8', cwd: ROOT, timeout: 400000,
       env: { ...process.env, PROBE_REPORT_DIR: path.join(tmp, 'reports'), PROBE_CONNECT_TIMEOUT: '5', ...env } })
@@ -185,6 +192,7 @@ describe('Перенос под одну учётку: правила дейст
     assert.match(rights.stdout, /ИТОГ: права под одну учётку применены и проверены\./)
 
     assert.equal(run('rights.sh', [envFile, '--check']).status, 0)
+    assert.match(serverLoadStatus(), /^rehearsal\|20\d\d-\d\d-\d\d /, 'сервер видит: это репетиция и когда она загружена')
     const again = run('rights.sh', [envFile, dump])
     assert.equal(again.status, 3, again.all)
     assert.match(again.stdout, /шаг не к месту/)
@@ -258,6 +266,7 @@ describe('Перенос под одну учётку: правила дейст
     assert.equal(reset.status, 0, reset.all)
     assert.equal(admin("select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind in ('r','v','m','S') and n.nspname not in ('pg_catalog','information_schema') and n.nspname !~ '^pg_'"), '0')
     assert.equal(admin("select count(*) from pg_namespace where nspname in ('osp_private', 'osp_meta', 'auth')"), '0')
+    assert.equal(serverLoadStatus(), 'не читается', 'пустая база: отметки нет — сервер считает это репетицией')
     assert.equal(neighbourObjects(), '1:500')
     assert.equal(run('neighbors.sh', [envFile, '--compare']).status, 0)
     // Кто-то (не мы) удалил соседнюю базу — сравнение обязано это показать.
@@ -272,6 +281,7 @@ describe('Перенос под одну учётку: правила дейст
     assert.equal(loaded.status, 0, loaded.all)
     assert.equal(run('verify.sh', [envFile, dump]).status, 0)
     assert.equal(run('rights.sh', [envFile, dump]).status, 0)
+    assert.match(serverLoadStatus(), /^final\|20\d\d-\d\d-\d\d /, 'сервер видит: копия рабочая')
     const reset = run('reset.sh', [envFile, '--yes-drop-rehearsal'])
     assert.notEqual(reset.status, 0)
     assert.equal(as(ADMIN, 'select count(*) from public.tenders'), '40', 'данные настоящего переноса на месте')

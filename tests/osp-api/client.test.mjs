@@ -6,8 +6,14 @@ import assert from 'node:assert/strict'
 import { callOspFunction, OSP_API_BASE } from '../../src/api/ospApi.js'
 import { nextFeatures, parseFeatures, resolveFeature } from '../../src/config/features.js'
 import { createOspFiles, HASH_MAX_BYTES, sha256Hex } from '../../src/api/ospFiles.js'
+import { functionPath, filesPath, DATA_BOUND_FUNCTIONS, OSP_API_FLAG, OSP_FILES_FLAG } from '../../src/api/serverPath.js'
 import { uuidv7 } from '../../src/utils/uuid.js'
 import crypto from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src')
 
 describe('src/config/features.js — флаги: config.json и браузер', () => {
   it('по умолчанию выключено; config.json true — включено всем', () => {
@@ -35,6 +41,57 @@ describe('src/config/features.js — флаги: config.json и браузер',
     assert.deepEqual(nextFeatures(current, { status: 'absent' }), {})
     assert.equal(nextFeatures(current, { status: 'error' }), current)
     assert.equal(nextFeatures(current, undefined), current)
+  })
+})
+
+describe('src/api/serverPath.js — файлы и ИИ: свой API или функции Supabase', () => {
+  const flags = (on) => (name) => on.includes(name)
+
+  it('данные в Supabase: каждая часть — по своему флагу, как раньше', () => {
+    assert.equal(functionPath('ai-assist', { ownDb: false, enabled: flags([]) }), 'supabase')
+    assert.equal(functionPath('ai-assist', { ownDb: false, enabled: flags(['ospApiAi']) }), 'osp')
+    assert.equal(functionPath('s3-presign', { ownDb: false, enabled: flags(['ospApiAi', OSP_FILES_FLAG]) }), 'supabase', 'прежний протокол файлов — функция')
+    assert.equal(filesPath({ ownDb: false, enabled: flags([]), hasDigest: true }), 'supabase')
+    assert.equal(filesPath({ ownDb: false, enabled: flags([OSP_FILES_FLAG]), hasDigest: true }), 'osp')
+    assert.equal(filesPath({ ownDb: false, enabled: flags([OSP_FILES_FLAG]), hasDigest: false }), 'supabase', 'без SubtleCrypto — прежний путь')
+  })
+
+  // Функция файлов Supabase удаляет объект из хранилища по строке СВОЕЙ базы: при данных в базе Яндекса
+  // это был бы файл, на который ссылается другая база. Поэтому при ospDb файлы — только через свой API.
+  it('данные в базе Яндекса (ospDb): функция файлов Supabase не вызывается ни при каких флагах', () => {
+    assert.deepEqual(DATA_BOUND_FUNCTIONS, ['s3-presign'])
+    for (const on of [[], ['ospApiAi'], [OSP_FILES_FLAG], ['ospApiAi', OSP_FILES_FLAG]]) {
+      for (const hasDigest of [true, false]) assert.equal(filesPath({ ownDb: true, enabled: flags(on), hasDigest }), 'osp')
+      // Прежний протокол файлов (в т.ч. удаление объекта после неудачной вставки строки) — отказ.
+      assert.equal(functionPath('s3-presign', { ownDb: true, enabled: flags(on) }), 'refuse')
+    }
+  })
+
+  // ИИ базу не читает и хранилище не трогает: недоступен Anthropic с сервера портала — ИИ остаётся на
+  // функции Supabase и после переноса данных.
+  it('ИИ идёт по своему флагу и при данных в базе Яндекса', () => {
+    assert.equal(functionPath('ai-assist', { ownDb: true, enabled: flags([]) }), 'supabase')
+    assert.equal(functionPath('ai-assist', { ownDb: true, enabled: flags([OSP_FILES_FLAG]) }), 'supabase')
+    assert.equal(functionPath('ai-assist', { ownDb: true, enabled: flags(['ospApiAi']) }), 'osp')
+  })
+
+  it('имя функции — не ключ объекта: служебные имена не дают «свой API»', () => {
+    for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      assert.equal(functionPath(name, { ownDb: false, enabled: () => true }), 'supabase', name)
+    }
+    assert.deepEqual(Object.keys(OSP_API_FLAG), ['ai-assist'])
+  })
+
+  // Правило выше работает, только если мимо него функцию Supabase вызвать нельзя.
+  it('функции Supabase вызываются в одном месте портала — после решения serverPath', () => {
+    const files = fs.readdirSync(SRC, { recursive: true }).filter((f) => /\.(js|jsx)$/.test(f)).map((f) => f.split(path.sep).join('/'))
+    const callers = files.filter((f) => /\.functions\b/.test(fs.readFileSync(path.join(SRC, f), 'utf8')))
+    assert.deepEqual(callers, ['api/functions.js'])
+    const code = fs.readFileSync(path.join(SRC, 'api', 'functions.js'), 'utf8')
+    assert.equal(code.split('supabase.functions').length - 1, 1, 'один вызов')
+    assert.match(code, /functionPath\(name, \{ ownDb: ownDbEnabled\(\), enabled: isFeatureEnabled \}\)/)
+    assert.match(code, /filesPath\(\{\s*ownDb: ownDbEnabled\(\),/)
+    assert.ok(code.indexOf("path === 'refuse'") < code.indexOf('supabase.functions'), 'отказ решается до вызова функции')
   })
 })
 

@@ -1,6 +1,6 @@
-// POST /api/fn/s3-presign — файлы документов через osp-api (заход Б, Р5-ядро). Его вызывают только
-// сборки с флагом ospApiFilesV2 (src/api/ospFiles.js). Без флага и в сборках до захода Б файлы идут
-// через Edge Function Supabase `s3-presign` — её протокол здесь не повторяется.
+// POST /api/fn/s3-presign — файлы документов через osp-api (заход Б, Р5-ядро). Его вызывают сборки с
+// флагом ospApiFilesV2 и любой браузер с данными в базе Яндекса (ospDb, src/api/serverPath.js). Иначе
+// файлы идут через Edge Function Supabase `s3-presign` — её протокол здесь не повторяется.
 //
 //   upload   { operation_id, owner_type, owner_id, file_name, mime_type, size_bytes, sha256? }
 //            → { s3_key, presigned_url, expires_in } — ссылка на PUT; ключ объекта задан operation_id
@@ -10,6 +10,12 @@
 //   download { s3_key, file_name?, download? }      → { presigned_url, expires_in }
 //   delete   { s3_key }                             → { ok: true } — сначала строка, затем объект;
 //            строки уже нет (повтор) — { ok: true, already: true }
+//
+// Перенос данных (шлюз включён, src/app.js):
+//   • барьер записи — upload, confirm и delete отвечают 503 OSP_READONLY, скачивание работает;
+//   • репетиция (копия за шлюзом не рабочая, src/lib/loadStatus.js) — хранилище у неё общее с рабочим
+//     порталом: delete убирает строку, а объект — только если документ создан уже в репетиции. Объект,
+//     который был до загрузки копии, принадлежит рабочим данным и остаётся: { ok, object_deleted: false }.
 //
 // Ключ операции один на выбранный файл: повтор любого шага не создаёт второй документ и второй объект.
 // Тот же operation_id с другим файлом (владелец, имя, тип, размер, sha256) — 409 OSP_KEY_REUSE.
@@ -23,6 +29,8 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { sanitizeFileName } from '../lib/files.js'
 import { z } from 'zod'
 import { access } from '../lib/access.js'
+import { isFinalLoad, createdAfterLoad } from '../lib/loadStatus.js'
+import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
 
 // owner_type → каталог в бакете. Расширять вместе с OWNER_TABLES и WRITE_RULES.
 export const FOLDER_BY_OWNER = {
@@ -151,7 +159,9 @@ export const PRESIGN_BODY = z.object({
   download: any,
 })
 
-export function registerS3Presign(app, { config, getS3 }) {
+const WRITE_ACTIONS = new Set(['upload', 'confirm', 'delete'])
+
+export function registerS3Presign(app, { config, getS3, gatewayOn = false, isReadOnly = () => false, loadStatus = null }) {
   app.route({ method: 'POST', url: '/api/fn/s3-presign', config: {
     // Вошедший, одобренный и не заблокированный: сотрудник или подрядчик. Что именно ему можно с
     // конкретным файлом (чужой договор, право раздела) — ниже, по данным записи.
@@ -170,6 +180,9 @@ export function registerS3Presign(app, { config, getS3 }) {
     const body = request.body
     if (isContractor && body.action !== 'download') {
       return reply.code(403).send({ error: 'Действие доступно только сотрудникам' })
+    }
+    if (WRITE_ACTIONS.has(body.action) && isReadOnly()) {
+      return reply.code(503).send({ error: READONLY_TEXT, code: READONLY_CODE })
     }
 
     let s3
@@ -318,7 +331,7 @@ export function registerS3Presign(app, { config, getS3 }) {
           if (!s3Key) return reply.code(400).send({ error: 'Missing s3_key' })
           const { data: doc, error } = await supabase
             .from('s3_documents')
-            .select('id, owner_type, owner_id')
+            .select('id, owner_type, owner_id, created_at')
             .eq('s3_key', s3Key)
             .maybeSingle()
           if (error) throw error
@@ -332,6 +345,13 @@ export function registerS3Presign(app, { config, getS3 }) {
           }
           if (!await allowed(rules)) return reply.code(403).send({ error: NO_RIGHT })
 
+          // Репетиция переноса: решаем до удаления строки, остаётся ли объект в хранилище.
+          let keepObject = false
+          if (gatewayOn) {
+            const load = loadStatus ? await loadStatus.current() : null
+            keepObject = !isFinalLoad(load) && !createdAfterLoad(doc.created_at, load?.loadedAt)
+          }
+
           // Сначала строка: документа, указывающего на удалённый файл, не бывает. Сбой хранилища
           // оставляет только объект без строки.
           const { data: gone, error: deleteError } = await supabase
@@ -344,6 +364,10 @@ export function registerS3Presign(app, { config, getS3 }) {
             throw deleteError
           }
           if (!gone?.length) return { ok: true, already: true } // параллельный запрос удалил раньше
+          if (keepObject) {
+            request.log.info({ document: doc.id }, 'rehearsal: s3 object kept')
+            return { ok: true, object_deleted: false, rehearsal: true }
+          }
           try {
             await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: s3Key }))
           } catch (e) {
