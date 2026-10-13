@@ -1,0 +1,63 @@
+# Запись портала ОСП в общем nginx сервера для одного имени сайта — __NAME__.
+# Собирается из deploy/docker/infra-nginx/site.conf.template (render.sh); вручную не править.
+# Один файл на имя; остальные сайты сервера он не затрагивает. Ставится один раз, выкладки портала его
+# не меняют. Проверяется в tests/deploy/docker.test.mjs.
+#
+# Здесь только приём HTTPS и пересылка в контейнер сайта (osp-web:8080 в сети общего nginx).
+# Правила самого сайта и /api — в контейнере (deploy/docker/web/site.conf).
+#
+# Имя osp-web ищется при каждом запросе, а не при запуске nginx: если контейнеры ОСП остановлены, общий
+# nginx запускается и перечитывает настройки как обычно, а 502 получает только сайт ОСП.
+
+# В журнал — без строки параметров: ключ выдачи расценок может прийти как ?key=.
+log_format osp_noargs___ID__ '$remote_addr - $remote_user [$time_local] "$request_method $uri $server_protocol" '
+                             '$status $body_bytes_sent "$http_referer" "$http_user_agent"';
+
+server {
+    listen 80;
+    server_name __NAME__;
+    access_log /var/log/nginx/access.log osp_noargs___ID__;
+
+    # Проверка Let's Encrypt — как у остальных сайтов сервера.
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    # /api — только по HTTPS. Без перенаправления: Location вернул бы ?key= обратно, и клиент продолжил
+    # бы слать ключ открытым текстом.
+    location ~ ^/api(/|$) {
+        return 403;
+    }
+    location / { return 301 https://$host$request_uri; }
+}
+# Блок HTTPS добавляется, когда сертификат имени выпущен: render.sh без --http-only.
+#@https server {
+#@https     listen 443 ssl;
+#@https     http2 on;
+#@https     server_name __NAME__;
+#@https
+#@https     ssl_certificate /etc/letsencrypt/live/__NAME__/fullchain.pem;
+#@https     ssl_certificate_key /etc/letsencrypt/live/__NAME__/privkey.pem;
+#@https
+#@https     access_log /var/log/nginx/access.log osp_noargs___ID__;
+#@https     # Ошибки соединения пишут строку запроса целиком (с ?key=): только критические.
+#@https     error_log /var/log/nginx/error.log crit;
+#@https
+#@https     # Самое большое тело — массовые загрузки через шлюз данных; точные пределы по адресам — в контейнере.
+#@https     client_max_body_size 50m;
+#@https
+#@https     resolver 127.0.0.11 valid=10s ipv6=off;
+#@https     set $osp_web http://osp-web:8080;
+#@https
+#@https     location / {
+#@https         proxy_pass $osp_web;
+#@https         proxy_http_version 1.1;
+#@https         proxy_set_header Connection "";
+#@https         proxy_set_header Host $host;
+#@https         proxy_set_header X-Real-IP $remote_addr;
+#@https         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#@https         proxy_set_header X-Forwarded-Proto $scheme;
+#@https         # Чуть дольше, чем ждёт контейнер сайта (180 с — ответ ИИ, 130 с — шлюз данных).
+#@https         proxy_read_timeout 185s;
+#@https         proxy_send_timeout 135s;
+#@https         # Тело запроса принимает контейнер сайта: общему nginx копить его целиком не нужно.
+#@https         proxy_request_buffering off;
+#@https     }
+#@https }

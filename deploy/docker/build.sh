@@ -6,8 +6,9 @@
 #
 # Результат — каталог osp-release-<коммит>/:
 #   images.tar.gz        — образы osp-api, osp-web (метка = коммит) и PostgREST закреплённой версии;
-#   compose.yml, deploy.sh, neighbors.sh, infra-nginx/osp.conf — файлы установки этого же коммита;
-#   release.env          — имена образов выпуска; MANIFEST — коммит, сборка и отпечатки образов;
+#   compose.yml, deploy.sh, neighbors.sh, infra-nginx/ — файлы установки этого же коммита;
+#   release.env          — имена образов выпуска; MANIFEST — коммит, сборка и отпечатки образов
+#                          (слои и параметры запуска — одинаковы на машине сборки и на сервере);
 #   SHA256SUMS           — контрольные суммы всех файлов: на сервере сверяются до загрузки образов.
 # Каталог переносится на сервер целиком; там — bash deploy.sh install <каталог> (deploy/docker/README.md).
 #
@@ -65,16 +66,16 @@ docker build -q -f "$HERE/web.Dockerfile" -t "osp-web:$TAG" "${LABELS[@]}" \
 REL="$OUT/osp-release-$TAG"
 rm -rf "$REL"; mkdir -p "$REL/infra-nginx"
 cp "$HERE/compose.yml" "$HERE/deploy.sh" "$HERE/neighbors.sh" "$REL/"
-cp "$HERE/infra-nginx/osp.conf" "$REL/infra-nginx/"
+cp "$HERE/infra-nginx/site.conf.template" "$HERE/infra-nginx/render.sh" "$REL/infra-nginx/"
 printf '%s\n' "OSP_TAG=$TAG" "OSP_API_IMAGE=osp-api:$TAG" "OSP_WEB_IMAGE=osp-web:$TAG" "OSP_POSTGREST_IMAGE=$PGRST_REF" > "$REL/release.env"
-id_of() { docker image inspect "$1" --format '{{.Id}}'; }
+print_of() { bash "$HERE/deploy.sh" fingerprint "$1"; }
 {
   echo "commit=$COMMIT"
   echo "tag=$TAG"
   echo "build_id=$BUILD_ID"
-  echo "image osp-api:$TAG $(id_of "osp-api:$TAG")"
-  echo "image osp-web:$TAG $(id_of "osp-web:$TAG")"
-  echo "image $PGRST_REF $(id_of "$PGRST_REF")"
+  echo "image osp-api:$TAG $(print_of "osp-api:$TAG")"
+  echo "image osp-web:$TAG $(print_of "osp-web:$TAG")"
+  echo "image $PGRST_REF $(print_of "$PGRST_REF")"
 } > "$REL/MANIFEST"
 docker save "osp-api:$TAG" "osp-web:$TAG" "$PGRST_REF" | gzip -c > "$REL/images.tar.gz"
 (cd "$REL" && find . -type f ! -name SHA256SUMS -printf '%P\n' | LC_ALL=C sort | xargs sha256sum > SHA256SUMS)

@@ -60,6 +60,7 @@ describe('Портал в Docker: связка для общего сервер�
   const deploy = (args, extra = {}) => sh('bash', [path.join(release, 'deploy.sh'), ...args], { env: { ...env(), ...extra }, timeout: 15 * 60 * 1000 })
   const neighbors = (mode) => sh('bash', [path.join(release, 'neighbors.sh'), mode], { env: env() })
   const containerOf = (service) => docker(['compose', '-p', PROJECT, 'ps', '-q', service]).stdout.trim()
+  const renderNginx = (args) => ok(sh('bash', [path.join(DOCKER_DIR, 'infra-nginx', 'render.sh'), ...args]), 'render.sh').stdout
   const inspect = (id, format) => docker(['inspect', id, '--format', format]).stdout.trim()
   const current = () => (fs.existsSync(path.join(home, 'current')) ? path.basename(fs.readlinkSync(path.join(home, 'current'))) : null)
   // Запросы через «общий nginx сервера»: настоящее имя сайта, HTTPS.
@@ -79,7 +80,8 @@ describe('Портал в Docker: связка для общего сервер�
     fs.rmSync(path.join(dir, 'images.tar.gz'))
     ok(docker(['tag', apiFrom || `osp-api:${tag}`, `osp-api:${newTag}`]), 'tag api')
     ok(docker(['tag', `osp-web:${tag}`, `osp-web:${newTag}`]), 'tag web')
-    const id = (ref) => docker(['image', 'inspect', ref, '--format', '{{.Id}}']).stdout.trim()
+    // Отпечаток образа — тем же способом, что в выпуске (не зависит от того, как Docker хранит образы).
+    const id = (ref) => sh('bash', [path.join(release, 'deploy.sh'), 'fingerprint', ref]).stdout.trim()
     fs.writeFileSync(path.join(dir, 'release.env'), [`OSP_TAG=${newTag}`, `OSP_API_IMAGE=osp-api:${newTag}`, `OSP_WEB_IMAGE=osp-web:${newTag}`, `OSP_POSTGREST_IMAGE=${PGRST_IMAGE}`].join('\n') + '\n')
     fs.writeFileSync(path.join(dir, 'MANIFEST'), [`commit=${newTag.repeat(4).slice(0, 40)}`, `tag=${newTag}`, `build_id=${buildId}`,
       `image osp-api:${newTag} ${id(`osp-api:${newTag}`)}`, `image osp-web:${newTag} ${id(`osp-web:${newTag}`)}`, `image ${PGRST_IMAGE} ${id(PGRST_IMAGE)}`].join('\n') + '\n')
@@ -120,13 +122,15 @@ describe('Портал в Docker: связка для общего сервер�
       "require('http').createServer((q, s) => { s.writeHead(200, { 'content-type': 'application/json' }); s.end('{}') }).listen(8080, '0.0.0.0')"]), 'заглушка входа')
     // Соседний проект сервера и общий nginx с записью портала — запущены ДО установки портала.
     ok(docker(['run', '-d', '--name', NEIGHBOUR, '--network', PROXY_NET, NGINX_IMAGE]), 'сосед')
-    const conf = fs.readFileSync(path.join(DOCKER_DIR, 'infra-nginx', 'osp.conf'), 'utf8')
-      .replaceAll('__NAMES__', 'osp.root.sx').replaceAll('__CERT__', '/etc/nginx/certs/site.crt').replaceAll('__KEY__', '/etc/nginx/certs/site.key')
-    assert.ok(!/__[A-Z]+__/.test(conf), 'в записи общего nginx не осталось незаполненных мест')
-    fs.writeFileSync(path.join(tmp, 'osp.conf'), conf)
-    for (const f of ['site.crt', 'site.key']) fs.chmodSync(path.join(tls, f), 0o644)
+    // Запись портала — сначала «только HTTP»: сертификата имени ещё нет, как при настоящей установке.
+    // Каталоги общего nginx — как на сервере: сертификаты в /etc/letsencrypt, проверка — /var/www/certbot.
+    fs.writeFileSync(path.join(tmp, 'osp.root.sx.conf'), renderNginx(['osp.root.sx', '--http-only']))
+    fs.mkdirSync(path.join(tmp, 'le'))
+    fs.mkdirSync(path.join(tmp, 'certbot', '.well-known', 'acme-challenge'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'certbot', '.well-known', 'acme-challenge', 'probe'), 'acme-ok')
     ok(docker(['run', '-d', '--name', INFRA, '--network', PROXY_NET, '-p', `127.0.0.1:${p443}:443`, '-p', `127.0.0.1:${p80}:80`,
-      '-v', `${path.join(tmp, 'osp.conf')}:/etc/nginx/conf.d/osp.conf:ro`, '-v', `${tls}:/etc/nginx/certs:ro`, NGINX_IMAGE]), 'общий nginx')
+      '-v', `${path.join(tmp, 'osp.root.sx.conf')}:/etc/nginx/conf.d/osp.root.sx.conf:ro`, '-v', `${path.join(tmp, 'le')}:/etc/letsencrypt/live:ro`,
+      '-v', `${path.join(tmp, 'certbot')}:/var/www/certbot:ro`, NGINX_IMAGE]), 'общий nginx')
 
     // 3. Каталог портала на «сервере»: настройки, сертификат базы, флаги.
     fs.writeFileSync(path.join(home, 'server.env'), `OSP_PROXY_NETWORK=${PROXY_NET}\n`)
@@ -178,7 +182,7 @@ networks:
   })
 
   it('выпуск: образы, файлы установки и контрольные суммы; в контекст сборки попадает только разрешённое', () => {
-    for (const f of ['images.tar.gz', 'compose.yml', 'deploy.sh', 'neighbors.sh', 'infra-nginx/osp.conf', 'release.env', 'MANIFEST', 'SHA256SUMS']) {
+    for (const f of ['images.tar.gz', 'compose.yml', 'deploy.sh', 'neighbors.sh', 'infra-nginx/site.conf.template', 'infra-nginx/render.sh', 'release.env', 'MANIFEST', 'SHA256SUMS']) {
       assert.ok(fs.existsSync(path.join(release, f)), f)
     }
     ok(sh('sha256sum', ['--quiet', '-c', 'SHA256SUMS'], { cwd: release }), 'суммы выпуска')
@@ -194,12 +198,40 @@ networks:
     }
   })
 
+  // Запись портала ставится в два шага: блок HTTPS ссылается на сертификат, которого сначала нет.
+  it('запись в общем nginx, шаг 1 — только HTTP: принимается без сертификата, отдаёт проверку Let’s Encrypt', () => {
+    const http = renderNginx(['osp.root.sx', '--http-only'])
+    assert.ok(!/ssl_certificate|listen 443|__[A-Z]+__|#@https/.test(http), 'в записи «только HTTP» нет ни HTTPS, ни незаполненных мест')
+    ok(docker(['exec', INFRA, 'nginx', '-t']), 'настройки общего nginx без сертификата портала')
+    assert.equal(curl([`http://osp.root.sx:${p80}/.well-known/acme-challenge/probe`]).stdout, 'acme-ok')
+    assert.equal(code(`http://osp.root.sx:${p80}/api/health`), '403')
+    assert.equal(code(`http://osp.root.sx:${p80}/`), '301')
+    // У двух имён сайта — две независимые записи: формат журнала у каждой свой, имена не пересекаются.
+    const other = renderNginx(['osp.213-171-26-249.nip.io'])
+    assert.match(other, /server_name osp\.213-171-26-249\.nip\.io;/)
+    assert.match(other, /ssl_certificate \/etc\/letsencrypt\/live\/osp\.213-171-26-249\.nip\.io\/fullchain\.pem;/)
+    assert.match(other, /log_format osp_noargs_osp_213_171_26_249_nip_io /)
+    assert.ok(!other.includes('osp_noargs_osp_root_sx'))
+    assert.notEqual(sh('bash', [path.join(DOCKER_DIR, 'infra-nginx', 'render.sh'), 'bad name;']).status, 0, 'имя сайта проверяется')
+  })
+
   // Главное для соседей: запись портала в общем nginx не мешает ему работать, когда портал остановлен.
-  it('общий nginx сервера работает и без контейнеров портала: сайт ОСП — 502, остальное как было', () => {
-    ok(docker(['exec', INFRA, 'nginx', '-t']), 'настройки общего nginx с записью портала')
-    assert.equal(inspect(INFRA, '{{.State.Status}}'), 'running')
+  it('шаг 2 — с HTTPS: общий nginx работает и без контейнеров портала, сайт ОСП — 502', () => {
+    // «Сертификат выпущен»: файлы появились там, где их кладёт Let's Encrypt.
+    const live = path.join(tmp, 'le', 'osp.root.sx')
+    fs.mkdirSync(live)
+    fs.copyFileSync(path.join(tmp, 'tls', 'site.crt'), path.join(live, 'fullchain.pem'))
+    fs.copyFileSync(path.join(tmp, 'tls', 'site.key'), path.join(live, 'privkey.pem'))
+    for (const f of ['fullchain.pem', 'privkey.pem']) fs.chmodSync(path.join(live, f), 0o644)
+    const full = renderNginx(['osp.root.sx'])
+    assert.ok(!/__[A-Z]+__|#@https/.test(full), 'в полной записи не осталось незаполненных мест')
+    fs.writeFileSync(path.join(tmp, 'osp.root.sx.conf'), full) // тот же файл: содержимое заменено на месте
+    ok(docker(['exec', INFRA, 'nginx', '-t']), 'настройки общего nginx с полной записью портала')
+    ok(docker(['exec', INFRA, 'nginx', '-s', 'reload']), 'перечитывание настроек без перезапуска')
+    spawnSync('sleep', ['1'])
+    assert.equal(inspect(INFRA, '{{.State.Status}} {{.RestartCount}}'), 'running 0')
     assert.equal(code(`https://osp.root.sx:${p443}/`), '502')
-    ok(docker(['exec', INFRA, 'nginx', '-s', 'reload']), 'перечитывание настроек')
+    assert.equal(curl([`http://osp.root.sx:${p80}/.well-known/acme-challenge/probe`]).stdout, 'acme-ok', 'продление сертификата продолжит работать')
     ok(neighbors('--save'), 'снимок соседей')
   })
 

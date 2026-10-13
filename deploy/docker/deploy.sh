@@ -32,6 +32,22 @@ HEALTH_PAUSE="${HEALTH_PAUSE:-2}"
 
 die() { echo "FAIL $*" >&2; exit 1; }
 for bin in docker flock sha256sum; do command -v "$bin" >/dev/null || die "нужен $bin"; done
+
+# Отпечаток образа: слои и параметры запуска. Номер образа (.Id) для сверки не годится — он зависит от
+# того, как Docker на машине хранит образы, и у машины сборки и сервера может не совпадать при одном и
+# том же содержимом. Пустая строка — образа нет.
+image_print() {
+  local out
+  out="$(docker image inspect "$1" --format '{{json .RootFS.Layers}}|{{json .Config.Entrypoint}}|{{json .Config.Cmd}}|{{json .Config.Env}}|{{.Config.User}}|{{.Config.WorkingDir}}|{{.Os}}/{{.Architecture}}' 2>/dev/null)" || return 0
+  printf '%s' "$out" | sha256sum | cut -d' ' -f1
+}
+# Для машины сборки (deploy/docker/build.sh): тот же отпечаток, каталог портала не нужен.
+if [ "${1:-}" = fingerprint ]; then
+  [ -n "${2:-}" ] || die "укажите образ"
+  image_print "$2"
+  exit 0
+fi
+
 docker compose version >/dev/null 2>&1 || die "нужен docker compose"
 [ -d "$OSP_HOME" ] || die "нет каталога портала $OSP_HOME"
 
@@ -121,7 +137,7 @@ case "${1:-}" in
     cur="$(release_of current)"
     [ -n "$cur" ] || { echo "Портал не выложен"; exit 1; }
     echo "Выпуск: $cur; предыдущий: $(release_of previous || true)"
-    dc "$cur" ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
+    dc "$cur" ps
     healthy "$cur"
     ;;
 
@@ -147,9 +163,10 @@ case "${1:-}" in
       echo "Загрузка образов выпуска $TAG…"
       docker load -q -i "$REL/images.tar.gz" >/dev/null
     fi
-    while read -r _ ref id; do
-      got="$(docker image inspect "$ref" --format '{{.Id}}' 2>/dev/null || true)"
-      [ "$got" = "$id" ] || die "образ $ref на сервере не тот, что в выпуске (или его нет)"
+    while read -r _ ref print; do
+      got="$(image_print "$ref")"
+      [ -n "$got" ] || die "образа $ref на сервере нет"
+      [ "$got" = "$print" ] || die "образ $ref на сервере не тот, что в выпуске"
     done < <(grep -E '^image ' "$REL/MANIFEST")
     # 3. Файлы выпуска — в каталог портала (секреты, флаги и состояние не затрагиваются).
     stage="$OSP_HOME/releases/.$TAG.tmp"

@@ -64,8 +64,8 @@ bash migration/target/neighbors.sh ~/.osp-secrets/target.env --compare   # по�
    В `secrets/osp-api.env` также: `SUPABASE_JWT_SECRET` (Supabase → настройки проекта → JWT Keys → Legacy
    JWT Secret; кнопку «Migrate» не нажимать), ключи S3 и Anthropic, служебный ключ Supabase, ключи выдачи
    расценок. Если Anthropic с сервера недоступен — `OSP_API_REQUIRE=supabase,s3`, флаг `ospApiAi` не включать.
-5. **Запись в общем nginx** — один файл `osp.conf`, разово (там же, шаг 6). Сеть общего nginx на corp —
-   `edge`; сертификаты — Let's Encrypt внутри контейнера `infra-nginx`.
+5. **Запись в общем nginx** — отдельный файл на каждое имя сайта, в два шага: «только HTTP» → сертификат →
+   полная запись (`deploy/docker/README.md`, «Запись в общем nginx»). Сеть общего nginx на corp — `edge`.
 6. **Проверка под запасным именем** `https://osp.213-171-26-249.nip.io` — оно уже указывает на corp, нынешний
    сервер не затрагивается: сайт с выключенными флагами (данные Supabase), вход, чтение; затем раздел Б.
    Загрузка файлов под этим именем не работает — хранилище принимает её только с `osp.root.sx`.
