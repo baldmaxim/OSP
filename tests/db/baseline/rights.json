@@ -1,5 +1,5 @@
 {
-  "copy": "prod-20261012-151429",
+  "copy": "prod-20261013-090146",
   "candidates": [],
   "classes": {
     "admin": {
@@ -139,7 +139,10 @@
         "update": "yes"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "all",
+        "update": "no"
       },
       "task_comments": {
         "delete": "yes",
@@ -235,7 +238,7 @@
         "update": "yes"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranties": {
         "delete": "yes",
@@ -292,7 +295,7 @@
         "update": "yes"
       },
       "kp_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "task_checklist_items": {
         "delete": "yes",
@@ -313,7 +316,7 @@
         "update": "yes"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparties": {
         "delete": "yes",
@@ -361,7 +364,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_vor_supply_rates": {
         "delete": "yes",
@@ -388,7 +391,7 @@
         "update": "yes"
       },
       "supply_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "tender_rd_document_codes": {
         "delete": "yes",
@@ -418,7 +421,7 @@
         "update": "yes"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparty_proposals": {
         "delete": "yes",
@@ -430,10 +433,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranty_retention_payments": {
         "delete": "yes",
@@ -448,13 +451,13 @@
         "update": "no"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "visible"
       }
     },
     "employee_full": {
@@ -594,7 +597,10 @@
         "update": "yes"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_comments": {
         "delete": "no",
@@ -690,7 +696,7 @@
         "update": "yes"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranties": {
         "delete": "yes",
@@ -747,7 +753,7 @@
         "update": "yes"
       },
       "kp_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "task_checklist_items": {
         "delete": "no",
@@ -768,7 +774,7 @@
         "update": "yes"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparties": {
         "delete": "yes",
@@ -816,7 +822,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_vor_supply_rates": {
         "delete": "yes",
@@ -843,7 +849,7 @@
         "update": "yes"
       },
       "supply_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "tender_rd_document_codes": {
         "delete": "yes",
@@ -873,7 +879,7 @@
         "update": "yes"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparty_proposals": {
         "delete": "yes",
@@ -885,10 +891,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranty_retention_payments": {
         "delete": "yes",
@@ -903,13 +909,13 @@
         "update": "no"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "visible"
       }
     },
     "employee_none": {
@@ -1049,7 +1055,10 @@
         "update": "yes"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_comments": {
         "delete": "no",
@@ -1145,7 +1154,7 @@
         "update": "yes"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranties": {
         "delete": "yes",
@@ -1202,7 +1211,7 @@
         "update": "yes"
       },
       "kp_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "task_checklist_items": {
         "delete": "no",
@@ -1223,7 +1232,7 @@
         "update": "yes"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparties": {
         "delete": "yes",
@@ -1271,7 +1280,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_vor_supply_rates": {
         "delete": "yes",
@@ -1298,7 +1307,7 @@
         "update": "yes"
       },
       "supply_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "tender_rd_document_codes": {
         "delete": "yes",
@@ -1328,7 +1337,7 @@
         "update": "yes"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparty_proposals": {
         "delete": "yes",
@@ -1340,10 +1349,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranty_retention_payments": {
         "delete": "yes",
@@ -1358,13 +1367,13 @@
         "update": "no"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "visible"
       }
     },
     "vors_only": {
@@ -1504,7 +1513,10 @@
         "update": "yes"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_comments": {
         "delete": "no",
@@ -1600,7 +1612,7 @@
         "update": "yes"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranties": {
         "delete": "yes",
@@ -1657,7 +1669,7 @@
         "update": "yes"
       },
       "kp_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "task_checklist_items": {
         "delete": "no",
@@ -1678,7 +1690,7 @@
         "update": "yes"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparties": {
         "delete": "yes",
@@ -1726,7 +1738,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_vor_supply_rates": {
         "delete": "yes",
@@ -1753,7 +1765,7 @@
         "update": "yes"
       },
       "supply_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "tender_rd_document_codes": {
         "delete": "yes",
@@ -1783,7 +1795,7 @@
         "update": "yes"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparty_proposals": {
         "delete": "yes",
@@ -1795,10 +1807,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranty_retention_payments": {
         "delete": "yes",
@@ -1813,13 +1825,13 @@
         "update": "no"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "visible"
       }
     },
     "contractor_own": {
@@ -1959,7 +1971,10 @@
         "update": "no"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_comments": {
         "delete": "no",
@@ -2055,7 +2070,7 @@
         "update": "no"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranties": {
         "delete": "no",
@@ -2112,7 +2127,7 @@
         "update": "no"
       },
       "kp_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "task_checklist_items": {
         "delete": "no",
@@ -2133,7 +2148,7 @@
         "update": "no"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparties": {
         "delete": "no",
@@ -2181,7 +2196,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_vor_supply_rates": {
         "delete": "no",
@@ -2208,7 +2223,7 @@
         "update": "no"
       },
       "supply_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "tender_rd_document_codes": {
         "delete": "no",
@@ -2238,7 +2253,7 @@
         "update": "no"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparty_proposals": {
         "delete": "yes",
@@ -2250,10 +2265,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranty_retention_payments": {
         "delete": "no",
@@ -2268,13 +2283,13 @@
         "update": "no"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "empty"
       }
     },
     "contractor_noorg": {
@@ -2414,7 +2429,10 @@
         "update": "no"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_comments": {
         "delete": "no",
@@ -2510,7 +2528,7 @@
         "update": "no"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranties": {
         "delete": "no",
@@ -2567,7 +2585,7 @@
         "update": "no"
       },
       "kp_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "task_checklist_items": {
         "delete": "no",
@@ -2588,7 +2606,7 @@
         "update": "no"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparties": {
         "delete": "no",
@@ -2636,7 +2654,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_vor_supply_rates": {
         "delete": "no",
@@ -2663,7 +2681,7 @@
         "update": "no"
       },
       "supply_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "tender_rd_document_codes": {
         "delete": "no",
@@ -2693,7 +2711,7 @@
         "update": "no"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparty_proposals": {
         "delete": "no",
@@ -2705,10 +2723,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranty_retention_payments": {
         "delete": "no",
@@ -2723,13 +2741,13 @@
         "update": "no"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "empty"
       }
     },
     "unapproved": {
@@ -2869,7 +2887,10 @@
         "update": "no"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_comments": {
         "delete": "no",
@@ -2965,7 +2986,7 @@
         "update": "no"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranties": {
         "delete": "no",
@@ -3022,7 +3043,7 @@
         "update": "no"
       },
       "kp_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "task_checklist_items": {
         "delete": "no",
@@ -3043,7 +3064,7 @@
         "update": "no"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparties": {
         "delete": "no",
@@ -3091,7 +3112,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_vor_supply_rates": {
         "delete": "no",
@@ -3118,7 +3139,7 @@
         "update": "no"
       },
       "supply_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "tender_rd_document_codes": {
         "delete": "no",
@@ -3148,7 +3169,7 @@
         "update": "no"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparty_proposals": {
         "delete": "no",
@@ -3160,10 +3181,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranty_retention_payments": {
         "delete": "no",
@@ -3178,13 +3199,13 @@
         "update": "no"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "empty"
       }
     },
     "blocked": {
@@ -3324,7 +3345,10 @@
         "update": "no"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_comments": {
         "delete": "no",
@@ -3420,7 +3444,7 @@
         "update": "no"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranties": {
         "delete": "no",
@@ -3477,7 +3501,7 @@
         "update": "no"
       },
       "kp_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "task_checklist_items": {
         "delete": "no",
@@ -3498,7 +3522,7 @@
         "update": "no"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparties": {
         "delete": "no",
@@ -3546,7 +3570,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_vor_supply_rates": {
         "delete": "no",
@@ -3573,7 +3597,7 @@
         "update": "no"
       },
       "supply_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "tender_rd_document_codes": {
         "delete": "no",
@@ -3603,7 +3627,7 @@
         "update": "no"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparty_proposals": {
         "delete": "no",
@@ -3615,10 +3639,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranty_retention_payments": {
         "delete": "no",
@@ -3633,13 +3657,13 @@
         "update": "no"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "empty"
       }
     },
     "no_user_roles": {
@@ -3779,7 +3803,10 @@
         "update": "no"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "no",
+        "insert": "no",
+        "select": "none",
+        "update": "no"
       },
       "task_comments": {
         "delete": "no",
@@ -3875,7 +3902,7 @@
         "update": "no"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranties": {
         "delete": "no",
@@ -3932,7 +3959,7 @@
         "update": "no"
       },
       "kp_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "task_checklist_items": {
         "delete": "no",
@@ -3953,7 +3980,7 @@
         "update": "no"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparties": {
         "delete": "no",
@@ -4001,7 +4028,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_vor_supply_rates": {
         "delete": "no",
@@ -4028,7 +4055,7 @@
         "update": "no"
       },
       "supply_rates_registry_mv": {
-        "select": "all"
+        "select": "err:42501"
       },
       "tender_rd_document_codes": {
         "delete": "no",
@@ -4058,7 +4085,7 @@
         "update": "no"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "empty"
       },
       "tender_counterparty_proposals": {
         "delete": "no",
@@ -4070,10 +4097,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "object_warranty_retention_payments": {
         "delete": "no",
@@ -4088,13 +4115,13 @@
         "update": "no"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "empty"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "empty"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "empty"
       }
     },
     "anon": {
@@ -4234,7 +4261,10 @@
         "update": "no"
       },
       "client_errors": {
-        "select": "err:42501"
+        "delete": "no",
+        "insert": "no",
+        "select": "err:42501",
+        "update": "no"
       },
       "task_comments": {
         "delete": "no",
@@ -4689,7 +4719,10 @@
         "update": "yes"
       },
       "client_errors": {
-        "select": "empty"
+        "delete": "yes",
+        "insert": "yes",
+        "select": "all",
+        "update": "yes"
       },
       "task_comments": {
         "delete": "yes",
@@ -4785,7 +4818,7 @@
         "update": "yes"
       },
       "kp_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranties": {
         "delete": "yes",
@@ -4863,7 +4896,7 @@
         "update": "yes"
       },
       "supply_rates_registry": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparties": {
         "delete": "yes",
@@ -4911,7 +4944,7 @@
         "select": "empty"
       },
       "kp_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_vor_supply_rates": {
         "delete": "yes",
@@ -4968,7 +5001,7 @@
         "update": "yes"
       },
       "supply_rates_registry_units": {
-        "select": "all"
+        "select": "visible"
       },
       "tender_counterparty_proposals": {
         "delete": "yes",
@@ -4980,10 +5013,10 @@
         "select": "empty"
       },
       "kp_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "object_warranty_retention_payments": {
         "delete": "yes",
@@ -4998,30 +5031,17 @@
         "update": "yes"
       },
       "supply_rates_registry_filter_objects": {
-        "select": "all"
+        "select": "visible"
       },
       "supply_rates_registry_filter_tenders": {
-        "select": "all"
+        "select": "visible"
       },
       "kp_rates_registry_filter_counterparties": {
-        "select": "all"
+        "select": "visible"
       }
     }
   },
-  "anon_functions": {
-    "is_admin": "ok",
-    "can_see_task": "ok",
-    "is_my_tender": "ok",
-    "is_my_contract": "ok",
-    "touch_last_login": "ok",
-    "admin_delete_user": "err:P0001",
-    "is_portal_employee": "ok",
-    "is_task_participant": "ok",
-    "refresh_rates_registry": "ok",
-    "current_counterparty_id": "ok",
-    "is_negotiation_employee": "ok",
-    "vor_requests_can_access": "ok"
-  },
+  "anon_functions": {},
   "self_promote": {
     "employee_full": "err:42501",
     "employee_none": "err:42501",
