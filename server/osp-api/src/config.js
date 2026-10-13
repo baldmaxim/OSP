@@ -35,6 +35,14 @@ export function loadConfig(env = process.env) {
     },
     anthropicApiKey: env.ANTHROPIC_API_KEY || '',
     ratesApiKeys: list(env.RATES_API_KEYS),
+    // Своё подключение к базе (src/lib/db.js). Пока маршруты данных не включены, может быть пустым.
+    db: {
+      url: env.OSP_DB_URL || '',
+      caFile: env.OSP_DB_CA_FILE || '',
+      poolMax: Number(env.OSP_DB_POOL_MAX) || 5,
+      // Пока база в Supabase — authenticated (правила по строкам вторым замком); в базе Яндекса — пусто.
+      secondLockRole: env.OSP_DB_SECOND_LOCK_ROLE || '',
+    },
     required: parseRequired(env.OSP_API_REQUIRE),
   }
 }
