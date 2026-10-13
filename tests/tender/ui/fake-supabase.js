@@ -9,6 +9,14 @@ const LATENCY_MS = Number(new URLSearchParams(window.location.search).get('laten
 const db = window.__fakeDb
 const stats = window.__supabaseStats = { requests: [], active: 0, maxActive: 0 }
 
+const channels = new Set()
+window.__realtime = {
+  emit(table, payload) {
+    for (const channel of channels) for (const h of channel.handlers) if (h.table === table) h.handler(payload)
+  },
+  subscriptions: () => [...channels].flatMap((c) => c.handlers.map((h) => h.table)),
+}
+
 const uuid = () => crypto.randomUUID()
 const sortedCache = new Map()
 const versions = {}
@@ -70,7 +78,9 @@ function builder(table) {
 async function run(q) {
   stats.active++
   stats.maxActive = Math.max(stats.maxActive, stats.active)
-  stats.requests.push({ table: q.table, op: q.op, range: q.range || null, count: q.count })
+  // ids — сколько значений в фильтре .in(...): по нему видно, перечитан один тендер или все.
+  const inFilter = q.filters.find((f) => f.op === 'in')
+  stats.requests.push({ table: q.table, op: q.op, range: q.range || null, count: q.count, ids: inFilter ? inFilter.val.map(String) : null })
   await new Promise((r) => setTimeout(r, LATENCY_MS))
   stats.active--
   const rows = tableRows(q.table)
@@ -141,8 +151,17 @@ export const supabase = {
     getSession: async () => ({ data: { session: null } }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
   },
-  channel: () => ({ on() { return this }, subscribe() { return this } }),
-  removeChannel: () => {},
+  // Онлайн-обновления: подписки запоминаются, событие «с сервера» подаёт тест —
+  // window.__realtime.emit('таблица', { eventType, new, old }).
+  channel: () => {
+    const channel = {
+      handlers: [],
+      on(_kind, opts, handler) { channel.handlers.push({ table: opts.table, handler }); return channel },
+      subscribe(onStatus) { channels.add(channel); onStatus?.('SUBSCRIBED'); return channel },
+    }
+    return channel
+  },
+  removeChannel: (channel) => { channels.delete(channel) },
 }
 
 export default supabase

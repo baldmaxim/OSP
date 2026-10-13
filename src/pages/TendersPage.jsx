@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '../api'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable'
+import { participantChangeAffectsCounts, createIdBatcher } from '../utils/tenderCountsLive'
 import { saveAs } from 'file-saver'
 import { buildTendersRegistryRows, buildTendersRegistryWorkbook } from '../utils/tendersRegistryExport'
 import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
@@ -59,6 +60,9 @@ import '../styles/workUi.css'
 
 // «Дежурный по тендерам»: ротация и ручная замена — src/utils/tenderDuty.js
 // (показывается и в «ВОРах и РД»).
+// Сколько копить события по участникам, прежде чем перечитать счётчики затронутых тендеров.
+const COUNTS_LIVE_DELAY_MS = 1500
+
 const TENDER_RESPONSIBLES = TENDER_DUTY_NAMES
 const RESPONSIBLE_OVERRIDE_KEY = DUTY_OVERRIDE_KEY
 
@@ -435,10 +439,25 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   })
 
   // Статусы участников (в т.ч. «КП предоставлено» из кабинета подрядчика) —
-  // только счётчики, поэтому обновляем их, а не весь реестр.
+  // только счётчики, поэтому обновляем их, а не весь реестр. Перечитываем лишь
+  // затронутые тендеры и одним запросом на серию событий: правка примечания или
+  // порядка участника счётчики не меняет, а чужой реестр не касается вовсе
+  // (utils/tenderCountsLive.js — раньше каждое событие перечитывало все тендеры).
+  const fetchCountsRef = useRef(null)
+  const countsBatcher = useMemo(() => createIdBatcher((ids) => fetchCountsRef.current?.(ids), COUNTS_LIVE_DELAY_MS), [])
+  useEffect(() => () => countsBatcher.cancel(), [countsBatcher])
+  const queueTenderCounts = (tenderId) => {
+    if (tenderId && tenderIdsRef.current.includes(tenderId)) countsBatcher.add(tenderId)
+  }
   useRealtimeTable({
     table: 'tender_counterparties',
-    onUpdate: () => { fetchTenderProposalCounts() },
+    onUpdate: (newRow, oldRow) => {
+      if (!participantChangeAffectsCounts(newRow, oldRow)) return
+      queueTenderCounts(newRow.tender_id)
+      if (oldRow?.tender_id !== newRow.tender_id) queueTenderCounts(oldRow?.tender_id)
+    },
+    onInsert: (newRow) => queueTenderCounts(newRow?.tender_id),
+    // Удаление: в событии только ключ строки, тендер неизвестен — перечитываем все (с задержкой).
     onStructuralChange: () => { fetchTenderProposalCounts() },
   })
 
@@ -494,6 +513,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     setCountsFailed(failedTenders)
     setTenderProposalCounts(prev => (ids ? { ...prev, ...map } : map))
   }
+  fetchCountsRef.current = fetchTenderProposalCounts
 
   const fetchTenders = async () => {
     try {

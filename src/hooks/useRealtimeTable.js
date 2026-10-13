@@ -13,6 +13,8 @@ import { subscribeTable } from '../api'
 //     скалярные поля, а страница подмешивает их в свою строку.
 //   • INSERT/DELETE — появилась или исчезла строка: тут нужен перезапрос, и он
 //     откладывается (debounce), чтобы пакет правок не вызвал десяток загрузок.
+//     Если странице достаточно новой строки (например, пересчитать один тендер),
+//     она задаёт onInsert — тогда появление строки перезапроса не вызывает.
 //
 // Права не обходятся: события фильтруются теми же RLS-политиками под токеном
 // текущего пользователя (таблицы включены в публикацию миграцией 20260915).
@@ -24,6 +26,7 @@ export function useRealtimeTable({
   filter = null,          // например `tender_id=eq.${id}`
   enabled = true,
   onUpdate,               // (newRow, oldRow) => void
+  onInsert,               // (newRow) => void — вместо onStructuralChange для новых строк
   onStructuralChange,     // () => void — вызывается с задержкой
   debounceMs = 800,
 }) {
@@ -32,6 +35,8 @@ export function useRealtimeTable({
   // подписку, а это переподключение вебсокета на каждое нажатие клавиши.
   const onUpdateRef = useRef(onUpdate)
   const onStructuralRef = useRef(onStructuralChange)
+  const onInsertRef = useRef(onInsert)
+  onInsertRef.current = onInsert
   onUpdateRef.current = onUpdate
   onStructuralRef.current = onStructuralChange
 
@@ -52,6 +57,8 @@ export function useRealtimeTable({
         if (payload.eventType === 'UPDATE') {
           if (onUpdateRef.current) onUpdateRef.current(payload.new, payload.old)
           else scheduleStructural()
+        } else if (payload.eventType === 'INSERT' && onInsertRef.current) {
+          onInsertRef.current(payload.new)
         } else {
           scheduleStructural()
         }
