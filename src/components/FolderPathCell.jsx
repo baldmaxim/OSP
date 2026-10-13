@@ -49,6 +49,8 @@ export default function FolderPathCell({
   canEdit = false,
   onSave,
   addLabel = 'Указать путь к папке',
+  // Подсказка и доступное имя «пустой» ссылки — когда подпись сокращена.
+  addTitle,
   placeholder = '\\\\su10-fs\\Тендеры\\ЖК Алия\\Фасады',
 }) {
   const [editing, setEditing] = useState(false)
@@ -83,7 +85,7 @@ export default function FolderPathCell({
 
   if (editing) {
     return (
-      <div className="fpath fpath-edit">
+      <div className={`fpath fpath-edit${value ? ' has-value' : ''}`}>
         <IconFolder />
         <input
           type="text"
@@ -115,6 +117,8 @@ export default function FolderPathCell({
       <button
         type="button"
         className="fpath-add"
+        title={addTitle}
+        aria-label={addTitle}
         onClick={(e) => { e.stopPropagation(); startEdit() }}
       ><IconFolder /> {addLabel}</button>
     )

@@ -22,6 +22,10 @@ import S3DocumentList from '../components/S3DocumentList'
 import ContractClausesTab from '../components/ContractClausesTab'
 import AccessDenied from '../components/AccessDenied'
 import PsdcPanel from '../components/psdc/PsdcPanel'
+import FolderPathCell from '../components/FolderPathCell'
+import SignalLinkCell from '../components/SignalLinkCell'
+import LarixLinkCell from '../components/LarixLinkCell'
+import { LARIX_LINK_LABEL, LARIX_NAME, isInLarix, larixLink } from '../utils/contractLarix'
 import '../components/ContractRegistry.css'
 
 // Держать в согласии со STATUS_OPTIONS в ContractsPage.jsx.
@@ -447,12 +451,13 @@ function ContractDetailPage() {
                 : vatLabel} />
               <InfoRow label="Статус" value={statusLabel} />
               <InfoRow label="Ответственный" value={contract.responsible?.full_name} />
-              {contract.document_link && (
-                <InfoRow
-                  label="Документ"
-                  value={<a href={contract.document_link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)' }}>Открыть</a>}
-                />
-              )}
+              {/* Три пути документа — только для сведения: вносят и меняют их в
+                  реестре, под номером договора. Значения те же, второго места
+                  ввода нет. */}
+              <InfoRow label="Путь к папке" value={contract.folder_path ? <FolderPathCell value={contract.folder_path} /> : null} />
+              <InfoRow label="Путь к Signal" value={contract.signal_link ? <SignalLinkCell value={contract.signal_link} /> : null} />
+              <InfoRow label={LARIX_LINK_LABEL} value={larixLink(contract) ? <LarixLinkCell value={larixLink(contract)} /> : null} />
+              <InfoRow label={`Внесён в ${LARIX_NAME}`} value={isInLarix(contract) ? 'Да' : 'Нет'} />
             </div>
           </div>
 

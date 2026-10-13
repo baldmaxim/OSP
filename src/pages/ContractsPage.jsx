@@ -9,15 +9,16 @@ import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
 import ConceptAgreementCell from '../components/ConceptAgreementCell'
 import FolderPathCell from '../components/FolderPathCell'
 import SignalLinkCell from '../components/SignalLinkCell'
+import LarixLinkCell from '../components/LarixLinkCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
 import { CONTRACTS_STRUCTURE } from '../utils/docStorageStructures'
 import { IconDocsStack, IconFolderTree, IconColumns, IconColumnsWide } from '../components/icons/ToolbarIcons'
-import LarixEntryBlock from '../components/LarixEntryBlock'
 // Модалка импорта тянет тяжёлый xlsx-js-style — грузим лениво, только при открытии.
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
 import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, LARIX_NAME, isInLarix } from '../utils/contractLarix'
 import {
   DOC_TYPE,
   DOC_TYPES,
@@ -200,7 +201,6 @@ const EMPTY_FORM = {
   accepted_date: '',
   signed_date: '',
   warranty_period: '',
-  document_link: '',
   status: 'new_request',
   tender_id: '',
   work_name: '',
@@ -1220,7 +1220,7 @@ function ContractRegistry() {
       }
       if (onlyOverdue && !isOverdue(c)) return false
       // «Не в Larix» — только заключённые (не «Новая заявка») и ещё не внесённые.
-      if (onlyNoLarix && (c.larix_entered || (c.status || 'new_request') === 'new_request')) return false
+      if (onlyNoLarix && (isInLarix(c) || (c.status || 'new_request') === 'new_request')) return false
       if (q) {
         // У ДС ищем ещё и по основному договору: в реестре ДС его номер и ID —
         // главный ориентир, по которому документ и разыскивают.
@@ -1566,7 +1566,6 @@ function ContractRegistry() {
       accepted_date: contract.accepted_date || '',
       signed_date: contract.signed_date || '',
       warranty_period: contract.warranty_period || '',
-      document_link: contract.document_link || '',
       status: contract.status || 'new_request',
       tender_id: contract.tender_id || '',
       work_name: contract.work_name || '',
@@ -1704,11 +1703,15 @@ function ContractRegistry() {
     notes: 'Примечание',
     folder_path: 'Путь к папке',
     signal_link: 'Путь к Signal',
+    [LARIX_LINK_FIELD]: LARIX_LINK_LABEL,
   }
   // Путь к папке (миграция 20260904) — обычное инлайн-поле договора.
   const handleSaveFolderPath = (contractId, value) => handleInlineField(contractId, 'folder_path', value.trim())
   // Путь к Signal (миграция 20260919) — ссылка на документы в общем хранилище.
   const handleSaveSignalLink = (contractId, value) => handleInlineField(contractId, 'signal_link', value.trim())
+  // Путь к Larix.CPM — вносится так же, как путь к Signal. По его заполненности
+  // определяется, внесён ли договор в Larix (utils/contractLarix.js).
+  const handleSaveLarixLink = (contractId, value) => handleInlineField(contractId, LARIX_LINK_FIELD, value.trim())
   const handleInlineField = async (contractId, field, rawValue) => {
     const value = rawValue === '' ? null : rawValue
     const contract = contracts.find(c => c.id === contractId)
@@ -1728,35 +1731,6 @@ function ContractRegistry() {
       // Колонки ещё нет в базе — называем миграцию, а не сырой текст PostgREST.
       alert(field === 'signal_link' && (error.code === 'PGRST204' || /signal_link/.test(error.message || ''))
         ? 'Не удалось сохранить путь к Signal: в базе не применена миграция 20260919_contract_signal_link.'
-        : 'Ошибка: ' + error.message)
-    }
-  }
-
-  // Отметка о внесении договора в Larix. action: 'mark' | 'update' | 'unmark'.
-  const handleLarix = async (contractId, action, number = '') => {
-    const by = userProfile?.full_name || 'Сотрудник'
-    let patch
-    if (action === 'mark') {
-      patch = { larix_entered: true, larix_number: number.trim() || null, larix_entered_at: new Date().toISOString(), larix_entered_by: by }
-    } else if (action === 'update') {
-      patch = { larix_number: number.trim() || null }
-    } else {
-      patch = { larix_entered: false, larix_number: null, larix_entered_at: null, larix_entered_by: null }
-    }
-    try {
-      const { error } = await db.from('contracts').update(patch).eq('id', contractId)
-      if (error) throw error
-      setContracts(prev => prev.map(c => c.id === contractId ? { ...c, ...patch } : c))
-      await logContractEvent(contractId, 'field_updated', {
-        fieldName: 'larix',
-        description: action === 'mark' ? 'Отмечено внесение в Larix'
-          : action === 'unmark' ? 'Снята отметка о внесении в Larix'
-            : 'Изменён № договора в Larix',
-      })
-    } catch (error) {
-      console.error('Ошибка Larix:', error.message)
-      alert((error.code === 'PGRST204' || error.code === '42703') && /larix_/.test(error.message || '')
-        ? 'Отметка Larix недоступна: в базе нет колонок Larix. Примените миграцию 20260929_contracts_fixes (она же добавляет их, если миграция 20260805 не была применена).'
         : 'Ошибка: ' + error.message)
     }
   }
@@ -2244,28 +2218,43 @@ function ContractRegistry() {
                         title={`Дополнительных соглашений к этому документу: ${amendmentCount}`}
                       >ДС: {amendmentCount}</span>
                     )}
-                    {/* Путь к папке — перед понятийным соглашением: с него
-                        начинают поиск документов по договору. Открыть проводник
-                        кликом браузер не даёт, поэтому путь копируется. */}
+                    {/* Три пути документа — перед понятийным соглашением: с них
+                        начинают поиск документов по договору. Заполненный путь —
+                        своя строка; пустые собраны в одну «путь к папке · Signal ·
+                        Larix.CPM» с общим «путь к»: три полные подписи в строку не
+                        помещались, и каждая строка реестра вырастала на строку
+                        (порядок и переносы — .cpaths в ContractRegistryPolish.css). */}
                     {!isDeletedTab && (
-                      <FolderPathCell
-                        value={contract.folder_path}
-                        canEdit={canEditContracts}
-                        onSave={(v) => handleSaveFolderPath(contract.id, v)}
-                        // Короткая подпись: кнопка есть в каждой строке реестра,
-                        // полная фраза занимала ячейку целиком.
-                        addLabel="путь к папке"
-                        placeholder="\\su10-fs\Договоры\ЖК Алия\СУ-2-АЛ"
-                      />
-                    )}
-                    {/* Путь к Signal — сразу после пути к папке: ссылка на те же
-                        документы в общем хранилище, открывается кликом. */}
-                    {!isDeletedTab && (
-                      <SignalLinkCell
-                        value={contract.signal_link}
-                        canEdit={canEditContracts}
-                        onSave={(v) => handleSaveSignalLink(contract.id, v)}
-                      />
+                      <div className="cpaths">
+                        {canEditContracts && (!contract.folder_path || !contract.signal_link || !isInLarix(contract)) && (
+                          <span className="cpaths-label" aria-hidden="true">путь к</span>
+                        )}
+                        {/* Открыть проводник кликом браузер не даёт, поэтому путь копируется. */}
+                        <FolderPathCell
+                          value={contract.folder_path}
+                          canEdit={canEditContracts}
+                          onSave={(v) => handleSaveFolderPath(contract.id, v)}
+                          addLabel="папке"
+                          addTitle="Указать путь к папке"
+                          placeholder="\\su10-fs\Договоры\ЖК Алия\СУ-2-АЛ"
+                        />
+                        {/* Ссылка на те же документы в общем хранилище, открывается кликом. */}
+                        <SignalLinkCell
+                          value={contract.signal_link}
+                          canEdit={canEditContracts}
+                          onSave={(v) => handleSaveSignalLink(contract.id, v)}
+                          addLabel="Signal"
+                          addTitle="Указать путь к Signal"
+                        />
+                        {/* Ссылка на карточку документа в Larix; вносится так же, как путь к Signal. */}
+                        <LarixLinkCell
+                          value={contract[LARIX_LINK_FIELD]}
+                          canEdit={canEditContracts}
+                          onSave={(v) => handleSaveLarixLink(contract.id, v)}
+                          addLabel={LARIX_NAME}
+                          addTitle={`Указать путь к ${LARIX_NAME}`}
+                        />
+                      </div>
                     )}
                     {!isDeletedTab && (
                       <ConceptAgreementCell
@@ -2325,14 +2314,15 @@ function ContractRegistry() {
                         renderOption={(o) => <span className={`status-badge ${o.className || ''}`}>{o.label}</span>}
                       />
                     )}
-                    {!isDeletedTab && contract.larix_entered && (
-                      <span
-                        className="larix-badge is-in"
-                        title={`Внесён в Larix${contract.larix_number ? ` · № ${contract.larix_number}` : ''}${contract.larix_entered_by ? ` · ${contract.larix_entered_by}` : ''}`}
-                      >Larix</span>
+                    {/* Состояние выводится из пути к Larix.CPM под номером договора. */}
+                    {!isDeletedTab && isInLarix(contract) && (
+                      <span className="larix-badge is-in" title={`Внесён в ${LARIX_NAME}`}>Larix</span>
                     )}
-                    {!isDeletedTab && !contract.larix_entered && (contract.status || 'new_request') !== 'new_request' && (
-                      <span className="larix-badge is-out" title="Договор ещё не внесён в Larix">не в Larix</span>
+                    {!isDeletedTab && !isInLarix(contract) && (contract.status || 'new_request') !== 'new_request' && (
+                      <span
+                        className="larix-badge is-out"
+                        title={`Не внесён в ${LARIX_NAME}: укажите путь к ${LARIX_NAME} под номером договора`}
+                      >не в Larix</span>
                     )}
                   </td>
                   {showLawyer && (
@@ -2462,13 +2452,6 @@ function ContractRegistry() {
                             )}
                           </div>
                         </section>
-
-                        {/* Внесение договора в систему Larix (после заключения) */}
-                        <LarixEntryBlock
-                          contract={contract}
-                          canEdit={canEditContracts && !isDeletedTab}
-                          onAction={(action, number) => handleLarix(contract.id, action, number)}
-                        />
 
                         {/* Блок 1: Примечание юриста — скрыто для руководителя строительства */}
                         {!hideNotes && (
@@ -3104,11 +3087,6 @@ function ContractRegistry() {
                 <div className={fieldGroupCls('warranty_period', 'full-width')}>
                   <label>Срок гарантии на работы</label>
                   <input type="text" name="warranty_period" value={formData.warranty_period} onChange={handleInputChange} disabled={formFrozen} placeholder="Например: 24 месяца" />
-                </div>
-
-                <div className="form-group full-width">
-                  <label>Ссылка на документ</label>
-                  <input type="url" name="document_link" value={formData.document_link} onChange={handleInputChange} placeholder="https://docs.google.com/document/d/..." />
                 </div>
 
                 <div className="form-group">

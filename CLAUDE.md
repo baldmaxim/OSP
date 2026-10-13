@@ -19,6 +19,7 @@ npm run lint         # Run ESLint (--max-warnings 0)
 npm run check:transport # доступ к серверу только через src/api/ (0 нарушений)
 npm run test:psdc    # ПСДЦ: движок в БД, XLSX, UI (PostgreSQL + Chromium)
 npm run test:tender  # карточка тендера: производительность UI (Chromium)
+npm run test:contracts # договоры: путь к Larix.CPM, импорт из Excel (без базы и браузера)
 npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
 npm run test:deploy  # deploy/publish.sh и rollback.sh на временных каталогах
 npm run test:backup  # migration/backup: копия, проверка восстановлением, прогон миграций; migration/target: разведка базы (Docker)
@@ -440,6 +441,28 @@ curl -H "X-API-Key: <ключ>" \
 - Старая таблица `contract_psdc_items` (float-расчёт) больше не используется интерфейсом.
 
 **Тесты** (`npm run test:psdc`): поднимают временный локальный PostgreSQL 17+ (`initdb/pg_ctl/psql` в PATH или `PG_BIN`, иначе Docker) с настоящими миграциями 20260906 + 20260908, проверяют движок, XLSX, интеграцию с суммами и UI в Chrome/Edge через Playwright (`PSDC_BROWSER`). Замер: `npm run bench:psdc`.
+
+## Пути документа в «Договорах и ДС»: папка, Signal, Larix.CPM (миграция 20261012)
+
+У договора и ДС три пути, все вносятся в реестре под номером документа и показываются в карточке
+(«Основная информация») только для чтения — второго места ввода нет:
+
+| Путь | Колонка `contracts` | Компонент |
+|---|---|---|
+| к папке | `folder_path` | [FolderPathCell](src/components/FolderPathCell.jsx) — копируется (проводник кликом не открыть) |
+| к Signal | `signal_link` | [SignalLinkCell](src/components/SignalLinkCell.jsx) |
+| к Larix.CPM | `document_link` | [LarixLinkCell](src/components/LarixLinkCell.jsx) |
+
+- Signal и Larix.CPM — одна основа [WebLinkCell](src/components/WebLinkCell.jsx): вид и ввод одинаковы.
+- **«Внесён в Larix» отдельно не хранится** — выводится из заполненности пути: `isInLarix(doc)` в
+  [contractLarix.js](src/utils/contractLarix.js). Имя поля и подписи — оттуда же (`LARIX_LINK_FIELD`,
+  `LARIX_LINK_LABEL`). Колонки `larix_entered` / `larix_number` / `larix_entered_at` / `larix_entered_by`
+  остались в базе, но интерфейс их не читает и не пишет — не возвращать (это проверяет `test:contracts`).
+- В реестре заполненный путь — своя строка; пустые собраны в одну «путь к папке · Signal · Larix.CPM»
+  (`.cpaths` в `ContractRegistryPolish.css`): три полные подписи не помещались, и каждая строка реестра
+  вырастала на строку.
+- Excel-импорт: колонка «Путь к Larix.CPM» (принимаются и прежний заголовок «Ссылка на документ», и «СРМ»
+  кириллицей); в ней допустима только ссылка `http(s)` — путь к папке даёт ошибку строки.
 
 ## Excel Import/Export (xlsx)
 

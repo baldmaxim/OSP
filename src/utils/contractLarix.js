@@ -1,0 +1,19 @@
+// Путь к Larix.CPM у договора или ДС — ссылка на карточку документа в Larix.
+//
+// Значение одно и хранится в одной колонке: contracts.document_link (раньше в
+// интерфейсе — «Ссылка на документ» / «Документ»). Состояние «внесён в Larix»
+// отдельно НЕ хранится — оно выводится из того, заполнен ли путь. Поэтому отметка
+// и ссылка не могут разойтись: ссылку вписали — договор внесён, стёрли — «не в Larix».
+//
+// Колонки contracts.larix_entered / larix_number / larix_entered_at / larix_entered_by
+// (миграция 20260805) интерфейс больше не читает и не пишет.
+//
+// Все места, где нужно имя поля, подпись или состояние, берут их отсюда.
+
+export const LARIX_LINK_FIELD = 'document_link'
+export const LARIX_NAME = 'Larix.CPM'
+export const LARIX_LINK_LABEL = `Путь к ${LARIX_NAME}`
+
+export const larixLink = (doc) => String(doc?.[LARIX_LINK_FIELD] ?? '').trim()
+
+export const isInLarix = (doc) => larixLink(doc) !== ''

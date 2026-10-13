@@ -9,11 +9,19 @@ import {
   effectiveValues,
   planAmendment,
 } from './contractAmendments'
+import { LARIX_LINK_FIELD, LARIX_LINK_LABEL } from './contractLarix'
 
 // --- Канонические колонки шаблона ---
-// key — внутреннее имя, header — заголовок в Excel-шаблоне.
+// key — внутреннее имя, header — заголовок в Excel-шаблоне, aliases — прежние и
+// допустимые написания заголовка (по ним колонка тоже узнаётся).
 // Колонки сопоставляются по заголовкам, поэтому старые файлы (29 колонок, без
-// ДГП, путей и Larix) грузятся как раньше: отсутствующие колонки просто пусты.
+// ДГП и путей) грузятся как раньше: отсутствующие колонки просто пусты.
+//
+// Путь к Larix.CPM — это document_link (см. utils/contractLarix.js): раньше колонка
+// называлась «Ссылка на документ». «CPM» в заголовке набирают и латиницей, и
+// кириллицей — буквы выглядят одинаково, поэтому принимаются оба написания.
+// Колонок «Внесён в Larix» и «№ в Larix» больше нет: состояние выводится из пути;
+// в старых файлах они просто не читаются.
 export const IMPORT_COLUMNS = [
   { key: 'record_type', header: 'Тип' },
   { key: 'parent_display_id', header: 'ID изменяемого документа' },
@@ -43,11 +51,13 @@ export const IMPORT_COLUMNS = [
   { key: 'accepted_date', header: 'Дата принятия в работу' },
   { key: 'signed_date', header: 'Дата подписания' },
   { key: 'warranty_period', header: 'Срок гарантии на работы' },
-  { key: 'document_link', header: 'Ссылка на документ' },
   { key: 'folder_path', header: 'Путь к папке' },
   { key: 'signal_link', header: 'Путь к Signal' },
-  { key: 'larix_entered', header: 'Внесён в Larix' },
-  { key: 'larix_number', header: '№ в Larix' },
+  {
+    key: LARIX_LINK_FIELD,
+    header: LARIX_LINK_LABEL,
+    aliases: ['Путь к Larix.СРМ', 'Путь к Larix', 'Ссылка на Larix', 'Ссылка на документ'],
+  },
   { key: 'notes', header: 'Примечание' },
   { key: 'comments', header: 'Комментарии' },
 ]
@@ -94,8 +104,8 @@ export function mapHeaderRow(headerRow = []) {
   const byHeader = {}
   let matched = 0
   IMPORT_COLUMNS.forEach((col) => {
-    const target = normHeader(col.header)
-    const j = fileNorms.findIndex((h) => h && h === target)
+    const targets = [col.header, ...(col.aliases || [])].map(normHeader)
+    const j = fileNorms.findIndex((h) => h && targets.includes(h))
     if (j >= 0) {
       byHeader[col.key] = j
       matched++
@@ -411,16 +421,19 @@ export function validateRow(raw, ctx) {
     else errors.push({ key: 'lawyer', message: 'Ответственный юрист не найден в сотрудниках' })
   }
 
-  // 4в) «Ведёт наш отдел», Larix
+  // 4в) «Ведёт наш отдел»
   const handledRes = parseYesNo(raw.handled_by_us)
   if (handledRes === undefined) errors.push({ key: 'handled_by_us', message: 'Ведёт наш отдел: укажите «Да» или «Нет»' })
-  const larixRes = parseYesNo(raw.larix_entered)
-  if (larixRes === undefined) errors.push({ key: 'larix_entered', message: 'Внесён в Larix: укажите «Да» или «Нет»' })
-  const larixNumber = textOrNull(raw.larix_number)
-  // Номер из Larix без отметки — значит, договор туда внесён.
-  const larixEntered = larixRes === true || (larixRes == null && !!larixNumber)
-  if (larixRes === false && larixNumber) {
-    errors.push({ key: 'larix_entered', message: 'Указан № в Larix, но «Внесён в Larix» — «Нет»' })
+
+  // 4г) Путь к Larix.CPM — только ссылка. По нему договор считается внесённым в
+  // Larix, а в старых файлах в этой колонке («Ссылка на документ») встречался путь
+  // к сетевой папке: такой договор числился бы внесённым.
+  const larixLinkRaw = parseDocumentLink(raw[LARIX_LINK_FIELD])
+  if (larixLinkRaw && !/^https?:\/\/\S+$/i.test(larixLinkRaw)) {
+    errors.push({
+      key: LARIX_LINK_FIELD,
+      message: `${LARIX_LINK_LABEL}: нужна ссылка вида https://… (путь к папке — в колонку «Путь к папке»)`,
+    })
   }
 
   // 5) Статус
@@ -489,7 +502,8 @@ export function validateRow(raw, ctx) {
       accepted_date: dates.accepted_date,
       signed_date: dates.signed_date,
       warranty_period: textOrNull(raw.warranty_period),
-      document_link: parseDocumentLink(raw.document_link),
+      // Путь к Larix.CPM; по его заполненности договор считается внесённым в Larix.
+      [LARIX_LINK_FIELD]: larixLinkRaw,
       status: statusRes.value,
       notes: textOrNull(raw.notes),
       gen_director_name: textOrNull(raw.gen_director_name),
@@ -508,12 +522,6 @@ export function validateRow(raw, ctx) {
     if (folderPath) payload.folder_path = folderPath
     const signalLink = parseDocumentLink(raw.signal_link)
     if (signalLink) payload.signal_link = signalLink
-    if (larixEntered) {
-      payload.larix_entered = true
-      payload.larix_number = larixNumber
-      payload.larix_entered_at = new Date().toISOString()
-      payload.larix_entered_by = ctx.authorName || 'Импорт из Excel'
-    }
 
     if (isDs && parentDoc) {
       applyAmendmentInheritance(payload, raw, parentDoc, ctx.docIndex)

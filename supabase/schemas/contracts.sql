@@ -27,13 +27,16 @@ CREATE TABLE IF NOT EXISTS contracts (
   signed_date DATE,                                   -- Дата подписания (задача 391)
   warranty_period VARCHAR(100),
   status VARCHAR(20) NOT NULL DEFAULT 'new_request',
+  -- Путь к Larix.CPM: ссылка на карточку документа в Larix. Заполнено — документ
+  -- внесён в Larix; отдельно это состояние не хранится (миграция 20261012).
   document_link TEXT,
   tender_id UUID REFERENCES tenders(id),
   work_name TEXT,
   responsible_contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL,
   -- Понятийное соглашение — документ-основание для договора (с визой акционера).
   concept_agreement_s3_document_id UUID REFERENCES s3_documents(id) ON DELETE SET NULL,
-  -- Внесение договора в систему Larix (после заключения).
+  -- Прежняя отметка о внесении в Larix (миграция 20260805). С 20261012 интерфейс
+  -- её не читает и не пишет: состояние выводится из document_link.
   larix_entered BOOLEAN NOT NULL DEFAULT false,
   larix_number TEXT,
   larix_entered_at TIMESTAMPTZ,
@@ -105,7 +108,7 @@ COMMENT ON COLUMN contracts.warranty_retention_period IS 'Срок гарант�
 COMMENT ON COLUMN contracts.work_start_date IS 'Дата начала работ';
 COMMENT ON COLUMN contracts.work_end_date IS 'Дата окончания работ';
 COMMENT ON COLUMN contracts.warranty_period IS 'Срок гарантии на выполненные работы';
-COMMENT ON COLUMN contracts.document_link IS 'Ссылка на документ договора (Google Drive и т.п.)';
+COMMENT ON COLUMN contracts.document_link IS 'Путь к Larix.CPM: ссылка на карточку договора или ДС в Larix. Заполнено — документ внесён в Larix (состояние отдельно не хранится). Вносится в реестре под номером договора';
 COMMENT ON COLUMN contracts.tender_id IS 'Ссылка на тендер, по которому заключён договор';
 COMMENT ON COLUMN contracts.created_at IS 'Дата и время создания записи';
 COMMENT ON COLUMN contracts.updated_at IS 'Дата и время последнего обновления записи';

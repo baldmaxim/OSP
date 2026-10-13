@@ -3,7 +3,6 @@ import * as XLSX from 'xlsx'
 import XLSXStyle from 'xlsx-js-style'
 import PizZip from 'pizzip'
 import { db } from '../api'
-import { useRole } from '../contexts/RoleContext'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import {
   IMPORT_COLUMNS,
@@ -14,6 +13,7 @@ import {
   normMatchName,
 } from '../utils/contractsImport'
 import { DOC_TYPES, buildDocIndex } from '../utils/contractAmendments'
+import { LARIX_LINK_FIELD, LARIX_LINK_LABEL } from '../utils/contractLarix'
 import './ContractsImportModal.css'
 
 const CHUNK = 200
@@ -105,7 +105,6 @@ function skipReasons(row) {
 }
 
 function ContractsImportModal({ counterparties = [], objects = [], contacts = [], refsReady = true, onClose, onImported }) {
-  const { userProfile } = useRole()
   const [step, setStep] = useState('select')     // select | preview | result
   const [fileName, setFileName] = useState('')
   const [parseError, setParseError] = useState('')
@@ -220,7 +219,6 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
 
       const ctx = {
         ...ctxRefs,
-        authorName: userProfile?.full_name || null,
         existingNumbers,
         docIndex: docs.index,
         // Копия: по мере успешной загрузки строк файла пополняем её, чтобы
@@ -237,7 +235,7 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
           // Колонки нет в файле (старый шаблон) — значение пустое.
           const cell = c == null ? null : ws[XLSX.utils.encode_cell({ r, c })]
           let val = cell ? cell.v : ''
-          if ((col.key === 'document_link' || col.key === 'signal_link') && cell && cell.l && cell.l.Target) val = cell.l.Target
+          if ((col.key === LARIX_LINK_FIELD || col.key === 'signal_link') && cell && cell.l && cell.l.Target) val = cell.l.Target
           raw[col.key] = val == null ? '' : val
           disp[col.key] = cell ? (cell.w != null ? cell.w : val) : ''
           if (raw[col.key] !== '' && raw[col.key] != null) nonEmpty = true
@@ -285,7 +283,6 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
       addListValidations(buf, [
         { colIndex: KEY_TO_CANONICAL.record_type, values: DOC_TYPES.map((t) => t.label), title: 'Тип документа' },
         { colIndex: KEY_TO_CANONICAL.handled_by_us, values: ['Да', 'Нет'], title: 'Ведёт наш отдел' },
-        { colIndex: KEY_TO_CANONICAL.larix_entered, values: ['Да', 'Нет'], title: 'Внесён в Larix' },
       ]),
       'Шаблон_импорта_договоров.xlsx',
     )
@@ -396,8 +393,9 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
               </p>
               <p className="cim-hint">
                 Контрагент ищется по ИНН (название — только если ИНН пуст); контрагенты из
-                «Удалённых» не привязываются. Юрист — по ФИО из сотрудников. «Ведёт наш отдел»
-                и «Внесён в Larix» — «Да» / «Нет»; если заполнен «№ в Larix», отметка ставится сама.
+                «Удалённых» не привязываются. Юрист — по ФИО из сотрудников. «Ведёт наш отдел» —
+                «Да» / «Нет». Внесён ли договор в Larix, определяется по колонке «{LARIX_LINK_LABEL}»:
+                ссылка указана — внесён.
               </p>
               <div className="cim-select-actions">
                 <button type="button" className="btn-secondary" onClick={downloadTemplate}>Скачать шаблон</button>

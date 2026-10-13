@@ -315,8 +315,8 @@
 }
 /* «Внесён в Larix» в таблице не показываем вовсе: это ожидаемое состояние, а
    одинокая зелёная точка под статусом читалась как сбой вёрстки. Сигналом
-   остаётся только янтарное «не в Larix»; подробности — в раскрытой строке,
-   выборка проблемных — быстрым фильтром «Не в Larix». */
+   остаётся только янтарное «не в Larix»; у внесённого договора под номером
+   стоит сам путь к Larix.CPM, выборка проблемных — быстрым фильтром «Не в Larix». */
 .contracts-table-compact .larix-badge.is-in { display: none; }
 
 /* ── Юрист ──────────────────────────────────────────────────────────────────
@@ -642,13 +642,41 @@
   white-space: nowrap;
 }
 
-/* Путь к Signal — под путём к папке, тем же тихим стилем. Ссылка открывается
-   кликом, акцентный цвет — только при наведении. */
-.contracts-table-compact .fpath-signal .fpath-link {
+/* ── Три пути документа: папка, Signal, Larix.CPM ───────────────────────────
+   Заполненный путь — отдельная строка на всю ширину ячейки, по порядку: папка,
+   Signal, Larix.CPM. Пустые идут после них одной строкой с общим «путь к»:
+   «путь к  папке  Signal  Larix.CPM». Три полные подписи («путь к папке» …) в
+   колонку не помещались — третья переносилась, и КАЖДАЯ строка реестра
+   становилась выше на строку (84 → 103px по замеру на стенде).
+   Порядок задаёт order, а не разметка: ячейка при сохранении не пересоздаётся.
+   Поле ввода нового пути — своей строкой после пустых; правка существующего
+   (.has-value) остаётся на месте. */
+.contracts-table-compact .cpaths {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.5rem;
+}
+.contracts-table-compact .cpaths > .fpath { order: 0; flex: 1 1 100%; min-width: 0; }
+.contracts-table-compact .cpaths > .cpaths-label {
+  order: 1;
+  margin-top: 0.15rem;
+  color: var(--text-tertiary);
+  font-size: 0.625rem;
+  font-weight: 500;
+  opacity: 0.75;
+}
+.contracts-table-compact .cpaths > .fpath-add { order: 2; margin-right: 0; }
+.contracts-table-compact .cpaths > .fpath-edit:not(.has-value) { order: 3; }
+.contracts-table-compact tr.contract-row:hover .cpaths-label { opacity: 1; }
+
+/* Путь к Signal и путь к Larix.CPM — под путём к папке, тем же тихим стилем.
+   Ссылка открывается кликом, акцентный цвет — только при наведении. */
+.contracts-table-compact .fpath-web .fpath-link {
   color: var(--text-secondary);
   text-decoration: none;
 }
-.contracts-table-compact .fpath-signal .fpath-link:hover {
+.contracts-table-compact .fpath-web .fpath-link:hover {
   color: var(--primary-color);
   text-decoration: underline;
   text-underline-offset: 2px;
