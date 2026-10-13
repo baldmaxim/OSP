@@ -194,7 +194,11 @@ const sqlText = (text) => `'${String(text).replace(/'/g, "''")}'`
 export function rewriteAclSingleOwner(sql) {
   const out = []
   const roles = []
-  const report = { policies: { kept: 0, byRole: {} }, grants: { droppedByRole: {} } }
+  // Кому на проде выдано чтение таблицы или представления (anon / authenticated). Саму выдачу прав под
+  // одной учёткой заменяет список шлюза, но представлению с правами владельца роль проверить больше
+  // нечем: правила по строкам на него не действуют (sql/load-single-owner.sql, п. 9).
+  const selectGrants = new Set()
+  const report = { policies: { kept: 0, byRole: {} }, grants: { droppedByRole: {}, selectRecorded: 0 } }
   let type = null
   let inPolicy = false
   const lines = sql.split('\n')
@@ -238,11 +242,25 @@ export function rewriteAclSingleOwner(sql) {
       const role = grant[4].startsWith('"') ? readIdent(grant[4])[0] : grant[4]
       if (role !== 'PUBLIC' && !Object.hasOwn(ROLE_RULES, role)) fail(`${where}: незнакомая роль «${role}»`)
       report.grants.droppedByRole[role] = (report.grants.droppedByRole[role] || 0) + 1
+      // «GRANT SELECT,… ON TABLE схема.имя TO роль» (и ALL) — чтение целиком. Выдача по колонкам
+      // сюда не попадает: такой роли представление с правами владельца строк не отдаст.
+      const target = grant[1] === 'GRANT' && SINGLE_OWNER_ROLES.has(role) ? /^([A-Z]+(?:,[A-Z]+)*) ON TABLE (.+)$/.exec(grant[2]) : null
+      if (target && target[1].split(',').some((p) => p === 'SELECT' || p === 'ALL')) {
+        const [schema, afterSchema] = readIdent(target[2])
+        if (afterSchema.startsWith('.')) {
+          const [relation, tail] = readIdent(afterSchema.slice(1))
+          if (tail === '') selectGrants.add(`(${sqlText(schema)}, ${sqlText(relation)}, ${sqlText(role)})`)
+        }
+      }
       continue
     }
     if (PASS_RE.test(line)) { if (type === 'POLICY') out.push(line); continue }
     fail(`${where}: строка не похожа ни на одну известную форму: «${line.slice(0, 80)}»`)
   }
+  report.grants.selectRecorded = selectGrants.size
+  out.push('', '-- Кому на проде выдано чтение (читает sql/load-single-owner.sql для представлений с правами владельца).')
+  out.push('CREATE TABLE osp_meta.select_grants (schema_name text NOT NULL, relation_name text NOT NULL, role_name text NOT NULL, PRIMARY KEY (schema_name, relation_name, role_name));')
+  if (selectGrants.size) out.push(`INSERT INTO osp_meta.select_grants VALUES\n  ${[...selectGrants].sort().join(',\n  ')};`)
   out.push('', '-- Для каких ролей Supabase написана каждая политика (читает sql/load-single-owner.sql).')
   out.push('CREATE TABLE osp_meta.policy_roles (schema_name text NOT NULL, table_name text NOT NULL, policy_name text NOT NULL, roles text[] NOT NULL, PRIMARY KEY (schema_name, table_name, policy_name));')
   if (roles.length) out.push(`INSERT INTO osp_meta.policy_roles VALUES\n  ${roles.join(',\n  ')};`)

@@ -538,6 +538,14 @@
         "select"
       ]
     },
+    "public_open_tenders": {
+      "anon": [
+        "select"
+      ],
+      "authenticated": [
+        "select"
+      ]
+    },
     "role_permissions": {
       "anon": [
         "select"

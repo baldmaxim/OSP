@@ -50,6 +50,22 @@ WITH t AS (
   UNION ALL
   SELECT 9, to_regprocedure('osp_private.pre_request()') IS NOT NULL AND has_schema_privilege('public', 'osp_private', 'USAGE') IS FALSE,
          'закрытая схема: проверка начала запроса на месте, «всем» схема недоступна'
+  UNION ALL
+  -- Представление с правами владельца не должно читать таблицу с правилами напрямую: под одной учёткой
+  -- оно отдало бы не те строки, что на проде. База, загруженная до появления этой проверки (нет записи
+  -- о выданном чтении), не проверяется — её права сверены замером.
+  SELECT 10, to_regclass('osp_meta.select_grants') IS NULL
+             OR (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'public' AND c.relkind = 'v'
+                   AND NOT coalesce((SELECT o.option_value::boolean FROM pg_options_to_table(c.reloptions) o WHERE o.option_name = 'security_invoker'), false)
+                   AND EXISTS (SELECT 1 FROM pg_rewrite rw
+                               JOIN pg_depend d ON d.classid = 'pg_rewrite'::regclass AND d.objid = rw.oid AND d.refclassid = 'pg_class'::regclass
+                               JOIN pg_class rc ON rc.oid = d.refobjid AND rc.relkind IN ('r', 'p') AND rc.relrowsecurity
+                               WHERE rw.ev_class = c.oid)) = 0,
+         CASE WHEN to_regclass('osp_meta.select_grants') IS NULL
+              THEN 'представления с правами владельца: загрузка прежним преобразованием, не проверяется'
+              ELSE 'представления с правами владельца читают таблицы только через закрытую схему: '
+                   || (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'osp_private' AND p.proname LIKE 'view\_%') END
 )
 SELECT CASE WHEN ok THEN 'OK ' ELSE 'FAIL ' END || what FROM checks ORDER BY n;
 
@@ -62,13 +78,22 @@ DECLARE
   n bigint;
   v_open text := '';
   v_showcase text := '';
+  v_view_for_anon boolean;
 BEGIN
   FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
            WHERE ns.nspname = 'public' AND c.relkind IN ('r', 'p', 'v') AND NOT c.relispartition ORDER BY 1 LOOP
     EXECUTE format('SELECT count(*) FROM (SELECT 1 FROM public.%I LIMIT 1) x', r.relname) INTO n;
     IF n > 0 THEN
-      -- Публичная витрина: анониму правилами открыта часть строк этих таблиц.
-      IF EXISTS (SELECT 1 FROM osp_meta.policy_roles pr WHERE pr.table_name = r.relname AND 'anon' = ANY (pr.roles)) THEN
+      -- Публичная витрина: анониму правилами открыта часть строк этих таблиц либо на проде ему выдано
+      -- чтение представления с правами владельца (публичный список открытых тендеров).
+      v_view_for_anon := false;
+      IF to_regclass('osp_meta.select_grants') IS NOT NULL THEN
+        EXECUTE 'SELECT EXISTS (SELECT 1 FROM osp_meta.select_grants g JOIN pg_class c ON c.relname = g.relation_name AND c.relkind = ''v''
+                                JOIN pg_namespace ns ON ns.oid = c.relnamespace AND ns.nspname = g.schema_name
+                                WHERE g.schema_name = ''public'' AND g.relation_name = $1 AND g.role_name = ''anon'')'
+          INTO v_view_for_anon USING r.relname;
+      END IF;
+      IF v_view_for_anon OR EXISTS (SELECT 1 FROM osp_meta.policy_roles pr WHERE pr.table_name = r.relname AND 'anon' = ANY (pr.roles)) THEN
         v_showcase := v_showcase || ' ' || r.relname;
       ELSE
         v_open := v_open || ' ' || r.relname;
@@ -79,6 +104,6 @@ BEGIN
 END
 $live$;
 SELECT CASE WHEN current_setting('osp_check.open') = '' THEN 'OK ' ELSE 'FAIL ' END
-       || 'без токена и без пропуска строки видны только в таблицах публичной витрины:' || current_setting('osp_check.showcase')
+       || 'без токена и без пропуска строки видны только в публичной витрине:' || current_setting('osp_check.showcase')
        || CASE WHEN current_setting('osp_check.open') = '' THEN '' ELSE '; ЛИШНЕЕ:' || current_setting('osp_check.open') END;
 ROLLBACK;

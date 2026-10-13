@@ -6,12 +6,18 @@
 // делит база (правила по строкам, migration/target/sql/load-single-owner.sql).
 //
 // Берётся с последней проверенной копии прода, поднятой с правами как на проде
-// (migration/backup/restore-copy.sh). Запуск: node scripts/build-db-allow.mjs [--check]
-//   --check — ничего не писать, выйти с кодом 1, если файл в репозитории отличается (для теста).
-// В файле только имена таблиц, представлений и функций.
+// (migration/backup/restore-copy.sh), ПОСЛЕ миграций-кандидатов (tests/db/baseline/candidate-migrations.txt):
+// они применяются на проде до финальной копии, и к моменту переноса права будут именно такими. Пока
+// кандидат не применён, лишняя строка списка безвредна: шлюз пропустит запрос, а PostgREST ответит, что
+// такого представления нет. Обратное опасно: без строки в списке портал после переноса не увидел бы
+// новое представление (так публичная страница тендеров осталась бы пустой).
+// Запуск: node scripts/build-db-allow.mjs [--check]
+//   --check — ничего не писать, выйти с кодом 1, если файл в репозитории отличается.
+// То же сравнение — тест tests/db/gateway-allow.test.mjs. В файле только имена таблиц, представлений и функций.
 import fs from 'node:fs'
 import path from 'node:path'
 import { ROOT, latestVerifiedCopy, startCopy, psqlAt } from '../tests/db/lib/stand.mjs'
+import { candidateMigrations } from '../tests/db/lib/rights.mjs'
 
 const OUT = path.join(ROOT, 'server', 'osp-api', 'src', 'data', 'allow.json')
 const ROLES = ['anon', 'authenticated']
@@ -36,6 +42,13 @@ export function readGrants(port) {
     where n.nspname = 'public' and p.prokind = 'f' and p.prorettype <> 'trigger'::regtype
       and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')`))
   return { tables, functions }
+}
+
+// Миграции-кандидаты — на копию прода; имя миграции из supabase/migrations или путь от корня.
+export function applyCandidates(port) {
+  const applied = candidateMigrations()
+  for (const m of applied) psqlAt(port, null, { file: path.join(ROOT, m.includes('/') ? m : path.join('supabase', 'migrations', m)) })
+  return applied
 }
 
 export function buildAllow({ tables, functions }) {
@@ -68,20 +81,22 @@ async function main() {
   const dump = latestVerifiedCopy()
   const db = startCopy(dump)
   let allow
+  let candidates
   try {
+    candidates = applyCandidates(db.port)
     allow = buildAllow(readGrants(db.port))
   } finally {
     db.stop()
   }
   const text = JSON.stringify(allow, null, 2) + '\n'
   const count = (role) => Object.values(allow.tables).filter((t) => t[role]).length
-  console.log(`Копия: ${path.basename(dump, '.dump')}. Таблиц и представлений: ${Object.keys(allow.tables).length}`
+  console.log(`Копия: ${path.basename(dump, '.dump')}, миграций-кандидатов поверх: ${candidates.length}. Таблиц и представлений: ${Object.keys(allow.tables).length}`
     + ` (анониму на чтение — ${count('anon')}, вошедшему — ${count('authenticated')}); функций: ${Object.keys(allow.rpc).length}`
     + ` (анониму — ${Object.values(allow.rpc).filter((r) => r.includes('anon')).length})`)
   if (check) {
     const current = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : ''
-    if (current !== text) { console.error('allow.json отличается от прав на копии прода: node scripts/build-db-allow.mjs'); process.exit(1) }
-    console.log('allow.json совпадает с правами на копии прода')
+    if (current !== text) { console.error('allow.json отличается от прав на копии прода с миграциями-кандидатами: node scripts/build-db-allow.mjs'); process.exit(1) }
+    console.log('allow.json совпадает с правами на копии прода с миграциями-кандидатами')
     return
   }
   fs.mkdirSync(path.dirname(OUT), { recursive: true })

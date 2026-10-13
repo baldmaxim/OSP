@@ -26,6 +26,13 @@
 --   8. Каждый запрос PostgREST начинается с osp_private.pre_request(): часовой пояс UTC, своё имя
 --      подключения (снимает отметку пропуска, если она осталась от прежнего сеанса пулера), таймаут по
 --      виду пользователя и отказ, если запрос пришёл не от шлюза (в токене нет роли пользователя).
+--   9. Представления с правами владельца, читающие таблицы с правилами. В Supabase такое представление
+--      читает таблицу мимо правил (владелец их обходит): так устроены справочник сотрудников и
+--      публичный список открытых тендеров. Здесь правила действуют и на владельца, и без этого шага
+--      такое представление не отдало бы гостю ни строки. Тело представления переносится в функцию
+--      закрытой схемы с отметкой пропуска, само представление читает из неё и проверяет роль из
+--      токена по тому, кому на проде было выдано чтение (osp_meta.select_grants) — правила по строкам
+--      на представление не действуют, и роль проверить больше нечем.
 -- Кому какие таблицы, действия и функции доступны вообще (то, что в Supabase решала выдача прав),
 -- решает шлюз osp-api по своему списку.
 
@@ -84,6 +91,7 @@ DECLARE
   v_missing int;
   v_stable text[];
   v_fn text;
+  v_path text;
 BEGIN
   -- Каждой политике из копии известны её роли; лишних записей о ролях тоже нет.
   SELECT count(*) INTO v_missing
@@ -200,5 +208,44 @@ BEGIN
       RAISE EXCEPTION 'функция обращается к % мимо закрытой схемы: после переноса она его не найдёт', m.relname;
     END IF;
   END LOOP;
+
+  -- 9. Представления с правами владельца, читающие таблицы с правилами по строкам. После п. 5: в теле
+  -- уже новые имена материализованных представлений. На время разбора тела search_path пуст — все
+  -- имена в нём выходят со схемой. Тип и порядок колонок представления сохраняются точно (приведение
+  -- к исходному типу с размерностью и порядком сортировки): от них зависят запросы портала.
+  v_path := current_setting('search_path');
+  PERFORM set_config('search_path', '', true);
+  FOR t IN
+    SELECT c.relname, pg_get_viewdef(c.oid) AS def,
+           (SELECT string_agg(format('%I %s', a.attname, format_type(a.atttypid, a.atttypmod)), ', ' ORDER BY a.attnum)
+            FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped) AS cols,
+           (SELECT string_agg(format('(f.%I)::%s%s AS %I', a.attname, format_type(a.atttypid, a.atttypmod),
+                     CASE WHEN a.attcollation <> 0 AND a.attcollation <> ty.typcollation
+                          THEN (SELECT format(' COLLATE %I.%I', cn.nspname, co.collname)
+                                FROM pg_collation co JOIN pg_namespace cn ON cn.oid = co.collnamespace WHERE co.oid = a.attcollation)
+                          ELSE '' END, a.attname), ', ' ORDER BY a.attnum)
+            FROM pg_attribute a JOIN pg_type ty ON ty.oid = a.atttypid
+            WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped) AS sel,
+           coalesce((SELECT string_agg(quote_literal(g.role_name), ', ' ORDER BY g.role_name)
+                     FROM osp_meta.select_grants g WHERE g.schema_name = 'public' AND g.relation_name = c.relname), '') AS roles,
+           -- Настройки представления (security_barrier и др.): замена тела без них сбросила бы их.
+           coalesce((SELECT 'WITH (' || string_agg(format('%I = %L', o.option_name, o.option_value), ', ' ORDER BY o.option_name) || ')'
+                     FROM pg_options_to_table(c.reloptions) o), '') AS opts
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'v'
+      AND NOT coalesce((SELECT o.option_value::boolean FROM pg_options_to_table(c.reloptions) o WHERE o.option_name = 'security_invoker'), false)
+      AND EXISTS (SELECT 1 FROM pg_rewrite rw
+                  JOIN pg_depend d ON d.classid = 'pg_rewrite'::regclass AND d.objid = rw.oid AND d.refclassid = 'pg_class'::regclass
+                  JOIN pg_class rc ON rc.oid = d.refobjid AND rc.relkind IN ('r', 'p') AND rc.relrowsecurity
+                  WHERE rw.ev_class = c.oid)
+    ORDER BY c.relname
+  LOOP
+    EXECUTE format('CREATE FUNCTION osp_private.%I() RETURNS TABLE (%s) LANGUAGE sql STABLE SET search_path = public SET application_name = %L AS %L',
+                   'view_' || t.relname, t.cols, 'osp:internal', t.def);
+    EXECUTE format('CREATE OR REPLACE VIEW public.%I %s AS SELECT %s FROM osp_private.%I() f WHERE (SELECT osp_private.bypass()) OR %s',
+                   t.relname, t.opts, t.sel, 'view_' || t.relname,
+                   CASE WHEN t.roles = '' THEN 'false' ELSE format('(SELECT osp_private.role_in(%s))', t.roles) END);
+  END LOOP;
+  PERFORM set_config('search_path', v_path, true);
 END
 $single_owner$;

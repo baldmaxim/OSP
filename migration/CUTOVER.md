@@ -144,9 +144,17 @@ bash migration/target/stand.sh down
      работают только через наш сервер (с шага 6). Изменение доходит до уже запущенной функции не сразу
      (минуты) — к шагу 3 не переходить, пока проверка не пройдёт: в портале (флаги ещё выключены) документ
      не открывается, повторить через минуту ещё раз.
-2. **Исправления в Supabase** (SQL Editor), каждое со своей проверкой:
+2. **Миграции-кандидаты в Supabase** (SQL Editor) — все из `tests/db/baseline/candidate-migrations.txt`,
+   каждая со своей проверкой:
    - `supabase/migrations/20261011_s3_documents_sha256.sql` → `migration/backup/checks/20261011.sql`;
-   - `supabase/migrations/20261015_rates_registry_deterministic.sql` → `migration/backup/checks/20261015.sql`.
+   - `supabase/migrations/20261015_rates_registry_deterministic.sql` → `migration/backup/checks/20261015.sql`;
+   - `supabase/migrations/20261016_public_tenders_view.sql` → `migration/backup/checks/20261016.sql`
+     (публичный список открытых тендеров — представление вместо правил для гостя).
+
+   Миграцию можно применить и раньше, в любое нерабочее время: под одной учёткой учтены оба состояния.
+   Список шлюза (`allow.json`) собирается с копии прода плюс эти миграции и уже содержит всё, что они
+   добавляют; расхождение ловит `tests/db/gateway-allow.test.mjs`. Новая миграция с новым представлением
+   или функцией — сначала в список кандидатов и `node scripts/build-db-allow.mjs`, затем новый выпуск.
 3. **Финальная копия** (Cursor): `backup.sh`; Claude — `verify.sh` копии.
 4. **Загрузка** (Claude): `neighbors.sh --save` → `reset.sh` репетиции → `load.sh … --status final --single-owner`
    → `verify.sh` (расхождений быть не должно) → `rights.sh` → `neighbors.sh --compare` (без `FAIL`).

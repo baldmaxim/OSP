@@ -34,7 +34,8 @@ const BORIS = '33333333-3333-4333-8333-333333333333'
 
 // «Прод» как Supabase: роли, права по умолчанию «всем ролям», политики для вошедшего и анонима,
 // функция-проверка с правами владельца, материализованное представление с представлением и пересчётом,
-// обновляемое представление, закрытое на запись выдачей прав.
+// обновляемое представление, закрытое на запись выдачей прав; представления с правами владельца, через
+// которые читают те, кому сама таблица закрыта (гостю — публичный список, вошедшим — справочник).
 const PROD_SQL = `
 create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
 create schema auth;
@@ -80,9 +81,24 @@ create view public.role_names as select user_id, role from public.user_roles;
 revoke insert, update, delete on public.role_names from anon, authenticated;
 revoke all on public.tender_titles_mv from anon, authenticated;
 
+-- Как публичный список открытых тендеров: таблица гостю закрыта, а представление с правами владельца
+-- отдаёт ему отобранные строки и только публичные поля.
+create table public.notices(id int primary key, title varchar(40) not null, price numeric(12,2), code text collate "C", is_open boolean not null);
+alter table public.notices enable row level security;
+create policy notices_employees on public.notices for all to authenticated using (public.is_employee()) with check (public.is_employee());
+create view public.open_notices with (security_barrier = true) as
+  select n.id, n.title, n.price, n.code from public.notices n where n.is_open;
+revoke all on public.open_notices from public, anon, authenticated;
+grant select on public.open_notices to anon, authenticated;
+-- Как справочник сотрудников: только вошедшим, строки ролей мимо правил таблицы.
+create view public.staff_board as select ur.user_id, ur.role from public.user_roles ur where ur.is_approved;
+revoke all on public.staff_board from public, anon, authenticated;
+grant select on public.staff_board to authenticated;
+
 insert into public.user_roles values ('${ADMIN}', 'admin', true), ('${ANNA}', 'engineer', true), ('${BORIS}', 'engineer', false);
 insert into public.tenders select g, 'Тендер ' || g, case when g % 4 = 0 then 'main' else 'internal' end, '${ANNA}' from generate_series(1, 40) g;
 insert into public.notes select g, case when g % 2 = 0 then '${ANNA}' else '${BORIS}' end::uuid, 'заметка ' || g from generate_series(1, 10) g;
+insert into public.notices select g, 'Объявление ' || g, g * 1.5, 'c' || g, g % 3 = 0 from generate_series(1, 30) g;
 refresh materialized view public.tender_titles_mv;
 `
 
@@ -186,8 +202,10 @@ describe('Перенос под одну учётку: правила дейст
     const rights = run('rights.sh', [envFile, dump])
     assert.equal(rights.status, 0, rights.all)
     assert.match(rights.stdout, /OK права применены одной транзакцией за \d+ с; число строк в таблицах не изменилось/)
-    assert.match(rights.stdout, /политик в копии: 5 \(authenticated — 4, anon — 1\)/)
-    assert.equal((rights.stdout.match(/^OK /gm) || []).length, 12, rights.stdout)
+    assert.match(rights.stdout, /политик в копии: 6 \(authenticated — 5, anon — 1\)/)
+    assert.equal((rights.stdout.match(/^OK /gm) || []).length, 13, rights.stdout)
+    assert.match(rights.stdout, /OK представления с правами владельца читают таблицы только через закрытую схему: 3/)
+    assert.match(rights.stdout, /OK без токена и без пропуска строки видны только в публичной витрине: open_notices role_names tenders/)
     assert.ok(!/^FAIL/m.test(rights.stdout), rights.stdout)
     assert.match(rights.stdout, /ИТОГ: права под одну учётку применены и проверены\./)
 
@@ -259,6 +277,39 @@ describe('Перенос под одну учётку: правила дейст
     assert.equal(as(ADMIN, "delete from public.role_names; select count(*) from public.user_roles"), '3')
     assert.match(as(ADMIN, "update public.role_names set role = 'admin' returning user_id"), /^err:/, 'с возвратом строк — отказ')
     assert.equal(as(ADMIN, 'select count(*) from public.role_names'), '3', 'чтение работает')
+  })
+
+  // В Supabase представление с правами владельца читает таблицу мимо правил по строкам. Под одной
+  // учёткой правила действуют и на владельца — без переноса тела в закрытую схему гость не увидел бы
+  // в публичном списке ни строки.
+  it('представления с правами владельца: гость видит публичный список, таблица ему закрыта; роль — как выдано на проде', () => {
+    for (const guest of ['anon', 'none']) {
+      assert.equal(as(guest, 'select count(*) from public.notices'), '0', `${guest}: сама таблица закрыта`)
+      assert.equal(as(guest, 'select count(*) from public.open_notices'), '10', `${guest}: публичный список`)
+      assert.equal(as(guest, 'select count(*) from public.staff_board'), '0', `${guest}: справочник выдан только вошедшим`)
+    }
+    // Вошедший без одобрения: таблица закрыта правилом, оба представления выданы вошедшим — как на проде.
+    assert.equal(as(BORIS, 'select count(*) from public.notices'), '0')
+    assert.equal(as(BORIS, 'select count(*) from public.open_notices'), '10')
+    assert.equal(as(BORIS, 'select count(*) from public.staff_board'), '2', 'одобренные сотрудники — мимо правила «только своя строка»')
+    assert.equal(as(ANNA, 'select count(*) from public.notices'), '30')
+    assert.equal(as(ANNA, "select count(*) || ':' || min(title) from public.open_notices where id > 20"), '4:Объявление 21')
+    // Колонки представления — те же: тип с размерностью и порядок сортировки сохранены.
+    assert.equal(admin(`select string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || coalesce(' ' || co.collname, ''), ', ' order by a.attnum)
+      from pg_attribute a left join pg_collation co on co.oid = a.attcollation and co.collname = 'C'
+      where a.attrelid = 'public.open_notices'::regclass and a.attnum > 0`), 'id integer, title character varying(40), price numeric(12,2), code text C')
+    assert.match(admin("select array_to_string(reloptions, ',') from pg_class where oid = 'public.open_notices'::regclass"), /security_barrier=true/)
+    // Тело каждого такого представления — в закрытой схеме, с отметкой пропуска; напрямую таблицу не читает ни одно.
+    assert.equal(admin("select string_agg(proname, ' ' order by proname) from pg_proc where pronamespace = 'osp_private'::regnamespace and proname like 'view\\_%'"),
+      'view_open_notices view_role_names view_staff_board')
+    assert.equal(admin("select count(*) from pg_proc where pronamespace = 'osp_private'::regnamespace and proname like 'view\\_%' and not coalesce(proconfig::text, '') ~ 'application_name=osp:internal'"), '0')
+    assert.match(admin("select pg_get_viewdef('public.open_notices'::regclass)"), /osp_private\.view_open_notices\(\)/)
+    // Представление над материализованным (оно без правил по строкам) не переносится.
+    assert.ok(!/osp_private\.view_/.test(admin("select pg_get_viewdef('public.tender_titles'::regclass)")))
+    // Записать через публичный список нельзя: вставка не меняет ни строки (как у остальных представлений).
+    as('anon', "insert into public.open_notices(id, title) values (999, 'x')")
+    as(ANNA, "update public.open_notices set title = 'x'")
+    assert.equal(admin("select count(*) || ':' || count(*) filter (where title = 'x') from public.notices"), '30:0')
   })
 
   it('репетицию можно убрать целиком; соседняя база не тронута; её пропажу проверка видит', () => {
