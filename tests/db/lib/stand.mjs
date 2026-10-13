@@ -100,3 +100,71 @@ export function startSnapshot() {
     throw e
   }
 }
+
+// Копия прода «как в базе Яндекса»: одна учётка-владелец без прав суперпользователя, ролей Supabase нет;
+// загрузка и права — настоящими инструментами переноса (migration/target: pin.sh, load.sh --single-owner,
+// rights.sh). Возвращает порт, учётку и psql под ней.
+export function startSingleOwner(dump) {
+  const port = 28000 + Math.floor(Math.random() * 1000) // ниже портов исходящих соединений (32768–60999)
+  const container = `osp-test-single-${process.pid}-${port}`
+  const adminPass = 'single-admin-pass'
+  const owner = 'target_owner'
+  const ownerPass = 'single-owner-pass'
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-single-db-'))
+  const stop = () => {
+    spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' })
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+  const psql = (user, pass, db, sql, { file, appName = 'osp-test', options = '' } = {}) => {
+    const args = ['-h', '127.0.0.1', '-p', String(port), '-U', user, '-d', db, '-X', '-q', '-At', '-v', 'ON_ERROR_STOP=1']
+    if (file) args.push('-f', file); else args.push('-c', sql)
+    const res = spawnSync('psql', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
+      env: { ...process.env, PGPASSWORD: pass, PGSSLMODE: 'disable', PGAPPNAME: appName, PGOPTIONS: options } })
+    // Только первая строка ошибки: в DETAIL бывают значения из данных.
+    if (res.status !== 0) throw new Error((res.stderr || '').split('\n').find((l) => /ERROR|FATAL/.test(l)) || `psql exit ${res.status}`)
+    return res.stdout.trim()
+  }
+  try {
+    const run = spawnSync('docker', ['run', '-d', '--rm', '--name', container, '-p', `127.0.0.1:${port}:5432`,
+      '-e', `POSTGRES_PASSWORD=${adminPass}`, '-e', 'POSTGRES_INITDB_ARGS=-E UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8',
+      'postgres:17-alpine', '-c', 'fsync=off', '-c', 'max_connections=60'], { encoding: 'utf8' })
+    if (run.status !== 0) throw new Error(`docker run: ${run.stderr}`)
+    const deadline = Date.now() + 120000
+    for (;;) {
+      try { if (psql('postgres', adminPass, 'postgres', 'select 1') === '1') break } catch { /* ещё стартует */ }
+      if (Date.now() > deadline) throw new Error('PostgreSQL в Docker не поднялся')
+      spawnSync('sleep', ['0.5'])
+    }
+    spawnSync('sleep', ['1']) // образ перезапускает сервер после инициализации
+    for (const sql of [
+      `create role ${owner} login password '${ownerPass}' nosuperuser nocreaterole nocreatedb`,
+      `create database osp_target owner ${owner}`,
+      'revoke connect on database osp_target from public',
+    ]) psql('postgres', adminPass, 'postgres', sql)
+    psql('postgres', adminPass, 'osp_target', 'create extension pg_trgm; create extension pgcrypto')
+    const envFile = path.join(tmp, 'target.env')
+    fs.writeFileSync(envFile, ['PGHOST=127.0.0.1', `PGPORT=${port}`, 'PGDATABASE=osp_target', `PGUSER=${owner}`,
+      `PGPASSWORD=${ownerPass}`, 'PGSSLMODE=disable'].join('\n') + '\n', { mode: 0o600 })
+    const tool = (script, args) => {
+      const res = spawnSync('bash', [path.join(ROOT, 'migration', 'target', script), ...args], { encoding: 'utf8', cwd: ROOT,
+        timeout: 20 * 60 * 1000, env: { ...process.env, PROBE_REPORT_DIR: path.join(tmp, 'reports'), PROBE_CONNECT_TIMEOUT: '5' } })
+      if (res.status !== 0) {
+        throw new Error(`${script}: ${(res.stdout + res.stderr).split('\n').filter((l) => /^(FAIL|ИНФО причина)|ERROR/.test(l)).slice(0, 5).join(' | ') || `код ${res.status}`}`)
+      }
+      return res.stdout
+    }
+    tool('pin.sh', [envFile, '--confirm'])
+    tool('load.sh', [envFile, dump, '--status', 'rehearsal', '--single-owner'])
+    const rights = tool('rights.sh', [envFile, dump])
+    psql('postgres', adminPass, 'osp_target', 'analyze')
+    return {
+      port, owner, ownerPass, envFile, rights, stop, tool,
+      url: `postgres://${owner}:${ownerPass}@127.0.0.1:${port}/osp_target`,
+      // Запрос под учёткой-владельцем. appName 'osp:internal' — служебная операция (мимо правил по строкам).
+      sql: (text, opts) => psql(owner, ownerPass, 'osp_target', text, opts),
+    }
+  } catch (e) {
+    stop()
+    throw e
+  }
+}

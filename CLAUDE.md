@@ -23,7 +23,7 @@ npm run test:contracts # договоры: путь к Larix.CPM, импорт �
 npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
 npm run test:deploy  # deploy/publish.sh и rollback.sh на временных каталогах
 npm run test:backup  # migration/backup: копия, проверка восстановлением, прогон миграций; migration/target: разведка базы (Docker)
-npm run test:db      # слепок схемы прода + «отпечаток» прав на копии прода против tests/db/baseline (Docker)
+npm run test:db      # слепок схемы прода + «отпечаток» прав на копии прода против tests/db/baseline; права под одну учётку и цепочка шлюза с настоящим PostgREST (Docker)
 npm run test:api     # свой API server/osp-api (нужен npm ci --prefix server/osp-api; MinIO — если есть образ)
 npm run hooks:install # один раз на машине: проверки перед git push (lint, check:transport, test:api)
 ```
@@ -70,6 +70,7 @@ src/
     ├── auth.js           # вход (фаза A — Supabase Auth): только RoleContext и сервисы
     ├── files.js          # Supabase Storage: обложки объектов (документы — services/s3.js, cloud.ru)
     ├── functions.js      # invokeFunction(name, options) — Edge Functions или osp-api (флаг ospApiAi); файлы — ospFiles (флаг ospApiFilesV2)
+    ├── serverPath.js     # правило выбора пути файлов и ИИ: при данных в базе Яндекса (ospDb) файлы — только через osp-api, функция файлов Supabase не вызывается
     ├── ospFiles.js       # файлы через osp-api с ключом операции: upload → PUT → confirm, удаление — строка, затем объект
     ├── ospApi.js         # вызов своего API /api/fn/<имя> с ответом как у functions.invoke
     ├── realtime.js       # subscribeTable(...) — онлайн-обновления
