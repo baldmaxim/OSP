@@ -590,6 +590,14 @@ CREATE POLICY "Allow all for authenticated users" ON table_name
     USING (true) WITH CHECK (true);
 ```
 
+**Гость (anon) — только представление `public_open_tenders` (миграция 20261016).** Страница без входа
+`/public/tenders` читает его: 11 публичных полей открытых основных тендеров (номер, работы, сроки, ссылка на
+тендерный пакет, название / адрес / карта объекта). Политик `TO anon` на таблицах нет и быть не должно:
+политика ограничивает строки, а не колонки — прежние политики на `tenders` и `objects` отдавали гостю
+строки целиком (ссылки на план затрат, сводную КП, ВОР, примечания). Публичный ключ Supabase лежит в
+скрипте сайта, поэтому всё, что разрешено anon, читается из интернета одним запросом. Новое поле в
+представлении = публикация; проверка — `migration/backup/checks/20261016.sql`.
+
 ### Common PostgreSQL Error Handling
 
 Handle unique constraint violations (common in BSM rates and counterparties):

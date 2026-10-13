@@ -1,1 +1,132 @@
-[]
+[
+  {
+    "release": "20261016",
+    "class": "anon",
+    "table": "tenders",
+    "action": "select",
+    "from": "some",
+    "to": "none",
+    "why": "гость читал открытые тендеры со всеми полями (ссылки на план затрат, сводную КП, ВОР, примечания); теперь — только представление public_open_tenders",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "anon",
+    "table": "objects",
+    "action": "select",
+    "from": "some",
+    "to": "none",
+    "why": "гость читал объекты с открытыми тендерами со всеми полями (почта, застройщик, бюджет); название, адрес и карта отдаются через public_open_tenders",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "admin",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "employee_full",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "employee_none",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "vors_only",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "contractor_own",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "contractor_noorg",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "unapproved",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "blocked",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "no_user_roles",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "anon",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261016",
+    "class": "service_role",
+    "table": "public_open_tenders",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
+    "candidate": "20261016_public_tenders_view.sql"
+  }
+]

@@ -24,5 +24,19 @@ export function expected(baseline, fixes) {
   return exp
 }
 
-export const readExpected = () => expected(JSON.parse(fs.readFileSync(BASELINE, 'utf8')),
-  fs.existsSync(FIXES) ? JSON.parse(fs.readFileSync(FIXES, 'utf8')) : [])
+// Миграции-кандидаты: ещё не применены на проде (baseline/candidate-migrations.txt).
+export const candidateMigrations = () => fs.readFileSync(path.join(BASELINE_DIR, 'candidate-migrations.txt'), 'utf8')
+  .split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
+
+// withCandidates: false — ожидание для копии прода БЕЗ миграций-кандидатов. Исправление, которое вносит
+// кандидат, помечено полем candidate (имя файла миграции) и пропускается, пока файл в списке кандидатов:
+// в копии прода его действия ещё нет. Так сравнивает замер под одной учёткой — кандидаты туда не
+// накатываются. Миграцию применили на проде и убрали из списка — исправление снова учитывается.
+export const readExpected = ({ withCandidates = true } = {}) => {
+  let fixes = fs.existsSync(FIXES) ? JSON.parse(fs.readFileSync(FIXES, 'utf8')) : []
+  if (!withCandidates) {
+    const pending = new Set(candidateMigrations())
+    fixes = fixes.filter((f) => !pending.has(f.candidate))
+  }
+  return expected(JSON.parse(fs.readFileSync(BASELINE, 'utf8')), fixes)
+}

@@ -247,7 +247,8 @@ describe('Права под одну учётку на копии прода: ц
     }
     if (process.env.ACTUAL_OUT) fs.writeFileSync(process.env.ACTUAL_OUT.replace(/(\.json)?$/, '.single-owner.json'), JSON.stringify(actual, null, 2) + '\n')
 
-    const exp = readExpected()
+    // Кандидаты сюда не накатываются (см. шапку) — их исправления в ожидание не входят.
+    const exp = readExpected({ withCandidates: false })
     // «Нет доступа» выражается по-разному: на проде — отказ по выдаче прав (err:42501), под одной учёткой —
     // ноль строк по правилу. Сравниваем по смыслу: нет / часть / всё.
     const rank = (v) => ({ none: 0, no: 0, 'err:42501': 0, some: 1, visible: 1, all: 2, yes: 2 }[v])

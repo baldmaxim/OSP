@@ -23,6 +23,40 @@ const formatShortRange = (start, end) => {
   return formatShortDate(start || end)
 }
 
+// Гость читает ТОЛЬКО представление public_open_tenders (миграция 20261016): в нём одни публичные поля
+// и уже применён отбор открытых основных тендеров. Из таблиц tenders и objects гостю ничего не отдаётся —
+// раньше политика открывала ему строки целиком, со ссылками на план затрат и сводную таблицу КП.
+async function loadPublicTenders() {
+  const { data, error } = await db
+    .from('public_open_tenders')
+    .select('id, public_tender_number, work_description, start_date, end_date, tender_end_date, tender_package_link, object_name, object_address, object_map_link')
+    .order('tender_end_date', { ascending: true, nullsFirst: false })
+  if (!error) {
+    return (data || []).map(({ object_name, object_address, object_map_link, ...t }) => ({
+      ...t,
+      objects: { name: object_name, address: object_address, map_link: object_map_link },
+    }))
+  }
+  // Представления ещё нет в базе (сайт выложен раньше миграции) — прежний запрос к таблице.
+  // После миграции он возвращает гостю пустой список; ветку убрать, когда миграция применена.
+  if (error.code !== 'PGRST205' && error.code !== '42P01') throw error
+  return loadPublicTendersLegacy()
+}
+
+async function loadPublicTendersLegacy() {
+  const { data, error } = await db
+    .from('tenders')
+    .select('id, public_tender_number, work_description, start_date, end_date, tender_end_date, tender_package_link, tender_type, deleted_at, objects(name, address, map_link, status)')
+    .eq('status', 'Идет тендерная процедура')
+    .order('tender_end_date', { ascending: true, nullsFirst: false })
+  if (error) throw error
+  return (data || []).filter(t =>
+    !t.deleted_at
+    && (!t.tender_type || t.tender_type === 'main')
+    && (t.objects?.status === 'main_construction' || t.objects?.status === 'warranty_service')
+  )
+}
+
 function PublicTendersPage() {
   const [tenders, setTenders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -36,21 +70,7 @@ function PublicTendersPage() {
   const fetchPublicTenders = async () => {
     try {
       setLoading(true)
-      const { data, error: err } = await db
-        .from('tenders')
-        .select('id, public_tender_number, work_description, start_date, end_date, tender_start_date, tender_end_date, status, tender_package_link, tender_type, deleted_at, objects(name, address, map_link, status)')
-        .eq('status', 'Идет тендерная процедура')
-        .order('tender_end_date', { ascending: true, nullsFirst: false })
-
-      if (err) throw err
-
-      // task 195: убираем разделение по отделам — оставляем оба статуса в едином списке
-      const filtered = (data || []).filter(t =>
-        !t.deleted_at
-        && (!t.tender_type || t.tender_type === 'main')
-        && (t.objects?.status === 'main_construction' || t.objects?.status === 'warranty_service')
-      )
-      setTenders(filtered)
+      setTenders(await loadPublicTenders())
     } catch (err) {
       console.error('Ошибка загрузки открытых тендеров:', err.message)
       setError('Не удалось загрузить открытые тендеры. Попробуйте обновить страницу позже.')
