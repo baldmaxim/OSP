@@ -14,6 +14,8 @@ User=osp-api
 Group=osp-api
 WorkingDirectory=/opt/osp-api/current
 EnvironmentFile=/etc/osp-api/osp-api.env
+# /var/lib/osp-api — каталог службы: в нём файл-переключатель барьера записи (db-readonly).
+StateDirectory=osp-api
 Environment=NODE_ENV=production HOST=127.0.0.1 PORT=8787
 ExecStart=/usr/bin/node src/server.js
 Restart=on-failure

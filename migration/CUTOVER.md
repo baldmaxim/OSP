@@ -1,0 +1,110 @@
+# Перенос данных портала с базы Supabase на базу Яндекса — порядок действий
+
+Что меняется: страницы портала читают и пишут базу Яндекса через свой сервер (`/api/db` → PostgREST →
+база). Что не меняется: адрес сайта, страница входа, вход (Supabase Auth), обложки объектов (хранилище
+Supabase). Страницы не переписываются: путь выбирает флаг `ospDb`.
+
+Как это устроено — `server/osp-api/README.md` («Шлюз данных») и `migration/target/sql/load-single-owner.sql`.
+
+**Кто что делает.** Команды на сервере портала — владелец портала или Cursor; пользователь указан перед
+каждой командой. Запросы в Supabase SQL Editor — владелец портала. Загрузку в базу Яндекса и сверку —
+Claude с удалённой машины, по слову владельца. Значения секретов в чат и в git не попадают.
+
+**Правило.** Любой шаг дал отказ или расхождение — остановка. Переключение пользователей — только когда
+выполнены все четыре доказательства из раздела «Готово».
+
+## А. Подготовка сервера портала — в любое время, пользователи не затронуты
+
+1. **Сеть до базы Яндекса** (danila). Адрес — из файла подключения на удалённой машине, в чат не
+   пересылается. Нужен ответ `open`:
+   ```bash
+   timeout 5 bash -c '</dev/tcp/АДРЕС_БАЗЫ/6432' && echo open || echo closed
+   ```
+   `closed` — внешний блокер: администратор кластера должен открыть доступ с адреса сервера портала.
+2. **Корневой сертификат базы** (root) — не секрет:
+   ```bash
+   install -d -m 755 /etc/ssl/osp
+   curl -fsS https://storage.yandexcloud.net/cloud-certs/CA.pem -o /etc/ssl/osp/yandex-root.crt && chmod 644 /etc/ssl/osp/yandex-root.crt
+   ```
+3. **Свежий код** (danila): `cd /home/danila/projects/OSP && git pull`.
+4. **PostgREST** (root):
+   ```bash
+   bash /home/danila/projects/OSP/deploy/postgrest/install.sh
+   openssl rand -base64 48        # внутренний секрет шлюза — в оба файла ниже, в чат не пересылать
+   nano /etc/osp-api/postgrest.env
+   ```
+   В `postgrest.env`: строка подключения к базе Яндекса (`PGRST_DB_URI`, с
+   `sslmode=verify-full&sslrootcert=/etc/ssl/osp/yandex-root.crt`) и `PGRST_JWT_SECRET`.
+   Запускать PostgREST — после шага Б (в пустой базе ему нечего читать).
+5. **osp-api** (root) — в `/etc/osp-api/osp-api.env` дописать (шаблон — `server/osp-api/osp-api.env.example`):
+   - `OSP_PGRST_URL=http://127.0.0.1:3001`, `OSP_PGRST_JWT_SECRET` (тот же секрет), `OSP_PGRST_DB_ROLE`
+     (имя учётки базы), `OSP_DB_READONLY_FILE=/var/lib/osp-api/db-readonly`;
+   - `OSP_DB_URL` (строка подключения к базе Яндекса), `OSP_DB_CA_FILE=/etc/ssl/osp/yandex-root.crt`,
+     `OSP_REGISTRY_REFRESH=1`;
+   - `SUPABASE_JWT_SECRET` (Supabase → настройки проекта → JWT Keys → Legacy JWT Secret; кнопку «Migrate»
+     не нажимать) — вход проверяется на сервере, без запроса к Supabase на каждое обращение;
+   - ключи S3 и Anthropic, если ещё не внесены (файлы и ИИ после переключения идут только через osp-api).
+   ```bash
+   cp /home/danila/projects/OSP/deploy/osp-api.service /etc/systemd/system/osp-api.service && systemctl daemon-reload
+   bash /home/danila/projects/OSP/deploy/api-deploy.sh
+   ```
+6. **nginx** (root) — как в `docs/DEPLOYMENT.md`, «Установка», шаг 5 (сверка суммы, копия прежнего файла,
+   `nginx -t`, перезагрузка). В файле появился блок `/api/db/`.
+7. **Портал** (как обычно): выложить текущую сборку. Флаг `ospDb` выключен — для пользователей ничего не меняется.
+
+## Б. Репетиция в базе Яндекса — в любое время
+
+Claude, по слову владельца портала:
+```bash
+bash migration/target/reset.sh  ~/.osp-secrets/target.env --yes-drop-rehearsal      # убрать прежнюю репетицию
+bash migration/target/load.sh   ~/.osp-secrets/target.env <копия.dump> --status rehearsal --single-owner
+bash migration/target/verify.sh ~/.osp-secrets/target.env <копия.dump>               # данные и структура
+bash migration/target/rights.sh ~/.osp-secrets/target.env <копия.dump>               # права под одну учётку
+```
+Затем на сервере портала (root): `systemctl enable --now postgrest && systemctl restart osp-api`, проверка
+`curl -s http://127.0.0.1:8787/api/ready; echo` — в ответе `"db":"ok"`, `"token":"ok"`, `"gateway":"ok"`.
+
+**Проверка в одном браузере** (владелец портала): открыть `https://osp.root.sx/?features=ospDb` — этот
+браузер работает с репетиционной копией в базе Яндекса, остальные — с Supabase. Пройти под сотрудником,
+администратором и подрядчиком: вход, реестры тендеров и договоров, карточка тендера (ВОР, сравнение КП),
+реестр расценок, задачи, администрирование; создать, изменить и удалить по одной записи. Данные
+репетиции потом стираются — на проде эти правки не появятся. Выключить: `?features=-ospDb`.
+
+## В. Переключение — в нерабочее время, каждый шаг по слову владельца портала
+
+1. **Барьер записи в Supabase** (SQL Editor) — старые вкладки больше ничего не запишут:
+   `migration/cutover/01-supabase-readonly.sql`. Проверка — последний запрос файла.
+2. **Исправления в Supabase** (SQL Editor), каждое со своей проверкой:
+   - `supabase/migrations/20261011_s3_documents_sha256.sql` → `migration/backup/checks/20261011.sql`;
+   - `supabase/migrations/20261015_rates_registry_deterministic.sql` → `migration/backup/checks/20261015.sql`.
+3. **Финальная копия** (Cursor): `backup.sh`; Claude — `verify.sh` копии.
+4. **Загрузка** (Claude): `reset.sh` репетиции → `load.sh … --status final --single-owner` → `verify.sh`
+   (расхождений быть не должно) → `rights.sh`.
+5. **Сервер портала** (root): барьер записи шлюза и перезапуск:
+   ```bash
+   touch /var/lib/osp-api/db-readonly
+   systemctl kill -s SIGUSR1 postgrest && systemctl restart osp-api && curl -s http://127.0.0.1:8787/api/ready; echo
+   ```
+6. **Флаги** (root) — в `/var/www/osp/shared/config.json`: `"ospDb": true, "ospApiFilesV2": true, "ospApiAi": true`.
+   Открытые вкладки перейдут в течение двух минут. Портал читает базу Яндекса, запись закрыта барьером.
+7. **Проверка чтения** (владелец портала): вход и основные разделы под тремя ролями.
+8. **Снять барьер шлюза** (root): `rm /var/lib/osp-api/db-readonly`. С этого момента записи идут в базу Яндекса.
+9. **Проверка записи** под тремя ролями: создать, изменить, удалить запись; загрузить и скачать файл.
+10. **Смежному отделу** — новый адрес выдачи расценок: `https://osp.root.sx/api/rates/…` с прежним ключом.
+
+**Откат до шага 8** (ни одной записи в базе Яндекса ещё нет): флаги в `config.json` → `false`,
+`migration/cutover/02-supabase-readonly-rollback.sql` в SQL Editor. Портал снова работает с Supabase.
+
+**После шага 8** возврата на Supabase нет: в нём не будет новых записей. Исправление — только вперёд.
+Копия базы Яндекса снимается каждую ночь; Supabase остаётся замороженным (только чтение) 30 дней.
+
+## Готово, когда есть четыре доказательства
+1. Браузер не обращается к базе Supabase: в Usage и в журнале портала нет запросов к таблицам.
+2. Все виды пользователей видят ровно разрешённое: замер прав на копии совпадает с эталоном прода
+   (`tests/db`), `rights.sh --check` — без замечаний.
+3. Контрольные суммы финальной копии совпадают: `verify.sh` — без расхождений.
+4. Портал читает и пишет в базу Яндекса; откат до шага 8 проверен на репетиции.
+
+## Что остаётся в Supabase после переключения
+Вход (Auth) и обложки объектов (Storage). База и функции — заморожены. Следующие шаги — отдельные задачи:
+перенос обложек, свой вход, выключение Supabase.

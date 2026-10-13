@@ -1,0 +1,33 @@
+# PostgREST за шлюзом osp-api (docs/DEPLOYMENT.md, «Шлюз данных»). Слушает только 127.0.0.1:3001.
+# Настройки и секреты — /etc/osp-api/postgrest.env (root, 600; systemd читает до запуска процесса).
+# Корневой сертификат базы — /etc/ssl/osp/yandex-root.crt (права 644: это не секрет).
+[Unit]
+Description=PostgREST for OSP portal (behind osp-api)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=postgrest
+Group=postgrest
+EnvironmentFile=/etc/osp-api/postgrest.env
+ExecStart=/usr/local/bin/postgrest
+# Перечитать описание структуры базы без перезапуска: systemctl kill -s SIGUSR1 postgrest
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

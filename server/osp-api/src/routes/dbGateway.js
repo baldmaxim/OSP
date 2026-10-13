@@ -16,6 +16,7 @@
 //
 // Отказы шлюза имеют тот же вид и коды, что отказы PostgREST: портал уже умеет их показывать.
 import fs from 'node:fs'
+import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { SignJWT } from 'jose'
 import { access } from '../lib/access.js'
@@ -131,7 +132,15 @@ export function registerDbGateway(app, ctx) {
   const upstream = String(gw.upstream || '').replace(/\/+$/, '')
   const fetchImpl = ctx.fetch || fetch
 
-  // Барьер записи: файл есть — только чтение. Проверяем не чаще раза в секунду.
+  // Барьер записи: файл есть — только чтение. Проверяем не чаще раза в секунду. Каталог файла должен
+  // быть доступен службе: иначе «файла нет» и «файл не виден» неразличимы, и барьер молча не сработал бы.
+  if (ctx.gatewayOn && gw.readOnlyFile) {
+    try {
+      fs.accessSync(path.dirname(gw.readOnlyFile), fs.constants.R_OK | fs.constants.X_OK)
+    } catch {
+      throw new Error('osp-api: каталог файла-переключателя барьера записи (OSP_DB_READONLY_FILE) недоступен службе')
+    }
+  }
   let readOnly = { at: 0, value: false }
   const isReadOnly = () => {
     if (!gw.readOnlyFile) return false
