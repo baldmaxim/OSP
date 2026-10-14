@@ -1,0 +1,9 @@
+# Свой buildx для сборки на общем сервере (scripts/deploy-server.sh). Ставится в каталог портала
+# (/opt/portals/osp/docker/cli-plugins) и подключается только к командам сборки портала через DOCKER_CONFIG:
+# в систему и в общий ~/.docker он не ставится — сборки соседних порталов под той же учёткой не меняются.
+# Суммы — из checksums.txt выпуска https://github.com/docker/buildx/releases (сверены 14.10.2026).
+# Образ BuildKit сборщика закреплён версией и отпечатком: на сервере работает тот же, что проверен.
+BUILDX_VERSION=v0.37.1
+BUILDX_SHA256_AMD64=9447199cdb435f25880548343c128a4b6650e8891ee598905d8d29d39a8e359b
+BUILDX_SHA256_ARM64=e5cc9fe3bbff5cbc91230981f7860e06076110730a2db997082652199042a1f2
+BUILDKIT_IMAGE=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea

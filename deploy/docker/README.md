@@ -86,6 +86,7 @@ bash scripts/deploy-server.sh status | rollback
 | Через что | Чем закрыто | Проверка |
 |---|---|---|
 | Память | свой сборщик buildx `osp-builder` с потолком `OSP_BUILD_MEMORY` (1280m, без подкачки); перед сборкой нужно свободно потолок + 512 МБ, иначе отказ до начала | замер: сборка сайта в потолке 1280m — 55 с, остановок по нехватке памяти 0; `tests/deploy/deploy-server.test.mjs` |
+| Сам buildx | на corp его нет, а ставить в систему или в общий `~/.docker` нельзя: под той же учёткой собирают соседи, и их сборка изменилась бы. Свой buildx закреплённой версии (`buildx.pin`: версия, суммы, образ BuildKit) лежит в `/opt/portals/osp/docker/cli-plugins` и подключается только к нашим командам сборки через `DOCKER_CONFIG`; общий список сборщиков его не видит | там же: установка только со сверкой суммы, `compose` — без своего `DOCKER_CONFIG` |
 | Процессор | сборщик на одном ядре (последнем) с пониженным приоритетом (`cpu-shares=256`) | там же |
 | Работающий сборщик | после сборки останавливается; его контейнер не входит в снимок соседей | там же, `neighbors.sh` |
 | Диск | перед сборкой нужно 5 ГБ на диске Docker; кэш своего сборщика — не больше 3 ГБ; два последних выпуска; пять последних копий базы | там же |
@@ -107,6 +108,8 @@ git clone https://github.com/baldmaxim/OSP /opt/portals/osp/src
 #   /opt/portals/osp/secrets/db/target.env           — подключение к базе портала (как ~/.osp-secrets/target.env)
 #   /opt/portals/osp/secrets/db/target.env.pin       — отпечаток базы (копия target.env.pin машины сборки)
 #   /opt/portals/osp/secrets/db/root.crt             — сертификат базы (тот же, что certs/yandex-root.crt)
+# по желанию — свой buildx заранее (иначе при первой сборке он скачается с GitHub, ~66 МБ):
+#   /opt/portals/osp/docker/buildx-v0.37.1.linux-amd64 — с машины сборки, deploy/docker/out/ (сумма сверяется)
 bash /opt/portals/osp/src/scripts/deploy-server.sh --check
 ```
 

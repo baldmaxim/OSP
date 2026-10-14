@@ -17,6 +17,11 @@
 #   • сборка — в своём сборщике buildx «osp-builder»: потолок памяти OSP_BUILD_MEMORY (1280m), одно ядро,
 #     пониженный приоритет. Перед сборкой проверяется свободная память (потолок + 512 МБ) и диск (5 ГБ):
 #     не хватает — отказ, ничего не начинается. После сборки сборщик останавливается;
+#   • buildx — свой, закреплённой версии (deploy/docker/buildx.pin), в каталоге портала: подключается только
+#     к нашим командам через DOCKER_CONFIG. В систему и в общий ~/.docker не ставится — сборки соседних
+#     порталов под той же учёткой не меняются. Ставится сам при первой сборке: файл
+#     $OSP_HOME/docker/buildx-<версия>.linux-<арх>, если его положили заранее, иначе скачивание с GitHub;
+#     в обоих случаях — сверка контрольной суммы;
 #   • общих команд Docker нет: чистится только кэш своего сборщика, свои каталоги выпусков и копий;
 #     свои образы старых выпусков убирает deploy.sh;
 #   • выкладка — deploy/docker/deploy.sh install: проверка готовности, при отказе — прежний выпуск;
@@ -48,6 +53,7 @@ readonly DB_DIR="$OSP_HOME/secrets/db"
 readonly WEB_ENV="$OSP_HOME/secrets/web-build.env"
 readonly KEEP_BUILDS=2
 readonly KEEP_BACKUPS=5
+readonly BX_HOME="$OSP_HOME/docker"
 
 readonly C_RED='\033[0;31m' C_GREEN='\033[0;32m' C_YELLOW='\033[0;33m' C_BLUE='\033[0;34m' C_RESET='\033[0m'
 log()  { printf '%b[deploy]%b %s\n' "$C_BLUE" "$C_RESET" "$*"; }
@@ -92,8 +98,8 @@ preflight() {
   [ -f "$OSP_HOME/server.env" ] || fail "портал на этом сервере не установлен: нет $OSP_HOME/server.env (deploy/docker/README.md, первая установка)"
   command -v docker >/dev/null || fail "нет docker"
   docker compose version >/dev/null 2>&1 || fail "нет docker compose"
-  docker buildx version >/dev/null 2>&1 || fail "нет docker buildx"
-  ok "каталог портала, клон, docker, compose, buildx — на месте ($(id -un))"
+  [ -f "$SRC/deploy/docker/buildx.pin" ] || fail "нет $SRC/deploy/docker/buildx.pin"
+  ok "каталог портала, клон, docker, compose — на месте ($(id -un))"
 }
 
 need_web_env() {
@@ -144,29 +150,70 @@ git_sync() {
   fi
 }
 
-# ---------- свой сборщик ----------
+# ---------- свой buildx и свой сборщик ----------
+pin() { grep -m 1 -E "^$1=" "$SRC/deploy/docker/buildx.pin" | cut -d= -f2-; }
+# Только наши команды сборки видят свой buildx; compose и остальное — как у всех.
+bx() { DOCKER_CONFIG="$BX_HOME" docker buildx "$@"; }
+
+own_buildx_state() { # ok | missing | wrong
+  local dst="$BX_HOME/cli-plugins/docker-buildx" sha
+  sha="$(pin "BUILDX_SHA256_$(buildx_arch | tr '[:lower:]' '[:upper:]')")"
+  [ -x "$dst" ] || { echo missing; return; }
+  [ "$(sha256sum "$dst" | cut -c1-64)" = "$sha" ] && echo ok || echo wrong
+}
+buildx_arch() {
+  case "$(uname -m)" in x86_64) echo amd64 ;; aarch64 | arm64) echo arm64 ;; *) fail "архитектура $(uname -m) не поддержана" ;; esac
+}
+
+install_buildx() {
+  local ver arch sha dst src tmp
+  ver="$(pin BUILDX_VERSION)"; arch="$(buildx_arch)"; sha="$(pin "BUILDX_SHA256_$(printf '%s' "$arch" | tr '[:lower:]' '[:upper:]')")"
+  [[ "$sha" =~ ^[0-9a-f]{64}$ ]] && [ -n "$ver" ] || fail "в buildx.pin нет версии или суммы для $arch"
+  dst="$BX_HOME/cli-plugins/docker-buildx"
+  if [ "$(own_buildx_state)" = ok ]; then ok "свой buildx $ver (сумма сверена)"; return 0; fi
+  mkdir -p "$BX_HOME/cli-plugins"; chmod 700 "$BX_HOME"
+  tmp="$dst.tmp"; rm -f -- "$tmp"
+  src="$BX_HOME/buildx-$ver.linux-$arch"
+  if [ -f "$src" ]; then
+    log "свой buildx $ver — из заранее положенного файла"
+    cp "$src" "$tmp"
+  else
+    log "скачиваю свой buildx $ver (~66 МБ) с GitHub"
+    curl -sSfL --retry 3 -o "$tmp" "${OSP_BUILDX_URL:-https://github.com/docker/buildx/releases/download/$ver/buildx-$ver.linux-$arch}" \
+      || { rm -f -- "$tmp"; fail "buildx не скачан — положите файл $src (с машины сборки) и повторите"; }
+  fi
+  [ "$(sha256sum "$tmp" | cut -c1-64)" = "$sha" ] || { rm -f -- "$tmp"; fail "контрольная сумма buildx не совпала с buildx.pin — файл удалён, ничего не установлено"; }
+  chmod 755 "$tmp"; mv -f "$tmp" "$dst"
+  bx version >/dev/null 2>&1 || fail "свой buildx не запускается"
+  ok "свой buildx $ver установлен в $BX_HOME (только для сборки портала)"
+}
+
 ensure_builder() {
-  local cpu opts
+  local cpu opts image
+  install_buildx
   cpu=$(( $(nproc) - 1 ))
-  opts="memory=$BUILD_MEMORY,memory-swap=$BUILD_MEMORY,cpuset-cpus=$cpu,cpu-shares=256,default-load=true"
-  if docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
-    if docker buildx inspect "$BUILDER" 2>/dev/null | grep -q "memory=\"$BUILD_MEMORY\""; then
+  image="$(pin BUILDKIT_IMAGE)"
+  [ -n "$image" ] || fail "в buildx.pin нет BUILDKIT_IMAGE"
+  opts="image=$image,memory=$BUILD_MEMORY,memory-swap=$BUILD_MEMORY,cpuset-cpus=$cpu,cpu-shares=256,default-load=true"
+  if bx inspect "$BUILDER" >/dev/null 2>&1; then
+    local info; info="$(bx inspect "$BUILDER" 2>/dev/null)"
+    if grep -q "memory=\"$BUILD_MEMORY\"" <<< "$info" && grep -qF "image=\"$image\"" <<< "$info"; then
       ok "сборщик $BUILDER: потолок памяти $BUILD_MEMORY, ядро $cpu"
       return 0
     fi
-    log "у сборщика $BUILDER другой потолок — пересоздаю (только свой сборщик)"
-    docker buildx rm "$BUILDER" >/dev/null
+    log "у сборщика $BUILDER другие настройки — пересоздаю (только свой сборщик)"
+    bx rm "$BUILDER" >/dev/null
   fi
   log "создаю свой сборщик $BUILDER: потолок памяти $BUILD_MEMORY, ядро $cpu, пониженный приоритет"
-  docker buildx create --name "$BUILDER" --driver docker-container --driver-opt "$opts" >/dev/null
+  bx create --name "$BUILDER" --driver docker-container --driver-opt "$opts" >/dev/null
   ok "сборщик $BUILDER создан"
 }
 
 # Кэш своего сборщика — не больше 3 ГБ; сам сборщик — остановить: память нужна соседям.
 release_builder() {
-  docker buildx prune --builder "$BUILDER" --force --max-used-space 3gb >/dev/null 2>&1 \
+  bx prune --builder "$BUILDER" --force --max-used-space 3gb >/dev/null 2>&1 \
     || warn "кэш сборщика не почищен — не критично"
-  docker buildx stop "$BUILDER" >/dev/null 2>&1 || true
+  bx stop "$BUILDER" >/dev/null 2>&1 || true
   ok "сборщик $BUILDER остановлен, его кэш — не больше 3 ГБ"
 }
 
@@ -181,7 +228,7 @@ build_release() { # build_release both|api|web
   ensure_builder
   log "сборка выпуска ($([ "$what" = both ] && echo 'API и сайт' || echo "только $what"))"
   mkdir -p "$OUT"
-  OSP_BUILDER="$BUILDER" OSP_WEB_BUILD_ENV="$WEB_ENV" bash "$SRC/deploy/docker/build.sh" "${args[@]}" || rc=$?
+  DOCKER_CONFIG="$BX_HOME" OSP_BUILDER="$BUILDER" OSP_WEB_BUILD_ENV="$WEB_ENV" bash "$SRC/deploy/docker/build.sh" "${args[@]}" || rc=$?
   release_builder
   [ "$rc" = 0 ] || fail "сборка не удалась (код $rc) — на сервере ничего не изменилось"
   REL="$OUT/osp-release-$(git -C "$SRC" rev-parse --short=12 HEAD)"
@@ -220,7 +267,7 @@ ensure_tools() {
   ensure_builder
   log "сборка образа инструментов базы $img"
   local rc=0
-  docker buildx build --builder "$BUILDER" --load -q -t "$img" -f "$SRC/deploy/docker/tools.Dockerfile" "$SRC/deploy/docker" >/dev/null || rc=$?
+  bx build --builder "$BUILDER" --load -q -t "$img" -f "$SRC/deploy/docker/tools.Dockerfile" "$SRC/deploy/docker" >/dev/null || rc=$?
   release_builder
   [ "$rc" = 0 ] || fail "образ инструментов не собран"
   ok "образ инструментов базы: $img"
@@ -287,6 +334,12 @@ do_check() {
   else warn "память: доступно ${avail_mb} МБ — для сборки нужно ${need_mb}, сборка сейчас откажет"; fi
   timeout 20 git -C "$SRC" ls-remote -q "$REMOTE" "$BRANCH" >/dev/null 2>&1 && ok "репозиторий доступен ($REMOTE)" || warn "репозиторий недоступен — git sync не пройдёт"
   reachable registry-1.docker.io && ok "Docker Hub доступен (базовые образы сборки)" || warn "Docker Hub недоступен — сборка образов не пройдёт"
+  case "$(own_buildx_state)" in
+    ok) ok "свой buildx $(pin BUILDX_VERSION) установлен (сумма сверена)" ;;
+    wrong) warn "свой buildx в $BX_HOME не совпадает с buildx.pin — при сборке будет заменён" ;;
+    *) if [ -f "$BX_HOME/buildx-$(pin BUILDX_VERSION).linux-$(buildx_arch)" ]; then ok "файл buildx положен заранее — установится при первой сборке"
+       else warn "своего buildx ещё нет — при первой сборке скачается с GitHub (~66 МБ) или положите $BX_HOME/buildx-$(pin BUILDX_VERSION).linux-$(buildx_arch)"; fi ;;
+  esac
   if docker image inspect "$(tools_image)" >/dev/null 2>&1; then
     run_tools --dry-run | grep -v '^Отчёт сохранён' || warn "проверка базы не прошла"
   else
