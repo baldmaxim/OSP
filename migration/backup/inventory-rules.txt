@@ -7,7 +7,7 @@
 # storage.objects[бакет] или cron.job[имя расписания]. Точное имя важнее «схема.*».
 
 public.*                            transfer  данные портала — копия pg_dump схемы public
-auth.users                          transfer  учётные записи с отпечатками паролей — выгрузка .auth-users.csv
+auth.users                          transfer  учётные записи без паролей (вход — Keycloak по паролю ФОТ) — выгрузка .auth-users.csv
 auth.identities                     transfer  способы входа учётных записей — выгрузка .auth-identities.csv
 storage.objects[object-photos]      transfer  обложки объектов — список .covers.csv, файлы копирует covers-copy в cloud.ru
 

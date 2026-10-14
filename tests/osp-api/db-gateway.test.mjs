@@ -406,13 +406,38 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     assert.equal(storageDeletes(), 0)
   })
 
-  it('рабочая копия (final): удаление убирает и строку, и объект — как раньше', async () => {
+  // Хранилище общее с прежним порталом и после окончательной загрузки: osp.root.sx на Supabase работает
+  // дальше и ссылается на файлы, загруженные до переноса.
+  it('рабочая копия (final): файл, загруженный до переноса, остаётся — на него ссылается прежний портал; новый удаляется целиком', async () => {
+    s3.objects.set(objectPath, 5)
+    reply = filesUpstream(doc(BEFORE_LOAD))
+    const kept = await files({ action: 'delete', s3_key: DOC_KEY })
+    assert.deepEqual([kept.statusCode, kept.json()], [200, { ok: true, object_deleted: false, shared: true }])
+    assert.deepEqual([rowDeletes(), storageDeletes()], [1, 0], 'строка нового портала удалена, файл прежнего — нет')
+    assert.ok(s3.objects.has(objectPath))
+    assert.ok(logs.some((l) => l.includes('shared with the previous portal: s3 object kept')))
+    seen.length = 0
+    reply = filesUpstream(doc(AFTER_LOAD))
+    const gone = await files({ action: 'delete', s3_key: DOC_KEY })
+    assert.deepEqual([gone.statusCode, gone.json()], [200, { ok: true }])
+    assert.deepEqual([rowDeletes(), storageDeletes()], [1, 1])
+    assert.ok(!s3.objects.has(objectPath))
+  })
+
+  it('прежний портал выключен (OSP_KEEP_PRE_TRANSFER_FILES=0): удаление убирает и строку, и объект', async () => {
+    await makeApp({ keepPreTransferFiles: false })
     s3.objects.set(objectPath, 5)
     reply = filesUpstream(doc(BEFORE_LOAD))
     const res = await files({ action: 'delete', s3_key: DOC_KEY })
     assert.deepEqual([res.statusCode, res.json()], [200, { ok: true }])
     assert.deepEqual([rowDeletes(), storageDeletes()], [1, 1])
     assert.ok(!s3.objects.has(objectPath))
+    // В репетиции файл рабочих данных не удаляется и с этой настройкой.
+    loadState = { status: 'rehearsal', loadedAt: LOADED_AT }
+    s3.objects.set(objectPath, 5)
+    reply = filesUpstream(doc(BEFORE_LOAD))
+    assert.deepEqual((await files({ action: 'delete', s3_key: DOC_KEY })).json(), { ok: true, object_deleted: false, rehearsal: true })
+    assert.ok(s3.objects.has(objectPath))
   })
 
   it('барьер записи действует и на файлы: загрузка, подтверждение и удаление — 503, скачивание работает', async () => {
@@ -431,10 +456,10 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     const down = await files({ action: 'download', s3_key: DOC_KEY })
     assert.equal(down.statusCode, 200)
     assert.match(down.json().presigned_url, /a-plan\.pdf/)
-    // Барьер снят — удаление проходит.
+    // Барьер снят — удаление проходит (файл до переноса остаётся прежнему порталу).
     fs.rmSync(path.join(tmp, 'db-readonly'))
     await new Promise((r) => setTimeout(r, 1100))
-    assert.deepEqual((await files({ action: 'delete', s3_key: DOC_KEY })).json(), { ok: true })
+    assert.deepEqual((await files({ action: 'delete', s3_key: DOC_KEY })).json(), { ok: true, object_deleted: false, shared: true })
   })
 
   it('готовность показывает, с какой копией работает сервер', async () => {

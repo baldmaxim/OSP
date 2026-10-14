@@ -147,7 +147,7 @@ if [ -n "$COVERS_JOURNAL" ]; then
   fi
 fi
 
-# 2б. Учётки с отпечатками паролей (load.sh --auth): выгрузка из базы побайтно равна выгрузке копии —
+# 2б. Учётные записи (load.sh --auth): выгрузка из базы побайтно равна выгрузке копии —
 #     те же колонки, порядок и формат (UTC, ISO), что в migration/backup/extras.sql.
 if ! has_vault="$(target_psql -c "select to_regnamespace('osp_vault') is not null" 2>"$WORK/err")"; then
   say "FAIL нет подключения: $(head -n 1 "$WORK/err" | target_mask | cut -c1-200)"; save_report; exit 2
@@ -178,9 +178,9 @@ SQL
   [ "$vault_ok" = 1 ] || problems_pre=1
 elif [ "$STATUS" = final ]; then
   problems_pre=1
-  say "FAIL окончательный перенос без учёток с отпечатками паролей (osp_vault нет)"
+  say "FAIL окончательный перенос без учётных записей Supabase Auth (osp_vault нет)"
 else
-  say "ИНФО учётки с отпечатками паролей не загружались (load.sh без --auth)"
+  say "ИНФО учётные записи Supabase Auth не загружались (load.sh без --auth)"
 fi
 
 # 3. Факты с обеих сторон.

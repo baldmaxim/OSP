@@ -1,14 +1,14 @@
-// Учётные записи с отпечатками паролей и обложки объектов при переносе: migration/backup/extras.sql →
+// Учётные записи (без паролей) и обложки объектов при переносе: migration/backup/extras.sql →
 // migration/target/load.sh --auth --covers → verify.sh --covers → rights.sh → vault.sh → reset.sh.
 // Проверяем обещанное:
-//   • учётки лежат в закрытой схеме osp_vault ровно как в выгрузке копии (побайтно); копия auth.users без
-//     паролей наполняется из них; отпечатки не читаются ни без отметки, ни с пропуском служебных функций,
-//     ни служебным ключом;
+//   • учётки лежат в закрытой схеме osp_vault ровно как в выгрузке копии (побайтно) и без паролей; копия
+//     auth.users наполняется из них; osp_vault не читается ни без отметки, ни с пропуском служебных
+//     функций, ни служебным ключом;
 //   • адрес обложки меняется только у сверенных файлов и только при точном совпадении прежнего адреса;
 //     дата изменения объектов и состояние триггеров — прежние; адрес другого вида — отмена всей загрузки;
 //   • окончательный перенос без учёток и обложек, с журналом от другого списка или с несверенной обложкой
 //     не начинается;
-//   • сверка видит подменённый отпечаток; репетиция убирается вместе с osp_vault.
+//   • сверка видит подменённую учётку; репетиция убирается вместе с osp_vault.
 // Нужны Docker, psql, pg_dump, pg_restore.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -59,7 +59,7 @@ insert into public.objects values
   (4, 'Объект 4', 'https://example.org/photo.jpg', '2026-01-04 10:00:00+00');
 `
 
-describe('Перенос учёток с отпечатками паролей и обложек', { skip, timeout: 900000 }, () => {
+describe('Перенос учётных записей и обложек', { skip, timeout: 900000 }, () => {
   let tmp
   let prodPort
   let targetPort
@@ -187,7 +187,8 @@ describe('Перенос учёток с отпечатками паролей �
     const res = load('--status', 'rehearsal', '--single-owner', '--auth', '--covers', good)
     assert.equal(res.status, 0, res.all)
     noSecrets(res)
-    assert.match(res.stdout, /^ИНФО учётные записи с отпечатками паролей — в закрытую схему osp_vault: учёток 3, способов входа 3$/m)
+    assert.match(res.stdout, /^ИНФО учётные записи без паролей — в закрытую схему osp_vault: учёток 3, способов входа 3$/m)
+    assert.equal(admin("select count(*) from information_schema.columns where table_schema = 'osp_vault' and column_name like '%password%'"), '0')
     assert.match(res.stdout, /^ИНФО обложки: в списке копии 3, скопировано в cloud\.ru и сверено 3, не сверено 0$/m)
     assert.match(res.stdout, /^ИНФО обложки: адресов объектов заменено на \/api\/covers\/… — 2 \(сверенных файлов 3\)$/m)
     assert.match(res.stdout, /verify\.sh <файл подключения> .* --covers /)
@@ -201,7 +202,7 @@ describe('Перенос учёток с отпечатками паролей �
     assert.equal(asOwner('select count(*) from osp_vault.users', 'osp:internal').out, '0')
   })
 
-  it('сверка: без журнала обложек — отказ; с ним — учётки побайтно, адреса по журналу; подменённый отпечаток виден', () => {
+  it('сверка: без журнала обложек — отказ; с ним — учётки побайтно, адреса по журналу; подменённая учётка видна', () => {
     let res = run('verify.sh', [envFile, dump])
     assert.equal(res.status, 1, res.all)
     assert.match(res.stdout, /^FAIL загрузка меняла адреса обложек: сверка — с тем же журналом/m)
@@ -214,40 +215,40 @@ describe('Перенос учёток с отпечатками паролей �
     assert.match(res.stdout, /^OK контрольные суммы данных: .* — совпадают$/m)
 
     const id = PLATFORM_USERS[1].id
-    assert.equal(asOwner(`update osp_vault.users set encrypted_password = encrypted_password || 'x' where id = '${id}'`, 'osp:vault').status, 0)
+    assert.equal(asOwner(`update osp_vault.users set email = email || 'x' where id = '${id}'`, 'osp:vault').status, 0)
     res = run('verify.sh', [envFile, dump, '--covers', path.join(tmp, 'good.json')])
     assert.equal(res.status, 4, res.all)
     assert.match(res.stdout, /^FAIL учётные записи: в базе не то, что в выгрузке копии$/m)
-    assert.equal(asOwner(`update osp_vault.users set encrypted_password = left(encrypted_password, -1) where id = '${id}'`, 'osp:vault').status, 0)
+    assert.equal(asOwner(`update osp_vault.users set email = left(email, -1) where id = '${id}'`, 'osp:vault').status, 0)
   })
 
-  it('права под одну учётку: копия auth.users — из osp_vault без паролей; отпечатки закрыты и пропуском, и служебным ключом', () => {
+  it('права под одну учётку: копия auth.users — из osp_vault; osp_vault закрыта и от пропуска, и от служебного ключа', () => {
     const res = run('rights.sh', [envFile, dump])
     assert.equal(res.status, 0, res.all)
     noSecrets(res)
-    assert.match(res.stdout, /^OK учётки с отпечатками паролей закрыты: только отметка переноса, функциям и представлениям портала недоступны$/m)
-    assert.match(res.stdout, /^OK с пропуском служебных функций и служебным ключом учётки с отпечатками не читаются$/m)
+    assert.match(res.stdout, /^OK учётные записи Supabase Auth закрыты: только отметка переноса, функциям и представлениям портала недоступны$/m)
+    assert.match(res.stdout, /^OK с пропуском служебных функций и служебным ключом учётные записи osp_vault не читаются$/m)
     assert.equal(asOwner('select count(*) from auth.users', 'osp:internal').out, '3')
     assert.equal(admin("select count(*) from information_schema.columns where table_schema = 'auth' and table_name = 'users' and column_name like '%password%'"), '0')
   })
 
-  it('vault.sh status: отпечатки актуальны; новая и изменённая учётка в Supabase Auth видны', () => {
+  it('vault.sh status: учётные записи актуальны; новая и изменённая учётка в Supabase Auth видны', () => {
     let res = run('vault.sh', [envFile, 'status'])
     assert.equal(res.status, 0, res.all)
-    assert.match(res.stdout, /^Учётки с отпечатками паролей \(osp_vault\): 3, сняты с копии prod-.*\.dump/m)
-    assert.match(res.stdout, /^Новые учётки — отпечатков нет: 0$/m)
-    assert.match(res.stdout, /^ИТОГ: отпечатки актуальны\.$/m)
+    assert.match(res.stdout, /^Учётные записи \(osp_vault\): 3, сняты с копии prod-.*\.dump/m)
+    assert.match(res.stdout, /^Новые учётки — в osp_vault их нет: 0$/m)
+    assert.match(res.stdout, /^ИТОГ: учётные записи актуальны\.$/m)
     // Так копию обновляет osp-api из Supabase Auth.
     assert.equal(asOwner(`update auth.users set updated_at = now() where id = '${PLATFORM_USERS[2].id}';
       insert into auth.users (id, email, created_at, updated_at) values (gen_random_uuid(), 'new@example.ru', now(), now())`, 'osp:internal').status, 0)
     res = run('vault.sh', [envFile, 'status'])
     assert.equal(res.status, 0, res.all)
-    assert.match(res.stdout, /^Новые учётки — отпечатков нет: 1$/m)
-    assert.match(res.stdout, /^Изменены позже снятия отпечатков — пароль мог смениться: 1$/m)
-    assert.match(res.stdout, /^ИТОГ: перед переходом входа в Keycloak снять отпечатки заново\.$/m)
+    assert.match(res.stdout, /^Новые учётки — в osp_vault их нет: 1$/m)
+    assert.match(res.stdout, /^Изменены в Supabase позже копии: 1$/m)
+    assert.match(res.stdout, /^ИТОГ: перед сопоставлением со входом через Keycloak снять учётные записи заново\.$/m)
   })
 
-  it('ночная копия базы (export.sh) включает учётки с отпечатками — тем же снимком, и восстанавливается', () => {
+  it('ночная копия базы (export.sh) включает учётные записи osp_vault — тем же снимком, и восстанавливается', () => {
     const out = path.join(tmp, 'exports')
     const res = spawnSync('bash', [path.join(TARGET, 'export.sh'), envFile], { encoding: 'utf8', cwd: ROOT, timeout: 400000,
       env: { ...process.env, BACKUP_OUT_DIR: out, PROBE_CONNECT_TIMEOUT: '5' } })

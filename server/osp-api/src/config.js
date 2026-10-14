@@ -60,6 +60,10 @@ export function loadConfig(env = process.env) {
       // Файл-переключатель барьера записи: есть файл — шлюз только читает.
       readOnlyFile: env.OSP_DB_READONLY_FILE || '',
     },
+    // Файлы, загруженные до переноса, хранилище cloud.ru общее с прежним порталом (osp.root.sx, Supabase):
+    // удаление документа в новом портале убирает строку, а файл оставляет — на него ссылается прежний.
+    // '0' — когда прежний портал выключен и его ссылки больше не нужны.
+    keepPreTransferFiles: env.OSP_KEEP_PRE_TRANSFER_FILES !== '0',
     // Пересчёт реестра расценок раз в 10 минут (в Supabase это делало расписание pg_cron).
     registryRefresh: env.OSP_REGISTRY_REFRESH === '1',
     required: parseRequired(env.OSP_API_REQUIRE),

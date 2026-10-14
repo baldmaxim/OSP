@@ -67,7 +67,7 @@ WITH t AS (
               ELSE 'представления с правами владельца читают таблицы только через закрытую схему: '
                    || (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'osp_private' AND p.proname LIKE 'view\_%') END
   UNION ALL
-  -- Учётки с отпечатками паролей (load.sh --auth): у каждой таблицы правило действует на владельца и
+  -- Учётные записи Supabase Auth (load.sh --auth): у каждой таблицы правило действует на владельца и
   -- единственная политика — своя отметка osp:vault; выдач нет; ни функции, ни представления портала
   -- и закрытой схемы osp_private на неё не ссылаются.
   SELECT 11, to_regnamespace('osp_vault') IS NULL
@@ -89,8 +89,8 @@ WITH t AS (
                       JOIN pg_rewrite rw ON d.classid = 'pg_rewrite'::regclass AND rw.oid = d.objid) = 0
                  AND NOT has_schema_privilege('public', 'osp_vault', 'USAGE')),
          CASE WHEN to_regnamespace('osp_vault') IS NULL
-              THEN 'учётки с отпечатками паролей не загружались (load.sh без --auth)'
-              ELSE 'учётки с отпечатками паролей закрыты: только отметка переноса, функциям и представлениям портала недоступны' END
+              THEN 'учётные записи Supabase Auth не загружались (load.sh без --auth)'
+              ELSE 'учётные записи Supabase Auth закрыты: только отметка переноса, функциям и представлениям портала недоступны' END
 )
 SELECT CASE WHEN ok THEN 'OK ' ELSE 'FAIL ' END || what FROM checks ORDER BY n;
 
@@ -126,7 +126,7 @@ BEGIN
     END IF;
   END LOOP;
   PERFORM set_config('osp_check.open', v_open, true), set_config('osp_check.showcase', v_showcase, true);
-  -- Учётки с отпечатками: ни пропуск служебных функций, ни служебный ключ их не открывают.
+  -- Учётные записи osp_vault: ни пропуск служебных функций, ни служебный ключ их не открывают.
   v_open := '';
   IF to_regnamespace('osp_vault') IS NOT NULL THEN
     PERFORM set_config('application_name', 'osp:internal', true),
@@ -145,6 +145,6 @@ SELECT CASE WHEN current_setting('osp_check.open') = '' THEN 'OK ' ELSE 'FAIL ' 
        || 'без токена и без пропуска строки видны только в публичной витрине:' || current_setting('osp_check.showcase')
        || CASE WHEN current_setting('osp_check.open') = '' THEN '' ELSE '; ЛИШНЕЕ:' || current_setting('osp_check.open') END;
 SELECT CASE WHEN current_setting('osp_check.vault_open') = '' THEN 'OK ' ELSE 'FAIL ' END
-       || 'с пропуском служебных функций и служебным ключом учётки с отпечатками не читаются'
+       || 'с пропуском служебных функций и служебным ключом учётные записи osp_vault не читаются'
        || CASE WHEN current_setting('osp_check.vault_open') = '' THEN '' ELSE ': ОТКРЫТО' || current_setting('osp_check.vault_open') END;
 ROLLBACK;

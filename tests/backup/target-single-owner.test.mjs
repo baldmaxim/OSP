@@ -204,7 +204,7 @@ describe('Перенос под одну учётку: правила дейст
     assert.match(rights.stdout, /OK права применены одной транзакцией за \d+ с; число строк в таблицах не изменилось/)
     assert.match(rights.stdout, /политик в копии: 6 \(authenticated — 5, anon — 1\)/)
     assert.equal((rights.stdout.match(/^OK /gm) || []).length, 15, rights.stdout)
-    assert.match(rights.stdout, /^OK учётки с отпечатками паролей не загружались \(load\.sh без --auth\)$/m)
+    assert.match(rights.stdout, /^OK учётные записи Supabase Auth не загружались \(load\.sh без --auth\)$/m)
     assert.match(rights.stdout, /OK представления с правами владельца читают таблицы только через закрытую схему: 3/)
     assert.match(rights.stdout, /OK без токена и без пропуска строки видны только в публичной витрине: open_notices role_names tenders/)
     assert.ok(!/^FAIL/m.test(rights.stdout), rights.stdout)

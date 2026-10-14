@@ -15,7 +15,11 @@
 //   • барьер записи — upload, confirm и delete отвечают 503 OSP_READONLY, скачивание работает;
 //   • репетиция (копия за шлюзом не рабочая, src/lib/loadStatus.js) — хранилище у неё общее с рабочим
 //     порталом: delete убирает строку, а объект — только если документ создан уже в репетиции. Объект,
-//     который был до загрузки копии, принадлежит рабочим данным и остаётся: { ok, object_deleted: false }.
+//     который был до загрузки копии, принадлежит рабочим данным и остаётся: { ok, object_deleted: false };
+//   • и после окончательной загрузки хранилище общее с прежним порталом (osp.root.sx на Supabase работает
+//     дальше): объект документа, созданного до загрузки, остаётся — на него ссылается прежний портал
+//     ({ ok, object_deleted: false, shared: true }). Выключается OSP_KEEP_PRE_TRANSFER_FILES=0, когда
+//     прежнего портала нет.
 //
 // Ключ операции один на выбранный файл: повтор любого шага не создаёт второй документ и второй объект.
 // Тот же operation_id с другим файлом (владелец, имя, тип, размер, sha256) — 409 OSP_KEY_REUSE.
@@ -345,11 +349,14 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
           }
           if (!await allowed(rules)) return reply.code(403).send({ error: NO_RIGHT })
 
-          // Репетиция переноса: решаем до удаления строки, остаётся ли объект в хранилище.
+          // Перенос данных: решаем до удаления строки, остаётся ли объект в хранилище. Документ пришёл с
+          // данными прежнего портала — объект его, пока тот работает (в репетиции — всегда).
           let keepObject = false
+          let final = false
           if (gatewayOn) {
             const load = loadStatus ? await loadStatus.current() : null
-            keepObject = !isFinalLoad(load) && !createdAfterLoad(doc.created_at, load?.loadedAt)
+            final = isFinalLoad(load)
+            keepObject = !createdAfterLoad(doc.created_at, load?.loadedAt) && (!final || config.keepPreTransferFiles !== false)
           }
 
           // Сначала строка: документа, указывающего на удалённый файл, не бывает. Сбой хранилища
@@ -364,9 +371,13 @@ export function registerS3Presign(app, { config, getS3, gatewayOn = false, isRea
             throw deleteError
           }
           if (!gone?.length) return { ok: true, already: true } // параллельный запрос удалил раньше
-          if (keepObject) {
+          if (keepObject && !final) {
             request.log.info({ document: doc.id }, 'rehearsal: s3 object kept')
             return { ok: true, object_deleted: false, rehearsal: true }
+          }
+          if (keepObject) {
+            request.log.info({ document: doc.id }, 'shared with the previous portal: s3 object kept')
+            return { ok: true, object_deleted: false, shared: true }
           }
           try {
             await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: s3Key }))

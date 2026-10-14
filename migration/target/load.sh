@@ -25,7 +25,7 @@
 #   3. Данные, таблицы, функции, индексы — как в копии, без правок. Права и политики — с заменой роли
 #      Supabase authenticated на роль приложения; anon и service_role не переносятся (lib/rewrite.mjs).
 #   4. Одна транзакция: схема auth (compat/auth.sql), отметка и часовой пояс UTC (sql/load-begin.sql),
-#      копия, учётные записи с отпечатками паролей в закрытую схему osp_vault (--auth, sql/load-auth.sql:
+#      копия, учётные записи без паролей в закрытую схему osp_vault (--auth, sql/load-auth.sql:
 #      выгрузки этой же копии, число строк сверяется с описью), адреса сверенных обложек (--covers <журнал>,
 #      sql/load-covers.sql — единственная правка данных, объявленная явно), права (sql/load-rights.sql и
 #      права из копии) либо закрытие функций (sql/load-lockdown.sql), перечень созданного (sql/load-end.sql).
@@ -211,7 +211,7 @@ if [ "$WITH_AUTH" = 1 ]; then
   extra_vars+=(-v auth_copy_file="$WORK/auth-copy.sql" -v auth_users_expected="$AUTH_USERS" -v auth_identities_expected="$AUTH_IDENTITIES"
     -v auth_users_sha256="$(sha256sum "$BASE.auth-users.csv" | cut -d' ' -f1)"
     -v auth_identities_sha256="$(sha256sum "$BASE.auth-identities.csv" | cut -d' ' -f1)")
-  say "ИНФО учётные записи с отпечатками паролей — в закрытую схему osp_vault: учёток $AUTH_USERS, способов входа $AUTH_IDENTITIES"
+  say "ИНФО учётные записи без паролей — в закрытую схему osp_vault: учёток $AUTH_USERS, способов входа $AUTH_IDENTITIES"
 fi
 if [ -n "$COVERS_JOURNAL" ]; then
   if ! node "$HERE/lib/extras.mjs" covers-sql "$COVERS_JOURNAL" "$BASE.covers.csv" "$WORK/covers.json" > "$WORK/covers-data.sql" 2> "$WORK/err"; then

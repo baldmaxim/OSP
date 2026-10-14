@@ -3,11 +3,11 @@
 -- согласованы между собой. Запускает backup.sh:
 --   psql -v users_file=… -v identities_file=… -v covers_file=… -v inventory_file=… -f extras.sql
 --
--- Учётные записи — по явному списку колонок: отпечатки паролей переносятся (вход потом — Keycloak), а
--- одноразовые коды из писем (confirmation_token, recovery_token, email_change_token_*, phone_change_token,
--- reauthentication_token) — нет: это действующие ключи, а не данные. Колонки списка, которых в этой
--- версии Supabase нет, пропускаются; без обязательных (id, email, encrypted_password, created_at,
--- updated_at) выгрузка падает.
+-- Учётные записи — по явному списку колонок, без паролей: в новом портале вход через Keycloak по паролю
+-- ФОТ, отпечатки паролей Supabase не нужны (решение владельца от 2026-10-14). Одноразовые коды из писем
+-- (confirmation_token, recovery_token, email_change_token_*, phone_change_token, reauthentication_token)
+-- тоже не выгружаются: это действующие ключи, а не данные. Колонки списка, которых в этой версии Supabase
+-- нет, пропускаются; без обязательных (id, email, created_at, updated_at) выгрузка падает.
 -- Формат времени задан явно (UTC, ISO): сверка после загрузки сравнивает выгрузки побайтно.
 \set ON_ERROR_STOP on
 BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
@@ -22,14 +22,14 @@ SELECT
   (SELECT string_agg(pg_catalog.quote_ident(a.attname), ', ' ORDER BY a.attnum)
    FROM pg_catalog.pg_attribute a
    WHERE a.attrelid = 'auth.users'::regclass AND NOT a.attisdropped AND a.attname = ANY (ARRAY[
-     'id', 'aud', 'role', 'email', 'encrypted_password', 'email_confirmed_at', 'invited_at',
+     'id', 'aud', 'role', 'email', 'email_confirmed_at', 'invited_at',
      'confirmation_sent_at', 'recovery_sent_at', 'email_change', 'email_change_sent_at', 'last_sign_in_at',
      'raw_app_meta_data', 'raw_user_meta_data', 'is_super_admin', 'created_at', 'updated_at', 'phone',
      'phone_confirmed_at', 'phone_change', 'phone_change_sent_at', 'email_change_confirm_status',
      'banned_until', 'reauthentication_sent_at', 'is_sso_user', 'deleted_at', 'is_anonymous'])) AS user_cols,
   (SELECT count(*) FROM pg_catalog.pg_attribute a
    WHERE a.attrelid = 'auth.users'::regclass AND NOT a.attisdropped
-     AND a.attname = ANY (ARRAY['id', 'email', 'encrypted_password', 'created_at', 'updated_at'])) AS user_required,
+     AND a.attname = ANY (ARRAY['id', 'email', 'created_at', 'updated_at'])) AS user_required,
   (SELECT string_agg(pg_catalog.quote_ident(a.attname), ', ' ORDER BY a.attnum)
    FROM pg_catalog.pg_attribute a
    WHERE a.attrelid = 'auth.identities'::regclass AND NOT a.attisdropped AND a.attname = ANY (ARRAY[
@@ -38,7 +38,7 @@ SELECT
    WHERE a.attrelid = 'auth.identities'::regclass AND NOT a.attisdropped
      AND a.attname = ANY (ARRAY['id', 'user_id', 'provider', 'identity_data'])) AS identity_required
 \gset
-SELECT (:user_required = 5 AND :identity_required = 4) AS columns_ok \gset
+SELECT (:user_required = 4 AND :identity_required = 4) AS columns_ok \gset
 \if :columns_ok
 \else
   \echo 'FAIL в auth.users или auth.identities нет обязательных колонок — выгрузка учёток невозможна'

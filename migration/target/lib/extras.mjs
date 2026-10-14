@@ -5,7 +5,8 @@
 //   node extras.mjs covers-sql <журнал.json> <копия>.covers.csv <итог.json>         → osp_meta.cover_moves
 //
 // Колонки учёток — только из закрытого списка (тот же, что в migration/backup/extras.sql; совпадение
-// проверяет тест): незнакомая колонка в заголовке выгрузки — отказ, а не «загрузим как есть».
+// проверяет тест): незнакомая колонка в заголовке выгрузки — отказ, а не «загрузим как есть». Паролей в
+// списке нет: вход в новом портале — Keycloak по паролю ФОТ.
 // Журнал обложек принимается, только если снят по списку обложек этой же копии (SHA-256 списка).
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -13,13 +14,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const USER_COLUMNS = [
-  'id', 'aud', 'role', 'email', 'encrypted_password', 'email_confirmed_at', 'invited_at',
+  'id', 'aud', 'role', 'email', 'email_confirmed_at', 'invited_at',
   'confirmation_sent_at', 'recovery_sent_at', 'email_change', 'email_change_sent_at', 'last_sign_in_at',
   'raw_app_meta_data', 'raw_user_meta_data', 'is_super_admin', 'created_at', 'updated_at', 'phone',
   'phone_confirmed_at', 'phone_change', 'phone_change_sent_at', 'email_change_confirm_status',
   'banned_until', 'reauthentication_sent_at', 'is_sso_user', 'deleted_at', 'is_anonymous',
 ]
-export const USER_REQUIRED = ['id', 'email', 'encrypted_password', 'created_at', 'updated_at']
+export const USER_REQUIRED = ['id', 'email', 'created_at', 'updated_at']
 export const IDENTITY_COLUMNS = ['id', 'user_id', 'provider', 'provider_id', 'identity_data', 'last_sign_in_at', 'created_at', 'updated_at']
 export const IDENTITY_REQUIRED = ['id', 'user_id', 'provider', 'identity_data']
 // Порядок строк выгрузки (extras.sql) — им же выгружает сверка, чтобы сравнить файлы побайтно.

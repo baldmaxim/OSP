@@ -108,22 +108,24 @@ describe('Копия прода: снятие, проверка восстано
     assert.ok(!(res.stdout + res.stderr).includes(HASH_MARK), 'отпечатки паролей в вывод не попадают')
   })
 
-  it('backup.sh: учётки с отпечатками паролей, без одноразовых кодов; список обложек; опись — права 600', () => {
+  it('backup.sh: учётки без паролей и одноразовых кодов; список обложек; опись — права 600', () => {
     const base = dump.replace(/\.dump$/, '')
     for (const suffix of ['.auth-users.csv', '.auth-identities.csv', '.covers.csv', '.inventory.tsv', '.extras.sha256']) {
       assert.equal(fs.statSync(base + suffix).mode & 0o777, 0o600, suffix)
     }
     const users = fs.readFileSync(`${base}.auth-users.csv`, 'utf8')
     const header = users.split('\n')[0].split(',')
-    assert.ok(header.includes('encrypted_password') && header.includes('email') && header.includes('raw_user_meta_data'), header.join(','))
-    for (const col of ['confirmation_token', 'recovery_token', 'email_change_token_new', 'email_change_token_current',
+    assert.ok(header.includes('email') && header.includes('raw_user_meta_data'), header.join(','))
+    // Вход в новом портале — Keycloak по паролю ФОТ: пароли Supabase не выгружаются вовсе.
+    for (const col of ['encrypted_password', 'confirmation_token', 'recovery_token', 'email_change_token_new', 'email_change_token_current',
       'phone_change_token', 'reauthentication_token', 'instance_id', 'confirmed_at']) assert.ok(!header.includes(col), col)
     assert.equal(countCsvRecords(users), 3)
-    assert.equal((users.match(new RegExp(HASH_MARK, 'g')) || []).length, 3, 'отпечатки всех трёх учёток')
     // время — UTC с микросекундами, как в базе: сверка после загрузки побайтная
     assert.match(users, /2026-10-01 08:30:15\.123456\+00/)
     for (const suffix of ['.auth-users.csv', '.auth-identities.csv', '.covers.csv', '.inventory.tsv']) {
-      assert.ok(!fs.readFileSync(base + suffix, 'utf8').includes(TOKEN_MARK), `одноразовых кодов нет: ${suffix}`)
+      const text = fs.readFileSync(base + suffix, 'utf8')
+      assert.ok(!text.includes(TOKEN_MARK), `одноразовых кодов нет: ${suffix}`)
+      assert.ok(!text.includes(HASH_MARK) && !text.includes('$2a$'), `отпечатков паролей нет: ${suffix}`)
     }
     assert.equal(countCsvRecords(fs.readFileSync(`${base}.auth-identities.csv`, 'utf8')), 3)
     const covers = fs.readFileSync(`${base}.covers.csv`, 'utf8')
@@ -154,7 +156,7 @@ describe('Копия прода: снятие, проверка восстано
     assert.match(res.stdout, /КОПИЯ ГОДНА: таблиц 3, строк 541/)
     assert.ok(!(res.stdout + res.stderr).includes(SECRET_EMAIL), 'данные в вывод не попадают')
     assert.ok(!(res.stdout + res.stderr).includes(HASH_MARK), 'отпечатки паролей в вывод не попадают')
-    assert.match(res.stdout, /^OK переносится auth\.users: строк 3 — учётные записи с отпечатками паролей/m)
+    assert.match(res.stdout, /^OK переносится auth\.users: строк 3 — учётные записи без паролей/m)
     assert.match(res.stdout, /^OK не переносится auth\.sessions: строк 3 — действующие сессии/m)
     assert.match(res.stdout, /^OK не переносится cron\.job\[refresh-rates-registry\]: строк 1/m)
     assert.match(res.stdout, /^OK учётные записи: в выгрузке 3, в описи 3$/m)
@@ -304,7 +306,7 @@ describe('Опись Supabase: правила и подсчёт выгрузок
     const sql = fs.readFileSync(path.join(SCRIPTS, 'extras.sql'), 'utf8')
     const arrays = [...sql.matchAll(/ARRAY\[([^\]]+)\]/g)].map((m) => m[1].match(/'([a-z_]+)'/g).map((x) => x.slice(1, -1)))
     assert.deepEqual(arrays, [USER_COLUMNS, USER_REQUIRED, IDENTITY_COLUMNS, IDENTITY_REQUIRED])
-    for (const token of ['confirmation_token', 'recovery_token', 'email_change_token_new', 'email_change_token_current',
+    for (const token of ['encrypted_password', 'confirmation_token', 'recovery_token', 'email_change_token_new', 'email_change_token_current',
       'phone_change_token', 'reauthentication_token']) assert.ok(!USER_COLUMNS.includes(token), token)
   })
 

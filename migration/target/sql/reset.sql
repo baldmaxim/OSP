@@ -69,7 +69,7 @@ BEGIN
   DROP SCHEMA auth CASCADE;
   -- Права под одну учётку (rights.sh): закрытая схема с материализованными представлениями и проверками.
   DROP SCHEMA IF EXISTS osp_private CASCADE;
-  -- Учётные записи с отпечатками паролей (load.sh --auth). Адреса обложек (osp_meta.cover_moves) уходят
+  -- Учётные записи Supabase Auth (load.sh --auth). Адреса обложек (osp_meta.cover_moves) уходят
   -- вместе с osp_meta ниже.
   DROP SCHEMA IF EXISTS osp_vault CASCADE;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_role) THEN

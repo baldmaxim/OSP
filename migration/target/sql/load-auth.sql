@@ -1,5 +1,6 @@
--- Учётные записи Supabase Auth с отпечатками паролей (load.sh --auth, та же транзакция загрузки):
--- вход потом переходит в Keycloak, и пароли пользователей должны остаться прежними.
+-- Учётные записи Supabase Auth (load.sh --auth, та же транзакция загрузки): кто был в портале, с какой
+-- почтой и с какими датами — по ним вход через Keycloak (пароль ФОТ) сопоставляется с людьми портала.
+-- Паролей и их отпечатков здесь нет: они не выгружаются (migration/backup/extras.sql).
 -- Закрытая схема osp_vault. Порталу и шлюзу она не нужна и недоступна:
 --   • PostgREST отдаёт только схему public; в списке шлюза (allow.json) её нет;
 --   • правило по строкам действует и на владельца (FORCE): читать и писать можно только с отметкой
@@ -8,21 +9,20 @@
 --     load-single-owner.sql);
 --   • ни одно представление и ни одна функция схемы public на неё не ссылаются (rights-check.sql).
 -- Чего это не закрывает: учётка базы одна на портал и соседние системы, и её владелец может поставить
--- отметку сам. Отпечатки защищены так же, как все данные портала, — паролем этой учётки.
--- Одноразовые коды из писем и сессии сюда не попадают: их нет в выгрузке (migration/backup/extras.sql).
+-- отметку сам. Учётные записи защищены так же, как все данные портала, — паролем этой учётки.
+-- Одноразовые коды из писем и сессии сюда тоже не попадают.
 -- Переменные psql: auth_copy_file (\copy из выгрузок, lib/extras.mjs), auth_users_expected и
 -- auth_identities_expected (числа из описи копии), auth_users_sha256, auth_identities_sha256, source_name.
 CREATE SCHEMA osp_vault;
-COMMENT ON SCHEMA osp_vault IS 'Учётные записи Supabase Auth с отпечатками паролей — для перехода входа в Keycloak (migration/target). Закрыто: только с отметкой osp:vault.';
+COMMENT ON SCHEMA osp_vault IS 'Учётные записи Supabase Auth без паролей — для сопоставления со входом через Keycloak (migration/target). Закрыто: только с отметкой osp:vault.';
 REVOKE ALL ON SCHEMA osp_vault FROM PUBLIC;
 
--- Колонки и типы — как в auth.users Supabase, без одноразовых кодов.
+-- Колонки и типы — как в auth.users Supabase, без паролей и одноразовых кодов.
 CREATE TABLE osp_vault.users (
   id uuid PRIMARY KEY,
   aud varchar(255),
   role varchar(255),
   email varchar(255),
-  encrypted_password varchar(255),
   email_confirmed_at timestamptz,
   invited_at timestamptz,
   confirmation_sent_at timestamptz,
@@ -56,7 +56,8 @@ CREATE TABLE osp_vault.identities (
   created_at timestamptz,
   updated_at timestamptz
 );
--- Когда и из какой копии сняты отпечатки: кто сменит пароль позже, у того отпечаток устарел (vault.sh status).
+-- Когда и из какой копии сняты учётные записи: кто заведёт учётку или сменит почту в Supabase позже — видно
+-- в vault.sh status.
 CREATE TABLE osp_vault.copy_log (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   source_name text NOT NULL,
