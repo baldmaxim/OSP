@@ -28,6 +28,11 @@ npm run test:api     # свой API server/osp-api (нужен npm ci --prefix s
 npm run hooks:install # один раз на машине: проверки перед git push (lint, check:transport, test:api)
 ```
 
+**Новый портал (tender.su10.ru, сервер corp)** выкладывается на самом сервере, из клона `/opt/portals/osp/src`:
+`bash scripts/deploy-server.sh migrate | backend | frontend | both | status | rollback | --check`
+(сначала `migrate`, потом `both`). Сборка там — в своём сборщике с потолком памяти, соседние порталы не задеваются;
+подробности — `deploy/docker/README.md`.
+
 **Тесты** — встроенный `node --test`. Нужны PostgreSQL 17+ и Chromium:
 - PostgreSQL: серверные бинарники (`initdb`/`pg_ctl` в PATH или `PG_BIN`), а если их нет — Docker
   (одноразовый контейнер `postgres:17-alpine`, `PG_TEST_MODE=docker|native` для явного выбора);
@@ -230,6 +235,9 @@ const { data } = await db
 1. Create migration file in `supabase/migrations/` with descriptive name (e.g., `add_field_to_table.sql`)
 2. Update corresponding schema file in `supabase/schemas/`
 3. Apply migration via Supabase dashboard SQL editor or CLI
+4. База нового портала (Яндекс, одна учётка) — отдельная миграция в `migration/yandex/` по правилам
+   `migration/yandex/README.md` (роли Supabase там не существуют). Применяет `scripts/deploy-server.sh migrate`:
+   одна транзакция, проверка прав под одну учётку, при FAIL — откат. Проверка на копии прода — `npm run test:db`.
 
 ## S3 Document Storage (cloud.ru)
 

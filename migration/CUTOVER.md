@@ -179,7 +179,9 @@ bash migration/target/stand.sh down
    **14.10:** в нынешнюю базу Яндекса тело `20261011` (колонка `s3_documents.sha256`) внесено напрямую
    одной транзакцией: без колонки сервер не подтверждает загрузку документа. Если базу заменят свежей
    копией, а в Supabase `20261011` к тому времени не применят, колонку внести снова и перечитать структуру
-   PostgREST (`docker compose -p osp kill -s SIGUSR1 osp-postgrest`).
+   PostgREST (`docker compose -p osp kill -s SIGUSR1 osp-postgrest`). С 14.10 это миграция
+   `migration/yandex/20261014_s3_documents_sha256.sql`: её и все следующие применяет
+   `bash scripts/deploy-server.sh migrate` на сервере (`migration/yandex/README.md`).
 3. **Финальная копия** (Cursor, после окончания работы): `backup.sh` — данные, учётные записи, список
    обложек, опись; Claude — `verify.sh` копии (неизвестная непустая таблица Supabase — остановка).
    3а. **Обложки** (Cursor на corp): `deploy.sh covers-copy <копия>.covers.csv` со списком ЭТОЙ копии —

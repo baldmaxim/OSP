@@ -58,7 +58,59 @@ bash neighbors.sh --compare    # все на месте, работают, не 
 память кончится у сервера в целом, система сама выбирает, какой процесс остановить. Потолки ОСП можно
 ужать или поднять в `/opt/portals/osp/compose.server.yml` — по наблюдению за настоящей нагрузкой.
 
-## Сборка выпуска — на машине сборки
+## Выкладка на сервере одной командой — `scripts/deploy-server.sh`
+
+Обычный способ после первой установки: на сервере от `corpsu`, из клона репозитория `/opt/portals/osp/src`:
+
+```bash
+cd /opt/portals/osp/src
+bash scripts/deploy-server.sh --check        # проверки, ничего не меняет
+bash scripts/deploy-server.sh migrate        # миграции базы нового портала (migration/yandex), с вопросом
+bash scripts/deploy-server.sh both           # собрать и выложить API и сайт
+bash scripts/deploy-server.sh backend        # только API (сайт — из выложенного выпуска)
+bash scripts/deploy-server.sh frontend       # только сайт (API — из выложенного выпуска)
+bash scripts/deploy-server.sh status | rollback
+```
+
+Если меняется и база — сначала `migrate`, потом `backend` или `both`: список шлюза лежит в образе API.
+
+Что делает `both`:
+
+1. git sync клона с `origin/main`. Если обновился сам скрипт — дальше работает новая версия.
+2. Сборка `build.sh --no-save` в своём сборщике.
+3. Снимок соседей, `deploy.sh install` (проверка готовности, при отказе — прежний выпуск), сравнение соседей.
+4. Уборка своих каталогов выпусков: хранятся два последних.
+
+Почему сборка на общем сервере не задевает соседей:
+
+| Через что | Чем закрыто | Проверка |
+|---|---|---|
+| Память | свой сборщик buildx `osp-builder` с потолком `OSP_BUILD_MEMORY` (1280m, без подкачки); перед сборкой нужно свободно потолок + 512 МБ, иначе отказ до начала | замер: сборка сайта в потолке 1280m — 55 с, остановок по нехватке памяти 0; `tests/deploy/deploy-server.test.mjs` |
+| Процессор | сборщик на одном ядре (последнем) с пониженным приоритетом (`cpu-shares=256`) | там же |
+| Работающий сборщик | после сборки останавливается; его контейнер не входит в снимок соседей | там же, `neighbors.sh` |
+| Диск | перед сборкой нужно 5 ГБ на диске Docker; кэш своего сборщика — не больше 3 ГБ; два последних выпуска; пять последних копий базы | там же |
+| Общие команды Docker | их нет: ни `prune` всего, ни остановки чужого; чистятся только кэш `osp-builder` и свои каталоги | статическая проверка в том же тесте |
+
+`migrate` запускает `migration/target/migrate.sh` в контейнере инструментов `osp-tools` (`tools.Dockerfile`:
+psql, pg_dump, node). Клон репозитория и подключение к базе монтируются только на чтение, копии базы — в
+`/opt/portals/osp/backups`, отчёты — в `/opt/portals/osp/reports/db`. Сначала только чтение и список новых
+миграций, затем вопрос (`--yes` — без вопроса), затем PostgREST перечитывает структуру. Как писать
+миграции — `migration/yandex/README.md`.
+
+Один раз на сервере, кроме первой установки ниже:
+
+```bash
+# corpsu@corp$
+git clone https://github.com/baldmaxim/OSP /opt/portals/osp/src
+# по scp, права 600:
+#   /opt/portals/osp/secrets/web-build.env           — VITE_SUPABASE_URL=, VITE_SUPABASE_ANON_KEY=
+#   /opt/portals/osp/secrets/db/target.env           — подключение к базе портала (как ~/.osp-secrets/target.env)
+#   /opt/portals/osp/secrets/db/target.env.pin       — отпечаток базы (копия target.env.pin машины сборки)
+#   /opt/portals/osp/secrets/db/root.crt             — сертификат базы (тот же, что certs/yandex-root.crt)
+bash /opt/portals/osp/src/scripts/deploy-server.sh --check
+```
+
+## Сборка выпуска на машине сборки (запасной путь)
 
 ```bash
 bash deploy/docker/build.sh            # → deploy/docker/out/osp-release-<коммит>/
@@ -66,10 +118,8 @@ bash deploy/docker/build.sh            # → deploy/docker/out/osp-release-<ко
 Собирается только из закоммиченного. Нужен файл `~/.osp-secrets/web-build.env` с двумя строками —
 `VITE_SUPABASE_URL=` и `VITE_SUPABASE_ANON_KEY=` (те же, с которыми сайт собирался раньше; это публичные
 значения, но на экран их не выводят). Каталог выпуска переносится на сервер целиком; после переноса —
-`sha256sum -c SHA256SUMS` в нём (то же самое делает `deploy.sh install`).
-
-На общем сервере образы портала не собираются, даже если соседние проекты собирают свои там же: сборка
-сайта требует 1–2 ГБ памяти и отняла бы её у соседей.
+`sha256sum -c SHA256SUMS` в нём (то же самое делает `deploy.sh install`). Нужен, если на сервере сборка не
+проходит — например, не хватает памяти или недоступен Docker Hub.
 
 ## Первая установка на сервере
 
