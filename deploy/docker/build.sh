@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Сборка выпуска портала для сервера: образы из точного коммита и файлы установки — одним каталогом.
-# Запускается НЕ на сервере портала (там ничего не собирается), а на машине сборки:
+# Запускается на машине сборки или на самом сервере через scripts/deploy-server.sh — тогда собирает свой
+# сборщик buildx с потолком памяти и процессора (OSP_BUILDER), чтобы не отнимать их у соседних порталов:
 #
 #   bash deploy/docker/build.sh [--out <каталог>]      # по умолчанию deploy/docker/out (вне git)
+#   bash deploy/docker/build.sh … --no-save            # без images.tar.gz: образы уже на этой машине (сервер)
+#   bash deploy/docker/build.sh … --only api|web --reuse <release.env выложенного выпуска>
+#                                                      # собрать один образ, второй взять из выложенного
 #
 # Результат — каталог osp-release-<коммит>/:
 #   images.tar.gz        — образы osp-api, osp-web (метка = коммит) и PostgREST закреплённой версии;
@@ -23,12 +27,18 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 OUT="$HERE/out"
 WEB_ENV="${OSP_WEB_BUILD_ENV:-$HOME/.osp-secrets/web-build.env}"
+ONLY=""; REUSE=""; SAVE=1
+usage() { echo "Использование: bash deploy/docker/build.sh [--out <каталог>] [--no-save] [--only api|web --reuse <release.env>]" >&2; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT="${2:?укажите каталог}"; shift 2 ;;
-    *) echo "Использование: bash deploy/docker/build.sh [--out <каталог>]" >&2; exit 1 ;;
+    --no-save) SAVE=0; shift ;;
+    --only) ONLY="${2:-}"; [ "$ONLY" = api ] || [ "$ONLY" = web ] || usage; shift 2 ;;
+    --reuse) REUSE="${2:-}"; [ -f "$REUSE" ] || { echo "Нет файла выпуска: $REUSE" >&2; exit 1; }; shift 2 ;;
+    *) usage ;;
   esac
 done
+{ [ -z "$ONLY" ] && [ -z "$REUSE" ]; } || { [ -n "$ONLY" ] && [ -n "$REUSE" ]; } || usage
 for bin in docker git sha256sum gzip; do command -v "$bin" >/dev/null || { echo "Нужен $bin" >&2; exit 1; }; done
 
 # Пути, из которых собираются образы и берутся файлы установки.
@@ -67,11 +77,35 @@ docker image inspect "$PGRST_REF" >/dev/null 2>&1 || docker pull -q "$PGRST" >/d
 docker image inspect "$PGRST_REF" --format '{{join .RepoDigests "\n"}}' | grep -q "@$PGRST_DIGEST\$" || {
   echo "FAIL образ $PGRST_REF на этой машине — не тот, что закреплён (отпечаток не совпал)" >&2; exit 1; }
 
-echo "Сборка выпуска $TAG (сборка сайта $BUILD_ID)…"
+echo "Сборка выпуска $TAG (сборка сайта $BUILD_ID)${ONLY:+, собирается только $ONLY}…"
 LABELS=(--label "org.opencontainers.image.revision=$COMMIT" --label "org.opencontainers.image.title=osp")
-docker build -q -f "$SRC_DOCKER/api.Dockerfile" -t "osp-api:$TAG" "${LABELS[@]}" "$SRC" >/dev/null
-docker build -q -f "$SRC_DOCKER/web.Dockerfile" -t "osp-web:$TAG" "${LABELS[@]}" \
-  --build-arg "VITE_SUPABASE_URL=$SUPA_URL" --build-arg "VITE_SUPABASE_ANON_KEY=$SUPA_KEY" --build-arg "OSP_BUILD_ID=$BUILD_ID" "$SRC" >/dev/null
+# Свой сборщик (scripts/deploy-server.sh: buildx с потолком памяти и процессора) или обычная сборка.
+build_image() {
+  if [ -n "${OSP_BUILDER:-}" ]; then docker buildx build --builder "$OSP_BUILDER" --load -q "$@" >/dev/null
+  else docker build -q "$@" >/dev/null; fi
+}
+# Образ из выложенного выпуска — под меткой нового: уборка старых выпусков снимает метки своих выпусков,
+# и образ, который продолжает работать, должен держаться за метку текущего.
+reuse_image() { # reuse_image api|web
+  local key ref
+  key="OSP_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')_IMAGE"
+  ref="$(grep -m 1 -E "^$key=" "$REUSE" | cut -d= -f2-)"
+  [[ "$ref" =~ ^osp-$1:[0-9a-f]{12}$ ]] || { echo "FAIL в $REUSE нет $key" >&2; exit 1; }
+  docker image inspect "$ref" >/dev/null 2>&1 || { echo "FAIL образа $ref на этой машине нет — соберите оба: без --only" >&2; exit 1; }
+  docker tag "$ref" "osp-$1:$TAG"
+  echo "Образ osp-$1 — из выложенного выпуска (${ref#*:})"
+}
+if [ "$ONLY" != web ]; then
+  build_image -f "$SRC_DOCKER/api.Dockerfile" -t "osp-api:$TAG" "${LABELS[@]}" "$SRC"
+else
+  reuse_image api
+fi
+if [ "$ONLY" != api ]; then
+  build_image -f "$SRC_DOCKER/web.Dockerfile" -t "osp-web:$TAG" "${LABELS[@]}" \
+    --build-arg "VITE_SUPABASE_URL=$SUPA_URL" --build-arg "VITE_SUPABASE_ANON_KEY=$SUPA_KEY" --build-arg "OSP_BUILD_ID=$BUILD_ID" "$SRC"
+else
+  reuse_image web
+fi
 
 REL="$OUT/osp-release-$TAG"
 rm -rf "$REL"; mkdir -p "$REL/infra-nginx"
@@ -87,8 +121,14 @@ print_of() { bash "$SRC_DOCKER/deploy.sh" fingerprint "$1"; }
   echo "image osp-web:$TAG $(print_of "osp-web:$TAG")"
   echo "image $PGRST_REF $(print_of "$PGRST_REF")"
 } > "$REL/MANIFEST"
-docker save "osp-api:$TAG" "osp-web:$TAG" "$PGRST_REF" | gzip -c > "$REL/images.tar.gz"
+if [ "$SAVE" = 1 ]; then
+  docker save "osp-api:$TAG" "osp-web:$TAG" "$PGRST_REF" | gzip -c > "$REL/images.tar.gz"
+fi
 (cd "$REL" && find . -type f ! -name SHA256SUMS -printf '%P\n' | LC_ALL=C sort | xargs sha256sum > SHA256SUMS)
 
-echo "OK выпуск собран: $(basename "$REL"), образы — $(du -h "$REL/images.tar.gz" | cut -f1)"
+if [ "$SAVE" = 1 ]; then
+  echo "OK выпуск собран: $(basename "$REL"), образы — $(du -h "$REL/images.tar.gz" | cut -f1)"
+else
+  echo "OK выпуск собран: $(basename "$REL"), образы — на этой машине (без архива)"
+fi
 echo "Каталог: ${REL#"$PWD"/}"

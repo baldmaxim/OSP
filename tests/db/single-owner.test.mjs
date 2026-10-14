@@ -83,7 +83,7 @@ describe('Права под одну учётку на копии прода: ц
     const started = spawnSync('docker', ['run', '-d', '--rm', '--name', name, '--network', 'host',
       ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), PGRST_IMAGE], { encoding: 'utf8' })
     assert.equal(started.status, 0, started.stderr)
-    pgrst = { url: `http://127.0.0.1:${port}`, env, stop: () => spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' }) }
+    pgrst = { url: `http://127.0.0.1:${port}`, env, stop: () => spawnSync('docker', ['rm', '-fv', name], { stdio: 'ignore' }) }
     // Готов, когда описание структуры базы прочитано: запрос без токена отклоняется (401), а не 503.
     const deadline = Date.now() + 120000
     for (;;) {

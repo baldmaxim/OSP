@@ -214,7 +214,7 @@ networks:
 
   after(() => {
     docker(['compose', '-p', PROJECT, 'down', '--volumes', '--remove-orphans'])
-    docker(['rm', '-f', INFRA, NEIGHBOUR, NEIGHBOUR_API, FOREIGN, SUPABASE, S3STUB])
+    docker(['rm', '-fv', INFRA, NEIGHBOUR, NEIGHBOUR_API, FOREIGN, SUPABASE, S3STUB])
     docker(['volume', 'rm', `${PROJECT}_www`])
     docker(['network', 'rm', `${PROJECT}_internal`])
     db?.stop()
@@ -322,7 +322,7 @@ networks:
     ok(docker(['run', '-d', '--name', FOREIGN, '--label', `com.docker.compose.project=${PROJECT}`, NGINX_IMAGE]), 'чужой контейнер')
     refused('контейнеры проекта')
     assert.equal(inspect(FOREIGN, '{{.State.Status}}'), 'running', 'чужой контейнер не тронут')
-    ok(docker(['rm', '-f', FOREIGN]), 'убрать')
+    ok(docker(['rm', '-fv', FOREIGN]), 'убрать')
     ok(docker(['volume', 'create', `${PROJECT}_www`]), 'чужой том')
     refused('том проекта')
     ok(docker(['volume', 'rm', `${PROJECT}_www`]), 'убрать')

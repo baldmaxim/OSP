@@ -115,7 +115,7 @@ export class TestDatabase {
           DOCKER_IMAGE, '-c', 'fsync=off', '-c', 'max_connections=40'])
         break
       } catch (error) {
-        spawnSync(findBin('docker'), ['rm', '-f', this.container], { stdio: 'ignore' })
+        spawnSync(findBin('docker'), ['rm', '-fv', this.container], { stdio: 'ignore' })
         if (attempt >= 5 || !/address already in use|port is already allocated/i.test(String(error.message))) throw error
         this.port = 30000 + Math.floor(Math.random() * 1000)
       }
@@ -137,7 +137,7 @@ export class TestDatabase {
 
   stop() {
     if (this.mode === 'docker') {
-      if (this.container) spawnSync(findBin('docker'), ['rm', '-f', this.container], { stdio: 'ignore' })
+      if (this.container) spawnSync(findBin('docker'), ['rm', '-fv', this.container], { stdio: 'ignore' })
     } else {
       try { this.ctl(['-D', this.data, '-m', 'immediate', '-w', 'stop']) } catch { /* уже остановлен */ }
     }

@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Рецензия ред. 5 — переезд ОСП с Supabase</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      font-family: 'Golos Text', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color-scheme: light;
+      --bg-primary: #f8fafc;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #f1f5f9;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-tertiary: #64748b;
+      --border-color: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --primary: #0e7490;
+      --primary-soft: #ecfeff;
+      --brand-red: #a83c39;
+      --success: #15803d;
+      --success-soft: #f0fdf4;
+      --warning: #a16207;
+      --warning-soft: #fffbeb;
+      --danger: #b91c1c;
+      --danger-soft: #fef2f2;
+      --info: #4338ca;
+      --info-soft: #eef2ff;
+      --shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 1px 2px rgba(15, 23, 42, .05);
+      --radius: 8px;
+    }
+    html { scroll-behavior: smooth; background: var(--bg-primary); }
+    body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--bg-primary); color: var(--text-primary); }
+    button, input { font: inherit; }
+    a { color: var(--primary); text-underline-offset: 2px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+    .layout { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); min-height: 100vh; }
+    .sidebar { position: sticky; top: 0; height: 100vh; padding: 24px 20px; border-right: 1px solid var(--border-color); background: var(--bg-secondary); overflow-y: auto; }
+    .brand { display: flex; align-items: center; gap: 11px; margin-bottom: 24px; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 7px; color: white; background: var(--brand-red); font-weight: 800; letter-spacing: -.04em; }
+    .brand strong { display: block; font-size: 14px; }
+    .brand span { display: block; margin-top: 2px; color: var(--text-tertiary); font-size: 12px; }
+    .verdict-box { padding: 14px; border: 1px solid #fecaca; border-left: 4px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
+    .verdict-box .label { display: block; color: var(--danger); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .verdict-box strong { display: block; margin-top: 5px; font-size: 14px; line-height: 1.35; }
+    .nav { display: grid; gap: 4px; margin-top: 24px; }
+    .nav a { padding: 8px 10px; border-radius: 6px; color: var(--text-secondary); font-size: 13px; text-decoration: none; }
+    .nav a:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .meta { margin-top: 24px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
+    main { min-width: 0; padding: 32px clamp(20px, 4vw, 58px) 64px; }
+    .hero { max-width: 1120px; margin: 0 auto 24px; }
+    .eyebrow { color: var(--primary); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { max-width: 900px; margin: 10px 0 12px; font-size: clamp(28px, 4vw, 46px); line-height: 1.08; letter-spacing: -.035em; }
+    .lead { max-width: 860px; margin: 0; color: var(--text-secondary); font-size: 17px; line-height: 1.65; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; max-width: 1120px; margin: 24px auto 34px; }
+    .stat { min-width: 0; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-secondary); box-shadow: var(--shadow); }
+    .stat b { display: block; font-size: 26px; line-height: 1; }
+    .stat span { display: block; margin-top: 8px; color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
+    .content { max-width: 1120px; margin: 0 auto; }
+    section { scroll-margin-top: 20px; margin-top: 34px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+    h2 { margin: 0; font-size: 22px; line-height: 1.25; }
+    .section-note { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
+    .filters { display: flex; flex-wrap: wrap; gap: 6px; }
+    .filter { min-height: 34px; padding: 0 11px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; }
+    .filter:hover, .filter.active { border-color: var(--primary); background: var(--primary-soft); color: var(--text-primary); }
+    .finding-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .finding { min-width: 0; padding: 18px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-secondary); box-shadow: var(--shadow); }
+    .finding[data-severity="blocker"] { border-top: 4px solid var(--danger); }
+    .finding[data-severity="high"] { border-top: 4px solid var(--warning); }
+    .finding-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .finding h3 { margin: 0; font-size: 17px; line-height: 1.35; }
+    .badge { flex: none; display: inline-flex; align-items: center; min-height: 24px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+    .badge.blocker { color: var(--danger); background: var(--danger-soft); border: 1px solid #fecaca; }
+    .badge.high { color: var(--warning); background: var(--warning-soft); border: 1px solid #fde68a; }
+    .finding p { margin: 12px 0 0; color: var(--text-secondary); font-size: 13.5px; line-height: 1.58; }
+    .evidence { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: var(--bg-tertiary); color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+    .fix { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); font-size: 13px; line-height: 1.55; }
+    .fix strong { color: var(--text-primary); }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-secondary); box-shadow: var(--shadow); }
+    table { width: 100%; min-width: 800px; border-collapse: collapse; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--border-color); text-align: left; vertical-align: top; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+    th { background: var(--bg-tertiary); color: var(--text-secondary); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { width: 54px; font-weight: 800; color: var(--text-tertiary); }
+    .good-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .good { padding: 16px; border: 1px solid #bbf7d0; border-radius: var(--radius); background: var(--success-soft); }
+    .good strong { display: block; color: var(--success); font-size: 14px; }
+    .good p { margin: 7px 0 0; color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; }
+    .comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .compare-card { padding: 18px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-secondary); }
+    .compare-card.current { border-top: 4px solid var(--warning); }
+    .compare-card.target { border-top: 4px solid var(--success); }
+    .compare-card h3 { margin: 0 0 10px; font-size: 16px; }
+    .compare-card ul, .checklist { margin: 0; padding-left: 20px; }
+    .compare-card li, .checklist li { margin: 7px 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+    .decision { margin-top: 18px; padding: 18px; border: 1px solid #bae6fd; border-left: 4px solid var(--primary); border-radius: var(--radius); background: var(--primary-soft); }
+    .decision strong { display: block; margin-bottom: 6px; }
+    .decision p { margin: 0; color: var(--text-secondary); line-height: 1.55; }
+    .sources { display: grid; gap: 8px; }
+    .source { padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; }
+    .hidden { display: none !important; }
+    @media (max-width: 920px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border-color); }
+      .nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .stats, .finding-grid, .good-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 620px) {
+      main { padding: 24px 16px 48px; }
+      .nav { grid-template-columns: 1fr 1fr; }
+      .stats, .finding-grid, .good-grid, .comparison { grid-template-columns: 1fr; }
+      .section-head { align-items: flex-start; flex-direction: column; }
+    }
+    @media print {
+      .layout { display: block; }
+      .sidebar { position: static; height: auto; border: 0; }
+      .nav, .filters { display: none; }
+      .finding, .stat, .table-wrap { box-shadow: none; break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">ОСП</div>
+        <div><strong>Архитектурная рецензия</strong><span>Supabase → su10 · редакция 5</span></div>
+      </div>
+      <div class="verdict-box">
+        <span class="label">Вердикт</span>
+        <strong>Допустить этапы −1 и 0. Окна A/B пока не утверждать.</strong>
+      </div>
+      <nav class="nav" aria-label="Разделы отчёта">
+        <a href="#summary">Итог</a>
+        <a href="#blockers">Блокеры</a>
+        <a href="#other">Остальные риски</a>
+        <a href="#good">Что уже хорошо</a>
+        <a href="#revision">Редакция 6</a>
+        <a href="#sources">Основания</a>
+      </nav>
+      <div class="meta">Проверено 05.10.2026<br>План: <code>lovely-rolling-pearl.md</code><br>Репозиторий просмотрен без изменений.</div>
+    </aside>
+
+    <main>
+      <header class="hero" id="summary">
+        <div class="eyebrow">Рецензия плана переезда</div>
+        <h1>Направление верное, но пять гарантий пока сильнее описанного механизма</h1>
+        <p class="lead">Редакция 5 заметно лучше прежней: она учитывает общий кластер, Keycloak, внутренний id, Odyssey и раздельные окна. Но сейчас план нельзя использовать как исполнимый runbook переключения: в нём есть одна прямолинейная невозможность, две гонки и несколько недоопределённых контуров безопасности.</p>
+      </header>
+
+      <div class="stats" aria-label="Сводка замечаний">
+        <div class="stat"><b>5</b><span>блокеров до фиксации редакции 6</span></div>
+        <div class="stat"><b>7</b><span>существенных уточнений до окна A</span></div>
+        <div class="stat"><b>488</b><span>вызовов <code>.from()</code>, которым нужен явный маршрут</span></div>
+        <div class="stat"><b>2</b><span>режима допуска: discovery сейчас, cutover после доказательств</span></div>
+      </div>
+
+      <div class="content">
+        <section id="blockers">
+          <div class="section-head">
+            <div><h2>Блокеры</h2><p class="section-note">Каждый пункт меняет формулировку гарантии или последовательность окна.</p></div>
+            <div class="filters" aria-label="Фильтр замечаний">
+              <button class="filter active" data-filter="all">Все</button>
+              <button class="filter" data-filter="blocker">Блокеры</button>
+              <button class="filter" data-filter="high">Высокие</button>
+            </div>
+          </div>
+
+          <div class="finding-grid">
+            <article class="finding" data-severity="blocker">
+              <div class="finding-head"><h3>A6 выполняется после барьера, который запрещает A6</h3><span class="badge blocker">Блокер</span></div>
+              <p>В A4 <code>node_role='retired'</code> включает statement-trigger, отклоняющий запись во все таблицы <code>public</code>. Затем A6 пытается сделать upsert в <code>public.users</code>. Исключение в механизме заявлено только для <code>ops.node_role</code>.</p>
+              <div class="evidence">План: строки 140–148 и 377–380.</div>
+              <div class="fix"><strong>Исправление:</strong> синхронизировать <code>public.users</code> до A4; перед A4 запретить signup; после A4 только сверить снимок <code>auth.users ↔ public.users</code>. Альтернатива — отдельный строго ограниченный cutover-bypass с аудитом, но он ослабляет гарантию барьера.</div>
+            </article>
+
+            <article class="finding" data-severity="blocker">
+              <div class="finding-head"><h3>Outbox не покрывает DELETE, смену видимости и границу ночного дампа</h3><span class="badge blocker">Блокер</span></div>
+              <p>В механизме записан только «полный образ новой строки», но у DELETE нет <code>NEW</code>. Для UPDATE, меняющего владельца, SSE нужен и старый, и новый образ — сам план ниже уже требует оба. Кроме того, «зафиксировать последний id при старте дампа» даёт дыру при долгой незавершённой транзакции с меньшим id.</p>
+              <div class="evidence">План: строки 195–218 и 354–357. PostgreSQL даёт OLD TABLE для UPDATE/DELETE и NEW TABLE для INSERT/UPDATE — это разные образы.</div>
+              <div class="fix"><strong>Исправление:</strong> хранить <code>event_id</code>, transaction id, PK, <code>old_row</code>, <code>new_row</code>, operation, schema version; проигрывать транзакциями с журналом применённых событий. Манифест дампа и безопасная граница outbox должны формироваться из одного экспортированного snapshot либо под кратким барьером. Добавить тест с long-running transaction вокруг границы.</div>
+            </article>
+
+            <article class="finding" data-severity="blocker">
+              <div class="finding-head"><h3>JIT противоречит гарантии <code>pending_mapping</code></h3><span class="badge blocker">Блокер</span></div>
+              <p>План обещает, что несопоставленный прежний пользователь не получит пустую учётку. Но resolver проверяет совпадение email и при несовпадении сразу делает JIT. Изменённый, отсутствующий или дублирующийся email превращает прежнего пользователя в «нового».</p>
+              <div class="evidence">План: гарантия на строках 98–102; фактическая ветка resolver на строках 411–418.</div>
+              <div class="fix"><strong>Исправление:</strong> на период миграции отключить общий JIT: любой неизвестный <code>sub</code> → <code>pending_mapping</code>. Новых пользователей создавать только по явному provisioning-решению auth/администратора. После закрытия всех pending можно отдельно включить JIT с проверяемым признаком «новый пользователь».</div>
+            </article>
+
+            <article class="finding" data-severity="blocker">
+              <div class="finding-head"><h3>Нет исполнимого шага для переключения всех чтений</h3><span class="badge blocker">Блокер</span></div>
+              <p>Этап 2 переводит через фасад только записи. Между тем 488 вызовов <code>.from()</code> живут в 52 файлах, а текущий Supabase client одновременно обслуживает Auth и REST. Нельзя просто заменить один base URL: в фазе A Auth должен остаться в Supabase, а данные уже идти через osp-api.</p>
+              <div class="evidence">План: строка 297 против заявленных «старых клиентов ноль» на строке 358. Репозиторий: <code>src/supabase/client.js</code> создаёт единый client.</div>
+              <div class="fix"><strong>Исправление:</strong> добавить отдельный milestone «split transport»: <code>supabaseAuth</code> только для Auth и отдельный PostgREST-compatible data client через <code>/api/rest/v1</code>. Gate перед A: ноль <code>.from/.rpc/.storage/.channel/.functions</code> вне утверждённых адаптеров.</div>
+            </article>
+
+            <article class="finding" data-severity="blocker">
+              <div class="finding-head"><h3>«Ровно один раз» не определено на границе PostgREST</h3><span class="badge blocker">Блокер</span></div>
+              <p>Pre-request может обнаружить дубликат и прервать SQL, но сам по себе не возвращает сохранённый бизнес-результат вместо выполнения основного PostgREST handler. Не описаны состояние «первый запрос ещё выполняется», таймаут ожидания и различие между stale version, RLS deny и отсутствующей строкой при результате 0 rows.</p>
+              <div class="evidence">План: строки 152–173 и тесты 5, 19, 21. Формулировка «ровно один раз» на строке 92 сильнее описанного протокола.</div>
+              <div class="fix"><strong>Исправление:</strong> зафиксировать протокол: duplicate exception → osp-api читает private <code>request_log</code> → возвращает сохранённый результат; in-flight имеет отдельный статус и bounded wait. Для внешних саг формулировать «at-least-once delivery + idempotent/effectively-once effect». Классификацию 0 rows делать внутри конкретного RPC, а не общим триггером.</div>
+            </article>
+
+            <article class="finding" data-severity="high">
+              <div class="finding-head"><h3>Backup под <code>osp_migration</code> нельзя запускать из osp-api</h3><span class="badge high">Высокий</span></div>
+              <p>Архитектура помещает экспортёр и ночной dump в osp-api, а dump выполняется ролью-владельцем. Компрометация долгоживущего приложения тогда даёт DDL/ownership-доступ ко всей базе. Плюс собственный outbox экспортируется асинхронно и не даёт нулевого RPO при потере всего кластера.</p>
+              <div class="evidence">План: строки 122–124 и 195–218.</div>
+              <div class="fix"><strong>Исправление:</strong> отдельный backup/export workload и отдельный секрет; по возможности роль <code>osp_backup</code> с минимальными правами. Явно разделить сценарии: logical corruption, отказ БД, потеря кластера; для каждого записать RPO/RTO и основной механизм (PITR владельца кластера либо собственный dump+outbox).</div>
+            </article>
+          </div>
+        </section>
+
+        <section id="other">
+          <div class="section-head"><div><h2>Существенные уточнения</h2><p class="section-note">Не ломают направление, но должны стать явными условиями допуска.</p></div></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Риск</th><th>Почему это важно</th><th>Что добавить в редакцию 6</th></tr></thead>
+              <tbody>
+                <tr><td>H1</td><td><strong>Права функций</strong></td><td>В схеме около 48 <code>SECURITY DEFINER</code>; blanket <code>GRANT EXECUTE ON ALL FUNCTIONS</code> и дефолтный EXECUTE для PUBLIC обходят RLS через владельца функции.</td><td><code>REVOKE EXECUTE ... FROM PUBLIC</code>, default privileges и allowlist RPC. Проверять secure <code>search_path</code> и владельца каждой definer-функции.</td></tr>
+                <tr><td>H2</td><td><strong>Связь mapping с финальным export</strong></td><td>В формате есть <code>basedOn.contentSha256</code>, но шаг применения не требует совпадения с финальной выгрузкой. Можно применить корректно подписанный mapping не от того снимка.</td><td>В ledger сохранить hash final export; <code>apply-mapping</code> обязан проверить <code>round=final</code>, portal, issuer и exact <code>basedOn.contentSha256</code>.</td></tr>
+                <tr><td>H3</td><td><strong>Заморозка Supabase Auth</strong></td><td>Скрытие UI не запрещает stale-клиенту сменить пароль/профиль после выгрузки; во время A новые signup также могут появиться вне барьера public-схемы.</td><td>Запрет signup перед A4; checksum/updated_at auth users непосредственно перед A и B switch; любое изменение → новый final round.</td></tr>
+                <tr><td>H4</td><td><strong>Локальные статусы и onboarding</strong></td><td><code>users.is_active</code> не заменяет текущие <code>user_roles.is_approved/is_blocked</code>. После отказа от self-signup не описано создание нового подрядчика, его company/phone и привязка к counterparty.</td><td>Единый resolver статусов и явный процесс provisioning для сотрудников/подрядчиков. Смоук для blocked, pending approval и нового подрядчика.</td></tr>
+                <tr><td>H5</td><td><strong>Anon-политики нельзя механически слить</strong></td><td>Политики PostgreSQL по умолчанию объединяются через OR. Замена и <code>anon</code>, и <code>authenticated</code> на одну роль меняет семантику.</td><td>Anon policies удалить из RLS-слоя; публичную витрину реализовать отдельной узкой функцией/view/ролью с фиксированным projection. Не делать blind replace.</td></tr>
+                <tr><td>H6</td><td><strong>Очередь и Object Storage — не одна транзакция</strong></td><td>Возможен orphan только в БД или только в бакете; файл/50 МБ payload нельзя считать принятым без durable object и hash. Простое деление по сущностям не задаёт порядок cross-entity команд.</td><td>Immutable object key = operation key, digest, conditional put, reconciliation обеих сторон, версия payload, отдельный путь для файлов и dependency/aggregate key.</td></tr>
+                <tr><td>H7</td><td><strong>Scheduler на xact lock</strong></td><td><code>pg_try_advisory_xact_lock</code> защищает только пока открыта транзакция. Для внешнего HTTP/S3 шага lock либо отпустится, либо придётся держать долгую DB-транзакцию.</td><td>Для чистого DB RPC оставить xact lock; для внешних работ — durable jobs с lease, <code>SKIP LOCKED</code>, retry и idempotency key.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="good">
+          <div class="section-head"><div><h2>Что в редакции 5 уже хорошо</h2><p class="section-note">Эти решения стоит сохранить.</p></div></div>
+          <div class="good-grid">
+            <article class="good"><strong>Стабильный внутренний id</strong><p>Прежний <code>auth.users.id</code> остаётся владельцем данных, а Keycloak <code>sub</code> вынесен в таблицу связей.</p></article>
+            <article class="good"><strong>Раздельные фазы A и B</strong><p>Перенос данных и смена identity имеют независимые откаты и отдельные smoke-наборы.</p></article>
+            <article class="good"><strong>Fail-closed RLS-контекст</strong><p><code>app.user_id</code> задаётся transaction-local, runtime не владеет таблицами, session state не используется.</p></article>
+            <article class="good"><strong>Стоп-точки и rehearsal</strong><p>Dry-run, репетиции, явное подтверждение и условия допуска превращают миграцию в управляемый процесс.</p></article>
+            <article class="good"><strong>Осознанный Odyssey-контур</strong><p>Нет LISTEN, session locks и session SET; prepared statements отключены для transaction pooling.</p></article>
+            <article class="good"><strong>Публичная витрина через API</strong><p>Отказ от прямого anon-доступа к базе уменьшает поверхность атаки и позволяет фиксировать projection.</p></article>
+          </div>
+        </section>
+
+        <section id="revision">
+          <div class="section-head"><div><h2>Минимальная редакция 6</h2><p class="section-note">Не переписывать весь документ — достаточно закрыть следующие контракты.</p></div></div>
+          <div class="comparison">
+            <article class="compare-card current">
+              <h3>Сейчас</h3>
+              <ul>
+                <li>можно начинать стенд, инвентаризацию и заявки;</li>
+                <li>нельзя обещать zero-loss и exactly-once для всех сценариев;</li>
+                <li>нельзя выполнять runbook A/B буквально;</li>
+                <li>не определён полный frontend cutover и lifecycle пользователей.</li>
+              </ul>
+            </article>
+            <article class="compare-card target">
+              <h3>После правок</h3>
+              <ul>
+                <li>A6 перенесён до барьера, Auth drift закрыт;</li>
+                <li>outbox имеет OLD/NEW, snapshot boundary и replay ledger;</li>
+                <li>JIT выключен для неизвестных identity до закрытия mapping;</li>
+                <li>есть split auth/data client и gate «0 прямых Supabase data calls»;</li>
+                <li>привилегии, backup role, RPO/RTO и onboarding зафиксированы.</li>
+              </ul>
+            </article>
+          </div>
+          <div class="decision">
+            <strong>Рекомендация по утверждению</strong>
+            <p>Утвердить только этапы −1 и 0 и подготовку заявок этапа 1. Этап 2 начинать с transport split и privilege model. Окна A/B считать неутверждёнными до редакции 6 и прохождения архитектурного стенда по исправленным критериям.</p>
+          </div>
+        </section>
+
+        <section id="sources">
+          <div class="section-head"><div><h2>Основания проверки</h2><p class="section-note">План сопоставлен с архивом skill, кодом репозитория и первичной документацией.</p></div></div>
+          <div class="sources">
+            <div class="source"><strong>Локальный план:</strong> <code>/home/usrr/.claude/plans/lovely-rolling-pearl.md</code>, 541 строк.</div>
+            <div class="source"><strong>Стандарт su10:</strong> <code>/home/usrr/skill_keycloak_supabase_migration.zip</code>, прочитаны SKILL.md и references 01–06.</div>
+            <div class="source"><strong>Код:</strong> единый Supabase client — <code>src/supabase/client.js</code>; текущие auth/onboarding — <code>src/contexts/RoleContext.jsx</code>; realtime — <code>src/hooks/useRealtimeTable.js</code>.</div>
+            <div class="source"><strong>PostgreSQL:</strong> <a href="https://www.postgresql.org/docs/current/ddl-rowsecurity.html">RLS и bypass владельца</a>; <a href="https://www.postgresql.org/docs/current/sql-createtrigger.html">OLD/NEW transition relations</a>; <a href="https://www.postgresql.org/docs/16/sql-createfunction.html">безопасность SECURITY DEFINER</a>.</div>
+            <div class="source"><strong>PostgREST / Yandex:</strong> <a href="https://docs.postgrest.org/en/v14/references/configuration.html">transaction-pooler settings и pre-request</a>; <a href="https://docs.postgrest.org/en/v14/references/auth.html">authenticator/user roles</a>; <a href="https://yandex.cloud/en/docs/managed-postgresql/concepts/pooling">Odyssey transaction mode</a>.</div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script>
+    const buttons = [...document.querySelectorAll('[data-filter]')];
+    const findings = [...document.querySelectorAll('.finding[data-severity]')];
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        const filter = button.dataset.filter;
+        buttons.forEach((item) => item.classList.toggle('active', item === button));
+        findings.forEach((item) => item.classList.toggle('hidden', filter !== 'all' && item.dataset.severity !== filter));
+      });
+    }
+  </script>
+</body>
+</html>

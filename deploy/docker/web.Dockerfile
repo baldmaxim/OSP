@@ -19,7 +19,11 @@ COPY src ./src
 ARG VITE_SUPABASE_URL=
 ARG VITE_SUPABASE_ANON_KEY=
 ARG OSP_BUILD_ID=
-RUN VITE_SUPABASE_URL="$VITE_SUPABASE_URL" VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
+# Куча Node при сборке сайта — с запасом к замеру (пик сборки ~0,85 ГБ вместе с файловым кэшем): на общем
+# сервере сборка идёт в сборщике с потолком памяти (scripts/deploy-server.sh), и куча не должна в него упереться.
+ARG OSP_NODE_HEAP=768
+RUN NODE_OPTIONS="--max-old-space-size=$OSP_NODE_HEAP" \
+    VITE_SUPABASE_URL="$VITE_SUPABASE_URL" VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
     OSP_BUILD_ID="$OSP_BUILD_ID" npm run build
 
 FROM nginx:1.29-alpine

@@ -21,14 +21,14 @@ adm() { PGPASSWORD="$ADMIN_PASS" PGSSLMODE=disable psql -h 127.0.0.1 -p "$PORT" 
 
 case "${1:-}" in
   down)
-    docker rm -f "$NAME" >/dev/null 2>&1 || true
+    docker rm -fv "$NAME" >/dev/null 2>&1 || true
     rm -rf "$STAND_DIR"
     echo "OK стенд убран" ;;
   up)
     DUMP="${2:-}"
     [ -n "$DUMP" ] && [ -f "$DUMP" ] || { echo "Нужна копия: bash migration/target/stand.sh up <копия.dump>" >&2; exit 1; }
     for bin in docker psql pg_restore; do command -v "$bin" >/dev/null || { echo "Нужен $bin" >&2; exit 1; }; done
-    docker rm -f "$NAME" >/dev/null 2>&1 || true
+    docker rm -fv "$NAME" >/dev/null 2>&1 || true
     docker run -d --rm --name "$NAME" -p "127.0.0.1:$PORT:5432" -e "POSTGRES_PASSWORD=$ADMIN_PASS" \
       -e 'POSTGRES_INITDB_ARGS=-E UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8' \
       postgres:17-alpine -c fsync=off -c max_connections=60 >/dev/null

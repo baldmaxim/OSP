@@ -32,7 +32,7 @@ pg_start() {
         "$PG_IMAGE" -c fsync=off -c max_connections=40 >/dev/null 2>"$err"; then
       break
     fi
-    docker rm -f "$LOCAL_CONTAINER" >/dev/null 2>&1 || true
+    docker rm -fv "$LOCAL_CONTAINER" >/dev/null 2>&1 || true
     if [ "$attempt" = 5 ] || ! grep -q -i -E 'address already in use|port is already allocated' "$err"; then
       cat "$err" >&2
       rm -f -- "$err"
@@ -52,7 +52,7 @@ pg_start() {
 }
 
 pg_stop() {
-  if [ -n "$LOCAL_CONTAINER" ]; then docker rm -f "$LOCAL_CONTAINER" >/dev/null 2>&1 || true; fi
+  if [ -n "$LOCAL_CONTAINER" ]; then docker rm -fv "$LOCAL_CONTAINER" >/dev/null 2>&1 || true; fi
 }
 
 # Расширения — в ту схему, на которую ссылается копия (в Supabase обычно extensions).

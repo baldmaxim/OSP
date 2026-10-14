@@ -282,7 +282,7 @@ describe('Загрузка копии в базу без Supabase: всё или
     for (const r of [unpinned, shown, pinned, other, otherReset, repin]) noSecrets(r)
   })
   after(() => {
-    spawnSync('docker', ['rm', '-f', prodContainer, targetContainer], { stdio: 'ignore' })
+    spawnSync('docker', ['rm', '-fv', prodContainer, targetContainer], { stdio: 'ignore' })
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true })
   })
 

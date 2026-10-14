@@ -117,7 +117,7 @@ describe('osp-api: подключение к базе по TLS на настоя
       const started = spawnSync('docker', ['run', '-d', '--rm', '--name', container, '-p', `127.0.0.1:${port}:5432`,
         '-v', `${certs}:/certs:ro`, '-e', `POSTGRES_PASSWORD=${PASSWORD}`, '--entrypoint', 'sh', 'postgres:17-alpine', '-c', boot], { encoding: 'utf8' })
       if (started.status === 0) break
-      spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' })
+      spawnSync('docker', ['rm', '-fv', container], { stdio: 'ignore' })
       if (attempt >= 5 || !/address already in use|port is already allocated/i.test(started.stderr)) assert.fail(started.stderr)
     }
     // Готов, когда отвечает через проброшенный порт (образ сначала поднимает сервер только на сокете).
@@ -132,7 +132,7 @@ describe('osp-api: подключение к базе по TLS на настоя
     }
   })
   after(() => {
-    spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' })
+    spawnSync('docker', ['rm', '-fv', container], { stdio: 'ignore' })
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true })
   })
 

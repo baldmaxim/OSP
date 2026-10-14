@@ -10,12 +10,14 @@
 #   • порты, которые сервер слушал снаружи, по-прежнему слушаются (адреса 127.0.0.1 не сравниваются:
 #     это внутренние порты служб, их состояние видно по контейнерам);
 #   • память и диск: предупреждение, если свободного стало мало.
-# Контейнеры проекта портала (OSP_PROJECT, по умолчанию osp) в сравнение не входят. В чужие контейнеры
+# Контейнеры проекта портала (OSP_PROJECT, по умолчанию osp) и его сборщик buildx в сравнение не входят. В чужие контейнеры
 # скрипт не заходит и их настроек не читает: только имя, состояние, время запуска и отпечаток образа.
 # Выход: 0 — без замечаний или только «ВНИМАНИЕ»; 1 — ошибка запуска; 3 — FAIL.
 set -euo pipefail
 OSP_HOME="${OSP_HOME:-/opt/portals/osp}"
 PROJECT="${OSP_PROJECT:-osp}"
+# Свой сборщик buildx (scripts/deploy-server.sh) — не сосед: он запускается на время сборки и останавливается.
+BUILDER="${OSP_BUILDER:-osp-builder}"
 REPORT_DIR="${OSP_REPORT_DIR:-$OSP_HOME/reports}"
 MODE="${1:-}"
 case "$MODE" in --save | --compare) ;; *) echo "Использование: bash neighbors.sh --save | --compare" >&2; exit 1 ;; esac
@@ -29,7 +31,8 @@ NOW="$REPORT_DIR/server-neighbors-$(date -u +%Y%m%d-%H%M%S).tsv"
   if [ -n "$ids" ]; then
     # shellcheck disable=SC2086
     docker inspect $ids --format '{{.Name}}{{"\t"}}{{index .Config.Labels "com.docker.compose.project"}}{{"\t"}}{{.State.Status}}{{"\t"}}{{.State.StartedAt}}{{"\t"}}{{.RestartCount}}{{"\t"}}{{.Image}}' |
-      awk -F'\t' -v own="$PROJECT" '$2 != own { sub(/^\//, "", $1); print "container\t" $1 "\t" $3 "\t" $4 "\t" $5 "\t" $6 }'
+      awk -F'\t' -v own="$PROJECT" -v builder="/buildx_buildkit_$BUILDER" \
+        '$2 != own && index($1, builder) != 1 { sub(/^\//, "", $1); print "container\t" $1 "\t" $3 "\t" $4 "\t" $5 "\t" $6 }'
   fi
   ss -ltnH | awk '$4 !~ /^(127\.|\[::1\])/ { print "port\t" $4 }' | sort -u
   awk '/^MemAvailable:/ { print "mem\t" int($2 / 1024) }' /proc/meminfo

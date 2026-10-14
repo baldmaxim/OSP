@@ -148,7 +148,7 @@ describe('Перенос учётных записей и обложек', { ski
     assert.equal(run('pin.sh', [envFile, '--confirm']).status, 0)
   })
   after(() => {
-    spawnSync('docker', ['rm', '-f', prodContainer, targetContainer], { stdio: 'ignore' })
+    spawnSync('docker', ['rm', '-fv', prodContainer, targetContainer], { stdio: 'ignore' })
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true })
   })
 

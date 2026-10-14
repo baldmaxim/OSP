@@ -11,6 +11,7 @@
 // кандидат не применён, лишняя строка списка безвредна: шлюз пропустит запрос, а PostgREST ответит, что
 // такого представления нет. Обратное опасно: без строки в списке портал после переноса не увидел бы
 // новое представление (так публичная страница тендеров осталась бы пустой).
+// Поверх — разрешения миграций базы нового портала (migration/yandex, строки «-- osp:allow …»).
 // Запуск: node scripts/build-db-allow.mjs [--check]
 //   --check — ничего не писать, выйти с кодом 1, если файл в репозитории отличается.
 // То же сравнение — тест tests/db/gateway-allow.test.mjs. В файле только имена таблиц, представлений и функций.
@@ -76,6 +77,64 @@ export function buildAllow({ tables, functions }) {
   return allow
 }
 
+// Миграции базы нового портала (migration/yandex/*.sql) открывают шлюзу новое явно — строкой-комментарием:
+//   -- osp:allow table <имя> authenticated=select,insert,update,delete anon=select
+//   -- osp:allow rpc <имя> authenticated
+//   -- osp:allow table <имя> none        (закрыть)
+// Строка задаёт запись целиком и сильнее прав копии: миграция могла их поменять. Аноним — только чтение
+// таблиц и представлений, функции ему не выдаются.
+const YANDEX_DIR = path.join(ROOT, 'migration', 'yandex')
+const ACTIONS = ['delete', 'insert', 'select', 'update']
+const NAME_RE = /^[a-z_][a-z0-9_]*$/
+
+export function parseAllowAnnotations(text, where = 'миграция') {
+  const out = []
+  for (const [i, line] of text.split('\n').entries()) {
+    const m = /^\s*--\s*osp:allow\b(.*)$/.exec(line)
+    if (!m) continue
+    const at = `${where}:${i + 1}`
+    const [kind, name, ...rest] = m[1].trim().split(/\s+/)
+    if (!['table', 'rpc'].includes(kind) || !NAME_RE.test(name || '') || !rest.length) throw new Error(`${at}: нужно «-- osp:allow table|rpc <имя> …»`)
+    if (rest.length === 1 && rest[0] === 'none') { out.push({ kind, name, entry: null }); continue }
+    if (kind === 'rpc') {
+      const roles = rest.join(',').split(',').filter(Boolean)
+      if (rest.length !== 1 || !roles.length || roles.some((r) => !ROLES.includes(r))) throw new Error(`${at}: роли функции — ${ROLES.join(',')} через запятую`)
+      // Как на проде после Р2g: вызывать функции без входа нельзя (tests/db/gateway-allow.test.mjs).
+      if (roles.includes('anon')) throw new Error(`${at}: функции анониму не выдаются`)
+      out.push({ kind, name, entry: ROLES.filter((r) => roles.includes(r)) })
+      continue
+    }
+    const entry = {}
+    for (const part of rest) {
+      const [role, list = ''] = part.split('=')
+      const actions = list.split(',').filter(Boolean)
+      if (!ROLES.includes(role) || entry[role] || !actions.length || actions.some((a) => !ACTIONS.includes(a))) {
+        throw new Error(`${at}: «${part}» — нужно роль=действия, роль ${ROLES.join('|')}, действия ${ACTIONS.join(',')}`)
+      }
+      if (role === 'anon' && actions.some((a) => a !== 'select')) throw new Error(`${at}: анониму — только select`)
+      entry[role] = ACTIONS.filter((a) => actions.includes(a))
+    }
+    out.push({ kind, name, entry: Object.fromEntries(ROLES.filter((r) => entry[r]).map((r) => [r, entry[r]])) })
+  }
+  return out
+}
+
+export function yandexAllowAnnotations(dir = YANDEX_DIR) {
+  if (!fs.existsSync(dir)) return []
+  return fs.readdirSync(dir).filter((f) => /^\d{8}_[a-z0-9_]+\.sql$/.test(f)).sort()
+    .flatMap((f) => parseAllowAnnotations(fs.readFileSync(path.join(dir, f), 'utf8'), `migration/yandex/${f}`))
+}
+
+export function applyAnnotations(allow, annotations = yandexAllowAnnotations()) {
+  const out = { tables: { ...allow.tables }, rpc: { ...allow.rpc } }
+  for (const { kind, name, entry } of annotations) {
+    const target = kind === 'table' ? out.tables : out.rpc
+    if (entry === null) delete target[name]
+    else target[name] = entry
+  }
+  return out
+}
+
 async function main() {
   const check = process.argv.includes('--check')
   const dump = latestVerifiedCopy()
@@ -84,7 +143,7 @@ async function main() {
   let candidates
   try {
     candidates = applyCandidates(db.port)
-    allow = buildAllow(readGrants(db.port))
+    allow = applyAnnotations(buildAllow(readGrants(db.port)))
   } finally {
     db.stop()
   }

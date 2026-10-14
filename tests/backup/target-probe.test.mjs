@@ -120,7 +120,7 @@ describe('Разведка выданной базы: только чтение,
     assert.equal(res.status, 0, res.stderr)
   })
   after(() => {
-    spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' })
+    spawnSync('docker', ['rm', '-fv', container], { stdio: 'ignore' })
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true })
   })
 

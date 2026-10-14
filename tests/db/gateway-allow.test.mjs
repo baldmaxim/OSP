@@ -6,12 +6,13 @@
 // представление или функцию, а список не пересобрали — после переноса портал их не увидит (так публичная
 // страница тендеров осталась бы пустой: шлюз ответил бы, что представления public_open_tenders нет).
 // Расхождение чинится командой: node scripts/build-db-allow.mjs
+// Поверх прав копии — явные разрешения миграций базы нового портала (migration/yandex, «-- osp:allow …»).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { ROOT, skipReason, latestVerifiedCopy, startCopy } from './lib/stand.mjs'
-import { applyCandidates, readGrants, buildAllow } from '../../scripts/build-db-allow.mjs'
+import { applyCandidates, readGrants, buildAllow, applyAnnotations, parseAllowAnnotations, yandexAllowAnnotations } from '../../scripts/build-db-allow.mjs'
 
 const skip = skipReason({ needCopy: true })
 const ALLOW = JSON.parse(fs.readFileSync(path.join(ROOT, 'server', 'osp-api', 'src', 'data', 'allow.json'), 'utf8'))
@@ -22,7 +23,7 @@ describe('Список шлюза данных против прав прода 
   before(() => {
     db = startCopy(latestVerifiedCopy())
     applyCandidates(db.port)
-    expected = buildAllow(readGrants(db.port))
+    expected = applyAnnotations(buildAllow(readGrants(db.port)))
   })
   after(() => db?.stop())
 
@@ -52,6 +53,39 @@ describe('Список шлюза данных против прав прода 
       // Таблица после миграции гостю закрыта — её в списке для анонима может не быть; представление обязано.
       if (t === 'public_open_tenders') assert.deepEqual(ALLOW.tables[t]?.anon, ['select'], t)
       else assert.ok(Object.hasOwn(ALLOW.tables, t), `${t} нет в списке шлюза`)
+    }
+  })
+})
+
+// Без Docker и копии: разрешения миграций базы нового портала разбираются строго и все уже в списке.
+describe('Разрешения шлюза из миграций базы нового портала (migration/yandex)', () => {
+  it('строки «-- osp:allow» разбираются; ошибочные — отказ, а не молчаливый пропуск', () => {
+    const sql = [
+      '-- osp:allow table tags authenticated=update,select anon=select',
+      '  --osp:allow rpc tag_count authenticated',
+      '-- osp:allow table old_table none',
+      '-- обычный комментарий про osp:allow не в начале',
+    ].join('\n')
+    assert.deepEqual(parseAllowAnnotations(sql), [
+      { kind: 'table', name: 'tags', entry: { anon: ['select'], authenticated: ['select', 'update'] } },
+      { kind: 'rpc', name: 'tag_count', entry: ['authenticated'] },
+      { kind: 'table', name: 'old_table', entry: null },
+    ])
+    for (const bad of ['-- osp:allow table tags anon=insert', '-- osp:allow rpc f anon', '-- osp:allow table tags owner=select',
+      '-- osp:allow table Tags authenticated=select', '-- osp:allow view tags authenticated=select', '-- osp:allow table tags',
+      '-- osp:allow table tags authenticated=drop']) {
+      assert.throws(() => parseAllowAnnotations(bad), /osp:allow|роль|анониму|функции/, bad)
+    }
+    const merged = applyAnnotations({ tables: { old_table: { authenticated: ['select'] }, keep: { anon: ['select'] } }, rpc: {} },
+      parseAllowAnnotations(sql))
+    assert.deepEqual(merged, { tables: { keep: { anon: ['select'] }, tags: { anon: ['select'], authenticated: ['select', 'update'] } },
+      rpc: { tag_count: ['authenticated'] } })
+  })
+
+  it('каждое разрешение миграций уже в allow.json (иначе: node scripts/build-db-allow.mjs)', () => {
+    for (const { kind, name, entry } of yandexAllowAnnotations()) {
+      const have = (kind === 'table' ? ALLOW.tables : ALLOW.rpc)[name]
+      assert.deepEqual(have ?? null, entry, `${kind} ${name}`)
     }
   })
 })

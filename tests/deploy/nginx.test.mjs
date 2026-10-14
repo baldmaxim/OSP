@@ -92,7 +92,7 @@ describe('nginx: сайт и /api/ по файлу из репозитория',
   })
 
   after(() => {
-    for (const c of [stub, nginx]) if (c) docker(['rm', '-f', c])
+    for (const c of [stub, nginx]) if (c) docker(['rm', '-fv', c])
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true })
   })
 

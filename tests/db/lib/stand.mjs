@@ -55,10 +55,10 @@ export function startCopy(dump) {
   const port = res.stdout.match(/^PORT=(\d+)$/m)?.[1]
   const container = res.stdout.match(/^CONTAINER=(\S+)$/m)?.[1]
   if (res.status !== 0 || !port) {
-    if (container) spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' })
+    if (container) spawnSync('docker', ['rm', '-fv', container], { stdio: 'ignore' })
     throw new Error(`restore-copy.sh: ${(res.stdout + res.stderr).split('\n').slice(-5).join(' | ')}`)
   }
-  return { port: Number(port), stop: () => spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' }) }
+  return { port: Number(port), stop: () => spawnSync('docker', ['rm', '-fv', container], { stdio: 'ignore' }) }
 }
 
 // Слепок схемы прода без данных: роли Supabase, pg_trgm в public, слепок. Миграции, применённые
@@ -69,7 +69,7 @@ export function startSnapshot() {
   const run = spawnSync('docker', ['run', '-d', '--rm', '--name', container, '-p', `127.0.0.1:${port}:5432`,
     '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', 'postgres:17-alpine', '-c', 'fsync=off'], { encoding: 'utf8' })
   if (run.status !== 0) throw new Error(`docker run: ${run.stderr}`)
-  const stop = () => spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' })
+  const stop = () => spawnSync('docker', ['rm', '-fv', container], { stdio: 'ignore' })
   try {
     const deadline = Date.now() + 120000
     for (;;) {
@@ -112,7 +112,7 @@ export function startSingleOwner(dump) {
   const ownerPass = 'single-owner-pass'
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'osp-single-db-'))
   const stop = () => {
-    spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' })
+    spawnSync('docker', ['rm', '-fv', container], { stdio: 'ignore' })
     fs.rmSync(tmp, { recursive: true, force: true })
   }
   const psql = (user, pass, db, sql, { file, appName = 'osp-test', options = '' } = {}) => {

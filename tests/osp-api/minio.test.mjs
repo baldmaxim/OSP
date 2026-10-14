@@ -94,7 +94,7 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
   after(async () => {
     await app?.close()
     await supa?.close()
-    if (container) docker(['rm', '-f', container])
+    if (container) docker(['rm', '-fv', container])
   })
 
   it('загрузка с повторами, превью, скачивание под исходным именем, удаление', async () => {
