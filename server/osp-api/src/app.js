@@ -30,6 +30,7 @@ import { OPEN_ROUTES } from './open-routes.js'
 import { registerS3Presign } from './routes/s3Presign.js'
 import { registerAiAssist } from './routes/aiAssist.js'
 import { registerRates } from './routes/rates.js'
+import { registerCovers } from './routes/covers.js'
 import { registerDbGateway, createInternalTokens, createRemoteVerifier } from './routes/dbGateway.js'
 import { createAuthAdmin, createAuthUsersMirror } from './lib/authUsers.js'
 import { createWriteBarrier } from './lib/writeBarrier.js'
@@ -355,5 +356,6 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   registerS3Presign(app, ctx)
   registerAiAssist(app, ctx)
   registerRates(app, ctx)
+  registerCovers(app, ctx)
   return app
 }

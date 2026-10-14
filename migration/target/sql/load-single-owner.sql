@@ -79,6 +79,23 @@ CREATE TABLE auth.users (
   updated_at timestamptz,
   raw_user_meta_data jsonb
 );
+-- Если учётки перенесены с отпечатками (load.sh --auth), копия наполняется сразу из них: список
+-- пользователей у администратора есть с первой минуты, не дожидаясь обновления из Supabase Auth.
+-- Отпечатки в эту таблицу не попадают — берутся только колонки выше. Отметка osp:vault — только на
+-- этот запрос.
+DO $mirror$
+DECLARE
+  v_app text := pg_catalog.current_setting('application_name');
+BEGIN
+  IF pg_catalog.to_regclass('osp_vault.users') IS NOT NULL THEN
+    PERFORM pg_catalog.set_config('application_name', 'osp:vault', true);
+    INSERT INTO auth.users (id, aud, role, email, email_confirmed_at, last_sign_in_at, created_at, updated_at, raw_user_meta_data)
+    SELECT id, aud, role, email, email_confirmed_at, last_sign_in_at, created_at, updated_at, raw_user_meta_data
+    FROM osp_vault.users;
+    PERFORM pg_catalog.set_config('application_name', v_app, true);
+  END IF;
+END
+$mirror$;
 
 DO $single_owner$
 DECLARE

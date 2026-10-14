@@ -25,8 +25,12 @@
 #   3. Данные, таблицы, функции, индексы — как в копии, без правок. Права и политики — с заменой роли
 #      Supabase authenticated на роль приложения; anon и service_role не переносятся (lib/rewrite.mjs).
 #   4. Одна транзакция: схема auth (compat/auth.sql), отметка и часовой пояс UTC (sql/load-begin.sql),
-#      копия, права (sql/load-rights.sql и права из копии) либо закрытие функций (sql/load-lockdown.sql),
-#      перечень созданного (sql/load-end.sql).
+#      копия, учётные записи с отпечатками паролей в закрытую схему osp_vault (--auth, sql/load-auth.sql:
+#      выгрузки этой же копии, число строк сверяется с описью), адреса сверенных обложек (--covers <журнал>,
+#      sql/load-covers.sql — единственная правка данных, объявленная явно), права (sql/load-rights.sql и
+#      права из копии) либо закрытие функций (sql/load-lockdown.sql), перечень созданного (sql/load-end.sql).
+#   Окончательный перенос (--status final) без --auth и --covers не выполняется: учётки и обложки не могут
+#   быть пропущены молча; не сверена хоть одна обложка списка — тоже отказ до записи.
 # Ролей и расширений не создаёт: в Яндексе это делается в консоли.
 # В вывод и отчёт (migration/target/reports/load-<время>.txt) идут только счётчики и имена объектов.
 # Выход: 0 — загружено; 1 — ошибка запуска; 2 — нет подключения; 3 — проверки не пройдены;
@@ -40,7 +44,7 @@ REPORT_DIR="${PROBE_REPORT_DIR:-$HERE/reports}"
 . "$HERE/lib/conn.sh"
 
 usage() {
-  echo "Использование: bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal|final [--runtime-role osp_runtime | --without-rights | --single-owner]" >&2
+  echo "Использование: bash migration/target/load.sh <файл подключения> <копия.dump> --status rehearsal|final [--runtime-role osp_runtime | --without-rights | --single-owner] [--auth] [--covers <журнал.json>]" >&2
   exit 1
 }
 
@@ -52,12 +56,16 @@ STATUS=""
 RUNTIME_ROLE=""
 WITH_RIGHTS=1
 SINGLE_OWNER=0
+WITH_AUTH=0
+COVERS_JOURNAL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --status) STATUS="${2:-}"; shift 2 ;;
     --runtime-role) RUNTIME_ROLE="${2:-}"; [ -n "$RUNTIME_ROLE" ] || usage; shift 2 ;;
     --without-rights) WITH_RIGHTS=0; shift ;;
     --single-owner) WITH_RIGHTS=0; SINGLE_OWNER=1; shift ;;
+    --auth) WITH_AUTH=1; shift ;;
+    --covers) COVERS_JOURNAL="${2:-}"; [ -n "$COVERS_JOURNAL" ] || usage; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -74,6 +82,10 @@ else
   [[ "$RUNTIME_ROLE" =~ ^[a-z_][a-z0-9_]*$ ]] || { echo "Недопустимое имя роли приложения" >&2; exit 1; }
   RIGHTS=loaded
 fi
+if [ "$STATUS" = final ] && { [ "$WITH_AUTH" = 0 ] || [ -z "$COVERS_JOURNAL" ]; }; then
+  echo "Окончательный перенос (final) — только вместе с учётками и обложками: --auth --covers <журнал covers-copy>" >&2
+  exit 1
+fi
 for bin in psql pg_restore node sha256sum; do
   command -v "$bin" >/dev/null || { echo "Нужен $bin" >&2; exit 1; }
 done
@@ -82,6 +94,20 @@ if [ ! -f "${DUMP%.dump}.verified" ]; then
   echo "Копия не проверена восстановлением: сначала bash migration/backup/verify.sh $DUMP" >&2
   exit 1
 fi
+BASE="${DUMP%.dump}"
+if [ "$WITH_AUTH" = 1 ] || [ -n "$COVERS_JOURNAL" ]; then
+  # Выгрузки — этой же копии и целы (суммы сняты backup.sh вместе с ними).
+  [ -f "$BASE.extras.sha256" ] || { echo "У копии нет выгрузок учёток и обложек (.extras.sha256): копия снята прежним backup.sh" >&2; exit 1; }
+  if ! (cd "$(dirname "$DUMP")" && sha256sum --check --quiet --strict "$(basename "$BASE").extras.sha256" >/dev/null 2>&1); then
+    echo "Выгрузки копии повреждены: контрольные суммы .extras.sha256 не совпадают" >&2
+    exit 1
+  fi
+fi
+if [ -n "$COVERS_JOURNAL" ] && [ ! -f "$COVERS_JOURNAL" ]; then
+  echo "Нет журнала копирования обложек: $COVERS_JOURNAL" >&2
+  exit 1
+fi
+inventory_count() { awk -F'\t' -v t="$1" '$1 == t { print $2; f = 1 } END { if (!f) print 0 }' "$BASE.inventory.tsv"; }
 
 target_conn "$ENV_FILE" || exit 1
 export PGAPPNAME=osp-load
@@ -173,8 +199,39 @@ say "ИНФО $(node -e '
 ' "$WORK/split.json" "$WORK/acl.json")"
 fi
 
+# Учётки и обложки: SQL из выгрузок копии и журнала — значения проверены (lib/extras.mjs).
+extra_vars=()
+if [ "$WITH_AUTH" = 1 ]; then
+  if ! node "$HERE/lib/extras.mjs" auth-copy "$BASE.auth-users.csv" "$BASE.auth-identities.csv" > "$WORK/auth-copy.sql" 2> "$WORK/err"; then
+    say "FAIL выгрузка учёток не принята: $(first_error "$WORK/err")"
+    say "Загрузка не начата: в базе ничего не изменилось."; save_report; exit 3
+  fi
+  AUTH_USERS="$(inventory_count auth.users)"
+  AUTH_IDENTITIES="$(inventory_count auth.identities)"
+  extra_vars+=(-v auth_copy_file="$WORK/auth-copy.sql" -v auth_users_expected="$AUTH_USERS" -v auth_identities_expected="$AUTH_IDENTITIES"
+    -v auth_users_sha256="$(sha256sum "$BASE.auth-users.csv" | cut -d' ' -f1)"
+    -v auth_identities_sha256="$(sha256sum "$BASE.auth-identities.csv" | cut -d' ' -f1)")
+  say "ИНФО учётные записи с отпечатками паролей — в закрытую схему osp_vault: учёток $AUTH_USERS, способов входа $AUTH_IDENTITIES"
+fi
+if [ -n "$COVERS_JOURNAL" ]; then
+  if ! node "$HERE/lib/extras.mjs" covers-sql "$COVERS_JOURNAL" "$BASE.covers.csv" "$WORK/covers.json" > "$WORK/covers-data.sql" 2> "$WORK/err"; then
+    say "FAIL журнал обложек не принят: $(first_error "$WORK/err")"
+    say "Загрузка не начата: в базе ничего не изменилось."; save_report; exit 3
+  fi
+  read -r COVERS_LISTED COVERS_VERIFIED COVERS_FAILED < <(node -e '
+    const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log(s.listed, s.verified, s.failed)' "$WORK/covers.json")
+  if [ "$COVERS_FAILED" != 0 ] && [ "$STATUS" = final ]; then
+    say "FAIL обложек не сверено: $COVERS_FAILED из $COVERS_LISTED — окончательный перенос только со всеми: повторить covers-copy"
+    say "Загрузка не начата: в базе ничего не изменилось."; save_report; exit 3
+  fi
+  extra_vars+=(-v covers_data_file="$WORK/covers-data.sql")
+  say "ИНФО обложки: в списке копии $COVERS_LISTED, скопировано в cloud.ru и сверено $COVERS_VERIFIED, не сверено $COVERS_FAILED"
+fi
+
 # 3. Одна транзакция. OSP_LOAD_TEST_INJECT_FAILURE — только для теста «всё или ничего»: ошибка в конце.
 files=(-f "$HERE/compat/auth.sql" -f "$HERE/sql/load-begin.sql" -f "$WORK/main.sql")
+if [ "$WITH_AUTH" = 1 ]; then files+=(-f "$HERE/sql/load-auth.sql"); fi
+if [ -n "$COVERS_JOURNAL" ]; then files+=(-f "$HERE/sql/load-covers.sql"); fi
 if [ "$WITH_RIGHTS" = 1 ]; then
   files+=(-f "$HERE/sql/load-rights.sql" -f "$WORK/acl.sql")
 else
@@ -188,7 +245,7 @@ fi
 started="$(date +%s)"
 if ! psql -X -q -v ON_ERROR_STOP=1 -1 \
     -v status="$STATUS" -v source_name="$(basename "$DUMP")" -v source_sha256="$SHA" \
-    -v tool_commit="$COMMIT" -v rights="$RIGHTS" -v runtime_role="$RUNTIME_ROLE" \
+    -v tool_commit="$COMMIT" -v rights="$RIGHTS" -v runtime_role="$RUNTIME_ROLE" "${extra_vars[@]}" \
     "${files[@]}" > "$WORK/out" 2> "$WORK/err"; then
   say "FAIL загрузка прервана, транзакция отменена — в базе ничего не изменилось"
   say "ИНФО причина: $(first_error "$WORK/err")"
@@ -210,6 +267,11 @@ summary="$(psql -X -q -At -c "
                    unnest(s.setconfig) c where d.datname = current_database() and s.setrole = 0 and c like 'TimeZone=%'), 'не задан')
   from osp_meta.load_log order by 1" 2>"$WORK/err")" || summary="ВНИМАНИЕ итог прочитать не удалось: $(first_error "$WORK/err")"
 while IFS= read -r line; do say "$line"; done <<< "$summary"
-say "Дальше — сверка: bash migration/target/verify.sh <файл подключения> $DUMP"
+if [ -n "$COVERS_JOURNAL" ]; then
+  moved="$(psql -X -q -At -c "select coalesce(sum(objects_updated), 0) || ' (сверенных файлов ' || count(*) || ')' from osp_meta.cover_moves" 2>"$WORK/err")" \
+    && say "ИНФО обложки: адресов объектов заменено на /api/covers/… — $moved" \
+    || say "ВНИМАНИЕ итог по обложкам прочитать не удалось: $(first_error "$WORK/err")"
+fi
+say "Дальше — сверка: bash migration/target/verify.sh <файл подключения> $DUMP${COVERS_JOURNAL:+ --covers $COVERS_JOURNAL}"
 if [ "$SINGLE_OWNER" = 1 ]; then say "Затем — права под одну учётку: bash migration/target/rights.sh <файл подключения> $DUMP"; fi
 save_report

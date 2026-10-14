@@ -20,7 +20,7 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { ROOT, skipReason, latestVerifiedCopy, startSingleOwner } from './lib/stand.mjs'
-import { CLASSES, readExpected } from './lib/rights.mjs'
+import { CLASSES, readExpected, candidateMigrations } from './lib/rights.mjs'
 import { SECTIONS } from '../../src/contexts/roleConstants.js'
 import { createOwnDb } from '../../src/api/ownDb.js'
 import { SECRET, userToken, signToken } from '../osp-api/lib/tokens.mjs'
@@ -136,6 +136,13 @@ describe('Права под одну учётку на копии прода: ц
         ['посторонняя учётка', '00000000-0000-4000-8000-00000000dead', 'authenticated'], ['аноним', null, 'anon']]
       if (users.unapproved) kinds.push(['неодобренный', users.unapproved, 'authenticated'])
       const tables = Object.keys(ALLOW.tables).sort()
+      // Представления из миграций-кандидатов: в список шлюза они входят заранее (scripts/build-db-allow.mjs),
+      // а в копии прода появятся после применения миграции. Пока их нет — шлюз отвечает «не найдено» и
+      // строк не отдаёт; больше ничего в списке без таблицы в базе быть не может.
+      const candidateViews = new Set(candidateMigrations().flatMap((f) =>
+        [...fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', f), 'utf8')
+          .matchAll(/create\s+(?:or\s+replace\s+)?view\s+(?:public\.)?"?([a-z_][a-z0-9_]*)/gi)].map((m) => m[1].toLowerCase())))
+      const pending = []
       const differ = []
       const closedByGateway = []
       const timedOut = []
@@ -147,6 +154,12 @@ describe('Права под одну учётку на копии прода: ц
         for (const t of tables) {
           // Первая строка и точное число — как считает страницы портал; при отказе в ответе есть код.
           const res = await client.from(t).select('*', { count: 'exact' }).range(0, 0)
+          if (!(t in want)) {
+            assert.ok(candidateViews.has(t), `${t}: в списке шлюза, но нет ни в копии, ни в миграциях-кандидатах`)
+            assert.ok(res.error && res.status === 404 && res.error.code === 'PGRST205', `${kind} / ${t}: шлюз должен ответить «не найдено»`)
+            pending.push(`${kind} / ${t}`)
+            continue
+          }
           const allowed = (ALLOW.tables[t][role] || []).includes('select')
           if (!allowed) {
             assert.ok(res.error && (res.status === 401 || res.status === 403), `${kind} / ${t}: шлюз должен отказать`)
@@ -171,6 +184,7 @@ describe('Права под одну учётку на копии прода: ц
       assert.deepEqual(closedByGateway, [], 'чтение, закрытое только списком шлюза, — базе нечем подстраховать')
       assert.ok(timedOut.length <= 8, `не уложились в таймаут (учётки без доступа): ${timedOut.join('; ')}`)
       if (timedOut.length) console.log(`полный подсчёт не уложился в таймаут у учёток без доступа: ${timedOut.join('; ')}`)
+      if (pending.length) console.log(`ещё не в копии прода (миграции-кандидаты), шлюз отвечает «не найдено»: ${[...new Set(pending.map((p) => p.split(' / ')[1]))].join(', ')}`)
       assert.ok(compared > 200 && visible > 50, `сравнение не пустое: ${compared} замеров, из них со строками ${visible}`)
       // Администратор видит рабочие данные, аноним — только витрину.
       const admin = directCounts(users.admin)

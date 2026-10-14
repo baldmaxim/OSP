@@ -8,7 +8,9 @@
 #   • контрольная сумма совпадает с записанной при снятии;
 #   • восстановление прошло без ошибок;
 #   • в каждой таблице столько же строк, сколько было на проде до или после копии
-#     (если таблица менялась во время копии — число между этими значениями).
+#     (если таблица менялась во время копии — число между этими значениями);
+#   • выгрузки учёток, способов входа и обложек целы (.extras.sha256) и полны, а у каждой непустой
+#     таблицы Supabase в описи есть решение «переносится / не переносится» (inventory.mjs).
 # В вывод — только имена таблиц и числа. Выход 0 — копия годна, 1 — нет.
 set -euo pipefail
 
@@ -17,7 +19,7 @@ BASE="${DUMP%.dump}"
 source "$(dirname "$0")/lib.sh"
 
 [ -f "$DUMP" ] || { echo "Нет файла $DUMP"; exit 1; }
-for f in "$BASE.counts-before.tsv" "$BASE.counts-after.tsv"; do
+for f in "$BASE.counts-before.tsv" "$BASE.counts-after.tsv" "$BASE.extras.sha256"; do
   [ -f "$f" ] || { echo "Нет $f — копия снята не через backup.sh?"; exit 1; }
 done
 
@@ -73,6 +75,16 @@ REPORT="$(awk -F'\t' '
 echo "$REPORT" | grep -v '^BAD=' || true
 BAD="$(echo "$REPORT" | sed -n 's/^BAD=//p')"
 [ "$BAD" = "0" ] || OK=0
+
+echo
+echo "Опись Supabase и выгрузки копии:"
+if ! (cd "$(dirname "$DUMP")" && sha256sum --check --quiet --strict "$(basename "$BASE").extras.sha256" >/dev/null 2>&1); then
+  echo "FAIL выгрузки копии повреждены: контрольные суммы .extras.sha256 не совпадают"
+  OK=0
+fi
+if ! node "$(dirname "$0")/inventory.mjs" check "$BASE"; then
+  OK=0
+fi
 
 TOTAL="$(awk -F'\t' '{ s += $2 } END { print s + 0 }' "$TMP/restored.tsv")"
 echo

@@ -1,0 +1,32 @@
+# Опись Supabase: что из него переносится и что нет — по каждой таблице, а не по памяти.
+# backup.sh снимает число строк каждой таблицы всех схем, кроме системных (migration/backup/extras.sql);
+# verify.sh сверяет опись с этим списком (inventory.mjs). Непустая таблица, которой здесь нет, — копия
+# не проверена: решить, переносится ли она, и дописать строку с причиной.
+#
+# Строка: <имя> <transfer | skip> <причина>. Имя — схема.таблица, схема.* (вся схема),
+# storage.objects[бакет] или cron.job[имя расписания]. Точное имя важнее «схема.*».
+
+public.*                            transfer  данные портала — копия pg_dump схемы public
+auth.users                          transfer  учётные записи с отпечатками паролей — выгрузка .auth-users.csv
+auth.identities                     transfer  способы входа учётных записей — выгрузка .auth-identities.csv
+storage.objects[object-photos]      transfer  обложки объектов — список .covers.csv, файлы копирует covers-copy в cloud.ru
+
+auth.sessions                       skip  действующие сессии входа — ключи, а не данные; в Keycloak не нужны
+auth.refresh_tokens                 skip  ключи обновления сессий — то же
+auth.mfa_amr_claims                 skip  отметки способа входа внутри сессий — то же
+auth.flow_state                     skip  незавершённые входы — одноразовое состояние
+auth.one_time_tokens                skip  одноразовые коды из писем — действующие ключи
+auth.audit_log_entries              skip  журнал входов Supabase — служебный журнал, не данные портала
+auth.schema_migrations              skip  версия схемы Supabase Auth
+auth.instances                      skip  служебная запись Supabase Auth
+storage.buckets                     skip  настройки бакетов Supabase; файлы переносятся по списку
+storage.migrations                  skip  версия схемы Supabase Storage
+storage.s3_multipart_uploads        skip  незавершённые загрузки файлов
+storage.s3_multipart_uploads_parts  skip  незавершённые загрузки файлов
+storage.prefixes                    skip  папки — выводятся из storage.objects
+realtime.*                          skip  служебные таблицы онлайн-обновлений Supabase (подписки, сообщения); в новой схеме — опрос
+supabase_migrations.*               skip  журнал миграций Supabase CLI; миграции портала — в git
+supabase_functions.migrations       skip  версия схемы вебхуков Supabase
+cron.job[refresh-rates-registry]    skip  расписание пересчёта реестра расценок; в новой схеме пересчёт делает osp-api раз в 10 минут
+cron.job_run_details                skip  журнал запусков расписаний
+net.*                               skip  очередь HTTP-запросов pg_net — служебная

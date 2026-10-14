@@ -4,6 +4,7 @@
 #   bash deploy.sh install <каталог выпуска>   # сверить суммы, загрузить образы, выложить, проверить
 #   bash deploy.sh rollback                    # вернуть предыдущий выпуск (его образы уже на сервере)
 #   bash deploy.sh status                      # что выложено и отвечает ли
+#   bash deploy.sh covers-copy <копия>.covers.csv  # обложки объектов из Supabase — в cloud.ru, журнал сверки
 #
 # Каталог выпуска собирает deploy/docker/build.sh на машине сборки; на сервере ничего не собирается.
 # Первый раз скрипт запускается из каталога выпуска; после установки он же (и neighbors.sh) лежит в
@@ -203,8 +204,33 @@ case "${1:-}" in
     done
     ;;
 
+  covers-copy)
+    # Обложки объектов из хранилища Supabase — в cloud.ru (covers/<имя>) со сверкой каждого файла обратным
+    # скачиванием: server/osp-api/src/covers-copy.js в образе выложенного выпуска, ключи — из настроек
+    # портала. Supabase только читается; в cloud.ru только добавляются объекты covers/…, лежащий там другой
+    # файл не перезаписывается. Повторный запуск загружает лишь то, чего ещё нет. Список — из копии прода
+    # (migration/backup/backup.sh), журнал — для migration/target/load.sh --covers.
+    LIST="${2:-}"
+    [ -n "$LIST" ] && [ -f "$LIST" ] || die "укажите список обложек копии: bash deploy.sh covers-copy <копия>.covers.csv"
+    head -n 1 "$LIST" | grep -qx 'name,size,mimetype,created_at,updated_at' || die "это не список обложек копии (.covers.csv)"
+    cur="$(release_of current)"
+    [ -n "$cur" ] || die "портал не выложен: сначала bash deploy.sh install <каталог выпуска>"
+    mkdir -p "$OSP_HOME/covers"; chmod 700 "$OSP_HOME/covers"
+    journal="$OSP_HOME/covers/journal-$(date -u +%Y%m%d-%H%M%S).json"
+    rc=0
+    # Список — на стандартный ввод (файл копии закрыт, процесс контейнера его не прочитал бы); журнал — из stdout.
+    (umask 077; dc "$cur" run --rm --no-deps -T osp-api node src/covers-copy.js - < "$LIST" > "$journal.tmp") || rc=$?
+    if [ "$rc" != 0 ] && [ "$rc" != 4 ]; then
+      rm -f -- "$journal.tmp"
+      die "копирование обложек не выполнено (код $rc) — в cloud.ru могли остаться только полностью загруженные обложки, журнала нет"
+    fi
+    mv -f "$journal.tmp" "$journal"
+    echo "Журнал: $journal"
+    [ "$rc" = 0 ] || { echo "ВНИМАНИЕ не все обложки сверены — причины выше; повторите после устранения" >&2; exit 4; }
+    ;;
+
   *)
-    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status" >&2
+    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | covers-copy <копия>.covers.csv" >&2
     exit 1
     ;;
 esac

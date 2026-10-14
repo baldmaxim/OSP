@@ -130,6 +130,7 @@ describe('osp-api: права объявлены на маршруте, закр
       'POST /api/fn/s3-presign confirm': { method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'confirm' } },
       'POST /api/fn/s3-presign download': { method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'download' } },
       'POST /api/fn/s3-presign delete': { method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'delete' } },
+      'POST /api/fn/cover-upload': { method: 'POST', url: '/api/fn/cover-upload', payload: {} },
       'GET /api/health': { method: 'GET', url: '/api/health' },
       'GET /api/ready через nginx': { method: 'GET', url: '/api/ready', headers: { 'x-forwarded-for': '203.0.113.7' } },
     }
@@ -161,6 +162,11 @@ describe('osp-api: права объявлены на маршруте, закр
         'администратор': await code(method, '/api/db/tenders?select=id', { authorization: `Bearer ${U.admin.token}` }),
       }
     }
+    // Обложки: картинку показывает <img> без токена — открыто, но только имя «UUID.расширение».
+    measured['GET /api/covers/:name'] = {
+      'без токена': await code('GET', '/api/covers/0f0e0d0c-0b0a-4908-8706-050403020100.jpg'),
+      'имя не по шаблону': await code('GET', '/api/covers/..%2Fcontracts%2Fx.docx'),
+    }
     measured['OPTIONS /api/rates/*'] = { 'без ключа': await code('OPTIONS', '/api/rates/kp') }
     measured['OPTIONS /api/rates'] = { 'без ключа': await code('OPTIONS', '/api/rates') }
     compareWithBaseline('access.json', measured)
@@ -177,6 +183,8 @@ describe('osp-api: права объявлены на маршруте, закр
       for (const denied of ['unapproved', 'blocked', 'no_user_roles']) assert.equal(row[denied], 403, `${title}: ${denied}`)
     }
     assert.equal(measured['POST /api/fn/ai-assist clause_suggest'].contractor, 403)
+    assert.equal(measured['POST /api/fn/cover-upload'].contractor, 403, 'обложку загружает только сотрудник')
+    assert.equal(measured['GET /api/covers/:name']['имя не по шаблону'], 404)
     for (const action of ['upload', 'confirm', 'delete']) {
       assert.equal(measured[`POST /api/fn/s3-presign ${action}`].contractor, 403, action)
       // Роль подрядчика без организации — тот же подрядчик, а не сотрудник.

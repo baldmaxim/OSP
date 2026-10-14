@@ -17,6 +17,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LOAD_STATUS_SQL } from '../../server/osp-api/src/lib/loadStatus.js'
+import { PLATFORM_SQL, coversJournal } from './lib/supabase-platform.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const BACKUP = path.join(ROOT, 'migration', 'backup')
@@ -38,9 +39,8 @@ const BORIS = '33333333-3333-4333-8333-333333333333'
 // которые читают те, кому сама таблица закрыта (гостю — публичный список, вошедшим — справочник).
 const PROD_SQL = `
 create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
-create schema auth;
 create extension pg_trgm with schema public;
-create table auth.users(id uuid primary key, email text);
+${PLATFORM_SQL}
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 grant usage on schema public to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
@@ -203,7 +203,8 @@ describe('Перенос под одну учётку: правила дейст
     assert.equal(rights.status, 0, rights.all)
     assert.match(rights.stdout, /OK права применены одной транзакцией за \d+ с; число строк в таблицах не изменилось/)
     assert.match(rights.stdout, /политик в копии: 6 \(authenticated — 5, anon — 1\)/)
-    assert.equal((rights.stdout.match(/^OK /gm) || []).length, 13, rights.stdout)
+    assert.equal((rights.stdout.match(/^OK /gm) || []).length, 15, rights.stdout)
+    assert.match(rights.stdout, /^OK учётки с отпечатками паролей не загружались \(load\.sh без --auth\)$/m)
     assert.match(rights.stdout, /OK представления с правами владельца читают таблицы только через закрытую схему: 3/)
     assert.match(rights.stdout, /OK без токена и без пропуска строки видны только в публичной витрине: open_notices role_names tenders/)
     assert.ok(!/^FAIL/m.test(rights.stdout), rights.stdout)
@@ -328,9 +329,10 @@ describe('Перенос под одну учётку: правила дейст
   })
 
   it('настоящий перенос под одну учётку разрешён, а его очистка — нет', () => {
-    const loaded = run('load.sh', [envFile, dump, '--status', 'final', '--single-owner'])
+    const journal = coversJournal(dump, path.join(tmp, 'covers-journal.json'))
+    const loaded = run('load.sh', [envFile, dump, '--status', 'final', '--single-owner', '--auth', '--covers', journal])
     assert.equal(loaded.status, 0, loaded.all)
-    assert.equal(run('verify.sh', [envFile, dump]).status, 0)
+    assert.equal(run('verify.sh', [envFile, dump, '--covers', journal]).status, 0)
     assert.equal(run('rights.sh', [envFile, dump]).status, 0)
     assert.match(serverLoadStatus(), /^final\|20\d\d-\d\d-\d\d /, 'сервер видит: копия рабочая')
     const reset = run('reset.sh', [envFile, '--yes-drop-rehearsal'])

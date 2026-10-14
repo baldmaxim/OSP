@@ -66,6 +66,31 @@ WITH t AS (
               THEN 'представления с правами владельца: загрузка прежним преобразованием, не проверяется'
               ELSE 'представления с правами владельца читают таблицы только через закрытую схему: '
                    || (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'osp_private' AND p.proname LIKE 'view\_%') END
+  UNION ALL
+  -- Учётки с отпечатками паролей (load.sh --auth): у каждой таблицы правило действует на владельца и
+  -- единственная политика — своя отметка osp:vault; выдач нет; ни функции, ни представления портала
+  -- и закрытой схемы osp_private на неё не ссылаются.
+  SELECT 11, to_regnamespace('osp_vault') IS NULL
+             OR ((SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'osp_vault' AND c.relkind IN ('r', 'p')
+                    AND NOT (c.relrowsecurity AND c.relforcerowsecurity
+                             AND (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) = 1
+                             AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'osp_vault_only'
+                                           AND pg_get_expr(p.polqual, p.polrelid) ~ '^\(?current_setting\(''application_name''::text, true\) = ''osp:vault''::text\)?$'
+                                           AND pg_get_expr(p.polwithcheck, p.polrelid) ~ '^\(?current_setting\(''application_name''::text, true\) = ''osp:vault''::text\)?$')
+                             AND c.relacl IS NULL)) = 0
+                 AND (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                      WHERE n.nspname = 'osp_vault' AND c.relkind IN ('v', 'm', 'f')) = 0
+                 AND (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                      WHERE n.nspname <> 'osp_vault' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                        AND (p.prosrc ~ 'osp_vault' OR coalesce(p.proconfig::text, '') ~ 'osp:vault')) = 0
+                 AND (SELECT count(*) FROM pg_depend d JOIN pg_class rc ON rc.oid = d.refobjid AND d.refclassid = 'pg_class'::regclass
+                      JOIN pg_namespace rn ON rn.oid = rc.relnamespace AND rn.nspname = 'osp_vault'
+                      JOIN pg_rewrite rw ON d.classid = 'pg_rewrite'::regclass AND rw.oid = d.objid) = 0
+                 AND NOT has_schema_privilege('public', 'osp_vault', 'USAGE')),
+         CASE WHEN to_regnamespace('osp_vault') IS NULL
+              THEN 'учётки с отпечатками паролей не загружались (load.sh без --auth)'
+              ELSE 'учётки с отпечатками паролей закрыты: только отметка переноса, функциям и представлениям портала недоступны' END
 )
 SELECT CASE WHEN ok THEN 'OK ' ELSE 'FAIL ' END || what FROM checks ORDER BY n;
 
@@ -101,9 +126,25 @@ BEGIN
     END IF;
   END LOOP;
   PERFORM set_config('osp_check.open', v_open, true), set_config('osp_check.showcase', v_showcase, true);
+  -- Учётки с отпечатками: ни пропуск служебных функций, ни служебный ключ их не открывают.
+  v_open := '';
+  IF to_regnamespace('osp_vault') IS NOT NULL THEN
+    PERFORM set_config('application_name', 'osp:internal', true),
+            set_config('request.jwt.claims', '{"role":"service_role","osp_role":"service_role"}', true);
+    FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+             WHERE ns.nspname = 'osp_vault' AND c.relkind IN ('r', 'p') ORDER BY 1 LOOP
+      EXECUTE format('SELECT count(*) FROM (SELECT 1 FROM osp_vault.%I LIMIT 1) x', r.relname) INTO n;
+      IF n > 0 THEN v_open := v_open || ' ' || r.relname; END IF;
+    END LOOP;
+    PERFORM set_config('application_name', 'osp-rights-check', true), set_config('request.jwt.claims', '', true);
+  END IF;
+  PERFORM set_config('osp_check.vault_open', v_open, true);
 END
 $live$;
 SELECT CASE WHEN current_setting('osp_check.open') = '' THEN 'OK ' ELSE 'FAIL ' END
        || 'без токена и без пропуска строки видны только в публичной витрине:' || current_setting('osp_check.showcase')
        || CASE WHEN current_setting('osp_check.open') = '' THEN '' ELSE '; ЛИШНЕЕ:' || current_setting('osp_check.open') END;
+SELECT CASE WHEN current_setting('osp_check.vault_open') = '' THEN 'OK ' ELSE 'FAIL ' END
+       || 'с пропуском служебных функций и служебным ключом учётки с отпечатками не читаются'
+       || CASE WHEN current_setting('osp_check.vault_open') = '' THEN '' ELSE ': ОТКРЫТО' || current_setting('osp_check.vault_open') END;
 ROLLBACK;

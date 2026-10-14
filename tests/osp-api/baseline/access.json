@@ -54,6 +54,17 @@
     "no_user_roles": 403,
     "blocked": 403
   },
+  "POST /api/fn/cover-upload": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 400,
+    "admin": 400,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
   "GET /api/health": {
     "без токена": 200,
     "неверный токен": 200,
@@ -101,6 +112,10 @@
   "DELETE /api/db/*": {
     "без токена": 503,
     "администратор": 503
+  },
+  "GET /api/covers/:name": {
+    "без токена": 302,
+    "имя не по шаблону": 404
   },
   "OPTIONS /api/rates/*": {
     "без ключа": 200

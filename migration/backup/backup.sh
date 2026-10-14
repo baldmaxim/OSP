@@ -13,12 +13,21 @@
 #   prod-<время>.counts-before.tsv  — число строк по таблицам прода до копии
 #   prod-<время>.counts-after.tsv   — и сразу после (между ними копия согласована)
 #   prod-<время>.dump.sha256        — контрольная сумма
+#   prod-<время>.auth-users.csv     — учётные записи с отпечатками паролей, без одноразовых кодов из писем
+#   prod-<время>.auth-identities.csv — способы входа учётных записей
+#   prod-<время>.covers.csv         — список обложек объектов (бакет object-photos): имя, размер, тип
+#   prod-<время>.inventory.tsv      — опись: число строк каждой таблицы Supabase вне системных схем
+#   prod-<время>.extras.sha256      — контрольные суммы четырёх файлов выше
+# Выгрузки и опись — одна транзакция «только чтение» (extras.sql). Отпечатки паролей — самое чувствительное
+# в копии: файлы только здесь, права 600, в чат и git не попадают; значения не выводятся.
 # Проверка восстановлением — verify.sh (её запускаю я). Копии старше 30 дней удаляйте.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 BACKUP_DIR="migration/backup"
 OUT_DIR="${BACKUP_OUT_DIR:-migration/dumps}"
+# Пути выгрузок передаются в psql без кавычек (\g :имя): каталог без пробелов.
+case "$OUT_DIR" in *[[:space:]]*) echo "Каталог копий не должен содержать пробелов: $OUT_DIR" >&2; exit 1 ;; esac
 
 # Подключение к проду: session pooler Supabase (порт 5432; transaction pooler 6543 для pg_dump не годится).
 export PGHOST="${PGHOST:-aws-1-eu-north-1.pooler.supabase.com}"
@@ -41,7 +50,8 @@ DONE=0
 cleanup() {
   unset PGPASSWORD
   if [ "$DONE" != 1 ]; then
-    rm -f -- "$BASE.counts-before.tsv" "$BASE.counts-after.tsv" "$BASE.dump" "$BASE.dump.partial" "$BASE.dump.sha256"
+    rm -f -- "$BASE.counts-before.tsv" "$BASE.counts-after.tsv" "$BASE.dump" "$BASE.dump.partial" "$BASE.dump.sha256" \
+      "$BASE.auth-users.csv" "$BASE.auth-identities.csv" "$BASE.covers.csv" "$BASE.inventory.tsv" "$BASE.extras.sha256"
   fi
 }
 trap cleanup EXIT
@@ -79,13 +89,23 @@ mv "$BASE.dump.partial" "$BASE.dump"
 echo "Подсчёт строк после копии…"
 counts "$BASE.counts-after.tsv"
 
+echo "Учётные записи, обложки, опись Supabase…"
+psql -X -q -v ON_ERROR_STOP=1 \
+  -v users_file="$BASE.auth-users.csv" -v identities_file="$BASE.auth-identities.csv" \
+  -v covers_file="$BASE.covers.csv" -v inventory_file="$BASE.inventory.tsv" \
+  -f "$BACKUP_DIR/extras.sql"
+
 (cd "$OUT_DIR" && sha256sum "prod-$STAMP.dump" >"prod-$STAMP.dump.sha256")
+(cd "$OUT_DIR" && sha256sum "prod-$STAMP.auth-users.csv" "prod-$STAMP.auth-identities.csv" "prod-$STAMP.covers.csv" \
+  "prod-$STAMP.inventory.tsv" >"prod-$STAMP.extras.sha256")
 chmod 600 "$BASE".*
 DONE=1
 
 TABLES="$(wc -l <"$BASE.counts-before.tsv")"
 CHANGED="$(paste "$BASE.counts-before.tsv" "$BASE.counts-after.tsv" | awk -F'\t' '$2 != $4' | wc -l)"
 SIZE="$(du -h "$BASE.dump" | cut -f1)"
+inv() { awk -F'\t' -v t="$1" '$1 == t { print $2; f = 1 } END { if (!f) print 0 }' "$BASE.inventory.tsv"; }
 echo
 echo "Готово: $BASE.dump ($SIZE), таблиц: $TABLES, изменились за время копии: $CHANGED."
+echo "Учётных записей: $(inv auth.users), способов входа: $(inv auth.identities), обложек: $(inv 'storage.objects[object-photos]')."
 echo "Дальше — проверка восстановлением: bash migration/backup/verify.sh $BASE.dump"

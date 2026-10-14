@@ -46,7 +46,7 @@ BEGIN
     ) extra $q$ INTO v_extra;
   SELECT v_extra + count(*) INTO v_extra
   FROM pg_namespace
-  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public', 'auth', 'osp_meta', 'osp_private') AND nspname !~ '^pg_(toast|temp)';
+  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public', 'auth', 'osp_meta', 'osp_private', 'osp_vault') AND nspname !~ '^pg_(toast|temp)';
   IF v_extra > 0 THEN
     RAISE EXCEPTION 'OSP_RESET_EXTRA %', v_extra;
   END IF;
@@ -69,6 +69,9 @@ BEGIN
   DROP SCHEMA auth CASCADE;
   -- Права под одну учётку (rights.sh): закрытая схема с материализованными представлениями и проверками.
   DROP SCHEMA IF EXISTS osp_private CASCADE;
+  -- Учётные записи с отпечатками паролей (load.sh --auth). Адреса обложек (osp_meta.cover_moves) уходят
+  -- вместе с osp_meta ниже.
+  DROP SCHEMA IF EXISTS osp_vault CASCADE;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = v_role) THEN
     EXECUTE format('REVOKE ALL ON SCHEMA public FROM %I', v_role);
   END IF;

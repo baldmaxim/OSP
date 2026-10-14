@@ -68,7 +68,8 @@ src/
     ├── index.js          # db, auth, objectPhotos, invokeFunction, subscribeTable
     ├── db.js             # таблицы и RPC: db.from(...), db.rpc(...) — построитель как у supabase-js
     ├── auth.js           # вход (фаза A — Supabase Auth): только RoleContext и сервисы
-    ├── files.js          # Supabase Storage: обложки объектов (документы — services/s3.js, cloud.ru)
+    ├── files.js          # обложки объектов: бакет Supabase или (ospDb) cloud.ru через osp-api, адрес /api/covers/<имя>
+    ├── ospCovers.js      # загрузка обложки через osp-api: ссылка cover-upload → PUT в cloud.ru (тип файла подписан)
     ├── functions.js      # invokeFunction(name, options) — Edge Functions или osp-api (флаг ospApiAi); файлы — ospFiles (флаг ospApiFilesV2)
     ├── serverPath.js     # правило выбора пути файлов и ИИ: при данных в базе Яндекса (ospDb) файлы — только через osp-api, функция файлов Supabase не вызывается
     ├── ospFiles.js       # файлы через osp-api с ключом операции: upload → PUT → confirm, удаление — строка, затем объект
@@ -303,7 +304,8 @@ S3-ключ объекта формируется автоматически: `{
     "AllowedOrigins": [
       "http://localhost:5173",
       "http://osp.root.sx",
-      "https://osp.root.sx"
+      "https://osp.root.sx",
+      "https://tender.su10.ru"
     ],
     "AllowedMethods": [
       "GET",
@@ -325,7 +327,7 @@ S3-ключ объекта формируется автоматически: `{
 
 | Поле | Значение | Зачем |
 |------|----------|-------|
-| **AllowedOrigins** | `http://localhost:5173`, `http://osp.root.sx`, `https://osp.root.sx` | dev-сервер Vite + прод-домен в обеих схемах (HTTP/HTTPS), чтобы CORS не сломался при переходе на TLS. |
+| **AllowedOrigins** | `http://localhost:5173`, `http://osp.root.sx`, `https://osp.root.sx`, `https://tender.su10.ru` | dev-сервер Vite, прежний портал (Supabase) в обеих схемах и новый портал с базой Яндекса (сервер corp, `migration/CUTOVER.md`). |
 | **AllowedMethods** | `GET`, `PUT`, `HEAD` | `PUT` — загрузка по presigned URL; `GET` — скачивание / iframe-preview; `HEAD` — некоторые preflight'ы. `DELETE` напрямую с браузера не идёт — через Edge Function. |
 | **AllowedHeaders** | `*` | Браузер при PUT шлёт `Content-Type`, `x-amz-*`. Если cloud.ru не принимает `*` — перечислить: `Content-Type`, `Authorization`, `x-amz-acl`, `x-amz-content-sha256`, `x-amz-date`, `x-amz-security-token`. |
 | **ExposeHeaders** | `ETag` | `Content-Length` / `Content-Type` уже CORS-safelisted и доступны JS-у без явного экспонирования. |

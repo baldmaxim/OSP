@@ -17,6 +17,8 @@ import path from 'node:path'
 import { ROOT, skipReason as dbSkipReason, latestVerifiedCopy, startSingleOwner } from '../db/lib/stand.mjs'
 import { createOwnDb } from '../../src/api/ownDb.js'
 import { SECRET, userToken, projectKey } from '../osp-api/lib/tokens.mjs'
+import { coverMovesSql } from '../../migration/target/lib/extras.mjs'
+import crypto from 'node:crypto'
 
 const DOCKER_DIR = path.join(ROOT, 'deploy', 'docker')
 const NGINX_IMAGE = 'nginx:1.29-alpine'
@@ -46,6 +48,11 @@ const NEIGHBOUR_API = `osp-test-neighbour-api-${P}`
 const FOREIGN = `osp-test-foreign-${P}`
 const SUPABASE = `osp-test-supabase-${P}`
 const SUPABASE_URL = 'http://supabase:8080'
+// Хранилище S3 «как cloud.ru» (без проверки подписи): запоминает объекты, пишет в журнал каждую запись.
+const S3STUB = `osp-test-s3-${P}`
+const S3_SECRET = 'S3-SECRET-DOCKER-zz7'
+// Обложки в общедоступном бакете object-photos «Supabase»: copy-covers читает их без ключей.
+const COVERS = { 'aaaaaaaa-0000-4000-8000-000000000001.jpg': 'jpeg-обложка-1', 'aaaaaaaa-0000-4000-8000-000000000002.png': 'png-обложка-2' }
 const GATEWAY_SECRET = 'docker-test-gateway-secret-0123456789abcdefgh'
 const RATES_KEY = 'SECRET-RATES-KEY-DOCKER-123'
 const OTHER_TAG = 'aaaaaaaaaaaa'
@@ -126,9 +133,22 @@ describe('Портал в Docker: связка для общего сервер�
     // 2. Сети: общая сеть «nginx сервера» и сеть до базы (на сервере база — снаружи, здесь — контейнер).
     for (const n of [PROXY_NET, DB_NET]) ok(docker(['network', 'create', n]), `сеть ${n}`)
     ok(docker(['network', 'connect', '--alias', 'db', DB_NET, db.container]), 'база в сети')
-    // Вместо Supabase Auth — заглушка: готовность osp-api проверяет его «здоровье».
-    ok(docker(['run', '-d', '--rm', '--name', SUPABASE, '--network', DB_NET, '--network-alias', 'supabase', NODE_IMAGE, 'node', '-e',
-      "require('http').createServer((q, s) => { s.writeHead(200, { 'content-type': 'application/json' }); s.end('{}') }).listen(8080, '0.0.0.0')"]), 'заглушка входа')
+    // Вместо Supabase Auth — заглушка: готовность osp-api проверяет его «здоровье». Она же — общедоступный
+    // бакет обложек object-photos.
+    ok(docker(['run', '-d', '--rm', '--name', SUPABASE, '--network', DB_NET, '--network-alias', 'supabase', '-e', `COVERS=${JSON.stringify(COVERS)}`, NODE_IMAGE, 'node', '-e',
+      `const covers = JSON.parse(process.env.COVERS); const p = '/storage/v1/object/public/object-photos/';
+       require('http').createServer((q, s) => { console.log(q.method + ' ' + q.url + ' auth=' + (q.headers.authorization ? 'yes' : 'no'));
+         const name = q.url.startsWith(p) ? decodeURIComponent(q.url.slice(p.length)) : null;
+         if (name !== null) { if (!(name in covers)) { s.writeHead(404); return s.end('{}') } s.writeHead(200, { 'content-type': 'image/jpeg' }); return s.end(covers[name]) }
+         s.writeHead(200, { 'content-type': 'application/json' }); s.end('{}') }).listen(8080, '0.0.0.0')`]), 'заглушка входа')
+    ok(docker(['run', '-d', '--rm', '--name', S3STUB, '--network', DB_NET, '--network-alias', 's3', NODE_IMAGE, 'node', '-e',
+      `const m = new Map(); require('http').createServer((q, s) => { const c = []; q.on('data', (d) => c.push(d)); q.on('end', () => {
+         const k = decodeURIComponent(new URL(q.url, 'http://x').pathname);
+         if (q.method === 'PUT') { m.set(k, Buffer.concat(c)); console.log('PUT ' + k); s.writeHead(200); return s.end() }
+         if (q.method === 'GET' || q.method === 'HEAD') { const b = m.get(k); if (!b) { s.writeHead(404, { 'content-type': 'application/xml' }); return s.end('<Error><Code>NoSuchKey</Code></Error>') }
+           s.writeHead(200, { 'content-length': b.length }); return s.end(q.method === 'HEAD' ? undefined : b) }
+         if (q.method === 'DELETE') { m.delete(k); s.writeHead(204); return s.end() }
+         s.writeHead(200); s.end() }) }).listen(9000, '0.0.0.0')`]), 'заглушка S3')
     // Соседний проект сервера — запущен ДО установки портала. В общей сети у него обычные имена «web» и
     // «api»; его запись в общем nginx ищет сайт по имени «web».
     ok(docker(['run', '-d', '--name', NEIGHBOUR, '--network', PROXY_NET, '--network-alias', 'web', NGINX_IMAGE]), 'сосед')
@@ -157,6 +177,7 @@ describe('Портал в Docker: связка для общего сервер�
     fs.writeFileSync(path.join(home, 'secrets', 'osp-api.env'), [
       `SUPABASE_URL=${SUPABASE_URL}`, `SUPABASE_ANON_KEY=${projectKey('anon')}`, `SUPABASE_JWT_SECRET=${SECRET}`, 'OSP_API_REQUIRE=supabase',
       `RATES_API_KEYS=${RATES_KEY}`, `OSP_DB_URL=${dbUri}`, 'OSP_DB_POOL_MAX=2', `OSP_PGRST_JWT_SECRET=${GATEWAY_SECRET}`, `OSP_PGRST_DB_ROLE=${db.owner}`,
+      'S3_ENDPOINT=http://s3:9000', 'S3_BUCKET=osp', 'S3_ACCESS_KEY_ID=ospdocker', `S3_SECRET_ACCESS_KEY=${S3_SECRET}`,
     ].join('\n') + '\n', { mode: 0o600 })
     const pgrstEnv = fs.readFileSync(path.join(ROOT, 'deploy', 'postgrest', 'postgrest.env.example'), 'utf8')
       .replace(/^PGRST_DB_URI=.*$/m, `PGRST_DB_URI=${dbUri}&sslrootcert=/etc/ssl/osp/yandex-root.crt&application_name=osp-postgrest`)
@@ -193,7 +214,7 @@ networks:
 
   after(() => {
     docker(['compose', '-p', PROJECT, 'down', '--volumes', '--remove-orphans'])
-    docker(['rm', '-f', INFRA, NEIGHBOUR, NEIGHBOUR_API, FOREIGN, SUPABASE])
+    docker(['rm', '-f', INFRA, NEIGHBOUR, NEIGHBOUR_API, FOREIGN, SUPABASE, S3STUB])
     docker(['volume', 'rm', `${PROJECT}_www`])
     docker(['network', 'rm', `${PROJECT}_internal`])
     db?.stop()
@@ -451,6 +472,46 @@ networks:
     for (const service of services) assert.equal(inspect(containerOf(service), '{{.HostConfig.CpuShares}}'), '512', `${service}: приоритет`)
     // В выпуске порт сайта не публикуется: сайт доступен только общему nginx по сети.
     assert.ok(!/^\s*ports:/m.test(fs.readFileSync(path.join(release, 'compose.yml'), 'utf8')))
+  })
+
+  it('обложки: covers-copy в образе API — список из копии на стандартный ввод, журнал на сервере; повтор ничего не загружает', () => {
+    const header = 'name,size,mimetype,created_at,updated_at'
+    const line = ([name, body]) => `${name},${Buffer.byteLength(body)},image/jpeg,2026-09-01 10:00:00+00,2026-09-01 10:00:00+00`
+    const list = path.join(tmp, 'prod-test.covers.csv')
+    fs.writeFileSync(list, [header, ...Object.entries(COVERS).map(line)].join('\n') + '\n', { mode: 0o600 })
+    const puts = () => docker(['logs', S3STUB]).stdout.split('\n').filter((l) => l.startsWith('PUT /osp/covers/'))
+
+    const first = deploy(['covers-copy', list])
+    assert.equal(first.status, 0, first.stdout + first.stderr)
+    assert.match(first.stderr, /Обложек в списке: 2; сверено 2 \(загружено 2, уже были 0\); не сверено 0/)
+    const file = /^Журнал: (.+)$/m.exec(first.stdout)[1]
+    assert.equal(path.dirname(file), path.join(home, 'covers'))
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+    assert.equal(fs.statSync(path.dirname(file)).mode & 0o777, 0o700)
+    const journal = JSON.parse(fs.readFileSync(file, 'utf8'))
+    assert.equal(journal.list_sha256, crypto.createHash('sha256').update(fs.readFileSync(list)).digest('hex'))
+    assert.equal(journal.source_base, `${SUPABASE_URL}/storage/v1/object/public/object-photos/`)
+    assert.deepEqual(journal.files.map((f) => [f.name, f.status, f.sha256]),
+      Object.entries(COVERS).map(([n, b]) => [n, 'verified', crypto.createHash('sha256').update(b).digest('hex')]))
+    // Журнал принимает загрузка в базу Яндекса.
+    assert.deepEqual(coverMovesSql(JSON.stringify(journal), fs.readFileSync(list, 'utf8')).summary, { listed: 2, verified: 2, failed: 0 })
+    assert.deepEqual(puts(), Object.keys(COVERS).map((n) => `PUT /osp/covers/${n}`))
+    for (const out of [first.stdout, first.stderr, fs.readFileSync(file, 'utf8')]) assert.ok(!out.includes(S3_SECRET), 'ключ хранилища не выводится')
+    const reads = docker(['logs', SUPABASE]).stdout.split('\n').filter((l) => l.includes('/object-photos/'))
+    assert.ok(reads.length === 2 && reads.every((l) => l.startsWith('GET ') && l.endsWith('auth=no')), 'Supabase только читается, без ключей')
+
+    const again = deploy(['covers-copy', list])
+    assert.equal(again.status, 0, again.stdout + again.stderr)
+    assert.match(again.stderr, /сверено 2 \(загружено 0, уже были 2\)/)
+    assert.equal(puts().length, 2, 'повтор ничего не загружает')
+
+    // Обложки нет в Supabase — журнал всё равно на сервере, выход 4.
+    fs.appendFileSync(list, line(['aaaaaaaa-0000-4000-8000-00000000dead.jpg', 'x']) + '\n')
+    const partial = deploy(['covers-copy', list])
+    assert.equal(partial.status, 4, partial.stdout + partial.stderr)
+    assert.match(partial.stderr, /FAIL aaaaaaaa-0000-4000-8000-00000000dead\.jpg: хранилище Supabase ответило 404/)
+    assert.match(partial.stdout, /^Журнал: /m)
+    assert.equal(deploy(['covers-copy', path.join(tmp, 'web-build.env')]).status, 1, 'не список обложек — отказ')
   })
 
   it('испорченный при переносе выпуск не устанавливается', () => {

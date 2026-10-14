@@ -34,3 +34,14 @@ export function filesPath({ ownDb, enabled, hasDigest }) {
   if (ownDb) return 'osp'
   return enabled(OSP_FILES_FLAG) && hasDigest ? 'osp' : 'supabase'
 }
+
+// Обложки объектов. Данные в базе Яндекса — обложки в cloud.ru через свой API (адрес /api/covers/<имя>,
+// server/osp-api/src/routes/covers.js): перенос данных переписывает адреса прежних обложек туда же
+// (migration/target/sql/load-covers.sql). Данные в Supabase — прежний бакет object-photos.
+export const COVER_URL_PREFIX = '/api/covers/'
+
+export function coversPath({ ownDb }) {
+  return ownDb ? 'osp' : 'supabase'
+}
+
+export const coverUrl = (name) => COVER_URL_PREFIX + encodeURIComponent(name)

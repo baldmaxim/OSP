@@ -1,5 +1,13 @@
 [
   {
+    "method": "GET",
+    "url": "/api/covers/:name",
+    "kind": "open",
+    "require": null,
+    "reason": "Обложки объектов: картинку показывает <img> без токена, как раньше из общедоступного бакета Supabase; только имя «UUID.расширение» в каталоге covers/, ответ — подписанная ссылка на 10 минут",
+    "body": null
+  },
+  {
     "method": "DELETE",
     "url": "/api/db/*",
     "kind": "open",
@@ -47,6 +55,18 @@
       "final_text",
       "mode",
       "our_text"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/fn/cover-upload",
+    "kind": "user",
+    "require": "employee",
+    "reason": null,
+    "body": [
+      "mime_type",
+      "name",
+      "size_bytes"
     ]
   },
   {

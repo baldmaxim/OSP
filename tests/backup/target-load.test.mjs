@@ -13,6 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rewriteAcl, splitToc } from '../../migration/target/lib/rewrite.mjs'
+import { PLATFORM_SQL, coversJournal } from './lib/supabase-platform.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const BACKUP = path.join(ROOT, 'migration', 'backup')
@@ -105,9 +106,8 @@ const USER_ID = '11111111-1111-4111-8111-111111111111'
 // для anon, значение по умолчанию auth.uid(), счётчик, тип, функция, материализованное представление.
 const PROD_SQL = `
 create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
-create schema auth;
 create extension pg_trgm with schema public;
-create table auth.users(id uuid primary key, email text);
+${PLATFORM_SQL}
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 grant usage on schema public to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
@@ -175,7 +175,7 @@ describe('Загрузка копии в базу без Supabase: всё или
     return { ...res, all: res.stdout + res.stderr }
   }
   const load = (args, env) => run(path.join(TARGET, 'load.sh'), [envFile, dump, ...args], env)
-  const verify = () => run(path.join(TARGET, 'verify.sh'), [envFile, dump])
+  const verify = (...args) => run(path.join(TARGET, 'verify.sh'), [envFile, dump, ...args])
   const reset = () => run(path.join(TARGET, 'reset.sh'), [envFile, '--yes-drop-rehearsal'])
   const noSecrets = (r) => {
     for (const s of [SECRET_EMAIL, ADMIN_PASS, OWNER_PASS, RUNTIME_PASS]) assert.ok(!r.all.includes(s), `в выводе: ${s}`)
@@ -495,16 +495,18 @@ describe('Загрузка копии в базу без Supabase: всё или
   })
 
   it('настоящий перенос (final): сверка требует остановленной записи; очистка — отказ навсегда', () => {
-    const res = load(['--status', 'final'])
+    // Окончательный перенос — только с учётками и обложками (их путь проверяет target-extras.test.mjs).
+    const journal = coversJournal(dump, path.join(tmp, 'covers-journal.json'))
+    const res = load(['--status', 'final', '--auth', '--covers', journal])
     assert.equal(res.status, 0, res.all)
-    const ok = verify()
+    const ok = verify('--covers', journal)
     assert.equal(ok.status, 0, ok.all)
     assert.ok(ok.stdout.includes('OK число строк равно подсчёту на проде до и после копии (3 таблиц)'))
 
     const original = fs.readFileSync(counts('before'), 'utf8')
     fs.writeFileSync(counts('before'), original.replace(/^tenders\t300$/m, 'tenders\t299'))
     try {
-      const moving = verify()
+      const moving = verify('--covers', journal)
       assert.equal(moving.status, 4, moving.all)
       assert.match(moving.stdout, /^FAIL настоящий перенос: число строк должно быть равно проду и до, и после копии — запись не была остановлена или строки потеряны: tenders/m)
     } finally {

@@ -10,6 +10,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SQL, HASH_MARK, TOKEN_MARK } from './lib/supabase-platform.mjs'
+import { checkCopy, countCsvRecords, parseRules, ruleFor } from '../../migration/backup/inventory.mjs'
+import { USER_COLUMNS, USER_REQUIRED, IDENTITY_COLUMNS, IDENTITY_REQUIRED } from '../../migration/target/lib/extras.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const SCRIPTS = path.join(ROOT, 'migration', 'backup')
@@ -24,9 +27,9 @@ const SECRET_EMAIL = 'ivanov.secret@example.ru'
 
 const PROD_SQL = `
 create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
-create schema auth; create schema extensions;
+create schema extensions;
 create extension pg_trgm with schema extensions;
-create table auth.users(id uuid primary key, email text, created_at timestamptz, last_sign_in_at timestamptz, email_confirmed_at timestamptz);
+${PLATFORM_SQL}
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 create publication supabase_realtime;
 
@@ -101,6 +104,36 @@ describe('Копия прода: снятие, проверка восстано
     assert.equal(fs.statSync(path.join(tmp, 'dumps')).mode & 0o777, 0o700)
     assert.match(res.stdout, /таблиц: 3/)
     assert.ok(!(res.stdout + res.stderr).includes(SECRET_EMAIL))
+    assert.match(res.stdout, /Учётных записей: 3, способов входа: 3, обложек: 3\./)
+    assert.ok(!(res.stdout + res.stderr).includes(HASH_MARK), 'отпечатки паролей в вывод не попадают')
+  })
+
+  it('backup.sh: учётки с отпечатками паролей, без одноразовых кодов; список обложек; опись — права 600', () => {
+    const base = dump.replace(/\.dump$/, '')
+    for (const suffix of ['.auth-users.csv', '.auth-identities.csv', '.covers.csv', '.inventory.tsv', '.extras.sha256']) {
+      assert.equal(fs.statSync(base + suffix).mode & 0o777, 0o600, suffix)
+    }
+    const users = fs.readFileSync(`${base}.auth-users.csv`, 'utf8')
+    const header = users.split('\n')[0].split(',')
+    assert.ok(header.includes('encrypted_password') && header.includes('email') && header.includes('raw_user_meta_data'), header.join(','))
+    for (const col of ['confirmation_token', 'recovery_token', 'email_change_token_new', 'email_change_token_current',
+      'phone_change_token', 'reauthentication_token', 'instance_id', 'confirmed_at']) assert.ok(!header.includes(col), col)
+    assert.equal(countCsvRecords(users), 3)
+    assert.equal((users.match(new RegExp(HASH_MARK, 'g')) || []).length, 3, 'отпечатки всех трёх учёток')
+    // время — UTC с микросекундами, как в базе: сверка после загрузки побайтная
+    assert.match(users, /2026-10-01 08:30:15\.123456\+00/)
+    for (const suffix of ['.auth-users.csv', '.auth-identities.csv', '.covers.csv', '.inventory.tsv']) {
+      assert.ok(!fs.readFileSync(base + suffix, 'utf8').includes(TOKEN_MARK), `одноразовых кодов нет: ${suffix}`)
+    }
+    assert.equal(countCsvRecords(fs.readFileSync(`${base}.auth-identities.csv`, 'utf8')), 3)
+    const covers = fs.readFileSync(`${base}.covers.csv`, 'utf8')
+    assert.equal(covers.split('\n')[0], 'name,size,mimetype,created_at,updated_at')
+    assert.equal(countCsvRecords(covers), 3)
+    const inventory = fs.readFileSync(`${base}.inventory.tsv`, 'utf8')
+    for (const line of ['auth.users\t3', 'auth.sessions\t3', 'storage.objects[object-photos]\t3',
+      'cron.job[refresh-rates-registry]\t1', 'auth.mfa_factors\t0', 'public.tenders\t500']) {
+      assert.ok(inventory.split('\n').includes(line), line)
+    }
   })
 
   it('backup.sh: нет подключения — понятное сообщение, файлов копии не остаётся', () => {
@@ -120,12 +153,59 @@ describe('Копия прода: снятие, проверка восстано
     assert.equal(res.status, 0, res.stdout + res.stderr)
     assert.match(res.stdout, /КОПИЯ ГОДНА: таблиц 3, строк 541/)
     assert.ok(!(res.stdout + res.stderr).includes(SECRET_EMAIL), 'данные в вывод не попадают')
+    assert.ok(!(res.stdout + res.stderr).includes(HASH_MARK), 'отпечатки паролей в вывод не попадают')
+    assert.match(res.stdout, /^OK переносится auth\.users: строк 3 — учётные записи с отпечатками паролей/m)
+    assert.match(res.stdout, /^OK не переносится auth\.sessions: строк 3 — действующие сессии/m)
+    assert.match(res.stdout, /^OK не переносится cron\.job\[refresh-rates-registry\]: строк 1/m)
+    assert.match(res.stdout, /^OK учётные записи: в выгрузке 3, в описи 3$/m)
+    assert.match(res.stdout, /^OK обложки объектов: в выгрузке 3, в описи 3$/m)
+    assert.doesNotMatch(res.stdout, /^FAIL/m)
+  })
+
+  it('verify.sh: непустая таблица Supabase вне описи (второй бакет, второй способ входа) — копия не проверена', () => {
+    assert.equal(prodSql(`insert into auth.mfa_factors values (gen_random_uuid(), gen_random_uuid(), 'totp');
+      insert into storage.buckets values ('docs', 'docs', false);
+      insert into storage.objects (bucket_id, name, metadata) values ('docs', 'a.pdf', '{"size": 1}')`).status, 0)
+    const outDir = path.join(tmp, 'dumps-unknown')
+    try {
+      let res = run('backup.sh', [], { ...prodEnv(), BACKUP_OUT_DIR: outDir })
+      assert.equal(res.status, 0, res.stdout + res.stderr)
+      const other = path.join(outDir, fs.readdirSync(outDir).find((f) => f.endsWith('.dump')))
+      res = run('verify.sh', [other])
+      assert.notEqual(res.status, 0)
+      assert.match(res.stdout, /^FAIL auth\.mfa_factors: строк 1 — нет в описи/m)
+      assert.match(res.stdout, /^FAIL storage\.objects\[docs\]: строк 1 — нет в описи/m)
+      assert.match(res.stdout, /КОПИЯ НЕ ПРОВЕРЕНА/)
+      assert.ok(!fs.existsSync(other.replace(/\.dump$/, '.verified')))
+    } finally {
+      assert.equal(prodSql("delete from auth.mfa_factors; delete from storage.objects where bucket_id = 'docs'; delete from storage.buckets where id = 'docs'").status, 0)
+    }
+  })
+
+  it('verify.sh: выгрузка учёток изменена после снятия — копия не проверена', () => {
+    const base = dump.replace(/\.dump$/, '')
+    const copy = path.join(tmp, 'dumps', 'edited.dump')
+    const cbase = copy.replace(/\.dump$/, '')
+    fs.copyFileSync(dump, copy)
+    for (const s of ['.counts-before.tsv', '.counts-after.tsv', '.auth-users.csv', '.auth-identities.csv', '.covers.csv', '.inventory.tsv']) {
+      fs.copyFileSync(base + s, cbase + s)
+    }
+    const stamp = path.basename(base)
+    fs.writeFileSync(`${copy}.sha256`, fs.readFileSync(`${dump}.sha256`, 'utf8').replace(path.basename(dump), 'edited.dump'))
+    fs.writeFileSync(`${cbase}.extras.sha256`, fs.readFileSync(`${base}.extras.sha256`, 'utf8').replaceAll(stamp, 'edited'))
+    const lines = fs.readFileSync(`${cbase}.auth-users.csv`, 'utf8').split('\n')
+    fs.writeFileSync(`${cbase}.auth-users.csv`, lines.slice(0, -2).join('\n') + '\n')
+    const res = run('verify.sh', [copy])
+    assert.notEqual(res.status, 0)
+    assert.match(res.stdout, /^FAIL выгрузки копии повреждены/m)
+    assert.match(res.stdout, /^FAIL учётные записи: в выгрузке 2, в описи 3/m)
+    assert.match(res.stdout, /КОПИЯ НЕ ПРОВЕРЕНА/)
   })
 
   it('verify.sh: повреждённая копия отклоняется', () => {
     const broken = path.join(tmp, 'dumps', 'broken.dump')
     fs.copyFileSync(dump, broken)
-    for (const s of ['.counts-before.tsv', '.counts-after.tsv']) fs.copyFileSync(dump.replace(/\.dump$/, s), broken.replace(/\.dump$/, s))
+    for (const s of ['.counts-before.tsv', '.counts-after.tsv', '.extras.sha256']) fs.copyFileSync(dump.replace(/\.dump$/, s), broken.replace(/\.dump$/, s))
     fs.writeFileSync(`${broken}.sha256`, fs.readFileSync(`${dump}.sha256`, 'utf8').replace(path.basename(dump), 'broken.dump'))
     const fd = fs.openSync(broken, 'r+')
     fs.writeSync(fd, Buffer.from('XXXX'), 0, 4, 200)
@@ -191,5 +271,53 @@ describe('Копия прода: снятие, проверка восстано
     res = run('counts.sh', [ref], prodEnv())
     assert.notEqual(res.status, 0)
     assert.match(res.stdout, /tenders .* СТАЛО МЕНЬШЕ/)
+  })
+})
+
+describe('Опись Supabase: правила и подсчёт выгрузок (без базы)', () => {
+  it('точное имя важнее «схема.*»; неизвестная непустая таблица — FAIL, пустая — молча', () => {
+    const rules = parseRules('public.* transfer данные\nauth.users transfer учётки\nrealtime.* skip служебное\nrealtime.keep transfer особая\n')
+    assert.equal(ruleFor('realtime.keep', rules).decision, 'transfer')
+    assert.equal(ruleFor('realtime.messages_2026_10_14', rules).decision, 'skip')
+    assert.equal(ruleFor('vault.secrets', rules), null)
+    const res = checkCopy({
+      rulesText: 'public.* transfer данные\nauth.users transfer учётки\nauth.identities transfer входы\nstorage.objects[object-photos] transfer обложки\n',
+      inventoryText: 'public.a\t5\nauth.users\t2\nauth.identities\t2\nvault.secrets\t1\npgsodium.key\t0\nnet.queue\t-1\n',
+      exportTexts: { '.auth-users.csv': 'id,email\n1,a\n2,b\n', '.auth-identities.csv': 'id\n1\n2\n', '.covers.csv': 'name\n' },
+    })
+    assert.equal(res.ok, false)
+    assert.deepEqual(res.lines.filter((l) => l.startsWith('FAIL')), [
+      'FAIL vault.secrets: строк 1 — нет в описи: решить, переносится ли, и дописать migration/backup/inventory-rules.txt',
+      'FAIL net.queue: нет права чтения — нет в описи: решить, переносится ли, и дописать migration/backup/inventory-rules.txt',
+    ])
+  })
+
+  it('записи CSV: перевод строки в кавычках запись не делит; оборванный файл — ошибка', () => {
+    assert.equal(countCsvRecords('a,b\n1,"x\ny"\n2,z\n'), 2)
+    assert.equal(countCsvRecords('a,b\n'), 0)
+    assert.equal(countCsvRecords(''), 0)
+    assert.equal(countCsvRecords('a\n1'), 1)
+    assert.throws(() => countCsvRecords('a\n"1'), /оборван/)
+  })
+
+  it('колонки учёток в выгрузке (extras.sql) и при загрузке (lib/extras.mjs) — один и тот же закрытый список', () => {
+    const sql = fs.readFileSync(path.join(SCRIPTS, 'extras.sql'), 'utf8')
+    const arrays = [...sql.matchAll(/ARRAY\[([^\]]+)\]/g)].map((m) => m[1].match(/'([a-z_]+)'/g).map((x) => x.slice(1, -1)))
+    assert.deepEqual(arrays, [USER_COLUMNS, USER_REQUIRED, IDENTITY_COLUMNS, IDENTITY_REQUIRED])
+    for (const token of ['confirmation_token', 'recovery_token', 'email_change_token_new', 'email_change_token_current',
+      'phone_change_token', 'reauthentication_token']) assert.ok(!USER_COLUMNS.includes(token), token)
+  })
+
+  it('список в репозитории читается, обязательные выгрузки в нём объявлены', () => {
+    const rules = parseRules(fs.readFileSync(path.join(SCRIPTS, 'inventory-rules.txt'), 'utf8'))
+    for (const name of ['public.*', 'auth.users', 'auth.identities', 'storage.objects[object-photos]']) {
+      assert.equal(ruleFor(name, rules)?.decision, 'transfer', name)
+    }
+    for (const name of ['auth.sessions', 'auth.refresh_tokens', 'auth.one_time_tokens', 'auth.flow_state']) {
+      assert.equal(ruleFor(name, rules)?.decision, 'skip', name)
+    }
+    for (const name of ['auth.mfa_factors', 'vault.secrets', 'storage.objects[docs]', 'cron.job[other]']) {
+      assert.equal(ruleFor(name, rules), null, `${name} — решение только явно`)
+    }
   })
 })

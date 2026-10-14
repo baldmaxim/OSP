@@ -31,8 +31,15 @@ REPORT_DIR="${PROBE_REPORT_DIR:-$HERE/reports}"
 
 ENV_FILE="${1:-}"
 DUMP="${2:-}"
+COVERS_JOURNAL=""
+if [ "${3:-}" = --covers ] && [ -n "${4:-}" ] && [ $# -eq 4 ]; then COVERS_JOURNAL="$4"
+elif [ $# -ne 2 ]; then DUMP=""; fi
 if [ -z "$ENV_FILE" ] || [ -z "$DUMP" ] || [ ! -f "$DUMP" ]; then
-  echo "Использование: bash migration/target/verify.sh <файл подключения> <копия.dump>" >&2
+  echo "Использование: bash migration/target/verify.sh <файл подключения> <копия.dump> [--covers <журнал covers-copy>]" >&2
+  exit 1
+fi
+if [ -n "$COVERS_JOURNAL" ] && [ ! -f "$COVERS_JOURNAL" ]; then
+  echo "Нет журнала копирования обложек: $COVERS_JOURNAL" >&2
   exit 1
 fi
 for bin in psql pg_restore docker sha256sum; do
@@ -111,6 +118,71 @@ if [ "$RESTORE_ERRORS" != 0 ]; then
   exit 1
 fi
 
+# 2а. Адреса обложек: загрузка с --covers меняла objects.cover_image_url — ту же замену получает эталон
+#     (из того же журнала), и перечень замен в базе обязан совпасть с эталонным.
+if ! has_moves="$(target_psql -c "select to_regclass('osp_meta.cover_moves') is not null" 2>"$WORK/err")"; then
+  say "FAIL нет подключения: $(head -n 1 "$WORK/err" | target_mask | cut -c1-200)"; save_report; exit 2
+fi
+if [ "$has_moves" = t ] && [ -z "$COVERS_JOURNAL" ]; then
+  say "FAIL загрузка меняла адреса обложек: сверка — с тем же журналом, --covers <журнал covers-copy>"; save_report; exit 1
+fi
+if [ "$has_moves" != t ] && [ -n "$COVERS_JOURNAL" ]; then
+  say "FAIL указан журнал обложек, а загрузка адреса не меняла (load.sh без --covers)"; save_report; exit 4
+fi
+if [ -n "$COVERS_JOURNAL" ]; then
+  if ! node "$HERE/lib/extras.mjs" covers-sql "$COVERS_JOURNAL" "$BASE.covers.csv" "$WORK/covers.json" > "$WORK/covers-data.sql" 2>"$WORK/err"; then
+    say "FAIL журнал обложек не принят: $(head -n 1 "$WORK/err" | cut -c1-200)"; save_report; exit 1
+  fi
+  if ! local_psql -c 'CREATE SCHEMA IF NOT EXISTS osp_meta' -v status="$STATUS" -v covers_data_file="$WORK/covers-data.sql" \
+       -f "$HERE/sql/load-covers.sql" >/dev/null 2>"$WORK/err"; then
+    say "FAIL замена адресов обложек на эталоне не прошла: $(grep -m 1 -E 'ERROR|FATAL|error' "$WORK/err" | sed -E 's/"[^"]*"/"…"/g' | cut -c1-200)"
+    save_report; exit 4
+  fi
+  moves_sql="select name, sha256, old_url, new_url, objects_updated from osp_meta.cover_moves order by name"
+  if [ "$(local_psql -At -c "$moves_sql" | sha256sum)" = "$(target_psql -c "$moves_sql" 2>/dev/null | sha256sum)" ]; then
+    say "OK адреса обложек: замены в базе — ровно по журналу ($(target_psql -c 'select count(*) from osp_meta.cover_moves') файлов, адресов $(target_psql -c 'select coalesce(sum(objects_updated), 0) from osp_meta.cover_moves'))"
+  else
+    problems_pre=1
+    say "FAIL адреса обложек: замены в базе не совпадают с журналом"
+  fi
+fi
+
+# 2б. Учётки с отпечатками паролей (load.sh --auth): выгрузка из базы побайтно равна выгрузке копии —
+#     те же колонки, порядок и формат (UTC, ISO), что в migration/backup/extras.sql.
+if ! has_vault="$(target_psql -c "select to_regnamespace('osp_vault') is not null" 2>"$WORK/err")"; then
+  say "FAIL нет подключения: $(head -n 1 "$WORK/err" | target_mask | cut -c1-200)"; save_report; exit 2
+fi
+if [ "$has_vault" = t ]; then
+  vault_ok=1
+  for pair in "users:auth-users:id:учётные записи" "identities:auth-identities:user_id, provider, id:способы входа"; do
+    IFS=: read -r table suffix order title <<< "$pair"
+    file="$BASE.$suffix.csv"
+    if [ ! -f "$file" ]; then vault_ok=0; say "FAIL $title: нет выгрузки копии $(basename "$file")"; continue; fi
+    cols="$(head -n 1 "$file")"
+    [[ "$cols" =~ ^[a-z_]+(,[a-z_]+)*$ ]] || { vault_ok=0; say "FAIL $title: заголовок выгрузки не похож на список колонок"; continue; }
+    got="$(target_psql 2>"$WORK/err" <<SQL | sha256sum | cut -d' ' -f1
+BEGIN TRANSACTION READ ONLY;
+SELECT pg_catalog.set_config('application_name', 'osp:vault', true), pg_catalog.set_config('TimeZone', 'UTC', true),
+       pg_catalog.set_config('DateStyle', 'ISO, YMD', true), pg_catalog.set_config('IntervalStyle', 'postgres', true),
+       pg_catalog.set_config('extra_float_digits', '1', true) \gset ignored_
+COPY (SELECT ${cols//,/, } FROM osp_vault.$table ORDER BY $order) TO STDOUT WITH (FORMAT csv, HEADER true);
+COMMIT;
+SQL
+)"
+    if [ "$got" = "$(sha256sum "$file" | cut -d' ' -f1)" ]; then
+      say "OK $title: в базе ровно выгрузка копии — $(( $(grep -c '' "$file") - 1 )) строк, побайтно"
+    else
+      vault_ok=0; say "FAIL $title: в базе не то, что в выгрузке копии"
+    fi
+  done
+  [ "$vault_ok" = 1 ] || problems_pre=1
+elif [ "$STATUS" = final ]; then
+  problems_pre=1
+  say "FAIL окончательный перенос без учёток с отпечатками паролей (osp_vault нет)"
+else
+  say "ИНФО учётки с отпечатками паролей не загружались (load.sh без --auth)"
+fi
+
 # 3. Факты с обеих сторон.
 if ! local_psql -At -v with_rights="$WITH_RIGHTS" -v acl_role=authenticated -v drop_roles="$DROP_ROLES" -f "$HERE/sql/verify-facts.sql" > "$WORK/reference.raw" 2>"$WORK/err"; then
   say "FAIL сверка на эталоне прервана: $(grep -m 1 -E 'ERROR|FATAL|error' "$WORK/err" | sed -E 's/"[^"]*"/"…"/g' | cut -c1-200)"
@@ -142,7 +214,7 @@ KINDS="$(printf '%s\n' \
 if [ "$WITH_RIGHTS" = 1 ]; then
   KINDS+=$'\npolicy:политики\ngrant:выданные права'
 fi
-problems=0
+problems="${problems_pre:-0}"
 while IFS= read -r pair; do
   kind="${pair%%:*}"
   title="${pair#*:}"

@@ -151,20 +151,34 @@ export async function startFakeSupabase(state) {
   }
 }
 
-// «S3» (path-style: /<bucket>/<key>): запоминает запросы; PUT сохраняет размер объекта, HEAD отвечает
-// им или 404, DELETE удаляет. failDelete — удаление в хранилище падает (500).
+// «S3» (path-style: /<bucket>/<key>): запоминает запросы; PUT сохраняет размер объекта (objects) и
+// содержимое (bodies), HEAD отвечает размером или 404, GET — содержимым (объект без содержимого — пустой
+// ответ, нет объекта — 404 NoSuchKey), DELETE удаляет. failDelete — удаление в хранилище падает (500).
 export async function startFakeS3() {
   const requests = []
   const objects = new Map()
+  const bodies = new Map()
   const fake = { failDelete: false }
   const server = http.createServer(async (req, res) => {
-    const body = await readBody(req)
+    const chunks = []
+    for await (const c of req) chunks.push(c)
+    const raw = Buffer.concat(chunks)
     const objectPath = decodeURIComponent(new URL(req.url, 'http://fake').pathname)
-    requests.push({ method: req.method, path: objectPath, auth: req.headers.authorization || '' })
+    requests.push({ method: req.method, path: objectPath, auth: req.headers.authorization || '', contentType: req.headers['content-type'] || '' })
     if (req.method === 'PUT') {
-      objects.set(objectPath, Buffer.byteLength(body))
+      objects.set(objectPath, raw.length)
+      bodies.set(objectPath, raw)
       res.writeHead(200)
       return res.end()
+    }
+    if (req.method === 'GET' && !objects.has(objectPath)) {
+      res.writeHead(404, { 'content-type': 'application/xml' })
+      return res.end('<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>no</Message></Error>')
+    }
+    if (req.method === 'GET') {
+      const data = bodies.get(objectPath) || Buffer.alloc(0)
+      res.writeHead(200, { 'content-length': String(data.length), etag: '"fake"' })
+      return res.end(data)
     }
     if (req.method === 'HEAD') {
       if (!objects.has(objectPath)) { res.writeHead(404); return res.end() }
@@ -174,6 +188,7 @@ export async function startFakeS3() {
     if (req.method === 'DELETE') {
       if (fake.failDelete) { res.writeHead(500); return res.end() }
       objects.delete(objectPath)
+      bodies.delete(objectPath)
       res.writeHead(204)
       return res.end()
     }
@@ -181,5 +196,5 @@ export async function startFakeS3() {
     res.end()
   })
   const port = await listen(server)
-  return Object.assign(fake, { url: `http://127.0.0.1:${port}`, requests, objects, close: () => new Promise((r) => server.close(r)) })
+  return Object.assign(fake, { url: `http://127.0.0.1:${port}`, requests, objects, bodies, close: () => new Promise((r) => server.close(r)) })
 }

@@ -2,7 +2,10 @@
 // подписанные ссылки действительно работают — загрузка PUT, превью и скачивание под исходным именем,
 // удаление; подделанная ссылка отклоняется. Загрузка с ключом операции (заход Б): повтор PUT и
 // подтверждения — один объект и одна строка; чужой отпечаток — 409; удаление — строка и объект,
-// повтор безопасен. Без Docker или образа набор пропускается.
+// повтор безопасен. Обложки объектов (src/routes/covers.js, src/lib/covers.js): ссылка на загрузку
+// принимает только заявленный тип изображения, показ по /api/covers/<имя> отдаёт файл, копирование из
+// хранилища Supabase сверяет каждый файл и повтор ничего не перезаписывает. Без Docker или образа набор
+// пропускается.
 // Образ: OSP_MINIO_IMAGE (по умолчанию cgr.dev/chainguard/minio:latest).
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -73,7 +76,7 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
     state = {
       users: { [USER.token]: { id: USER.id } },
       roles: { [USER.id]: { role: 'engineer', counterparty_id: null, is_approved: true, is_blocked: false, full_name: 'Инженер' } },
-      docs: {}, myContracts: {}, can: { [USER.id]: ['tenders:view'] }, owners: { tenders: { [TENDER]: 'all' } },
+      docs: {}, myContracts: {}, can: { [USER.id]: ['tenders:view', 'objects:edit'] }, owners: { tenders: { [TENDER]: 'all' } },
     }
     supa = await startFakeSupabase(state)
     const { buildApp } = await import(path.join(SERVER, 'src', 'app.js'))
@@ -138,6 +141,46 @@ describe('osp-api s3-presign против MinIO (настоящая подпис
     assert.deepEqual(state.docs, {}, 'строка удалена')
     assert.deepEqual(await listKeys(prefix), [])
     assert.deepEqual(await call({ action: 'delete', s3_key: up.s3_key }), { ok: true, already: true }, 'повтор удаления')
+  })
+
+  it('обложка: PUT по ссылке — только с заявленным типом; показ /api/covers/<имя> отдаёт файл', async () => {
+    const name = '0f0e0d0c-0b0a-4908-8706-050403020100.png'
+    const content = Buffer.from('png-обложка')
+    const res = await app.inject({
+      method: 'POST', url: '/api/fn/cover-upload',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${USER.token}` },
+      payload: JSON.stringify({ name, mime_type: 'image/png', size_bytes: content.length }),
+    })
+    assert.equal(res.statusCode, 200, res.body)
+    const { presigned_url: url } = res.json()
+    const wrong = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'text/html' }, body: '<script>1</script>' })
+    assert.equal(wrong.status, 403, 'другой тип файла — подпись не сходится')
+    assert.deepEqual(await listKeys('covers/'), [])
+    const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: content })
+    assert.equal(put.status, 200, await put.text())
+    const view = await app.inject({ method: 'GET', url: `/api/covers/${name}` })
+    assert.equal(view.statusCode, 302)
+    const got = await fetch(view.headers.location)
+    assert.equal(got.status, 200)
+    assert.equal(got.headers.get('content-type'), 'image/png')
+    assert.ok(Buffer.from(await got.arrayBuffer()).equals(content))
+  })
+
+  it('копирование обложек из хранилища Supabase: сверка обратным скачиванием, повтор без загрузки', async () => {
+    const { copyCovers } = await import(path.join(SERVER, 'src', 'lib', 'covers.js'))
+    const { defaultDeps } = await import(path.join(SERVER, 'src', 'app.js'))
+    const files = { 'bbbbbbbb-0000-4000-8000-000000000001.jpg': Buffer.from('jpeg из Supabase') }
+    const fetchImpl = async (url) => {
+      const body = files[decodeURIComponent(url.split('/').pop())]
+      return body ? new Response(body, { status: 200, headers: { 'content-type': 'image/jpeg' } }) : new Response('{}', { status: 404 })
+    }
+    const listBytes = Buffer.from(`name,size,mimetype,created_at,updated_at\nbbbbbbbb-0000-4000-8000-000000000001.jpg,${files['bbbbbbbb-0000-4000-8000-000000000001.jpg'].length},image/jpeg,,\n`)
+    const s3 = defaultDeps.createS3({ endpoint, region: 'ru-central-1', bucket: 'osp', accessKeyId: ACCESS, secretAccessKey: SECRET })
+    const first = await copyCovers({ listBytes, sourceBase: 'https://ref.supabase.co/storage/v1/object/public/object-photos/', s3, bucket: 'osp', fetchImpl })
+    assert.deepEqual(first.files.map((f) => [f.status, f.uploaded, f.content_type]), [['verified', true, 'image/jpeg']])
+    const again = await copyCovers({ listBytes, sourceBase: 'https://ref.supabase.co/storage/v1/object/public/object-photos/', s3, bucket: 'osp', fetchImpl })
+    assert.deepEqual(again.files.map((f) => [f.status, f.uploaded]), [['verified', false]])
+    assert.ok((await listKeys('covers/')).includes('covers/bbbbbbbb-0000-4000-8000-000000000001.jpg'))
   })
 
   it('подтверждение без загруженного объекта — 409, строки нет', async () => {

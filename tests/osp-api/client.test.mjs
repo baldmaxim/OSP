@@ -6,7 +6,8 @@ import assert from 'node:assert/strict'
 import { callOspFunction, OSP_API_BASE } from '../../src/api/ospApi.js'
 import { nextFeatures, parseFeatures, resolveFeature } from '../../src/config/features.js'
 import { createOspFiles, HASH_MAX_BYTES, sha256Hex } from '../../src/api/ospFiles.js'
-import { functionPath, filesPath, DATA_BOUND_FUNCTIONS, OSP_API_FLAG, OSP_FILES_FLAG } from '../../src/api/serverPath.js'
+import { functionPath, filesPath, coversPath, coverUrl, DATA_BOUND_FUNCTIONS, OSP_API_FLAG, OSP_FILES_FLAG } from '../../src/api/serverPath.js'
+import { createOspCovers } from '../../src/api/ospCovers.js'
 import { uuidv7 } from '../../src/utils/uuid.js'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -296,3 +297,64 @@ describe('src/utils/uuid.js — uuidv7', () => {
   })
 })
 
+describe('src/api/ospCovers.js и files.js — обложки объектов', () => {
+  const NAME = '0f0e0d0c-0b0a-4908-8706-050403020100.jpg'
+  const file = { name: 'фото.JPG', type: 'image/jpeg', size: 1234 }
+  const httpError = (status, body) => {
+    const error = new Error('Edge Function returned a non-2xx status code')
+    error.context = new Response(JSON.stringify(body), { status })
+    return { data: null, error }
+  }
+
+  it('данные в базе Яндекса — обложки через свой API, адрес /api/covers/<имя>; в Supabase — прежний бакет', () => {
+    assert.equal(coversPath({ ownDb: true }), 'osp')
+    assert.equal(coversPath({ ownDb: false }), 'supabase')
+    assert.equal(coverUrl(NAME), `/api/covers/${NAME}`)
+    // Адаптер помнит, куда ушла загрузка: адрес — того же хранилища, даже если флаг сменился.
+    const adapter = fs.readFileSync(path.join(SRC, 'api', 'files.js'), 'utf8')
+    assert.match(adapter, /uploadedTo\.set\(path, where\)/)
+    assert.match(adapter, /uploadedTo\.get\(path\) \|\| coversPath/)
+    // Страница объектов работает только через адаптер — её код не меняется.
+    const page = fs.readFileSync(path.join(SRC, 'pages', 'ObjectsPage.jsx'), 'utf8')
+    assert.match(page, /objectPhotos\.upload\(fileName, file/)
+    assert.match(page, /objectPhotos\.publicUrl\(fileName\)/)
+  })
+
+  it('загрузка: ссылка → PUT с типом файла; ответ как у storage.upload', async () => {
+    const calls = []
+    const puts = []
+    const covers = createOspCovers({
+      call: async (body) => { calls.push(body); return { data: { presigned_url: 'https://s3.test/osp/covers/x?sig', url: `/api/covers/${NAME}` }, error: null } },
+      fetchImpl: async (url, init) => { puts.push({ url, init }); return new Response('', { status: 200 }) },
+      sleep: async () => {},
+    })
+    assert.deepEqual(await covers.upload(NAME, file), { data: { path: NAME }, error: null })
+    assert.deepEqual(calls, [{ name: NAME, mime_type: 'image/jpeg', size_bytes: 1234 }])
+    assert.equal(puts[0].init.method, 'PUT')
+    assert.equal(puts[0].init.headers['Content-Type'], 'image/jpeg')
+  })
+
+  it('сбой хранилища — новая ссылка и повтор; ответ PUT потерян, а имя уже занято — загрузка состоялась', async () => {
+    let n = 0
+    const covers = createOspCovers({
+      call: async () => (++n === 3 ? httpError(409, { error: 'занято', code: 'OSP_COVER_EXISTS' }) : { data: { presigned_url: 'https://s3.test/p' }, error: null }),
+      fetchImpl: async () => (n === 1 ? new Response('', { status: 503 }) : Promise.reject(new TypeError('сеть'))),
+      sleep: async () => {},
+    })
+    assert.deepEqual(await covers.upload(NAME, file), { data: { path: NAME }, error: null })
+    assert.equal(n, 3)
+  })
+
+  it('отказ по правам — сразу ошибка с текстом сервера, без повторов', async () => {
+    let n = 0
+    const covers = createOspCovers({
+      call: async () => { n++; return httpError(403, { error: 'Нет права на правку объектов' }) },
+      fetchImpl: async () => { throw new Error('PUT не должен вызываться') },
+      sleep: async () => {},
+    })
+    const res = await covers.upload(NAME, file)
+    assert.equal(res.data, null)
+    assert.equal(res.error.message, 'Нет права на правку объектов')
+    assert.equal(n, 1)
+  })
+})
