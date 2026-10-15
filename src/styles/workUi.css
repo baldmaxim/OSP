@@ -482,6 +482,11 @@ body.ui-work-portal :is(.fdrop-panel, .drc-pop, .status-dropdown-menu-portal, .d
   padding: 0.0625rem 0.5rem;
   white-space: nowrap;
 }
+/* Статус тендера без права правки (экономист, вкладка «Завершённые») — та же
+   плашка, что выпадающий список у редактора, и переносится так же: в одну
+   строку «Идет тендерная процедура» не влезала в колонку и наезжала на срок
+   тендерных процедур. */
+.ui-work.ui-work :is(.data-table, .dcr-table) .tp-status-badge { white-space: normal; max-width: 100%; }
 .ui-work.ui-work :is(.data-table, .dcr-table) .status-dropdown { display: inline-block; width: auto; max-width: 100%; }
 .ui-work.ui-work :is(.data-table, .dcr-table) .status-dropdown-trigger {
   display: inline-flex;
