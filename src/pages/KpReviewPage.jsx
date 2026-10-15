@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import { fetchProposalFilesForReview, setRemarksSent, setSummaryAdded, setReviewStage } from '../services/tenderProposalFiles'
 import { stageOf, STAGE_KEYS, STAGE_GROUPS, TAB_META } from '../utils/kpReviewStages'
+import { kpDownloadName } from '../utils/kpDownloadName'
+import { requestDownloadUrl } from '../services/s3'
+import { IconDownload } from '../components/icons/ActionIcons'
 import KpReviewBadge from '../components/KpReviewBadge'
 import KpReviewModal from '../components/KpReviewModal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
@@ -265,6 +268,35 @@ function KpReviewPage() {
     }
   }
 
+  // Скачивание КП одним кликом под именем «№ тендера_контрагент_тендер_объект»:
+  // имя ставит сервер (Content-Disposition), a.download на чужом домене не работает.
+  // Пока ссылка запрашивается, кнопка занята — повторный клик второй файл не качает.
+  const [downloadingIds, setDownloadingIds] = useState(() => new Set())
+  const handleDownload = async (r) => {
+    if (!r.s3?.s3_key || downloadingIds.has(r.id)) return
+    const fileName = kpDownloadName(r)
+    setDownloadingIds(prev => new Set(prev).add(r.id))
+    try {
+      const { presigned_url } = await requestDownloadUrl(r.s3.s3_key, { fileName, download: true })
+      const a = document.createElement('a')
+      a.href = presigned_url
+      a.download = fileName
+      a.target = '_blank'
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } catch (e) {
+      alert('Не удалось скачать КП: ' + (e.message || e))
+    } finally {
+      setDownloadingIds(prev => {
+        const next = new Set(prev)
+        next.delete(r.id)
+        return next
+      })
+    }
+  }
+
   // Первый клик по новому столбцу: номер — по возрастанию, даты — от свежих.
   const toggleSort = useCallback((key) => {
     setSort(s => (s.key === key
@@ -459,6 +491,21 @@ function KpReviewPage() {
                       <span className="kprv-file-name">{r.s3?.file_name || '—'}</span>
                     </button>
                     {r.version_label && <span className="kprv-vlabel">{r.version_label}</span>}
+                    {/* Скачивание — в правом нижнем углу ячейки, появляется при
+                        наведении на КП (и при фокусе с клавиатуры). */}
+                    {r.s3?.s3_key && (
+                      <button
+                        type="button"
+                        className={`kprv-dl-btn${downloadingIds.has(r.id) ? ' is-busy' : ''}`}
+                        title={`Скачать как «${kpDownloadName(r)}»`}
+                        aria-label="Скачать КП"
+                        aria-busy={downloadingIds.has(r.id)}
+                        disabled={downloadingIds.has(r.id)}
+                        onClick={() => handleDownload(r)}
+                      >
+                        <IconDownload size={14} />
+                      </button>
+                    )}
                   </td>
                   <td className="kprv-col-date">{fmtDate(r.created_at)}</td>
                   <td className="kprv-col-resp">{r.tenders?.responsible_contact?.full_name || '—'}</td>
