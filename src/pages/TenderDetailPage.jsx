@@ -11,6 +11,7 @@ import { sanitizeUserText, sanitizeDeep } from '../utils/text'
 import { describeSupabaseError, isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { useRole } from '../contexts/RoleContext'
 import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
+import TenderFilesZipButton from '../components/TenderFilesZipButton'
 import TenderProposalsCompare from '../components/TenderProposalsCompare'
 import VorDocsModal from '../components/VorDocsModal'
 import VirtualTableBody from '../components/VirtualTableBody'
@@ -2895,7 +2896,12 @@ function TenderDetailPage() {
                       <th>Контакт</th>
                       <th style={{ width: '140px' }}>Телефон</th>
                       <th style={{ width: '190px' }}>Статус</th>
-                      <th style={{ width: '280px' }}>КП / Документы</th>
+                      <th style={{ width: '280px' }}>
+                        <div className="tc-files-head">
+                          <TenderFilesZipButton tender={tender} participants={tenderCounterparties} />
+                          <span>КП / Документы</span>
+                        </div>
+                      </th>
                       {!hideNotes && <th style={{ minWidth: '350px', width: '35%' }}>Примечание</th>}
                     </tr>
                   </thead>

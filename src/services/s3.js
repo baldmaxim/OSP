@@ -51,6 +51,14 @@ export async function requestDownloadUrl(s3Key, { fileName = null, download = fa
   })
 }
 
+// Байты файла — для сборки архива в браузере («Скачать всё» у участников тендера).
+export async function fetchFileBytes(s3Key) {
+  const { presigned_url } = await requestDownloadUrl(s3Key)
+  const res = await fetch(presigned_url)
+  if (!res.ok) throw new Error(`хранилище ответило ${res.status}`)
+  return new Uint8Array(await res.arrayBuffer())
+}
+
 // Через osp-api удаляет и строку s3_documents (сначала её), и объект — строки без файла не остаётся.
 export async function deleteS3Object(s3Key) {
   if (filesViaOspApi()) return ospFiles.remove(s3Key)

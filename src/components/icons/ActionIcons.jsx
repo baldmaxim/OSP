@@ -50,6 +50,9 @@ export const IconLink = ({ size }) => (
 export const IconCheck = ({ size }) => (
   <AiSvg size={size}><path d="M20 6 9 17l-5-5" /></AiSvg>
 )
+export const IconDownload = ({ size }) => (
+  <AiSvg size={size}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></AiSvg>
+)
 export const IconHistory = ({ size }) => (
   <AiSvg size={size}><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l3 2" /></AiSvg>
 )

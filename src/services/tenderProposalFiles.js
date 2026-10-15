@@ -60,6 +60,18 @@ export async function fetchProposalFiles(tenderId, counterpartyId) {
   return { proposals, attachments }
 }
 
+// Все файлы участников тендера одним запросом — для «Скачать всё» (utils/tenderFilesArchive.js).
+export async function fetchTenderFilesForArchive(tenderId) {
+  if (!tenderId) return []
+  return fetchAllRows((from, to) => db
+    .from('tender_proposal_files')
+    .select('id, counterparty_id, file_kind, proposal_group_id, version_label, created_at, s3:s3_documents!s3_document_id(s3_key, file_name, size_bytes)')
+    .eq('tender_id', tenderId)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: true })
+    .range(from, to))
+}
+
 // Загружает файл в S3 и регистрирует в tender_proposal_files.
 // fileKind: 'commercial_proposal' | 'attachment'
 // proposalGroupId: для нового КП — null (сгенерируется новая группа);
