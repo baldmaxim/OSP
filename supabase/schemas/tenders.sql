@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS tenders (
   tg_published BOOLEAN NOT NULL DEFAULT false,
   tg_published_at TIMESTAMPTZ,
   tg_published_by TEXT,
+  -- Третье состояние «Не публиковать» (миграция 20261017); вместе с tg_published не бывает.
+  tg_skip BOOLEAN NOT NULL DEFAULT false,
+  tg_skip_at TIMESTAMPTZ,
+  tg_skip_by TEXT,
   -- Шаг между подведением итогов и завершением (миграция 20260830).
   completion_letter_sent BOOLEAN NOT NULL DEFAULT false,
   completion_letter_sent_at TIMESTAMPTZ,

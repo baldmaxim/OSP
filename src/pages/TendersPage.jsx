@@ -10,6 +10,7 @@ import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
 import { useRole, ROLES } from '../contexts/RoleContext'
 import StatusDropdown from '../components/StatusDropdown'
 import TgPublishToggle from '../components/TgPublishToggle'
+import { tgEventDescription, tgPatch, tgSkipSupported, tgState } from '../utils/tgPublish'
 import CompletionLetterToggle from '../components/CompletionLetterToggle'
 import RdCheckToggle from '../components/RdCheckToggle'
 import FolderPathCell from '../components/FolderPathCell'
@@ -1352,19 +1353,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
-  // Отметка публикации тендера в Telegram-канале (галочка под описанием работ).
-  const handleToggleTgPublished = async (tenderId, published) => {
+  // Отметка «ТГ» под описанием работ: не опубликовано → опубликовано → не публиковать (utils/tgPublish.js).
+  const handleToggleTgPublished = async (tender, next) => {
     const by = userProfile?.full_name || 'Сотрудник'
-    const patch = published
-      ? { tg_published: true, tg_published_at: new Date().toISOString(), tg_published_by: by }
-      : { tg_published: false, tg_published_at: null, tg_published_by: null }
+    const patch = tgPatch(next, by, new Date().toISOString(), tgSkipSupported(tender))
     try {
-      const { error } = await db.from('tenders').update(patch).eq('id', tenderId)
+      const { error } = await db.from('tenders').update(patch).eq('id', tender.id)
       if (error) throw error
-      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, ...patch } : t))
-      logTenderEvent(tenderId, 'field_updated', {
+      setTenders(prev => prev.map(t => t.id === tender.id ? { ...t, ...patch } : t))
+      logTenderEvent(tender.id, 'field_updated', {
         fieldName: 'tg_published',
-        description: published ? 'Отмечена публикация в ТГ-канале' : 'Снята отметка о публикации в ТГ-канале',
+        description: tgEventDescription(tgState(tender), next),
       })
     } catch (err) {
       console.error('Ошибка отметки публикации в ТГ:', err.message)

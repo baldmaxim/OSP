@@ -1,8 +1,9 @@
 import './TgPublishToggle.css'
+import { TG_PUBLISHED, TG_SKIP, nextTgState, tgSkipSupported, tgState } from '../utils/tgPublish'
 
-// Галочка «Публикация тендера в Telegram-канале». После запуска тендера сотрудник
-// публикует его в ТГ-канале и отмечает это здесь. Показывается в строке тендера под
-// описанием работ. Клик (для редакторов) переключает состояние; onToggle(tenderId, next).
+// Отметка «Публикация тендера в Telegram-канале» в строке тендера под описанием работ.
+// Три состояния (utils/tgPublish.js): серое «не опубликовано», зелёное «опубликовано»,
+// красное «не публиковать». Клик (для редакторов) — следующее по кругу; onToggle(tender, next).
 
 function fmtDate(iso) {
   if (!iso) return ''
@@ -12,30 +13,35 @@ function fmtDate(iso) {
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`
 }
 
-const IconBox = ({ checked }) => (
+const whoWhen = (by, at) => `${by ? ` · ${by}` : ''}${at ? ` · ${fmtDate(at)}` : ''}`
+
+const IconBox = ({ state }) => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <rect x="3" y="3" width="18" height="18" rx="4" />
-    {checked && <path d="M8 12.5l2.6 2.6L16 9" />}
+    {state === TG_PUBLISHED && <path d="M8 12.5l2.6 2.6L16 9" />}
+    {state === TG_SKIP && <path d="M9 9l6 6M15 9l-6 6" />}
   </svg>
 )
 
+const LABEL = { none: 'Публикация в ТГ', published: 'Опубликовано в ТГ', skip: 'Не публиковать в ТГ' }
+const STATE_CLASS = { none: 'is-unpub', published: 'is-pub', skip: 'is-skip' }
+
 // short — короткая подпись для плотного реестра; полный смысл остаётся в подсказке.
 export default function TgPublishToggle({ tender, canEdit = false, onToggle, short = false }) {
-  const published = !!tender.tg_published
-  const label = short
-    ? 'ТГ'
-    : (published ? 'Опубликовано в ТГ' : 'Публикация в ТГ')
-  const cls = `tgpub ${published ? 'is-pub' : 'is-unpub'}`
+  const state = tgState(tender)
+  const label = short ? 'ТГ' : LABEL[state]
+  const cls = `tgpub ${STATE_CLASS[state]}`
 
-  const title = published
-    ? `Опубликовано в Telegram-канале${tender.tg_published_by ? ` · ${tender.tg_published_by}` : ''}${tender.tg_published_at ? ` · ${fmtDate(tender.tg_published_at)}` : ''}`
-    : 'Отметить публикацию тендера в Telegram-канале'
+  let title
+  if (state === TG_PUBLISHED) title = `Опубликовано в Telegram-канале${whoWhen(tender.tg_published_by, tender.tg_published_at)}`
+  else if (state === TG_SKIP) title = `Не публиковать${whoWhen(tender.tg_skip_by, tender.tg_skip_at)}`
+  else title = canEdit ? 'Отметить публикацию тендера в Telegram-канале' : 'Не опубликовано в ТГ'
 
   if (!canEdit) {
     return (
-      <span className={`${cls} is-readonly`} title={published ? title : 'Не опубликовано в ТГ'}>
-        <IconBox checked={published} /> <span>{label}</span>
+      <span className={`${cls} is-readonly`} title={title}>
+        <IconBox state={state} /> <span>{label}</span>
       </span>
     )
   }
@@ -45,9 +51,14 @@ export default function TgPublishToggle({ tender, canEdit = false, onToggle, sho
       type="button"
       className={cls}
       title={title}
-      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(tender.id, !published) }}
+      aria-label={short ? title : undefined}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onToggle(tender, nextTgState(state, tgSkipSupported(tender)))
+      }}
     >
-      <IconBox checked={published} /> <span>{label}</span>
+      <IconBox state={state} /> <span>{label}</span>
     </button>
   )
 }

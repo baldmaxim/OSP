@@ -132,7 +132,7 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
     row.push(
       t.summary_proposal_link || '',
       t.folder_path || '',
-      t.tg_published ? `Да${t.tg_published_at ? `, ${fmtDate(t.tg_published_at)}` : ''}` : '',
+      t.tg_published ? `Да${t.tg_published_at ? `, ${fmtDate(t.tg_published_at)}` : ''}` : (t.tg_skip ? 'Не публиковать' : ''),
       t.completion_letter_sent ? `Да${t.completion_letter_sent_at ? `, ${fmtDate(t.completion_letter_sent_at)}` : ''}` : '',
       fmtDate(t.start_date),
       fmtDate(t.end_date),
