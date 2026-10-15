@@ -268,31 +268,50 @@ Supabase — люди входят прежним паролем; писем н�
 **osp.root.sx остаётся на Supabase**, его вход не меняется. Устройство — `server/osp-api/README.md` («Свой
 вход»), перенос паролей — `migration/accounts/README.md`. Каждый шаг на corp и в базе — по слову владельца.
 
-Пилот (касается только владельца портала и тестовой учётки):
-1. На corp: `bash scripts/deploy-server.sh auth-key-init` (копию `secrets/osp-api.env` — офлайн),
-   `transfer-key-init` (открытый ключ — на машину сборки), `edge-token-init`, затем запись общего nginx заново
-   (`current/infra-nginx/install.sh tender.su10.ru`).
-2. `deploy-server.sh migrate` — `20261019_own_auth` (вечером; соседи до и после).
-3. Машина сборки: `backup.sh --credentials <открытый ключ> --accounts-only` → файлы `*.auth-users.csv`,
-   `*.auth-credentials.sealed`, `*.manifest.json` — на corp в `accounts/in/`.
-4. `deploy-server.sh accounts-sync --users … --credentials … --manifest …` — проверка, затем запись.
-5. Выпуск с новым фронтом (`both`), в `shared/config.json` — `"authServer": true`; в `secrets/osp-api.env` —
-   `OSP_AUTH_PILOT_IDS=<id владельца>,<id тестовой учётки>`; `deploy-server.sh auth-mode both`.
-6. Пилот в одном браузере (`?features=ownLogin`): вход прежним паролем; на тестовой учётке — смена пароля,
-   сброс администратором, блокировка (выход не позже 5 с), удаление; окно повторного входа; файлы, ИИ,
-   Администрирование, `/public/tenders`.
+**Когда включать.** Свой вход (`auth-mode own`) включается в тот же вечер, что и переход по разделу В, после
+окончательной загрузки — не раньше:
+- окончательная загрузка идёт в пустую базу (`reset.sh` → `load.sh --status final`), а `reset.sh` стирает и
+  `osp_auth`: пароли, сменённые в своём входе до перехода, и учётки, заведённые там администратором, пропали бы;
+- при переходе на новый адрес все и так входят заново (вход на osp.root.sx к tender.su10.ru не переходит) —
+  свой вход в тот же вечер не добавляет людям лишнего входа, почта и пароль прежние;
+- пароли берутся из той же финальной копии, что и данные.
 
-Переключение (вечером):
-7. Объявить: на tender.su10.ru один раз войти той же почтой и паролем; новых людей заводит администратор.
-8. Пересверка: `backup.sh --credentials … --accounts-only` и `accounts-sync` — подтянуть изменения учёток в
-   Supabase за время пилота (повтор безопасен).
-9. `deploy-server.sh auth-mode own` — внутри свежий `accounts-check`; не прошёл — режим не меняется.
-10. Проверки под тремя ролями: вход прежним паролем, чтение, запись, файлы, Администрирование.
-11. Откат: `deploy-server.sh auth-mode supabase` — вход снова через Supabase; пароли, сменённые на
-    tender.su10.ru, станут прежними, учётки, заведённые там администратором, войти не смогут.
+До вечера (в любое время; база не меняется, соседи до и после):
+1. На corp: `bash scripts/deploy-server.sh edge-token-init`, затем запись общего nginx заново
+   (`current/infra-nginx/install.sh tender.su10.ru`), затем выпуск `both`. Режим входа остаётся `supabase`, в
+   `shared/config.json` нет `authServer` — люди изменений не видят. Без жетона сайт не знает адрес клиента и
+   лимит `/api/` по адресу не применяет (в журнале osp-web — предупреждение).
+2. `deploy-server.sh auth-key-init` (копию `secrets/osp-api.env` — офлайн) и `transfer-key-init` (открытый
+   ключ — на машину сборки: без него финальная копия с паролями не снимется).
+3. Машина сборки, только чтение: дубли почты в Supabase (миграция `20261019_own_auth` ставит уникальный
+   индекс по `lower(btrim(email))`; ожидается 0):
+   ```sql
+   select count(*) from (select lower(btrim(email)) from auth.users where email is not null
+                         group by 1 having count(*) > 1) d;
+   ```
+   Не 0 — до вечера разобраться с этими учётками (сами адреса в отчёт не выводить).
+4. Пробная полная копия днём (`backup.sh --credentials <открытый ключ>`, в `tmux`/`nohup`): время и то, что
+   копия снимается до конца.
+5. По желанию — пилот на репетиционной базе: `migrate`, `backup.sh --credentials … --accounts-only` →
+   `accounts-sync`, `"authServer": true`, `OSP_AUTH_PILOT_IDS=<id владельца>,<id тестовой учётки>`,
+   `auth-mode both`; в одном браузере `?features=ownLogin`. Всё пилотное сотрётся при окончательной загрузке.
+
+Вечер перехода — вместе с разделом В:
+6. Шаг В.3: финальная копия **с паролями** — `backup.sh --credentials <открытый ключ>`; файлы
+   `*.auth-users.csv`, `*.auth-credentials.sealed`, `*.manifest.json` — на corp в `accounts/in/`.
+7. После шага В.4: `deploy-server.sh migrate` — все миграции `migration/yandex`, в т.ч. `20261019_own_auth`.
+8. `deploy-server.sh accounts-sync --users … --credentials … --manifest …` — проверка, затем запись;
+   `accounts-check`.
+9. Перед шагом В.7: если после копии osp.root.sx не был закрыт для входа — пересверка
+   (`backup.sh --credentials … --accounts-only` → `accounts-sync`, повтор безопасен).
+10. `deploy-server.sh auth-mode own` (внутри свежий `accounts-check`; не прошёл — режим не меняется), в
+    `shared/config.json` — `"authServer": true`. Шаги В.7 и В.9 — уже своим входом: прежний пароль, чтение,
+    запись, файлы, Администрирование.
+11. Откат входа: `deploy-server.sh auth-mode supabase` и убрать `authServer` — вход снова через Supabase Auth
+    (пока он жив). Сорвались шаги 7–8 — свой вход не включать, переход по разделу В идёт с входом Supabase.
 
 После:
 12. Через неделю без отката: убрать `SUPABASE_*` из окружения API, собрать сайт без `VITE_SUPABASE_*`
-    (аварийного входа через Supabase с этого шага нет); `transfer-key-destroy`.
-13. Перезагрузка базы нового портала (`reset.sh`) стирает и `osp_auth`: перенос данных из Supabase в будущем —
-    дозаполнением или с сохранением и возвратом `osp_auth`, иначе пропадут пароли, сменённые на tender.su10.ru.
+    (аварийного входа через Supabase с этого шага нет); `transfer-key-destroy`, удалить запечатанные файлы на
+    машине сборки.
+13. После перехода `reset.sh` отказывает (статус `final`), поэтому `osp_auth` больше ничем не стирается.

@@ -29,16 +29,22 @@ fi
 if [ "$publish" = 1 ]; then
   bash /opt/osp/publish.sh "$DIST" "$WEB_ROOT"
 fi
-# Адрес клиента от общего nginx — по жетону (nginx.conf). Жетон — только латиница и цифры, не короче 32
-# знаков; нет или негодный — адрес соединения (лимит по адресу тогда общий на всех за общим nginx).
+# Адрес клиента от общего nginx — по жетону (nginx.conf). Жетон — только латиница и цифры, 32–128 знаков.
+# Нет или негодный — адрес клиента не известен: за общим nginx все запросы приходят с одного адреса, и лимит
+# /api/ по нему стал бы одним на всех. Поэтому без жетона лимит по адресу не действует (пустой ключ nginx
+# не считает) — остаются лимиты osp-api по пользователю.
+token_ok=0
+[[ "${OSP_EDGE_TOKEN:-}" =~ ^[A-Za-z0-9]{32,128}$ ]] && token_ok=1
 {
   echo 'map $http_x_osp_edge $osp_client_ip {'
   echo '    default $remote_addr;'
-  if [[ "${OSP_EDGE_TOKEN:-}" =~ ^[A-Za-z0-9]{32,128}$ ]]; then
-    echo "    \"$OSP_EDGE_TOKEN\" \$http_x_osp_client_ip;"
-  else
-    echo "osp-web: OSP_EDGE_TOKEN не задан — адрес клиента не известен, лимит /api/ общий" >&2
-  fi
+  if [ "$token_ok" = 1 ]; then echo "    \"$OSP_EDGE_TOKEN\" \$http_x_osp_client_ip;"; fi
+  echo '}'
+  echo 'map $http_x_osp_edge $osp_api_limit_key {'
+  if [ "$token_ok" = 1 ]; then echo '    default $osp_client_ip;'; else echo '    default "";'; fi
   echo '}'
 } > /tmp/osp-edge.conf
+if [ "$token_ok" != 1 ]; then
+  echo "osp-web: OSP_EDGE_TOKEN не задан — адрес клиента не известен, лимит /api/ по адресу выключен (deploy-server.sh edge-token-init)" >&2
+fi
 exec nginx -g 'daemon off;'

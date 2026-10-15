@@ -416,6 +416,34 @@ networks:
     assert.ok(!/set_real_ip_from/.test(fs.readFileSync(path.join(DOCKER_DIR, 'web', 'nginx.conf'), 'utf8')), 'частным сетям целиком не доверяем')
   })
 
+  // Без жетона все запросы за общим nginx приходят с одного адреса: лимит /api/ по нему стал бы одним на всех
+  // (20 зап/с на весь портал). Поэтому без жетона лимит по адресу не действует, с жетоном — действует.
+  // Отдельный контейнер сайта без API: запрос, прошедший лимит, ждёт API (нет ответа), сверх лимита — 429.
+  it('лимит /api/ по адресу: без жетона выключен (а не один на всех), с жетоном — действует', () => {
+    const flood = (env) => {
+      const name = `${PROJECT}-limit-${env.length}`
+      ok(docker(['run', '-d', '--name', name, ...env, `osp-web:${tag}`]), 'сайт без API')
+      try {
+        let up = false
+        for (let i = 0; i < 40 && !up; i++) {
+          up = docker(['exec', name, 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/version.json']).status === 0
+          if (!up) spawnSync('sleep', ['0.5'])
+        }
+        assert.ok(up, 'сайт не поднялся')
+        const res = docker(['exec', name, 'sh', '-c',
+          'for i in $(seq 80); do (wget -S -q -T 3 -O /dev/null http://127.0.0.1:8080/api/health 2>&1 | grep -q " 429" && echo 429 || echo pass) & done; wait'])
+        return { limited: res.stdout.split('\n').filter((l) => l === '429').length, log: docker(['logs', name]) }
+      } finally {
+        docker(['rm', '-f', name])
+      }
+    }
+    const without = flood([])
+    assert.equal(without.limited, 0, 'без жетона лимит по адресу не действует')
+    assert.match(without.log.stderr + without.log.stdout, /OSP_EDGE_TOKEN не задан/, 'в журнале — предупреждение')
+    const withToken = flood(['-e', `OSP_EDGE_TOKEN=${EDGE_TOKEN}`])
+    assert.ok(withToken.limited > 0, 'с жетоном всплеск с одного адреса получает 429')
+  })
+
   // Имя службы Docker делает именем в каждой сети, куда она подключена. У соседа в общей сети имена
   // «web» и «api» — будь такие же у служб портала, запросы перемешались бы в обе стороны.
   it('имена в общей сети: запросы соседа не попадают в портал, запросы портала — к соседу', () => {
