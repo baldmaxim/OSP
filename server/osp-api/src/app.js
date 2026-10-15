@@ -11,6 +11,10 @@
 // статус учётки читается из базы с коротким кэшем (src/lib/userStatus.js). Не заданы — как раньше:
 // оба шага запросами к Supabase. Вернуть прежний путь — убрать ключ из окружения и перезапустить.
 //
+// Свой вход (AUTH_MODE): supabase — как раньше; both — пилот своего входа (OSP_AUTH_PILOT_IDS); own — только
+// свой вход: учётки и пароли в базе Яндекса, сессия в httpOnly-cookie, Supabase не нужен (src/lib/auth/,
+// src/lib/principal.js, src/routes/auth.js). Переключение и откат — одной строкой окружения и перезапуском.
+//
 // Журнал: метод, ШАБЛОН маршрута, код, время. Ни адреса с параметрами (в ?key= ключ rates-api), ни
 // заголовков, ни тел запросов (в них текст договоров) в журнал не попадает. Ответы не кешируются.
 import fs from 'node:fs'
@@ -19,7 +23,7 @@ import { createClient } from '@supabase/supabase-js'
 import { PostgrestClient } from '@supabase/postgrest-js'
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import Anthropic from '@anthropic-ai/sdk'
-import { configuredParts, READY_PARTS, READY_OPTIONAL } from './config.js'
+import { configuredParts, checkOwnAuthConfig, READY_PARTS, READY_OPTIONAL } from './config.js'
 import { bearerToken } from './lib/keys.js'
 import { createDb } from './lib/db.js'
 import { createTokenVerifier } from './lib/token.js'
@@ -37,6 +41,13 @@ import { createWriteBarrier } from './lib/writeBarrier.js'
 import { createLoadStatus, isFinalLoad } from './lib/loadStatus.js'
 import { createLarixClient } from './lib/larixClient.js'
 import { createLarixSync, dbTarget, supabaseTarget } from './lib/larixSync.js'
+import { createSecretBox } from './lib/auth/secretBox.js'
+import { createPasswordVerifier } from './lib/auth/passwords.js'
+import { loadBlocklist } from './lib/auth/policy.js'
+import { createSessions, SESSION_DEFAULTS } from './lib/auth/sessions.js'
+import { createAuthService } from './lib/auth/service.js'
+import { createPrincipalResolver, csrfProblem, clearSessionCookies } from './lib/principal.js'
+import { registerAuth } from './routes/auth.js'
 
 // Список разрешённого шлюзу данных — выдача прав прода как есть (scripts/build-db-allow.mjs).
 const ALLOW = JSON.parse(fs.readFileSync(new URL('./data/allow.json', import.meta.url), 'utf8'))
@@ -44,6 +55,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // Функции портала, которые меняют учётку во входе Supabase Auth, а не только строки базы.
 const AUTH_ADMIN_RPC = { admin_delete_user: 'deleteUser', admin_confirm_user_email: 'confirmEmail' }
 const REGISTRY_REFRESH_MS = 10 * 60_000
+const AUTH_CLEANUP_MS = 10 * 60_000
+const SUPERADMIN_TTL_MS = 30_000
+const DAY_MS = 24 * 60 * 60 * 1000
 
 // Ответ ИИ ждём меньше, чем nginx ждёт нас (proxy_read_timeout 180 с, deploy/nginx/osp.root.sx.conf).
 export const AI_TIMEOUT_MS = 170_000
@@ -107,6 +121,13 @@ export function buildLarixTargets(config, { db, deps = defaultDeps }) {
 export const larixSecrets = (config) => [config.larix.password, config.larix.username, config.supabaseServiceKey]
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 
+// Тело — объект JSON (как ждали Edge Functions); у запросов без тела (GET /api/auth/me) не проверяется.
+function bodyIsObject(request) {
+  if (request.method === 'GET' || request.method === 'HEAD') return true
+  const body = request.body
+  return Boolean(body) && typeof body === 'object' && !Array.isArray(body)
+}
+
 function withTimeout(promise, ms) {
   let timer
   return Promise.race([
@@ -116,10 +137,15 @@ function withTimeout(promise, ms) {
 }
 
 export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' }, limits = DEFAULT_LIMITS } = {}) {
+  // Свой вход с неполными настройками не запускается (ключи, адрес портала, база, шлюз).
+  checkOwnAuthConfig(config)
   const app = Fastify({
     logger,
     logController: new LogController({ disableRequestLogging: true }),
     bodyLimit: BODY_LIMIT,
+    // Адрес клиента (лимиты входа) — из X-Forwarded-For только от непосредственного соседа: до osp-api не
+    // достаёт никто, кроме своего прокси, а он перезаписывает заголовок одним адресом клиента (config.js).
+    trustProxy: config.trustProxy === 'peer' ? (address, hop) => hop === 0 : false,
   })
 
   // Своё подключение к базе — если задано. Неверная настройка (нет сертификата, не та строка)
@@ -163,10 +189,55 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     },
   })
 
-  // Пользователь по его токену Supabase; клиент — от его имени, чтобы действовал RLS.
+  // Свой вход: сессии, пароли, единая проверка «кто это» для маршрутов, шлюза и /api/auth.
+  const authMode = config.authMode || 'supabase'
+  const ownAuth = authMode !== 'supabase'
+  const sessions = ownAuth ? createSessions({
+    db, logger: app.log,
+    idleMs: (config.auth.idleDays ?? 14) * DAY_MS, absoluteMs: (config.auth.absoluteDays ?? 30) * DAY_MS,
+    cacheMs: config.auth.sessionCacheMs ?? SESSION_DEFAULTS.cacheMs,
+  }) : null
+  const authService = ownAuth ? createAuthService({
+    db, sessions, box: createSecretBox(config.auth.keys),
+    verifier: deps.createPasswordVerifier ? deps.createPasswordVerifier() : createPasswordVerifier(),
+    blocklist: deps.blocklist || loadBlocklist(), mode: authMode, pilotIds: config.auth.pilotIds || [], logger: app.log,
+  }) : null
+  // Суперадминистратор (таблица superadmins) — с памятью на полминуты: спрашивается на каждом запросе своей сессии
+  // только у тех, кто не одобрен, и у маршрутов администратора.
+  const superadminCache = new Map()
+  const isSuperadmin = authService ? async (userId) => {
+    const hit = superadminCache.get(userId)
+    if (hit && Date.now() - hit.at < SUPERADMIN_TTL_MS) return hit.value
+    const value = await authService.isSuperadmin(userId)
+    superadminCache.set(userId, { value, at: Date.now() })
+    if (superadminCache.size > 2000) superadminCache.delete(superadminCache.keys().next().value)
+    return value
+  } : null
+  const principal = ownAuth ? createPrincipalResolver({
+    mode: authMode, verifyBearer: verifyUserToken, sessions, userStatus, isSuperadmin, pilotIds: config.auth.pilotIds || [],
+  }) : null
+  const refuse = (reply, p) => {
+    if (p.clear) clearSessionCookies(reply)
+    reply.code(p.status).send({ error: p.message, code: p.code })
+    return null
+  }
+
+  // Кто вошёл: своя сессия (cookie) или токен Supabase (заголовок); клиент данных — от его имени, чтобы
+  // действовали правила по строкам.
   const authenticate = async (request, reply) => {
     const authHeader = request.headers.authorization
+    if (!authHeader && ownAuth) {
+      const p = await principal.resolve(request)
+      if (p.kind === 'error') return refuse(reply, p)
+      if (p.kind === 'anon') { reply.code(401).send({ error: 'Unauthorized' }); return null }
+      const bad = csrfProblem(request, p, config.auth.publicOrigin)
+      if (bad) { reply.code(403).send({ error: bad, code: 'OSP_CSRF' }); return null }
+      if (!bodyIsObject(request)) { reply.code(400).send({ error: 'Invalid JSON' }); return null }
+      return { supabase: dataClient({ role: 'authenticated', user: p.user }), user: p.user, session: p.session,
+        who: { userId: p.user.id, email: p.user.email || '' } }
+    }
     if (!authHeader) { reply.code(401).send({ error: 'Unauthorized' }); return null }
+    if (authMode === 'own') return refuse(reply, { status: 401, code: 'OSP_AUTH_MODE', message: 'Вход изменился — обновите страницу' })
     if (!config.supabaseUrl || !config.supabaseAnonKey) {
       reply.code(500).send({ error: 'Supabase env not configured' }); return null
     }
@@ -196,12 +267,8 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
         user = data.user
       }
     }
-    // Тело — объект JSON (как ждали Edge Functions); иначе — «Invalid JSON».
-    const body = request.body
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      reply.code(400).send({ error: 'Invalid JSON' }); return null
-    }
-    return { supabase, user, who: { userId: user.id, email: user.email || '' } }
+    if (!bodyIsObject(request)) { reply.code(400).send({ error: 'Invalid JSON' }); return null }
+    return { supabase, user, session: null, who: { userId: user.id, email: user.email || '' } }
   }
 
   let s3Client = null
@@ -229,6 +296,19 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   // Перед запросом шлюза: действия, которым мало базы.
   const beforeGateway = async ({ kind, name, who, request }) => {
     if (kind !== 'rpc' || who.role !== 'authenticated') return null
+    if (ownAuth) {
+      // Вход Supabase теперь принадлежит прежнему порталу (osp.root.sx): его учётки отсюда не меняются.
+      // get_auth_users и admin_confirm_user_email — функции базы как есть. Удаление — надгробие и функция базы
+      // одной транзакцией (повторный перенос учёток удалённую не воссоздаст); в PostgREST запрос не идёт.
+      if (name !== 'admin_delete_user') return null
+      let args = null
+      try { args = JSON.parse(Buffer.from(request.body || '').toString('utf8')) } catch { /* ниже — отказ */ }
+      const result = await authService.adminDeleteUser({
+        who: { userId: who.user.id, email: who.user.email || '' }, targetUserId: args?.target_user_id,
+      })
+      if (result.ok) return { status: 204, body: null }
+      return { status: result.status, body: { code: result.code, details: null, hint: null, message: result.message } }
+    }
     if (name === 'get_auth_users') {
       // Список пользователей читает копию учёток в базе — освежаем её (сбой — покажем прежнюю).
       if (usersMirror && config.supabaseServiceKey) {
@@ -297,6 +377,8 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
   }
 
   const limiters = {
+    loginIp: createRateLimit(limits.loginPerIp || DEFAULT_LIMITS.loginPerIp),
+    authAdmin: createRateLimit(limits.authAdminPerUser || DEFAULT_LIMITS.authAdminPerUser),
     aiRate: createRateLimit(limits.aiPerUser),
     aiUser: createConcurrency(limits.aiConcurrentPerUser),
     aiTotal: createConcurrency(limits.aiConcurrentTotal),
@@ -336,7 +418,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
 
   // Права — на маршруте: без config.access маршрут не регистрируется (закрыто по умолчанию),
   // открытые адреса — только из утверждённого списка. Ставится до первого маршрута.
-  installAccess(app, { authenticate, limiters, openRoutes: OPEN_ROUTES, userStatus })
+  installAccess(app, { authenticate, limiters, openRoutes: OPEN_ROUTES, userStatus, isSuperadmin })
   const openReason = (method, url) => OPEN_ROUTES.find((r) => r.method === method && r.url === url).reason
 
   app.route({
@@ -373,6 +455,8 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
       run('s3', parts.s3, () => deps.checkS3(getS3(), config.s3.bucket)),
       run('anthropic', parts.anthropic, () => deps.checkAnthropic(getAnthropic())),
       run('db', Boolean(db), () => db.read(null, (tx) => tx.query('select 1'))),
+      // Свой вход: канарейка ключа расшифровывается, у каждой строки паролей ключ есть в окружении.
+      run('auth', ownAuth, () => authService.readyCheck()),
       // Шлюз: PostgREST отвечает, его секрет и учётка совпадают с нашими, база за ним читается.
       run('gateway', gatewayOn, async () => {
         const { error } = await dataClient({ role: 'service_role' }).from('app_settings').select('key').limit(1)
@@ -393,8 +477,21 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     return reply.code(ok ? 200 : 503).send({ ok, checks, required, ...data })
   } })
 
+  // Очистка своего входа: просроченные сессии, давние неудачи, старый журнал (src/lib/auth/service.js).
+  if (ownAuth && db && config.authCleanup !== false) {
+    const timer = setInterval(() => {
+      authService.cleanup()
+        .then((n) => { if (n && (n.sessions || n.failures || n.events)) app.log.info({ ...n }, 'auth cleanup') })
+        .catch((err) => app.log.warn({ code: err?.code, msg: String(err?.message || err).slice(0, 120) }, 'auth cleanup'))
+    }, AUTH_CLEANUP_MS)
+    timer.unref()
+    app.addHook('onClose', async () => clearInterval(timer))
+  }
+
   const ctx = { config, getS3, getAnthropic, getServiceClient, limiters, db, refreshRegistry,
-    verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus }
+    verifyUserToken, allow: deps.allow || ALLOW, mint, beforeGateway, gatewayOn, isReadOnly, loadStatus,
+    principal, authService, sessions, isSuperadmin }
+  registerAuth(app, ctx)
   registerDbGateway(app, ctx)
   registerS3Presign(app, ctx)
   registerAiAssist(app, ctx)

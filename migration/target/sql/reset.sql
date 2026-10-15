@@ -46,7 +46,7 @@ BEGIN
     ) extra $q$ INTO v_extra;
   SELECT v_extra + count(*) INTO v_extra
   FROM pg_namespace
-  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public', 'auth', 'osp_meta', 'osp_private', 'osp_vault') AND nspname !~ '^pg_(toast|temp)';
+  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public', 'auth', 'osp_meta', 'osp_private', 'osp_vault', 'osp_auth', 'osp_session') AND nspname !~ '^pg_(toast|temp)';
   IF v_extra > 0 THEN
     RAISE EXCEPTION 'OSP_RESET_EXTRA %', v_extra;
   END IF;
@@ -66,6 +66,10 @@ BEGIN
     EXECUTE format('DROP TYPE IF EXISTS public.%I CASCADE', r.name);
   END LOOP;
 
+  -- Свой вход (migration/yandex/20261019_own_auth.sql): пароли и сессии репетиции. После загрузки схемы
+  -- заново создаёт migrate.sh, учётки и пароли заполняет migration/accounts/accounts-sync.
+  DROP SCHEMA IF EXISTS osp_session CASCADE;
+  DROP SCHEMA IF EXISTS osp_auth CASCADE;
   DROP SCHEMA auth CASCADE;
   -- Права под одну учётку (rights.sh): закрытая схема с материализованными представлениями и проверками.
   DROP SCHEMA IF EXISTS osp_private CASCADE;

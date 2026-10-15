@@ -5,7 +5,9 @@
 // только 127.0.0.1 и принимает запросы только с внутренним токеном шлюза.
 //
 // Что делает шлюз до того, как запрос попадёт в базу:
-//   1. Кто это: токен входа проверяется (как у остальных маршрутов); без токена — аноним.
+//   1. Кто это: токен входа проверяется (как у остальных маршрутов); без токена — аноним. В режимах своего
+//      входа (AUTH_MODE both | own) — единая проверка src/lib/principal.js: своя сессия из cookie (жива,
+//      учётка одобрена; меняющий запрос — с CSRF и с самого портала; временный пароль — сначала сменить).
 //   2. Что можно: список allow.json — выдача прав прода как есть (scripts/build-db-allow.mjs). Таблица,
 //      действие, функция и каждая связанная таблица в select должны быть разрешены этому виду
 //      пользователя. В базе одна учётка, и эту часть прав там выразить нечем.
@@ -19,6 +21,7 @@ import { createHash } from 'node:crypto'
 import { SignJWT } from 'jose'
 import { access } from '../lib/access.js'
 import { bearerToken } from '../lib/keys.js'
+import { csrfProblem, clearSessionCookies } from '../lib/principal.js'
 import { READONLY_CODE, READONLY_TEXT } from '../lib/writeBarrier.js'
 
 export const GATEWAY_METHODS = ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE']
@@ -149,7 +152,21 @@ export function registerDbGateway(app, ctx) {
 
     // 1. Кто это.
     let who = { role: 'anon' }
-    if (request.headers.authorization) {
+    if (ctx.principal) {
+      const p = await ctx.principal.resolve(request)
+      if (p.kind === 'error') {
+        if (p.clear) clearSessionCookies(reply)
+        return send(p.status, pgError(p.code, p.message))
+      }
+      if (p.kind === 'user') {
+        if (p.source === 'own') {
+          if (p.session.mustChange) return send(403, pgError('OSP_PASSWORD_CHANGE_REQUIRED', 'Смените временный пароль'))
+          const bad = csrfProblem(request, p, ctx.config.auth?.publicOrigin)
+          if (bad) return send(403, pgError('OSP_CSRF', bad))
+        }
+        who = { role: 'authenticated', user: p.user }
+      }
+    } else if (request.headers.authorization) {
       const token = bearerToken(request.headers.authorization)
       const user = token ? await verifyUserToken(token) : null
       if (!user) return send(401, pgError('PGRST301', 'JWT expired or invalid'))

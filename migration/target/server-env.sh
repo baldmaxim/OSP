@@ -57,6 +57,10 @@ write('osp-api.add.env', '\n'.join([
     'OSP_DB_CA_FILE=' + e['OSP_ENV_CA'],
     'OSP_DB_POOL_MAX=4',
     'OSP_REGISTRY_REFRESH=1',
+    '# Свой вход (migration/CUTOVER.md, «Свой вход tender.su10.ru»): пока supabase — вход как сейчас. Ключ',
+    '# шифрования паролей OSP_AUTH_KEYS дописывает scripts/deploy-server.sh auth-key-init; режим меняет auth-mode.',
+    'AUTH_MODE=supabase',
+    'OSP_PUBLIC_ORIGIN=https://tender.su10.ru',
     '',
 ]))
 write('db-host', f'{host} {port}\n')

@@ -171,7 +171,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
   it('health: что настроено — да/нет, без значений секретов', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' })
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(res.json(), { ok: true, service: 'osp-api', configured: { supabase: true, supabaseService: true, s3: true, anthropic: true, rates: true, db: false, token: false, gateway: false, larix: false } })
+    assert.deepEqual(res.json(), { ok: true, service: 'osp-api', configured: { supabase: true, supabaseService: true, s3: true, anthropic: true, rates: true, db: false, token: false, gateway: false, larix: false, auth: false } })
     for (const secret of ['anon-test-key', 'service-test-key', 'secret-test', 'anthropic-test-key', 'rk-one']) {
       assert.ok(!res.body.includes(secret), secret)
     }
@@ -720,7 +720,7 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
   describe('готовность /api/ready (рецензия, п. 5)', () => {
     const ready = (headers = {}) => app.inject({ method: 'GET', url: '/api/ready', headers })
     // Своя база и проверка токена на сервере здесь не настроены (их набор — tests/osp-api/identity.test.mjs).
-    const OFF = { db: 'not_configured', token: 'not_configured', gateway: 'not_configured' }
+    const OFF = { db: 'not_configured', token: 'not_configured', gateway: 'not_configured', auth: 'not_configured' }
 
     it('все настроенные зависимости отвечают — 200; S3 — запись и удаление служебного объекта', async () => {
       const res = await ready()

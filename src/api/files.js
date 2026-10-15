@@ -4,15 +4,16 @@
 import { supabase } from './supabaseClient'
 import { callOspFunction } from './ospApi'
 import { createOspCovers } from './ospCovers'
-import { observingFetch } from './clientErrors'
+import { auth } from './auth'
+import { sessionFetch } from './sessionClient'
 import { ownDbEnabled } from './db'
 import { coversPath, coverUrl } from './serverPath'
 
 const OBJECT_PHOTOS = 'object-photos'
 
-const ospToken = async () => (await supabase.auth.getSession()).data?.session?.access_token ?? null
+const ospToken = () => auth.getAccessToken()
 const ospCovers = createOspCovers({
-  call: (body) => callOspFunction('cover-upload', { body }, { getToken: ospToken, fetchImpl: observingFetch }),
+  call: (body) => callOspFunction('cover-upload', { body }, { getToken: ospToken, fetchImpl: sessionFetch }),
   fetchImpl: (url, init) => fetch(url, init),
 })
 

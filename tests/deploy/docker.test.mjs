@@ -40,6 +40,8 @@ const skip = skipReason()
 const P = process.pid
 const PROJECT = `osp-test-${P}`
 const PROXY_NET = `osp-test-proxy-${P}`
+// Жетон адреса клиента (web/nginx.conf): знают только запись общего nginx и контейнер сайта.
+const EDGE_TOKEN = crypto.randomBytes(24).toString('hex')
 const DB_NET = `osp-test-db-${P}`
 const INFRA = `osp-test-infra-${P}`
 const NEIGHBOUR = `osp-test-neighbour-${P}`
@@ -74,7 +76,7 @@ describe('Портал в Docker: связка для общего сервер�
   // Запись в «общем nginx» ставит тот же скрипт, что на сервере.
   const confDir = () => path.join(tmp, 'conf.d')
   const nginxInstall = (args, extra = {}) => sh('bash', [path.join(DOCKER_DIR, 'infra-nginx', 'install.sh'), ...args],
-    { env: { ...process.env, INFRA_NGINX: INFRA, INFRA_CONF_DIR: confDir(), ...extra } })
+    { env: { ...process.env, INFRA_NGINX: INFRA, INFRA_CONF_DIR: confDir(), OSP_EDGE_TOKEN: EDGE_TOKEN, ...extra } })
   // Сайт соседа через общий nginx: его запись ищет контейнер по имени «web».
   const neighbourSite = () => sh('curl', ['-s', '-m', '10', '--resolve', `neighbour.test:${p80}:127.0.0.1`, `http://neighbour.test:${p80}/`]).stdout
   const inspect = (id, format) => docker(['inspect', id, '--format', format]).stdout.trim()
@@ -183,6 +185,7 @@ describe('Портал в Docker: связка для общего сервер�
       .replace(/^PGRST_DB_URI=.*$/m, `PGRST_DB_URI=${dbUri}&sslrootcert=/etc/ssl/osp/yandex-root.crt&application_name=osp-postgrest`)
       .replace(/^PGRST_JWT_SECRET=.*$/m, `PGRST_JWT_SECRET=${GATEWAY_SECRET}`)
     fs.writeFileSync(path.join(home, 'secrets', 'postgrest.env'), pgrstEnv, { mode: 0o600 })
+    fs.writeFileSync(path.join(home, 'secrets', 'osp-web.env'), `OSP_EDGE_TOKEN=${EDGE_TOKEN}\n`, { mode: 0o600 })
     fs.copyFileSync(path.join(tls, 'ca.crt'), path.join(home, 'certs', 'yandex-root.crt'))
     fs.chmodSync(path.join(home, 'certs', 'yandex-root.crt'), 0o644)
     fs.writeFileSync(path.join(home, 'shared', 'config.json'), '{"features":{"ospDb":true},"marker":"osp-docker-test"}\n')
@@ -386,6 +389,31 @@ networks:
     for (const s of [GATEWAY_SECRET, SECRET, db.ownerPass]) assert.ok(!logs.includes(s), 'секрет в журнале')
     // Общий журнал сервера за счёт портала не растёт: его запросов там нет вовсе.
     assert.ok(!(infraLog.stdout + infraLog.stderr).includes('/api/rates'), 'запросы портала в общем журнале')
+  })
+
+  // Адрес клиента (лимиты /api/ и входа) — только от общего nginx по жетону; X-Forwarded-For к API — одним
+  // адресом. Подложенные клиентом заголовки и запрос соседа из общей сети адрес не подменяют.
+  it('адрес клиента: по жетону общего nginx; подложенные заголовки клиента и сосед без жетона адрес не подменяют', () => {
+    https('/api/health', ['-A', 'probe-spoof', '-H', 'X-Forwarded-For: 6.6.6.6', '-H', 'X-OSP-Client-IP: 7.7.7.7', '-H', 'X-OSP-Edge: wrong'])
+    docker(['exec', NEIGHBOUR, 'sh', '-c', `wget -q -T 5 -O /dev/null -U probe-neighbour --header 'X-OSP-Client-IP: 9.9.9.9' --header 'X-OSP-Edge: ${'0'.repeat(48)}' --header 'X-Forwarded-Proto: https' http://osp-web:8080/api/health`])
+    const ip = (id) => docker(['inspect', id, '--format', `{{(index .NetworkSettings.Networks "${PROXY_NET}").IPAddress}}`]).stdout.trim()
+    const webLog = docker(['compose', '-p', PROJECT, 'logs', '--no-color', 'osp-web'])
+    const lines = (webLog.stdout + webLog.stderr).split('\n')
+    const addr = (agent) => {
+      const line = lines.filter((l) => l.includes(`"${agent}"`)).at(-1)
+      assert.ok(line, `нет строки журнала для ${agent}`)
+      return /\|\s*(\S+) - /.exec(line)?.[1] ?? line.split(' ')[0]
+    }
+    const spoof = addr('probe-spoof')
+    assert.ok(!['6.6.6.6', '7.7.7.7'].includes(spoof), `подложенный адрес: ${spoof}`)
+    assert.notEqual(spoof, ip(INFRA), 'адрес клиента не дошёл по жетону — виден адрес общего nginx')
+    assert.equal(addr('probe-neighbour'), ip(NEIGHBOUR), 'сосед без жетона — его собственный адрес')
+    const all = docker(['compose', '-p', PROJECT, 'logs', '--no-color'])
+    assert.ok(!(all.stdout + all.stderr).includes(EDGE_TOKEN), 'жетон не попадает в журналы')
+    const conf = fs.readFileSync(path.join(DOCKER_DIR, 'web', 'site.conf'), 'utf8')
+    assert.ok(!conf.includes('$proxy_add_x_forwarded_for'), 'X-Forwarded-For к API — перезапись одним адресом, не дописывание')
+    assert.ok(!conf.includes('$http_referer'), 'журнал без Referer')
+    assert.ok(!/set_real_ip_from/.test(fs.readFileSync(path.join(DOCKER_DIR, 'web', 'nginx.conf'), 'utf8')), 'частным сетям целиком не доверяем')
   })
 
   // Имя службы Docker делает именем в каждой сети, куда она подключена. У соседа в общей сети имена

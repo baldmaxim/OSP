@@ -31,6 +31,7 @@ const APP_NAME = 'osp-api'
 // по этой отметке — как раньше проходила просто потому, что учётка владела таблицами. У операции
 // пользователя отметка всегда снята явно: имя подключения ставится заново в каждой транзакции.
 const INTERNAL_MARK = 'osp:internal'
+const MARKS = { internal: INTERNAL_MARK, auth: 'osp:auth', user: APP_NAME }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const DB_DEFAULTS = {
@@ -129,7 +130,18 @@ export function createDb(options) {
       // Второй замок — только у операций пользователя: служебные идут под учёткой подключения.
       if (who && o.secondLockRole) await run(client, "select set_config('role', $1, true)", [o.secondLockRole])
 
-      const result = await fn({ query: (text, values) => run(client, text, values) })
+      // Отметка для следующей группы команд той же транзакции (до конца транзакции или до следующей отметки):
+      //   'internal' — пропуск служебных функций (auth.users, user_roles, osp_session);
+      //   'auth'     — пароли своего входа (osp_auth): пропуск служебных функций их НЕ открывает, а эта отметка
+      //                не открывает ничего, кроме osp_auth. Ставит только модуль входа — проверяет тест;
+      //   'user'     — снова от имени вошедшего (функции базы сами проверяют его права).
+      const mark = (kind) => {
+        const name = MARKS[kind]
+        if (!name) throw new TypeError(`osp-api: неизвестная отметка транзакции: ${kind}`)
+        if (kind === 'user' && !who) throw new TypeError('osp-api: отметка «от имени вошедшего» без вошедшего')
+        return run(client, "select set_config('application_name', $1, true)", [name])
+      }
+      const result = await fn({ query: (text, values) => run(client, text, values), mark })
       await client.query('COMMIT')
       return result
     } catch (err) {

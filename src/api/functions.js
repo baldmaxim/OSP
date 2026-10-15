@@ -7,18 +7,19 @@ import { supabase } from './supabaseClient'
 import { isFeatureEnabled } from '../config/runtime'
 import { callOspFunction } from './ospApi'
 import { createOspFiles, sha256Hex } from './ospFiles'
-import { observingFetch } from './clientErrors'
+import { auth } from './auth'
+import { sessionFetch } from './sessionClient'
 import { ownDbEnabled } from './db'
 import { functionPath, filesPath } from './serverPath'
 import { uuidv7 } from '../utils/uuid'
 
 export { OSP_API_FLAG, OSP_FILES_FLAG } from './serverPath'
 
-const ospToken = async () => (await supabase.auth.getSession()).data?.session?.access_token ?? null
+const ospToken = () => auth.getAccessToken()
 
 export function invokeFunction(name, options) {
   const path = functionPath(name, { ownDb: ownDbEnabled(), enabled: isFeatureEnabled })
-  if (path === 'osp') return callOspFunction(name, options, { getToken: ospToken, fetchImpl: observingFetch })
+  if (path === 'osp') return callOspFunction(name, options, { getToken: ospToken, fetchImpl: sessionFetch })
   if (path === 'refuse') {
     const error = new Error('Действие недоступно: данные портала перенесены, обновите страницу')
     error.name = 'FunctionsFetchError'
@@ -37,7 +38,7 @@ export function filesViaOspApi() {
 }
 
 export const ospFiles = createOspFiles({
-  call: (body) => callOspFunction('s3-presign', { body }, { getToken: ospToken, fetchImpl: observingFetch }),
+  call: (body) => callOspFunction('s3-presign', { body }, { getToken: ospToken, fetchImpl: sessionFetch }),
   fetchImpl: (url, init) => fetch(url, init),
   digest: sha256Hex,
   newId: () => uuidv7(),

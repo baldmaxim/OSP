@@ -5,7 +5,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { uuidv4Manual } from './utils/uuid'
-import { applyFeatureParam, loadRuntimeConfig } from './config/runtime'
+import { applyFeatureParam, loadRuntimeConfig, getRuntimeConfig, isFeatureEnabled, forceFeatures } from './config/runtime'
+import { loadAuthMode, setAuthMode, isOwnAuth, OWN_AUTH_FEATURES } from './api/authMode'
 import { installChunkRecovery, isChunkLoadError, reloadOnceForThisBuild } from './utils/chunkRecovery'
 
 // Полифил crypto.randomUUID — на http:// и в старых браузерах метод отсутствует,
@@ -30,6 +31,18 @@ async function start() {
   applyFeatureParam()
   await loadRuntimeConfig()
   const root = document.getElementById('root')
+  // Режим входа — до приложения: от него зависят форма входа и пути к серверу (src/api/authMode.js). Только где
+  // свой вход есть (config.json: authServer); без ответа сервера портал не стартует на прежнем входе молча.
+  if (getRuntimeConfig().authServer) {
+    try {
+      setAuthMode(await loadAuthMode({ fetchImpl: (url, init) => fetch(url, init) }), isFeatureEnabled)
+      if (isOwnAuth()) forceFeatures(OWN_AUTH_FEATURES)
+    } catch (err) {
+      console.error('Режим входа не получен:', err)
+      root.textContent = 'Сервер портала недоступен. Обновите страницу через минуту.'
+      return
+    }
+  }
   try {
     const { default: App } = await import('./App.jsx')
     createRoot(root).render(

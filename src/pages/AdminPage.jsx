@@ -7,6 +7,7 @@ import RoleBadge from '../components/admin/RoleBadge'
 import StatusBadge, { userStatus, statusPatch, isBlockColumnMissing, BLOCK_MIGRATION_HINT } from '../components/admin/StatusBadge'
 import UserAvatar from '../components/admin/UserAvatar'
 import UserActionsMenu from '../components/admin/UserActionsMenu'
+import { AddUserDrawer, TemporaryPasswordDialog } from '../components/admin/AccountModals'
 import UserEditDrawer from '../components/admin/UserEditDrawer'
 import { fetchAllActiveCounterparties } from '../utils/fetchAllRows'
 import './AdminPage.css'
@@ -30,8 +31,11 @@ function AdminPage() {
   const {
     isAdmin, isSuperAdmin, availableRoles, roleLabels, refreshAvailableRoles,
     canPreviewRoles, previewActive, previewInfo, startRolePreview, stopRolePreview,
-    userProfile,
+    userProfile, ownAuth, adminResetPassword,
   } = useRole()
+  // Свой вход (tender.su10.ru): учётки и временные пароли выдаёт администратор.
+  const [addUserOpen, setAddUserOpen] = useState(false)
+  const [tempPassword, setTempPassword] = useState(null) // { email, password } — показывается один раз
   const [activeTab, setActiveTab] = useState('users')
 
   const employeeRoleKeys = availableRoles.filter(r => r.key !== 'contractor').map(r => r.key)
@@ -252,6 +256,16 @@ function AdminPage() {
       }
       await fetchUsers({ silent: true })
       notify('ok', 'Почта подтверждена — пользователь может войти')
+    } catch (err) {
+      notify('err', 'Ошибка: ' + err.message)
+    }
+  }
+
+  const handleResetPassword = async (u) => {
+    if (!window.confirm(`Выдать ${u.email || 'пользователю'} временный пароль? Прежний пароль перестанет действовать, все его сессии закроются.`)) return
+    try {
+      const { temporaryPassword } = await adminResetPassword(u.user_id)
+      setTempPassword({ email: u.email || '', password: temporaryPassword })
     } catch (err) {
       notify('err', 'Ошибка: ' + err.message)
     }
@@ -537,6 +551,9 @@ function AdminPage() {
           <p className="admin-subtitle">Управление пользователями, ролями и доступом к системе</p>
         </div>
         <div className="admin-topbar-actions">
+          {ownAuth && (
+            <button type="button" className="btn-primary" onClick={() => setAddUserOpen(true)}>Добавить пользователя</button>
+          )}
           <a className="btn-ghost" href="/public/tenders" target="_blank" rel="noopener noreferrer"
             title="Открыть публичную страницу тендеров в новой вкладке">
             Открытые тендеры
@@ -694,6 +711,7 @@ function AdminPage() {
                                 onEdit={() => setEditUser(u)}
                                 onSetStatus={(next) => setUserStatus(u, next)}
                                 onConfirmEmail={u.email_confirmed_at === null ? () => handleConfirmEmail(u) : null}
+                                onResetPassword={ownAuth ? () => handleResetPassword(u) : null}
                                 onDelete={() => handleDeleteUser(u)}
                               />
                             </div>
@@ -932,6 +950,22 @@ function AdminPage() {
           onClose={() => setEditUser(null)}
           onSave={saveUserFromDrawer}
         />
+      )}
+
+      {addUserOpen && (
+        <AddUserDrawer
+          roleOptions={roleOptionsForForm}
+          onClose={() => setAddUserOpen(false)}
+          onCreated={({ user, temporaryPassword }) => {
+            setAddUserOpen(false)
+            setTempPassword({ email: user.email, password: temporaryPassword })
+            fetchUsers({ silent: true })
+          }}
+        />
+      )}
+
+      {tempPassword && (
+        <TemporaryPasswordDialog email={tempPassword.email} password={tempPassword.password} onClose={() => setTempPassword(null)} />
       )}
 
       {toast && (

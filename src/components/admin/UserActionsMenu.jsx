@@ -6,7 +6,8 @@ import { useState, useRef, useEffect } from 'react'
 // заблокировать сразу — раньше был только один пункт, и заблокировать того, кто
 // ни разу не входил, было нельзя.
 // onConfirmEmail — только у тех, кто не подтвердил почту (иначе null).
-export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete, onConfirmEmail = null }) {
+// onResetPassword — свой вход (tender.su10.ru): временный пароль от администратора (иначе null).
+export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete, onConfirmEmail = null, onResetPassword = null }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
 
@@ -53,6 +54,12 @@ export default function UserActionsMenu({ status, onEdit, onSetStatus, onDelete,
             <button type="button" role="menuitem" className="adm-menu-item" onClick={() => run(onConfirmEmail)}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
               Подтвердить e-mail
+            </button>
+          )}
+          {onResetPassword && (
+            <button type="button" role="menuitem" className="adm-menu-item" onClick={() => run(onResetPassword)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+              Сбросить пароль
             </button>
           )}
           {status === 'pending' && (

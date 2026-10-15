@@ -54,6 +54,10 @@ export function RoleProvider({ children }) {
   })
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  // Свой вход (tender.su10.ru): временный пароль надо сменить до работы; закончившаяся сессия — окно повторного
+  // входа поверх страницы, без потери набранного.
+  const [mustChangePassword, setMustChangePassword] = useState(false)
+  const [sessionExpired, setSessionExpired] = useState(false)
   // security fix: ошибка загрузки роли/прав → fail-closed (экран ошибки, НЕ admin).
   const [roleError, setRoleError] = useState(null)
   const [permissions, setPermissions] = useState({}) // { section: { can_view, can_edit } }
@@ -154,8 +158,8 @@ export function RoleProvider({ children }) {
     return []
   }
 
-  const fetchUserRole = useCallback(async (userId, userEmail) => {
-    const isSuperAdmin = SUPER_ADMINS.includes(userEmail?.toLowerCase())
+  const fetchUserRole = useCallback(async (userId, userEmail, { isSuperadmin = false } = {}) => {
+    const isSuperAdmin = isSuperadmin || SUPER_ADMINS.includes(userEmail?.toLowerCase())
     setRoleError(null)
 
     try {
@@ -212,10 +216,13 @@ export function RoleProvider({ children }) {
           setRole(ROLES.ADMIN)
           return
         }
-        // Обычный пользователь — заявка (pending), доступ закрыт до подтверждения админом.
-        await db
-          .from('user_roles')
-          .insert([{ user_id: userId, email: userEmail, role: 'engineer', is_approved: false }])
+        // Обычный пользователь — заявка (pending), доступ закрыт до подтверждения админом. При своём входе
+        // заявку создаёт сервер при входе — здесь её не вставляем.
+        if (!auth.isOwn) {
+          await db
+            .from('user_roles')
+            .insert([{ user_id: userId, email: userEmail, role: 'engineer', is_approved: false }])
+        }
 
         await auth.signOut()
         throw new Error('PENDING_APPROVAL')
@@ -254,12 +261,47 @@ export function RoleProvider({ children }) {
     }
   }, [])
 
-  // Инициализация Supabase Auth
+  // Свой вход: кто это — сотрудник или подрядчик — решает строка user_roles, а не подсказка браузера. Подрядчик
+  // без организации кабинета не получает (кабинет показывать не от чьего имени).
+  const applyOwnRole = useCallback(async (u) => {
+    const { row, counterparty } = await resolveContractorCounterparty(u.id)
+    if (row && (row.counterparty_id || row.role === ROLES.CONTRACTOR)) {
+      if (row.is_blocked) throw new Error('ACCOUNT_BLOCKED')
+      if (!row.is_approved) throw new Error('PENDING_APPROVAL')
+      if (!counterparty) throw new Error('NO_COUNTERPARTY')
+      setRole(ROLES.CONTRACTOR)
+      setContractorInfo(counterparty)
+      setPermissions({})
+      return ROLES.CONTRACTOR
+    }
+    setContractorInfo(null)
+    await fetchUserRole(u.id, u.email, { isSuperadmin: u.isSuperadmin === true })
+    return null
+  }, [resolveContractorCounterparty, fetchUserRole])
+
+  // Инициализация входа (Supabase Auth или свой вход — src/api/auth.js)
   useEffect(() => {
     auth.getSession().then(async ({ data: { session } }) => {
       const u = session?.user ?? null
       setUser(u)
-      if (u) {
+      if (u && session?.mustChange) {
+        // Временный пароль: сначала смена (форма — на странице входа), права — после неё.
+        setMustChangePassword(true)
+        denyAccess(null)
+      } else if (u && auth.isOwn) {
+        try {
+          await applyOwnRole(u)
+        } catch (err) {
+          if (['PENDING_APPROVAL', 'ACCOUNT_BLOCKED', 'NO_COUNTERPARTY'].includes(err.message)) {
+            await auth.signOut()
+            setUser(null)
+            denyAccess(null)
+          } else {
+            console.error('Не удалось загрузить роль:', err.message)
+            denyAccess(isTransientError(err) ? NETWORK_ROLE_ERROR : ROLE_LOAD_ERROR)
+          }
+        }
+      } else if (u) {
         // Восстановление вида подрядчика — по подсказке из localStorage (захвачена в ref
         // до того, как persist-эффект мог её перезаписать). Подрядчик — минимальные права.
         if (initialSavedRole.current === ROLES.CONTRACTOR) {
@@ -302,7 +344,15 @@ export function RoleProvider({ children }) {
     // Реагируем только на ВЫХОД. Вход/обновление токена обрабатывают getSession (старт)
     // и функции входа — чтобы не сбросить authLoading в false до проверки роли (иначе
     // во время проверки могли бы отрендериться внутренние страницы с непроверенной ролью).
-    const { data: { subscription } } = auth.onAuthStateChange((_event, session) => {
+    // Свой вход: сессия закончилась — окно повторного входа (страница и формы остаются); временный
+    // пароль — форма смены; вошли в другой вкладке — сверяемся.
+    const { data: { subscription } } = auth.onAuthStateChange((event, session) => {
+      if (event === 'SESSION_EXPIRED') { setSessionExpired(true); return }
+      if (event === 'PASSWORD_CHANGE_REQUIRED') { setMustChangePassword(true); return }
+      if (event === 'SIGNED_IN_ELSEWHERE') {
+        auth.getSession().then(({ data }) => { if (data.session) setSessionExpired(false) })
+        return
+      }
       const u = session?.user ?? null
       if (!u) {
         setUser(null)
@@ -313,7 +363,7 @@ export function RoleProvider({ children }) {
     })
 
     return () => subscription.unsubscribe()
-  }, [fetchUserRole, denyAccess, resolveContractorCounterparty])
+  }, [fetchUserRole, denyAccess, resolveContractorCounterparty, applyOwnRole])
 
   // Persist
   useEffect(() => {
@@ -331,6 +381,19 @@ export function RoleProvider({ children }) {
     const { data, error } = await auth.signInWithPassword({ email, password })
     if (error) throw error
     setUser(data.user)
+    if (auth.isOwn) {
+      // Свой вход: время входа отмечает сервер; временный пароль — сначала смена.
+      setSessionExpired(false)
+      if (data.mustChange) { setMustChangePassword(true); return data }
+      try {
+        await applyOwnRole(data.user)
+      } catch (err) {
+        await auth.signOut()
+        setUser(null)
+        throw err
+      }
+      return data
+    }
     await fetchUserRole(data.user.id, email)
     setContractorInfo(null)
     // Фиксируем момент входа через SECURITY DEFINER RPC — чтобы не выдавать
@@ -350,6 +413,27 @@ export function RoleProvider({ children }) {
   const loginAsContractor = async (email, password) => {
     const { data, error } = await auth.signInWithPassword({ email, password })
     if (error) throw error
+    if (auth.isOwn) {
+      setUser(data.user)
+      setSessionExpired(false)
+      if (data.mustChange) { setMustChangePassword(true); return data }
+      let kind
+      try {
+        kind = await applyOwnRole(data.user)
+      } catch (err) {
+        await auth.signOut()
+        setUser(null)
+        throw err
+      }
+      if (kind !== ROLES.CONTRACTOR) {
+        // Вход сотрудника через страницу подрядчика — как раньше: кабинет подрядчика не от чьего имени.
+        await auth.signOut()
+        setUser(null)
+        denyAccess(null)
+        throw new Error('NO_COUNTERPARTY')
+      }
+      return data
+    }
 
     const { row, counterparty } = await resolveContractorCounterparty(data.user.id)
 
@@ -452,9 +536,31 @@ export function RoleProvider({ children }) {
     setUserProfile(prev => ({ ...prev, ...updates }))
   }
 
+  // Свой вход: смена пароля (в том числе временного). Новая сессия выдаётся сервером; права — заново.
+  const changePassword = async (currentPassword, newPassword) => {
+    await auth.changePassword({ currentPassword, newPassword })
+    setMustChangePassword(false)
+    const { data } = await auth.getSession()
+    const u = data.session?.user ?? null
+    setUser(u)
+    if (u) await applyOwnRole(u)
+  }
+
+  // Свой вход: повторный вход в окне поверх страницы. Вошёл другой человек — страница перезагружается
+  // (чужие данные на экране не остаются).
+  const relogin = async (password) => {
+    const { data, error } = await auth.signInWithPassword({ email: user?.email, password })
+    if (error) throw error
+    if (data.user?.id !== user?.id) { window.location.reload(); return }
+    setSessionExpired(false)
+  }
+
   // Выход
-  const logout = async () => {
-    await auth.signOut()
+  const logout = async ({ everywhere = false } = {}) => {
+    if (everywhere && auth.isOwn) await auth.logoutAll()
+    else await auth.signOut()
+    setMustChangePassword(false)
+    setSessionExpired(false)
     // Предпросмотр роли — состояние сессии администратора, при выходе снимаем.
     setPreview(null)
     setRole(null)
@@ -469,7 +575,7 @@ export function RoleProvider({ children }) {
   // Реальные права (по ним решаем, можно ли вообще включать режим и кто может
   // из него выйти) — считаются ДО подмены.
   const realIsAdmin = role === ROLES.ADMIN
-  const realIsSuperAdmin = !!(user?.email && SUPER_ADMINS.includes(user.email.toLowerCase()))
+  const realIsSuperAdmin = user?.isSuperadmin === true || !!(user?.email && SUPER_ADMINS.includes(user.email.toLowerCase()))
   const canPreviewRoles = realIsAdmin || realIsSuperAdmin
   // Режим считается активным, только если его включил тот, кому это разрешено:
   // подложенный в sessionStorage ключ сам по себе прав не меняет (он их только
@@ -601,7 +707,15 @@ export function RoleProvider({ children }) {
       previewRole: previewActive ? preview.role : null,
       previewInfo: previewActive ? preview : null,
       startRolePreview,
-      stopRolePreview
+      stopRolePreview,
+      // Свой вход (tender.su10.ru)
+      ownAuth: auth.isOwn,
+      mustChangePassword,
+      sessionExpired,
+      changePassword,
+      relogin,
+      adminCreateUser: auth.adminCreateUser,
+      adminResetPassword: auth.adminResetPassword,
     }}>
       {children}
     </RoleContext.Provider>

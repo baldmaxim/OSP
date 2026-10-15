@@ -38,7 +38,7 @@ local_psql -At -F $'\t' -c "
          (xpath('/row/n/text()', query_to_xml(format('select count(*) as n from %I.%I', n.nspname, c.relname), false, true, '')))[1]::text,
          (xpath('/row/h/text()', query_to_xml(format('select coalesce(md5(string_agg(h, '''' order by h)), ''-'') as h from (select md5(t::text) as h from %I.%I t) x', n.nspname, c.relname), false, true, '')))[1]::text
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
-  where c.relkind = 'r' and n.nspname in ('public', 'auth', 'osp_meta', 'osp_private', 'osp_vault')" | LC_ALL=C sort > "$TMP/restored.tsv"
+  where c.relkind = 'r' and n.nspname in ('public', 'auth', 'osp_meta', 'osp_private', 'osp_vault', 'osp_auth')" | LC_ALL=C sort > "$TMP/restored.tsv"
 LC_ALL=C sort "$DIR/manifest.tsv" > "$TMP/manifest.tsv"
 if ! diff -q "$TMP/manifest.tsv" "$TMP/restored.tsv" >/dev/null; then
   echo "КОПИЯ НЕ ГОДНА: таблицы отличаются от снимка —"

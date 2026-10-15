@@ -6,6 +6,8 @@
 #   bash deploy.sh status                      # что выложено и отвечает ли
 #   bash deploy.sh covers-copy <копия>.covers.csv  # обложки объектов из Supabase — в cloud.ru, журнал сверки
 #   bash deploy.sh larix probe | sync [--force] [--target db|supabase]  # договорные расценки из Larix.CPM
+#   bash deploy.sh api-restart                 # пересоздать API того же выпуска (перечитать secrets/osp-api.env)
+#   bash deploy.sh auth-config                 # режим входа, который отдаёт API (/api/auth/config)
 #
 # Каталог выпуска собирает deploy/docker/build.sh на машине сборки; на сервере ничего не собирается.
 # Первый раз скрипт запускается из каталога выпуска; после установки он же (и neighbors.sh) лежит в
@@ -143,6 +145,24 @@ case "${1:-}" in
     healthy "$cur"
     ;;
 
+  api-restart)
+    # Окружение (secrets/osp-api.env) читается при создании контейнера: перезапуск без пересоздания его не
+    # перечитал бы. Сайт и PostgREST не трогаются; не прошёл проверку — ненулевой выход (откат строки — у
+    # вызывающего, scripts/deploy-server.sh auth-mode).
+    preflight
+    cur="$(release_of current)"
+    [ -n "$cur" ] || die "портал не выложен"
+    dc "$cur" up -d --no-deps --force-recreate osp-api
+    healthy "$cur"
+    ;;
+
+  auth-config)
+    cur="$(release_of current)"
+    [ -n "$cur" ] || die "портал не выложен"
+    dc "$cur" exec -T osp-api node -e 'fetch("http://127.0.0.1:8787/api/auth/config").then(async (r) => { process.stdout.write(await r.text()); process.exit(r.ok ? 0 : 3) }).catch(() => process.exit(4))'
+    echo
+    ;;
+
   rollback)
     preflight
     prev="$(release_of previous)"
@@ -242,7 +262,7 @@ case "${1:-}" in
     ;;
 
   *)
-    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | covers-copy <копия>.covers.csv | larix probe|sync" >&2
+    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | api-restart | auth-config | covers-copy <копия>.covers.csv | larix probe|sync" >&2
     exit 1
     ;;
 esac

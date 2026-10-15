@@ -159,6 +159,20 @@ CSS variables defined for `[data-theme="light"]` and `[data-theme="dark"]` in `i
 `dcr-dense` (конец `DcRequestsPage.css`, только на компьютере): широкие «Документы», кнопки файла в углу карточки,
 сумма и подпись в строку.
 
+## Свой вход tender.su10.ru (AUTH_MODE)
+
+Новый портал входит без Supabase Auth: учётки — `auth.users` базы Яндекса (те же id), пароли — закрытая схема
+`osp_auth` (только отметка `osp:auth`, зашифрованы ключом `OSP_AUTH_KEYS`), сессии — `osp_session`, cookie
+`__Host-osp_session` + CSRF `__Host-osp_csrf`. osp.root.sx остаётся на Supabase. Режим — `AUTH_MODE`
+(`supabase` | `both` — пилот | `own`), фронт узнаёт его из `/api/auth/config` только при `authServer: true` в
+`config.json`. Фронт: фасад `src/api/auth.js` (Supabase или `ownAuth.js`), `session.js` (CSRF, события сессии),
+`authMode.js`; `RoleContext` (временный пароль, окно повторного входа), `ChangePasswordForm`, `ReloginModal`,
+«Добавить пользователя» / «Сбросить пароль» в `AdminPage`. Сервер: `server/osp-api/src/lib/auth/*`,
+`src/lib/principal.js`, `src/routes/auth.js`; миграция `migration/yandex/20261019_own_auth.sql`; перенос паролей —
+`migration/accounts/`; порядок — `migration/CUTOVER.md` («Свой вход tender.su10.ru»). Самостоятельной регистрации
+нет (писем нет): учётки и временные пароли выдаёт администратор. Тесты: `tests/osp-api/own-auth*.test.mjs`,
+`client-auth.test.mjs`, `tests/backup/own-auth-accounts.test.mjs`.
+
 ## Supabase Integration
 
 ### Client Usage

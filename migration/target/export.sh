@@ -11,6 +11,8 @@
 #   • данные — все таблицы одним снимком: одна транзакция REPEATABLE READ READ ONLY с отметкой
 #     служебной операции, каждая таблица — отдельным файлом; учётные записи Supabase Auth (osp_vault) —
 #     в той же транзакции, со своей отметкой osp:vault (отметка служебных функций их не открывает);
+#     пароли своего входа (osp_auth, уже зашифрованные ключом сервера) — так же, с отметкой osp:auth;
+#     сессии (osp_session) — только структура: они временные, и восстанавливать их незачем;
 #   • перечень — число строк и контрольная сумма каждой таблицы из того же снимка; значения счётчиков.
 # Каталог копии: <BACKUP_OUT_DIR или migration/dumps>/yandex-<время UTC>, права 700/600, вне git.
 # В вывод — только имена таблиц и числа. Выход: 0 — копия снята; 1 — ошибка запуска; 2 — нет
@@ -52,9 +54,9 @@ done
 # 2. Данные и перечень — одним снимком.
 tables="$(psql -X -q -At -v ON_ERROR_STOP=1 -c "
   select n.nspname || '.' || c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
-  where c.relkind = 'r' and n.nspname in ('public', 'auth', 'osp_meta', 'osp_private', 'osp_vault')
+  where c.relkind = 'r' and n.nspname in ('public', 'auth', 'osp_meta', 'osp_private', 'osp_vault', 'osp_auth')
     and n.nspname ~ '^[a-z_][a-z0-9_]*$' and c.relname ~ '^[a-z_][a-z0-9_]*$' order by 1" 2>"$OUT/err")" || fail "список таблиц: $(first_error "$OUT/err")"
-odd="$(psql -X -q -At -c "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind = 'r' and n.nspname in ('public', 'auth', 'osp_meta', 'osp_private', 'osp_vault') and not (c.relname ~ '^[a-z_][a-z0-9_]*\$')")"
+odd="$(psql -X -q -At -c "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind = 'r' and n.nspname in ('public', 'auth', 'osp_meta', 'osp_private', 'osp_vault', 'osp_auth') and not (c.relname ~ '^[a-z_][a-z0-9_]*\$')")"
 [ "$odd" = 0 ] || fail "в базе есть таблицы с необычными именами ($odd): копия была бы неполной"
 {
   echo '\set ON_ERROR_STOP on'
@@ -66,18 +68,23 @@ odd="$(psql -X -q -At -c "select count(*) from pg_class c join pg_namespace n on
   manifest_of "n.nspname in ('public', 'auth', 'osp_meta', 'osp_private')" "$OUT/manifest.main.tsv"
   echo "\\copy (select format('select pg_catalog.setval(%L, %s, true);', schemaname || '.' || sequencename, last_value) from pg_sequences where last_value is not null order by 1) to '$OUT/sequences.sql'"
   while IFS= read -r t; do
-    if [ -n "$t" ] && [ "${t%%.*}" != osp_vault ]; then echo "\\copy $t to '$OUT/data/$t.copy'"; fi
+    case "${t%%.*}" in ''|osp_vault|osp_auth) ;; *) echo "\\copy $t to '$OUT/data/$t.copy'" ;; esac
   done <<< "$tables"
   echo "SET LOCAL application_name = 'osp:vault';"
   manifest_of "n.nspname = 'osp_vault'" "$OUT/manifest.vault.tsv"
   while IFS= read -r t; do
     if [ "${t%%.*}" = osp_vault ]; then echo "\\copy $t to '$OUT/data/$t.copy'"; fi
   done <<< "$tables"
+  echo "SET LOCAL application_name = 'osp:auth';"
+  manifest_of "n.nspname = 'osp_auth'" "$OUT/manifest.auth.tsv"
+  while IFS= read -r t; do
+    if [ "${t%%.*}" = osp_auth ]; then echo "\\copy $t to '$OUT/data/$t.copy'"; fi
+  done <<< "$tables"
   echo 'COMMIT;'
 } > "$OUT/export.psql"
 psql -X -q -f "$OUT/export.psql" >/dev/null 2>"$OUT/err" || fail "данные: $(first_error "$OUT/err")"
-LC_ALL=C sort "$OUT/manifest.main.tsv" "$OUT/manifest.vault.tsv" > "$OUT/manifest.tsv"
-rm -f -- "$OUT/export.psql" "$OUT/err" "$OUT/manifest.main.tsv" "$OUT/manifest.vault.tsv"
+LC_ALL=C sort "$OUT/manifest.main.tsv" "$OUT/manifest.vault.tsv" "$OUT/manifest.auth.tsv" > "$OUT/manifest.tsv"
+rm -f -- "$OUT/export.psql" "$OUT/err" "$OUT/manifest.main.tsv" "$OUT/manifest.vault.tsv" "$OUT/manifest.auth.tsv"
 
 # 3. Снимок полон: файл на каждую таблицу перечня; контрольные суммы файлов.
 count="$(wc -l < "$OUT/manifest.tsv")"

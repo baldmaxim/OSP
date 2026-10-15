@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import BrandLogo from '../components/BrandLogo'
+import ChangePasswordForm from '../components/ChangePasswordForm'
 import { takeAuthRedirectResult } from '../utils/authRedirect'
 import './LoginPage.css'
 
@@ -14,7 +15,8 @@ const CONTRACTOR_SIGNUP_OPEN = false
 // подрядчиков (выбор организации). Экран выбора роли убран, у каждого входа свой URL.
 function LoginPage({ variant = 'employee' }) {
   const navigate = useNavigate()
-  const { loginWithPassword, loginAsContractor, signUp, resendConfirmation, isLoggedIn, isEmployee } = useRole()
+  const { loginWithPassword, loginAsContractor, signUp, resendConfirmation, isLoggedIn, isEmployee,
+    ownAuth, mustChangePassword } = useRole()
   const isContractorVariant = variant === 'contractor'
 
   // 'employee' | 'contractor' | 'register'. Для варианта подрядчика — всегда 'contractor'.
@@ -211,6 +213,13 @@ function LoginPage({ variant = 'employee' }) {
 
   const getErrorMessage = (err) => {
     const msg = err.message || ''
+    // Свой вход (tender.su10.ru): ответы сервера с кодом.
+    if (err.code === 'too_many_attempts') {
+      const min = Math.max(1, Math.ceil((err.retryAfterSec || 60) / 60))
+      return `Слишком много неудачных попыток входа. Повторите через ${min} мин.`
+    }
+    if (err.code === 'OSP_AUTH_BUSY') return 'Сервер входа занят — повторите через несколько секунд.'
+    if (err.code === 'OSP_AUTH_PILOT') return 'Новый вход пока проверяется. Войдите прежним способом.'
     if (msg === 'PENDING_APPROVAL') return 'Ваша заявка отправлена. Ожидайте подтверждения администратором.'
     if (msg === 'ACCOUNT_BLOCKED') return 'Доступ к системе заблокирован. Обратитесь к администратору.'
     if (msg.includes('Invalid login credentials')) return 'Неверный email или пароль'
@@ -251,7 +260,12 @@ function LoginPage({ variant = 'employee' }) {
           <div className="login-error">{error}</div>
         )}
 
-        {showResend && (
+        {/* Временный пароль от администратора: сначала смена. */}
+        {mustChangePassword && (
+          <ChangePasswordForm forced onDone={() => navigate('/')} />
+        )}
+
+        {showResend && !ownAuth && (
           <div className="login-resend">
             <button type="button" className="login-resend-btn" onClick={handleResend} disabled={resending}>
               {resending ? 'Отправка…' : 'Отправить письмо ещё раз'}
@@ -260,7 +274,7 @@ function LoginPage({ variant = 'employee' }) {
         )}
 
         {/* Форма входа сотрудника */}
-        {mode === 'employee' && (
+        {mode === 'employee' && !mustChangePassword && (
           <form onSubmit={handleEmployeeLogin} className="login-form">
             <div className="form-field">
               <label>Email</label>
@@ -290,7 +304,7 @@ function LoginPage({ variant = 'employee' }) {
         )}
 
         {/* Форма входа подрядчика */}
-        {mode === 'contractor' && (
+        {mode === 'contractor' && !mustChangePassword && (
           <form onSubmit={handleContractorLogin} className="login-form">
             <div className="form-field">
               <label>Email</label>
@@ -322,7 +336,7 @@ function LoginPage({ variant = 'employee' }) {
         )}
 
         {/* Заявка подрядчика на доступ в кабинет */}
-        {mode === 'contractor_register' && CONTRACTOR_SIGNUP_OPEN && (
+        {mode === 'contractor_register' && CONTRACTOR_SIGNUP_OPEN && !ownAuth && (
           <form onSubmit={handleContractorSignUp} className="login-form">
             <div className="form-field">
               <label>Организация *</label>
@@ -403,7 +417,7 @@ function LoginPage({ variant = 'employee' }) {
         )}
 
         {/* Форма регистрации */}
-        {mode === 'register' && (
+        {mode === 'register' && !ownAuth && (
           <form onSubmit={handleSignUp} className="login-form">
             <div className="form-field">
               <label>Email</label>
@@ -451,7 +465,19 @@ function LoginPage({ variant = 'employee' }) {
 
         {/* Переключение регистрации и перекрёстные ссылки между двумя входами */}
         <div className="login-footer">
-          {isContractorVariant ? (
+          {ownAuth ? (
+            // Свой вход: писем портал не отправляет — учётки и временные пароли выдаёт администратор.
+            <>
+              <p className="login-note">
+                {isContractorVariant
+                  ? 'Доступ в кабинет выдаёт отдел сопровождения подрядчиков. Забыли пароль — обратитесь к вашему менеджеру.'
+                  : 'Учётную запись выдаёт администратор ОСП. Забыли пароль — обратитесь к администратору: он выдаст временный.'}
+              </p>
+              <button type="button" className="login-link login-link-muted" onClick={() => navigate(isContractorVariant ? '/login' : '/partner')}>
+                {isContractorVariant ? 'Вход для сотрудников →' : 'Вход для подрядчиков →'}
+              </button>
+            </>
+          ) : isContractorVariant ? (
             <>
               {!CONTRACTOR_SIGNUP_OPEN ? (
                 <p className="login-note login-signup-paused">

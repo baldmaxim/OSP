@@ -1,5 +1,77 @@
 [
   {
+    "method": "POST",
+    "url": "/api/auth/admin/reset-password",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "userId"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/admin/users",
+    "kind": "user",
+    "require": "admin",
+    "reason": null,
+    "body": [
+      "counterpartyId",
+      "email",
+      "fullName",
+      "objectIds",
+      "role"
+    ]
+  },
+  {
+    "method": "GET",
+    "url": "/api/auth/config",
+    "kind": "open",
+    "require": null,
+    "reason": "Режим входа портала: какую форму входа показать; данных и учёток не отдаёт",
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/login",
+    "kind": "open",
+    "require": null,
+    "reason": "Вход по почте и паролю: до входа сессии нет; только запрос с самого портала (Origin, Sec-Fetch-Site, JSON), лимиты по адресу и по почте",
+    "body": [
+      "email",
+      "password"
+    ]
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/logout",
+    "kind": "open",
+    "require": null,
+    "reason": "Выход: стирает только свою сессию; чужую отозвать нельзя — нужен её идентификатор и CSRF",
+    "body": [
+      "all"
+    ]
+  },
+  {
+    "method": "GET",
+    "url": "/api/auth/me",
+    "kind": "user",
+    "require": "signedIn",
+    "reason": null,
+    "body": null
+  },
+  {
+    "method": "POST",
+    "url": "/api/auth/password",
+    "kind": "user",
+    "require": "signedIn",
+    "reason": null,
+    "body": [
+      "currentPassword",
+      "newPassword"
+    ]
+  },
+  {
     "method": "GET",
     "url": "/api/covers/:name",
     "kind": "open",

@@ -76,6 +76,83 @@
     "no_user_roles": 200,
     "blocked": 200
   },
+  "GET /api/auth/config": {
+    "без токена": 200,
+    "неверный токен": 200,
+    "employee": 200,
+    "admin": 200,
+    "unapproved": 200,
+    "contractor": 200,
+    "contractor_noorg": 200,
+    "no_user_roles": 200,
+    "blocked": 200
+  },
+  "GET /api/auth/me": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 200,
+    "admin": 200,
+    "unapproved": 200,
+    "contractor": 200,
+    "contractor_noorg": 200,
+    "no_user_roles": 200,
+    "blocked": 403
+  },
+  "POST /api/auth/login": {
+    "без токена": 400,
+    "неверный токен": 400,
+    "employee": 400,
+    "admin": 400,
+    "unapproved": 400,
+    "contractor": 400,
+    "contractor_noorg": 400,
+    "no_user_roles": 400,
+    "blocked": 400
+  },
+  "POST /api/auth/logout": {
+    "без токена": 404,
+    "неверный токен": 404,
+    "employee": 404,
+    "admin": 404,
+    "unapproved": 404,
+    "contractor": 404,
+    "contractor_noorg": 404,
+    "no_user_roles": 404,
+    "blocked": 404
+  },
+  "POST /api/auth/password": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 400,
+    "admin": 400,
+    "unapproved": 400,
+    "contractor": 400,
+    "contractor_noorg": 400,
+    "no_user_roles": 400,
+    "blocked": 403
+  },
+  "POST /api/auth/admin/users": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 400,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
+  "POST /api/auth/admin/reset-password": {
+    "без токена": 401,
+    "неверный токен": 401,
+    "employee": 403,
+    "admin": 400,
+    "unapproved": 403,
+    "contractor": 403,
+    "contractor_noorg": 403,
+    "no_user_roles": 403,
+    "blocked": 403
+  },
   "GET /api/ready через nginx": {
     "без токена": 404,
     "неверный токен": 404,

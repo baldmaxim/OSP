@@ -19,10 +19,18 @@ export function isEmployeeRole(row) {
 }
 
 // Требования к учётке вошедшего. Имя требования попадает в снимок прав (tests/osp-api/baseline).
+// Второй аргумент — { auth, isSuperadmin(userId) }: требование может быть асинхронным.
 export const REQUIREMENTS = {
   // Есть строка ролей, не отклонён и не заблокирован: сотрудник или подрядчик.
   approved: (row) => !!row && row.is_approved !== false && row.is_blocked !== true,
   employee: isEmployeeRole,
+  // Вошёл и не заблокирован (заявки может ещё не быть): кто я, смена своего пароля. Одобрение своей сессии
+  // проверяет src/lib/principal.js.
+  signedIn: (row) => !row || row.is_blocked !== true,
+  // Администратор — как is_admin() в базе: одобренный admin или запись в superadmins.
+  admin: async (row, { auth, isSuperadmin }) =>
+    (!!row && row.role === 'admin' && row.is_approved === true && row.is_blocked !== true)
+    || (typeof isSuperadmin === 'function' && await isSuperadmin(auth.user.id)),
 }
 
 export const access = {
@@ -31,15 +39,16 @@ export const access = {
   // Межсистемный ключ. check(request, reply) → true либо сам отправил отказ.
   apiKey: ({ reason, check }) => ({ kind: 'apiKey', reason, check }),
   // Вошедший пользователь. require — имя из REQUIREMENTS; deny — текст отказа 403;
-  // rate — { limiter: имя лимита, deny: текст 429 }, проверяется до обращения к базе за ролью.
-  user: ({ require, deny = 'Forbidden', rate = null }) => ({ kind: 'user', require, deny, rate }),
+  // rate — { limiter: имя лимита, deny: текст 429 }, проверяется до обращения к базе за ролью;
+  // allowMustChange — маршрут доступен и тому, кто обязан сменить временный пароль (смена пароля, профиль, выход).
+  user: ({ require, deny = 'Forbidden', rate = null, allowMustChange = false }) => ({ kind: 'user', require, deny, rate, allowMustChange }),
 }
 
 const routeKey = (method, url) => `${method === 'HEAD' ? 'GET' : method} ${url}`
 
 // userStatus (src/lib/userStatus.js) — статус учётки из своей базы; не задан — строка читается из
 // Supabase под токеном пользователя, как раньше.
-export function installAccess(app, { authenticate, limiters, openRoutes, userStatus = null }) {
+export function installAccess(app, { authenticate, limiters, openRoutes, userStatus = null, isSuperadmin = null }) {
   const table = []
   const approved = new Map(openRoutes.map((r) => [routeKey(r.method, r.url), r]))
   app.decorate('accessTable', table)
@@ -67,6 +76,10 @@ export function installAccess(app, { authenticate, limiters, openRoutes, userSta
       guards.push(async (request, reply) => {
         const auth = await authenticate(request, reply)
         if (!auth) return reply
+        // Временный пароль: до смены доступны только смена пароля, профиль и выход.
+        if (auth.session?.mustChange && !declared.allowMustChange) {
+          return reply.code(403).send({ error: 'Смените временный пароль', code: 'OSP_PASSWORD_CHANGE_REQUIRED' })
+        }
         if (declared.rate && !limiters[declared.rate.limiter].take(auth.user.id)) {
           return reply.code(429).send({ error: declared.rate.deny })
         }
@@ -83,7 +96,7 @@ export function installAccess(app, { authenticate, limiters, openRoutes, userSta
           const { data } = await auth.supabase.from('user_roles').select(ROLE_COLUMNS).eq('user_id', auth.user.id).maybeSingle()
           roleRow = data || null
         }
-        if (!requirement(roleRow)) return reply.code(403).send({ error: declared.deny })
+        if (!(await requirement(roleRow, { auth, isSuperadmin }))) return reply.code(403).send({ error: declared.deny })
         request.auth = { ...auth, roleRow }
       })
     } else {

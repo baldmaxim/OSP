@@ -174,7 +174,7 @@ describe('Миграции базы нового портала: правила 
     const res = migrate('--yes')
     assert.equal(res.status, 0, res.all)
     assert.match(res.stdout, /OK копия базы перед миграцией: .*yandex-\d{8}-\d{6}/)
-    assert.match(res.stdout, /OK 20261014_s3_documents_sha256: применена за \d+ с; проверок OK — 17/)
+    assert.match(res.stdout, /OK 20261014_s3_documents_sha256: применена за \d+ с; проверок OK — 20/)
     assert.match(res.stdout, /OK соседи по кластеру не изменились/)
     assert.equal(journal(), '20261014_s3_documents_sha256')
     assert.equal(admin("select tool_commit from osp_meta.schema_migrations"), 'test-commit')

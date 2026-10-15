@@ -12,18 +12,82 @@ export const READY_PARTS = ['supabase', 's3', 'anthropic']
 // Проверяются, только если настроены: своё подключение к базе (db) и секрет подписи токенов (token).
 // Настроенная и не ответившая — отказ готовности и без OSP_API_REQUIRE; в списке обязательных —
 // «не настроено» тоже отказ.
-export const READY_OPTIONAL = ['db', 'token', 'gateway']
+export const READY_OPTIONAL = ['db', 'token', 'gateway', 'auth']
+// Свой вход (AUTH_MODE both | own): без пароля-канарейки, базы и шлюза данных он не работает — эти проверки
+// обязательны всегда. В режиме own Supabase не нужен вовсе: из обязательных он убирается.
+export const AUTH_MODES = ['supabase', 'both', 'own']
+const OWN_AUTH_REQUIRED = ['auth', 'db', 'gateway']
 
-export function parseRequired(raw) {
+export function parseRequired(raw, authMode = 'supabase') {
   const names = String(raw ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-  if (!names.length) return [...READY_PARTS]
   const known = [...READY_PARTS, ...READY_OPTIONAL]
   const unknown = names.filter((n) => !known.includes(n))
   if (unknown.length) {
     throw new Error(`OSP_API_REQUIRE: неизвестные зависимости ${unknown.join(', ')} (допустимы ${known.join(', ')})`)
   }
-  if (!names.includes('supabase')) throw new Error('OSP_API_REQUIRE: supabase обязателен — без него не работает ни один маршрут')
-  return known.filter((n) => names.includes(n))
+  let chosen = names.length ? names : [...READY_PARTS]
+  if (authMode === 'own') chosen = [...chosen.filter((n) => n !== 'supabase'), ...OWN_AUTH_REQUIRED]
+  else if (!chosen.includes('supabase')) throw new Error('OSP_API_REQUIRE: supabase обязателен — без него не работает ни один маршрут')
+  if (authMode === 'both') chosen = [...chosen, ...OWN_AUTH_REQUIRED]
+  return known.filter((n) => chosen.includes(n))
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Адрес портала для проверки источника запроса (Origin): https://…, для разработки — http://localhost:порт.
+export function parseOrigin(raw) {
+  const v = String(raw || '').trim()
+  if (!v) return ''
+  let u
+  try { u = new URL(v) } catch { throw new Error('OSP_PUBLIC_ORIGIN: не адрес') }
+  const local = u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname)
+  if ((u.protocol !== 'https:' && !local) || u.pathname !== '/' || u.search || u.hash || u.username) {
+    throw new Error('OSP_PUBLIC_ORIGIN: только адрес портала вида https://tender.su10.ru, без пути')
+  }
+  return u.origin
+}
+
+function parseAuthMode(raw) {
+  const v = String(raw || 'supabase').trim()
+  if (!AUTH_MODES.includes(v)) throw new Error(`AUTH_MODE: ${v} — допустимы ${AUTH_MODES.join(', ')}`)
+  return v
+}
+
+function parsePilot(raw) {
+  const ids = String(raw || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+  const bad = ids.filter((id) => !UUID.test(id))
+  if (bad.length) throw new Error('OSP_AUTH_PILOT_IDS: только идентификаторы пользователей (uuid) через запятую')
+  return ids
+}
+
+function parseDays(raw, fallback, name) {
+  if (raw === undefined || raw === '') return fallback
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0 || n > 365) throw new Error(`${name}: число дней от 1 до 365`)
+  return n
+}
+
+// Доверие к X-Forwarded-For: только 'peer' — непосредственному соседу (своему прокси). Верно лишь там, где до
+// osp-api не достаёт никто, кроме него: на corp — внутренняя сеть проекта (osp-web), на VPS — 127.0.0.1. Прокси
+// обязан перезаписывать X-Forwarded-For одним адресом клиента. Число хопов Fastify 5 не принимает.
+function parseTrustProxy(raw) {
+  const v = String(raw || '').trim()
+  if (v === '' || v === 'peer') return v
+  throw new Error('OSP_TRUST_PROXY: допустимо только peer (или пусто)')
+}
+
+// Проверка настроек своего входа — до запуска: служба с неполными настройками не стартует.
+export function checkOwnAuthConfig(config) {
+  if (config.authMode === 'supabase' || !config.authMode) return
+  const missing = []
+  if (!config.auth?.keys) missing.push('OSP_AUTH_KEYS')
+  if (!config.auth?.publicOrigin) missing.push('OSP_PUBLIC_ORIGIN')
+  if (!config.db?.url) missing.push('OSP_DB_URL')
+  if (!config.dbGateway?.upstream || !config.dbGateway?.secret || !config.dbGateway?.dbRole) missing.push('шлюз данных (OSP_PGRST_*)')
+  if (missing.length) throw new Error(`AUTH_MODE=${config.authMode}: не заданы ${missing.join(', ')}`)
+  if (config.authMode === 'both' && !(config.auth.pilotIds || []).length) {
+    throw new Error('AUTH_MODE=both: свой вход — только пилоту, задайте OSP_AUTH_PILOT_IDS')
+  }
 }
 
 // Загрузка договорных расценок из Larix.CPM (src/lib/larixSync.js). Выключена, пока не задано LARIX_SYNC=1:
@@ -98,7 +162,18 @@ export function loadConfig(env = process.env) {
     // Пересчёт реестра расценок раз в 10 минут (в Supabase это делало расписание pg_cron).
     registryRefresh: env.OSP_REGISTRY_REFRESH === '1',
     larix: parseLarix(env, { dbUrl: env.OSP_DB_URL || '', supabaseUrl: env.SUPABASE_URL || '', supabaseServiceKey: env.SUPABASE_SERVICE_ROLE_KEY || '' }),
-    required: parseRequired(env.OSP_API_REQUIRE),
+    // Вход: supabase — как раньше; both — пилот своего входа; own — только свой вход (src/lib/auth/).
+    authMode: parseAuthMode(env.AUTH_MODE),
+    auth: {
+      // Ключи шифрования паролей «id:base64,…», первый — текущий (src/lib/auth/secretBox.js). Секрет.
+      keys: env.OSP_AUTH_KEYS || '',
+      pilotIds: parsePilot(env.OSP_AUTH_PILOT_IDS),
+      publicOrigin: parseOrigin(env.OSP_PUBLIC_ORIGIN),
+      idleDays: parseDays(env.OSP_SESSION_IDLE_DAYS, 14, 'OSP_SESSION_IDLE_DAYS'),
+      absoluteDays: parseDays(env.OSP_SESSION_MAX_DAYS, 30, 'OSP_SESSION_MAX_DAYS'),
+    },
+    trustProxy: parseTrustProxy(env.OSP_TRUST_PROXY),
+    required: parseRequired(env.OSP_API_REQUIRE, parseAuthMode(env.AUTH_MODE)),
   }
 }
 
@@ -114,5 +189,6 @@ export function configuredParts(config) {
     token: Boolean(config.supabaseJwtSecret),
     gateway: Boolean(config.dbGateway?.upstream && config.dbGateway?.secret && config.dbGateway?.dbRole),
     larix: Boolean(config.larix?.sync && config.larix.username && config.larix.password),
+    auth: Boolean(config.auth?.keys && config.authMode && config.authMode !== 'supabase'),
   }
 }

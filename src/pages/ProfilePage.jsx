@@ -2,10 +2,14 @@ import { useState, useEffect } from 'react'
 import { useRole, ROLE_LABELS } from '../contexts/RoleContext'
 import { db } from '../api'
 import { formatPhone } from '../utils/phoneFormat'
+import ChangePasswordForm from '../components/ChangePasswordForm'
 import './ProfilePage.css'
 
 function ProfilePage() {
-  const { user, role, userProfile, updateProfile } = useRole()
+  const { user, role, userProfile, updateProfile, ownAuth, logout } = useRole()
+  // Свой вход (tender.su10.ru): смена пароля и выход на всех устройствах.
+  const [passwordFormOpen, setPasswordFormOpen] = useState(false)
+  const [passwordChanged, setPasswordChanged] = useState(false)
   const [fullName, setFullName] = useState(userProfile.full_name || '')
   const [workPhone, setWorkPhone] = useState(userProfile.work_phone || '')
   const [workEmail, setWorkEmail] = useState(userProfile.work_email || '')
@@ -125,6 +129,26 @@ function ProfilePage() {
             {message && <span className={`profile-message ${message.startsWith('Ошибка') ? 'error' : 'success'}`}>{message}</span>}
           </div>
         </form>
+
+        {ownAuth && (
+          <div className="profile-security">
+            <h3>Пароль и вход</h3>
+            {passwordChanged && <span className="profile-message success">Пароль изменён. Другие устройства выйдут из портала.</span>}
+            {passwordFormOpen ? (
+              <ChangePasswordForm className="profile-form" fieldClassName="profile-field" errorClassName="profile-message error"
+                buttonClassName="btn-save" onDone={() => { setPasswordFormOpen(false); setPasswordChanged(true) }} />
+            ) : (
+              <div className="profile-actions">
+                <button type="button" className="btn-save" onClick={() => { setPasswordFormOpen(true); setPasswordChanged(false) }}>
+                  Сменить пароль
+                </button>
+                <button type="button" className="btn-logout-all" onClick={() => logout({ everywhere: true }).finally(() => window.location.assign('/login'))}>
+                  Выйти на всех устройствах
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

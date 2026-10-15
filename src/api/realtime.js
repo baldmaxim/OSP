@@ -6,12 +6,14 @@
 // Флаг читается на каждом шаге опроса: путь переключается в открытой вкладке, без перезагрузки.
 import { supabase } from './supabaseClient'
 import { ownDb, ownDbEnabled } from './db'
+import { isOwnAuth } from './authMode'
 import { createTablePoller, fetchTableRows } from './tablePolling'
 
 // Подписка на изменения одной таблицы. onChange(payload) — событие как у supabase-js
 // (eventType, new, old); onStatus(status) — 'SUBSCRIBED' и т. п. Возвращает отписку.
 export function subscribeTable({ channelName, schema = 'public', table, filter = null }, onChange, onStatus) {
-  const channel = supabase
+  // Свой вход: к Supabase не обращаемся вовсе — только опрос своего сервера.
+  const channel = isOwnAuth() ? null : supabase
     .channel(channelName)
     // После переключения на базу Яндекса события Supabase уже не про наши данные — пропускаем.
     .on('postgres_changes', { event: '*', schema, table, ...(filter ? { filter } : {}) }, (payload) => { if (!ownDbEnabled()) onChange(payload) })
@@ -29,6 +31,6 @@ export function subscribeTable({ channelName, schema = 'public', table, filter =
   return () => {
     document.removeEventListener('visibilitychange', onVisible)
     poller.stop()
-    supabase.removeChannel(channel)
+    if (channel) supabase.removeChannel(channel)
   }
 }

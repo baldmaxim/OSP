@@ -55,6 +55,10 @@ server {
 #@https         proxy_set_header X-Real-IP $remote_addr;
 #@https         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 #@https         proxy_set_header X-Forwarded-Proto $scheme;
+#@https         # Адрес клиента для контейнера сайта — с жетоном (deploy/docker/web/nginx.conf): соседний контейнер
+#@https         # общей сети без жетона адрес подделать не может. Строку жетона подставляет render.sh.
+#@https         proxy_set_header X-OSP-Client-IP $remote_addr;
+#@https         __EDGE_HEADER__
 #@https         # Чуть дольше, чем ждёт контейнер сайта (180 с — ответ ИИ, 130 с — шлюз данных).
 #@https         proxy_read_timeout 185s;
 #@https         proxy_send_timeout 135s;

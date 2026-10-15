@@ -43,6 +43,10 @@ export function createConcurrency(max) {
 }
 
 export const DEFAULT_LIMITS = {
+  // Свой вход: попытки входа с одного адреса клиента (в офисе за одним адресом много людей — лимит мягкий;
+  // перебор одной учётки останавливает счётчик по почте в базе); действия администратора с учётками.
+  loginPerIp: { max: 60, windowMs: 10 * 60_000 },
+  authAdminPerUser: { max: 30, windowMs: 60_000 },
   aiPerUser: { max: 6, windowMs: 60_000 }, // платный ИИ: 6 запросов в минуту на пользователя
   aiConcurrentPerUser: 1,
   aiConcurrentTotal: 4,

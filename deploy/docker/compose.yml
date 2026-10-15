@@ -40,6 +40,10 @@ services:
     memswap_limit: 128m
     cpus: 0.25
     tmpfs: ["/tmp:size=64m,mode=1777"]
+    # Жетон адреса клиента от общего nginx (web/nginx.conf): OSP_EDGE_TOKEN. Файла нет — адрес соединения.
+    env_file:
+      - path: ./secrets/osp-web.env
+        required: false
     volumes:
       - www:/var/www/osp
       # Флаги портала (config.json): правятся на сервере без пересборки.
@@ -63,6 +67,9 @@ services:
       OSP_PGRST_URL: http://osp-postgrest:3001
       OSP_DB_CA_FILE: /etc/ssl/osp/yandex-root.crt
       OSP_DB_READONLY_FILE: /var/lib/osp-api/db-readonly
+      # Адрес клиента (лимиты входа) — из X-Forwarded-For только от непосредственного соседа: до osp-api
+      # достаёт лишь osp-web (внутренняя сеть), а он перезаписывает заголовок одним адресом клиента.
+      OSP_TRUST_PROXY: peer
     volumes:
       - ./certs/yandex-root.crt:/etc/ssl/osp/yandex-root.crt:ro
       # Барьер записи: файл state/db-readonly на сервере — «только чтение». Службе достаточно его видеть.

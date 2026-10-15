@@ -4,6 +4,7 @@
 // решение, а не правка. Меняется вместе со снимком tests/osp-api/baseline/routes.json.
 import { GATEWAY_METHODS, GATEWAY_URL, GATEWAY_REASON } from './routes/dbGateway.js'
 import { COVERS_OPEN_REASON } from './routes/covers.js'
+import { AUTH_CONFIG_REASON, AUTH_LOGIN_REASON, AUTH_LOGOUT_REASON } from './routes/auth.js'
 
 export const OPEN_ROUTES = [
   {
@@ -30,6 +31,10 @@ export const OPEN_ROUTES = [
     method: 'OPTIONS', url: '/api/rates/*', kind: 'open',
     reason: 'CORS-предзапрос к реестру расценок: данных не отдаёт',
   },
+  // Свой вход (src/routes/auth.js): до входа сессии нет — эти три адреса открыты; остальные /api/auth/* — по сессии.
+  { method: 'GET', url: '/api/auth/config', kind: 'open', reason: AUTH_CONFIG_REASON },
+  { method: 'POST', url: '/api/auth/login', kind: 'open', reason: AUTH_LOGIN_REASON },
+  { method: 'POST', url: '/api/auth/logout', kind: 'open', reason: AUTH_LOGOUT_REASON },
   // Обложки объектов (src/routes/covers.js): адрес картинки для <img>, токен он не передаёт.
   { method: 'GET', url: '/api/covers/:name', kind: 'open', reason: COVERS_OPEN_REASON },
   // Шлюз данных (src/routes/dbGateway.js): вход и права проверяет сам. Без входа — только чтение таблиц,

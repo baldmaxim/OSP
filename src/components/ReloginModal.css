@@ -1,0 +1,90 @@
+.relogin-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.relogin-card {
+  width: 100%;
+  max-width: 24rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #0f172a);
+  box-shadow: 0 1.25rem 3rem rgba(15, 23, 42, 0.3);
+}
+
+.relogin-card h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.5rem;
+}
+
+.relogin-card p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--text-secondary, #475569);
+}
+
+.relogin-email {
+  font-size: 0.875rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.relogin-card input {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-color, #cbd5e1);
+  border-radius: 0.5rem;
+  background: var(--bg-secondary, #fff);
+  color: inherit;
+  font-size: 1rem;
+}
+
+.relogin-error {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.875rem;
+}
+
+.relogin-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.relogin-primary,
+.relogin-secondary {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.relogin-primary {
+  border: none;
+  background: #16a34a;
+  color: #fff;
+}
+
+.relogin-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.relogin-secondary {
+  border: 1px solid var(--border-color, #cbd5e1);
+  background: transparent;
+  color: inherit;
+}

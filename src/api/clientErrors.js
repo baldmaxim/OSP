@@ -37,7 +37,7 @@ function sectionOf(url) {
   m = path.match(/\/functions\/v1\/([^/]+)/)
   if (m) return `fn:${m[1]}`
   if (/\/storage\/v1\//.test(path)) return 'storage'
-  return null // вход (/auth/v1) не наблюдаем: неверный пароль — не поломка
+  return null // вход (/auth/v1, /api/auth/*) не наблюдаем: неверный пароль — не поломка
 }
 
 // Сами отчёты не наблюдаем — иначе отказ отчёта породил бы новый отчёт.
@@ -52,6 +52,8 @@ async function inspect(url, res) {
     if (body && typeof body.code === 'string') code = body.code
   } catch { /* тело не JSON */ }
   const status = res.status
+  // Закончилась сессия своего входа или вход переключили — это не поломка: человек просто войдёт заново.
+  if (code === 'OSP_SESSION_REVOKED' || code === 'OSP_AUTH_MODE' || code === 'OSP_PASSWORD_CHANGE_REQUIRED') return
   const broken = status === 401 || status === 403 || status >= 500 ||
     code === '42501' || code === '57014' || (code && code.startsWith('PGRST'))
   if (!broken) return

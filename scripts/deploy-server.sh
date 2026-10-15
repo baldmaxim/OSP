@@ -11,6 +11,15 @@
 #   bash scripts/deploy-server.sh both           # собрать и выложить API и сайт
 #   bash scripts/deploy-server.sh status | rollback
 #
+# Свой вход tender.su10.ru (учётки и пароли в базе Яндекса; migration/CUTOVER.md, «Свой вход tender.su10.ru»):
+#   bash scripts/deploy-server.sh auth-key-init              # ключ шифрования паролей (один раз, значение не выводится)
+#   bash scripts/deploy-server.sh edge-token-init            # жетон адреса клиента для общего nginx (один раз)
+#   bash scripts/deploy-server.sh transfer-key-init          # ключ переноса паролей из Supabase; печатает открытый ключ
+#   bash scripts/deploy-server.sh accounts-sync --users <файл> --credentials <файл> [--manifest <файл>] [--restore <uuid>] [--yes]
+#   bash scripts/deploy-server.sh accounts-check             # готов ли свой вход (только чтение)
+#   bash scripts/deploy-server.sh auth-mode supabase|both|own  # переключить вход без сборки; не прошло — прежний
+#   bash scripts/deploy-server.sh transfer-key-destroy       # после переноса: удалить ключ переноса и файлы выгрузок
+#
 # Если меняется и база: сначала migrate, потом backend или both (список шлюза — в образе API).
 #
 # На сервере работают соседние порталы — они не должны почувствовать ничего (deploy/docker/README.md):
@@ -54,6 +63,9 @@ readonly WEB_ENV="$OSP_HOME/secrets/web-build.env"
 readonly KEEP_BUILDS=2
 readonly KEEP_BACKUPS=5
 readonly BX_HOME="$OSP_HOME/docker"
+readonly API_ENV="$OSP_HOME/secrets/osp-api.env"
+readonly TRANSFER_KEY="$OSP_HOME/secrets/accounts-transfer.key"
+readonly ACCOUNTS_IN="$OSP_HOME/accounts/in"
 
 readonly C_RED='\033[0;31m' C_GREEN='\033[0;32m' C_YELLOW='\033[0;33m' C_BLUE='\033[0;34m' C_RESET='\033[0m'
 log()  { printf '%b[deploy]%b %s\n' "$C_BLUE" "$C_RESET" "$*"; }
@@ -72,6 +84,16 @@ usage() {
   both            собрать и выложить API и сайт
   status          что выложено и отвечает ли
   rollback        вернуть предыдущий выпуск
+
+  Свой вход tender.su10.ru:
+  auth-key-init         ключ шифрования паролей в secrets/osp-api.env (один раз)
+  edge-token-init       жетон адреса клиента (secrets/osp-web.env); затем запись общего nginx и frontend
+  transfer-key-init     ключ переноса паролей из Supabase; печатает открытый ключ
+  accounts-sync --users <файл> --credentials <файл> [--manifest <файл>] [--restore <uuid>] [--yes]
+                        перенос учёток и паролей (файлы — в $ACCOUNTS_IN); без --yes — с вопросом
+  accounts-check        готов ли свой вход (только чтение)
+  auth-mode <режим>     supabase | both | own — без сборки; не прошло — возвращается прежний
+  transfer-key-destroy  удалить ключ переноса и файлы выгрузок
 
 Если меняется и база: сначала migrate, потом backend или both.
 EOF
@@ -322,6 +344,154 @@ do_migrate() {
   bash "$OSP_HOME/deploy.sh" status || warn "проверка готовности не прошла — посмотрите вывод выше"
 }
 
+# ---------- свой вход ----------
+env_value() { grep -m 1 -E "^$1=" "$API_ENV" 2>/dev/null | cut -d= -f2- || true; }
+
+# Одна строка в файле окружения API — атомарно (временный файл рядом, 600, затем mv). Значение не выводится.
+set_env_line() {
+  local name="$1" value="$2" tmp
+  [ -f "$API_ENV" ] || fail "нет $API_ENV"
+  tmp="$(mktemp "$API_ENV.XXXXXX")"
+  chmod 600 "$tmp"
+  if grep -q -E "^$name=" "$API_ENV"; then
+    NAME="$name" VALUE="$value" awk '{ if (index($0, ENVIRON["NAME"] "=") == 1) print ENVIRON["NAME"] "=" ENVIRON["VALUE"]; else print }' "$API_ENV" > "$tmp"
+  else
+    { cat "$API_ENV"; printf '%s=%s\n' "$name" "$value"; } > "$tmp"
+  fi
+  mv -f -- "$tmp" "$API_ENV"
+}
+
+# Инструменты своего входа — в том же контейнере, что миграции; ключи и выгрузки — только на чтение.
+run_accounts() {
+  mkdir -p "$OSP_HOME/reports/db" "$OSP_HOME/backups"
+  chmod 700 "$OSP_HOME/reports" "$OSP_HOME/reports/db" "$OSP_HOME/backups"
+  local net=() extra=()
+  [ -z "${OSP_TOOLS_NETWORK:-}" ] || net=(--network "$OSP_TOOLS_NETWORK")
+  [ ! -d "$ACCOUNTS_IN" ] || extra+=(-v "$ACCOUNTS_IN:/in:ro")
+  [ ! -f "$TRANSFER_KEY" ] || extra+=(-v "$TRANSFER_KEY:/run/osp/transfer.key:ro")
+  extra+=(-v "$API_ENV:/run/osp/osp-api.env:ro")
+  docker run --rm "${net[@]}" --user "$(id -u):$(id -g)" --memory 512m --cpus 1 \
+    -e HOME=/tmp -e PROBE_REPORT_DIR=/reports -e BACKUP_OUT_DIR=/backups \
+    -v "$SRC:/src:ro" -v "$DB_DIR:/db:ro" -v "$OSP_HOME/reports/db:/reports" -v "$OSP_HOME/backups:/backups" "${extra[@]}" \
+    -w /src "$(tools_image)" bash "$@"
+}
+
+do_auth_key_init() {
+  [ -f "$API_ENV" ] || fail "нет $API_ENV"
+  [ -z "$(env_value OSP_AUTH_KEYS)" ] || fail "ключ уже есть (OSP_AUTH_KEYS) — второй раз не создаётся"
+  local id key
+  id="k$(date -u +%Y%m%d)"
+  key="$(head -c 32 /dev/urandom | base64 -w0)"
+  set_env_line OSP_AUTH_KEYS "$id:$key"
+  unset key
+  ok "ключ шифрования паролей $id записан в $API_ENV (значение не выводится)"
+  warn "сохраните копию $API_ENV офлайн: без ключа пароли своего входа не расшифровать"
+}
+
+# Жетон, по которому контейнер сайта верит адресу клиента от общего nginx (deploy/docker/web/nginx.conf).
+# После создания: запись общего nginx заново (infra-nginx/install.sh <имя>) и выкладка сайта (frontend).
+do_edge_token_init() {
+  local file="$OSP_HOME/secrets/osp-web.env"
+  if [ -f "$file" ] && grep -q -E '^OSP_EDGE_TOKEN=[A-Za-z0-9]{32,}' "$file"; then
+    fail "жетон уже есть: $file"
+  fi
+  (umask 077; printf 'OSP_EDGE_TOKEN=%s\n' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> "$file")
+  chmod 600 "$file"
+  ok "жетон адреса клиента записан в $file (значение не выводится)"
+  echo "Дальше: запись общего nginx заново — bash $OSP_HOME/current/infra-nginx/install.sh tender.su10.ru; затем frontend"
+}
+
+do_transfer_key_init() {
+  command -v openssl >/dev/null || fail "нет openssl"
+  [ ! -e "$TRANSFER_KEY" ] || fail "ключ переноса уже есть: $TRANSFER_KEY"
+  (umask 077; openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$TRANSFER_KEY" 2>/dev/null) || fail "ключ переноса не создан"
+  mkdir -p "$ACCOUNTS_IN"
+  chmod 700 "$OSP_HOME/accounts" "$ACCOUNTS_IN"
+  ok "ключ переноса создан: $TRANSFER_KEY (закрытый — только на этом сервере)"
+  echo "Открытый ключ — на машину, где снимается копия Supabase (backup.sh --credentials <этот файл>):"
+  openssl pkey -in "$TRANSFER_KEY" -pubout
+}
+
+do_transfer_key_destroy() {
+  if [ -e "$TRANSFER_KEY" ]; then
+    shred -u -- "$TRANSFER_KEY" 2>/dev/null || rm -f -- "$TRANSFER_KEY"
+  fi
+  [ ! -d "$ACCOUNTS_IN" ] || find "$ACCOUNTS_IN" -mindepth 1 -maxdepth 1 -type f -exec rm -f -- {} +
+  ok "ключ переноса и файлы выгрузок удалены"
+}
+
+do_accounts_check() {
+  need_db_files
+  ensure_tools
+  run_accounts migration/accounts/accounts-check.sh /db/target.env
+}
+
+do_accounts_sync() {
+  local users="" cred="" manifest="" restore="" yes=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --users) users="${2:-}"; shift 2 ;;
+      --credentials) cred="${2:-}"; shift 2 ;;
+      --manifest) manifest="${2:-}"; shift 2 ;;
+      --restore) restore="${2:-}"; shift 2 ;;
+      --yes) yes=1; shift ;;
+      *) usage; fail "неизвестный ключ: $1" ;;
+    esac
+  done
+  [ -n "$users" ] && [ -n "$cred" ] || { usage; fail "нужны --users и --credentials (файлы в $ACCOUNTS_IN)"; }
+  local f
+  for f in "$users" "$cred" ${manifest:+"$manifest"}; do
+    [[ "$f" =~ ^[A-Za-z0-9._-]+$ ]] || fail "укажите имя файла из $ACCOUNTS_IN, без пути: $f"
+    [ -f "$ACCOUNTS_IN/$f" ] || fail "нет $ACCOUNTS_IN/$f"
+  done
+  [ -f "$TRANSFER_KEY" ] || fail "нет ключа переноса — сначала transfer-key-init"
+  [ -n "$(env_value OSP_AUTH_KEYS)" ] || fail "нет ключа шифрования паролей — сначала auth-key-init"
+  need_db_files
+  ensure_tools
+  local args=(migration/accounts/accounts-sync.sh /db/target.env --users "/in/$users" --credentials "/in/$cred"
+    --transfer-key /run/osp/transfer.key --auth-keys-file /run/osp/osp-api.env)
+  [ -z "$manifest" ] || args+=(--manifest "/in/$manifest")
+  [ -z "$restore" ] || args+=(--restore "$restore")
+  log "перенос учёток — проверка (только чтение)"
+  run_accounts "${args[@]}" --dry-run || fail "проверка не прошла — база не менялась"
+  if [ "$yes" != 1 ]; then
+    [ -t 0 ] || fail "нет терминала для вопроса — запустите с --yes"
+    local answer
+    read -r -p "Записать учётки и пароли в базу нового портала? Перед этим снимается копия базы. [y/N] " answer
+    [[ "$answer" =~ ^[yYдД]$ ]] || { warn "отменено — база не менялась"; return 0; }
+  fi
+  run_accounts "${args[@]}" --yes || fail "перенос учёток остановлен — подробности выше; отчёт — $OSP_HOME/reports/db"
+  warn "удалите файлы выгрузки из $ACCOUNTS_IN, когда они больше не нужны (transfer-key-destroy — вместе с ключом)"
+}
+
+auth_mode_now() { bash "$OSP_HOME/deploy.sh" auth-config 2>/dev/null | grep -o '"mode":"[a-z]*"' | cut -d'"' -f4; }
+
+do_auth_mode() {
+  local mode="${1:-}" prev
+  case "$mode" in supabase | both | own) ;; *) usage; fail "режим входа: supabase | both | own" ;; esac
+  [ -f "$API_ENV" ] || fail "нет $API_ENV"
+  prev="$(env_value AUTH_MODE)"; prev="${prev:-supabase}"
+  if [ "$mode" != supabase ]; then
+    [ -n "$(env_value OSP_AUTH_KEYS)" ] || fail "нет ключа шифрования паролей — сначала auth-key-init"
+    [ -n "$(env_value OSP_PUBLIC_ORIGIN)" ] || fail "в $API_ENV не задан OSP_PUBLIC_ORIGIN (https://tender.su10.ru)"
+  fi
+  [ "$mode" != both ] || [ -n "$(env_value OSP_AUTH_PILOT_IDS)" ] || fail "для both нужен OSP_AUTH_PILOT_IDS (кто проверяет свой вход)"
+  if [ "$mode" = own ]; then
+    log "свежая проверка готовности своего входа"
+    do_accounts_check || fail "свой вход не готов — режим не меняется"
+  fi
+  log "режим входа: $prev → $mode"
+  set_env_line AUTH_MODE "$mode"
+  if bash "$OSP_HOME/deploy.sh" api-restart && [ "$(auth_mode_now)" = "$mode" ]; then
+    ok "вход переключён: $mode"
+    return 0
+  fi
+  warn "API в режиме $mode не прошёл проверку — возвращаю $prev"
+  set_env_line AUTH_MODE "$prev"
+  bash "$OSP_HOME/deploy.sh" api-restart || warn "и с прежним режимом API не отвечает — смотрите журналы"
+  fail "режим входа не изменён (остался $prev)"
+}
+
 # ---------- --check ----------
 reachable() { timeout 8 bash -c "exec 3<>/dev/tcp/$1/443" 2>/dev/null; }
 do_check() {
@@ -374,6 +544,19 @@ main() {
       case "$scope" in backend) build_release api ;; frontend) build_release web ;; both) build_release both ;; esac
       install_release; summary ;;
     status)               preflight; bash "$OSP_HOME/deploy.sh" status ;;
+    auth-key-init)        preflight; do_auth_key_init ;;
+    edge-token-init)      preflight; do_edge_token_init ;;
+    transfer-key-init)    preflight; do_transfer_key_init ;;
+    transfer-key-destroy) preflight; do_transfer_key_destroy ;;
+    accounts-check)       preflight; do_accounts_check ;;
+    accounts-sync)
+      preflight
+      exec 9>"$OSP_HOME/.deploy-server.lock"; flock -n 9 || fail "уже идёт другая выкладка или миграция"
+      shift; do_accounts_sync "$@" ;;
+    auth-mode)
+      preflight
+      exec 9>"$OSP_HOME/.deploy-server.lock"; flock -n 9 || fail "уже идёт другая выкладка или миграция"
+      do_auth_mode "${2:-}" ;;
     rollback)             preflight; bash "$OSP_HOME/deploy.sh" rollback ;;
     -h | --help)          usage ;;
     "")                   usage; exit 1 ;;

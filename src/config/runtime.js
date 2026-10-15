@@ -20,7 +20,11 @@ const config = {
   authStorageKey: null,
   // features.<имя>: включение новых операций; выключенный флаг = прежний путь.
   features: {},
+  // Режим входа спрашивать у сервера (/api/auth/config) — только там, где свой вход есть (tender.su10.ru).
+  authServer: false,
 }
+// Флаги, включённые принудительно (свой вход: всё через свой сервер) — сильнее config.json и браузера.
+let forced = new Set()
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== ''
 
@@ -30,6 +34,7 @@ function apply(raw) {
   if (isNonEmptyString(raw.supabaseUrl)) config.supabaseUrl = raw.supabaseUrl.trim()
   if (isNonEmptyString(raw.supabaseAnonKey)) config.supabaseAnonKey = raw.supabaseAnonKey.trim()
   if (isNonEmptyString(raw.authStorageKey)) config.authStorageKey = raw.authStorageKey.trim()
+  if (raw.authServer === true) config.authServer = true
   if (raw.features && typeof raw.features === 'object' && !Array.isArray(raw.features)) {
     config.features = parseFeatures(raw.features)
   }
@@ -104,5 +109,11 @@ export function applyFeatureParam() {
 }
 
 export function isFeatureEnabled(name, fallback = false) {
+  if (forced.has(name)) return true
   return resolveFeature(name, config.features, readLocalFeatures(), fallback)
+}
+
+// Включить флаги принудительно (main.jsx — при своём входе).
+export function forceFeatures(names) {
+  forced = new Set(names)
 }

@@ -18,10 +18,29 @@
 #   prod-<время>.covers.csv         — список обложек объектов (бакет object-photos): имя, размер, тип
 #   prod-<время>.inventory.tsv      — опись: число строк каждой таблицы Supabase вне системных схем
 #   prod-<время>.extras.sha256      — контрольные суммы четырёх файлов выше
+# С ключом --credentials <открытый ключ переноса.pem> (свой вход нового портала, решение владельца 2026-10-15):
+#   prod-<время>.auth-credentials.sealed        — отпечатки паролей (bcrypt), запечатанные ключом corp прямо из
+#                                                 потока psql: открытого текста на диске нет (migration/accounts)
+#   prod-<время>.auth-credentials.manifest.json — опись: число строк, sha256, отпечаток учёток (без почт)
+# --accounts-only (вместе с --credentials) — только учётки и пароли, без копии данных: пересверка перед
+# переключением своего входа и повторный перенос учёток.
 # Выгрузки и опись — одна транзакция «только чтение» (extras.sql). В учётных записях — личные данные:
 # файлы только здесь, права 600, в чат и git не попадают; значения не выводятся.
 # Проверка восстановлением — verify.sh (её запускаю я). Копии старше 30 дней удаляйте.
 set -euo pipefail
+
+CRED_PUB=""
+ACCOUNTS_ONLY=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --credentials) CRED_PUB="${2:-}"; [ -n "$CRED_PUB" ] && [ -r "$CRED_PUB" ] || { echo "--credentials: нет файла открытого ключа переноса" >&2; exit 1; }
+                   CRED_PUB="$(cd "$(dirname "$CRED_PUB")" && pwd)/$(basename "$CRED_PUB")"; shift 2 ;;
+    --accounts-only) ACCOUNTS_ONLY=1; shift ;;
+    *) echo "Использование: bash migration/backup/backup.sh [--credentials <открытый ключ.pem> [--accounts-only]]" >&2; exit 1 ;;
+  esac
+done
+[ "$ACCOUNTS_ONLY" = 0 ] || [ -n "$CRED_PUB" ] || { echo "--accounts-only — только вместе с --credentials" >&2; exit 1; }
+[ -z "$CRED_PUB" ] || command -v node >/dev/null || { echo "Для --credentials нужен node" >&2; exit 1; }
 
 cd "$(dirname "$0")/../.."
 BACKUP_DIR="migration/backup"
@@ -51,7 +70,8 @@ cleanup() {
   unset PGPASSWORD
   if [ "$DONE" != 1 ]; then
     rm -f -- "$BASE.counts-before.tsv" "$BASE.counts-after.tsv" "$BASE.dump" "$BASE.dump.partial" "$BASE.dump.sha256" \
-      "$BASE.auth-users.csv" "$BASE.auth-identities.csv" "$BASE.covers.csv" "$BASE.inventory.tsv" "$BASE.extras.sha256"
+      "$BASE.auth-users.csv" "$BASE.auth-identities.csv" "$BASE.covers.csv" "$BASE.inventory.tsv" "$BASE.extras.sha256" \
+      "$BASE.auth-credentials.sealed" "$BASE.auth-credentials.manifest.json"
   fi
 }
 trap cleanup EXIT
@@ -79,15 +99,17 @@ counts() {
   psql -X -q -At -F $'\t' -v ON_ERROR_STOP=1 -c 'SET default_transaction_read_only = on' -f "$BACKUP_DIR/counts.sql" >"$1"
 }
 
-echo "Подсчёт строк до копии…"
-counts "$BASE.counts-before.tsv"
+if [ "$ACCOUNTS_ONLY" = 0 ]; then
+  echo "Подсчёт строк до копии…"
+  counts "$BASE.counts-before.tsv"
 
-echo "Копия схемы public…"
-pg_dump -Fc -n public -f "$BASE.dump.partial"
-mv "$BASE.dump.partial" "$BASE.dump"
+  echo "Копия схемы public…"
+  pg_dump -Fc -n public -f "$BASE.dump.partial"
+  mv "$BASE.dump.partial" "$BASE.dump"
 
-echo "Подсчёт строк после копии…"
-counts "$BASE.counts-after.tsv"
+  echo "Подсчёт строк после копии…"
+  counts "$BASE.counts-after.tsv"
+fi
 
 echo "Учётные записи, обложки, опись Supabase…"
 psql -X -q -v ON_ERROR_STOP=1 \
@@ -95,6 +117,20 @@ psql -X -q -v ON_ERROR_STOP=1 \
   -v covers_file="$BASE.covers.csv" -v inventory_file="$BASE.inventory.tsv" \
   -f "$BACKUP_DIR/extras.sql"
 
+if [ -n "$CRED_PUB" ]; then
+  echo "Отпечатки паролей (запечатываются ключом переноса)…"
+  psql -X -q -At -v ON_ERROR_STOP=1 -f "$BACKUP_DIR/credentials.sql" \
+    | node migration/accounts/seal.mjs --pub "$CRED_PUB" --out "$BASE.auth-credentials.sealed" --manifest "$BASE.auth-credentials.manifest.json"
+fi
+if [ "$ACCOUNTS_ONLY" = 1 ]; then
+  (cd "$OUT_DIR" && sha256sum "prod-$STAMP.auth-users.csv" "prod-$STAMP.auth-identities.csv" "prod-$STAMP.covers.csv" \
+    "prod-$STAMP.inventory.tsv" >"prod-$STAMP.extras.sha256")
+  chmod 600 "$BASE".*
+  DONE=1
+  echo
+  echo "Готово: учётные записи и пароли — $BASE.auth-users.csv, $BASE.auth-credentials.sealed (опись рядом)."
+  exit 0
+fi
 (cd "$OUT_DIR" && sha256sum "prod-$STAMP.dump" >"prod-$STAMP.dump.sha256")
 (cd "$OUT_DIR" && sha256sum "prod-$STAMP.auth-users.csv" "prod-$STAMP.auth-identities.csv" "prod-$STAMP.covers.csv" \
   "prod-$STAMP.inventory.tsv" >"prod-$STAMP.extras.sha256")

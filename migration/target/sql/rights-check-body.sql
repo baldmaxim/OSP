@@ -89,6 +89,40 @@ WITH t AS (
          CASE WHEN to_regnamespace('osp_vault') IS NULL
               THEN 'учётные записи Supabase Auth не загружались (load.sh без --auth)'
               ELSE 'учётные записи Supabase Auth закрыты: только отметка переноса, функциям и представлениям портала недоступны' END
+  UNION ALL
+  -- Свой вход (migration/yandex/20261019_own_auth.sql): пароли и журнал входа — только с отметкой osp:auth;
+  -- пропуск служебных функций их не открывает; ни функции, ни представления на схему не ссылаются.
+  SELECT 12, to_regnamespace('osp_auth') IS NULL
+             OR ((SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'osp_auth' AND c.relkind IN ('r', 'p')
+                    AND NOT (c.relrowsecurity AND c.relforcerowsecurity
+                             AND (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) = 1
+                             AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'osp_auth_only'
+                                           AND pg_get_expr(p.polqual, p.polrelid) ~ '^\(?current_setting\(''application_name''::text, true\) = ''osp:auth''::text\)?$'
+                                           AND pg_get_expr(p.polwithcheck, p.polrelid) ~ '^\(?current_setting\(''application_name''::text, true\) = ''osp:auth''::text\)?$')
+                             AND c.relacl IS NULL)) = 0
+                 AND (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                      WHERE n.nspname = 'osp_auth' AND c.relkind IN ('v', 'm', 'f')) = 0
+                 AND (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                      WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+                        AND (p.prosrc ~ 'osp_auth' OR coalesce(p.proconfig::text, '') ~ 'osp:auth')) = 0
+                 AND (SELECT count(*) FROM pg_depend d JOIN pg_class rc ON rc.oid = d.refobjid AND d.refclassid = 'pg_class'::regclass
+                      JOIN pg_namespace rn ON rn.oid = rc.relnamespace AND rn.nspname = 'osp_auth'
+                      JOIN pg_rewrite rw ON d.classid = 'pg_rewrite'::regclass AND rw.oid = d.objid) = 0
+                 AND NOT has_schema_privilege('public', 'osp_auth', 'USAGE')),
+         CASE WHEN to_regnamespace('osp_auth') IS NULL
+              THEN 'своего входа ещё нет (миграция 20261019_own_auth не применялась)'
+              ELSE 'пароли своего входа закрыты: только отметка osp:auth, функциям и представлениям портала недоступны' END
+  UNION ALL
+  SELECT 13, to_regnamespace('osp_session') IS NULL
+             OR ((SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'osp_session' AND c.relkind IN ('r', 'p')
+                    AND NOT (c.relrowsecurity AND c.relforcerowsecurity AND c.relacl IS NULL
+                             AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'osp_internal'))) = 0
+                 AND NOT has_schema_privilege('public', 'osp_session', 'USAGE')),
+         CASE WHEN to_regnamespace('osp_session') IS NULL
+              THEN 'сессий своего входа ещё нет'
+              ELSE 'сессии своего входа: только служебным операциям, «всем» схема недоступна' END
 )
 SELECT CASE WHEN ok THEN 'OK ' ELSE 'FAIL ' END || what FROM checks ORDER BY n;
 
@@ -137,6 +171,27 @@ BEGIN
     PERFORM set_config('application_name', 'osp-rights-check', true), set_config('request.jwt.claims', '', true);
   END IF;
   PERFORM set_config('osp_check.vault_open', v_open, true);
+  -- Пароли своего входа: ни пропуск служебных функций, ни служебный ключ их не открывают.
+  v_open := '';
+  IF to_regnamespace('osp_auth') IS NOT NULL THEN
+    PERFORM set_config('application_name', 'osp:internal', true),
+            set_config('request.jwt.claims', '{"role":"service_role","osp_role":"service_role"}', true);
+    FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+             WHERE ns.nspname = 'osp_auth' AND c.relkind IN ('r', 'p') ORDER BY 1 LOOP
+      EXECUTE format('SELECT count(*) FROM (SELECT 1 FROM osp_auth.%I LIMIT 1) x', r.relname) INTO n;
+      IF n > 0 THEN v_open := v_open || ' ' || r.relname; END IF;
+    END LOOP;
+    PERFORM set_config('application_name', 'osp-rights-check', true), set_config('request.jwt.claims', '', true);
+  END IF;
+  -- Сессии: без пропуска (как запрос мимо шлюза) — ни одной строки.
+  IF to_regnamespace('osp_session') IS NOT NULL THEN
+    FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+             WHERE ns.nspname = 'osp_session' AND c.relkind IN ('r', 'p') ORDER BY 1 LOOP
+      EXECUTE format('SELECT count(*) FROM (SELECT 1 FROM osp_session.%I LIMIT 1) x', r.relname) INTO n;
+      IF n > 0 THEN v_open := v_open || ' osp_session.' || r.relname; END IF;
+    END LOOP;
+  END IF;
+  PERFORM set_config('osp_check.auth_open', v_open, true);
 END
 $live$;
 SELECT CASE WHEN current_setting('osp_check.open') = '' THEN 'OK ' ELSE 'FAIL ' END
@@ -145,3 +200,6 @@ SELECT CASE WHEN current_setting('osp_check.open') = '' THEN 'OK ' ELSE 'FAIL ' 
 SELECT CASE WHEN current_setting('osp_check.vault_open') = '' THEN 'OK ' ELSE 'FAIL ' END
        || 'с пропуском служебных функций и служебным ключом учётные записи osp_vault не читаются'
        || CASE WHEN current_setting('osp_check.vault_open') = '' THEN '' ELSE ': ОТКРЫТО' || current_setting('osp_check.vault_open') END;
+SELECT CASE WHEN current_setting('osp_check.auth_open') = '' THEN 'OK ' ELSE 'FAIL ' END
+       || 'пароли своего входа не читаются с пропуском служебных функций, сессии — без пропуска'
+       || CASE WHEN current_setting('osp_check.auth_open') = '' THEN '' ELSE ': ОТКРЫТО' || current_setting('osp_check.auth_open') END;

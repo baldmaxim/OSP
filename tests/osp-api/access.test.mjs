@@ -132,6 +132,15 @@ describe('osp-api: права объявлены на маршруте, закр
       'POST /api/fn/s3-presign delete': { method: 'POST', url: '/api/fn/s3-presign', payload: { action: 'delete' } },
       'POST /api/fn/cover-upload': { method: 'POST', url: '/api/fn/cover-upload', payload: {} },
       'GET /api/health': { method: 'GET', url: '/api/health' },
+      // Свой вход — здесь режим supabase: вход и учётки в Supabase Auth, маршруты своего входа отвечают 404 (кроме
+      // config и me). Права своего входа в режимах both и own — tests/osp-api/own-auth.test.mjs.
+      'GET /api/auth/config': { method: 'GET', url: '/api/auth/config' },
+      'GET /api/auth/me': { method: 'GET', url: '/api/auth/me' },
+      'POST /api/auth/login': { method: 'POST', url: '/api/auth/login', payload: {} },
+      'POST /api/auth/logout': { method: 'POST', url: '/api/auth/logout', payload: {} },
+      'POST /api/auth/password': { method: 'POST', url: '/api/auth/password', payload: {} },
+      'POST /api/auth/admin/users': { method: 'POST', url: '/api/auth/admin/users', payload: {} },
+      'POST /api/auth/admin/reset-password': { method: 'POST', url: '/api/auth/admin/reset-password', payload: {} },
       'GET /api/ready через nginx': { method: 'GET', url: '/api/ready', headers: { 'x-forwarded-for': '203.0.113.7' } },
     }
     const measured = {}
