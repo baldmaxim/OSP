@@ -72,7 +72,8 @@ create policy tenders_showcase on public.tenders for select to anon using (kind 
 create policy notes_own on public.notes for all to authenticated using (owner = auth.uid() or public.is_admin()) with check (owner = auth.uid());
 create policy audit_admin_read on public.audit for select to authenticated using ((select public.is_admin()));
 
-create materialized view public.tender_titles_mv as select id, lower(title) as title from public.tenders;
+-- pick — как выбор среди равных в kp_rates_registry_mv: пересчёт даёт другое значение при тех же таблицах.
+create materialized view public.tender_titles_mv as select id, lower(title) as title, random() as pick from public.tenders;
 create unique index tender_titles_mv_id on public.tender_titles_mv (id);
 create view public.tender_titles as select * from public.tender_titles_mv where (select public.is_employee());
 create function public.refresh_titles() returns void language plpgsql security definer set search_path = public as $$
@@ -100,6 +101,11 @@ insert into public.tenders select g, 'Тендер ' || g, case when g % 4 = 0 t
 insert into public.notes select g, case when g % 2 = 0 then '${ANNA}' else '${BORIS}' end::uuid, 'заметка ' || g from generate_series(1, 10) g;
 insert into public.notices select g, 'Объявление ' || g, g * 1.5, 'c' || g, g % 3 = 0 from generate_series(1, 30) g;
 refresh materialized view public.tender_titles_mv;
+-- Настройки портала; отметку пересчёта реестра пишет refresh_rates_registry() по расписанию.
+create table public.app_settings(key text primary key, value jsonb, updated_at timestamptz not null);
+alter table public.app_settings enable row level security;
+insert into public.app_settings values ('rates_registry_refreshed_at', '{}', '2026-10-01 00:00:00+00'),
+  ('tenders_drive_folder', '"https://drive.example/folder"', '2026-10-01 00:00:00+00');
 `
 
 describe('Перенос под одну учётку: правила действуют на владельца, соседи не тронуты', { skip, timeout: 900000 }, () => {
@@ -196,8 +202,17 @@ describe('Перенос под одну учётку: правила дейст
     const loaded = run('load.sh', [envFile, dump, '--status', 'rehearsal', '--single-owner'])
     assert.equal(loaded.status, 0, loaded.all)
     assert.match(loaded.stdout, /Затем — права под одну учётку: bash migration\/target\/rights\.sh/)
+    // Как на сервере после загрузки: пересчёт реестра по расписанию — представление выбрало среди равных
+    // иначе, отметка пересчёта сдвинулась. Данные людей те же — сверка проходит.
+    admin("refresh materialized view public.tender_titles_mv; update public.app_settings set value = '\"later\"', updated_at = now() where key = 'rates_registry_refreshed_at'")
     const verified = run('verify.sh', [envFile, dump])
     assert.equal(verified.status, 0, verified.all)
+    // Любая другая строка настроек сверяется: изменённая — расхождение.
+    admin("update public.app_settings set value = '\"changed\"' where key = 'tenders_drive_folder'")
+    const changed = run('verify.sh', [envFile, dump])
+    assert.equal(changed.status, 4, changed.all)
+    assert.match(changed.stdout, /FAIL контрольные суммы данных: расхождений — 1 .*app_settings/)
+    admin("update public.app_settings set value = '\"https://drive.example/folder\"' where key = 'tenders_drive_folder'")
 
     const rights = run('rights.sh', [envFile, dump])
     assert.equal(rights.status, 0, rights.all)

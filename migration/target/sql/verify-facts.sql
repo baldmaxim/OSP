@@ -29,11 +29,28 @@ from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public' and c.relkind in ('r', 'p', 'm') and not c.relispartition
 order by c.relname;
 
+--    Материализованное представление с уникальным индексом сверяется по колонкам этого индекса — по составу
+--    строк. Его содержимое строится заново из таблиц (они сверены выше) по определению (сверено в разделе 3),
+--    а выбор строки среди равных по порядку определение может не задавать: у kp_rates_registry_mv при
+--    равной дате КП попадает любое из предложений (supabase/migrations/20261015_rates_registry_deterministic.sql),
+--    и эталон с базой выбирают по-разному. Без уникального индекса — целиком, как таблица.
+--    В app_settings не сверяется отметка пересчёта реестра (rates_registry_refreshed_at): её пишет
+--    refresh_rates_registry(), а не люди, — по расписанию и на эталоне, и в базе.
 select 'sum' || E'\t' || c.relname || E'\t'
     || (xpath('/row/h/text()', query_to_xml(format(
-         'select md5(coalesce(string_agg(md5(t::text), '''' order by md5(t::text) collate "C"), '''')) as h from public.%I t', c.relname),
+         'select md5(coalesce(string_agg(md5(%1$s::text), '''' order by md5(%1$s::text) collate "C"), '''')) as h from public.%2$I t%3$s',
+         coalesce(k.expr, 't'), c.relname,
+         case when c.relname = 'app_settings' then ' where t.key is distinct from ''rates_registry_refreshed_at''' else '' end),
          false, true, '')))[1]::text
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+left join lateral (
+  select 'row(' || string_agg('t.' || quote_ident(a.attname), ', ' order by u.ord) || ')' as expr
+  from (select i.indkey from pg_index i
+        where i.indrelid = c.oid and i.indisunique and i.indpred is null and i.indexprs is null
+        order by i.indexrelid::regclass::text limit 1) ix
+  cross join lateral unnest(ix.indkey::int2[]) with ordinality u(attnum, ord)
+  join pg_attribute a on a.attrelid = c.oid and a.attnum = u.attnum
+) k on c.relkind = 'm'
 where n.nspname = 'public' and c.relkind in ('r', 'p', 'm') and not c.relispartition
 order by c.relname;
 
