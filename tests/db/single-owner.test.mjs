@@ -136,12 +136,13 @@ describe('Права под одну учётку на копии прода: ц
         ['посторонняя учётка', '00000000-0000-4000-8000-00000000dead', 'authenticated'], ['аноним', null, 'anon']]
       if (users.unapproved) kinds.push(['неодобренный', users.unapproved, 'authenticated'])
       const tables = Object.keys(ALLOW.tables).sort()
-      // Представления из миграций-кандидатов: в список шлюза они входят заранее (scripts/build-db-allow.mjs),
-      // а в копии прода появятся после применения миграции. Пока их нет — шлюз отвечает «не найдено» и
-      // строк не отдаёт; больше ничего в списке без таблицы в базе быть не может.
-      const candidateViews = new Set(candidateMigrations().flatMap((f) =>
+      // Таблицы и представления из миграций-кандидатов: в список шлюза они входят заранее
+      // (scripts/build-db-allow.mjs), а в копии прода появятся после применения миграции. Пока их нет —
+      // шлюз отвечает «не найдено» и строк не отдаёт; больше ничего в списке без таблицы в базе быть не может.
+      const candidateRelations = new Set(candidateMigrations().flatMap((f) =>
         [...fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', f), 'utf8')
-          .matchAll(/create\s+(?:or\s+replace\s+)?view\s+(?:public\.)?"?([a-z_][a-z0-9_]*)/gi)].map((m) => m[1].toLowerCase())))
+          .matchAll(/create\s+(?:(?:or\s+replace\s+)?view|table(?:\s+if\s+not\s+exists)?)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)/gi)]
+          .map((m) => m[1].toLowerCase())))
       const pending = []
       const differ = []
       const closedByGateway = []
@@ -154,13 +155,15 @@ describe('Права под одну учётку на копии прода: ц
         for (const t of tables) {
           // Первая строка и точное число — как считает страницы портал; при отказе в ответе есть код.
           const res = await client.from(t).select('*', { count: 'exact' }).range(0, 0)
+          const allowed = (ALLOW.tables[t][role] || []).includes('select')
           if (!(t in want)) {
-            assert.ok(candidateViews.has(t), `${t}: в списке шлюза, но нет ни в копии, ни в миграциях-кандидатах`)
-            assert.ok(res.error && res.status === 404 && res.error.code === 'PGRST205', `${kind} / ${t}: шлюз должен ответить «не найдено»`)
+            assert.ok(candidateRelations.has(t), `${t}: в списке шлюза, но нет ни в копии, ни в миграциях-кандидатах`)
+            // Этому виду пользователя чтение не выдано — шлюз отказывает раньше, чем спросит базу.
+            if (!allowed) assert.ok(res.error && (res.status === 401 || res.status === 403), `${kind} / ${t}: шлюз должен отказать`)
+            else assert.ok(res.error && res.status === 404 && res.error.code === 'PGRST205', `${kind} / ${t}: шлюз должен ответить «не найдено»`)
             pending.push(`${kind} / ${t}`)
             continue
           }
-          const allowed = (ALLOW.tables[t][role] || []).includes('select')
           if (!allowed) {
             assert.ok(res.error && (res.status === 401 || res.status === 403), `${kind} / ${t}: шлюз должен отказать`)
             // Шлюз закрыл чтение, а база этому виду пользователя строки показала бы: держится только списком.

@@ -5,6 +5,7 @@
 #   bash deploy.sh rollback                    # вернуть предыдущий выпуск (его образы уже на сервере)
 #   bash deploy.sh status                      # что выложено и отвечает ли
 #   bash deploy.sh covers-copy <копия>.covers.csv  # обложки объектов из Supabase — в cloud.ru, журнал сверки
+#   bash deploy.sh larix probe | sync [--force] [--target db|supabase]  # договорные расценки из Larix.CPM
 #
 # Каталог выпуска собирает deploy/docker/build.sh на машине сборки; на сервере ничего не собирается.
 # Первый раз скрипт запускается из каталога выпуска; после установки он же (и neighbors.sh) лежит в
@@ -229,8 +230,19 @@ case "${1:-}" in
     [ "$rc" = 0 ] || { echo "ВНИМАНИЕ не все обложки сверены — причины выше; повторите после устранения" >&2; exit 4; }
     ;;
 
+  larix)
+    # Договорные расценки из Larix.CPM — ручные команды server/osp-api/src/larix-cli.js в образе выложенного
+    # выпуска, с настройками из secrets/osp-api.env: probe — только чтение (что отдаёт Larix, совпадают ли
+    # договоры); sync — внеочередная загрузка (--force — принять ответ, отложенный защитой). Логин, пароль и
+    # токен не печатаются. Выход: 0 — готово, 3 — отложено защитой, 4 — сбой.
+    case "${2:-}" in probe | sync) ;; *) die "укажите команду: bash deploy.sh larix probe | sync [--force] [--target db|supabase]" ;; esac
+    cur="$(release_of current)"
+    [ -n "$cur" ] || die "портал не выложен: сначала bash deploy.sh install <каталог выпуска>"
+    dc "$cur" run --rm --no-deps -T osp-api node src/larix-cli.js "${@:2}"
+    ;;
+
   *)
-    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | covers-copy <копия>.covers.csv" >&2
+    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | covers-copy <копия>.covers.csv | larix probe|sync" >&2
     exit 1
     ;;
 esac

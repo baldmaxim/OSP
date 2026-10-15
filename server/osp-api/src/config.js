@@ -1,3 +1,6 @@
+import { LARIX_DEFAULT_URL, LARIX_DEFAULTS, larixBaseUrl } from './lib/larixClient.js'
+import { LARIX_TARGETS } from './lib/larixSync.js'
+
 // Настройки osp-api — только из окружения (на VPS — файл EnvironmentFile службы, права 600).
 // Значения секретов никуда не выводятся: /api/health отдаёт лишь «задано / не задано».
 
@@ -21,6 +24,34 @@ export function parseRequired(raw) {
   }
   if (!names.includes('supabase')) throw new Error('OSP_API_REQUIRE: supabase обязателен — без него не работает ни один маршрут')
   return known.filter((n) => names.includes(n))
+}
+
+// Загрузка договорных расценок из Larix.CPM (src/lib/larixSync.js). Выключена, пока не задано LARIX_SYNC=1:
+// на прежнем сервере тот же код, и вторая загрузка в ту же базу не нужна. Включена, но настроена с
+// ошибкой — служба не запускается (выкладка откатится), а не молчит без загрузки.
+export function parseLarix(env, { dbUrl, supabaseUrl, supabaseServiceKey }) {
+  const list = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean)
+  const larix = {
+    sync: env.LARIX_SYNC === '1',
+    baseUrl: env.LARIX_BASE_URL || LARIX_DEFAULT_URL,
+    username: env.LARIX_USERNAME || '',
+    password: env.LARIX_PASSWORD || '',
+    appCode: env.LARIX_APP_CODE || 'cpm',
+    targets: list(env.LARIX_SYNC_TARGETS || 'db'),
+    maxBytes: Number(env.LARIX_MAX_BYTES) || LARIX_DEFAULTS.maxBytes,
+  }
+  if (!larix.sync) return larix
+  if (!larix.username || !larix.password) throw new Error('LARIX_SYNC=1: нужны LARIX_USERNAME и LARIX_PASSWORD')
+  larixBaseUrl(larix.baseUrl)
+  const unknown = larix.targets.filter((t) => !LARIX_TARGETS.includes(t))
+  if (!larix.targets.length || unknown.length) {
+    throw new Error(`LARIX_SYNC_TARGETS: допустимы ${LARIX_TARGETS.join(', ')} через запятую${unknown.length ? ` (неизвестно: ${unknown.join(', ')})` : ''}`)
+  }
+  if (larix.targets.includes('db') && !dbUrl) throw new Error('LARIX_SYNC_TARGETS=db: нужен OSP_DB_URL')
+  if (larix.targets.includes('supabase') && !(supabaseUrl && supabaseServiceKey)) {
+    throw new Error('LARIX_SYNC_TARGETS=supabase: нужны SUPABASE_URL и SUPABASE_SERVICE_ROLE_KEY')
+  }
+  return larix
 }
 
 export function loadConfig(env = process.env) {
@@ -66,6 +97,7 @@ export function loadConfig(env = process.env) {
     keepPreTransferFiles: env.OSP_KEEP_PRE_TRANSFER_FILES !== '0',
     // Пересчёт реестра расценок раз в 10 минут (в Supabase это делало расписание pg_cron).
     registryRefresh: env.OSP_REGISTRY_REFRESH === '1',
+    larix: parseLarix(env, { dbUrl: env.OSP_DB_URL || '', supabaseUrl: env.SUPABASE_URL || '', supabaseServiceKey: env.SUPABASE_SERVICE_ROLE_KEY || '' }),
     required: parseRequired(env.OSP_API_REQUIRE),
   }
 }
@@ -81,5 +113,6 @@ export function configuredParts(config) {
     db: Boolean(config.db?.url),
     token: Boolean(config.supabaseJwtSecret),
     gateway: Boolean(config.dbGateway?.upstream && config.dbGateway?.secret && config.dbGateway?.dbRole),
+    larix: Boolean(config.larix?.sync && config.larix.username && config.larix.password),
   }
 }

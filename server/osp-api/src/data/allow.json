@@ -392,6 +392,16 @@
         "select"
       ]
     },
+    "larix_contract_rates": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "larix_sync_runs": {
+      "authenticated": [
+        "select"
+      ]
+    },
     "object_areas": {
       "anon": [
         "select"

@@ -128,5 +128,335 @@
     "to": "all",
     "why": "новое представление: открытые тендеры для страницы без входа, только 11 публичных полей",
     "candidate": "20261016_public_tenders_view.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "admin",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "admin",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "admin",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "employee_full",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "employee_full",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "employee_full",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "employee_none",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "employee_none",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "employee_none",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "vors_only",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "vors_only",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "vors_only",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "contractor_own",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "contractor_own",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "contractor_own",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "contractor_noorg",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "contractor_noorg",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "contractor_noorg",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "unapproved",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "unapproved",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "unapproved",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "blocked",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "blocked",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "blocked",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "no_user_roles",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "no_user_roles",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "no_user_roles",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "anon",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "anon",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "anon",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "service_role",
+    "table": "larix_contract_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: договорные расценки из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "service_role",
+    "table": "larix_sync_runs",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал загрузок из Larix.CPM; строки — только с правом раздела «Реестр расценок» (osp_can), гостю — отказ; пишет только загрузка (служебный ключ)",
+    "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261018",
+    "class": "service_role",
+    "table": "larix_sync_stage",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
+    "candidate": "20261018_larix_contract_rates.sql"
   }
 ]

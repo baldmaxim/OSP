@@ -1,57 +1,24 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import * as XLSX from 'xlsx'
 import { db } from '../api'
 import FilterDropdown from '../components/FilterDropdown'
+import LarixRegistrySection from './LarixRegistrySection'
+import {
+  fmtMoney, fmtDate, fmtRefreshed, describeRegistryError, PAGE_SIZES, useDebounced,
+  applyInFilter, fetchAllRows, downloadXlsx, todayStamp,
+} from '../utils/ratesRegistry'
 import './RatesRegistryPage.css'
 
 // task 356/354/411: «Реестр расценок» — общий список расценок из разных источников.
 //   1) От подрядчиков (КП) — представление kp_rates_registry (дедуп на стороне БД).
-//   2) ДП и ДС — в разработке. 3) Снабжение СУ-10 — в разработке.
+//   2) ДП и ДС — в разработке. 3) Снабжение СУ-10 — supply_rates_registry.
+//   4) Договорные расценки (Larix) — таблица larix_contract_rates, загрузка из Larix.CPM раз в день
+//      (server/osp-api/src/lib/larixSync.js), вкладка — LarixRegistrySection.
 //
 // task 411: всё серверное — пагинация (.range + count), фильтры (.eq/.gte/.lte),
 // поиск (.ilike по триграммному индексу), сортировка (.order). В браузер грузится
 // только текущая страница, а не весь реестр.
 
-// Один форматтер на модуль: конструктор Intl.NumberFormat дорогой, а вызывается на каждую ячейку.
-const MONEY_FMT = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
-const fmtMoney = (n) => {
-  if (n == null || n === '' || isNaN(n)) return ''
-  return MONEY_FMT.format(n)
-}
-const fmtDate = (iso) => {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('ru-RU')
-}
-// Отметка свежести реестра. Сегодняшнее время показываем без даты — так короче
-// и сразу понятно, насколько давно был пересчёт.
-const fmtRefreshed = (iso) => {
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return '—'
-  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-  const isToday = d.toDateString() === new Date().toDateString()
-  return isToday ? time : `${d.toLocaleDateString('ru-RU')} ${time}`
-}
-
-// Понятное сообщение вместо «сырой» ошибки Postgres. Реестр опирается на
-// представления БД (kp_rates_registry / supply_rates_registry и т.д.) — если
-// миграция ещё не применена, вью нет и запрос падает с 42P01; на больших
-// выборках точный count может упереться в statement_timeout (57014).
-const describeRegistryError = (err) => {
-  const code = err?.code
-  const msg = String(err?.message || '')
-  if (code === '42P01' || /does not exist|не существует|relation .* does not exist/i.test(msg)) {
-    return 'Реестр расценок ещё не настроен в базе данных: не найдено нужное представление. Обратитесь к администратору — требуется применить миграции реестра (kp_rates_registry / supply_rates_registry).'
-  }
-  if (code === '57014' || /statement timeout|canceling statement/i.test(msg)) {
-    return 'Запрос к реестру не успел выполниться из-за большого объёма данных. Уточните фильтры (объект, тендер или наименование), чтобы сузить выборку, либо повторите попытку.'
-  }
-  return msg || 'Не удалось загрузить реестр'
-}
-
-const PAGE_SIZES = [50, 100, 250]
 // Сопоставление UI-сортировки → колонке представления.
 const SORT_COLUMN = {
   name: 'item_name',
@@ -59,55 +26,6 @@ const SORT_COLUMN = {
   date: 'proposal_date',
   tender: 'tender_desc',
   counterparty: 'counterparty_name',
-}
-
-// Локальный debounce-хук (для поиска).
-function useDebounced(value, delay) {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delay)
-    return () => clearTimeout(t)
-  }, [value, delay])
-  return debounced
-}
-
-// Фильтр множественного выбора → .in(). Пустой выбор = фильтр не применён.
-// Если выбрано ВСЁ, предикат тоже не добавляем: результат тот же, но длинный список id
-// раздул бы URL запроса до отказа (эта грабля уже ловилась в задаче 402).
-function applyInFilter(q, column, values, totalOptions) {
-  if (!values || values.length === 0) return q
-  if (totalOptions > 0 && values.length >= totalOptions) return q
-  return q.in(column, values)
-}
-
-// Экспорт в Excel учитывает текущие фильтры. Данные грузятся ПОСТРАНИЧНО: Supabase
-// по умолчанию отдаёт максимум 1000 строк, а выгрузка всей базы — это тысячи строк
-// (та же грабля, что в счётчиках КП). makeQuery(from, to) должен вернуть готовый
-// query-builder с .range(from, to).
-async function fetchAllRows(makeQuery) {
-  const PAGE = 1000
-  const all = []
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await makeQuery(from, from + PAGE - 1)
-    if (error) throw error
-    if (data?.length) all.push(...data)
-    if (!data || data.length < PAGE) break
-  }
-  return all
-}
-
-function downloadXlsx(headers, dataRows, sheetName, fileName, colWidths) {
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
-  if (colWidths) ws['!cols'] = colWidths.map(w => ({ wch: w }))
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, sheetName)
-  XLSX.writeFile(wb, fileName)
-}
-
-function todayStamp() {
-  const d = new Date()
-  const p = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
 const SELECT_COLS =
@@ -467,7 +385,7 @@ function SupplyRegistrySection() {
 }
 
 function RatesRegistryPage() {
-  const [topTab, setTopTab] = useState('kp')          // 'kp' | 'dp_ds' | 'supply'
+  const [topTab, setTopTab] = useState('kp')          // 'kp' | 'dp_ds' | 'supply' | 'larix'
   const [kindTab, setKindTab] = useState('materials') // 'materials' | 'works'
 
   // Фильтры. Объект/Подрядчик/Тендер — множественный выбор (пустой массив = не применён).
@@ -753,22 +671,27 @@ function RatesRegistryPage() {
         <h2 className="rr-title">Реестр расценок</h2>
         {/* Реестр считается заранее (материализованные представления, миграция
             20260902) и обновляется по расписанию. Кнопка — чтобы не ждать
-            расписания после загрузки новых КП. */}
-        <div className="rr-refresh">
-          <span className="rr-refresh-stamp">
-            {refreshedAt ? `Данные на ${fmtRefreshed(refreshedAt)}` : 'Обновляется по расписанию'}
-          </span>
-          <button
-            type="button"
-            className="rr-refresh-btn"
-            onClick={handleRefreshRegistry}
-            disabled={refreshing}
-            title="Пересчитать реестр по текущим данным тендеров"
-          >{refreshing ? 'Обновление…' : '↻ Обновить'}</button>
-        </div>
-        <div className="rr-counter" title="Найдено строк в выбранной вкладке (с учётом фильтров)">
-          {totalCount}
-        </div>
+            расписания после загрузки новых КП. У вкладки Larix свои данные и своя
+            отметка свежести (загрузка раз в день) — там этот блок не показываем. */}
+        {topTab !== 'larix' && (
+          <>
+            <div className="rr-refresh">
+              <span className="rr-refresh-stamp">
+                {refreshedAt ? `Данные на ${fmtRefreshed(refreshedAt)}` : 'Обновляется по расписанию'}
+              </span>
+              <button
+                type="button"
+                className="rr-refresh-btn"
+                onClick={handleRefreshRegistry}
+                disabled={refreshing}
+                title="Пересчитать реестр по текущим данным тендеров"
+              >{refreshing ? 'Обновление…' : '↻ Обновить'}</button>
+            </div>
+            <div className="rr-counter" title="Найдено строк в выбранной вкладке (с учётом фильтров)">
+              {totalCount}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Верхние табы — источники расценок */}
@@ -788,6 +711,11 @@ function RatesRegistryPage() {
           onClick={() => setTopTab('supply')}>
           Расценки от снабжения СУ-10
         </button>
+        <button type="button" role="tab" aria-selected={topTab === 'larix'}
+          className={`rr-top-tab ${topTab === 'larix' ? 'active' : ''}`}
+          onClick={() => setTopTab('larix')}>
+          Договорные расценки (Larix)
+        </button>
       </div>
 
       {topTab === 'dp_ds' ? (
@@ -800,6 +728,8 @@ function RatesRegistryPage() {
         </div>
       ) : topTab === 'supply' ? (
         <SupplyRegistrySection />
+      ) : topTab === 'larix' ? (
+        <LarixRegistrySection />
       ) : (
         <>
           {/* Фильтры — все применяются на стороне БД */}

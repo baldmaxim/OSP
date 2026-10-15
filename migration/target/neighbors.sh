@@ -21,7 +21,13 @@ for bin in psql node; do command -v "$bin" >/dev/null || { echo "Нужен $bin
 target_conn "$ENV_FILE" || exit 1
 export PGAPPNAME=osp-neighbors
 mkdir -p "$REPORT_DIR"; chmod 700 "$REPORT_DIR"
-NOW="$REPORT_DIR/neighbors-$(date -u +%Y%m%d-%H%M%S).tsv"
+# Снимок для сравнения — под своим именем: с тем же, что у снимка --save той же секунды, он затёр бы точку
+# отсчёта (быстрая миграция между --save и --compare) и сравнивать стало бы не с чем.
+if [ "$MODE" = --save ]; then
+  NOW="$REPORT_DIR/neighbors-$(date -u +%Y%m%d-%H%M%S).tsv"
+else
+  NOW="$REPORT_DIR/.neighbors-now-$$.tsv"
+fi
 if ! (umask 077; psql -X -q -At -F $'\t' -f "$HERE/sql/neighbors.sql" > "$NOW" 2>"$NOW.err"); then
   echo "FAIL нет подключения или снимок не снят: $(head -n 1 "$NOW.err" | target_mask | cut -c1-200)"
   rm -f "$NOW" "$NOW.err"; exit 2
@@ -32,7 +38,7 @@ if [ "$MODE" = --save ]; then
   echo "Файл: ${NOW#"$PWD"/} (в нём только отпечатки имён, номера и размеры)"
   exit 0
 fi
-PREV="$(ls -1 "$REPORT_DIR"/neighbors-*.tsv 2>/dev/null | grep -v "$(basename "$NOW")" | sort | tail -n 1 || true)"
+PREV="$(ls -1 "$REPORT_DIR"/neighbors-*.tsv 2>/dev/null | sort | tail -n 1 || true)"
 if [ -z "$PREV" ]; then
   echo "FAIL прежнего снимка нет: сначала --save (до работ)"; rm -f "$NOW"; exit 3
 fi

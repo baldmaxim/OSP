@@ -17,3 +17,9 @@ export const LARIX_LINK_LABEL = `Путь к ${LARIX_NAME}`
 export const larixLink = (doc) => String(doc?.[LARIX_LINK_FIELD] ?? '').trim()
 
 export const isInLarix = (doc) => larixLink(doc) !== ''
+
+// Карточка договора в Larix по его номеру (contract_id из «ВОР по договорам»). Тот же вид ссылки, что
+// вписывают в «Путь к Larix.CPM»; по ней загрузка Larix находит наш договор (larix_sync_finish).
+export const LARIX_WEB_URL = 'https://cpm.su10.larix.ru'
+export const larixContractUrl = (contractId) =>
+  (Number.isSafeInteger(Number(contractId)) && Number(contractId) > 0 ? `${LARIX_WEB_URL}/contract/${Number(contractId)}` : null)

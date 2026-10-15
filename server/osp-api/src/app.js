@@ -35,6 +35,8 @@ import { registerDbGateway, createInternalTokens, createRemoteVerifier } from '.
 import { createAuthAdmin, createAuthUsersMirror } from './lib/authUsers.js'
 import { createWriteBarrier } from './lib/writeBarrier.js'
 import { createLoadStatus, isFinalLoad } from './lib/loadStatus.js'
+import { createLarixClient } from './lib/larixClient.js'
+import { createLarixSync, dbTarget, supabaseTarget } from './lib/larixSync.js'
 
 // Список разрешённого шлюзу данных — выдача прав прода как есть (scripts/build-db-allow.mjs).
 const ALLOW = JSON.parse(fs.readFileSync(new URL('./data/allow.json', import.meta.url), 'utf8'))
@@ -77,6 +79,32 @@ export const defaultDeps = {
 }
 
 const SERVER_AUTH = { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+// Вызов функции загрузки Larix в Supabase ждём не дольше минуты: у клиента supabase-js своего предела нет.
+const LARIX_SUPABASE_TIMEOUT_MS = 60_000
+
+// Базы, в которые пишет загрузка Larix (LARIX_SYNC_TARGETS), — для службы и для src/larix-cli.js.
+export function buildLarixTargets(config, { db, deps = defaultDeps }) {
+  const targets = []
+  if (config.larix.targets.includes('db')) {
+    if (!db) throw new Error('LARIX_SYNC_TARGETS=db: нет подключения к своей базе (OSP_DB_URL)')
+    targets.push(dbTarget(db))
+  }
+  if (config.larix.targets.includes('supabase')) {
+    const client = deps.createSupabase(config.supabaseUrl, config.supabaseServiceKey, {
+      auth: SERVER_AUTH,
+      global: {
+        fetch: (input, init = {}) => {
+          const timeout = AbortSignal.timeout(LARIX_SUPABASE_TIMEOUT_MS)
+          return fetch(input, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout })
+        },
+      },
+    })
+    targets.push(supabaseTarget(client))
+  }
+  return targets
+}
+
+export const larixSecrets = (config) => [config.larix.password, config.larix.username, config.supabaseServiceKey]
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 
 function withTimeout(promise, ms) {
@@ -251,6 +279,21 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     }, REGISTRY_REFRESH_MS)
     timer.unref()
     app.addHook('onClose', async () => clearInterval(timer))
+  }
+
+  // Договорные расценки из Larix.CPM: раз в день в выбранные базы (src/lib/larixSync.js). Когда пора —
+  // решает база; такт раз в 5 минут лишь спрашивает. Сбой Larix на готовность службы не влияет.
+  if (config.larix?.sync) {
+    const larixSync = createLarixSync({
+      client: (deps.createLarixClient || createLarixClient)(config.larix),
+      targets: buildLarixTargets(config, { db, deps }),
+      log: app.log,
+      secrets: larixSecrets(config),
+      options: deps.larixOptions,
+    })
+    const stopLarix = larixSync.start({ isReadOnly })
+    app.addHook('onClose', async () => stopLarix())
+    app.decorate('larixSync', larixSync)
   }
 
   const limiters = {

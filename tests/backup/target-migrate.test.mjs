@@ -277,4 +277,14 @@ describe('Миграции базы нового портала: правила 
     assert.match(res.stdout, /база не закреплена или это другая база — ничего не изменено/)
     assert.equal(admin("select to_regnamespace('osp_meta') is null and (select count(*) from keep_me) = 50", 'neighbour_db'), 't')
   })
+
+  it('сброс репетиции после миграций: созданное миграцией — в перечне, база пустеет целиком', () => {
+    assert.equal(admin("select count(*) from osp_meta.manifest where schema = 'public' and name in ('tender_tags', 'tender_tag_count')"), '2',
+      'таблица и функция из миграции записаны в перечень загрузки')
+    const res = run('reset.sh', [envFile, '--yes-drop-rehearsal'])
+    assert.equal(res.status, 0, res.all)
+    assert.equal(admin("select to_regclass('public.tender_tags') is null and to_regclass('public.tenders') is null and to_regnamespace('osp_meta') is null"), 't')
+    assert.equal(admin("select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname = 'tender_tag_count'"), '0')
+    assert.equal(admin('select count(*) from keep_me', 'neighbour_db'), '50', 'соседняя база не тронута')
+  })
 })

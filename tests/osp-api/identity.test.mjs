@@ -351,7 +351,7 @@ describe('osp-api: вход без обращения к Supabase на кажд�
     await employee(token(U.blocked))
     await approved(projectKey('anon'))
     const health = await app.inject({ method: 'GET', url: '/api/health' })
-    assert.deepEqual(health.json().configured, { supabase: true, supabaseService: true, s3: false, anthropic: false, rates: false, db: true, token: true, gateway: false })
+    assert.deepEqual(health.json().configured, { supabase: true, supabaseService: true, s3: false, anthropic: false, rates: false, db: true, token: true, gateway: false, larix: false })
     const ready = await app.inject({ method: 'GET', url: '/api/ready' })
     await makeApp({ db: { url: `postgres://api_login:${DB_PASSWORD}@127.0.0.1:9/psdc_test`, caFile: '', poolMax: 2, secondLockRole: '' } })
     const failed = await employee(bearer)

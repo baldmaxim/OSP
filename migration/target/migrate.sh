@@ -19,6 +19,8 @@
 #      В той же транзакции, до COMMIT: проверка прав под одну учётку (sql/rights-check-body.sql — та же,
 #      что у rights.sh --check), проверка самой миграции (<имя>.check.sql, строки «OK …» / «FAIL …») и
 #      запись в osp_meta.schema_migrations. Хоть один FAIL или ошибка — откат, следующие не применяются.
+#      Созданные миграцией таблицы, последовательности и функции дописываются в перечень загрузки
+#      (osp_meta.manifest) — по нему reset.sh убирает репетицию целиком.
 #   4. Сравнение соседей с первым снимком (neighbors.sh --compare).
 # В вывод и отчёт (<PROBE_REPORT_DIR или migration/target/reports>/migrate-<время>.txt) — только имена
 # миграций, строки проверок и числа. Выход: 0 — применено или нечего; 1 — ошибка запуска; 2 — нет
@@ -157,6 +159,32 @@ SET LOCAL application_name = 'osp:internal';
 \set osp_oks `grep -c '^OK' "$OSP_CHECKS_FILE" || true`
 SELECT (:osp_fails = 0 AND :osp_oks > 0) AS osp_commit \gset
 \if :osp_commit
+-- Созданное миграцией — в перечень загрузки (как load-end.sql): иначе reset.sh примет новые таблицы,
+-- последовательности и функции за чужие и откажет. search_path пустой — так перечень и сверяется.
+SELECT pg_catalog.set_config('search_path', '', true);
+INSERT INTO osp_meta.manifest (kind, schema, name, detail)
+SELECT 'relation', n.nspname::text, c.relname::text, c.relkind::text
+FROM pg_catalog.pg_class c
+JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname IN ('public', 'auth') AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'c')
+  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                  WHERE d.classid = 'pg_catalog.pg_class'::pg_catalog.regclass AND d.objid = c.oid AND d.deptype = 'e')
+UNION
+SELECT 'function', n.nspname::text, p.proname::text, pg_catalog.pg_get_function_identity_arguments(p.oid)
+FROM pg_catalog.pg_proc p
+JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname IN ('public', 'auth')
+  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                  WHERE d.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass AND d.objid = p.oid AND d.deptype = 'e')
+UNION
+SELECT 'type', n.nspname::text, t.typname::text, t.typtype::text
+FROM pg_catalog.pg_type t
+JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+WHERE n.nspname IN ('public', 'auth') AND t.typtype IN ('e', 'd', 'r')
+  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d
+                  WHERE d.classid = 'pg_catalog.pg_type'::pg_catalog.regclass AND d.objid = t.oid AND d.deptype = 'e')
+EXCEPT
+SELECT kind, schema, name, detail FROM osp_meta.manifest;
 INSERT INTO osp_meta.schema_migrations (name, sha256, tool_commit) VALUES (:'mig_name', :'mig_sha', :'tool_commit');
 COMMIT;
 \echo OSP_MIGRATE_COMMITTED

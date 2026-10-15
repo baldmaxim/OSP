@@ -5,3 +5,4 @@
 20261011_s3_documents_sha256.sql
 20261015_rates_registry_deterministic.sql
 20261016_public_tenders_view.sql
+20261018_larix_contract_rates.sql
