@@ -361,6 +361,13 @@ networks:
     const asset = docker(['compose', '-p', PROJECT, 'exec', '-T', 'osp-web', 'sh', '-c', 'ls /var/www/osp/assets | head -n 1']).stdout.trim()
     assert.match(https(`/assets/${asset}`, ['-D', '-', '-o', '/dev/null']).stdout, /cache-control: public, immutable/i)
     assert.equal(code(`https://osp.root.sx:${p443}/assets/no-such-file.js`), '404')
+    // Самоудаление service worker прежнего сайта (public/sw.js): скрипт, без кэша — браузер должен получить его.
+    const sw = https('/sw.js', ['-D', '-'])
+    assert.match(sw.stdout, /^HTTP\/\S+ 200/m)
+    assert.match(sw.stdout, /content-type: (text|application)\/javascript/i)
+    assert.match(sw.stdout, /cache-control: no-cache, no-store, must-revalidate/i)
+    assert.ok(!/immutable/i.test(sw.stdout), '/sw.js не «неизменяемый на 30 дней»')
+    assert.match(sw.stdout, /registration\.unregister\(\)/)
     // /api: только по HTTPS, не кешируется, готовность снаружи закрыта.
     const health = https('/api/health', ['-D', '-'])
     assert.match(health.stdout, /"service":"osp-api"/)
