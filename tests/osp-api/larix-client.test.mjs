@@ -36,7 +36,7 @@ describe('Клиент Larix.CPM: вход, данные, защита логи�
   let mode = 'ok'
   before(async () => {
     larix = await startFakeLarix((req, res, body) => {
-      if (req.url === '/api-acs/users/login') {
+      if (req.url === '/api/login') {
         if (mode === 'deny') return json(res, 401, { message: `bad credentials for ${USER} / ${PASS}` })
         if (mode === 'login-redirect') { res.writeHead(307, { location: 'http://127.0.0.2:9/steal' }); return res.end() }
         if (mode === 'no-token') return json(res, 200, { ok: true })

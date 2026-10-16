@@ -195,7 +195,7 @@ await db.write(who, async (tx) => { await tx.query('update … set … where id 
 
 Не маршрут, а работа службы: вкладка «Договорные расценки (Larix)» реестра расценок читает таблицу
 `larix_contract_rates` (миграция `20261018`), служба раз в день наполняет её из Larix.CPM (метод «ВОР по
-договорам», `GET /api/contract/data/project_contract_boq` после входа `POST /api-acs/users/login`).
+договорам», `GET /api/contract/data/project_contract_boq` после входа `POST /api/login`).
 
 - **Когда.** Такт раз в 5 минут (первый — через минуту после запуска) спрашивает базу `larix_sync_begin`:
   пора ли. База отвечает «да» после 05:00 по Москве, если сегодня ещё не было удачной (или отложенной)

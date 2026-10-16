@@ -110,7 +110,7 @@ describe('Загрузка договорных расценок из Larix.CPM'
       const send = (status, obj) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)) }
       req.resume()
       req.on('end', () => {
-        if (req.url === '/api-acs/users/login') {
+        if (req.url === '/api/login') {
           return larixState.mode === 'deny' ? send(401, { message: `wrong ${USER}:${PASS}` }) : send(200, { access_token: TOKEN })
         }
         if (req.url === '/api/contract/data/project_contract_boq' && req.headers.authorization === `Bearer ${TOKEN}`) {

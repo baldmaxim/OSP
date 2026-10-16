@@ -13,7 +13,9 @@
 // Ошибка — LarixError с кодом из набора журнала загрузок: login | http | timeout | too_large | invalid.
 export const LARIX_HOSTS = ['cpm.su10.larix.ru']
 export const LARIX_DEFAULT_URL = 'https://cpm.su10.larix.ru'
-export const LARIX_LOGIN_PATH = '/api-acs/users/login'
+// Вход — как у веб-приложения Larix: POST <адрес>/api/login, тело { username, password } (UserLoginSchema;
+// лишнее app_code сервер пропускает), ответ { token, user, … }. Адрес /api-acs/users/login отвечает 404.
+export const LARIX_LOGIN_PATH = '/api/login'
 export const LARIX_BOQ_PATH = '/api/contract/data/project_contract_boq'
 export const LARIX_DEFAULTS = {
   loginTimeoutMs: 15_000,
