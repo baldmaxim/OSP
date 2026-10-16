@@ -1,6 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { db, auth } from '../api'
 import { ROLES, ROLE_LABELS, SECTIONS } from './roleConstants'
+import { useAvailableRoles } from './useAvailableRoles'
+
+// Справочник ролей для useAvailableRoles: системные первыми, затем по названию.
+const loadRoles = () => db.from('roles').select('key, label, is_system')
+  .order('is_system', { ascending: false })
+  .order('label', { ascending: true })
 
 // security fix: понятное сообщение при невозможности загрузить права (fail-closed).
 const ROLE_LOAD_ERROR = 'Не удалось загрузить права доступа. Обновите страницу или обратитесь к администратору.'
@@ -62,8 +68,8 @@ export function RoleProvider({ children }) {
   const [roleError, setRoleError] = useState(null)
   const [permissions, setPermissions] = useState({}) // { section: { can_view, can_edit } }
   const [userProfile, setUserProfile] = useState({ full_name: '' })
-  // Динамический справочник ролей из БД (таблица roles)
-  const [availableRoles, setAvailableRoles] = useState([])
+  // Динамический справочник ролей из БД (таблица roles): читается при входе и при смене пользователя
+  const [availableRoles, fetchAvailableRoles] = useAvailableRoles(user?.id ?? null, loadRoles)
 
   // ── Режим «посмотреть глазами роли» (только для администратора) ──────────
   // Администратору нужно проверять, что видит инженер, юрист или подрядчик, не
@@ -82,28 +88,6 @@ export function RoleProvider({ children }) {
       return null
     }
   })
-
-  const fetchAvailableRoles = useCallback(async () => {
-    try {
-      const { data, error } = await db
-        .from('roles')
-        .select('key, label, is_system')
-        .order('is_system', { ascending: false })
-        .order('label', { ascending: true })
-      if (error) throw error
-      setAvailableRoles(data || [])
-    } catch (err) {
-      console.warn('Не удалось загрузить справочник ролей (таблица roles?):', err.message)
-      // Фоллбэк: используем встроенные ROLE_LABELS
-      setAvailableRoles(Object.entries(ROLE_LABELS).map(([key, label]) => ({
-        key, label, is_system: true
-      })))
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchAvailableRoles()
-  }, [fetchAvailableRoles])
 
   // Сводный лейбл-маппинг: динамический из БД + статический фоллбэк
   const dynamicRoleLabels = availableRoles.reduce((acc, r) => {
