@@ -685,6 +685,14 @@ function TenderDetailPage() {
   // task 410: ленивые загрузки по вкладкам (один раз на тендер).
   //  • «История» → loadAuditLog;
   //  • «Расценки снабжения» / «Сравнение КП» → fetchSupplyRates (нужны для колонок снабжения).
+  // Таблица расценки снабжения: после первого открытия вкладки остаётся смонтированной (скрытой), чтобы
+  // возврат на вкладку не грузил всё заново и не терял незаконченный ввод.
+  const [supplyOpenedFor, setSupplyOpenedFor] = useState(null)
+  const onSupplyRates = useCallback((rows) => {
+    loadedTabsRef.current.add('supply')
+    setSupplyRates(rows)
+  }, [])
+
   useEffect(() => {
     if (!tenderId) return
     const loaded = loadedTabsRef.current
@@ -692,12 +700,16 @@ function TenderDetailPage() {
       loaded.add('history')
       loadAuditLog()
     }
-    if ((activeTab === 'supply' || activeTab === 'proposals') && !loaded.has('supply')) {
+    // Во вкладке «Расценки снабжения» цены грузит её таблица и отдаёт карточке (onSupplyRates) — второй
+    // загрузки тех же цен не нужно.
+    if (activeTab === 'proposals' && !loaded.has('supply')) {
       loaded.add('supply')
       fetchSupplyRates()
     }
+    if (activeTab === 'supply') setSupplyOpenedFor(tenderId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, tenderId])
+
 
   // task 259: загрузка сохранённой сметы тендера
   // task 366: paginated fetch to avoid PostgREST 1000-row default limit
@@ -2547,8 +2559,8 @@ function TenderDetailPage() {
         {/* Вкладка «Расценки снабжения» (task 398 → миграция 20261020): таблица расценки по позициям ВОР — та же,
             что у снабжения на его странице. Позиции загружаются сами (файлы «ВОРов и РД», иначе вкладка «ВОР»),
             цены вводятся в таблице или загружаются из Excel по ВОР (прежний разбор файла ниже). */}
-        {activeTab === 'supply' && (
-          <div className="estimate-section">
+        {(activeTab === 'supply' || supplyOpenedFor === tenderId) && (
+          <div className="estimate-section" style={activeTab !== 'supply' ? { display: 'none' } : undefined}>
             <div className="section-header">
               <h3>Расценки снабжения по материалам ВОР</h3>
             </div>
@@ -2560,10 +2572,12 @@ function TenderDetailPage() {
               style={{ display: 'none' }}
             />
             <SupplyPricingPanel
+              key={tenderId}
               tenderId={tenderId}
               estimateItems={estimateItems}
               variant="card"
-              onRatesChange={setSupplyRates}
+              active={activeTab === 'supply'}
+              onRatesChange={onSupplyRates}
               refreshToken={supplyRefreshToken}
               excelImport={canEditTenders ? { onImport: startSupplyExcelImport } : null}
             />

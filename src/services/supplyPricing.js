@@ -9,12 +9,12 @@
 // Отсюда — только чтение и запись с проверкой версии: правка со старой версией не проходит, и чужая цена
 // не перетирается молча.
 import { db } from '../api'
-import { fetchAllRows } from '../utils/fetchAllRows'
+import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { fetchFileBytes } from './s3'
 import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './tenderVorRd'
-import { isWorkbookFileName, readWorkbookBytes } from '../utils/vorMaterialsSheet'
+import { isWorkbookFileName, readMaterialsWorkbookBytes, readWorkbookBytes } from '../utils/vorMaterialsSheet'
 
 // Статусы тендера на материалы, после которых расценки только для чтения (как supply_rates_locked в базе).
 export const MATERIALS_LOCK_STATUSES = ['Завершён', 'Завершен']
@@ -60,27 +60,67 @@ const fail = (error) => { throw Object.assign(new Error(classifyError(error)?.me
 // id — тендер на материалы (обычный вход) или основной тендер (вход из карточки, если тендера на материалы
 // нет). Расценки привязаны к основному: mainId. Закрыто, если у основного есть неудалённые тендеры на
 // материалы и все «Завершён».
-export async function loadPricingContext(id) {
-  const { data: opened, error } = await db.from('tenders').select(TENDER_COLUMNS).eq('id', id).maybeSingle()
+async function loadTender(id) {
+  const { data, error } = await db.from('tenders').select(TENDER_COLUMNS).eq('id', id).maybeSingle()
   if (error) fail(error)
-  if (!opened) return null
-  const mainId = opened.tender_type === 'materials' ? (opened.parent_tender_id || opened.id) : opened.id
-  let main = opened
-  if (mainId !== opened.id) {
-    const res = await db.from('tenders').select(TENDER_COLUMNS).eq('id', mainId).maybeSingle()
-    if (res.error) fail(res.error)
-    main = res.data || null
-  }
-  const { data: kids, error: kidsError } = await db.from('tenders')
+  return data || null
+}
+
+async function loadMaterialsTenders(mainId) {
+  const { data, error } = await db.from('tenders')
     .select(TENDER_COLUMNS)
     .eq('tender_type', 'materials')
     .is('deleted_at', null)
     .or(`parent_tender_id.eq.${mainId},id.eq.${mainId}`)
-  if (kidsError) fail(kidsError)
-  const materialsTenders = kids || []
+  if (error) fail(error)
+  return data || []
+}
+
+const mainIdOf = (opened) => (opened.tender_type === 'materials' ? (opened.parent_tender_id || opened.id) : opened.id)
+
+function buildContext(opened, main, materialsTenders) {
   const materials = opened.tender_type === 'materials' ? opened : (materialsTenders[0] || null)
   const locked = materialsTenders.length > 0 && materialsTenders.every((t) => MATERIALS_LOCK_STATUSES.includes(t.status))
-  return { opened, main, mainId, materials, materialsTenders, locked, orphan: opened.tender_type === 'materials' && !opened.parent_tender_id }
+  return {
+    opened, main, mainId: mainIdOf(opened), materials, materialsTenders, locked,
+    orphan: opened.tender_type === 'materials' && !opened.parent_tender_id,
+  }
+}
+
+// Основной тендер и тендеры на материалы — одновременно, после открытого тендера.
+async function contextOf(opened) {
+  const mainId = mainIdOf(opened)
+  const [main, kids] = await Promise.all([mainId === opened.id ? opened : loadTender(mainId), loadMaterialsTenders(mainId)])
+  return buildContext(opened, main, kids)
+}
+
+export async function loadPricingContext(id) {
+  const opened = await loadTender(id)
+  return opened ? contextOf(opened) : null
+}
+
+// Всё для таблицы расценки по основному тендеру — одновременно: файлы ВОР, списки позиций, цены, последний
+// номер журнала и (если карточка их не дала) строки вкладки «ВОР».
+export async function loadPricingData(mainId, { withItems = false } = {}) {
+  const [files, sources, rates, logId, items] = await Promise.all([
+    loadVorFiles(mainId), loadSources(mainId), loadRates(mainId), loadLogMarker(mainId),
+    withItems ? loadEstimateItems(mainId) : null,
+  ])
+  return { files, sources, rates, logId, items }
+}
+
+// Открытие таблицы за два шага к серверу вместо цепочки: тендер, затем всё остальное разом. ctx уже есть
+// (страница загрузила шапку) — сразу данные. Ошибка данных (например, «таблиц ещё нет») не теряет тендер:
+// { ctx, error }.
+export async function loadPricingBundle(id, { ctx = null, withItems = false } = {}) {
+  const opened = ctx ? ctx.opened : await loadTender(id)
+  if (!opened) return { ctx: null }
+  const mainId = ctx ? ctx.mainId : mainIdOf(opened)
+  const [c, data] = await Promise.all([
+    ctx || contextOf(opened),
+    loadPricingData(mainId, { withItems }).catch((error) => ({ error })),
+  ])
+  return { ctx: c, ...data }
 }
 
 // ── Источники позиций ───────────────────────────────────────────────────────────────────────────────
@@ -96,17 +136,26 @@ export async function loadVorFiles(mainId) {
   return (data || []).filter((d) => isWorkbookFileName(d.file_name))
 }
 
+// Вся книга — для окна «Указать лист и колонки» (выбор листа).
 export async function fetchVorWorkbook(doc) {
   return readWorkbookBytes(await fetchFileBytes(doc.s3_key))
 }
+
+// Автозагрузка: скачивание и разбор — по отдельности. Не скачалось — сеть или хранилище (повторить можно);
+// не разобралось — сам файл (повторять незачем, причина запоминается).
+export async function downloadVorFile(doc) {
+  return fetchFileBytes(doc.s3_key)
+}
+export { readMaterialsWorkbookBytes }
 
 // Признак версии источника: файл — id и время загрузки; вкладка «ВОР» — число строк и время загрузки.
 export { fileVersion, estimateVersion } from '../utils/supplyAutoImport.js'
 
 // Строки вкладки «ВОР» карточки (только нужные поля) — для позиций из ВОР и признаков его версии.
+// Страницы — параллельно (у больших ВОР десятки тысяч строк).
 export async function loadEstimateItems(mainId) {
-  return fetchAllRows((from, to) => db.from('tender_estimate_items')
-    .select('id, estimate_name, code, cost_name, unit, material_consumption, is_section, created_at')
+  return fetchAllRowsParallel((from, to, withCount) => db.from('tender_estimate_items')
+    .select('id, estimate_name, code, cost_name, unit, material_consumption, is_section, created_at', withCount ? { count: 'exact' } : undefined)
     .eq('tender_id', mainId)
     .order('id', { ascending: true })
     .range(from, to))
@@ -214,14 +263,45 @@ export async function clearRate(rate) {
 
 // ── Синхронизация и история ─────────────────────────────────────────────────────────────────────────
 // Признак «что-то изменилось»: последний номер в журнале расценок тендера и версии списков позиций.
+export async function loadLogMarker(mainId) {
+  const { data, error } = await db.from('tender_supply_rate_log').select('id')
+    .eq('tender_id', mainId).order('id', { ascending: false }).limit(1)
+  if (error) fail(error)
+  return data?.[0]?.id ?? 0
+}
+
+export const sourcesSignature = (sources) => (sources || []).map((s) => `${s.id}:${s.row_version}`).sort().join(',')
+
+export async function loadSourceVersions(mainId) {
+  const { data, error } = await db.from('tender_supply_sources').select('id, row_version').eq('tender_id', mainId)
+  if (error) fail(error)
+  return data || []
+}
+
 export async function loadChangeMarker(mainId) {
-  const [log, src] = await Promise.all([
-    db.from('tender_supply_rate_log').select('id').eq('tender_id', mainId).order('id', { ascending: false }).limit(1),
-    db.from('tender_supply_sources').select('id, row_version').eq('tender_id', mainId).order('id', { ascending: true }),
-  ])
-  if (log.error) fail(log.error)
-  if (src.error) fail(src.error)
-  return `${log.data?.[0]?.id ?? 0}|${(src.data || []).map((s) => `${s.id}:${s.row_version}`).join(',')}`
+  const [logId, src] = await Promise.all([loadLogMarker(mainId), loadSourceVersions(mainId)])
+  return { logId, sources: sourcesSignature(src) }
+}
+
+// Что менялось после номера fromId: id расценок (без повторов). Больше limit записей — null (перечитать всё).
+export async function loadChangedRateIds(mainId, fromId, limit = 1000) {
+  const { data, error } = await db.from('tender_supply_rate_log').select('id, rate_id')
+    .eq('tender_id', mainId).gt('id', fromId).order('id', { ascending: true }).limit(limit)
+  if (error) fail(error)
+  const rows = data || []
+  if (rows.length >= limit) return null
+  return { ids: [...new Set(rows.map((r) => r.rate_id))], lastId: rows.length ? rows[rows.length - 1].id : fromId }
+}
+
+// Текущие строки расценок по id (порциями — длинный .in() не проходит шлюз). Удалённых в ответе нет.
+export async function loadRatesByIds(mainId, ids) {
+  const out = []
+  for (const chunk of chunkList(ids)) {
+    const { data, error } = await db.from('tender_vor_supply_rates').select(RATE_COLUMNS).eq('tender_id', mainId).in('id', chunk)
+    if (error) fail(error)
+    out.push(...(data || []))
+  }
+  return out
 }
 
 export async function loadRateHistory(mainId, { rateId, estimateName, materialName }) {

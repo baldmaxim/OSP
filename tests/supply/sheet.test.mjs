@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
 import {
   findMaterialsSheet, detectMaterialsColumns, parseMaterialsSheet, readMaterialsFromWorkbook, parseVolume, isWorkbookFileName,
+  readMaterialsWorkbookBytes,
 } from '../../src/utils/vorMaterialsSheet.js'
 import { buildSupplyPositions, positionsFromEstimate, aggregateEstimate, isWorkItem } from '../../src/utils/vorMaterials.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
@@ -116,6 +117,47 @@ describe('Лист «Материалы» файла ВОР', () => {
     assert.ok(isWorkbookFileName('ВОР ОВ.XLSX'))
     assert.ok(isWorkbookFileName('a.xls') && isWorkbookFileName('a.xlsm'))
     assert.ok(!isWorkbookFileName('РД.pdf'))
+  })
+})
+
+describe('Чтение файла ВОР для автозагрузки — только нужные листы', () => {
+  const bytes = (sheets) => {
+    const wb = XLSX.utils.book_new()
+    for (const [name, aoa] of Object.entries(sheets)) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), name)
+    return XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+  }
+  const big = Array.from({ length: 3000 }, (_, i) => [`Работа ${i}`, 'м', i])
+  const file = bytes({
+    КП: big,
+    МАТЕРИАЛЫ: [['Стоимость материалов'], ['№ п/п', 'Наименование материала', 'Ед. изм.', 'Объем'], [1, 2, 3, 4], [1, 'Труба', 'м', 5]],
+    РАБОТЫ: big,
+    'Лист 7': [['Наименование', 'Кол-во'], ['Кран', 2]],
+  })
+
+  it('разбирается только лист «Материалы»; имена всех листов — для подсказки', () => {
+    const wb = readMaterialsWorkbookBytes(file)
+    assert.deepEqual(wb.SheetNames, ['КП', 'МАТЕРИАЛЫ', 'РАБОТЫ', 'Лист 7'])
+    assert.deepEqual(Object.keys(wb.Sheets), ['МАТЕРИАЛЫ'])
+    const r = readMaterialsFromWorkbook(wb)
+    assert.deepEqual(r.rows.map((x) => [x.name, x.unit, x.volume]), [['Труба', 'м', 5]])
+  })
+
+  it('лист из сохранённой карты колонок разбирается вместе с «Материалами»', () => {
+    const wb = readMaterialsWorkbookBytes(file, ['Лист 7', 'Нет такого'])
+    assert.deepEqual(Object.keys(wb.Sheets).sort(), ['Лист 7', 'МАТЕРИАЛЫ'])
+  })
+
+  it('листа «Материалы» нет — ни один лист не разбирается, причина — «нет листа» со списком листов', () => {
+    const wb = readMaterialsWorkbookBytes(bytes({ КП: big, РАБОТЫ: big }))
+    assert.deepEqual(Object.keys(wb.Sheets), [])
+    assert.deepEqual(readMaterialsFromWorkbook(wb), { error: 'no_sheet', sheetNames: ['КП', 'РАБОТЫ'] })
+  })
+
+  it('испорченная книга — исключение (автозагрузка запоминает «файл не читается»); не книга — «нет листа»', () => {
+    assert.throws(() => readMaterialsWorkbookBytes(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4, 5])))
+    // Текст (например, PDF с расширением .xlsx) SheetJS читает как таблицу из одного листа.
+    const wb = readMaterialsWorkbookBytes(new TextEncoder().encode('%PDF-1.4 не книга'))
+    assert.equal(readMaterialsFromWorkbook(wb).error, 'no_sheet')
   })
 })
 

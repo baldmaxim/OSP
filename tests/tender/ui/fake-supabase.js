@@ -6,6 +6,10 @@
 // искусственную «сетевую» задержку и учитывается в window.__supabaseStats.
 // window.__fakeTriggers[таблица](строка, прежняя) — подмена триггера «до записи» (расчёт в базе);
 // window.__fakeErrors[таблица] — ответ ошибкой на любой запрос к таблице (например, «таблицы нет»).
+// window.__fakeUnique[таблица] — колонки уникального ключа: вставка дубля отвечает 23505, как база.
+// window.__fakeAfter[таблица](op, строка, прежняя) — триггер «после записи» (журнал расценок).
+// window.__fakeFiles[s3_key] — содержимое файла (data: URL): хранилище отдаёт его по ссылке на скачивание;
+// window.__fakeFileRequests — какие файлы запрашивали.
 const LATENCY_MS = Number(new URLSearchParams(window.location.search).get('latency') || 120)
 
 const db = window.__fakeDb
@@ -30,6 +34,7 @@ function applyFilters(rows, filters) {
     if (f.op === 'eq') return String(r[f.col]) === String(f.val)
     if (f.op === 'is') return f.val === null ? r[f.col] == null : r[f.col] === f.val
     if (f.op === 'in') return f.val.map(String).includes(String(r[f.col]))
+    if (f.op === 'gt') return r[f.col] > f.val
     if (f.op === 'or') return f.conds.some((c) => (c.op === 'is' ? r[c.col] == null : String(r[c.col]) === c.val))
     return true
   }))
@@ -61,6 +66,7 @@ function builder(table) {
     eq(col, val) { q.filters.push({ op: 'eq', col, val }); return self },
     is(col, val) { q.filters.push({ op: 'is', col, val }); return self },
     in(col, val) { q.filters.push({ op: 'in', col, val }); return self },
+    gt(col, val) { q.filters.push({ op: 'gt', col, val }); return self },
     neq() { return self },
     not() { return self },
     // «a.eq.1,b.is.null» — как PostgREST; прочие операторы стенду не нужны.
@@ -99,6 +105,7 @@ async function run(q) {
   const rows = tableRows(q.table)
   const now = new Date().toISOString()
   const trigger = window.__fakeTriggers?.[q.table]
+  const after = window.__fakeAfter?.[q.table]
 
   if (q.op === 'select') {
     // Отфильтрованный и отсортированный набор кэшируется до следующей записи в
@@ -123,7 +130,8 @@ async function run(q) {
     return { data, count, error: null }
   }
 
-  if (q.op !== 'select') touch(q.table)
+  // Запись могла задеть и другие таблицы (триггер «после записи» пишет журнал) — кэш выборок сбрасывается весь.
+  if (q.op !== 'select') { touch(q.table); sortedCache.clear() }
 
   if (q.op === 'insert' || q.op === 'upsert') {
     const keys = q.onConflict ? q.onConflict.split(',').map((s) => s.trim()) : null
@@ -134,11 +142,17 @@ async function run(q) {
         const old = { ...existing }
         Object.assign(existing, input, { updated_at: now })
         trigger?.(existing, old)
+        after?.('update', existing, old)
         affected.push(existing)
       } else {
+        const unique = window.__fakeUnique?.[q.table]
+        if (unique && rows.some((r) => unique.every((k) => String(r[k]) === String(input[k])))) {
+          return { data: null, error: { code: '23505', message: `duplicate key value violates unique constraint (${unique.join(', ')})` } }
+        }
         const row = { id: uuid(), created_at: now, updated_at: now, ...input }
         trigger?.(row, null)
         rows.push(row)
+        after?.('insert', row, null)
         affected.push(row)
       }
     }
@@ -151,6 +165,7 @@ async function run(q) {
       const old = { ...r }
       Object.assign(r, q.patch, { updated_at: now })
       trigger?.(r, old)
+      after?.('update', r, old)
     }
     return { data: q.returning ? affected.map((r) => ({ ...r })) : null, error: null }
   }
@@ -158,6 +173,7 @@ async function run(q) {
   if (q.op === 'delete') {
     const doomed = new Set(applyFilters(rows, q.filters))
     db[q.table] = rows.filter((r) => !doomed.has(r))
+    for (const r of doomed) after?.('delete', null, r)
     return { data: q.returning ? [...doomed].map((r) => ({ ...r })) : null, error: null }
   }
   return { data: null, error: null }
@@ -166,7 +182,17 @@ async function run(q) {
 export const supabase = {
   from: (table) => builder(table),
   rpc: async () => ({ data: null, error: null }),
-  functions: { invoke: async () => ({ data: null, error: { message: 'Хранилище недоступно в стенде' } }) },
+  functions: {
+    invoke: async (name, opts = {}) => {
+      const key = opts.body?.s3_key
+      if (name === 's3-presign' && key && window.__fakeFiles?.[key]) {
+        window.__fakeFileRequests ||= []
+        window.__fakeFileRequests.push(key)
+        return { data: { presigned_url: window.__fakeFiles[key] }, error: null }
+      }
+      return { data: null, error: { message: 'Хранилище недоступно в стенде' } }
+    },
+  },
   auth: {
     getUser: async () => ({ data: { user: { id: 'user-1' } } }),
     getSession: async () => ({ data: { session: null } }),

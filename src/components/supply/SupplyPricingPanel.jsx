@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { useRole } from '../../contexts/RoleContext'
 import SupplyMoneyCell from './SupplyMoneyCell'
@@ -12,8 +12,9 @@ import { IconChevronDown } from '../icons/TenderHubIcons'
 import { fetchEmployees, employeesById } from '../../services/employees'
 import { requestDownloadUrl } from '../../services/s3'
 import {
-  classifyError, clearRate, deleteSource, estimateSignatures, fetchVorWorkbook, loadChangeMarker, loadEstimateItems,
-  loadPricingContext, loadRates, loadSources, loadVorFiles, renameEstimate, saveRate, saveSource,
+  classifyError, clearRate, deleteSource, downloadVorFile, estimateSignatures, loadChangeMarker, loadChangedRateIds,
+  loadPricingBundle, loadPricingContext, loadPricingData, loadRates, loadRatesByIds, loadSources, loadVorFiles,
+  readMaterialsWorkbookBytes, renameEstimate, saveRate, saveSource, sourcesSignature,
 } from '../../services/supplyPricing'
 import { rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
@@ -34,21 +35,27 @@ import '../../styles/workUi.css'
 // Позиции загружаются сами, без кнопки: сначала лист «Материалы» файлов ВОР из «ВОРов и РД» основного
 // тендера, если ни один не дал позиций — вкладка «ВОР» карточки (utils/supplyAutoImport). Записывать может
 // только тот, у кого право правки, — у остальных подсказка, что ВОР загрузится при открытии снабжением.
-// Не загрузилось — плашка с причиной и что сделать. Все ВОР — в одной таблице, каждый со своей строкой-шапкой.
+// Не загрузилось — плашка с причиной и что сделать; причина запоминается (localStorage), и тот же файл не
+// скачивается и не разбирается при каждом открытии. Все ВОР — в одной таблице, у каждого строка-шапка.
 //
 // Цены — tender_vor_supply_rates основного тендера: введённое сразу видно в карточке и в «Сравнении КП», в
-// реестре «Расценки от снабжения СУ-10» — после его пересчёта (до 10 минут). Сохранение — по Enter / уходу из
-// поля, с версией строки (чужая правка не перетирается молча); черновики — в localStorage до подтверждения;
-// чужие правки — опросом журнала раз в 20 с. Цена позиции подставляется в такие же позиции других ВОР, где
-// цены ещё нет.
+// реестре «Расценки от снабжения СУ-10» — после его пересчёта (до 10 минут). Сохранение — само (через секунду
+// после ввода, при уходе из поля), с версией строки: чужая правка не перетирается молча. Последняя известная
+// версия каждой строки — в ratesRef, который обновляется сразу при записи (не на следующей отрисовке): очередь
+// записей одной строки и опрос не работают со старой версией. Сохранённая цена — зелёная галочка в строке.
+// Чужие правки — опросом журнала раз в 20 с: перечитываются только изменившиеся строки. Цена позиции
+// подставляется в такие же позиции других ВОР, где цены нет (и туда, куда её подставили за этот сеанс, если
+// там ничего не меняли).
 
 const POLL_MS = 20000
 const RETRY_DELAYS = [5000, 15000, 30000, 60000]
-const SAVED_FLASH_MS = 2000
+const SAVED_FLASH_MS = 1600
 const REMOTE_FLASH_MS = 6000
+const FILL_NOTE_MS = 10000
 const VOLUME_FMT = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 4 })
 const fmtVolume = (v) => (v == null || v === '' ? '—' : VOLUME_FMT.format(Number(v)))
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '')
+const fmtClock = (iso) => (iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '')
 const posKey = (estimateName, k) => `${estimateName}∣${k}`
 const draftsKey = (mainId) => `supply-pricing-drafts:${mainId}`
 const ACTIVE_STATUSES = new Set(['saving', 'queued', 'error', 'conflict'])
@@ -59,7 +66,26 @@ const PROBLEM_TEXT = {
     + 'Добавьте лист «Материалы» с колонками «Наименование», «Ед. изм.», «Объём» и загрузите файл в «ВОРы и РД» заново — или укажите лист вручную.',
   no_header: (p) => `на листе «${p.sheetName}» не нашли шапку: в первых 30 строках нужны колонки «Наименование» и «Объём» (или «Кол-во»). Укажите колонки вручную.`,
   empty: (p) => `на листе «${p.sheetName}» нет позиций: все строки — разделы, итоги или пустые. Проверьте колонки.`,
-  error: (p) => `файл не открылся (${p.message}). Повторите позже; если не поможет — загрузите файл в «ВОРы и РД» заново.`,
+  broken: (p) => `файл не читается как книга Excel${p.message ? ` (${p.message})` : ''}. Откройте его в Excel, сохраните как .xlsx и загрузите в «ВОРы и РД» заново.`,
+  error: (p) => `файл не скачался (${p.message}). Повторите позже; если не поможет — загрузите файл в «ВОРы и РД» заново.`,
+}
+// Причины, которые зависят от самого файла: запоминаются до замены файла или «Повторить».
+const FILE_PROBLEMS = new Set(['no_sheet', 'no_header', 'empty', 'broken'])
+
+const failureKey = (doc) => `supply-vor-failed:${doc.id}`
+function readFailure(doc) {
+  try {
+    const v = JSON.parse(localStorage.getItem(failureKey(doc)) || 'null')
+    return v && v.version === fileVersion(doc) ? { doc, kind: v.kind, sheetNames: v.sheetNames, sheetName: v.sheetName, message: v.message } : null
+  } catch { return null }
+}
+function storeFailure(p) {
+  try {
+    localStorage.setItem(failureKey(p.doc), JSON.stringify({ version: fileVersion(p.doc), kind: p.kind, sheetNames: p.sheetNames, sheetName: p.sheetName, message: p.message }))
+  } catch { /* приватный режим — только на этот сеанс */ }
+}
+function forgetFailure(doc) {
+  try { localStorage.removeItem(failureKey(doc)) } catch { /* нечего забывать */ }
 }
 
 // Позиции из базы уже сгруппированы по ключу; на случай совпадения ключей — склеиваем в одну позицию.
@@ -111,7 +137,7 @@ function rowView(position, rate, draft) {
     total = null
   } else if (draft?.mode === 'unit') {
     unitPrice = roundMoney(draft.value)
-    total = volume > 0 ? roundMoney(unitPrice * volume) : null
+    total = volume != null ? roundMoney(unitPrice * volume) : null
     primary = 'unit'
   } else if (draft?.mode === 'total') {
     total = roundMoney(draft.value)
@@ -130,6 +156,12 @@ function rateIn(list, key) {
   return own.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))[0] || null
 }
 
+// В базе уже то, что хотели записать (например, первая попытка прошла, а ответ потерялся) — это не конфликт.
+function reached(current, intent) {
+  if (intent.mode === 'clear') return !current
+  return !!current && current.price_input === intent.mode && Number(current.input_value) === Number(intent.value)
+}
+
 const loadStoredDrafts = (mainId) => {
   try { return JSON.parse(localStorage.getItem(draftsKey(mainId)) || '{}') || {} } catch { return {} }
 }
@@ -144,11 +176,27 @@ const storeDrafts = (mainId, drafts) => {
   } catch { /* приватный режим — черновик только в памяти */ }
 }
 
-// ctx — готовый контекст (страница уже загрузила его для шапки) или tenderId — загрузим сами (карточка).
-// estimateItems — строки вкладки «ВОР», если они уже есть у карточки. onRatesChange — карточке, чтобы
-// «Сравнение КП» и выгрузка видели новые цены. excelImport — { onImport(estimateName) }: загрузка цен из Excel
-// (есть только в карточке). refreshToken — карточка увеличивает его после своей записи (Excel, удаление).
-export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = null, estimateItems: itemsProp = null, onRatesChange, excelImport = null, refreshToken = 0, variant = 'page' }) {
+// Состояние, у которого последнее значение нужно сразу (до отрисовки): ref обновляется в момент записи.
+function useSyncedState(initial) {
+  const [value, setValue] = useState(initial)
+  const ref = useRef(initial)
+  const set = useCallback((next) => {
+    const v = typeof next === 'function' ? next(ref.current) : next
+    ref.current = v
+    setValue(v)
+  }, [])
+  return [value, set, ref]
+}
+
+// ctx — готовый контекст или tenderId — загрузим сами (вместе с данными, за два шага к серверу). onContext —
+// странице для шапки. estimateItems — строки вкладки «ВОР», если они уже есть у карточки. onRatesChange —
+// карточке, чтобы «Сравнение КП» и выгрузка видели новые цены. excelImport — { onImport(estimateName) }:
+// загрузка цен из Excel (есть только в карточке). refreshToken — карточка увеличивает его после своей записи
+// (Excel, удаление). active — вкладка карточки открыта (скрытая не опрашивает сервер).
+export default function SupplyPricingPanel({
+  ctx: ctxProp = null, tenderId = null, estimateItems: itemsProp = null, onRatesChange, onContext, excelImport = null,
+  refreshToken = 0, variant = 'page', active = true,
+}) {
   const { canEdit, user } = useRole()
   const canEditRole = canEdit('tenders') || canEdit('tenders_materials')
   const myId = user?.id || null
@@ -158,13 +206,13 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
   const [loadError, setLoadError] = useState('')
   const [missing, setMissing] = useState(false)
   const [files, setFiles] = useState([])
-  const [sources, setSources] = useState([])
-  const [rates, setRates] = useState([])
+  const [sources, setSourcesState] = useState([])
+  const [rates, setRates, ratesRef] = useSyncedState([])
+  const [drafts, setDrafts, draftsRef] = useSyncedState({})
   const [loadedItems, setLoadedItems] = useState(null)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState(() => new Set())
-  const [drafts, setDrafts] = useState({})
   const [flash, setFlash] = useState({}) // key → { kind: 'saved' | 'remote' | 'auto', by, at, from }
   const [conflict, setConflict] = useState(null)
   const [historyFor, setHistoryFor] = useState(null)
@@ -173,44 +221,59 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
   const [importing, setImporting] = useState(null) // { label, done, total }
   const [employees, setEmployees] = useState(() => new Map())
   const [notice, setNotice] = useState('')
-  const [info, setInfo] = useState('')
+  const [fillNote, setFillNote] = useState('')
+  const [lastSavedAt, setLastSavedAt] = useState(null)
   const [bindTarget, setBindTarget] = useState({})
 
   const mainId = ctx?.mainId || null
   const editable = canEditRole && !!ctx && !ctx.locked && !missing
-  const ratesRef = useRef(rates)
-  const draftsRef = useRef(drafts)
   const docViewsRef = useRef([])
   const inflight = useRef(new Set())
   const queued = useRef(new Map())
   const retryTimers = useRef(new Map())
   const recentlyDeleted = useRef(new Map())
   const recentLocal = useRef(new Map())
-  const markerRef = useRef(null)
+  const autoFilled = useRef(new Map()) // key → { id, version } — цену подставили мы, и её с тех пор не меняли
+  const logIdRef = useRef(null)
+  const sourcesSigRef = useRef(null)
   const runSaveRef = useRef(null)
   const failedFiles = useRef(new Map())
   const autoBusy = useRef(false)
   const autoKey = useRef('')
   const autoRerun = useRef(false)
+  const fillTimer = useRef(null)
+  const activeRef = useRef(active)
+  activeRef.current = active
   const [autoTick, setAutoTick] = useState(0)
-  ratesRef.current = rates
-  draftsRef.current = drafts
+
+  const setSources = useCallback((list) => {
+    sourcesSigRef.current = sourcesSignature(list)
+    setSourcesState(list)
+  }, [])
 
   // Карточке — свежие цены для «Сравнения КП» и выгрузки.
   const onRatesChangeRef = useRef(onRatesChange)
   onRatesChangeRef.current = onRatesChange
   useEffect(() => { if (!loading && !missing) onRatesChangeRef.current?.(rates) }, [rates, loading, missing])
-
-  // ── Загрузка ──────────────────────────────────────────────────────────────────────────────────────
-  const loadData = useCallback(async (id) => {
-    const [vorFiles, srcs, rateRows, marker] = await Promise.all([loadVorFiles(id), loadSources(id), loadRates(id), loadChangeMarker(id)])
-    markerRef.current = marker
-    setFiles(vorFiles)
-    setSources(srcs)
-    setRates(rateRows)
-    return srcs
+  const onContextRef = useRef(onContext)
+  onContextRef.current = onContext
+  const updateCtx = useCallback((c) => {
+    setCtx(c)
+    onContextRef.current?.(c)
   }, [])
 
+  // ── Загрузка ──────────────────────────────────────────────────────────────────────────────────────
+  const applyData = useCallback((d) => {
+    logIdRef.current = d.logId
+    setFiles(d.files)
+    setSources(d.sources)
+    setRates(d.rates)
+    if (d.items) setLoadedItems(d.items)
+  }, [setRates, setSources])
+
+  const reloadData = useCallback(async (id) => applyData(await loadPricingData(id)), [applyData])
+
+  const wantItems = useRef(itemsProp == null)
   useEffect(() => {
     let alive = true
     setLoading(true)
@@ -218,23 +281,21 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
     setMissing(false)
     ;(async () => {
       try {
-        const c = ctxProp || await loadPricingContext(tenderId)
+        const b = await loadPricingBundle(tenderId, { ctx: ctxProp, withItems: wantItems.current })
         if (!alive) return
-        setCtx(c)
-        if (!c) return
-        try {
-          await loadData(c.mainId)
-          if (!alive) return
-          const stored = loadStoredDrafts(c.mainId)
-          if (Object.keys(stored).length) {
-            setDrafts(Object.fromEntries(Object.entries(stored).map(([k, d]) => [k, {
-              ...d, status: 'error', kind: 'stored', message: 'Не сохранено при прошлом открытии — повторите или отмените ввод',
-            }])))
-          }
-        } catch (e) {
-          if (!alive) return
-          if (e.kind === 'missing') setMissing(true)
-          else setLoadError(e.message || 'Не удалось загрузить расценку')
+        updateCtx(b.ctx)
+        if (!b.ctx) return
+        if (b.error) {
+          if ((b.error.kind || classifyError(b.error)?.kind) === 'missing') setMissing(true)
+          else setLoadError(b.error.message || 'Не удалось загрузить расценку')
+          return
+        }
+        applyData(b)
+        const stored = loadStoredDrafts(b.ctx.mainId)
+        if (Object.keys(stored).length) {
+          setDrafts(Object.fromEntries(Object.entries(stored).map(([k, d]) => [k, {
+            ...d, status: 'error', kind: 'stored', message: 'Не сохранено при прошлом открытии — повторите или отмените ввод',
+          }])))
         }
       } catch (e) {
         if (alive) setLoadError(e.message || 'Не удалось загрузить тендер')
@@ -243,15 +304,8 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
       }
     })()
     return () => { alive = false }
-  }, [ctxProp, tenderId, loadData])
+  }, [ctxProp, tenderId, applyData, updateCtx, setDrafts])
 
-  // Строки вкладки «ВОР»: имена ВОР карточки, их версии и позиции на случай, если файлов ВОР нет.
-  useEffect(() => {
-    if (itemsProp || !mainId || missing) return undefined
-    let alive = true
-    loadEstimateItems(mainId).then((items) => { if (alive) setLoadedItems(items) }).catch(() => { if (alive) setLoadedItems([]) })
-    return () => { alive = false }
-  }, [itemsProp, mainId, missing])
   const estimateItems = itemsProp || loadedItems
   const estimate = useMemo(() => {
     if (!estimateItems) return null
@@ -263,8 +317,8 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
   const firstToken = useRef(refreshToken)
   useEffect(() => {
     if (refreshToken === firstToken.current || !mainId) return
-    loadData(mainId).catch((e) => setNotice(e.message))
-  }, [refreshToken, mainId, loadData])
+    reloadData(mainId).catch((e) => setNotice(e.message))
+  }, [refreshToken, mainId, reloadData])
 
   // ФИО тех, кто менял цены и загружал ВОР (в строках расценок — только id).
   useEffect(() => {
@@ -287,8 +341,11 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [draftsRef])
+  useEffect(() => () => {
+    for (const t of retryTimers.current.values()) clearTimeout(t)
+    clearTimeout(fillTimer.current)
   }, [])
-  useEffect(() => () => { for (const t of retryTimers.current.values()) clearTimeout(t) }, [])
 
   // ── Автозагрузка позиций ВОР ──────────────────────────────────────────────────────────────────────
   const runAutoImport = useCallback(async () => {
@@ -296,26 +353,48 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
     autoBusy.current = true
     const found = []
     let changed = false
+    const remember = (p) => {
+      failedFiles.current.set(p.doc.id, p)
+      if (FILE_PROBLEMS.has(p.kind)) storeFailure(p)
+      found.push(p)
+    }
     try {
       const cardNames = estimate.names
       const { jobs, skipped } = planFileImports(files, sources, cardNames)
-      const fresh = jobs.filter((j) => !failedFiles.current.has(j.doc.id))
-      for (const j of jobs) if (failedFiles.current.has(j.doc.id)) found.push(failedFiles.current.get(j.doc.id))
+      const fresh = []
+      for (const j of jobs) {
+        const known = failedFiles.current.get(j.doc.id) || readFailure(j.doc)
+        if (known) found.push(known)
+        else fresh.push(j)
+      }
       let fileSourceCreated = sources.some((s) => s.source === 'vor_file')
       for (const [i, job] of fresh.entries()) {
         setImporting({ label: `файл «${job.doc.file_name}»`, done: i, total: fresh.length })
+        let bytes
         try {
-          const wb = await fetchVorWorkbook(job.doc)
-          let result = readMaterialsFromWorkbook(wb)
-          const saved = job.existing?.column_map
-          if (result.error === 'no_header' && saved?.columns && wb.Sheets[saved.sheetName]) result = readMaterialsFromWorkbook(wb, saved)
-          const positions = result.error ? [] : buildSupplyPositions(result.rows)
-          if (result.error || !positions.length) {
-            const p = { doc: job.doc, kind: result.error || 'empty', sheetNames: result.sheetNames || wb.SheetNames, sheetName: result.sheetName }
-            failedFiles.current.set(job.doc.id, p)
-            found.push(p)
-            continue
-          }
+          bytes = await downloadVorFile(job.doc)
+        } catch (e) {
+          const p = { doc: job.doc, kind: 'error', message: e.message }
+          if ((e.kind || classifyError(e)?.kind) === 'retry') found.push(p)
+          else remember(p)
+          continue
+        }
+        const saved = job.existing?.column_map
+        let wb
+        try {
+          wb = readMaterialsWorkbookBytes(bytes, saved?.sheetName ? [saved.sheetName] : [])
+        } catch (e) {
+          remember({ doc: job.doc, kind: 'broken', message: e.message })
+          continue
+        }
+        let result = readMaterialsFromWorkbook(wb)
+        if ((result.error === 'no_header' || result.error === 'no_sheet') && saved?.columns && wb.Sheets[saved.sheetName]) result = readMaterialsFromWorkbook(wb, saved)
+        const positions = result.error ? [] : buildSupplyPositions(result.rows)
+        if (result.error || !positions.length) {
+          remember({ doc: job.doc, kind: result.error || 'empty', sheetNames: result.sheetNames || wb.SheetNames, sheetName: result.sheetName })
+          continue
+        }
+        try {
           await saveSource({
             existing: job.existing, mainId, estimateName: job.name, source: 'vor_file', doc: job.doc,
             sheetName: result.sheetName, columnMap: result.map, sourceVersion: fileVersion(job.doc), positions,
@@ -325,9 +404,7 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
         } catch (e) {
           // Одновременно загрузил другой — его список уже в базе.
           if (e.kind === 'conflict') { changed = true; continue }
-          const p = { doc: job.doc, kind: 'error', message: e.message }
-          if (e.kind !== 'retry') failedFiles.current.set(job.doc.id, p)
-          found.push(p)
+          found.push({ doc: job.doc, kind: 'error', message: e.message })
         }
       }
       for (const s of skipped) found.push({ doc: s.doc, kind: 'older', name: s.name })
@@ -365,7 +442,7 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
         setAutoTick((t) => t + 1)
       }
     }
-  }, [mainId, estimate, files, sources])
+  }, [mainId, estimate, files, sources, ratesRef, setSources])
 
   // Запуск — когда изменились файлы, списки позиций или ВОР карточки; без права правки — не пишем.
   useEffect(() => {
@@ -379,6 +456,7 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
 
   const retryFile = (doc) => {
     failedFiles.current.delete(doc.id)
+    forgetFailure(doc)
     autoKey.current = ''
     runAutoImport()
   }
@@ -395,18 +473,20 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
     return m
   }, [rates])
 
-  const docViews = useMemo(() => sources.map((s) => {
-    const positions = mergePositions(s.positions)
+  // Позиции — только от списков (не пересобираются при каждой цене: строки таблицы не перерисовываются зря).
+  const sourceViews = useMemo(() => sources.map((s) => ({ source: s, name: s.estimate_name, positions: mergePositions(s.positions) })), [sources])
+
+  const docViews = useMemo(() => sourceViews.map((d) => {
     let priced = 0
     let total = 0
-    for (const p of positions) {
-      const rate = ratesByKey.get(posKey(s.estimate_name, p.k))?.[0]
+    for (const p of d.positions) {
+      const rate = ratesByKey.get(posKey(d.name, p.k))?.[0]
       if (!rate) continue
       priced += 1
       total += rateTotal(rate, p) || 0
     }
-    return { source: s, name: s.estimate_name, positions, priced, total: roundMoney(total) }
-  }), [sources, ratesByKey])
+    return { ...d, priced, total: roundMoney(total) }
+  }), [sourceViews, ratesByKey])
   docViewsRef.current = docViews
 
   const grand = useMemo(() => docViews.reduce((a, d) => ({
@@ -416,9 +496,9 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
   // Цены без позиции: наименования нет ни в одном списке позиций этого ВОР (ВОР обновился, Excel с другим
   // написанием, ВОР без списка позиций).
   const orphans = useMemo(() => {
-    const keys = new Set(docViews.flatMap((d) => d.positions.map((p) => posKey(d.name, p.k))))
+    const keys = new Set(sourceViews.flatMap((d) => d.positions.map((p) => posKey(d.name, p.k))))
     return rates.filter((r) => !keys.has(posKey(r.estimate_name, r.material_key)))
-  }, [docViews, rates])
+  }, [sourceViews, rates])
 
   // Что изменилось у источника: файл удалён, ВОР карточки перезагружен; имя ВОР не как в карточке.
   const docNotes = useMemo(() => {
@@ -430,7 +510,7 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
       if (s.source === 'vor_file') {
         if (!s.s3_document_id || !fileIds.has(s.s3_document_id)) notes.push({ kind: 'stale', text: 'Файл удалён из «ВОРов и РД» — позиции остались от него.' })
         if (cardNames.length && !cardNames.includes(s.estimate_name)) notes.push({ kind: 'bind', text: `Во вкладке «ВОР» карточки нет ВОР «${s.estimate_name}» — «Сравнение КП» эти цены не сопоставит.` })
-      } else if (estimate) {
+      } else if (estimate && estimateItems?.length) {
         const sig = estimate.signatures.get(s.estimate_name)
         if (!sig) notes.push({ kind: 'stale', text: 'ВОР удалён из вкладки «ВОР» карточки — позиции остались от него.' })
         else if (s.source_version && estimateVersion(sig) !== s.source_version && !editable) notes.push({ kind: 'stale', text: 'ВОР в карточке перезагружен — позиции обновятся при открытии снабжением или тендерным отделом.' })
@@ -438,7 +518,7 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
       if (notes.length) out.set(s.estimate_name, notes)
     }
     return out
-  }, [sources, files, estimate, editable])
+  }, [sources, files, estimate, estimateItems, editable])
 
   // Без права правки автозагрузки нет: какие файлы ещё не загружены.
   const pendingForViewer = useMemo(() => {
@@ -476,7 +556,7 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
       else delete next[key]
       return next
     })
-  }, [])
+  }, [setDrafts])
 
   const flashRow = useCallback((key, value, ms) => {
     setFlash((prev) => ({ ...prev, [key]: value }))
@@ -501,29 +581,44 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
       }
       return prev
     })
+  }, [setRates])
+
+  const isOwnAuto = useCallback((key, rate) => {
+    const a = autoFilled.current.get(key)
+    return !!a && !!rate && a.id === rate.id && a.version === rate.row_version
   }, [])
 
   const reloadContext = useCallback(async () => {
     try {
       const c = await loadPricingContext(ctx?.opened?.id || tenderId)
-      if (c) setCtx(c)
+      if (c) updateCtx(c)
     } catch { /* останется прежнее */ }
-  }, [ctx, tenderId])
+  }, [ctx, tenderId, updateCtx])
 
-  // Цену позиции — в такие же позиции других ВОР, где цены ещё нет (решение пользователя 16.10).
+  // Цену позиции — в такие же позиции других ВОР, где цены ещё нет (решение пользователя 16.10), и туда, куда
+  // её подставили за этот сеанс, если там с тех пор ничего не меняли (исправили цену — исправится и там).
   const fillIdentical = useCallback((estimateName, position, row) => {
     const price = roundMoney(rateUnitPrice(row))
     if (!(price > 0)) return
-    const isPriced = (name, k) => !!rateIn(ratesRef.current, posKey(name, k)) || !!draftsRef.current[posKey(name, k)]
-    const targets = identicalTargets(docViewsRef.current, estimateName, position, isPriced)
+    const taken = (name, k) => {
+      const key = posKey(name, k)
+      const d = draftsRef.current[key]
+      if (d && !d.auto) return true
+      const r = rateIn(ratesRef.current, key)
+      if (!r) return false
+      return !isOwnAuto(key, r) || (r.price_input === 'unit' && Number(r.supply_price) === price)
+    }
+    const targets = identicalTargets(docViewsRef.current, estimateName, position, taken)
     for (const t of targets) {
       runSaveRef.current(posKey(t.name, t.position.k), { mode: 'unit', value: price, estimateName: t.name, position: t.position, auto: true, from: estimateName })
     }
     if (targets.length) {
       const docs = [...new Set(targets.map((t) => `«${t.name}»`))].join(', ')
-      setInfo(`Цена «${position.name}» подставлена в такие же позиции: ВОР ${docs}.`)
+      setFillNote(`Цена «${position.name}» подставлена в такие же позиции: ВОР ${docs}.`)
+      clearTimeout(fillTimer.current)
+      fillTimer.current = setTimeout(() => setFillNote(''), FILL_NOTE_MS)
     }
-  }, [])
+  }, [draftsRef, ratesRef, isOwnAuto])
 
   const runSave = useCallback(async (key, intent) => {
     if (inflight.current.has(key)) {
@@ -535,40 +630,59 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
     if (timer) { clearTimeout(timer); retryTimers.current.delete(key) }
     inflight.current.add(key)
     setDraft(key, { ...intent, status: 'saving' })
+    // Последняя версия строки — из ratesRef: он обновлён ответом предыдущей записи ещё до отрисовки.
     const rate = rateIn(ratesRef.current, key)
     try {
-      // Подстановка в одинаковую позицию: пока шла запись, цену там поставил кто-то — его не трогаем.
-      if (intent.auto && rate) { setDraft(key, null); return }
+      // Подстановка в одинаковую позицию: цену там поставил человек — его не трогаем.
+      if (intent.auto && rate && !isOwnAuto(key, rate)) {
+        if (!queued.current.has(key)) setDraft(key, null)
+        return
+      }
       const res = intent.mode === 'clear'
         ? (rate ? await clearRate(rate) : { status: 'ok', row: null })
         : await saveRate({ rate, mainId, estimateName: intent.estimateName, position: intent.position, mode: intent.mode, value: intent.value })
-      if (res.status === 'ok') {
-        applyRow(rate, res.row)
+      const ok = res.status === 'ok' || reached(res.current, intent)
+      const row = res.status === 'ok' ? res.row : res.current
+      if (ok) {
+        if (row) applyRow(null, row)
+        else if (rate) applyRow(rate, null)
+        if (intent.auto && row) autoFilled.current.set(key, { id: row.id, version: row.row_version })
+        else autoFilled.current.delete(key)
         if (!queued.current.has(key)) setDraft(key, null)
         flashRow(key, intent.auto ? { kind: 'auto', from: intent.from } : { kind: 'saved' }, intent.auto ? REMOTE_FLASH_MS : SAVED_FLASH_MS)
-        if (!intent.auto && res.row) fillIdentical(intent.estimateName, intent.position, res.row)
+        if (!intent.auto) {
+          setLastSavedAt(new Date().toISOString())
+          if (row) fillIdentical(intent.estimateName, intent.position, row)
+        }
       } else if (intent.auto) {
         if (res.current) applyRow(null, res.current)
-        setDraft(key, null)
+        if (!queued.current.has(key)) setDraft(key, null)
       } else {
+        // Строку изменил другой: очередь этой строки не пишем поверх него — спрашиваем (последнее введённое).
+        const mine = queued.current.get(key) || intent
+        queued.current.delete(key)
         if (res.current) applyRow(null, res.current)
         else if (rate) applyRow(rate, null)
-        setDraft(key, { ...intent, status: 'conflict' })
-        setConflict({ key, intent, current: res.current, position: intent.position })
+        setDraft(key, { ...mine, status: 'conflict' })
+        setConflict({ key, intent: mine, current: res.current, position: mine.position })
       }
     } catch (e) {
       const kind = e.kind || classifyError(e)?.kind || 'error'
-      const attempts = (draftsRef.current[key]?.attempts || 0) + 1
-      setDraft(key, { ...intent, status: 'error', kind, message: e.message, attempts })
-      if (kind === 'retry') {
-        const delay = RETRY_DELAYS[Math.min(attempts - 1, RETRY_DELAYS.length - 1)]
-        retryTimers.current.set(key, setTimeout(() => {
-          retryTimers.current.delete(key)
-          const d = draftsRef.current[key]
-          if (d?.status === 'error' && d.kind === 'retry') {
-            runSaveRef.current(key, { mode: d.mode, value: d.value, estimateName: d.estimateName, position: d.position, auto: d.auto, from: d.from })
-          }
-        }, delay))
+      if (intent.auto && kind !== 'retry') {
+        if (!queued.current.has(key)) setDraft(key, null)
+      } else {
+        const attempts = (draftsRef.current[key]?.attempts || 0) + 1
+        setDraft(key, { ...intent, status: 'error', kind, message: e.message, attempts })
+        if (kind === 'retry') {
+          const delay = RETRY_DELAYS[Math.min(attempts - 1, RETRY_DELAYS.length - 1)]
+          retryTimers.current.set(key, setTimeout(() => {
+            retryTimers.current.delete(key)
+            const d = draftsRef.current[key]
+            if (d?.status === 'error' && d.kind === 'retry') {
+              runSaveRef.current(key, { mode: d.mode, value: d.value, estimateName: d.estimateName, position: d.position, auto: d.auto, from: d.from })
+            }
+          }, delay))
+        }
       }
       if (kind === 'locked') reloadContext()
     } finally {
@@ -579,34 +693,43 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
         runSaveRef.current(key, next)
       }
     }
-  }, [mainId, applyRow, setDraft, flashRow, reloadContext, fillIdentical])
+  }, [mainId, ratesRef, draftsRef, applyRow, setDraft, flashRow, reloadContext, fillIdentical, isOwnAuto])
   runSaveRef.current = runSave
 
+  // Ячейка отдала набранное (через секунду после ввода, при уходе из поля). Строка и черновик — последние
+  // известные, а не с прошлой отрисовки.
   const commit = useCallback((row, field, raw) => {
-    const { p, key, rate, view, doc } = row
+    const { p, key, doc } = row
+    const rate = rateIn(ratesRef.current, key)
+    const draft = draftsRef.current[key] || null
+    const view = rowView(p, rate, draft)
     const value = parseAmount(raw)
-    const intentBase = { estimateName: doc, position: p }
+    const base = { estimateName: doc, position: p }
     if (value == null) {
-      if (!rate && !drafts[key]) return
-      if (!rate) { setDraft(key, null); return }
-      runSave(key, { ...intentBase, mode: 'clear', value: null })
+      if (!rate && !inflight.current.has(key) && !queued.current.has(key)) {
+        if (draft) setDraft(key, null)
+        return
+      }
+      runSave(key, { ...base, mode: 'clear', value: null })
       return
     }
     if (value <= 0) {
-      setDraft(key, { ...intentBase, mode: field, value, status: 'error', kind: 'invalid', message: 'Цена и сумма должны быть больше нуля' })
+      setDraft(key, { ...base, mode: field, value, status: 'error', kind: 'invalid', message: 'Цена и сумма должны быть больше нуля' })
       return
     }
     if (field === 'total' && !(view.volume > 0)) {
-      setDraft(key, { ...intentBase, mode: field, value, status: 'error', kind: 'invalid', message: 'Сумму можно ввести только у позиции с объёмом' })
+      setDraft(key, { ...base, mode: field, value, status: 'error', kind: 'invalid', message: 'Сумму можно ввести только у позиции с объёмом' })
       return
     }
+    // То же, что уже сохранено или сохраняется, — не писать ещё раз.
+    const pending = !!draft && (draft.status === 'saving' || draft.status === 'queued')
     const shown = field === 'unit' ? view.unitPrice : view.total
-    if (shown != null && roundMoney(value) === roundMoney(shown) && !drafts[key] && !view.volumeChanged) return
-    runSave(key, { ...intentBase, mode: field, value })
-  }, [drafts, runSave, setDraft])
+    if (shown != null && roundMoney(value) === roundMoney(shown) && (!draft || pending) && !view.volumeChanged) return
+    runSave(key, { ...base, mode: field, value })
+  }, [ratesRef, draftsRef, runSave, setDraft])
 
   const retryDraft = (key) => {
-    const d = drafts[key]
+    const d = draftsRef.current[key]
     if (!d) return
     const estimateName = d.estimateName || key.split('∣')[0]
     const owner = docViews.find((x) => x.name === estimateName)
@@ -622,10 +745,12 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
   }
 
   const acceptVolume = (row) => {
-    const { p, key, rate, view, doc } = row
+    const { p, key, doc } = row
+    const rate = rateIn(ratesRef.current, key)
     if (!rate) return
-    if (rate.price_input === 'total' && view.volume > 0) {
-      runSave(key, { estimateName: doc, position: p, mode: 'total', value: roundMoney(rateUnitPrice(rate) * view.volume) })
+    const volume = p.units || p.volume == null ? null : Number(p.volume)
+    if (rate.price_input === 'total' && volume > 0) {
+      runSave(key, { estimateName: doc, position: p, mode: 'total', value: roundMoney(rateUnitPrice(rate) * volume) })
     } else {
       runSave(key, { estimateName: doc, position: p, mode: 'unit', value: Number(rate.input_value ?? rate.supply_price) })
     }
@@ -650,7 +775,7 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
 
   // Очистить все цены ВОР (была кнопка «Очистить» во вкладке карточки). Журнал хранит их — можно вернуть.
   const clearDoc = async (d) => {
-    const own = rates.filter((r) => r.estimate_name === d.name)
+    const own = ratesRef.current.filter((r) => r.estimate_name === d.name)
     if (!own.length) return
     const fromSite = own.filter((r) => r.price_input === 'unit' || r.price_input === 'total').length
     if (!window.confirm(`Удалить все цены снабжения ВОР «${d.name}» (${own.length})?${fromSite ? ` Из них введено на сайте: ${fromSite}.` : ''}\n\nУдаление записывается в журнал — цену можно вернуть из истории.`)) return
@@ -665,56 +790,73 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
     if (!to) return
     try {
       await renameEstimate(mainId, from, to)
-      await loadData(mainId)
+      await reloadData(mainId)
     } catch (e) {
       setNotice(`Не удалось привязать: ${e.message}`)
     }
   }
 
   // ── Синхронизация ─────────────────────────────────────────────────────────────────────────────────
-  const refreshFromServer = useCallback(async () => {
-    if (!mainId) return
-    const [srcs, rateRows, vorFiles] = await Promise.all([loadSources(mainId), loadRates(mainId), loadVorFiles(mainId)])
+  // Строки с сервера поверх своих: своя новее (ответ записи уже пришёл) — остаётся своя; только что удалённые
+  // нами не возвращаются. ids — какие строки перечитаны: тех, что не пришли, на сервере больше нет.
+  const mergeServerRows = useCallback((rows, ids = null) => {
     const now = Date.now()
     for (const [id, at] of recentlyDeleted.current) if (now - at > 60000) recentlyDeleted.current.delete(id)
     for (const [id, at] of recentLocal.current) if (now - at > 60000) recentLocal.current.delete(id)
-    const prev = ratesRef.current
-    const local = new Map(prev.map((r) => [r.id, r]))
-    const server = new Set(rateRows.map((r) => r.id))
     const remote = []
-    const merged = rateRows
-      .filter((r) => !recentlyDeleted.current.has(r.id))
-      .map((r) => {
-        const l = local.get(r.id)
-        if (l && l.row_version > r.row_version) return l
-        if (r.updated_by && r.updated_by !== myId && (!l || l.row_version !== r.row_version)) remote.push(r)
-        return r
-      })
-    for (const l of prev) if (!server.has(l.id) && recentLocal.current.has(l.id)) merged.push(l)
-    setRates(merged)
+    setRates((prev) => {
+      const byId = new Map(rows.map((r) => [r.id, r]))
+      const map = new Map(prev.map((r) => [r.id, r]))
+      if (ids) {
+        for (const id of ids) if (!byId.has(id)) map.delete(id)
+      } else {
+        for (const l of prev) if (!byId.has(l.id) && !recentLocal.current.has(l.id)) map.delete(l.id)
+      }
+      for (const r of rows) {
+        if (recentlyDeleted.current.has(r.id)) continue
+        const l = map.get(r.id)
+        if (l && l.row_version >= r.row_version) continue
+        if (r.updated_by && r.updated_by !== myId) remote.push(r)
+        map.set(r.id, r)
+      }
+      return [...map.values()]
+    })
     for (const r of remote) flashRow(posKey(r.estimate_name, r.material_key), { kind: 'remote', by: r.updated_by, at: r.updated_at }, REMOTE_FLASH_MS)
-    setSources(srcs)
-    setFiles(vorFiles)
-  }, [mainId, myId, flashRow])
+  }, [myId, setRates, flashRow])
 
+  // Новые записи журнала → перечитать только эти строки; записей очень много — все цены.
+  const syncRates = useCallback(async (upTo) => {
+    const from = logIdRef.current ?? 0
+    const changed = await loadChangedRateIds(mainId, from)
+    if (!changed) {
+      mergeServerRows(await loadRates(mainId))
+      logIdRef.current = upTo
+      return
+    }
+    if (changed.ids.length) mergeServerRows(await loadRatesByIds(mainId, changed.ids), changed.ids)
+    logIdRef.current = changed.lastId
+  }, [mainId, mergeServerRows])
+
+  const tickRef = useRef(null)
   useEffect(() => {
     if (!mainId || missing) return undefined
     let busy = false
     const tick = async () => {
-      if (busy || document.visibilityState !== 'visible') return
+      if (busy || document.visibilityState !== 'visible' || !activeRef.current || logIdRef.current == null) return
       busy = true
       try {
-        const marker = await loadChangeMarker(mainId)
-        if (markerRef.current !== null && marker !== markerRef.current) await refreshFromServer()
-        markerRef.current = marker
+        const m = await loadChangeMarker(mainId)
+        if (m.logId > logIdRef.current) await syncRates(m.logId)
+        if (m.sources !== sourcesSigRef.current) setSources(await loadSources(mainId))
       } catch { /* сеть — следующий раз */ } finally {
         busy = false
       }
     }
+    tickRef.current = tick
     const id = setInterval(tick, POLL_MS)
     // Вернулись на вкладку — заодно проверить, не добавили ли файлы ВОР.
     const onVisible = () => {
-      if (document.visibilityState !== 'visible') return
+      if (document.visibilityState !== 'visible' || !activeRef.current) return
       tick()
       loadVorFiles(mainId).then(setFiles).catch(() => {})
     }
@@ -722,10 +864,20 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
     window.addEventListener('focus', onVisible)
     return () => {
       clearInterval(id)
+      tickRef.current = null
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }
-  }, [mainId, missing, refreshFromServer])
+  }, [mainId, missing, syncRates, setSources])
+  // Снова открыли вкладку карточки — сразу проверить, что изменилось, пока её не было видно.
+  const wasActive = useRef(active)
+  useEffect(() => {
+    if (active && !wasActive.current) {
+      tickRef.current?.()
+      if (mainId) loadVorFiles(mainId).then(setFiles).catch(() => {})
+    }
+    wasActive.current = active
+  }, [active, mainId])
 
   // ── Выгрузка в Excel: по листу на ВОР, как лист «Материалы» ВОР ─────────────────────────────────────
   const exportExcel = () => {
@@ -770,12 +922,28 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
     return next
   })
 
+  // Действия строк — через одну стабильную функцию: строки таблицы (memo) перерисовываются только когда
+  // меняются их собственные данные, а не при каждом сохранении в соседней строке.
+  const actionsRef = useRef(null)
+  actionsRef.current = {
+    commit,
+    retry: retryDraft,
+    discard: discardDraft,
+    conflict: (row) => setConflict({ key: row.key, intent: { mode: row.draft.mode, value: row.draft.value, estimateName: row.doc, position: row.p }, current: row.rate, position: row.p }),
+    acceptVolume,
+    history: (row) => setHistoryFor({ position: row.p, rate: row.rate, estimateName: row.doc, key: row.key }),
+    removeDuplicates,
+  }
+  const act = useCallback((name, ...args) => actionsRef.current[name](...args), [])
+
   // ── Отрисовка ─────────────────────────────────────────────────────────────────────────────────────
   if (loading) return <div className="sp-loading">Загрузка расценки…</div>
   if (loadError) return <p className="sp-error-text">{loadError}</p>
   if (!ctx) return <p className="sp-error-text">Тендер не найден.</p>
 
-  const pending = Object.values(drafts).filter((d) => ACTIVE_STATUSES.has(d.status) && !d.auto).length
+  const draftList = Object.values(drafts).filter((d) => !d.auto)
+  const savingCount = draftList.filter((d) => d.status === 'saving' || d.status === 'queued').length
+  const failedCount = draftList.filter((d) => d.status === 'error' || d.status === 'conflict').length
   const readOnlyReason = ctx.locked
     ? 'Тендер на материалы завершён — расценки только для чтения. Чтобы изменить, верните тендеру на материалы прежний статус.'
     : !canEditRole ? 'Только просмотр: вводить цены могут снабжение и тендерный отдел (право правки раздела).' : ''
@@ -808,7 +976,7 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
           {editable && p.doc && ['no_sheet', 'no_header', 'empty'].includes(p.kind) && (
             <button type="button" className="sp-link-btn" onClick={() => setMappingFile(p.doc)}>Указать лист и колонки</button>
           )}
-          {editable && p.doc && p.kind === 'error' && <button type="button" className="sp-link-btn" onClick={() => retryFile(p.doc)}>Повторить</button>}
+          {editable && p.doc && (p.kind === 'error' || p.kind === 'broken') && <button type="button" className="sp-link-btn" onClick={() => retryFile(p.doc)}>Повторить</button>}
         </div>
       ))}
       {pendingForViewer.length > 0 && (
@@ -821,17 +989,6 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
         <div className="sp-banner is-warn" role="alert">
           <IconAlert size={16} /><span>{notice}</span>
           <button type="button" className="sp-link-btn" onClick={() => setNotice('')}>Скрыть</button>
-        </div>
-      )}
-      {info && (
-        <div className="sp-banner is-info" role="status">
-          <IconCheck size={16} /><span>{info}</span>
-          <button type="button" className="sp-link-btn" onClick={() => setInfo('')}>Скрыть</button>
-        </div>
-      )}
-      {pending > 0 && (
-        <div className="sp-banner is-warn" role="status">
-          <IconClock size={16} /><span>Не сохранено значений: {pending}. Не закрывайте страницу, пока они не сохранятся.</span>
         </div>
       )}
       {fromTab && (
@@ -872,6 +1029,23 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
               <button type="button" className="btn-secondary" onClick={exportExcel}><IconFileSpreadsheet size={16} /> Скачать Excel</button>
             </div>
           </div>
+
+          {/* Строка состояния постоянной высоты: «сохраняем / всё сохранено / не сохранено» и подстановка цены —
+              без плашек над таблицей, которые сдвигали строки под курсором. */}
+          {editable && (
+            <div className="sp-statusbar" role="status" aria-live="polite">
+              {failedCount > 0 ? (
+                <span className="sp-save-status is-error"><IconAlertCircle size={16} /> Не сохранено: {failedCount} — строки с красным значком, нажмите на значок, чтобы повторить</span>
+              ) : savingCount > 0 ? (
+                <span className="sp-save-status is-saving"><IconClock size={16} /> Сохраняем…</span>
+              ) : lastSavedAt ? (
+                <span className="sp-save-status is-ok"><IconCheck size={16} /> Все цены сохранены · {fmtClock(lastSavedAt)}</span>
+              ) : (
+                <span className="sp-save-status sp-muted">Цены сохраняются сами — через секунду после ввода или при переходе в другое поле</span>
+              )}
+              {fillNote && <span className="sp-fill-note">{fillNote}</span>}
+            </div>
+          )}
 
           <div className="table-container sp-table-wrap">
             <table className="data-table sp-table">
@@ -953,20 +1127,7 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
                       <tr><td colSpan={7} className="no-data">В этом ВОР нет позиций</td></tr>
                     )}
                     {open && rows.map((row) => (
-                      <PriceRow
-                        key={row.key}
-                        row={row}
-                        flash={flash[row.key]}
-                        editable={editable}
-                        nameOf={nameOf}
-                        onCommit={commit}
-                        onRetry={() => retryDraft(row.key)}
-                        onDiscard={() => discardDraft(row.key)}
-                        onConflict={() => setConflict({ key: row.key, intent: { mode: row.draft.mode, value: row.draft.value, estimateName: row.doc, position: row.p }, current: row.rate, position: row.p })}
-                        onAcceptVolume={() => acceptVolume(row)}
-                        onHistory={() => setHistoryFor({ position: row.p, rate: row.rate, estimateName: row.doc, key: row.key })}
-                        onRemoveDuplicates={() => removeDuplicates(row)}
-                      />
+                      <PriceRow key={row.key} row={row} flash={flash[row.key]} editable={editable} nameOf={nameOf} act={act} />
                     ))}
                   </tbody>
                 )
@@ -1017,7 +1178,8 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
           onClose={() => setMappingFile(null)}
           onSaved={async ({ close }) => {
             failedFiles.current.delete(mappingFile.id)
-            try { await loadData(mainId) } catch (e) { setNotice(e.message) }
+            forgetFailure(mappingFile)
+            try { await reloadData(mainId) } catch (e) { setNotice(e.message) }
             setProblems((prev) => prev.filter((p) => p.doc?.id !== mappingFile.id))
             if (close) setMappingFile(null)
           }}
@@ -1053,10 +1215,17 @@ export default function SupplyPricingPanel({ ctx: ctxProp = null, tenderId = nul
   )
 }
 
-function PriceRow({ row, flash, editable, nameOf, onCommit, onRetry, onDiscard, onConflict, onAcceptVolume, onHistory, onRemoveDuplicates }) {
+// Строка перерисовывается, только когда меняются её позиция, цена, ввод, подсветка или номер.
+const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.rate === b.row.rate && a.row.draft === b.row.draft
+  && a.row.gi === b.row.gi && a.row.index === b.row.index && a.row.doc === b.row.doc
+  && a.row.duplicates.length === b.row.duplicates.length
+  && a.flash === b.flash && a.editable === b.editable && a.nameOf === b.nameOf && a.act === b.act
+
+const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act }) {
   const { p, draft, view, index, gi } = row
   const mixed = !!p.units
-  const totalDisabled = !editable || mixed || !(view.volume > 0)
+  const noVolume = !mixed && !(view.volume > 0)
+  const totalDisabled = !editable || mixed || noVolume
   return (
     <tr
       className={[
@@ -1070,10 +1239,15 @@ function PriceRow({ row, flash, editable, nameOf, onCommit, onRetry, onDiscard, 
       <td className="sp-name" data-label="Наименование">
         <span>{p.name}</span>
         {mixed && <span className="sp-hint">разные ед. изм.: цена одна на все строки ВОР, сумма — по каждой</span>}
+        {noVolume && (
+          <span className="sp-hint">
+            {p.volume == null ? 'объёма в ВОР нет' : 'объём в ВОР — 0'}: вводится только цена за единицу, итог не посчитать
+          </span>
+        )}
         {row.duplicates.length > 0 && (
           <span className="sp-hint is-warn">
             ещё цен на это наименование: {row.duplicates.length} (из Excel)
-            {editable && <button type="button" className="sp-link-btn" onClick={onRemoveDuplicates}>оставить последнюю</button>}
+            {editable && <button type="button" className="sp-link-btn" onClick={() => act('removeDuplicates', row)}>оставить последнюю</button>}
           </span>
         )}
       </td>
@@ -1090,7 +1264,7 @@ function PriceRow({ row, flash, editable, nameOf, onCommit, onRetry, onDiscard, 
           label={`Цена за единицу: ${p.name} (ВОР «${row.doc}»)`}
           title={view.primary === 'total' && view.priced ? 'Посчитано из суммы: сумма ÷ объём' : undefined}
           invalid={draft?.status === 'error' && draft.mode === 'unit'}
-          onCommit={(raw) => onCommit(row, 'unit', raw)}
+          onCommit={(raw) => act('commit', row, 'unit', raw)}
         />
       </td>
       <td className="sp-input-cell" data-label="Итого с НДС, ₽">
@@ -1100,67 +1274,72 @@ function PriceRow({ row, flash, editable, nameOf, onCommit, onRetry, onDiscard, 
           disabled={totalDisabled}
           cellId={`total-${gi}`}
           label={`Сумма: ${p.name} (ВОР «${row.doc}»)`}
+          placeholder={editable && mixed ? 'разные ед.' : editable && noVolume ? 'нет объёма' : '—'}
           title={mixed ? 'Сумму не ввести: у позиции разные единицы измерения'
-            : !(view.volume > 0) ? 'Сумму можно ввести только у позиции с объёмом'
+            : noVolume ? 'Сумму не ввести: в ВОР у позиции нет объёма — введите цену за единицу'
               : view.primary === 'unit' && view.priced ? 'Посчитано из цены: цена × объём' : undefined}
           invalid={draft?.status === 'error' && draft.mode === 'total'}
-          onCommit={(raw) => onCommit(row, 'total', raw)}
+          onCommit={(raw) => act('commit', row, 'total', raw)}
         />
       </td>
       <td className="sp-state" data-label="">
-        <RowState row={row} flash={flash} editable={editable} nameOf={nameOf} onRetry={onRetry} onDiscard={onDiscard}
-          onConflict={onConflict} onAcceptVolume={onAcceptVolume} onHistory={onHistory} />
+        <RowState row={row} flash={flash} editable={editable} nameOf={nameOf} act={act} />
       </td>
     </tr>
   )
-}
+}, samePriceRow)
 
-// Состояние строки — значки с подписью для диктора: сохраняется / сохранено / подставлено / не сохранено /
-// изменено другим / объём изменился; история цены.
-function RowState({ row, flash, editable, nameOf, onRetry, onDiscard, onConflict, onAcceptVolume, onHistory }) {
+// Состояние строки — значки с подписью для диктора, по трём постоянным местам: сохраняется / сохранено
+// (галочка остаётся, пока цена есть) / не сохранено / изменено другим; объём изменился или «отменить ввод»;
+// история цены.
+function RowState({ row, flash, editable, nameOf, act }) {
   const { draft, rate, view } = row
-  const items = []
+  let status = null
+  let middle = null
   if (draft?.status === 'saving' || draft?.status === 'queued') {
-    items.push(<span key="s" className="sp-st is-saving" role="status" aria-label="Сохраняется" title="Сохраняется"><IconClock size={16} /></span>)
+    status = <span className="sp-st is-saving" role="img" aria-label="Сохраняется" title="Сохраняется"><IconClock size={16} /></span>
   } else if (draft?.status === 'conflict') {
-    items.push(
-      <button key="c" type="button" className="sp-icon-btn is-warn" onClick={onConflict} aria-label="Цену изменил другой пользователь — выбрать значение" title="Цену изменил другой пользователь — выбрать значение">
+    status = (
+      <button type="button" className="sp-icon-btn is-warn" onClick={() => act('conflict', row)} aria-label="Цену изменил другой пользователь — выбрать значение" title="Цену изменил другой пользователь — выбрать значение">
         <IconAlert size={16} />
-      </button>,
+      </button>
     )
   } else if (draft?.status === 'error') {
     const canRetry = draft.kind === 'retry' || draft.kind === 'stored' || draft.kind === 'error'
-    items.push(
-      <span key="e" className="sp-st-group">
-        {canRetry && (
-          <button type="button" className="sp-icon-btn is-error" onClick={onRetry} aria-label={`Не сохранено: ${draft.message}. Повторить`} title={`Не сохранено: ${draft.message}. Нажмите, чтобы повторить`}>
-            <IconAlertCircle size={16} />
-          </button>
-        )}
-        {!canRetry && <span className="sp-st is-error" title={draft.message} aria-label={`Не сохранено: ${draft.message}`}><IconAlertCircle size={16} /></span>}
-        <button type="button" className="sp-icon-btn" onClick={onDiscard} aria-label="Отменить ввод" title="Отменить ввод">×</button>
-      </span>,
-    )
-  } else if (flash?.kind === 'saved') {
-    items.push(<span key="ok" className="sp-st is-saved" role="status" aria-label="Сохранено" title="Сохранено"><IconCheck size={16} /></span>)
-  } else if (flash?.kind === 'auto') {
-    items.push(<span key="a" className="sp-st is-remote" role="status" title={`Подставлено из ВОР «${flash.from}»: такая же позиция`} aria-label={`Цена подставлена из ВОР «${flash.from}»`}>●</span>)
-  } else if (flash?.kind === 'remote') {
-    const who = nameOf(flash.by) || 'другой пользователь'
-    items.push(<span key="r" className="sp-st is-remote" title={`Изменил(а) ${who}${flash.at ? ` в ${fmtTime(flash.at)}` : ''}`} aria-label={`Изменил(а) ${who}`}>●</span>)
+    status = canRetry
+      ? (
+        <button type="button" className="sp-icon-btn is-error" onClick={() => act('retry', row.key)} aria-label={`Не сохранено: ${draft.message}. Повторить`} title={`Не сохранено: ${draft.message}. Нажмите, чтобы повторить`}>
+          <IconAlertCircle size={16} />
+        </button>
+      )
+      : <span className="sp-st is-error" role="img" title={draft.message} aria-label={`Не сохранено: ${draft.message}`}><IconAlertCircle size={16} /></span>
+    middle = <button type="button" className="sp-icon-btn" onClick={() => act('discard', row.key)} aria-label="Отменить ввод" title="Отменить ввод">×</button>
+  } else if (rate) {
+    const who = nameOf(rate.updated_by)
+    const text = flash?.kind === 'auto'
+      ? `Сохранено: подставлено из ВОР «${flash.from}» — такая же позиция`
+      : flash?.kind === 'remote'
+        ? `Изменил(а) ${nameOf(flash.by) || 'другой пользователь'}${flash.at ? ` в ${fmtTime(flash.at)}` : ''}`
+        : `Сохранено${rate.updated_at ? ` ${fmtTime(rate.updated_at)}` : ''}${who ? `, ${who}` : ''}`
+    const fresh = flash?.kind === 'saved' || flash?.kind === 'auto'
+    status = <span className={`sp-st is-saved${fresh ? ' is-fresh' : ''}`} role="img" aria-label={text} title={text}><IconCheck size={16} /></span>
   }
   if (view.volumeChanged && !draft) {
     const text = `Объём изменился: было ${fmtVolume(rate.volume_at_input)}, стало ${fmtVolume(view.volume)}. Цена за единицу та же, сумма пересчитана`
-    items.push(editable
-      ? <button key="v" type="button" className="sp-icon-btn is-warn" onClick={onAcceptVolume} aria-label={`${text}. Принять`} title={`${text}. Нажмите, чтобы принять`}><IconAlert size={16} /></button>
-      : <span key="v" className="sp-st is-warn" title={text} aria-label={text}><IconAlert size={16} /></span>)
+    middle = editable
+      ? <button type="button" className="sp-icon-btn is-warn" onClick={() => act('acceptVolume', row)} aria-label={`${text}. Принять`} title={`${text}. Нажмите, чтобы принять`}><IconAlert size={16} /></button>
+      : <span className="sp-st is-warn" role="img" title={text} aria-label={text}><IconAlert size={16} /></span>
   }
-  if (rate || draft?.status === 'conflict') {
-    items.push(
-      <button key="h" type="button" className="sp-icon-btn" onClick={onHistory} aria-label={`История цены: ${row.p.name}`} title="История цены">
-        <IconHistory size={16} />
-      </button>,
-    )
-  }
-  return <div className="sp-state-inner">{items}</div>
+  const history = (rate || draft?.status === 'conflict') && (
+    <button type="button" className="sp-icon-btn" onClick={() => act('history', row)} aria-label={`История цены: ${row.p.name}`} title="История цены">
+      <IconHistory size={16} />
+    </button>
+  )
+  return (
+    <div className="sp-state-inner">
+      <span className="sp-slot">{status}</span>
+      <span className="sp-slot">{middle}</span>
+      <span className="sp-slot">{history}</span>
+    </div>
+  )
 }

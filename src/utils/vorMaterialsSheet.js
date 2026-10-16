@@ -128,8 +128,19 @@ export function readMaterialsFromWorkbook(workbook, manualMap = null) {
 }
 
 // Чтение файла как в ПСДЦ: без формул-вычислений, без макросов.
+const READ_OPTIONS = { type: 'array', cellFormula: false, cellStyles: false, bookVBA: false, cellHTML: false }
 export function readWorkbookBytes(bytes) {
-  return XLSX.read(bytes, { type: 'array', cellFormula: false, cellStyles: false, bookVBA: false, cellHTML: false })
+  return XLSX.read(bytes, READ_OPTIONS)
+}
+
+// Только лист «Материалы» (и extraSheets — лист из сохранённой карты колонок): сначала имена листов, затем
+// разбор нужных. Соседние «КП» / «Работы» в ВОР бывают на десятки тысяч строк — полный разбор занимал секунды
+// и подвешивал страницу. SheetNames — все листы книги (для подсказки «листы: …»), Sheets — только нужные.
+export function readMaterialsWorkbookBytes(bytes, extraSheets = []) {
+  const names = XLSX.read(bytes, { type: 'array', bookSheets: true }).SheetNames || []
+  const wanted = [...new Set([findMaterialsSheet({ SheetNames: names }), ...extraSheets])].filter((n) => n && names.includes(n))
+  if (!wanted.length) return { SheetNames: names, Sheets: {} }
+  return XLSX.read(bytes, { ...READ_OPTIONS, sheets: wanted })
 }
 
 // Файл ВОР из «ВОРов и РД» годится, если это книга Excel (в старой категории vor бывают PDF и РД).

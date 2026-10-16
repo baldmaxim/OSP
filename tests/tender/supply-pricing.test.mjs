@@ -2,12 +2,15 @@
 // (tests/tender/ui/seed.js), триггеры базы подменены той же логикой. Одна таблица в двух местах — страница
 // снабжения (/tenders/materials/:id/pricing) и вкладка «Расценки снабжения» карточки тендера.
 // Проверяется: цена → сумма и сумма → цена, запись с версией строки, все ВОР в одной таблице со своими
-// шапками, подстановка цены в одинаковые позиции других ВОР (только где пусто), автозагрузка позиций из
-// вкладки «ВОР», когда файлов нет, причина, если файл ВОР не загрузился, окно «изменено другим», только
+// шапками, подстановка цены в одинаковые позиции других ВОР (только где пусто, и исправление подставленной за
+// сеанс), автозагрузка позиций из вкладки «ВОР», когда файлов нет, причина, если файл ВОР не загрузился (и
+// что она запоминается), сохранение без Enter и постоянная галочка, гонки записи на медленном сервере (Tab
+// через «Итого», правка во время записи — без ложного «изменено другим»), окно «изменено другим», только
 // чтение, понятное сообщение без миграции.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
+import * as XLSX from 'xlsx'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
@@ -35,23 +38,27 @@ describe('Расценка снабжением: таблица', { skip: !launc
     await stand?.server.close()
   })
 
-  async function open(query = '', route = '/tenders/materials/mat-p/pricing') {
-    const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1400, height: 900 } })
+  // latency — «сетевая» задержка ответа стенда, мс: медленный сервер, на котором видны гонки записи.
+  async function open(query = '', route = '/tenders/materials/mat-p/pricing', { latency = 10, context: given = null, init = null } = {}) {
+    const context = given || await browser.newContext({ locale: 'ru-RU', viewport: { width: 1400, height: 900 } })
+    if (init && !given) await context.addInitScript(init.fn, init.arg)
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', (e) => errors.push(e.message))
     page.on('console', (msg) => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) errors.push(msg.text()) })
-    await page.goto(`${stand.url}?route=${route}&items=20&cps=1&tenders=3&latency=10${query}`)
+    await page.goto(`${stand.url}?route=${route}&items=20&cps=1&tenders=3&latency=${latency}${query}`)
     return { page, context, errors }
   }
-  const openPage = async (query = '') => {
-    const r = await open(query)
+  const openPage = async (query = '', opts = {}) => {
+    const r = await open(query, undefined, opts)
     await r.page.getByRole('heading', { name: 'Расценка материалов' }).waitFor({ timeout: 120000 })
     // Таблица загрузила позиции и цены (или показала, почему не может) — дальше можно менять «базу».
     await r.page.locator('.sp-table, .sp-banner').first().waitFor({ timeout: 120000 })
     return r
   }
   const summary = (page) => page.locator('.sp-summary-inline').innerText().then(plain)
+  const rowOf = (page, name, vor) => page.locator('.sp-table tbody tr', { has: page.getByLabel(price(name, vor)) })
+  const ratesNamed = (page, name) => page.evaluate((n) => window.__fakeDb.tender_vor_supply_rates.filter((r) => r.material_name === n), name)
   const rateOf = (page, name, vor) => page.evaluate(([n, v]) => window.__fakeDb.tender_vor_supply_rates
     .find((r) => r.material_name === n && r.estimate_name === v) || null, [name, vor])
 
@@ -128,7 +135,7 @@ describe('Расценка снабжением: таблица', { skip: !launc
     try {
       const banner = page.locator('.sp-problem', { hasText: 'ВОР_ЭОМ.xlsx' })
       await banner.waitFor()
-      assert.match(await banner.innerText(), /не загрузился: файл не открылся/)
+      assert.match(await banner.innerText(), /не загрузился: файл не скачался/)
       assert.equal(await banner.getByRole('button', { name: 'Повторить' }).count(), 1)
       assert.deepEqual(errors, [])
     } finally {
@@ -149,6 +156,129 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.deepEqual(errors, [])
     } finally {
       await context.close()
+    }
+  })
+
+  it('сохраняется само, без Enter: через секунду после ввода; галочка у строки остаётся, вверху — «Все цены сохранены»', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      const field = page.getByLabel(price('Кран шаровой Ду15', 'ОВ'))
+      await field.focus()
+      await page.waitForTimeout(60)
+      await field.fill('777')
+      // Поле не покидали и Enter не нажимали — цена всё равно в базе.
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15' && r.supply_price === 777), null, { timeout: 5000 })
+      assert.equal(await field.evaluate((el) => el === document.activeElement), true, 'фокус остался в поле')
+      await page.locator('.sp-save-status.is-ok', { hasText: 'Все цены сохранены' }).waitFor()
+      await field.press('Tab')
+      // Через 3 с галочка на месте (раньше гасла через 2 с), и у уже расценённой изоляции — тоже.
+      await page.waitForTimeout(3000)
+      assert.equal(await rowOf(page, 'Кран шаровой Ду15', 'ОВ').locator('.sp-st.is-saved').count(), 1)
+      assert.equal(await rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ').locator('.sp-st.is-saved').count(), 1)
+      assert.equal(await rowOf(page, 'Хомут монтажный', 'ОВ').locator('.sp-st.is-saved').count(), 0, 'у нерасценённой галочки нет')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('медленный сервер: Tab через «Итого» во время записи — одна запись, без «цену уже изменили»', async () => {
+    const { page, context, errors } = await openPage('', { latency: 400 })
+    try {
+      const field = page.getByLabel(price('Кран шаровой Ду15', 'ОВ'))
+      await field.focus()
+      await page.waitForTimeout(60)
+      await field.fill('1500')
+      await page.keyboard.press('Tab') // в «Итого» той же строки — запись цены ещё идёт
+      await page.waitForTimeout(80)
+      await page.keyboard.press('Tab') // и дальше, ничего не меняя
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15'))
+      await page.waitForTimeout(2500)
+      assert.equal(await page.getByRole('alertdialog').count(), 0, 'окна «изменено другим» нет')
+      const rows = await ratesNamed(page, 'Кран шаровой Ду15')
+      assert.equal(rows.length, 1)
+      assert.equal(rows[0].price_input, 'unit', 'проход по «Итого» не переписал цену суммой')
+      assert.equal(rows[0].row_version, 1, 'вторая запись не уходила')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('медленный сервер: исправили цену, пока первая ещё сохраняется — пишется по новой версии, без конфликта', async () => {
+    const { page, context, errors } = await openPage('', { latency: 400 })
+    try {
+      const field = page.getByLabel(price('Кран шаровой Ду15', 'ОВ'))
+      await enter(field, '100')
+      await enter(field, '150')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15' && r.supply_price === 150), null, { timeout: 10000 })
+      await page.waitForTimeout(1000)
+      assert.equal(await page.getByRole('alertdialog').count(), 0)
+      const rows = await ratesNamed(page, 'Кран шаровой Ду15')
+      assert.equal(rows.length, 1)
+      assert.equal(rows[0].row_version, 2)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('исправили цену — подставленная за сеанс цена такой же позиции исправляется тоже; изменённая вручную — нет', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      const vk = () => rateOf(page, 'труба медная ∅12.7', 'ВК')
+      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '412,5')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && r.supply_price === 412.5))
+      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '420')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && r.supply_price === 420))
+      // В ВК цену поправили руками — дальше она своя.
+      await enter(page.getByLabel(price('труба медная ∅12.7', 'ВК')), '400')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ВК' && r.supply_price === 400))
+      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '430')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.estimate_name === 'ОВ' && r.supply_price === 430))
+      await page.waitForTimeout(500)
+      assert.equal((await vk()).supply_price, 400)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('у позиции без объёма — подсказка «вводится только цена за единицу», поле итога с пометкой', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      const row = rowOf(page, 'Хомут монтажный', 'ОВ')
+      assert.match(await row.innerText(), /объёма в ВОР нет: вводится только цена за единицу/)
+      const total = page.getByLabel(sum('Хомут монтажный', 'ОВ'))
+      assert.equal(await total.isDisabled(), true)
+      assert.equal(await total.getAttribute('placeholder'), 'нет объёма')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('файл ВОР без листа «Материалы»: причина видна, запоминается — при следующем открытии файл не скачивается', async () => {
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Наименование работ', 'Ед.', 'Объём'], ['Монтаж', 'м', 5]]), 'РАБОТЫ')
+    const dataUrl = `data:application/octet-stream;base64,${XLSX.write(wb, { type: 'base64', bookType: 'xlsx' })}`
+    const init = { fn: (url) => { window.__fakeFiles = { 'tenders/tender-q/x-ВОР_Корпус7.xlsx': url } }, arg: dataUrl }
+    const first = await open('&noSheetFile=1', '/tenders/materials/mat-q/pricing', { init })
+    try {
+      const banner = first.page.locator('.sp-problem', { hasText: 'ВОР_Корпус7.xlsx' })
+      await banner.waitFor({ timeout: 120000 })
+      assert.match(await banner.innerText(), /нет листа «Материалы» \(листы: РАБОТЫ\)/)
+      // Позиции всё равно есть — из вкладки «ВОР» карточки.
+      await first.page.getByText('ВОР «Корпус 7»', { exact: true }).waitFor()
+      assert.equal((await first.page.evaluate(() => window.__fakeFileRequests || [])).length, 1)
+      await first.page.close()
+
+      const second = await open('&noSheetFile=1', '/tenders/materials/mat-q/pricing', { context: first.context })
+      await second.page.locator('.sp-problem', { hasText: 'ВОР_Корпус7.xlsx' }).waitFor({ timeout: 120000 })
+      assert.deepEqual(await second.page.evaluate(() => window.__fakeFileRequests || []), [], 'файл не скачивался снова')
+      assert.deepEqual([...first.errors, ...second.errors], [])
+    } finally {
+      await first.context.close()
     }
   })
 

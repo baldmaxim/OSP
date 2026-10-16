@@ -150,15 +150,16 @@
 
 /* ── Таблица (sp-dense) ─────────────────────────────────────────────────
    Ширины по замерам: № — «999»; ед. — «шт., м²»; объём — «12 345,6789»; цена — поле «1 234 567,00»;
-   сумма — поле «123 456 789,00»; состояние — два значка. Сумма = 41,75rem + наименование ≥ 16rem. */
+   сумма — поле «123 456 789,00»; состояние — три места под значки (сохранено / объём / история).
+   Сумма = 42,5rem + наименование ≥ 16rem. */
 .sp-table-wrap { border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-secondary); }
-.ui-work.ui-work .sp-table { table-layout: fixed; width: 100%; min-width: 57.75rem; border-collapse: collapse; }
+.ui-work.ui-work .sp-table { table-layout: fixed; width: 100%; min-width: 58.5rem; border-collapse: collapse; }
 .sp-table .sp-c-num { width: 3rem; }
 .sp-table .sp-c-unit { width: 5rem; }
 .sp-table .sp-c-vol { width: 8rem; }
 .sp-table .sp-c-price { width: 9.5rem; }
 .sp-table .sp-c-total { width: 11rem; }
-.sp-table .sp-c-state { width: 5.25rem; }
+.sp-table .sp-c-state { width: 6rem; }
 .ui-work.ui-work .sp-table > thead > tr > th {
   font-size: var(--ui-hint);
   line-height: var(--ui-hint-lh);
@@ -175,6 +176,7 @@
   vertical-align: top;
 }
 .ui-work.ui-work .sp-table > tbody > tr > td.sp-input-cell { padding: 0.1875rem 0.375rem; }
+.ui-work.ui-work .sp-table > tbody > tr > td.sp-state { padding: 0.1875rem 0.25rem; }
 /* Заголовки числовых колонок — по правому краю, как сами числа. */
 .ui-work.ui-work .sp-table > thead > tr > th.ui-money { text-align: right; padding-right: 0.875rem; }
 .ui-work.ui-work .sp-table > tfoot > tr > td { border-left: 0; border-right: 0; background: none; }
@@ -214,7 +216,41 @@
 .sp-money-input:disabled { background: transparent; border-color: transparent; color: var(--text-primary); opacity: 1; cursor: default; }
 .sp-money-input:disabled::placeholder { color: var(--text-tertiary); }
 
-.sp-state-inner { display: flex; align-items: center; justify-content: flex-end; gap: 0.125rem; min-height: 1.875rem; }
+/* Три постоянных места: значок состояния, «объём изменился» / «отменить ввод», история — значки не
+   прыгают при сохранении. Галочка остаётся, пока у позиции есть сохранённая цена. */
+.sp-state-inner {
+  display: grid;
+  grid-template-columns: 1.5rem 1.75rem 1.75rem;
+  justify-content: end;
+  align-items: center;
+  column-gap: 0.125rem;
+  min-height: 1.875rem;
+}
+.sp-slot { display: inline-flex; align-items: center; justify-content: center; }
+.sp-st.is-fresh { animation: sp-saved-pop 0.6s ease-out; }
+@keyframes sp-saved-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .sp-st.is-fresh { animation: none; } }
+
+/* Строка состояния над таблицей — постоянной высоты, чтобы сообщения не сдвигали строки. */
+.sp-statusbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  min-height: 1.75rem;
+  margin: 0 0 0.375rem;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.sp-save-status { display: inline-flex; align-items: center; gap: 0.375rem; }
+.sp-save-status.is-ok { color: #15803d; }
+.sp-save-status.is-saving { color: var(--text-secondary); }
+.sp-save-status.is-error { color: var(--danger-color); font-weight: var(--ui-medium); }
+.sp-fill-note { color: #075985; }
 .sp-st-group { display: inline-flex; align-items: center; gap: 0.125rem; }
 .sp-st { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; }
 .sp-st.is-saving { color: var(--text-secondary); }
@@ -408,6 +444,8 @@
 [data-theme='dark'] .ui-work.ui-work .sp-table > tbody > tr.is-error > td,
 [data-theme='dark'] .ui-work.ui-work .sp-table > tbody > tr.is-conflict > td { background: #450a0a; }
 [data-theme='dark'] .sp-st.is-remote { color: #7dd3fc; }
+[data-theme='dark'] .sp-save-status.is-ok { color: #86efac; }
+[data-theme='dark'] .sp-fill-note { color: #7dd3fc; }
 
 /* ── Телефон: строка — карточка ─────────────────────────────────────────── */
 @media (max-width: 640px) {
@@ -439,6 +477,8 @@
     font-size: var(--ui-hint);
   }
   .sp-table td.sp-state { grid-column: 1 / -1; }
+  /* Значков нет (позиция не расценена) — пустой полосы под карточкой тоже нет. */
+  .sp-table td.sp-state:not(:has(.sp-st, .sp-icon-btn)) { display: none; }
   .sp-table tfoot tr { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 0.5rem 0.75rem; }
   .sp-table tfoot td { border: 0; }
   .sp-orphans li { grid-template-columns: 1fr auto auto; }

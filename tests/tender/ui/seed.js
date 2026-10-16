@@ -123,7 +123,7 @@ window.__fakeDb.s3_documents.push(
   { id: 'doc-vor-p2', owner_type: 'tender', owner_id: 'tender-p', doc_category: 'vor_statement',
     file_name: 'ВОР_ВК.xlsx', s3_key: 'tenders/tender-p/x-ВОР_ВК.xlsx', created_at: '2026-10-12T09:10:00Z', uploaded_by_name: 'Иванов И. И.' },
 )
-// brokenFile=1 — третий файл ВОР, который не открывается (хранилища в стенде нет): автозагрузка покажет причину.
+// brokenFile=1 — третий файл ВОР, который не скачивается (хранилища в стенде нет): автозагрузка покажет причину.
 if (params.get('brokenFile') === '1') {
   window.__fakeDb.s3_documents.push({ id: 'doc-vor-bad', owner_type: 'tender', owner_id: 'tender-p', doc_category: 'vor_statement',
     file_name: 'ВОР_ЭОМ.xlsx', s3_key: 'tenders/tender-p/x-ВОР_ЭОМ.xlsx', created_at: '2026-10-13T09:00:00Z', uploaded_by_name: 'Иванов И. И.' })
@@ -162,6 +162,29 @@ window.__fakeDb.tender_vor_supply_rates.push({
   material_key: normName('Изоляция K-Flex 13×15'),
 })
 window.__fakeDb.tender_supply_rate_log = []
+// Уникальные ключи, как в базе: цена — одна на (тендер, ВОР, наименование), список позиций — один на ВОР.
+window.__fakeUnique = {
+  tender_vor_supply_rates: ['tender_id', 'estimate_name', 'material_name'],
+  tender_supply_sources: ['tender_id', 'estimate_name'],
+}
+// Журнал расценок — триггер «после записи» tender_supply_rate_log_write: номер растёт с каждой правкой.
+let rateLogSeq = 0
+window.__fakeAfter = {
+  tender_vor_supply_rates(op, row, old) {
+    const r = row || old
+    window.__fakeDb.tender_supply_rate_log.push({
+      id: ++rateLogSeq, tender_id: r.tender_id, rate_id: r.id, op, estimate_name: r.estimate_name, material_name: r.material_name,
+      unit: r.unit, old_price: old?.supply_price ?? null, new_price: row?.supply_price ?? null, changed_by: row?.updated_by || 'user-1',
+      changed_by_name: 'Стендов С. С.', changed_at: new Date().toISOString(),
+    })
+  },
+}
+// noSheetFile=1 — у тендера без файлов ВОР появляется файл без листа «Материалы» (содержимое кладёт тест в
+// window.__fakeFiles): причина запоминается, и при следующем открытии файл не скачивается снова.
+if (params.get('noSheetFile') === '1') {
+  window.__fakeDb.s3_documents.push({ id: 'doc-vor-q', owner_type: 'tender', owner_id: 'tender-q', doc_category: 'vor_statement',
+    file_name: 'ВОР_Корпус7.xlsx', s3_key: 'tenders/tender-q/x-ВОР_Корпус7.xlsx', created_at: '2026-10-14T09:00:00Z', uploaded_by_name: 'Иванов И. И.' })
+}
 window.__fakeDb.employee_directory = [{ user_id: 'user-2', display_name: 'Петров П. П.', full_name: 'Петров Пётр Петрович', email: 'p@example.invalid', role: 'supply' }]
 if (params.get('missing') === '1') {
   window.__fakeErrors = { tender_supply_sources: { code: '42P01', message: 'relation "public.tender_supply_sources" does not exist' } }
