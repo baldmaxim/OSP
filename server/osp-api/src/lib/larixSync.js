@@ -106,19 +106,30 @@ export function normalizeBoqRow(raw) {
   return row
 }
 
-// Весь ответ: годные строки, число отброшенных и имена полей (без значений) — для журнала загрузок.
-export function normalizeBoq(rawRows) {
+// Приём позиций по одной (по мере разбора ответа Larix — larixClient.fetchBoq({ onRow })): позиция сразу
+// становится короткой строкой для базы, исходный объект не хранится. Итог — годные строки, число отброшенных и
+// имена полей (без значений) — для журнала загрузок.
+export function createBoqAccumulator() {
   const rows = []
   let skipped = 0
   const keys = new Set()
-  for (const raw of rawRows) {
-    if (raw && typeof raw === 'object' && !Array.isArray(raw) && keys.size < 200) {
-      for (const k of Object.keys(raw)) if (keys.size < 200 && KEY_RE.test(k)) keys.add(k)
-    }
-    const row = normalizeBoqRow(raw)
-    if (row) rows.push(row); else skipped++
+  return {
+    add(raw) {
+      if (raw && typeof raw === 'object' && !Array.isArray(raw) && keys.size < 200) {
+        for (const k of Object.keys(raw)) if (keys.size < 200 && KEY_RE.test(k)) keys.add(k)
+      }
+      const row = normalizeBoqRow(raw)
+      if (row) rows.push(row); else skipped++
+    },
+    result: () => ({ rows, skipped, keys: [...keys].sort() }),
   }
-  return { rows, skipped, keys: [...keys].sort() }
+}
+
+// Весь ответ сразу (тесты, небольшие массивы).
+export function normalizeBoq(rawRows) {
+  const acc = createBoqAccumulator()
+  for (const raw of rawRows) acc.add(raw)
+  return acc.result()
 }
 
 const shortError = (err) => String(err?.message || err || 'сбой').replace(/\s+/g, ' ').slice(0, 200)
@@ -188,9 +199,11 @@ export function createLarixSync({ client, targets, log, secrets = [], options = 
     }
     if (!started.length) return { started: 0, results: {} }
 
-    let fetched
+    const acc = createBoqAccumulator()
     try {
-      fetched = await client.fetchBoq()
+      const fetched = await client.fetchBoq({ onRow: acc.add })
+      // Клиент без построчной выдачи (подделки в тестах) отдаёт позиции массивом.
+      if (Array.isArray(fetched?.rows)) for (const raw of fetched.rows) acc.add(raw)
     } catch (err) {
       const code = err instanceof LarixError ? err.code : 'http'
       const message = clean(err)
@@ -198,8 +211,7 @@ export function createLarixSync({ client, targets, log, secrets = [], options = 
       await failAll(started, code, message)
       return { started: started.length, results: Object.fromEntries(started.map((s) => [s.target.name, { status: 'failed', code }])) }
     }
-    const { rows, skipped, keys } = normalizeBoq(fetched.rows)
-    fetched = null
+    const { rows, skipped, keys } = acc.result()
     const total = rows.length + skipped
     if (total > 0 && skipped / total > o.maxInvalidShare) {
       const message = `Larix: не прошли проверку ${skipped} из ${total} позиций — формат ответа изменился?`

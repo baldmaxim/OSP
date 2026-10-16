@@ -5,7 +5,7 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
-import { createLarixClient, larixBaseUrl, LarixError, redact } from '../../server/osp-api/src/lib/larixClient.js'
+import { createLarixClient, createJsonArrayParser, larixBaseUrl, LarixError, redact } from '../../server/osp-api/src/lib/larixClient.js'
 import { parseLarix } from '../../server/osp-api/src/config.js'
 
 const USER = 'larix-robot'
@@ -129,6 +129,77 @@ describe('Клиент Larix.CPM: вход, данные, защита логи�
   it('Larix недоступен — http без адреса и учётки', async () => {
     const dead = createLarixClient({ baseUrl: 'http://127.0.0.1:9', username: USER, password: PASS })
     await rejects(() => dead.fetchBoq(), 'http', /недоступен/)
+  })
+})
+
+// Потоковый разбор ответа (createJsonArrayParser + fetchBoq({ onRow })): позиции те же, что у JSON.parse всего
+// ответа, при любой границе кусков; ответ целиком в памяти не собирается.
+describe('Ответ Larix разбирается потоком', () => {
+  const TRICKY = '﻿ [\n {"work_title":"Скобки { } [ ] и запятая , внутри","measure_title":"м\\u00b2","q":"\\"кавычки\\" и \\\\ слэш"},'
+    + ' {"nested":{"a":[1,[2,{"b":"]}"}]],"c":null},"emoji":"кирпич 🧱 и 𝄞","n":-1.5e3,"t":true,"f":false},'
+    + ' "строка-элемент", 42, null, true, {}, [], [{"x":"y"}]\n] \n'
+  const parseAll = (chunks, opts = {}) => {
+    const items = []
+    const p = createJsonArrayParser({ onItem: (v) => items.push(v), ...opts })
+    for (const c of chunks) p.push(c)
+    return { items, count: p.end() }
+  }
+  const expected = JSON.parse(TRICKY.replace(/^﻿/, ''))
+  const invalid = (fn, re) => assert.throws(fn, (err) => err instanceof LarixError && err.code === 'invalid' && (!re || re.test(err.message)))
+
+  it('любая граница кусков (в т.ч. по одному знаку) — те же позиции, что у JSON.parse всего ответа', () => {
+    for (let k = 1; k < TRICKY.length; k++) {
+      const { items, count } = parseAll([TRICKY.slice(0, k), TRICKY.slice(k)])
+      assert.deepEqual(items, expected, `граница на ${k}`)
+      assert.equal(count, expected.length)
+    }
+    assert.deepEqual(parseAll([...TRICKY]).items, expected, 'по одному знаку')
+    assert.deepEqual(parseAll(['[', ' ', ']']).items, [], 'пустой массив')
+  })
+
+  it('не массив, мусор, обрыв, лишняя запятая и хвост — invalid; позиция больше предела — too_large', () => {
+    invalid(() => parseAll(['{"rows":[]}']), /не массив/)
+    invalid(() => parseAll(['<html>oops</html>']), /не JSON/)
+    invalid(() => parseAll(['']), /не JSON/)
+    invalid(() => parseAll(['[{"a":1}', ',{"b":']), /неполный/)
+    invalid(() => parseAll(['[1,]']))
+    invalid(() => parseAll(['[1 2]']))
+    invalid(() => parseAll(['[] x']))
+    invalid(() => parseAll(['[{"a":}]']), /не JSON/)
+    const big = `[{"s":"${'я'.repeat(200)}"}]`
+    assert.throws(() => parseAll([big], { maxItemChars: 100 }), (err) => err.code === 'too_large')
+    assert.throws(() => parseAll([...big], { maxItemChars: 100 }), (err) => err.code === 'too_large', 'и когда позиция пришла по кускам')
+    assert.equal(parseAll([big], { maxItemChars: 1000 }).count, 1)
+  })
+
+  // Ответ «ВОР» — поток байтов по одному: буквы кириллицы и эмодзи разрезаны между кусками (TextDecoder в потоковом
+  // режиме), а первая позиция доходит до onRow раньше, чем Larix отдал ответ до конца.
+  it('байты по одному: буквы через границу кусков целы; позиции приходят в onRow по мере чтения', async () => {
+    const body = new TextEncoder().encode(TRICKY)
+    let sent = 0
+    let releaseRest
+    const restAllowed = new Promise((r) => { releaseRest = r })
+    const firstItemEnd = new TextEncoder().encode(TRICKY.slice(0, TRICKY.indexOf('},') + 2)).length
+    const fetchImpl = async (url) => {
+      if (url.endsWith('/api/login')) return new Response(JSON.stringify({ token: TOKEN }), { status: 200, headers: { 'content-type': 'application/json' } })
+      const stream = new ReadableStream({
+        async pull(controller) {
+          if (sent === firstItemEnd) await restAllowed
+          if (sent >= body.length) return controller.close()
+          controller.enqueue(body.slice(sent, sent + 1))
+          sent++
+        },
+      })
+      return new Response(stream, { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    const client = createLarixClient({ baseUrl: 'http://127.0.0.1:9', username: USER, password: PASS, fetchImpl })
+    const seen = []
+    const done = client.fetchBoq({ onRow: (row) => { seen.push(row); if (seen.length === 1) releaseRest() } })
+    const result = await Promise.race([done, new Promise((_, rej) => setTimeout(() => rej(new Error('первая позиция не дошла до onRow до конца ответа')), 5000))])
+    assert.deepEqual(seen, expected)
+    assert.equal(result.count, expected.length)
+    assert.equal(result.rows, null, 'с onRow позиции не собираются в массив')
+    assert.equal(result.bytes, body.length)
   })
 })
 

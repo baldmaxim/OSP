@@ -17,7 +17,7 @@
 import { loadConfig } from './config.js'
 import { defaultDeps, buildLarixTargets, larixSecrets } from './app.js'
 import { createLarixClient, redact } from './lib/larixClient.js'
-import { createLarixSync, normalizeBoq } from './lib/larixSync.js'
+import { createLarixSync, createBoqAccumulator } from './lib/larixSync.js'
 
 const LINK_RE = /^\s*https?:\/\/cpm\.su10\.larix\.ru\/contract\/(\d{1,15})\/?([?#].*)?\s*$/i
 const ROUND = [1000, 2000, 5000, 10000, 20000, 50000, 100000]
@@ -57,17 +57,16 @@ const fmt = (n) => Number(n).toLocaleString('ru-RU')
 
 async function probe(config, db, deps) {
   const client = createLarixClient(config.larix)
-  const t0 = Date.now()
-  const { rows: raw, bytes } = await client.fetchBoq()
-  const seconds = ((Date.now() - t0) / 1000).toFixed(1)
-  console.log(`Larix: ответ ${(bytes / 1024 / 1024).toFixed(1)} МБ, позиций ${fmt(raw.length)}, за ${seconds} с`)
   const types = new Map()
   const tally = (map, key) => map.set(key, (map.get(key) || 0) + 1)
   const objectTypes = new Map()
   const states = new Map()
   const contracts = new Set()
-  for (const r of raw) {
-    if (!r || typeof r !== 'object') continue
+  const acc = createBoqAccumulator()
+  // Подсчёты — по мере чтения ответа, по одной позиции: весь ответ в памяти не держится (larixClient.js).
+  const onRow = (r) => {
+    acc.add(r)
+    if (!r || typeof r !== 'object') return
     for (const [k, v] of Object.entries(r)) {
       if (!types.has(k)) types.set(k, new Map())
       tally(types.get(k), typeOf(v))
@@ -76,6 +75,10 @@ async function probe(config, db, deps) {
     tally(states, String(r.contract_state ?? '—').slice(0, 60))
     if (r.contract_id !== null && r.contract_id !== undefined) contracts.add(Number(r.contract_id))
   }
+  const t0 = Date.now()
+  const { count, bytes } = await client.fetchBoq({ onRow })
+  const seconds = ((Date.now() - t0) / 1000).toFixed(1)
+  console.log(`Larix: ответ ${(bytes / 1024 / 1024).toFixed(1)} МБ, позиций ${fmt(count)}, за ${seconds} с`)
   console.log('Поля и типы значений:')
   for (const [k, m] of [...types.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     console.log(`  ${k.slice(0, 64)}: ${[...m.entries()].map(([t, n]) => `${t} ${fmt(n)}`).join(', ')}`)
@@ -85,12 +88,12 @@ async function probe(config, db, deps) {
   const top = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([v, n]) => `${v} (${fmt(n)})`).join('; ')
   console.log(`Виды документов (object_type): ${top(objectTypes)}`)
   console.log(`Статусы договоров (contract_state): ${top(states)}`)
-  const { rows, skipped } = normalizeBoq(raw)
+  const { rows, skipped } = acc.result()
   console.log(`Прошли проверку: ${fmt(rows.length)}; отброшено: ${fmt(skipped)}`)
   const materials = rows.filter((r) => r.price_material > 0).length
   const works = rows.filter((r) => r.price_work > 0).length
   console.log(`Строк реестра будет: материалы ${fmt(materials)}, работы ${fmt(works)}`)
-  if (ROUND.includes(raw.length)) console.log(`ВНИМАНИЕ число позиций круглое (${fmt(raw.length)}) — возможно, Larix отдаёт не всё (предел страницы)`)
+  if (ROUND.includes(count)) console.log(`ВНИМАНИЕ число позиций круглое (${fmt(count)}) — возможно, Larix отдаёт не всё (предел страницы)`)
   const ours = await ourLarixIds(config, db, deps)
   if (ours === null) {
     console.log(`Договоров в ответе: ${fmt(contracts.size)}; наши договоры не прочитаны (нет OSP_DB_URL и служебного ключа Supabase)`)
