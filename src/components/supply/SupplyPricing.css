@@ -1,0 +1,412 @@
+/* Расценка материалов снабжением (SupplyPricingPage и её окна). Рабочий стиль — workUi.css (корень .ui-work),
+   правила — docs/UI_GUIDELINES.md: шкала --ui-*, числа tabular-nums и вправо, ширины колонок в rem по замерам,
+   узкое окно — прокрутка таблицы. Плотный вариант sp-dense: 13/18 в таблице, 12/16 заголовки. */
+
+.sp-page {
+  padding: 1rem 1.25rem 2rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  min-height: 100%;
+}
+.sp-back {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  color: var(--ui-link);
+  text-decoration: none;
+}
+.sp-back:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── Шапка ─────────────────────────────────────────────────────────────── */
+.sp-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  margin-bottom: 0.75rem;
+}
+.sp-title h2 {
+  margin: 0 0 0.25rem;
+  font-size: var(--ui-title);
+  line-height: var(--ui-title-lh);
+  font-weight: var(--ui-semibold);
+}
+.sp-subtitle, .sp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+}
+.sp-subtitle > span + span::before,
+.sp-meta > span + span::before {
+  content: '·';
+  margin-right: 0.75rem;
+  color: var(--text-tertiary);
+}
+.sp-desc { font-weight: var(--ui-medium); }
+.sp-meta { margin-top: 0.25rem; color: var(--text-secondary); }
+.sp-meta b { color: var(--text-primary); font-weight: var(--ui-medium); }
+.sp-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  border-radius: 12px;
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+.sp-status.is-work { background: #e0f2fe; color: #075985; }
+.sp-status.is-done { background: var(--success-light); color: #166534; }
+.sp-status.is-off { background: var(--hover-bg); color: var(--text-secondary); }
+.sp-summary {
+  display: grid;
+  gap: 0.125rem;
+  text-align: right;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  color: var(--text-secondary);
+}
+.sp-summary b { color: var(--text-primary); font-weight: var(--ui-semibold); }
+
+/* ── Плашки ────────────────────────────────────────────────────────────── */
+.sp-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+}
+.sp-banner > svg { flex: 0 0 auto; color: var(--text-secondary); }
+.sp-banner.is-warn { border-color: var(--warning-muted); background: var(--warning-light); }
+.sp-banner.is-warn > svg { color: var(--warning-color); }
+.sp-muted { color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-error-text { color: var(--danger-color); font-size: var(--ui-text); line-height: var(--ui-text-lh); }
+.sp-link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-link);
+  font-size: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sp-empty {
+  padding: 2rem 1rem;
+  border: 1px dashed var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  text-align: center;
+  font-size: var(--ui-text);
+}
+.sp-empty p { margin: 0 0 0.5rem; }
+.sp-empty .btn-primary { display: inline-flex; align-items: center; gap: 0.375rem; }
+
+/* ── ВОР тендера и источник ─────────────────────────────────────────────── */
+.sp-docs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+}
+.sp-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: var(--ui-control-h);
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--ui-text);
+  cursor: pointer;
+}
+.sp-doc:hover { background: var(--hover-bg); }
+.sp-doc.active { border-color: var(--ui-link); box-shadow: inset 0 0 0 1px var(--ui-link); font-weight: var(--ui-medium); }
+.sp-doc.is-complete > svg { color: var(--success-color); }
+.sp-doc-count { color: var(--text-secondary); font-size: var(--ui-th); }
+.sp-doc-stale { display: inline-flex; color: var(--warning-color); }
+.sp-source {
+  margin-bottom: 0.5rem;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+}
+.sp-source .sp-link-btn { margin-left: 0.5rem; }
+
+/* ── Панель ────────────────────────────────────────────────────────────── */
+.sp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.sp-search { flex: 0 1 20rem; }
+.sp-search input {
+  width: 100%;
+  height: var(--ui-control-h);
+  padding: 0 0.625rem 0 2rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--ui-text);
+}
+.sp-filter { display: inline-flex; border: 1px solid var(--border-color-dark); border-radius: var(--ui-radius); overflow: hidden; }
+.sp-filter-btn {
+  height: calc(var(--ui-control-h) - 2px);
+  padding: 0 0.75rem;
+  border: 0;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--ui-text);
+  cursor: pointer;
+}
+.sp-filter-btn + .sp-filter-btn { border-left: 1px solid var(--border-color); }
+.sp-filter-btn.active { background: var(--hover-bg); color: var(--text-primary); font-weight: var(--ui-medium); }
+.sp-toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-left: auto; }
+.sp-toolbar-right .btn-secondary { display: inline-flex; align-items: center; gap: 0.375rem; }
+
+/* ── Таблица (sp-dense) ─────────────────────────────────────────────────
+   Ширины по замерам: № — «999»; ед. — «шт., м²»; объём — «12 345,6789»; цена — поле «1 234 567,00»;
+   сумма — поле «123 456 789,00»; состояние — два значка. Сумма = 41,75rem + наименование ≥ 16rem. */
+.sp-table-wrap { border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-secondary); }
+.ui-work.ui-work .sp-table { table-layout: fixed; width: 100%; min-width: 57.75rem; border-collapse: collapse; }
+.sp-table .sp-c-num { width: 3rem; }
+.sp-table .sp-c-unit { width: 5rem; }
+.sp-table .sp-c-vol { width: 8rem; }
+.sp-table .sp-c-price { width: 9.5rem; }
+.sp-table .sp-c-total { width: 11rem; }
+.sp-table .sp-c-state { width: 5.25rem; }
+.ui-work.ui-work .sp-table > thead > tr > th {
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  padding: 0.375rem 0.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-secondary);
+}
+.ui-work.ui-work .sp-table > tbody > tr > td {
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  padding: 0.375rem 0.5rem;
+  vertical-align: top;
+}
+.ui-work.ui-work .sp-table > tbody > tr > td.sp-input-cell { padding: 0.1875rem 0.375rem; }
+/* Заголовки числовых колонок — по правому краю, как сами числа. */
+.ui-work.ui-work .sp-table > thead > tr > th.ui-money { text-align: right; padding-right: 0.875rem; }
+.ui-work.ui-work .sp-table > tfoot > tr > td { border-left: 0; border-right: 0; background: none; }
+.ui-work.ui-work .sp-table > tfoot > tr > td.ui-money { padding-right: 0.875rem; }
+.sp-name { hyphens: auto; overflow-wrap: anywhere; }
+.sp-hint { display: block; margin-top: 0.125rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-hint.is-warn { color: var(--warning-color); }
+.sp-hint .sp-link-btn { margin-left: 0.375rem; }
+.ui-work.ui-work .sp-table > tbody > tr.is-unpriced > td { background: var(--warning-light); }
+.ui-work.ui-work .sp-table > tbody > tr.is-remote > td { background: #e0f2fe; transition: background 0.6s; }
+.ui-work.ui-work .sp-table > tbody > tr.is-error > td,
+.ui-work.ui-work .sp-table > tbody > tr.is-conflict > td { background: #fef2f2; }
+.ui-work.ui-work .sp-table > tfoot > tr > td {
+  padding: 0.5rem;
+  border-top: 1px solid var(--border-color-dark);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  font-weight: var(--ui-medium);
+}
+
+.sp-money-input {
+  width: 100%;
+  height: 1.875rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-th);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.sp-money-input.is-derived { color: var(--text-secondary); background: transparent; border-style: dashed; }
+.sp-money-input.is-invalid { border-color: var(--danger-color); }
+.sp-money-input:focus { outline: 2px solid var(--primary-color); outline-offset: 0; color: var(--text-primary); border-style: solid; }
+.sp-money-input:disabled { background: transparent; border-color: transparent; color: var(--text-primary); opacity: 1; cursor: default; }
+.sp-money-input:disabled::placeholder { color: var(--text-tertiary); }
+
+.sp-state-inner { display: flex; align-items: center; justify-content: flex-end; gap: 0.125rem; min-height: 1.875rem; }
+.sp-st-group { display: inline-flex; align-items: center; gap: 0.125rem; }
+.sp-st { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; }
+.sp-st.is-saving { color: var(--text-secondary); }
+.sp-st.is-saved { color: var(--success-color); }
+.sp-st.is-error { color: var(--danger-color); }
+.sp-st.is-warn { color: var(--warning-color); }
+.sp-st.is-remote { color: #0284c7; font-size: 0.75rem; }
+.sp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.sp-icon-btn:hover { background: var(--hover-bg); color: var(--text-primary); }
+.sp-icon-btn.is-error { color: var(--danger-color); }
+.sp-icon-btn.is-warn { color: var(--warning-color); }
+
+/* ── Цены без позиции ──────────────────────────────────────────────────── */
+.sp-orphans { margin-top: 0.75rem; font-size: var(--ui-text); }
+.sp-orphans summary { cursor: pointer; font-weight: var(--ui-medium); }
+.sp-orphans ul { margin: 0.5rem 0 0; padding: 0; list-style: none; }
+.sp-orphans li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5rem 10rem auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ── Окна ──────────────────────────────────────────────────────────────── */
+.sp-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.45);
+}
+.sp-modal {
+  width: min(32rem, 100%);
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
+  font-family: var(--ui-font);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+}
+.sp-modal-wide { width: min(40rem, 100%); }
+.sp-modal-import { width: min(52rem, 100%); }
+.sp-modal h3 {
+  margin: 0;
+  padding: 1rem 1.25rem 0.5rem;
+  font-size: var(--ui-block);
+  line-height: var(--ui-block-lh);
+  font-weight: var(--ui-semibold);
+}
+.sp-modal-item { margin: 0; padding: 0 1.25rem; font-weight: var(--ui-medium); }
+.sp-modal-body { padding: 0.5rem 1.25rem; overflow: auto; }
+.sp-modal-body p { margin: 0 0 0.5rem; }
+.sp-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem 1rem;
+  border-top: 1px solid var(--border-color);
+}
+.sp-modal-actions button { height: var(--ui-control-h); padding: 0 0.875rem; border-radius: var(--ui-radius); font-size: var(--ui-text); cursor: pointer; }
+
+.sp-history { margin: 0; padding: 0; list-style: none; }
+.sp-history li { padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
+.sp-history-head { display: flex; gap: 0.75rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+
+.sp-import-list { margin: 0 0 0.75rem; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+.sp-import-item { padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
+.sp-import-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; cursor: pointer; }
+.sp-import-file { font-weight: var(--ui-medium); overflow-wrap: anywhere; }
+.sp-import-status { margin-top: 0.25rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-import-status.is-warn { color: var(--warning-color); }
+.sp-import-target { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin-top: 0.375rem; }
+.sp-import-target label { display: inline-flex; align-items: center; gap: 0.375rem; }
+.sp-import-target input {
+  width: 16rem;
+  height: 1.875rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+}
+.sp-import-diff { color: var(--text-secondary); font-size: var(--ui-hint); }
+.sp-import-manual { margin-top: 0.375rem; }
+.sp-import-manual summary { cursor: pointer; color: var(--ui-link); font-size: var(--ui-hint); }
+.sp-import-tab { margin-top: 0.5rem; }
+.sp-manual { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 0.75rem; margin-top: 0.5rem; }
+.sp-manual label { display: grid; gap: 0.125rem; font-size: var(--ui-hint); color: var(--text-secondary); }
+.sp-manual select, .sp-manual input {
+  height: 1.875rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-th);
+}
+.sp-manual input { width: 7rem; }
+.sp-manual select { max-width: 16rem; }
+
+/* ── Тёмная тема ───────────────────────────────────────────────────────── */
+[data-theme='dark'] .sp-status.is-work { background: #0c4a6e; color: #bae6fd; }
+[data-theme='dark'] .sp-status.is-done { color: #bbf7d0; }
+[data-theme='dark'] .ui-work.ui-work .sp-table > tbody > tr.is-remote > td { background: #0c4a6e; }
+[data-theme='dark'] .ui-work.ui-work .sp-table > tbody > tr.is-error > td,
+[data-theme='dark'] .ui-work.ui-work .sp-table > tbody > tr.is-conflict > td { background: #450a0a; }
+[data-theme='dark'] .sp-st.is-remote { color: #7dd3fc; }
+
+/* ── Телефон: строка — карточка ─────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .sp-page { padding: 0.75rem 1rem 1.5rem; }
+  .sp-summary { text-align: left; }
+  .sp-registry-hint { display: none; }
+  .sp-search { flex: 1 1 100%; }
+  .ui-work.ui-work .sp-table { min-width: 0; table-layout: auto; }
+  .sp-table colgroup, .sp-table thead { display: none; }
+  .sp-table, .sp-table tbody, .sp-table tfoot { display: block; }
+  .ui-work.ui-work .sp-table > tbody > tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.25rem 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .ui-work.ui-work .sp-table > tbody > tr > td { padding: 0; border: 0; background: none; }
+  .ui-work.ui-work .sp-table > tbody > tr.is-unpriced { background: var(--warning-light); }
+  .sp-table td.sp-name { grid-column: 1 / -1; font-weight: var(--ui-medium); }
+  .sp-table td.ui-rownum { display: none; }
+  .sp-table td[data-label]:not(.sp-name):not([data-label=''])::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--text-secondary);
+    font-size: var(--ui-hint);
+  }
+  .sp-table td.sp-state { grid-column: 1 / -1; }
+  .sp-table tfoot tr { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 0.5rem 0.75rem; }
+  .sp-table tfoot td { border: 0; }
+  .sp-orphans li { grid-template-columns: 1fr auto auto; }
+}

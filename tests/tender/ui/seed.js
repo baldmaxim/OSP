@@ -1,4 +1,5 @@
 // Данные крупного тендера для стенда (выполняется до импорта страницы).
+import { normName } from '../../../src/utils/supplyRateHelpers.js'
 const params = new URLSearchParams(window.location.search)
 const ITEMS = Number(params.get('items') || 5000)
 const CPS = Number(params.get('cps') || 10)
@@ -98,4 +99,62 @@ window.__fakeDb = {
   tender_proposal_files: [],
   tender_audit_log: [],
   s3_documents: [],
+}
+
+// ── Расценка снабжением на сайте (страница /tenders/materials/mat-p/pricing) ──────────────────────────
+// Основной тендер — направление «гарантия», чтобы не попасть в реестр стенда основного строительства.
+//   matStatus — статус тендера на материалы («Завершён» — только чтение); missing=1 — таблиц расценки нет.
+const PRICING_POSITIONS = [
+  { name: 'Труба медная Ø12,7', unit: 'м', volume: 1500, order: 1 },
+  { name: 'Кран шаровой Ду15', unit: 'шт', volume: 48, order: 2 },
+  { name: 'Изоляция K-Flex 13×15', unit: 'м', volume: 1100, order: 3 },
+  { name: 'Хомут монтажный', unit: 'шт', volume: null, order: 4 },
+].map((p) => ({ ...p, k: normName(p.name) }))
+window.__fakeDb.tenders.push(
+  { id: 'tender-p', tender_type: 'main', department: 'warranty', public_tender_number: 291, status: 'Идет тендерная процедура',
+    work_description: 'Монтаж систем ОВ и ВК', object_id: 'obj-1', objects: objects[0], deleted_at: null, parent_tender_id: null },
+  { id: 'mat-p', tender_type: 'materials', department: 'warranty', public_tender_number: 292, status: params.get('matStatus') || 'В работе',
+    work_description: 'Монтаж систем ОВ и ВК', object_id: 'obj-1', objects: objects[0], deleted_at: null, parent_tender_id: 'tender-p',
+    materials_proposal_deadline: '2026-10-30', materials_resp_name: 'Снабженцев С. С.' },
+)
+window.__fakeDb.s3_documents.push({ id: 'doc-vor-p', owner_type: 'tender', owner_id: 'tender-p', doc_category: 'vor_statement',
+  file_name: 'ВОР_ОВ.xlsx', s3_key: 'tenders/tender-p/x-ВОР_ОВ.xlsx', created_at: '2026-10-12T09:00:00Z', uploaded_by_name: 'Иванов И. И.' })
+window.__fakeDb.tender_supply_sources = [{
+  id: 'src-p', tender_id: 'tender-p', estimate_name: 'ОВ', source: 'vor_file', s3_document_id: 'doc-vor-p', file_name: 'ВОР_ОВ.xlsx',
+  sheet_name: 'Материалы', column_map: null, source_version: 'file:doc-vor-p:2026-10-12T09:00:00Z', positions: PRICING_POSITIONS,
+  positions_count: PRICING_POSITIONS.length, row_version: 1, parsed_by: 'user-2', parsed_at: '2026-10-12T09:05:00Z',
+}]
+window.__fakeDb.tender_vor_supply_rates.push({
+  id: 'rate-p-3', tender_id: 'tender-p', estimate_name: 'ОВ', material_name: 'Изоляция K-Flex 13×15', unit: 'м',
+  supply_price: 96, supply_price_exact: null, supply_total: 105600, price_input: 'unit', input_value: 96, volume_at_input: 1100,
+  row_version: 1, updated_by: 'user-2', updated_at: '2026-10-12T10:00:00Z', created_at: '2026-10-12T10:00:00Z',
+  material_key: normName('Изоляция K-Flex 13×15'),
+})
+window.__fakeDb.tender_supply_rate_log = []
+window.__fakeDb.employee_directory = [{ user_id: 'user-2', display_name: 'Петров П. П.', full_name: 'Петров Пётр Петрович', email: 'p@example.invalid', role: 'supply' }]
+if (params.get('missing') === '1') {
+  window.__fakeErrors = { tender_supply_sources: { code: '42P01', message: 'relation "public.tender_supply_sources" does not exist' } }
+}
+
+// Триггер расчёта tender_vor_supply_rates (миграция 20261020) — та же логика, что в базе.
+const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100
+window.__fakeTriggers = {
+  tender_vor_supply_rates(row, old) {
+    row.row_version = old ? (old.row_version || 1) + 1 : 1
+    row.updated_by = 'user-1'
+    const page = ['unit', 'total'].includes(row.price_input)
+      && (!old || row.price_input !== old.price_input || row.input_value !== old.input_value || row.volume_at_input !== old.volume_at_input)
+    if (page && row.price_input === 'unit') {
+      row.supply_price = round2(row.input_value)
+      row.supply_price_exact = null
+      row.supply_total = row.volume_at_input > 0 ? round2(row.supply_price * row.volume_at_input) : null
+    } else if (page) {
+      row.supply_total = round2(row.input_value)
+      row.supply_price_exact = row.supply_total / row.volume_at_input
+      row.supply_price = round2(row.supply_price_exact)
+    } else if (!old || row.supply_price !== old.supply_price) {
+      Object.assign(row, { price_input: 'import', input_value: row.supply_price, volume_at_input: null, supply_price_exact: null, supply_total: null })
+    }
+    row.material_key = normName(row.material_name)
+  },
 }

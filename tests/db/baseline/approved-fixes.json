@@ -458,5 +458,425 @@
     "to": "empty",
     "why": "новая таблица: порции загрузки из Larix.CPM — только служебный ключ",
     "candidate": "20261018_larix_contract_rates.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "admin",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "admin",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "admin",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "admin",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "err:P0001",
+    "why": "закрытие расценок после завершения тендера на материалы: строка-образец замера принадлежит тендеру, чей тендер на материалы «Завершён», — удаление отклоняет триггер (вставка и правка проверяются раньше и остаются «да»)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_full",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_full",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_full",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_full",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "err:P0001",
+    "why": "закрытие расценок после завершения тендера на материалы: строка-образец замера принадлежит тендеру, чей тендер на материалы «Завершён», — удаление отклоняет триггер (вставка и правка проверяются раньше и остаются «да»)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_none",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_none",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_none",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_none",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись расценок снабжения — только с правом правки «Тендеры» или «Тендеры на материалы» (раньше — любой одобренный сотрудник); чтение прежнее",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_none",
+    "table": "tender_vor_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "запись расценок снабжения — только с правом правки «Тендеры» или «Тендеры на материалы» (раньше — любой одобренный сотрудник); чтение прежнее",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "employee_none",
+    "table": "tender_vor_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись расценок снабжения — только с правом правки «Тендеры» или «Тендеры на материалы» (раньше — любой одобренный сотрудник); чтение прежнее",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "vors_only",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "vors_only",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "vors_only",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "vors_only",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "no",
+    "why": "запись расценок снабжения — только с правом правки «Тендеры» или «Тендеры на материалы» (раньше — любой одобренный сотрудник); чтение прежнее",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "vors_only",
+    "table": "tender_vor_supply_rates",
+    "action": "insert",
+    "from": "yes",
+    "to": "no",
+    "why": "запись расценок снабжения — только с правом правки «Тендеры» или «Тендеры на материалы» (раньше — любой одобренный сотрудник); чтение прежнее",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "vors_only",
+    "table": "tender_vor_supply_rates",
+    "action": "update",
+    "from": "yes",
+    "to": "no",
+    "why": "запись расценок снабжения — только с правом правки «Тендеры» или «Тендеры на материалы» (раньше — любой одобренный сотрудник); чтение прежнее",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "contractor_own",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "contractor_own",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "contractor_own",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "contractor_noorg",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "contractor_noorg",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "contractor_noorg",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "unapproved",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "unapproved",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "unapproved",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "blocked",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "blocked",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "blocked",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "no_user_roles",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "no_user_roles",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "no_user_roles",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "anon",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего); гостю не выдано",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "anon",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер; гостю не выдано",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "anon",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»; гостю не выдано",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "service_role",
+    "table": "tender_supply_progress",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новое представление: прогресс расценки по ВОР (на копии пусто; с правами вызывающего)",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "service_role",
+    "table": "tender_supply_rate_log",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: журнал изменений расценок снабжения (на копии пусто); читает сотрудник, пишет только триггер",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "service_role",
+    "table": "tender_supply_sources",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: позиции ВОР для расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
+    "candidate": "20261020_supply_pricing.sql"
+  },
+  {
+    "release": "20261020",
+    "class": "service_role",
+    "table": "tender_vor_supply_rates",
+    "action": "delete",
+    "from": "yes",
+    "to": "err:P0001",
+    "why": "закрытие расценок после завершения тендера на материалы: строка-образец замера принадлежит тендеру, чей тендер на материалы «Завершён», — удаление отклоняет триггер (вставка и правка проверяются раньше и остаются «да»)",
+    "candidate": "20261020_supply_pricing.sql"
   }
 ]

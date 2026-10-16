@@ -52,3 +52,12 @@ export const supplyTotal = (unitPrice, volume) => {
   if (unitPrice == null || !Number.isFinite(v) || v <= 0) return null
   return unitPrice * v
 }
+
+// Миграция 20261020: цена за единицу для расчёта сумм. Когда снабжение вводило итоговую сумму, база хранит
+// точную цену (сумма / объём) рядом с ценой в копейках — по ней сумма в карточке совпадает с введённой.
+// Прежние строки и импорт Excel — только supply_price.
+export const rateUnitPrice = (r) => {
+  const exact = r?.supply_price_exact
+  if (exact != null && exact !== '' && Number.isFinite(Number(exact))) return Number(exact)
+  return Number(r?.supply_price)
+}

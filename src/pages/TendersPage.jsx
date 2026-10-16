@@ -22,6 +22,7 @@ import TenderCounterpartyFiles from '../components/TenderCounterpartyFiles'
 import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
 import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
+import { loadSupplyProgress } from '../services/supplyPricing'
 import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
 import { formatDateRange as formatShortDateRange, breakAfterDash } from '../utils/dateRange'
 import DateRangeCell from '../components/DateRangeCell'
@@ -174,6 +175,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [reminderPreview, setReminderPreview] = useState(false)
   const [rootFolderPath, setRootFolderPath] = useState('')
   const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
+  // Расценка снабжением на сайте: основной тендер → { positions, priced } (миграция 20261020; нет — пусто).
+  const [supplyProgress, setSupplyProgress] = useState(() => new Map())
   // task 397: документы «Тендерный пакет» (S3, категория 'tender_package')
   const [packageDocsModalTenderId, setPackageDocsModalTenderId] = useState(null)
   const [packageDocCounts, setPackageDocCounts] = useState({}) // tenderId → число документов
@@ -604,6 +607,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       setTenders(filteredTenders)
       tenderIdsRef.current = filteredTenders.map(t => t.id)
       fetchVorDocCounts(tenderIdsRef.current)
+      if (isMaterialsView) {
+        loadSupplyProgress(filteredTenders.map(t => t.parent_tender_id || t.id))
+          .then(setSupplyProgress)
+          .catch((err) => console.error('Ошибка загрузки прогресса расценки снабжения:', err.message))
+      }
       fetchTenderProposalCounts()
     } catch (error) {
       console.error('Ошибка загрузки тендеров:', error.message)
@@ -2602,6 +2610,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         rdCodesByTender,
         proposalCounts: tenderProposalCounts,
         docCounts: { vor: vorDocCounts, package: packageDocCounts },
+        supplyProgress,
         options: { isMaterialsView, withConstructionPhases: department === 'construction', withVorPhase: department === 'joint', hideNotes },
       })
       const bytes = await buildTendersRegistryWorkbook({ headers, rows })
@@ -2987,7 +2996,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                 {/* Ссылка — только информационная часть. Кнопки пути к папке и
                     отметки вынесены из неё: внутри ссылки их тапы то уводили
                     со страницы, то глушили переход в тендер. */}
-                <Link to={canOpenTenderCard ? `/tenders/${tender.id}` : '#'} className="tp-mcard-main" onClick={(e) => { if (!canOpenTenderCard) e.preventDefault() }}>
+                {/* Тендер на материалы — в его расценку (она открыта и снабжению); основной — в карточку. */}
+                <Link
+                  to={isMaterialsView ? `/tenders/materials/${tender.id}/pricing` : (canOpenTenderCard ? `/tenders/${tender.id}` : '#')}
+                  className="tp-mcard-main"
+                  onClick={(e) => { if (!isMaterialsView && !canOpenTenderCard) e.preventDefault() }}
+                >
                 <div className="mcard-head">
                   <span className="mcard-num">Тендер №{tenderNumberOf(tender) ?? '—'}</span>
                   {tender.status && (
@@ -3013,6 +3027,14 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                         : formatDateRange(tender.tender_start_date, tender.tender_end_date)}
                     </span>
                   </div>
+                  {isMaterialsView && supplyProgress.get(tender.parent_tender_id || tender.id)?.positions > 0 && (
+                    <div className="mcard-row">
+                      <span className="mcard-label">Расценка</span>
+                      <span className="mcard-value">
+                        {supplyProgress.get(tender.parent_tender_id || tender.id).priced} из {supplyProgress.get(tender.parent_tender_id || tender.id).positions} позиций
+                      </span>
+                    </div>
+                  )}
                   {tenderProposalCounts[tender.id]?.total > 0 && (
                     <div className="mcard-row">
                       <span className="mcard-label">КП</span>
@@ -3038,7 +3060,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   )}
                 </div>
                 {canOpenTenderCard && (
-                  <Link to={`/tenders/${tender.id}`} className="tp-mcard-open">
+                  <Link to={`/tenders/${isMaterialsView ? (tender.parent_tender_id || tender.id) : tender.id}`} className="tp-mcard-open">
                     Открыть тендер <span aria-hidden>›</span>
                   </Link>
                 )}
@@ -3149,6 +3171,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                             </Link>
                           ) : undefined}
                         />
+                        {/* Расценка материалов ВОР снабжением — второй строкой, без отдельной колонки:
+                            описанию и так остаётся ≈ 15rem на 1920. */}
+                        <SupplyPricingLink tender={tender} progress={supplyProgress.get(tender.parent_tender_id || tender.id)} />
                       </td>
                       {/* Приоритет: низкий / средний / высокий. Высокий подсвечивается
                           и чипом, и полосой слева у всей строки. */}
@@ -5603,3 +5628,21 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 }
 
 export default TendersPage
+
+// «Расценка: N из M» под описанием тендера на материалы: сколько позиций ВОР расценено, переход в расценку.
+function SupplyPricingLink({ tender, progress }) {
+  const has = progress && progress.positions > 0
+  const pct = has ? Math.round((progress.priced / progress.positions) * 100) : 0
+  return (
+    <Link
+      to={`/tenders/materials/${tender.id}/pricing`}
+      className={`link tp-pricing-link${has && progress.priced === progress.positions ? ' is-complete' : ''}`}
+      title="Расценка материалов ВОР снабжением на сайте"
+    >
+      <span>Расценка: <span className="ui-num">{has ? `${progress.priced} из ${progress.positions}` : 'открыть'}</span></span>
+      {has && (
+        <span className="tp-pricing-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
+      )}
+    </Link>
+  )
+}

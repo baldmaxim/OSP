@@ -13,6 +13,7 @@ import '../../../src/mobile.css'
 import TendersPage from '../../../src/pages/TendersPage'
 import TenderDetailPage from '../../../src/pages/TenderDetailPage'
 import CounterpartiesPage from '../../../src/pages/CounterpartiesPage'
+import SupplyPricingPage from '../../../src/pages/SupplyPricingPage'
 
 const params = new URLSearchParams(window.location.search)
 const route = params.get('route') || '/tenders/tender-1'
@@ -22,6 +23,7 @@ createRoot(document.getElementById('root')).render(
     <Routes>
       <Route path="/tenders/construction" element={<TendersPage department="construction" tenderType="main" />} />
       <Route path="/general/counterparties" element={<CounterpartiesPage />} />
+      <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />
       <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />
     </Routes>
   </MemoryRouter>,

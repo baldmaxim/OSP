@@ -59,6 +59,7 @@ const CounterpartiesPage = lazy(() => import('./pages/CounterpartiesPage'))
 const TendersHubPage = lazy(() => import('./pages/TendersHubPage'))
 const TendersPage = lazy(() => import('./pages/TendersPage'))
 const TenderDetailPage = lazy(() => import('./pages/TenderDetailPage'))
+const SupplyPricingPage = lazy(() => import('./pages/SupplyPricingPage'))
 const CostPlansPage = lazy(() => import('./pages/CostPlansPage'))
 const VorsPage = lazy(() => import('./pages/VorsPage'))
 const KpReviewPage = lazy(() => import('./pages/KpReviewPage'))
@@ -142,6 +143,9 @@ function EmployeeLayout() {
             {/* Тендеры на материалы — свой раздел прав (снабжение); кому открыты
                 тендеры, открыт и этот список. */}
             <Route path="/tenders/materials" element={<PermissionRoute anyOf={['tenders', 'tenders_materials']}><TendersPage key="tenders-materials" tenderType="materials" /></PermissionRoute>} />
+            {/* Расценка материалов ВОР снабжением: позиции и цены, без участников и КП — карточка тендера
+                снабжению по-прежнему закрыта. id — тендер на материалы (или основной из карточки). */}
+            <Route path="/tenders/materials/:tenderId/pricing" element={<PermissionRoute anyOf={['tenders', 'tenders_materials']}><SupplyPricingPage /></PermissionRoute>} />
             <Route path="/tenders/:tenderId" element={<PermissionRoute section="tenders"><TenderDetailPage /></PermissionRoute>} />
             <Route path="/cost-plans" element={<PermissionRoute section="tenders"><CostPlansPage /></PermissionRoute>} />
             {/* ВОРы и РД — свой раздел прав; кому открыты тендеры, открыта и эта страница. */}

@@ -41,14 +41,15 @@ export function rdCodesText(codes = []) {
 // options: { isMaterialsView, withConstructionPhases, withVorPhase, hideNotes, today }
 // withVorPhase — только колонки «ВОРы и РД» (совместные тендеры: плана затрат и
 // тендера на материалы у них нет).
-export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(), proposalCounts = {}, docCounts = {}, options = {} } = {}) {
+// supplyProgress — Map(основной тендер → { positions, priced }): расценка снабжением на сайте (тендеры на материалы).
+export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(), proposalCounts = {}, docCounts = {}, supplyProgress = new Map(), options = {} } = {}) {
   const { isMaterialsView = false, withConstructionPhases = true, withVorPhase = false, hideNotes = false, today = new Date().toISOString().slice(0, 10) } = options
 
   if (isMaterialsView) {
     // № — номер основного тендера (как в интерфейсе); у самой записи на материалы
     // свой номер из общей последовательности, людям он не нужен.
     const headers = ['№ тендера', 'Объект', 'Описание работ', 'Приоритет', 'Шифр РД', 'Статус',
-      'Ответственный (снабжение)', 'Ответственный по тендеру', 'Срок проведения тендерных процедур', 'Начало предоставления КП', 'Срок предоставления КП на материалы', 'Срок истёк', 'Ссылка на КП на материалы', 'Путь к папке']
+      'Ответственный (снабжение)', 'Ответственный по тендеру', 'Срок проведения тендерных процедур', 'Начало предоставления КП', 'Срок предоставления КП на материалы', 'Срок истёк', 'Ссылка на КП на материалы', 'Позиций для расценки', 'Расценено', 'Путь к папке']
     if (!hideNotes) headers.push('Примечание')
     const rows = tenders.map((t) => {
       const row = [
@@ -67,6 +68,8 @@ export function buildTendersRegistryRows(tenders, { rdCodesByTender = new Map(),
         t.materials_proposal_deadline && String(t.materials_proposal_deadline).slice(0, 10) < today
           && !['Завершен', 'Завершён', 'Не требуется'].includes(t.status) ? 'Да' : '',
         t.materials_proposal_link || '',
+        supplyProgress.get(t.parent_tender_id || t.id)?.positions ?? '',
+        supplyProgress.get(t.parent_tender_id || t.id)?.priced ?? '',
         t.folder_path || '',
       ]
       if (!hideNotes) row.push(t.notes || '')

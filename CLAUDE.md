@@ -18,7 +18,8 @@ npm run preview      # Preview production build
 npm run lint         # Run ESLint (--max-warnings 0)
 npm run check:transport # доступ к серверу только через src/api/ (0 нарушений)
 npm run test:psdc    # ПСДЦ: движок в БД, XLSX, UI (PostgreSQL + Chromium)
-npm run test:tender  # карточка тендера: производительность UI (Chromium)
+npm run test:tender  # карточка тендера: производительность UI, страница расценки снабжением (Chromium)
+npm run test:supply  # расценка снабжением: база на слепке прода (Docker), лист «Материалы», normName = SQL
 npm run test:contracts # договоры: путь к Larix.CPM, импорт из Excel (без базы и браузера)
 npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
 npm run test:deploy  # deploy/publish.sh и rollback.sh на временных каталогах; портал в Docker (deploy/docker): связка из трёх контейнеров на копии прода, выкладка с возвратом (Docker)
@@ -214,7 +215,9 @@ const { data } = await db
 | `tender_counterparty_proposals` | Price proposals | `estimate_item_id`, `counterparty_id` |
 | `tender_documents` | Tender attachments (Google Drive links) | `tender_id` (CASCADE) |
 | `tender_proposal_files` | Uploaded Excel КП files from contractors | `tender_id`, `counterparty_id` (CASCADE) |
-| `tender_vor_supply_rates` | Расценки от снабжения по материалам ВОР тендера (task 398). Привязка к документу-ВОР через `estimate_name`; сопоставление с позициями по `material_name`. Стоимость = `material_consumption × supply_price`. | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_name)` |
+| `tender_vor_supply_rates` | Расценки от снабжения по материалам ВОР тендера (task 398). Привязка к документу-ВОР через `estimate_name`; сопоставление с позициями по `material_name` (`material_key`). Стоимость = `material_consumption × (supply_price_exact ?? supply_price)`. Ввод на сайте — см. «Расценка снабжением на сайте». | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_name)` |
+| `tender_supply_sources` | Позиции ВОР для расценки снабжением: разобранный лист «Материалы» файла из «ВОРов и РД» или вкладка «ВОР» карточки; строка на основной тендер и ВОР (`positions jsonb`) | `tender_id` (CASCADE), `s3_document_id` (SET NULL), `UNIQUE(tender_id, estimate_name)` |
+| `tender_supply_rate_log` | Журнал каждого изменения расценки снабжения (триггер): было / стало, кто, когда | без FK (не мешает удалению тендера) |
 | `bsm_contract_rates` | Agreed material rates | `object_id` (CASCADE) |
 | `bsm_supply_rates` | Supply dept rates (has `applied_at` date) | `object_id` (CASCADE) |
 | `bsm_contractor_rates` | Contractor-specific rates | `object_id`, `counterparty_id` (CASCADE) |
@@ -450,6 +453,35 @@ curl -H "X-API-Key: <ключ>" \
 **Требуется включить pg_cron** в Supabase → Database → Extensions. Если расширение недоступно, миграция не падает — просто не создаётся расписание, и реестр обновляется только кнопкой.
 
 Если менять SQL реестра — править нужно **тело MV** в миграции, а не вью-обёртку. После правки обязательно `REFRESH`.
+
+## Расценка снабжением на сайте (миграция 20261020)
+
+Снабжение (раздел «Тендеры на материалы») вводит цены по позициям ВОР прямо на сайте — страница
+`/tenders/materials/:id/pricing` ([SupplyPricingPage](src/pages/SupplyPricingPage.jsx); id — тендер на материалы или
+основной). Вход — «Расценка: N из M» под описанием в реестре тендеров на материалы и кнопка во вкладке «Расценки
+снабжения» карточки. Карточка тендера снабжению по-прежнему закрыта: страница не показывает участников и КП.
+
+- **Цены** — прежняя `tender_vor_supply_rates` **основного** тендера (`parent_tender_id`), поэтому сразу видны в карточке,
+  «Сравнении КП», выгрузке ВОР и реестре СУ-10 (после пересчёта MV, до 10 минут). Отдельной «передачи» нет.
+- **Позиции** — `tender_supply_sources`: сначала лист «Материалы» Excel-файлов ВОР из «ВОРов и РД» основного тендера
+  ([vorMaterialsSheet.js](src/utils/vorMaterialsSheet.js): шапка по словам, иначе ручное сопоставление колонок), если их
+  нет — вкладка «ВОР» карточки ([vorMaterials.js](src/utils/vorMaterials.js), та же логика, что подвкладка «Материалы»).
+  Группировка — по ключу цены (`normName`); имя ВОР (`estimate_name`) — как у ВОР карточки, иначе карточка цены не
+  сопоставит (там же «Привязать к…» — `supply_estimate_rename`). Обновление ВОР цены не трогает.
+- **Ввод цены ИЛИ суммы; расчёт — в базе** (триггер `tender_vor_supply_rates_compute`): страница пишет `price_input`
+  (`unit`|`total`), `input_value`, `volume_at_input`; база считает `supply_price` (копейки), `supply_price_exact` (сумма /
+  объём) и `supply_total`. Запись только `supply_price` (импорт Excel, старая вкладка) → `price_input='import'`, точная
+  цена сбрасывается. Во фронте цену для сумм брать через `rateUnitPrice(r)` ([supplyRateHelpers.js](src/utils/supplyRateHelpers.js)).
+- **Права — в базе:** читать — сотрудник; писать — `supply_can_edit()` = правка «Тендеров» или «Тендеров на материалы».
+  Тендер на материалы «Завершён» — расценки и позиции только для чтения (триггер `tender_supply_guard`; «Не требуется» не
+  закрывает; каскад удаления тендера проходит).
+- **Параллельная правка:** `row_version` в условии правки (0 строк / 23505 → окно «изменено другим»); чужие правки —
+  опрос `max(id)` журнала `tender_supply_rate_log` раз в 20 с (Realtime-публикацию не трогали). Черновики ввода — в
+  `localStorage` до подтверждения сервером, повтор при сети и `OSP_READONLY`.
+- Ключ `material_key` / `positions[].k` = `supply_norm_name()` — порт `normName` на SQL; совпадение сторожит
+  `tests/supply/norm-name.test.mjs`. Меняете `normName` — меняйте и функцию (новой миграцией) и пересчитайте колонку.
+- База Яндекса — `migration/yandex/20261020_supply_pricing.sql` (тела функций совпадают — `tests/supply/migrations.test.mjs`);
+  проверка для прода — `migration/backup/checks/20261020.sql`, откат — `migration/rollback/20261020_supply_pricing_rollback.sql`.
 
 ## Договорные расценки (Larix) — четвёртая вкладка реестра расценок (миграция 20261018)
 

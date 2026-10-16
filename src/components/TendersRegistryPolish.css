@@ -814,3 +814,16 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .ui-work.ui-work.tp-dense-mat .tp-grid :is(.mat-prio-fdrop, .mat-resp-fdrop) .fdrop-trigger { margin-left: 0; max-width: 100%; }
 .ui-work.ui-work.tp-dense-mat .tp-grid > tbody > tr > td.actions-cell .btn-icon { width: 1.625rem; height: 1.625rem; }
 .ui-work.ui-work.tp-dense-mat .tp-grid > tbody > tr > td.actions-cell { padding-left: 0.25rem; padding-right: 0.25rem; }
+
+/* «Расценка: N из M» под описанием тендера на материалы; полоска — доля расценённых, всё — зелёная. */
+.ui-work.ui-work .tp-grid .tp-pricing-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.tp-pricing-bar { display: inline-block; width: 3rem; height: 4px; border-radius: 2px; background: var(--border-color); overflow: hidden; }
+.tp-pricing-bar > span { display: block; height: 100%; background: var(--ui-link, var(--primary-color)); }
+.tp-pricing-link.is-complete .tp-pricing-bar > span { background: var(--success-color); }

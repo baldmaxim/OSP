@@ -774,6 +774,24 @@
         "update"
       ]
     },
+    "tender_supply_progress": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "tender_supply_rate_log": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "tender_supply_sources": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "tender_vor_supply_rates": {
       "anon": [
         "select"
@@ -981,6 +999,18 @@
       "authenticated"
     ],
     "report_client_version": [
+      "authenticated"
+    ],
+    "supply_can_edit": [
+      "authenticated"
+    ],
+    "supply_estimate_rename": [
+      "authenticated"
+    ],
+    "supply_norm_name": [
+      "authenticated"
+    ],
+    "supply_rates_locked": [
       "authenticated"
     ],
     "touch_last_login": [

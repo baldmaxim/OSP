@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { db } from '../api'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
-import { normName, supplyKey } from '../utils/supplyRateHelpers'
+import { normName, supplyKey, rateUnitPrice } from '../utils/supplyRateHelpers'
+import { isWorkItem, aggregateEstimate } from '../utils/vorMaterials'
+import { MATERIALS_LOCK_STATUSES, renameEstimate } from '../services/supplyPricing'
 import { reorderSiblings } from '../utils/appendixTree'
 import { tenderObjectName } from '../utils/tenderDepartments'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
@@ -25,6 +27,7 @@ import TenderVorRdPanel from '../components/TenderVorRdPanel'
 import { countVorRdDocs } from '../services/tenderVorRd'
 import { vorResponsibleName } from '../services/stoEmployees'
 import TenderFinalDocBlock from '../components/TenderFinalDocBlock'
+import SupplyOrphanRates from '../components/supply/SupplyOrphanRates'
 import '../components/TenderDetail.css'
 
 // task 410: с какого числа видимых строк включаем виртуализацию <tbody>.
@@ -94,11 +97,7 @@ const loadSupplyColumnMap = () => {
   }
 }
 
-// task 260: КОД «Р»/«Р-» → работы, «мат.»/иное → материалы (как в Анализ КП/БСМ)
-const isWorkItem = (it) => {
-  const c = (it.code || '').trim().toUpperCase()
-  return c.startsWith('Р')
-}
+// task 260: КОД «Р»/«Р-» → работы, «мат.»/иное → материалы — isWorkItem в utils/vorMaterials.
 
 const sectionKey = (it, idx) => (it.id != null ? `id:${it.id}` : `idx:${idx}`)
 
@@ -550,28 +549,8 @@ const EstimateTable = memo(function EstimateTable({ items, collapsedSections, on
 // task 398: для «Материалы» добавляем колонку стоимости от снабжения (Σ объём×цена).
 function AggregateTable({ items, type, ratesMap }) {
   const withSupply = type === 'materials' && !!ratesMap
-  const map = new Map()
-  for (const it of items) {
-    if (it.is_section) continue
-    if (it._isDocDivider) continue // task 350: разделители документов в агрегации не участвуют
-    const work = isWorkItem(it)
-    if (type === 'works' && !work) continue
-    if (type === 'materials' && work) continue
-    const name = (it.cost_name || '').trim()
-    if (!name) continue
-    const unit = (it.unit || '').trim()
-    const key = `${name.toLowerCase()}∣${unit.toLowerCase()}`
-    const vol = type === 'works' ? it.work_volume : it.material_consumption
-    const cur = map.get(key) || { name, unit, total: 0, count: 0, supplyCost: 0 }
-    cur.total += Number(vol) || 0
-    cur.count += 1
-    if (withSupply) {
-      const price = ratesMap.get(supplyKey(it.estimate_name, name))
-      if (price != null) cur.supplyCost += (Number(it.material_consumption) || 0) * Number(price)
-    }
-    map.set(key, cur)
-  }
-  const rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  // task 350: разделители документов в агрегации не участвуют (utils/vorMaterials).
+  const rows = aggregateEstimate(items, type, ratesMap)
   const grandTotal = rows.reduce((s, r) => s + r.total, 0)
   const grandCount = rows.reduce((s, r) => s + r.count, 0)
   const grandSupply = rows.reduce((s, r) => s + (r.supplyCost || 0), 0)
@@ -635,6 +614,8 @@ function TenderDetailPage() {
   const canEditTenders = canEdit('tenders')
 
   const [tender, setTender] = useState(null)
+  // Тендер на материалы «Завершён» — расценки снабжения только для чтения (в базе — триггер, здесь — кнопки).
+  const supplyLocked = MATERIALS_LOCK_STATUSES.includes(tender?.materials_tender?.status)
   const [tenderCounterparties, setTenderCounterparties] = useState([])
   // Когда КП контрагента фактически попало на сайт: counterparty_id → ISO-дата.
   // Источник — загруженный файл КП, а если файла нет (кабинет подрядчика) — строки расценок.
@@ -1244,7 +1225,7 @@ function TenderDetailPage() {
     if (!supplyImportReport) return
     setSupplyImporting(true)
     const { docName, newItems, conflictItems, sameItems } = supplyImportReport
-    let added = 0, updated = 0, skipped = 0
+    let added = 0, updated = 0, skipped = 0, raced = 0
     const errors = []
     try {
       if (newItems.length) {
@@ -1255,9 +1236,16 @@ function TenderDetailPage() {
           unit: it.unit || null,
           supply_price: it.supply_price,
         }))
-        const { error } = await db.from('tender_vor_supply_rates').insert(payload)
+        // Пока готовили отчёт, позицию могли расценить на странице расценки снабжением: такие строки
+        // пропускаются (а не роняют всю вставку) и попадают в отчёт.
+        const { data: inserted, error } = await db.from('tender_vor_supply_rates')
+          .upsert(payload, { onConflict: 'tender_id,estimate_name,material_name', ignoreDuplicates: true })
+          .select('id')
         if (error) errors.push(error.message)
-        else added = payload.length
+        else {
+          added = inserted?.length || 0
+          raced = payload.length - added
+        }
       }
       for (let idx = 0; idx < conflictItems.length; idx++) {
         const it = conflictItems[idx]
@@ -1276,6 +1264,7 @@ function TenderDetailPage() {
       let msg = `Импорт расценок снабжения «${docName}» завершён.\n`
         + `Добавлено: ${added}\nОбновлено: ${updated}\n`
         + `Без изменений: ${skipped + sameItems.length}`
+      if (raced) msg += `\nУже расценены другим пользователем (пропущены — проверьте): ${raced}`
       if (errors.length) msg += `\n\nОшибок: ${errors.length}\n${errors[0]}`
       alert(msg)
       setSupplyImportReport(null)
@@ -1302,7 +1291,12 @@ function TenderDetailPage() {
   // task 398: удалить все расценки снабжения выбранного документа.
   const handleClearSupplyRates = async () => {
     if (supplySelectedDoc === 'all') return
-    if (!window.confirm(`Удалить всю стоимость материалов от снабжения для ВОР «${supplySelectedDoc}»?`)) return
+    const fromSite = supplyRates.filter(r => (r.estimate_name || 'Основная смета') === supplySelectedDoc
+      && (r.price_input === 'unit' || r.price_input === 'total')).length
+    const warn = fromSite
+      ? `\n\nИз них введено снабжением на сайте: ${fromSite}. Удаление записывается в журнал — цену можно вернуть на странице расценки (история цены).`
+      : ''
+    if (!window.confirm(`Удалить всю стоимость материалов от снабжения для ВОР «${supplySelectedDoc}»?${warn}`)) return
     try {
       const { error } = await db
         .from('tender_vor_supply_rates')
@@ -1367,7 +1361,8 @@ function TenderDetailPage() {
   const supplyRatesMap = useMemo(() => {
     const m = new Map()
     for (const r of supplyRates) {
-      m.set(supplyKey(r.estimate_name, r.material_name), Number(r.supply_price) || 0)
+      // Точная цена, если снабжение вводило сумму, — суммы совпадут до копейки (миграция 20261020).
+      m.set(supplyKey(r.estimate_name, r.material_name), rateUnitPrice(r) || 0)
     }
     return m
   }, [supplyRates])
@@ -1430,7 +1425,8 @@ function TenderDetailPage() {
         .map(it => normName(it.cost_name))
     )
     const unmatched = docRates.filter(r => !vorNames.has(normName(r.material_name)))
-    return { matched: docRates.length - unmatched.length, total: docRates.length, unmatched }
+    const fromSite = docRates.filter(r => r.price_input === 'unit' || r.price_input === 'total').length
+    return { matched: docRates.length - unmatched.length, total: docRates.length, unmatched, fromSite }
   }, [supplyRates, supplySelectedDoc, supplyEstimate])
 
   // Если активный документ удалён или ещё не выбран — переключаемся на 'all'.
@@ -1470,7 +1466,7 @@ function TenderDetailPage() {
       loadedTabsRef.current.add('supply')
       ratesMap = new Map()
       for (const r of rows || []) {
-        ratesMap.set(supplyKey(r.estimate_name, r.material_name), Number(r.supply_price) || 0)
+        ratesMap.set(supplyKey(r.estimate_name, r.material_name), rateUnitPrice(r) || 0)
       }
     }
     const wb = XLSX.utils.book_new()
@@ -1530,27 +1526,7 @@ function TenderDetailPage() {
 
     // ===== Листы 2 и 3: Материалы / Работы (агрегированные по name+unit) =====
     const buildAggregateRows = (type) => {
-      const map = new Map()
-      for (const it of currentEstimate) {
-        if (it.is_section || it._isDocDivider) continue
-        const work = isWorkItem(it)
-        if (type === 'works' && !work) continue
-        if (type === 'materials' && work) continue
-        const name = (it.cost_name || '').trim()
-        if (!name) continue
-        const unit = (it.unit || '').trim()
-        const key = `${name.toLowerCase()}∣${unit.toLowerCase()}`
-        const vol = type === 'works' ? it.work_volume : it.material_consumption
-        const cur = map.get(key) || { name, unit, total: 0, count: 0, supplyCost: 0 }
-        cur.total += Number(vol) || 0
-        cur.count += 1
-        if (type === 'materials') {
-          const price = ratesMap.get(supplyKey(it.estimate_name, name))
-          if (price != null) cur.supplyCost += (Number(it.material_consumption) || 0) * Number(price)
-        }
-        map.set(key, cur)
-      }
-      const rows = [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+      const rows = aggregateEstimate(currentEstimate, type, ratesMap)
       const grandTotal = rows.reduce((s, r) => s + r.total, 0)
       const grandCount = rows.reduce((s, r) => s + r.count, 0)
       const r2 = (v) => Math.round(v * 100) / 100
@@ -2736,7 +2712,30 @@ function TenderDetailPage() {
           <div className="estimate-section">
             <div className="section-header">
               <h3>Расценки снабжения по материалам ВОР</h3>
+              <Link
+                to={`/tenders/materials/${tender?.materials_tender?.id || tenderId}/pricing`}
+                className="btn-secondary btn-sm"
+                title="Страница, где снабжение вводит цены или суммы по позициям ВОР"
+              >Расценка снабжения на сайте</Link>
             </div>
+            {supplyLocked && (
+              <p className="supply-tab-hint">
+                Тендер на материалы завершён — расценки снабжения только для чтения. Чтобы изменить, верните тендеру на материалы прежний статус.
+              </p>
+            )}
+            <SupplyOrphanRates
+              rates={supplyRates}
+              docNames={estimateItems.length ? docNames : []}
+              canEdit={canEditTenders && !supplyLocked}
+              onRename={async (from, to) => {
+                try {
+                  await renameEstimate(tenderId, from, to)
+                  await fetchSupplyRates()
+                } catch (err) {
+                  alert('Не удалось привязать расценки: ' + err.message)
+                }
+              }}
+            />
 
             {estimateItems.length === 0 ? (
               <div className="empty-state">
@@ -2744,6 +2743,7 @@ function TenderDetailPage() {
                 <p className="hint">
                   Сначала загрузите ВОР на вкладке «ВОР», затем здесь можно будет
                   по каждому разделу загрузить стоимость материалов от снабжения.
+                  Позиции из файлов ВОР («ВОРы и РД») снабжение расценивает на странице «Расценка снабжения на сайте».
                 </p>
               </div>
             ) : (
@@ -2764,6 +2764,7 @@ function TenderDetailPage() {
                       {supplyMatchStats && (
                         <span className={`supply-tab-match-hint${supplyMatchStats.matched < supplyMatchStats.total ? ' is-partial' : ''}`}>
                           {' '}— сопоставлено {supplyMatchStats.matched} из {supplyMatchStats.total} расценок
+                          {supplyMatchStats.fromSite > 0 && ` (введено на сайте: ${supplyMatchStats.fromSite})`}
                         </span>
                       )}
                     </span>
@@ -2794,7 +2795,7 @@ function TenderDetailPage() {
                         >Развернуть всё</button>
                       </>
                     )}
-                    {canEditTenders && supplySelectedDoc !== 'all' && (
+                    {canEditTenders && !supplyLocked && supplySelectedDoc !== 'all' && (
                       <>
                         <label
                           className="btn-primary btn-sm estimate-supply-import-btn"

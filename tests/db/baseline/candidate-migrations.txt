@@ -6,3 +6,4 @@
 20261015_rates_registry_deterministic.sql
 20261016_public_tenders_view.sql
 20261018_larix_contract_rates.sql
+20261020_supply_pricing.sql

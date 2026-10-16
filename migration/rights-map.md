@@ -69,7 +69,9 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | tender_counterparties | TendersPage, TenderDetailPage, кабинет (свои строки, только статус) | canEditTenders / E(tenders) |
 | tender_counterparty_proposals | TenderDetailPage, TenderProposalUploadModal, TenderProposalsCompare; кабинет (свои) | E(tenders) |
 | tender_proposal_files | TenderCounterpartyFiles и др. | вставка/удаление — canEditTenders; **проверка КП — роль** admin/суперадмин/economist; замечания — admin/суперадмин/engineer; стадия — **суперадмин** |
-| tender_estimate_items, tender_vor_supply_rates, tender_winners, tender_docs, tender_doc_links | TenderDetailPage, TendersPage | E(tenders) / canEditTenders |
+| tender_estimate_items, tender_winners, tender_docs, tender_doc_links | TenderDetailPage, TendersPage | E(tenders) / canEditTenders |
+| tender_vor_supply_rates, tender_supply_sources | TenderDetailPage (импорт Excel), SupplyPricingPage | **в базе (20261020):** E(tenders) **или** E(tenders_materials); тендер на материалы «Завершён» — триггер отказывает всем |
+| tender_supply_rate_log | только триггер на tender_vor_supply_rates | записи пользователя нет; читает сотрудник |
 | tender_rd_codes, tender_rd_document_codes | TenderRdCodesTab, TenderVorRdPanel | E(tenders); в «ВОРах и РД» — E(tenders) **или** E(vors) |
 | tender_audit_log | TendersPage, TenderDetailPage, CostPlansPage, VorsPage | пишется при правках |
 | vor_requests | VorsPage, VorRequestModal | E(tenders) **или** E(vors); читает ещё reports |

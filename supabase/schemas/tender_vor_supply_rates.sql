@@ -11,8 +11,19 @@ CREATE TABLE IF NOT EXISTS tender_vor_supply_rates (
     supply_price DECIMAL(15, 2) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Миграция 20261020 (расценка снабжением на сайте): как ввели и что посчитала база.
+    price_input TEXT CHECK (price_input IS NULL OR price_input IN ('unit', 'total', 'import')),
+    input_value NUMERIC,
+    volume_at_input NUMERIC,
+    supply_price_exact NUMERIC,          -- сумма / объём, когда вводили сумму; карточка считает по ней
+    supply_total NUMERIC(15, 2),
+    row_version INTEGER NOT NULL DEFAULT 1,
+    updated_by UUID,
+    material_key TEXT GENERATED ALWAYS AS (public.supply_norm_name(material_name)) STORED,
     UNIQUE(tender_id, estimate_name, material_name)
 );
+-- Расчёт, версия строки, закрытие после завершения тендера на материалы, журнал и права (запись — только
+-- правка «Тендеров» или «Тендеров на материалы») — supabase/migrations/20261020_supply_pricing.sql.
 
 CREATE INDEX IF NOT EXISTS idx_tender_vor_supply_rates_tender
     ON tender_vor_supply_rates(tender_id);
@@ -33,12 +44,7 @@ CREATE TRIGGER trigger_tender_vor_supply_rates_updated_at
 
 ALTER TABLE tender_vor_supply_rates ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON tender_vor_supply_rates;
-CREATE POLICY "Allow all for authenticated users" ON tender_vor_supply_rates
-    FOR ALL
-    TO authenticated
-    USING (true)
-    WITH CHECK (true);
+-- Политики: с 20261020 — supply_rates_read (сотрудник) и supply_rates_insert/update/delete (supply_can_edit()).
 
 COMMENT ON TABLE tender_vor_supply_rates IS 'Расценки от снабжения на материалы ВОР тендера (task 398)';
 COMMENT ON COLUMN tender_vor_supply_rates.tender_id IS 'Ссылка на тендер';

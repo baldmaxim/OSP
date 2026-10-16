@@ -20,6 +20,7 @@ import PaperclipIcon from '../components/icons/PaperclipIcon'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import useBodyClass from '../hooks/useBodyClass'
 import { copyToClipboard } from '../utils/clipboard'
+import { parseAmount, formatAmount, formatAmountLive } from '../utils/money'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 import './DcRequestsPage.css'
@@ -187,30 +188,6 @@ function formatShortDate(iso) {
   return `${dd}.${mm}.${d.getFullYear()}`
 }
 
-// task 370: парсинг введённой суммы → число | null. Терпим пробелы, ₽ и запятую.
-function parseAmount(raw) {
-  if (raw == null || raw === '') return null
-  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null
-  // \s в JS-регулярках уже покрывает все юникод-пробелы (вкл. U+00A0/U+2007/U+202F).
-  const str = String(raw)
-    .replace(/[₽\s]/g, '')
-    .replace(',', '.')
-    .replace(/[^\d.-]/g, '')
-  const num = parseFloat(str)
-  return Number.isFinite(num) ? num : null
-}
-
-// task 371: всегда 2 знака после запятой + разрядность пробелами (ru-RU):
-//   1000000 → «1 000 000,00».
-const AMOUNT_FORMATTER = new Intl.NumberFormat('ru-RU', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-function formatAmount(num) {
-  if (num == null || !Number.isFinite(num)) return ''
-  return AMOUNT_FORMATTER.format(num)
-}
-
 // Процент изменения суммы: «5,6» (1 знак после запятой; для мелких изменений — 2).
 const PERCENT_FORMATTER = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 1,
@@ -223,20 +200,6 @@ const PERCENT_FORMATTER_SMALL = new Intl.NumberFormat('ru-RU', {
 function formatPercent(num) {
   if (num == null || !Number.isFinite(num)) return ''
   return num < 0.1 ? PERCENT_FORMATTER_SMALL.format(num) : PERCENT_FORMATTER.format(num)
-}
-
-// task 371: «живое» форматирование во время ввода — группировка разрядов пробелами
-//   («1000000» → «1 000 000», «1000,5» → «1 000,5»). Десятичная часть до 2 знаков.
-function formatAmountLive(raw) {
-  if (raw == null) return ''
-  let s = String(raw).replace(/\s/g, '').replace('.', ',').replace(/[^\d,]/g, '')
-  const i = s.indexOf(',')
-  let intPart = i === -1 ? s : s.slice(0, i)
-  const decPart = i === -1 ? null : s.slice(i + 1).replace(/,/g, '').slice(0, 2)
-  intPart = intPart.replace(/^0+(?=\d)/, '')
-  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
-  if (decPart === null) return grouped
-  return `${grouped || '0'},${decPart}`
 }
 
 // task 365 + 366: маленький popover для быстрого редактирования ориентировочного

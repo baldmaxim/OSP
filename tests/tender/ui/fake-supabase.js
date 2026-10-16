@@ -1,9 +1,11 @@
 // Клиент Supabase в памяти браузера для стенда карточки тендера.
 // Реализует ровно те части PostgREST-построителя, которые использует карточка:
-// select (с count/head), eq/in/is, order, range/limit, single/maybeSingle,
+// select (с count/head), eq/in/is, or (только eq и is.null), order, range/limit, single/maybeSingle,
 // insert/upsert/update/delete с .select(). Встраивания (objects(name)…) не
 // разбираются — нужные поля заранее лежат в данных. Каждый запрос ждёт
 // искусственную «сетевую» задержку и учитывается в window.__supabaseStats.
+// window.__fakeTriggers[таблица](строка, прежняя) — подмена триггера «до записи» (расчёт в базе);
+// window.__fakeErrors[таблица] — ответ ошибкой на любой запрос к таблице (например, «таблицы нет»).
 const LATENCY_MS = Number(new URLSearchParams(window.location.search).get('latency') || 120)
 
 const db = window.__fakeDb
@@ -28,6 +30,7 @@ function applyFilters(rows, filters) {
     if (f.op === 'eq') return String(r[f.col]) === String(f.val)
     if (f.op === 'is') return f.val === null ? r[f.col] == null : r[f.col] === f.val
     if (f.op === 'in') return f.val.map(String).includes(String(r[f.col]))
+    if (f.op === 'or') return f.conds.some((c) => (c.op === 'is' ? r[c.col] == null : String(r[c.col]) === c.val))
     return true
   }))
 }
@@ -60,7 +63,15 @@ function builder(table) {
     in(col, val) { q.filters.push({ op: 'in', col, val }); return self },
     neq() { return self },
     not() { return self },
-    or() { return self },
+    // «a.eq.1,b.is.null» — как PostgREST; прочие операторы стенду не нужны.
+    or(expr) {
+      const conds = String(expr).split(',').map((part) => {
+        const [col, op, ...rest] = part.split('.')
+        return { col, op, val: rest.join('.') }
+      })
+      if (conds.every((c) => c.op === 'eq' || (c.op === 'is' && c.val === 'null'))) q.filters.push({ op: 'or', conds })
+      return self
+    },
     order(col, opts = {}) { q.orders.push({ col, asc: opts.ascending !== false }); return self },
     range(from, to) { q.range = [from, to]; return self },
     limit(n) { q.limit = n; return self },
@@ -83,8 +94,11 @@ async function run(q) {
   stats.requests.push({ table: q.table, op: q.op, range: q.range || null, count: q.count, ids: inFilter ? inFilter.val.map(String) : null })
   await new Promise((r) => setTimeout(r, LATENCY_MS))
   stats.active--
+  const fakeError = window.__fakeErrors?.[q.table]
+  if (fakeError) return { data: null, count: null, error: fakeError }
   const rows = tableRows(q.table)
   const now = new Date().toISOString()
+  const trigger = window.__fakeTriggers?.[q.table]
 
   if (q.op === 'select') {
     // Отфильтрованный и отсортированный набор кэшируется до следующей записи в
@@ -117,10 +131,13 @@ async function run(q) {
     for (const input of q.payload) {
       const existing = keys ? rows.find((r) => keys.every((k) => String(r[k]) === String(input[k]))) : null
       if (existing) {
+        const old = { ...existing }
         Object.assign(existing, input, { updated_at: now })
+        trigger?.(existing, old)
         affected.push(existing)
       } else {
         const row = { id: uuid(), created_at: now, updated_at: now, ...input }
+        trigger?.(row, null)
         rows.push(row)
         affected.push(row)
       }
@@ -130,14 +147,18 @@ async function run(q) {
 
   if (q.op === 'update') {
     const affected = applyFilters(rows, q.filters)
-    for (const r of affected) Object.assign(r, q.patch, { updated_at: now })
+    for (const r of affected) {
+      const old = { ...r }
+      Object.assign(r, q.patch, { updated_at: now })
+      trigger?.(r, old)
+    }
     return { data: q.returning ? affected.map((r) => ({ ...r })) : null, error: null }
   }
 
   if (q.op === 'delete') {
     const doomed = new Set(applyFilters(rows, q.filters))
     db[q.table] = rows.filter((r) => !doomed.has(r))
-    return { data: null, error: null }
+    return { data: q.returning ? [...doomed].map((r) => ({ ...r })) : null, error: null }
   }
   return { data: null, error: null }
 }
