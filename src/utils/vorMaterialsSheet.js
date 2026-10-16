@@ -101,6 +101,8 @@ export function parseMaterialsSheet(ws, map) {
     const volume = parseVolume(rawVolume)
     if (!name) { out.skipped.empty += 1; continue }
     if (TOTAL_ROW.test(name.toLowerCase())) { out.skipped.totals += 1; continue }
+    // Строка номеров колонок под шапкой (1 | 2 | 3 | 4 …, часто с фильтрами) — наименование из одних цифр.
+    if (/^\d+$/.test(name)) { out.skipped.empty += 1; continue }
     // Повтор шапки (лист из нескольких таблиц) — не позиция.
     if (headerKind(name)?.field === 'name') { out.skipped.empty += 1; continue }
     if (!unit && volume == null) { out.skipped.sections += 1; continue }

@@ -532,7 +532,7 @@ export default function SupplyPricingPage() {
     const wb = XLSX.utils.book_new()
     const used = new Set()
     for (const d of docViews) {
-      const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед., ₽', 'Сумма, ₽']]
+      const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед. с доставкой и НДС, ₽', 'Итого с НДС, ₽']]
       d.positions.forEach((p, i) => {
         const rate = ratesByKey.get(posKey(d.name, p.k))?.[0] || null
         const v = rowView(p, rate, null)
@@ -729,8 +729,8 @@ export default function SupplyPricingPage() {
                     <th>Наименование</th>
                     <th>Ед. изм.</th>
                     <th className="ui-money">Объём</th>
-                    <th className="ui-money">Цена за ед., ₽</th>
-                    <th className="ui-money">Сумма, ₽</th>
+                    <th className="ui-money" title="Как в листе «Материалы» ВОР: цена с учётом доставки и НДС">Цена за ед. с доставкой и НДС, ₽</th>
+                    <th className="ui-money" title="Объём × цена за единицу, с НДС">Итого с НДС, ₽</th>
                     <th><span className="ui-sr-only">Состояние</span></th>
                   </tr>
                 </thead>
@@ -770,7 +770,7 @@ export default function SupplyPricingPage() {
                             ? p.units.map((u, i) => <div key={i}>{fmtVolume(u.volume)} {u.unit || ''}</div>)
                             : fmtVolume(p.volume)}
                         </td>
-                        <td className="sp-input-cell" data-label="Цена за ед., ₽">
+                        <td className="sp-input-cell" data-label="Цена с доставкой и НДС, ₽">
                           <SupplyMoneyCell
                             value={view.unitPrice}
                             derived={view.primary === 'total' && view.priced}
@@ -782,7 +782,7 @@ export default function SupplyPricingPage() {
                             onCommit={(raw) => commit(doc.name, row, 'unit', raw)}
                           />
                         </td>
-                        <td className="sp-input-cell" data-label="Сумма, ₽">
+                        <td className="sp-input-cell" data-label="Итого с НДС, ₽">
                           <SupplyMoneyCell
                             value={view.total}
                             derived={view.primary === 'unit' && view.priced}

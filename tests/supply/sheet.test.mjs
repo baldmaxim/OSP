@@ -51,6 +51,30 @@ describe('Лист «Материалы» файла ВОР', () => {
     assert.deepEqual(r.skipped, { sections: 1, totals: 1, empty: 1 })
   })
 
+  it('как в ВОР тендера 785: заголовок над шапкой, строка номеров колонок 1…7, цена и итог от снабжения', () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Стоимость материалов'],
+      ['№ п/п', 'Наименование материала', 'Ед. изм.', 'Объем', 'ЦЕНА руб., с учетом доставки и НДС 22%', 'ИТОГО, руб. с учетом НДС 22%', 'Примечание от контрагента'],
+      [1, 2, 3, 4, 5, 6, 7],
+      [1, 'Кирпич "КМС" Гангут 59, 210*100*50 с косым резом для облицовки пояса (размер и цвет по согласованию с Заказчиком)', 'м2', 385.671, null, 0, null],
+      [2, 'Прочие материалы для монтажа кирпича "КМС" Гангут 59 на подсистему под углом с затиркой швов', 'м2', 350.61, null, 0, null],
+      [9, 'Кирпич "КМС" Гангут 59, 210*50*21 (размер и цвет по согласованию с Заказчиком)', 'м2', '1 035,3464', null, 0, null],
+      [15, 'Устройство противопожарных отсечек из оцинкованной стали с полимерным покрытием толщиной 0,7 мм', 'м. пог.', 2168.22, null, 0, null],
+    ])
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }]
+    const wb = XLSX.utils.book_new()
+    for (const [name, sheet] of [['КП', XLSX.utils.aoa_to_sheet([['x']])], ['МАТЕРИАЛЫ', ws], ['РАБОТЫ', XLSX.utils.aoa_to_sheet([['y']])], ['ДАННЫЕ', XLSX.utils.aoa_to_sheet([['z']])]]) {
+      XLSX.utils.book_append_sheet(wb, sheet, name)
+    }
+    const r = readMaterialsFromWorkbook(XLSX.read(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }), { type: 'array' }))
+    assert.equal(r.sheetName, 'МАТЕРИАЛЫ')
+    assert.equal(r.map.headerRow, 2)
+    assert.deepEqual(r.map.columns, { name: 1, unit: 2, volume: 3 })
+    assert.deepEqual(r.rows.map((x) => [x.unit, x.volume, x.row]), [['м2', 385.671, 4], ['м2', 350.61, 5], ['м2', 1035.3464, 6], ['м. пог.', 2168.22, 7]])
+    assert.equal(r.skipped.empty, 1, 'строка номеров колонок пропущена')
+    assert.equal(buildSupplyPositions(r.rows).length, 4)
+  })
+
   it('объём важнее количества и расхода; «Кол-во позиций» (выгрузка карточки) — не объём', () => {
     const wb = book({
       'Материалы': [
