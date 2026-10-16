@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '../api'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
+import { chunkList } from '../utils/inChunks'
 import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable'
 import { participantChangeAffectsCounts, createIdBatcher } from '../utils/tenderCountsLive'
 import { saveAs } from 'file-saver'
@@ -565,17 +566,21 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
       // task 223b: для тендеров на материалы подгружаем родительский тендер
       // основного строительства (отдельным запросом — self-FK неоднозначен в embed).
+      // Порциями: все родители одним .in() (сотни id) не проходили по длине адреса
+      // на tender.su10.ru — у тендеров на материалы был свой номер вместо номера основного.
       if (isMaterialsView) {
         const parentIds = [...new Set(filteredTenders.map(t => t.parent_tender_id).filter(Boolean))]
         if (parentIds.length > 0) {
-          const { data: parents, error: parentsError } = await db
+          const parentParts = await Promise.all(chunkList(parentIds).map(chunk => db
             .from('tenders')
             .select('id, public_tender_number, work_description, tender_start_date, tender_end_date, objects(name), responsible_contact:contacts!responsible_contact_id(id, full_name)')
-            .in('id', parentIds)
+            .in('id', chunk)))
+          const parentsError = parentParts.find(p => p.error)?.error
           if (parentsError) {
             console.error('Не удалось загрузить родительские тендеры:', parentsError.message)
           } else {
-            const parentMap = new Map((parents || []).map(p => [p.id, p]))
+            const parents = parentParts.flatMap(p => p.data || [])
+            const parentMap = new Map(parents.map(p => [p.id, p]))
             // task 231: описание работ тендера на материалы всегда взято из
             // основного тендера (взаимосвязь). Если разошлось — тихо приводим
             // к родительскому и в отображении, и в БД (самовосстановление,
@@ -625,10 +630,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const fetchVorDocCounts = async (tenderIds) => {
     if (!tenderIds || tenderIds.length === 0) { setVorDocCounts({}); setPackageDocCounts({}); return }
     try {
-      // Порции по 150 id, параллельно: сотни UUID одним IN-списком в URL роняют запрос.
-      const chunks = []
-      for (let i = 0; i < tenderIds.length; i += 150) chunks.push(tenderIds.slice(i, i + 150))
-      const parts = await Promise.all(chunks.map(async (chunk) => {
+      // Порциями id, параллельно: сотни UUID одним IN-списком в URL роняют запрос (inChunks.js).
+      const parts = await Promise.all(chunkList(tenderIds).map(async (chunk) => {
         const { data, error } = await db
           .from('s3_documents')
           .select('owner_id, doc_category')
@@ -2590,9 +2593,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         return sortOrder === 'asc' ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1)
       })
       const rdTenderIds = [...new Set(list.flatMap(t => [t.id, t.parent_tender_id]).filter(Boolean))]
-      const chunks = []
-      for (let i = 0; i < rdTenderIds.length; i += 150) chunks.push(rdTenderIds.slice(i, i + 150))
-      const parts = await Promise.all(chunks.map(async (chunk) => {
+      const parts = await Promise.all(chunkList(rdTenderIds).map(async (chunk) => {
         const { data, error } = await db
           .from('tender_rd_codes')
           .select('tender_id, code, title, sort_order')

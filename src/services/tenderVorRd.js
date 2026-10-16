@@ -7,6 +7,7 @@
 //   'vor'           — прежняя общая категория, файлы загружены до разделения.
 // Шифры — существующая таблица tender_rd_codes, связь — tender_rd_document_codes.
 import { db } from '../api'
+import { chunkList } from '../utils/inChunks'
 import { deleteDocument, uploadFile } from './s3'
 
 export const RD_CATEGORY = 'rd'
@@ -200,9 +201,7 @@ export async function setDocumentCodes(documentId, nextCodeIds, prevCodeIds, byN
 export async function fetchVorRdDocCounts(tenderIds) {
   const counts = {}
   if (!tenderIds?.length) return counts
-  const chunks = []
-  for (let i = 0; i < tenderIds.length; i += 150) chunks.push(tenderIds.slice(i, i + 150))
-  const parts = await Promise.all(chunks.map(async (chunk) => {
+  const parts = await Promise.all(chunkList(tenderIds).map(async (chunk) => {
     const { data, error } = await db
       .from('s3_documents')
       .select('owner_id')

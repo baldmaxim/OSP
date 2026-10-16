@@ -10,6 +10,7 @@
 // не перетирается молча.
 import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import { chunkList } from '../utils/inChunks'
 import { isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { fetchFileBytes } from './s3'
 import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './tenderVorRd'
@@ -238,9 +239,9 @@ export async function loadRateHistory(mainId, { rateId, estimateName, materialNa
 export async function loadSupplyProgress(mainIds) {
   const out = new Map()
   const ids = [...new Set(mainIds.filter(Boolean))]
-  for (let i = 0; i < ids.length; i += 150) {
+  for (const chunk of chunkList(ids)) {
     const { data, error } = await db.from('tender_supply_progress')
-      .select('tender_id, positions_count, priced_count').in('tender_id', ids.slice(i, i + 150))
+      .select('tender_id, positions_count, priced_count').in('tender_id', chunk)
     if (error) {
       if (classifyError(error)?.kind === 'missing') return out
       throw error

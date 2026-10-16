@@ -18,6 +18,7 @@ import { IconDocsStack, IconFolderTree, IconColumns, IconColumnsWide } from '../
 const ContractsImportModal = lazy(() => import('../components/ContractsImportModal'))
 import { fetchCounterpartyDocSummary, deleteDocument } from '../services/s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
+import { chunkList } from '../utils/inChunks'
 import { LARIX_LINK_FIELD, LARIX_LINK_LABEL, LARIX_NAME, isInLarix } from '../utils/contractLarix'
 import {
   DOC_TYPE,
@@ -508,17 +509,20 @@ function ContractRegistry() {
       setLoading(false)
 
       const ids = filtered.map(c => c.id)
+      // Порциями id: все договоры реестра одним .in() не проходят по длине адреса (inChunks.js).
+      // Строки одного договора — в одной порции, порядок внутри договора сохраняется.
+      const idChunks = chunkList(ids)
       // «Приложения к Договору» — единая таблица (task 419).
       if (ids.length > 0) {
         try {
-          const apRows = await fetchAllRows((from, to) => db
+          const apRows = (await Promise.all(idChunks.map(chunk => fetchAllRows((from, to) => db
             .from('contract_appendices')
             .select('*')
-            .in('contract_id', ids)
+            .in('contract_id', chunk)
             .order('sort_order', { ascending: true })
             .order('created_at', { ascending: true })
             .order('id', { ascending: true })
-            .range(from, to))
+            .range(from, to))))).flat()
           const apMap = {}
           for (const r of apRows || []) {
             if (!apMap[r.contract_id]) apMap[r.contract_id] = []
@@ -536,15 +540,15 @@ function ContractRegistry() {
       // Понятийные соглашения (несколько файлов на договор) — s3_documents по категории.
       if (ids.length > 0) {
         try {
-          const caRows = await fetchAllRows((from, to) => db
+          const caRows = (await Promise.all(idChunks.map(chunk => fetchAllRows((from, to) => db
             .from('s3_documents')
             .select('id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at')
             .eq('owner_type', 'contract')
             .eq('doc_category', 'concept_agreement')
-            .in('owner_id', ids)
+            .in('owner_id', chunk)
             .order('created_at', { ascending: true })
             .order('id', { ascending: true })
-            .range(from, to))
+            .range(from, to))))).flat()
           const caMap = {}
           for (const r of caRows || []) {
             if (!caMap[r.owner_id]) caMap[r.owner_id] = []

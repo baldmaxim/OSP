@@ -34,7 +34,10 @@ const UPSTREAM_TIMEOUT_MS = 125_000
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/
 const ACTION = { GET: 'select', HEAD: 'select', POST: 'insert', PATCH: 'update', DELETE: 'delete' }
 const REQUEST_HEADERS = ['accept', 'content-type', 'prefer', 'range', 'range-unit']
-const RESPONSE_HEADERS = ['content-type', 'content-range', 'content-location', 'preference-applied', 'location', 'range-unit']
+// Content-Location не передаётся: PostgREST повторяет в нём всю строку запроса, и при длинном фильтре
+// (.in() на сотню id — от ~4 КБ) заголовок ответа не помещался в буфер nginx сайта — 502 у всех таких
+// запросов. supabase-js его не читает.
+const RESPONSE_HEADERS = ['content-type', 'content-range', 'preference-applied', 'location', 'range-unit']
 
 const pgError = (code, message) => ({ code, details: null, hint: null, message })
 

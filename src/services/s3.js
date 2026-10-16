@@ -4,6 +4,7 @@
 // создаёт второй документ, удаление — сначала строка, затем объект. Путь выбирается один раз, в начале
 // операции; без флага всё как прежде.
 import { db, auth, invokeFunction, filesViaOspApi, ospFiles } from '../api'
+import { chunkList } from '../utils/inChunks'
 
 const FUNCTION_NAME = 's3-presign'
 
@@ -163,22 +164,30 @@ export async function fetchDocuments(ownerType, ownerId, category = null) {
 export async function fetchCounterpartyDocSummary(ids = null) {
   if (Array.isArray(ids) && ids.length === 0) return new Map()
   const PAGE = 1000
-  const rows = []
-  for (let from = 0; ; from += PAGE) {
-    let query = db
-      .from('s3_documents')
-      .select('owner_id, doc_category, created_at')
-      .eq('owner_type', 'counterparty')
-      .in('doc_category', ['sb_approval', 'other'])
-    if (Array.isArray(ids)) query = query.in('owner_id', ids)
-    const { data, error } = await query
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
-    if (error) throw error
-    if (data?.length) rows.push(...data)
-    if (!data || data.length < PAGE) break
+  // Контрагентов реестра договоров — сотни: id порциями, иначе адрес запроса не проходит
+  // (inChunks.js). Документы одного контрагента — в одной порции, «последний по дате» не меняется.
+  const fetchRows = async (chunk) => {
+    const part = []
+    for (let from = 0; ; from += PAGE) {
+      let query = db
+        .from('s3_documents')
+        .select('owner_id, doc_category, created_at')
+        .eq('owner_type', 'counterparty')
+        .in('doc_category', ['sb_approval', 'other'])
+      if (chunk) query = query.in('owner_id', chunk)
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) throw error
+      if (data?.length) part.push(...data)
+      if (!data || data.length < PAGE) break
+    }
+    return part
   }
+  const rows = Array.isArray(ids)
+    ? (await Promise.all(chunkList(ids).map(fetchRows))).flat()
+    : await fetchRows(null)
 
   const map = new Map()
   for (const r of rows) {

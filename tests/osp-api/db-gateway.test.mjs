@@ -218,6 +218,17 @@ describe('osp-api: шлюз данных /api/db → PostgREST', { skip }, () =>
     assert.ok(!seen[0].headers.apikey && !seen[0].headers['x-client-info'], 'лишние заголовки не передаются')
   })
 
+  it('длинный фильтр: Content-Location с повтором строки запроса дальше не идёт (nginx сайта отвечал 502)', async () => {
+    const ids = Array.from({ length: 361 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`).join(',')
+    const query = `select=id&id=in.(${ids})`
+    reply = (r) => ({ headers: { 'content-location': r.url, 'content-range': '0-0/*' }, body: '[]' })
+    const res = await call('GET', `/api/db/tenders?${query}`, { token: user() })
+    assert.equal(res.statusCode, 200)
+    assert.equal(seen[0].url, `/tenders?${query}`, 'фильтр уходит целиком')
+    assert.equal(res.headers['content-location'], undefined)
+    assert.equal(res.headers['content-range'], '0-0/*')
+  })
+
   it('без токена — аноним: чтение по списку; негодный токен — отказ до PostgREST', async () => {
     const res = await call('GET', '/api/db/tenders?select=id')
     assert.equal(res.statusCode, 200)

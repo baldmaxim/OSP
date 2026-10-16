@@ -5,6 +5,7 @@
 // одними и теми же обработчиками — отличается только таблица.
 // Файлы — s3_documents с owner_type='general', owner_id = id заявки.
 import { db } from '../api'
+import { chunkList } from '../utils/inChunks'
 
 export const VOR_REQUESTS_TABLE = 'vor_requests'
 export const REQUEST_RD_CATEGORY = 'vor_request_rd'
@@ -59,9 +60,7 @@ export async function updateVorRequest(id, patch) {
 export async function fetchVorRequestDocCounts(ids) {
   const counts = {}
   if (!ids?.length) return counts
-  const chunks = []
-  for (let i = 0; i < ids.length; i += 150) chunks.push(ids.slice(i, i + 150))
-  const parts = await Promise.all(chunks.map(async (chunk) => {
+  const parts = await Promise.all(chunkList(ids).map(async (chunk) => {
     const { data, error } = await db
       .from('s3_documents')
       .select('owner_id')
