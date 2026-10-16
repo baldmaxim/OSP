@@ -1,5 +1,6 @@
 -- Проверка после 20261017_tenders_tg_skip.sql. Каждая строка — «OK …» или «FAIL …».
 -- Только чтение. Выполняется на копии (rehearse.sh) и на проде в SQL Editor после миграции.
+-- До миграции отвечает FAIL, а не падает: колонка tg_skip читается, только если она есть (query_to_xml).
 with
 col as (
   select column_name, data_type, is_nullable, column_default
@@ -22,7 +23,9 @@ checks(n, ok, what) as (
   select 3, exists (select 1 from con where def ilike '%tg_published%tg_skip%'),
          'tenders: «опубликовано» и «не публиковать» одновременно запрещены (tenders_tg_state_check)'
   union all
-  select 4, not exists (select 1 from public.tenders where tg_skip),
+  select 4, case when not exists (select 1 from col where column_name = 'tg_skip') then false
+                 else (xpath('/row/n/text()', query_to_xml('select count(*) as n from public.tenders where tg_skip',
+                   false, true, '')))[1]::text = '0' end,
          'tenders: «не публиковать» ни у одного тендера — данные не изменились'
   union all
   select 5, (select relrowsecurity from pg_class where oid = 'public.tenders'::regclass),

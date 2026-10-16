@@ -20,9 +20,14 @@ checks(n, ok, what) as (
                              and has_function_privilege('service_role', sig::regprocedure, 'EXECUTE')) from f),
          'вошедший и служебный ключ вызывают эти функции как раньше'
   union all
+  -- Витрина для гостя: до 20261016 — две политики чтения на tenders и objects, после — представление
+  -- public_open_tenders и ни одной политики для гостя на этих таблицах. Годится любое из двух состояний.
   select 4, (select count(*) from pg_policies where schemaname = 'public' and roles = '{anon}'
-               and tablename in ('tenders', 'objects') and cmd = 'SELECT') = 2,
-         'публичная витрина: две политики чтения для анонима на месте'
+               and tablename in ('tenders', 'objects') and cmd = 'SELECT') = 2
+            or (coalesce(has_table_privilege('anon', to_regclass('public.public_open_tenders'), 'select'), false)
+                and not exists (select 1 from pg_policies where schemaname = 'public' and 'anon' = any (roles)
+                                  and tablename in ('tenders', 'objects'))),
+         'публичная витрина на месте: две политики чтения для анонима или представление public_open_tenders (после 20261016)'
   union all
   select 5, not exists (select 1 from pg_policies where schemaname = 'public' and 'anon' = any (roles)
                          and (coalesce(qual, '') || coalesce(with_check, '')) ~ '(is_admin|is_portal_employee|is_my_|current_counterparty_id|can_see_task|is_task_participant|is_negotiation_employee|vor_requests_can_access|osp_)'),
