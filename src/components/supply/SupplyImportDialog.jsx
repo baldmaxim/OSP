@@ -3,13 +3,13 @@ import * as XLSX from 'xlsx'
 import { getColumnPreviews } from '../../utils/parseProposalExcel'
 import { normName } from '../../utils/supplyRateHelpers'
 import { buildSupplyPositions, positionsFromEstimate } from '../../utils/vorMaterials'
+import { targetNameForFile } from '../../utils/supplyAutoImport'
 import { MATERIALS_COLUMN_FIELDS, readMaterialsFromWorkbook } from '../../utils/vorMaterialsSheet'
 import {
   estimateSignatures, estimateVersion, fetchVorWorkbook, fileVersion, loadEstimateItems, saveSource,
 } from '../../services/supplyPricing'
 
 const COLUMN_COUNT = 26
-const baseName = (fileName) => String(fileName || '').replace(/\.[^.]+$/, '').trim()
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString('ru-RU') : '')
 
 // Разница нового списка позиций с прежним: добавятся / пропадут / изменится объём (по ключу наименования).
@@ -66,17 +66,8 @@ export default function SupplyImportDialog({ mainId, files, sources, onClose, on
     return () => { alive = false }
   }, [mainId])
 
-  // Имя ВОР для файла: прежняя привязка этого файла → ВОР карточки с тем же именем → прежний список с тем же
-  // именем файла → имя файла.
-  const defaultName = (doc) => {
-    const bound = sources.find((s) => s.s3_document_id === doc.id)
-    if (bound) return bound.estimate_name
-    const base = baseName(doc.file_name)
-    const card = cardDocNames.find((n) => normName(n) === normName(base))
-    if (card) return card
-    const byFile = sources.find((s) => s.file_name && normName(baseName(s.file_name)) === normName(base))
-    return byFile ? byFile.estimate_name : base
-  }
+  // Имя ВОР для файла — как у автозагрузки (utils/supplyAutoImport).
+  const defaultName = (doc) => targetNameForFile(doc, sources, cardDocNames)
 
   // Разбор файлов по очереди (книги бывают тяжёлыми). Сохранённое сопоставление колонок того же ВОР —
   // если шапка не распознаётся сама.

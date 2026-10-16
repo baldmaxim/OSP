@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
-import { Link, useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { db } from '../api'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
 import { normName, supplyKey, rateUnitPrice } from '../utils/supplyRateHelpers'
 import { isWorkItem, aggregateEstimate } from '../utils/vorMaterials'
-import { MATERIALS_LOCK_STATUSES, renameEstimate } from '../services/supplyPricing'
 import { reorderSiblings } from '../utils/appendixTree'
 import { tenderObjectName } from '../utils/tenderDepartments'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
@@ -27,7 +26,7 @@ import TenderVorRdPanel from '../components/TenderVorRdPanel'
 import { countVorRdDocs } from '../services/tenderVorRd'
 import { vorResponsibleName } from '../services/stoEmployees'
 import TenderFinalDocBlock from '../components/TenderFinalDocBlock'
-import SupplyOrphanRates from '../components/supply/SupplyOrphanRates'
+import SupplyPricingPanel from '../components/supply/SupplyPricingPanel'
 import '../components/TenderDetail.css'
 
 // task 410: с какого числа видимых строк включаем виртуализацию <tbody>.
@@ -182,96 +181,6 @@ function getHeaderKeys(items) {
     if (next && lvlOf(next) > lvlOf(items[i])) keys.push(sectionKey(items[i], i))
   }
   return keys
-}
-
-// task 398: стоимость материалов от снабжения по строкам + подытоги.
-// Для каждой строки-материала: material_consumption × supply_price (расценка
-// сопоставляется по наименованию в пределах ВОР-документа). Подытоги всплывают
-// к родительским разделам, к документам (для Объединённого ВОР) и в общий итог.
-// Один проход с тем же стеком уровней, что у EstimateTable — индексы leaf и
-// ключи sectionTotals совпадают с разметкой таблицы.
-function computeSupplyCosts(items, ratesMap) {
-  // task 409: leaf — «Итого от снабжения» (объём×цена); unitPrice — «Цена за ед.» (raw supply_price).
-  const empty = { leaf: [], unitPrice: [], sectionTotals: new Map(), docTotals: new Map(), grand: 0 }
-  if (!items || items.length === 0 || !ratesMap) return empty
-  const lvlOf = makeLevelOf(items)
-  const leaf = new Array(items.length).fill(null)
-  const unitPrice = new Array(items.length).fill(null)
-  const sectionTotals = new Map()
-  const docTotals = new Map()
-  let grand = 0
-  const stack = [] // открытые разделы: { key, level, total }
-  let curDoc = null
-  // Закрыть разделы с уровнем >= toLevel, всплывая сумму к родителю.
-  const flush = (toLevel) => {
-    while (stack.length && stack[stack.length - 1].level >= toLevel) {
-      const s = stack.pop()
-      sectionTotals.set(s.key, (sectionTotals.get(s.key) || 0) + s.total)
-      if (stack.length) stack[stack.length - 1].total += s.total
-    }
-  }
-  for (let idx = 0; idx < items.length; idx++) {
-    const it = items[idx]
-    if (it._isDocDivider) {
-      flush(0)
-      stack.length = 0
-      curDoc = it._docName
-      if (!docTotals.has(curDoc)) docTotals.set(curDoc, 0)
-      continue
-    }
-    const L = lvlOf(it)
-    const next = items[idx + 1]
-    const isHeader = !!next && !next._isDocDivider && lvlOf(next) > L
-    const isSectionLike = it.is_section || isHeader
-    if (isSectionLike) {
-      flush(L)
-      stack.push({ key: sectionKey(it, idx), level: L, total: 0 })
-      continue
-    }
-    flush(L)
-    if (isWorkItem(it)) continue // в колонку снабжения попадают только материалы
-    const dk = it.estimate_name || curDoc || 'Основная смета'
-    const price = ratesMap.get(supplyKey(dk, it.cost_name))
-    if (price == null) continue // нет цены снабжения → нерасценено (обе ячейки пустые + жёлтый)
-    unitPrice[idx] = Number(price)
-    // task 409: цена за единицу есть, но если объём некорректен/<=0 — итог НЕ считаем
-    // (показываем прочерк), цену оставляем. Подсветки «нерасценено» при этом нет.
-    const vol = Number(it.material_consumption)
-    if (!Number.isFinite(vol) || vol <= 0) continue
-    const cost = vol * Number(price)
-    leaf[idx] = cost
-    grand += cost
-    if (stack.length) stack[stack.length - 1].total += cost
-    docTotals.set(dk, (docTotals.get(dk) || 0) + cost)
-  }
-  flush(0)
-  return { leaf, unitPrice, sectionTotals, docTotals, grand }
-}
-
-// task 398: вкладка снабжения показывает только материалы. После удаления строк-работ
-// итеративно убираем разделы/подразделы, под которыми не осталось ни одного материала
-// (пустой раздел = следующий за ним элемент это разделитель документа, конец списка
-// или строка того же/более высокого уровня).
-function pruneEmptySections(items) {
-  if (!items || items.length === 0) return items
-  const lvlOf = makeLevelOf(items)
-  let arr = items
-  let changed = true
-  while (changed) {
-    changed = false
-    const out = []
-    for (let i = 0; i < arr.length; i++) {
-      const it = arr[i]
-      if (it.is_section) {
-        const next = arr[i + 1]
-        const empty = !next || next._isDocDivider || lvlOf(next) <= lvlOf(it)
-        if (empty) { changed = true; continue }
-      }
-      out.push(it)
-    }
-    arr = out
-  }
-  return arr
 }
 
 // task 260/262: смета с многоуровневой группировкой/сворачиванием (как в Excel)
@@ -614,8 +523,6 @@ function TenderDetailPage() {
   const canEditTenders = canEdit('tenders')
 
   const [tender, setTender] = useState(null)
-  // Тендер на материалы «Завершён» — расценки снабжения только для чтения (в базе — триггер, здесь — кнопки).
-  const supplyLocked = MATERIALS_LOCK_STATUSES.includes(tender?.materials_tender?.status)
   const [tenderCounterparties, setTenderCounterparties] = useState([])
   // Когда КП контрагента фактически попало на сайт: counterparty_id → ISO-дата.
   // Источник — загруженный файл КП, а если файла нет (кабинет подрядчика) — строки расценок.
@@ -689,9 +596,10 @@ function TenderDetailPage() {
   // task 405: конфиг-модалка выбора листа/столбцов перед парсингом
   // { workbook, sheetNames, sheetName, startRow, endRow, columnMap, fileName, docName }
   const [supplyConfig, setSupplyConfig] = useState(null)
-  // выбранный документ + свёрнутые разделы для вкладки «Расценки снабжения»
+  // ВОР, в который загружаются цены из Excel (выбирается в таблице расценки — «загрузить цены из Excel»).
   const [supplySelectedDoc, setSupplySelectedDoc] = useState('all')
-  const [supplyCollapsed, setSupplyCollapsed] = useState(new Set())
+  // Таблица расценки перечитывает данные, когда карточка записала сама (импорт Excel).
+  const [supplyRefreshToken, setSupplyRefreshToken] = useState(0)
 
   // Состояния для добавления участников
   const [showAddParticipantModal, setShowAddParticipantModal] = useState(false)
@@ -1107,7 +1015,7 @@ function TenderDetailPage() {
     const file = e.target.files[0]
     if (!file) return
     if (supplySelectedDoc === 'all') {
-      alert('Выберите конкретный раздел (ВОР-документ) слева, чтобы загрузить к нему стоимость материалов.')
+      alert('Выберите ВОР в таблице расценки («загрузить цены из Excel» у нужного ВОР).')
       if (supplyFileRef.current) supplyFileRef.current.value = ''
       return
     }
@@ -1221,6 +1129,12 @@ function TenderDetailPage() {
     }
   }
 
+  // Загрузка цен из Excel в ВОР таблицы расценки: запомнить ВОР и открыть выбор файла.
+  const startSupplyExcelImport = (estimateName) => {
+    setSupplySelectedDoc(estimateName)
+    supplyFileRef.current?.click()
+  }
+
   const handleConfirmSupplyImport = async () => {
     if (!supplyImportReport) return
     setSupplyImporting(true)
@@ -1261,6 +1175,7 @@ function TenderDetailPage() {
         }
       }
       await fetchSupplyRates()
+      setSupplyRefreshToken((t) => t + 1)
       let msg = `Импорт расценок снабжения «${docName}» завершён.\n`
         + `Добавлено: ${added}\nОбновлено: ${updated}\n`
         + `Без изменений: ${skipped + sameItems.length}`
@@ -1286,28 +1201,6 @@ function TenderDetailPage() {
     const obj = {}
     supplyImportReport.conflictItems.forEach((_, idx) => { obj[idx] = d })
     setSupplyConflictDecisions(obj)
-  }
-
-  // task 398: удалить все расценки снабжения выбранного документа.
-  const handleClearSupplyRates = async () => {
-    if (supplySelectedDoc === 'all') return
-    const fromSite = supplyRates.filter(r => (r.estimate_name || 'Основная смета') === supplySelectedDoc
-      && (r.price_input === 'unit' || r.price_input === 'total')).length
-    const warn = fromSite
-      ? `\n\nИз них введено снабжением на сайте: ${fromSite}. Удаление записывается в журнал — цену можно вернуть на странице расценки (история цены).`
-      : ''
-    if (!window.confirm(`Удалить всю стоимость материалов от снабжения для ВОР «${supplySelectedDoc}»?${warn}`)) return
-    try {
-      const { error } = await db
-        .from('tender_vor_supply_rates')
-        .delete()
-        .eq('tender_id', tenderId)
-        .eq('estimate_name', supplySelectedDoc)
-      if (error) throw error
-      setSupplyRates(prev => prev.filter(r => (r.estimate_name || 'Основная смета') !== supplySelectedDoc))
-    } catch (err) {
-      alert('Ошибка удаления расценок: ' + err.message)
-    }
   }
 
   // task 345: превью первой непустой ячейки каждого столбца — подсказка
@@ -1372,62 +1265,6 @@ function TenderDetailPage() {
     () => getColumnPreviews(supplyConfig?.workbook, supplyConfig?.sheetName, SUPPLY_COLUMN_COUNT),
     [supplyConfig?.workbook, supplyConfig?.sheetName]
   )
-
-  // Вкладка «Расценки снабжения»: только материалы (без работ) выбранного документа
-  // или объединённый вид. Работы отбрасываем до конкатенации, пустые разделы — после.
-  const supplyEstimate = useMemo(() => {
-    const docFiltered = supplySelectedDoc === 'all'
-      ? estimateItems
-      : estimateItems.filter(it => (it.estimate_name || 'Основная смета') === supplySelectedDoc)
-    const noWorks = docFiltered.filter(it => it.is_section || !isWorkItem(it))
-    const tree = supplySelectedDoc === 'all' ? concatCombinedEstimate(noWorks) : noWorks
-    return pruneEmptySections(tree)
-  }, [estimateItems, supplySelectedDoc])
-
-  const supplyCosts = useMemo(
-    () => computeSupplyCosts(supplyEstimate, supplyRatesMap),
-    [supplyEstimate, supplyRatesMap]
-  )
-
-  const supplySectionKeys = useMemo(() => getHeaderKeys(supplyEstimate), [supplyEstimate])
-  const toggleSupplySection = useCallback((key) => {
-    setSupplyCollapsed(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }, [])
-
-  // Сброс выбранного документа во вкладке снабжения, если он исчез.
-  useEffect(() => {
-    if (supplySelectedDoc === 'all') return
-    if (!docNames.includes(supplySelectedDoc)) setSupplySelectedDoc('all')
-  }, [docNames, supplySelectedDoc])
-
-  // Число загруженных расценок для выбранного во вкладке снабжения документа.
-  const supplyTabRatesCount = useMemo(() => {
-    if (supplySelectedDoc === 'all') return supplyRates.length
-    return supplyRates.filter(r => (r.estimate_name || 'Основная смета') === supplySelectedDoc).length
-  }, [supplyRates, supplySelectedDoc])
-
-  // task 406: сколько расценок снабжения выбранного документа реально сопоставились
-  // материалу ВОР. Отличает «не загрузил» от «загрузил, но имена не совпали».
-  const supplyMatchStats = useMemo(() => {
-    if (supplySelectedDoc === 'all') return null
-    const docRates = supplyRates.filter(
-      r => (r.estimate_name || 'Основная смета') === supplySelectedDoc
-    )
-    if (docRates.length === 0) return null
-    const vorNames = new Set(
-      supplyEstimate
-        .filter(it => !it.is_section && !it._isDocDivider && !isWorkItem(it))
-        .map(it => normName(it.cost_name))
-    )
-    const unmatched = docRates.filter(r => !vorNames.has(normName(r.material_name)))
-    const fromSite = docRates.filter(r => r.price_input === 'unit' || r.price_input === 'total').length
-    return { matched: docRates.length - unmatched.length, total: docRates.length, unmatched, fromSite }
-  }, [supplyRates, supplySelectedDoc, supplyEstimate])
 
   // Если активный документ удалён или ещё не выбран — переключаемся на 'all'.
   useEffect(() => {
@@ -2707,147 +2544,29 @@ function TenderDetailPage() {
           </div>
         )}
 
-        {/* task 398: Вкладка «Расценки снабжения» — стоимость материалов по разделам ВОР */}
+        {/* Вкладка «Расценки снабжения» (task 398 → миграция 20261020): таблица расценки по позициям ВОР — та же,
+            что у снабжения на его странице. Позиции загружаются сами (файлы «ВОРов и РД», иначе вкладка «ВОР»),
+            цены вводятся в таблице или загружаются из Excel по ВОР (прежний разбор файла ниже). */}
         {activeTab === 'supply' && (
           <div className="estimate-section">
             <div className="section-header">
               <h3>Расценки снабжения по материалам ВОР</h3>
-              <Link
-                to={`/tenders/materials/${tender?.materials_tender?.id || tenderId}/pricing`}
-                className="btn-secondary btn-sm"
-                title="Страница, где снабжение вводит цены или суммы по позициям ВОР"
-              >Расценка снабжения на сайте</Link>
             </div>
-            {supplyLocked && (
-              <p className="supply-tab-hint">
-                Тендер на материалы завершён — расценки снабжения только для чтения. Чтобы изменить, верните тендеру на материалы прежний статус.
-              </p>
-            )}
-            <SupplyOrphanRates
-              rates={supplyRates}
-              docNames={estimateItems.length ? docNames : []}
-              canEdit={canEditTenders && !supplyLocked}
-              onRename={async (from, to) => {
-                try {
-                  await renameEstimate(tenderId, from, to)
-                  await fetchSupplyRates()
-                } catch (err) {
-                  alert('Не удалось привязать расценки: ' + err.message)
-                }
-              }}
+            <input
+              ref={supplyFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleSupplyRatesFileSelect}
+              style={{ display: 'none' }}
             />
-
-            {estimateItems.length === 0 ? (
-              <div className="empty-state">
-                <p>ВОР ещё не загружен</p>
-                <p className="hint">
-                  Сначала загрузите ВОР на вкладке «ВОР», затем здесь можно будет
-                  по каждому разделу загрузить стоимость материалов от снабжения.
-                  Позиции из файлов ВОР («ВОРы и РД») снабжение расценивает на странице «Расценка снабжения на сайте».
-                </p>
-              </div>
-            ) : (
-              <>
-                <DocTabsTree
-                  docNames={docNames}
-                  estimateItems={estimateItems}
-                  selected={supplySelectedDoc}
-                  onSelect={setSupplySelectedDoc}
-                />
-
-                <div className="estimate-subtabs">
-                  <div className="estimate-subtabs-left">
-                    <span className="supply-tab-current">
-                      {supplySelectedDoc === 'all'
-                        ? 'Объединённый ВОР (все разделы)'
-                        : `Раздел: ${supplySelectedDoc}`}
-                      {supplyMatchStats && (
-                        <span className={`supply-tab-match-hint${supplyMatchStats.matched < supplyMatchStats.total ? ' is-partial' : ''}`}>
-                          {' '}— сопоставлено {supplyMatchStats.matched} из {supplyMatchStats.total} расценок
-                          {supplyMatchStats.fromSite > 0 && ` (введено на сайте: ${supplyMatchStats.fromSite})`}
-                        </span>
-                      )}
-                    </span>
-                    {supplyMatchStats?.unmatched?.length > 0 && (
-                      <details className="supply-unmatched">
-                        <summary>не сопоставлено: {supplyMatchStats.unmatched.length}</summary>
-                        <ul>
-                          {supplyMatchStats.unmatched.slice(0, 30).map((r, i) => (
-                            <li key={i} title={r.material_name}>{r.material_name}</li>
-                          ))}
-                          {supplyMatchStats.unmatched.length > 30 && (
-                            <li>…и ещё {supplyMatchStats.unmatched.length - 30}</li>
-                          )}
-                        </ul>
-                      </details>
-                    )}
-                  </div>
-                  <div className="estimate-collapse-controls">
-                    {supplySectionKeys.length > 0 && (
-                      <>
-                        <button
-                          className="btn-secondary btn-sm"
-                          onClick={() => setSupplyCollapsed(new Set(supplySectionKeys))}
-                        >Свернуть всё</button>
-                        <button
-                          className="btn-secondary btn-sm"
-                          onClick={() => setSupplyCollapsed(new Set())}
-                        >Развернуть всё</button>
-                      </>
-                    )}
-                    {canEditTenders && !supplyLocked && supplySelectedDoc !== 'all' && (
-                      <>
-                        <label
-                          className="btn-primary btn-sm estimate-supply-import-btn"
-                          title={`Загрузить стоимость материалов из Excel для раздела «${supplySelectedDoc}»`}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="17 8 12 3 7 8" />
-                            <line x1="12" y1="3" x2="12" y2="15" />
-                          </svg>
-                          Загрузить стоимость материалов
-                          {supplyTabRatesCount > 0 && (
-                            <span className="estimate-supply-badge">{supplyTabRatesCount}</span>
-                          )}
-                          <input
-                            ref={supplyFileRef}
-                            type="file"
-                            accept=".xlsx,.xls"
-                            onChange={handleSupplyRatesFileSelect}
-                            style={{ display: 'none' }}
-                          />
-                        </label>
-                        {supplyTabRatesCount > 0 && (
-                          <button
-                            className="btn-secondary btn-sm"
-                            onClick={handleClearSupplyRates}
-                            title={`Удалить стоимость материалов для раздела «${supplySelectedDoc}»`}
-                          >Очистить</button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {supplySelectedDoc === 'all' && (
-                  <p className="supply-tab-hint">
-                    Выберите конкретный раздел слева, чтобы загрузить для него стоимость материалов
-                    (Excel: A — наименование, B — ед. изм., C — цена). В объединённом виде показаны итоги по всем разделам.
-                  </p>
-                )}
-
-                <EstimateTable
-                  items={supplyEstimate}
-                  collapsedSections={supplyCollapsed}
-                  onToggleSection={toggleSupplySection}
-                  onSwitchToDoc={supplySelectedDoc === 'all' ? setSupplySelectedDoc : undefined}
-                  supplyCosts={supplyCosts}
-                  showSupply
-                  hideWorkVolume
-                />
-              </>
-            )}
+            <SupplyPricingPanel
+              tenderId={tenderId}
+              estimateItems={estimateItems}
+              variant="card"
+              onRatesChange={setSupplyRates}
+              refreshToken={supplyRefreshToken}
+              excelImport={canEditTenders ? { onImport: startSupplyExcelImport } : null}
+            />
           </div>
         )}
 

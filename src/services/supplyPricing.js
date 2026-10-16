@@ -100,8 +100,7 @@ export async function fetchVorWorkbook(doc) {
 }
 
 // Признак версии источника: файл — id и время загрузки; вкладка «ВОР» — число строк и время загрузки.
-export const fileVersion = (doc) => `file:${doc.id}:${doc.created_at}`
-export const estimateVersion = (sig) => `vor:${sig.count}:${sig.latest || ''}`
+export { fileVersion, estimateVersion } from '../utils/supplyAutoImport.js'
 
 // Строки вкладки «ВОР» карточки (только нужные поля) — для позиций из ВОР и признаков его версии.
 export async function loadEstimateItems(mainId) {
