@@ -55,14 +55,48 @@ const DEPT_BADGE = {
   other: { short: 'Проч.', title: 'Тендеры (прочее)' },
 }
 
-function TenderDeptBadge({ tender }) {
-  const key = tender?.department
+function tenderDeptKey(tender) {
+  return tender?.department
     || (tender?.objects?.status === 'warranty_service' ? 'warranty' : null)
     || (tender?.objects?.status === 'main_construction' ? 'construction' : null)
+}
+
+function TenderDeptBadge({ tender }) {
+  const key = tenderDeptKey(tender)
   const meta = DEPT_BADGE[key]
   if (!meta) return null
   return (
     <span className={`kprv-dept kprv-dept-${key}`} title={meta.title}>{meta.short}</span>
+  )
+}
+
+// Отбор по направлению — галочки справа от поиска, можно несколько сразу;
+// ничего не отмечено — показываем все КП. Совместные в этот набор не входят:
+// их галочка появляется, только когда такие КП есть в очереди, — иначе при
+// любом отборе они пропадали бы из списка без способа их найти.
+const DEPT_FILTER_KEYS = ['construction', 'warranty', 'other']
+
+const IconCheck = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+)
+
+function DeptFilter({ deptKey, checked, count, onToggle }) {
+  const m = DEPT_BADGE[deptKey]
+  return (
+    <label className={`kprv-dept-chip${checked ? ' is-on' : ''}`} title={m.title}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => onToggle(deptKey)}
+        aria-label={`${m.title}: ${count}`}
+      />
+      <span className="kprv-dept-chip-box" aria-hidden><IconCheck /></span>
+      <span className="kprv-dept-chip-label" aria-hidden>{m.short}</span>
+      <span className={`kprv-dept-chip-count${count ? '' : ' is-zero'}`} aria-hidden>{count}</span>
+    </label>
   )
 }
 
@@ -180,6 +214,8 @@ function KpReviewPage() {
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('pending')
   const [search, setSearch] = useState('')
+  // Отмеченные направления (ключи DEPT_BADGE); пустой набор — без отбора.
+  const [depts, setDepts] = useState(() => new Set())
   // По умолчанию — как раньше: свежие КП сверху.
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
   const [reviewFile, setReviewFile] = useState(null)
@@ -304,16 +340,42 @@ function KpReviewPage() {
       : { key, dir: key === 'tender_no' ? 'asc' : 'desc' }))
   }, [])
 
+  const toggleDept = useCallback((key) => {
+    setDepts(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
+  const inDepts = useCallback(
+    (r) => depts.size === 0 || depts.has(tenderDeptKey(r.tenders)),
+    [depts],
+  )
+
+  // Счётчики этапов — с учётом отбора по направлениям: отметил ГО — очереди
+  // показывают работу ГО, а не всего отдела.
   const counts = useMemo(() => {
     const c = Object.fromEntries(STAGE_KEYS.map(k => [k, 0]))
-    c.all = rows.length
-    for (const r of rows) { const st = stageOf(r); c[st] = (c[st] || 0) + 1 }
+    let all = 0
+    for (const r of rows) {
+      if (!inDepts(r)) continue
+      all++
+      const st = stageOf(r)
+      c[st] = (c[st] || 0) + 1
+    }
+    c.all = all
     return c
-  }, [rows])
+  }, [rows, inDepts])
 
-  const visibleRows = useMemo(() => {
+  const hasJoint = useMemo(() => rows.some(r => tenderDeptKey(r.tenders) === 'joint'), [rows])
+  const deptKeys = hasJoint || depts.has('joint') ? [...DEPT_FILTER_KEYS, 'joint'] : DEPT_FILTER_KEYS
+
+  // Строки открытого этапа и поиска — без отбора по направлениям.
+  const tabRows = useMemo(() => {
     const s = search.trim().toLowerCase()
-    const filtered = rows.filter(r => {
+    return rows.filter(r => {
       if (tab !== 'all' && stageOf(r) !== tab) return false
       if (!s) return true
       const hay = [
@@ -327,6 +389,21 @@ function KpReviewPage() {
       ].filter(v => v != null && v !== '').join(' ').toLowerCase()
       return hay.includes(s)
     })
+  }, [rows, tab, search])
+
+  // Число у галочки — сколько КП этого направления в открытом этапе с учётом
+  // поиска: ровно столько строк прибавится в списке, если её отметить.
+  const deptCounts = useMemo(() => {
+    const c = Object.fromEntries(Object.keys(DEPT_BADGE).map(k => [k, 0]))
+    for (const r of tabRows) {
+      const k = tenderDeptKey(r.tenders)
+      if (k in c) c[k]++
+    }
+    return c
+  }, [tabRows])
+
+  const visibleRows = useMemo(() => {
+    const filtered = tabRows.filter(inDepts)
     const sign = sort.dir === 'asc' ? 1 : -1
     return filtered.sort((a, b) => {
       const va = sortValue(a, sort.key)
@@ -337,7 +414,7 @@ function KpReviewPage() {
       }
       return (va - vb) * sign
     })
-  }, [rows, tab, search, sort])
+  }, [tabRows, inDepts, sort])
 
   return (
     <div className="kprv-page">
@@ -398,6 +475,17 @@ function KpReviewPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <div className="kprv-depts" role="group" aria-label="Направление тендера">
+          {deptKeys.map(key => (
+            <DeptFilter
+              key={key}
+              deptKey={key}
+              checked={depts.has(key)}
+              count={deptCounts[key] ?? 0}
+              onToggle={toggleDept}
+            />
+          ))}
+        </div>
       </div>
 
       {loading ? (
@@ -406,7 +494,7 @@ function KpReviewPage() {
         <div className="kprv-error">Ошибка: {error}</div>
       ) : visibleRows.length === 0 ? (
         <div className="kprv-empty">
-          {{
+          {depts.size > 0 && tabRows.length > 0 ? 'Нет КП по выбранным направлениям.' : {
             pending: 'Нет КП, ожидающих проверки.',
             ok_summary: 'Нет КП без замечаний, ожидающих занесения в сводную таблицу.',
             ok_done: 'Нет полностью отработанных КП без замечаний.',

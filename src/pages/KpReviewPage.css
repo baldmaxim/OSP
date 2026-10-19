@@ -25,7 +25,7 @@
 .kprv-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 1rem;
   flex-wrap: wrap;
   padding: 0.875rem 1.5rem;
@@ -41,6 +41,86 @@
   background: var(--bg-primary);
   color: var(--text-primary);
   font-size: 0.875rem;
+}
+
+/* Отбор по направлениям справа от поиска: отмеченное — зелёное, остальное —
+   серое. Настоящий checkbox спрятан, но остаётся в фокусе с клавиатуры. */
+.kprv-depts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.kprv-dept-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid color-mix(in srgb, var(--text-tertiary) 35%, transparent);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.kprv-dept-chip:hover { border-color: color-mix(in srgb, var(--text-tertiary) 70%, transparent); }
+.kprv-dept-chip input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.kprv-dept-chip:has(input:focus-visible) {
+  outline: 2px solid var(--success-color);
+  outline-offset: 2px;
+}
+.kprv-dept-chip-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1.5px solid var(--text-tertiary);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: transparent;
+}
+.kprv-dept-chip-count {
+  min-width: 1.5rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.kprv-dept-chip-count.is-zero {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-color);
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+.kprv-dept-chip.is-on {
+  border-color: #16a34a;
+  background: color-mix(in srgb, #16a34a 12%, var(--bg-secondary));
+  color: #166534;
+}
+.kprv-dept-chip.is-on:hover { border-color: #15803d; }
+.kprv-dept-chip.is-on .kprv-dept-chip-box {
+  border-color: #16a34a;
+  background: #16a34a;
+  color: #fff;
+}
+[data-theme='dark'] .kprv-dept-chip.is-on {
+  background: color-mix(in srgb, #16a34a 22%, var(--bg-secondary));
+  color: #86efac;
 }
 
 .kprv-empty, .kprv-error {
