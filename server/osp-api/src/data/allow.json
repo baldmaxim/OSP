@@ -854,6 +854,11 @@
         "select",
         "update"
       ]
+    },
+    "larix_rates_registry": {
+      "authenticated": [
+        "select"
+      ]
     }
   },
   "rpc": {

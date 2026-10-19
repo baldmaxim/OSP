@@ -1,8 +1,13 @@
 // Загрузка договорных расценок из Larix.CPM (server/osp-api/src/lib/larixSync.js) на настоящем PostgreSQL с
-// настоящей миграцией supabase/migrations/20261018_larix_contract_rates.sql (дважды — повтор безопасен).
+// настоящими миграциями: supabase/migrations/20261018_larix_contract_rates.sql, затем
+// migration/yandex/20261021_larix_rates_registry.sql (каждая дважды — повтор безопасен).
 // Проверяем обещанное:
-//   • позиция ВОР даёт строку материалов и строку работ (цена > 0); дата договора — по Москве;
+//   • строка — позиция договора с ценой материалов и ценой работ; одинаковые строки ВОР (договор, позиция,
+//     единица без учёта регистра и пробелов, цены) схлопываются; дата договора — по Москве;
 //     наш договор находится по ссылке «Путь к Larix.CPM» только при однозначном совпадении;
+//   • вкладка читает представление larix_rates_registry: строки — только вошедшему с правом раздела, поиск
+//     подстрокой идёт по триграммному индексу; закрытая таблица вошедшему недоступна; уже загруженное
+//     переносится из прежней таблицы;
 //   • пустой ответ и резкое падение числа позиций не стирают расценки (held), --force принимает;
 //   • сбой Larix — запись в журнал с причиной, без логина и пароля; сломанный формат — invalid;
 //   • одна загрузка одновременно; зависшая — снимается; повтор порции безопасен, недостающая — отказ;
@@ -24,6 +29,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const SERVER = path.join(ROOT, 'server', 'osp-api')
 const MIGRATION = path.join(ROOT, 'supabase', 'migrations', '20261018_larix_contract_rates.sql')
 const YANDEX = path.join(ROOT, 'migration', 'yandex', '20261018_larix_contract_rates.sql')
+const REGISTRY = path.join(ROOT, 'migration', 'yandex', '20261021_larix_rates_registry.sql')
 const skip = !fs.existsSync(path.join(SERVER, 'node_modules', 'pg')) ? 'нет зависимостей: npm ci --prefix server/osp-api'
   : !pgAvailable() ? 'нет PostgreSQL (бинарники или Docker)' : false
 
@@ -41,6 +47,14 @@ create schema extensions; create extension pg_trgm with schema extensions;
 create schema auth;
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+-- Как в базе Яндекса: закрытая схема и роль из токена (migration/target/sql/load-single-owner.sql). Служебный
+-- ключ пишет закрытую таблицу (там это владелец), вошедшему схема недоступна.
+create schema osp_private;
+create function osp_private.role_in(variadic p_roles text[]) returns boolean language sql stable as $$
+  select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'anon') = any (p_roles) $$;
+grant usage on schema osp_private to service_role;
+alter default privileges in schema osp_private grant all on tables to service_role;
+alter default privileges in schema osp_private grant all on sequences to service_role;
 grant usage on schema public to anon, authenticated, service_role;
 grant usage on schema auth to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
@@ -92,7 +106,10 @@ describe('Загрузка договорных расценок из Larix.CPM'
   const q = (sql) => pgdb.exec(sql).trim()
   const client = () => lib.client.createLarixClient({ baseUrl: larix.url, username: USER, password: PASS })
   const sync = (targets, options) => lib.sync.createLarixSync({ client: client(), targets, log, secrets: [PASS, USER], options })
-  const clean = () => q('delete from public.larix_contract_rates; delete from public.larix_sync_runs;')
+  const clean = () => q('delete from osp_private.larix_rates; delete from public.larix_contract_rates; delete from public.larix_sync_runs;')
+  const rates = () => q('select count(*) from osp_private.larix_rates')
+  // gin_trgm_ops на Supabase — в схеме extensions, в базе Яндекса — в public.
+  const applyRegistry = () => pgdb.exec(`set search_path = public, extensions;\n${fs.readFileSync(REGISTRY, 'utf8')}`)
 
   before(async () => {
     ;({ createDb } = await import(path.join(SERVER, 'src', 'lib', 'db.js')))
@@ -105,6 +122,8 @@ describe('Загрузка договорных расценок из Larix.CPM'
     pgdb.exec(BOOT)
     pgdb.applyFile(MIGRATION)
     pgdb.applyFile(MIGRATION)
+    applyRegistry()
+    applyRegistry()
     db = createDb({ url: `postgres://postgres@127.0.0.1:${pgdb.port}/psdc_test`, max: 2 })
     const server = http.createServer((req, res) => {
       const send = (status, obj) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)) }
@@ -135,45 +154,102 @@ describe('Загрузка договорных расценок из Larix.CPM'
     assert.deepEqual(fns(YANDEX), supa)
   })
 
-  it('ручной запуск: материалы и работы отдельными строками, дата по Москве, наш договор — по ссылке', async () => {
+  it('ручной запуск: позиция с обеими ценами — одна строка, дата по Москве, наш договор — по ссылке', async () => {
     clean()
     larixState = { mode: 'ok', rows: SAMPLE }
     const out = await sync([lib.sync.dbTarget(db)]).runOnce({ startedBy: 'cli' })
     assert.equal(out.results.db.status, 'ok', JSON.stringify(out))
     assert.equal(out.positions, 4)
-    const rows = q(`select string_agg(concat_ws('|', item_type, item_name, price, contract_id, contract_date, coalesce(osp_contract_id::text, '-'), coalesce(vat_rate::text, '-')), E'\\n' order by id)
-      from public.larix_contract_rates`).split('\n')
+    const rows = q(`select string_agg(concat_ws('|', item_name, coalesce(price_material::text, '-'), coalesce(price_work::text, '-'), contract_id,
+        contract_date, coalesce(osp_contract_id::text, '-'), coalesce(vat_rate::text, '-'), repeats), E'\\n' order by id)
+      from osp_private.larix_rates`).split('\n')
     assert.deepEqual(rows, [
-      'material|Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)|807.45|93|2025-01-20|c0000000-0000-4000-8000-000000000093|-',
-      'work|Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)|2185.5|93|2025-01-20|c0000000-0000-4000-8000-000000000093|-',
-      'work|Монтаж перегородок|1200.5|104|2025-03-01|-|-',
-      'material|Кабель ВВГнг 3х2,5|12.3|7|2025-01-01|c0000000-0000-4000-8000-000000000007|20',
-      'work|Без договора у нас|50|8|2025-01-20|-|-',
+      'Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)|807.45|2185.5|93|2025-01-20|c0000000-0000-4000-8000-000000000093|-|1',
+      'Монтаж перегородок|-|1200.5|104|2025-03-01|-|-|1',
+      'Кабель ВВГнг 3х2,5|12.3|-|7|2025-01-01|c0000000-0000-4000-8000-000000000007|20|1',
+      'Без договора у нас|-|50|8|2025-01-20|-|-|1',
     ], 'договор 104 — две ссылки (неоднозначно), договор 8 — удалён у нас')
+    assert.equal(q('select count(*) from public.larix_contract_rates'), '0', 'прежняя таблица больше не пишется')
     const run = JSON.parse(q(`select row_to_json(r) from (select status, started_by, positions_count, rows_count, skipped_count,
       larix_contracts, matched_contracts, response_keys, filters from public.larix_sync_runs) r`))
     assert.equal(run.status, 'ok')
     assert.equal(run.started_by, 'cli')
-    assert.deepEqual([run.positions_count, run.rows_count, run.skipped_count, run.larix_contracts, run.matched_contracts], [4, 5, 0, 4, 2])
+    assert.deepEqual([run.positions_count, run.rows_count, run.skipped_count, run.larix_contracts, run.matched_contracts], [4, 4, 0, 4, 2])
     assert.ok(run.response_keys.includes('work_title') && run.response_keys.includes('vat_rate'))
     assert.deepEqual(run.filters.states, ['Закрыт', 'Заключен'].sort())
     assert.deepEqual(run.filters.contracts.map((c) => c.id).sort((a, b) => a - b), [7, 8, 93, 104])
     assert.deepEqual(run.filters.contractors.map((c) => c.name).sort(), ['ООО "Стройсервис"', 'ООО Б'])
   })
 
-  it('читает реестр только вошедший с правом раздела; гость и функции загрузки — закрыты', () => {
+  it('повторы схлопываются: тот же договор, та же позиция (регистр и пробелы не важны), те же цены — одна строка', async () => {
+    clean()
+    larixState = { mode: 'ok', rows: [
+      POS(), POS({ comment: 'секция 2' }), POS({ work_title: '  газобетон стеновой блок  Bonolit D600, t=100 мм (пч) ', measure_title: 'М2' }),
+      POS({ price_material: 900 }),                       // другая цена — своя строка
+      POS({ contract_id: 104, contract_number: 'N-104' }), // другой договор — своя строка
+      POS({ work_title: 'Кабель', price_work: null }), POS({ work_title: 'Кабель', price_work: 0 }),
+    ] }
+    const out = await sync([lib.sync.dbTarget(db)]).runOnce({ startedBy: 'cli' })
+    assert.equal(out.results.db.status, 'ok', JSON.stringify(out))
+    assert.equal(out.results.db.positions, 7)
+    assert.equal(out.results.db.rows, 4)
+    const rows = q(`select string_agg(concat_ws('|', item_name, coalesce(price_material::text, '-'), coalesce(price_work::text, '-'), contract_id,
+        repeats, coalesce(comment, '-')), E'\\n' order by id) from osp_private.larix_rates`).split('\n')
+    assert.deepEqual(rows, [
+      'Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)|807.45|2185.5|93|3|-',
+      'Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)|900|2185.5|93|1|-',
+      'Газобетон Стеновой блок Bonolit D600, t=100 мм (ПЧ)|807.45|2185.5|104|1|-',
+      'Кабель|807.45|-|93|2|-',
+    ], 'остаётся первая строка по порядку ответа Larix; цена работ 0 — то же, что её нет')
+  })
+
+  it('уже загруженное переносится из прежней таблицы (позиции собираются обратно, повторы схлопываются); повтор безопасен', () => {
+    clean()
+    q(`insert into public.larix_contract_rates (run_id, item_type, item_name, unit, price, price_material, price_work, contract_id, project_id, contractor_id)
+       values (1, 'material', 'Газобетон', 'м2', 807.45, 807.45, 2185.5, 93, 2, 33), (1, 'work', 'Газобетон', 'м2', 2185.5, 807.45, 2185.5, 93, 2, 33),
+              (1, 'material', 'газобетон ', 'м2', 807.45, 807.45, 2185.5, 93, 2, 33), (1, 'work', 'газобетон ', 'м2', 2185.5, 807.45, 2185.5, 93, 2, 33),
+              (1, 'work', 'Монтаж', 'шт', 100, 0, 100, 93, 2, 33)`)
+    applyRegistry()
+    assert.equal(q(`select string_agg(concat_ws('|', item_name, coalesce(price_material::text, '-'), price_work, repeats), ',' order by id) from osp_private.larix_rates`),
+      'Газобетон|807.45|2185.5|2,Монтаж|-|100|1')
+    applyRegistry()
+    assert.equal(rates(), '2', 'новая таблица не пуста — повторный перенос ничего не добавляет')
+  })
+
+  it('вкладка читает представление: строки — только вошедшему с правом раздела, поиск — по индексу; запись закрыта', async () => {
+    clean()
+    larixState = { mode: 'ok', rows: SAMPLE }
+    await sync([lib.sync.dbTarget(db)]).runOnce({ startedBy: 'cli' })
+    const asUser = (role, uid) => `set role ${role}; select set_config('request.jwt.claim.sub', '${uid || ''}', false);
+      select set_config('request.jwt.claim.role', '${role}', false);`
     const as = (role, uid, sql) => {
       try {
-        return { ok: true, out: q(`set role ${role}; select set_config('request.jwt.claim.sub', '${uid || ''}', false); ${sql}`).split('\n').at(-1) }
+        return { ok: true, out: q(`${asUser(role, uid)} ${sql}`).split('\n').at(-1) }
       } catch (e) { return { ok: false, error: e.message } }
     }
-    assert.equal(as('authenticated', VIEWER, 'select count(*) from public.larix_contract_rates').out, '5')
+    assert.equal(as('authenticated', VIEWER, 'select count(*) from public.larix_rates_registry').out, '4')
+    assert.equal(as('authenticated', VIEWER, "select count(*) from public.larix_rates_registry where item_name ilike '%газобетон%'").out, '1')
     assert.equal(as('authenticated', VIEWER, 'select count(*) from public.larix_sync_runs').out, '1')
-    assert.equal(as('authenticated', STRANGER, 'select count(*) from public.larix_contract_rates').out, '0')
-    assert.match(as('anon', null, 'select count(*) from public.larix_contract_rates').error, /permission denied/)
+    assert.equal(as('authenticated', STRANGER, 'select count(*) from public.larix_rates_registry').out, '0')
+    assert.equal(as('anon', null, 'select count(*) from public.larix_rates_registry').out, '0')
+    assert.match(as('authenticated', VIEWER, 'select count(*) from osp_private.larix_rates').error, /permission denied/)
     assert.match(as('authenticated', VIEWER, 'select count(*) from public.larix_sync_stage').error, /permission denied/)
     assert.match(as('authenticated', VIEWER, "select public.larix_sync_begin('cli')").error, /permission denied/)
-    assert.match(as('authenticated', VIEWER, 'delete from public.larix_contract_rates').error, /permission denied/)
+    as('authenticated', VIEWER, 'delete from public.larix_rates_registry')
+    as('authenticated', VIEWER, 'update public.larix_rates_registry set price_work = 1')
+    assert.equal(q("select count(*) || ':' || count(*) filter (where price_work = 1) from osp_private.larix_rates"), '4:0',
+      'через представление не удаляется и не меняется')
+    // Поиск подстрокой может идти по триграммному индексу: условие ILIKE становится условием индекса. У таблицы с
+    // правилами по строкам так не бывает — оператор не leakproof, и база вычисляет его перебором после правила.
+    // (На 80 тыс. строк планировщик выбирает индекс сам; здесь строк мало — перебор выключен.) Слово латиницей:
+    // тестовая база — с локалью C.UTF-8, кириллицу pg_trgm в ней на триграммы не делит (в базе Яндекса ctype
+    // ru_RU.UTF-8 — делит).
+    q(`insert into osp_private.larix_rates (run_id, item_name, price_material)
+       select 1, 'Позиция ' || g || ' ' || md5(g::text), g from generate_series(1, 20000) g; analyze osp_private.larix_rates`)
+    const plan = q(`${asUser('authenticated', VIEWER)} set enable_seqscan = off;
+      explain (costs off) select count(*) from public.larix_rates_registry where item_name ilike '%bonolit%'`)
+    q(`delete from osp_private.larix_rates where item_name like 'Позиция %'; analyze osp_private.larix_rates`)
+    assert.match(plan, /Bitmap Index Scan on larix_rates_name_trgm\s+Index Cond: \(item_name ~~\* '%bonolit%'/, plan)
   })
 
   it('по расписанию — не чаще раза в день: после удачной загрузки сегодня такт ничего не начинает', async () => {
@@ -186,7 +262,7 @@ describe('Загрузка договорных расценок из Larix.CPM'
     larixState = { mode: 'ok', rows: [] }
     let out = await sync([lib.sync.dbTarget(db)]).runOnce({ startedBy: 'cli' })
     assert.equal(out.results.db.status, 'held')
-    assert.equal(q('select count(*) from public.larix_contract_rates'), '5', 'прежние расценки на месте')
+    assert.equal(rates(), '4', 'прежние расценки на месте')
     assert.equal(q("select error_code || ' ' || error_text from public.larix_sync_runs order by id desc limit 1"),
       'empty Larix вернул пустой список — оставлены расценки прежней загрузки')
 
@@ -198,10 +274,10 @@ describe('Загрузка договорных расценок из Larix.CPM'
     out = await sync([lib.sync.dbTarget(db)]).runOnce({ startedBy: 'cli' })
     assert.equal(out.results.db.status, 'held')
     assert.equal(out.results.db.reason, 'shrink')
-    assert.equal(q('select count(*) from public.larix_contract_rates'), '120')
+    assert.equal(rates(), '60')
     out = await sync([lib.sync.dbTarget(db)]).runOnce({ startedBy: 'cli', force: true })
     assert.equal(out.results.db.status, 'ok')
-    assert.equal(q('select count(*) from public.larix_contract_rates'), '5')
+    assert.equal(rates(), '4')
   })
 
   it('сбой Larix: неверный логин и недоступность — запись в журнал без логина и пароля, расценки на месте', async () => {
@@ -219,7 +295,7 @@ describe('Загрузка договорных расценок из Larix.CPM'
       assert.ok(!journal.includes(s), `в журнале загрузок: ${s}`)
       assert.ok(!logs.join('\n').includes(s), `в журнале службы: ${s}`)
     }
-    assert.equal(q('select count(*) from public.larix_contract_rates'), '5')
+    assert.equal(rates(), '4')
   })
 
   it('формат ответа сломался (больше 5 % позиций не проходят проверку) — invalid, расценки на месте', async () => {
@@ -227,7 +303,7 @@ describe('Загрузка договорных расценок из Larix.CPM'
     const out = await sync([lib.sync.dbTarget(db)]).runOnce({ startedBy: 'cli' })
     assert.deepEqual(out.results.db, { status: 'failed', code: 'invalid' })
     assert.match(q("select error_text from public.larix_sync_runs order by id desc limit 1"), /не прошли проверку 3 из 7/)
-    assert.equal(q('select count(*) from public.larix_contract_rates'), '5')
+    assert.equal(rates(), '4')
   })
 
   it('одна загрузка одновременно; зависшая снимается; порция повторяется безопасно, недостающая — отказ', async () => {
@@ -248,7 +324,7 @@ describe('Загрузка договорных расценок из Larix.CPM'
     assert.equal(q(`select status from public.larix_sync_runs where id = ${b}`), 'running', 'неудачная замена не меняет журнал')
     const done = await t.finish(b, 2, 0, [], false)
     assert.equal(done.status, 'ok')
-    assert.equal(done.rows, 4)
+    assert.equal(done.rows, 2)
     assert.equal(q('select count(*) from public.larix_sync_stage'), '0', 'порции убраны')
   })
 
@@ -315,7 +391,7 @@ describe('Загрузка договорных расценок из Larix.CPM'
       const supabase = createClient(rest.url, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
       const out = await sync([lib.sync.supabaseTarget(supabase)]).runOnce({ startedBy: 'cli' })
       assert.equal(out.results.supabase.status, 'ok', JSON.stringify(out))
-      assert.equal(q('select count(*) from public.larix_contract_rates'), '5')
+      assert.equal(rates(), '4')
       assert.deepEqual([...new Set(calls.map((c) => c.fn))], ['larix_sync_begin', 'larix_sync_add_rows', 'larix_sync_finish'])
       assert.ok(calls.every((c) => c.apikey === SERVICE_KEY))
     })
@@ -347,7 +423,7 @@ describe('Загрузка договорных расценок из Larix.CPM'
         const due = q("select now() >= (date_trunc('day', now() at time zone 'Europe/Moscow') + interval '5 hours') at time zone 'Europe/Moscow'") === 't'
         if (due) {
           assert.equal(q("select status || ' ' || started_by from public.larix_sync_runs"), 'ok schedule')
-          assert.equal(q('select count(*) from public.larix_contract_rates'), '5')
+          assert.equal(rates(), '4')
         } else {
           assert.equal(q('select count(*) from public.larix_sync_runs'), '0')
         }

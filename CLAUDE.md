@@ -229,7 +229,7 @@ const { data } = await db
 | `psdc` | ПСДЦ / ВОР: одна загруженная ведомость (см. раздел «ПСДЦ / ВОР») | `document_id` → `contracts` (CASCADE), `batch_id`, `previous_psdc_id` |
 | `psdc_rows` / `psdc_source_rows` / `psdc_issues` | Рассчитанные строки, сырые ячейки XLSX, ошибки/предупреждения проверки | `psdc_id` (CASCADE) |
 | `psdc_batches` | Пакет массовой загрузки ПСДЦ | — |
-| `larix_contract_rates` | Договорные расценки из Larix.CPM (см. раздел «Договорные расценки (Larix)»): строка = позиция ВОР договора × вид (материал/работа). Пишет только загрузка osp-api | `osp_contract_id` (наш договор, без FK) |
+| `osp_private.larix_rates` → вью `larix_rates_registry` | Договорные расценки из Larix.CPM (см. раздел «Договорные расценки (Larix)»): строка = позиция договора с ценой материалов и ценой работ, повторы схлопнуты. Пишет только загрузка osp-api; прежняя `larix_contract_rates` (строка × вид) с 20261021 не пишется | `osp_contract_id` (наш договор, без FK) |
 | `larix_sync_runs` / `larix_sync_stage` | Журнал загрузок из Larix (статус, причина, списки фильтров) и порции текущей загрузки | `larix_sync_stage.run_id` (CASCADE) |
 
 **Key ENUMs:**
@@ -510,7 +510,7 @@ curl -H "X-API-Key: <ключ>" \
 - База Яндекса — `migration/yandex/20261020_supply_pricing.sql` (тела функций совпадают — `tests/supply/migrations.test.mjs`);
   проверка для прода — `migration/backup/checks/20261020.sql`, откат — `migration/rollback/20261020_supply_pricing_rollback.sql`.
 
-## Договорные расценки (Larix) — четвёртая вкладка реестра расценок (миграция 20261018)
+## Договорные расценки (Larix) — четвёртая вкладка реестра расценок (миграции 20261018, 20261021)
 
 Вкладка «Договорные расценки (Larix)» на `/rates-registry` (после «Расценки от снабжения СУ-10»; заглушка
 «ДП и ДС» оставлена). Источник — Larix.CPM, метод «ВОР по договорам» (`project_contract_boq`).
@@ -518,21 +518,34 @@ curl -H "X-API-Key: <ключ>" \
 - **Загрузка — osp-api на сервере corp, раз в день** ([server/osp-api/src/lib/larixSync.js](server/osp-api/src/lib/larixSync.js),
   клиент — [larixClient.js](server/osp-api/src/lib/larixClient.js), раздел в `server/osp-api/README.md`). Когда пора,
   решает база (`larix_sync_begin`: после 05:00 Мск, раз в день, повтор через 30 минут); замена — одной транзакцией
-  (`larix_sync_finish`). Пишет в обе базы (`LARIX_SYNC_TARGETS=db,supabase`); после переноса — только `db`.
+  (`larix_sync_finish`). После переноса пишет только базу Яндекса (`LARIX_SYNC_TARGETS=db`); Supabase-вариант
+  остался прежним (20261018, строка × вид) — цель `supabase` не включать.
 - **Логин Larix — только в `secrets/osp-api.env` на сервере** (`LARIX_USERNAME` / `LARIX_PASSWORD`); в чат, git и
   браузер не попадает. Отдельной учётки в Supabase нет: запись в базу прежнего портала — служебным ключом и только
   функциями `larix_sync_*` (EXECUTE только `service_role`, не SECURITY DEFINER).
 - **Защита данных:** пустой ответ или падение ниже 30 % прежнего числа позиций — `held`, расценки не меняются
   (принять — `deploy.sh larix sync --force`); сбой — `failed` с кодом причины, на вкладке понятное предупреждение.
-- **Вид как у КП:** подвкладки «Материалы / Работы», позиция с обеими ценами — две строки (`item_type`). Дата договора
+- **Строка — позиция договора с обеими ценами** (материалов и работ; нет цены — «—»), подвкладки «Все позиции /
+  Материалы / Работы» — фильтр по наличию цены (фильтр цены — по цене подвкладки, на «Все» — по любой из двух).
+  **Повторы схлопываются при загрузке:** тот же договор, та же позиция и единица (без учёта регистра и пробелов), те
+  же цены — одна строка, число повторов — `repeats`. Дата договора
   — по Москве (Larix отдаёт полночь Мск в UTC). Наш договор — по `contracts.document_link` вида
   `https://cpm.su10.larix.ru/contract/<contract_id>` (только однозначное совпадение); ссылка на карточку — при
   `canView('contracts')`, иначе на Larix. Колонка НДС появляется, если Larix отдаёт ставку (имена полей — `VAT_KEYS`).
-- **Права:** читать `larix_contract_rates` / `larix_sync_runs` — `osp_can('rates_registry','view')` (строже, чем КП и
-  СУ-10); `larix_sync_stage` — только служебный ключ. Списки фильтров — `larix_sync_runs.filters` последней удачной загрузки.
+- **Поиск по индексу, поэтому строки — в закрытой схеме.** У таблицы с правилами по строкам поиск подстрокой
+  (`ILIKE`) по индексу не идёт: оператор не leakproof, PostgreSQL вычисляет его перебором после правила (на 83 тыс.
+  строк — 120 мс на каждый из трёх запросов ввода против 2–7 мс по индексу). Поэтому данные — `osp_private.larix_rates`
+  (без RLS; PostgREST видит только `public`), вкладка читает представление `larix_rates_registry` с правами владельца:
+  условие «вошедший с правом раздела» — один раз на запрос, `ILIKE` — по `larix_rates_name_trgm`. Так же устроены КП и СУ-10.
+  Не возвращать вкладку на таблицу с RLS и не делать представление `security_invoker`.
+- **Права:** строки представления и журнал `larix_sync_runs` — `osp_can('rates_registry','view')` (строже, чем КП и
+  СУ-10); запись через представление закрыта правилами `osp_readonly_*`; `larix_sync_stage` и закрытая таблица —
+  только загрузка. Списки фильтров — `larix_sync_runs.filters` последней удачной загрузки.
 - Фронт: [src/pages/LarixRegistrySection.jsx](src/pages/LarixRegistrySection.jsx); общие помощники всех вкладок реестра —
   [src/utils/ratesRegistry.js](src/utils/ratesRegistry.js). База Яндекса — `migration/yandex/20261018_larix_contract_rates.sql`
-  (тексты функций совпадают — сторожит `tests/osp-api/larix-sync.test.mjs`). Ручные команды на corp:
+  (тексты функций совпадают с Supabase-вариантом — сторожит `tests/osp-api/larix-sync.test.mjs`) и
+  `20261021_larix_rates_registry.sql` (закрытая таблица, представление, новая `larix_sync_finish`, перенос уже
+  загруженного). Ручные команды на corp:
   `bash /opt/portals/osp/deploy.sh larix probe | sync [--force]`.
 
 ## ПСДЦ / ВОР (миграция 20260908)

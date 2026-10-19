@@ -486,6 +486,10 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.rr-table .rr-td-price.rr-td-none {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
 .rr-td-contract { max-width: 260px; }
 .rr-contract-line {
   display: flex;

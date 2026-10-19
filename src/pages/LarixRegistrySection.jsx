@@ -10,20 +10,28 @@ import {
 } from '../utils/ratesRegistry'
 
 // Вкладка «Договорные расценки (Larix)» реестра расценок. Источник — Larix.CPM, метод «ВОР по договорам»:
-// osp-api загружает его раз в день в таблицу larix_contract_rates (server/osp-api/src/lib/larixSync.js,
-// миграция 20261018). Вид — как у вкладки КП: подвкладки «Материалы / Работы», в строке одна цена; позиция
-// ВОР с обеими ценами есть в обеих подвкладках. Всё серверное: фильтры, сортировка, страницы.
-// Свежесть и итог последней загрузки — журнал larix_sync_runs; списки фильтров — там же (filters).
+// osp-api загружает его раз в день (server/osp-api/src/lib/larixSync.js). Строка — позиция договора с ценой
+// материалов и ценой работ; одинаковые строки ВОР (тот же договор, позиция, единица и цены) схлопнуты при
+// загрузке. Читается представление larix_rates_registry (миграция 20261021): поиск идёт по триграммному
+// индексу, а не перебором, как было у таблицы с правилами по строкам. Подвкладки «Все / Материалы / Работы» —
+// фильтр по наличию цены. Всё серверное: фильтры, сортировка, страницы. Свежесть и итог последней загрузки —
+// журнал larix_sync_runs; списки фильтров — там же (filters).
 
-const LARIX_COLS = 'id,item_type,item_name,unit,price,vat_rate,materials_used,comment,project_id,project_name,'
+const VIEW = 'larix_rates_registry'
+const LARIX_COLS = 'id,item_name,unit,price_material,price_work,vat_rate,materials_used,comment,project_id,project_name,'
   + 'contractor_id,contractor_name,contract_id,contract_number,contract_date,contract_state,object_type,osp_contract_id'
-const EXPORT_COLS = `${LARIX_COLS},price_material,price_work`
 const SORT_COLUMN = {
-  name: 'item_name', price: 'price', date: 'contract_date', contract: 'contract_number', contractor: 'contractor_name',
+  name: 'item_name', pm: 'price_material', pw: 'price_work', date: 'contract_date', contract: 'contract_number', contractor: 'contractor_name',
 }
+// Подвкладки: все позиции, позиции с ценой материалов, позиции с ценой работ.
+const KINDS = [
+  { key: 'all', label: 'Все позиции' },
+  { key: 'materials', label: 'Материалы', column: 'price_material' },
+  { key: 'works', label: 'Работы', column: 'price_work' },
+]
 // Если Larix отдаёт ставку НДС, то под одним из этих имён (тот же список — server/osp-api/src/lib/larixSync.js).
 const VAT_KEYS = ['vat_rate', 'vat', 'nds', 'nds_rate', 'vat_percent', 'nds_percent']
-const MISSING = 'Договорные расценки ещё не настроены в базе данных. Обратитесь к администратору — требуется миграция 20261018_larix_contract_rates.sql и загрузка из Larix.'
+const MISSING = 'Договорные расценки ещё не настроены в базе данных. Обратитесь к администратору — требуются миграции 20261018 и 20261021 (larix_rates_registry) и загрузка из Larix.'
 
 // Причина неудачной или отложенной загрузки — по коду журнала, без технических подробностей.
 const RUN_REASON = {
@@ -71,7 +79,6 @@ function LarixStatus({ lastRun, lastOk, loaded }) {
         {lastOk ? (
           <>
             Данные {LARIX_NAME} на <strong>{fmtRefreshed(lastOk.finished_at)}</strong>
-            {' · '}позиций ВОР: {fmtCount(lastOk.positions_count)}
             {' · '}договоров: {fmtCount(lastOk.larix_contracts)}, из них в портале: {fmtCount(lastOk.matched_contracts)}
             <span className="rr-larix-status-note"> · обновляются автоматически раз в день</span>
           </>
@@ -100,7 +107,7 @@ function LarixStatus({ lastRun, lastOk, loaded }) {
 export default function LarixRegistrySection() {
   const { canView } = useRole()
   const canOpenContracts = canView('contracts')
-  const [kindTab, setKindTab] = useState('materials') // 'materials' | 'works'
+  const [kindTab, setKindTab] = useState('all') // 'all' | 'materials' | 'works'
 
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounced(search, 400)
@@ -110,6 +117,9 @@ export default function LarixRegistrySection() {
   const [states, setStates] = useState([])
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
+  // Цена, как и поиск, уходит в запрос с паузой: иначе каждая набранная цифра — три запроса подсчёта и страница.
+  const debouncedPriceMin = useDebounced(priceMin, 400)
+  const debouncedPriceMax = useDebounced(priceMax, 400)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [sortBy, setSortBy] = useState('name')
@@ -118,7 +128,7 @@ export default function LarixRegistrySection() {
   const [pageSize, setPageSize] = useState(100)
 
   const [rows, setRows] = useState([])
-  const [counts, setCounts] = useState({ materials: 0, works: 0 })
+  const [counts, setCounts] = useState({ all: 0, materials: 0, works: 0 })
   const [countsFailed, setCountsFailed] = useState(false)
   const [lastPageSize, setLastPageSize] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -169,6 +179,7 @@ export default function LarixRegistrySection() {
     }
   }, [options])
 
+  // Фильтры, кроме цены: общие для всех подвкладок.
   const applyFilters = useCallback((q) => {
     const s = debouncedSearch.trim()
     if (s) q = q.ilike('item_name', `%${s}%`)
@@ -176,16 +187,31 @@ export default function LarixRegistrySection() {
     q = applyInFilter(q, 'contractor_id', contractorIds, optionCounts.current.contractors)
     q = applyInFilter(q, 'contract_id', contractIds, optionCounts.current.contracts)
     q = applyInFilter(q, 'contract_state', states, optionCounts.current.states)
-    if (priceMin !== '' && !isNaN(Number(priceMin))) q = q.gte('price', Number(priceMin))
-    if (priceMax !== '' && !isNaN(Number(priceMax))) q = q.lte('price', Number(priceMax))
     if (dateFrom) q = q.gte('contract_date', dateFrom)
     if (dateTo) q = q.lte('contract_date', dateTo)
     return q
-  }, [debouncedSearch, projectIds, contractorIds, contractIds, states, priceMin, priceMax, dateFrom, dateTo])
+  }, [debouncedSearch, projectIds, contractorIds, contractIds, states, dateFrom, dateTo])
+
+  // Подвкладка и цена: «Материалы» — есть цена материалов (и фильтр цены — по ней), «Работы» — так же по
+  // цене работ, «Все» — фильтр цены по любой из двух цен.
+  const applyKind = useCallback((q, kind) => {
+    const min = debouncedPriceMin !== '' && !isNaN(Number(debouncedPriceMin)) ? Number(debouncedPriceMin) : null
+    const max = debouncedPriceMax !== '' && !isNaN(Number(debouncedPriceMax)) ? Number(debouncedPriceMax) : null
+    const column = KINDS.find(k => k.key === kind)?.column
+    if (column) {
+      q = q.not(column, 'is', null)
+      if (min !== null) q = q.gte(column, min)
+      if (max !== null) q = q.lte(column, max)
+      return q
+    }
+    if (min === null && max === null) return q
+    const range = (c) => `and(${[min !== null ? `${c}.gte.${min}` : null, max !== null ? `${c}.lte.${max}` : null].filter(Boolean).join(',')})`
+    return q.or(`${range('price_material')},${range('price_work')}`)
+  }, [debouncedPriceMin, debouncedPriceMax])
 
   useEffect(() => {
     setPage(0)
-  }, [debouncedSearch, projectIds, contractorIds, contractIds, states, priceMin, priceMax, dateFrom, dateTo, sortBy, sortDir, kindTab, pageSize])
+  }, [debouncedSearch, projectIds, contractorIds, contractIds, states, debouncedPriceMin, debouncedPriceMax, dateFrom, dateTo, sortBy, sortDir, kindTab, pageSize])
 
   const ordered = useCallback((q) => q
     .order(SORT_COLUMN[sortBy] || 'item_name', { ascending: sortDir === 'asc', nullsFirst: false })
@@ -199,8 +225,7 @@ export default function LarixRegistrySection() {
       setError(null)
       try {
         const from = page * pageSize
-        const itemType = kindTab === 'materials' ? 'material' : 'work'
-        const q = ordered(applyFilters(db.from('larix_contract_rates').select(LARIX_COLS).eq('item_type', itemType)))
+        const q = ordered(applyKind(applyFilters(db.from(VIEW).select(LARIX_COLS)), kindTab))
           .range(from, from + pageSize - 1)
         const { data, error: qErr } = await q
         if (qErr) throw qErr
@@ -218,18 +243,19 @@ export default function LarixRegistrySection() {
     }
     run()
     return () => { cancelled = true }
-  }, [kindTab, page, pageSize, ordered, applyFilters])
+  }, [kindTab, page, pageSize, ordered, applyFilters, applyKind])
 
   // Счётчики подвкладок — только при смене фильтров, не при листании.
   useEffect(() => {
     let cancelled = false
     const run = async () => {
       try {
-        const mk = (type) => applyFilters(db.from('larix_contract_rates').select('id', { count: 'exact', head: true }).eq('item_type', type))
-        const [m, w] = await Promise.all([mk('material'), mk('work')])
+        const mk = (kind) => applyKind(applyFilters(db.from(VIEW).select('id', { count: 'exact', head: true })), kind)
+        const res = await Promise.all(KINDS.map(k => mk(k.key)))
         if (cancelled) return
-        if (m.error || w.error) throw (m.error || w.error)
-        setCounts({ materials: m.count || 0, works: w.count || 0 })
+        const failed = res.find(r => r.error)
+        if (failed) throw failed.error
+        setCounts(Object.fromEntries(KINDS.map((k, i) => [k.key, res[i].count || 0])))
         setCountsFailed(false)
       } catch {
         if (!cancelled) setCountsFailed(true)
@@ -237,11 +263,11 @@ export default function LarixRegistrySection() {
     }
     run()
     return () => { cancelled = true }
-  }, [applyFilters])
+  }, [applyFilters, applyKind])
 
   const totalCount = countsFailed
     ? page * pageSize + lastPageSize + (lastPageSize === pageSize ? pageSize : 0)
-    : (kindTab === 'materials' ? counts.materials : counts.works)
+    : (counts[kindTab] || 0)
 
   const resetFilters = () => {
     setSearch(''); setProjectIds([]); setContractorIds([]); setContractIds([]); setStates([])
@@ -251,23 +277,23 @@ export default function LarixRegistrySection() {
   const hasActiveFilters = Boolean(search || projectIds.length || contractorIds.length || contractIds.length
     || states.length || priceMin || priceMax || dateFrom || dateTo)
 
-  // Выгрузка: материалы и работы вместе (колонка «Тип») под текущие фильтры, обе цены позиции.
+  // Выгрузка — позиции активной подвкладки под текущие фильтры (на «Все позиции» без фильтров — весь реестр).
   const handleExport = async () => {
     setExporting(true)
     try {
-      const all = await fetchAllRows((from, to) => ordered(applyFilters(db.from('larix_contract_rates').select(EXPORT_COLS))).range(from, to))
+      const all = await fetchAllRows((from, to) => ordered(applyKind(applyFilters(db.from(VIEW).select(LARIX_COLS)), kindTab)).range(from, to))
       if (all.length === 0) { alert('Нет строк для выгрузки под текущие фильтры.'); return }
-      const headers = ['№ п/п', 'Объект', 'Подрядчик', 'Тип', 'Наименование', 'Ед. изм.', 'Цена, ₽', 'Цена материалов, ₽', 'Цена работ, ₽',
+      const headers = ['№ п/п', 'Объект', 'Подрядчик', 'Наименование', 'Ед. изм.', 'Цена материалов, ₽', 'Цена работ, ₽',
         ...(hasVat ? ['Ставка НДС, %'] : []), 'Договор', 'Дата договора', 'Статус договора', 'Вид документа', 'Примечание', 'Материалы']
       const num = (v) => (v != null && v !== '' ? Number(v) : '')
       const dataRows = all.map((r, i) => [
-        i + 1, r.project_name || '', r.contractor_name || '', r.item_type === 'work' ? 'Работа' : 'Материал', r.item_name || '',
-        r.unit || '', num(r.price), num(r.price_material), num(r.price_work), ...(hasVat ? [num(r.vat_rate)] : []),
+        i + 1, r.project_name || '', r.contractor_name || '', r.item_name || '', r.unit || '',
+        num(r.price_material), num(r.price_work), ...(hasVat ? [num(r.vat_rate)] : []),
         r.contract_number || '', r.contract_date ? fmtDate(r.contract_date) : '', r.contract_state || '', r.object_type || '',
         r.comment || '', r.materials_used || '',
       ])
       downloadXlsx(headers, dataRows, 'Договорные расценки', `Реестр расценок (Larix) ${todayStamp()}.xlsx`,
-        [6, 24, 24, 10, 46, 10, 14, 14, 14, ...(hasVat ? [10] : []), 24, 12, 14, 14, 30, 30])
+        [6, 24, 24, 46, 10, 16, 16, ...(hasVat ? [10] : []), 24, 12, 14, 14, 30, 30])
     } catch (err) {
       alert('Ошибка выгрузки: ' + (err.message || err))
     } finally {
@@ -284,7 +310,6 @@ export default function LarixRegistrySection() {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
   const fromRow = totalCount === 0 ? 0 : page * pageSize + 1
   const toRow = Math.min(totalCount, (page + 1) * pageSize)
-  const isMaterials = kindTab === 'materials'
 
   const contractCell = (r) => {
     const label = r.contract_number || (r.contract_id ? `№ ${r.contract_id}` : '—')
@@ -368,22 +393,20 @@ export default function LarixRegistrySection() {
           <button type="button" className="rr-filter-reset" onClick={resetFilters} title="Сбросить все фильтры">✕ Сбросить</button>
         )}
         <button type="button" className="rr-filter-export" onClick={handleExport}
-          disabled={exporting || (counts.materials + counts.works) === 0}
-          title="Выгрузить в Excel (материалы + работы, учитывает фильтры; без фильтров — весь реестр)">
+          disabled={exporting || totalCount === 0}
+          title="Выгрузить в Excel позиции выбранной подвкладки (учитывает фильтры; без фильтров — весь реестр)">
           <DownloadIcon />
           {exporting ? 'Выгрузка…' : 'Excel'}
         </button>
       </div>
 
       <div className="rr-sub-tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={isMaterials}
-          className={`rr-sub-tab ${isMaterials ? 'active' : ''}`} onClick={() => setKindTab('materials')}>
-          Материалы<span className="rr-sub-count">{counts.materials}</span>
-        </button>
-        <button type="button" role="tab" aria-selected={!isMaterials}
-          className={`rr-sub-tab ${!isMaterials ? 'active' : ''}`} onClick={() => setKindTab('works')}>
-          Работы<span className="rr-sub-count">{counts.works}</span>
-        </button>
+        {KINDS.map(k => (
+          <button key={k.key} type="button" role="tab" aria-selected={kindTab === k.key}
+            className={`rr-sub-tab ${kindTab === k.key ? 'active' : ''}`} onClick={() => setKindTab(k.key)}>
+            {k.label}<span className="rr-sub-count">{counts[k.key]}</span>
+          </button>
+        ))}
       </div>
 
       {error ? (
@@ -395,7 +418,7 @@ export default function LarixRegistrySection() {
           {hasActiveFilters
             ? 'По заданным фильтрам ничего не найдено.'
             : lastOk
-              ? `В последней загрузке из ${LARIX_NAME} нет позиций с ценой ${isMaterials ? 'материалов' : 'работ'}.`
+              ? `В последней загрузке из ${LARIX_NAME} нет таких позиций.`
               : `Расценки из ${LARIX_NAME} ещё не загружены. Загрузка идёт автоматически раз в день.`}
         </div>
       ) : (
@@ -410,14 +433,17 @@ export default function LarixRegistrySection() {
                     Подрядчик{sortIndicator('contractor')}
                   </th>
                   <th className="rr-th-name rr-th-sortable" onClick={() => toggleSort('name')}>
-                    {isMaterials ? 'Наименование материалов' : 'Наименование работ'}{sortIndicator('name')}
+                    Наименование{sortIndicator('name')}
                   </th>
                   <th className="rr-th-contract rr-th-sortable" onClick={() => toggleSort('contract')}>
                     Договор{sortIndicator('contract')}
                   </th>
                   <th className="rr-th-unit">Ед. изм.</th>
-                  <th className="rr-th-price rr-th-sortable" onClick={() => toggleSort('price')}>
-                    {isMaterials ? 'Цена за материал, ₽' : 'Цена за работу, ₽'}{sortIndicator('price')}
+                  <th className="rr-th-price rr-th-sortable" onClick={() => toggleSort('pm')}>
+                    Цена материалов, ₽{sortIndicator('pm')}
+                  </th>
+                  <th className="rr-th-price rr-th-sortable" onClick={() => toggleSort('pw')}>
+                    Цена работ, ₽{sortIndicator('pw')}
                   </th>
                   {hasVat && <th className="rr-th-vat">НДС</th>}
                   <th className="rr-th-date rr-th-sortable" onClick={() => toggleSort('date')}>
@@ -442,7 +468,8 @@ export default function LarixRegistrySection() {
                     </td>
                     <td className="rr-td-contract">{contractCell(r)}</td>
                     <td className="rr-td-unit">{r.unit || '—'}</td>
-                    <td className="rr-td-price">{fmtMoney(r.price)}</td>
+                    <td className={`rr-td-price${r.price_material == null ? ' rr-td-none' : ''}`}>{r.price_material == null ? '—' : fmtMoney(r.price_material)}</td>
+                    <td className={`rr-td-price${r.price_work == null ? ' rr-td-none' : ''}`}>{r.price_work == null ? '—' : fmtMoney(r.price_work)}</td>
                     {hasVat && <td className="rr-td-vat">{fmtVat(r.vat_rate)}</td>}
                     <td className="rr-td-date">{fmtDate(r.contract_date)}</td>
                   </tr>

@@ -21,6 +21,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { ROOT, skipReason, latestVerifiedCopy, startSingleOwner } from './lib/stand.mjs'
 import { CLASSES, readExpected, candidateMigrations } from './lib/rights.mjs'
+import { yandexAllowAnnotations } from '../../scripts/build-db-allow.mjs'
 import { SECTIONS } from '../../src/contexts/roleConstants.js'
 import { createOwnDb } from '../../src/api/ownDb.js'
 import { SECRET, userToken, signToken } from '../osp-api/lib/tokens.mjs'
@@ -136,13 +137,17 @@ describe('Права под одну учётку на копии прода: ц
         ['посторонняя учётка', '00000000-0000-4000-8000-00000000dead', 'authenticated'], ['аноним', null, 'anon']]
       if (users.unapproved) kinds.push(['неодобренный', users.unapproved, 'authenticated'])
       const tables = Object.keys(ALLOW.tables).sort()
-      // Таблицы и представления из миграций-кандидатов: в список шлюза они входят заранее
-      // (scripts/build-db-allow.mjs), а в копии прода появятся после применения миграции. Пока их нет —
-      // шлюз отвечает «не найдено» и строк не отдаёт; больше ничего в списке без таблицы в базе быть не может.
-      const candidateRelations = new Set(candidateMigrations().flatMap((f) =>
-        [...fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', f), 'utf8')
-          .matchAll(/create\s+(?:(?:or\s+replace\s+)?view|table(?:\s+if\s+not\s+exists)?)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)/gi)]
-          .map((m) => m[1].toLowerCase())))
+      // Таблицы и представления из миграций-кандидатов и из миграций базы нового портала (migration/yandex,
+      // строки «-- osp:allow table …»): в список шлюза они входят заранее (scripts/build-db-allow.mjs), а в копии
+      // прода появятся после применения миграции. Пока их нет — шлюз отвечает «не найдено» и строк не отдаёт;
+      // больше ничего в списке без таблицы в базе быть не может.
+      const candidateRelations = new Set([
+        ...candidateMigrations().flatMap((f) =>
+          [...fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', f), 'utf8')
+            .matchAll(/create\s+(?:(?:or\s+replace\s+)?view|table(?:\s+if\s+not\s+exists)?)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)/gi)]
+            .map((m) => m[1].toLowerCase())),
+        ...yandexAllowAnnotations().filter((a) => a.kind === 'table' && a.entry).map((a) => a.name),
+      ])
       const pending = []
       const differ = []
       const closedByGateway = []
