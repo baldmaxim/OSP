@@ -23,6 +23,21 @@ export const MATERIALS_LOCK_STATUSES = ['Завершён', 'Завершен']
 
 export const RATE_COLUMNS = 'id, tender_id, estimate_name, material_name, unit, supply_price, supply_price_exact, supply_total, '
   + 'price_input, input_value, volume_at_input, row_version, updated_by, updated_at, created_at, material_key'
+// Цены из других тендеров (миграция 20261023): день расценки и откуда скопирована цена. Колонок ещё нет — цены
+// читаются без них (таблица работает как раньше); проверяется один раз за сеанс.
+const REUSE_COLUMNS = ', price_date, source_rate_id, source_tender_id, source_kind'
+let reuseColumns = true
+const rateColumns = () => (reuseColumns ? RATE_COLUMNS + REUSE_COLUMNS : RATE_COLUMNS)
+const isMissingColumn = (e) => ['42703', 'PGRST204'].includes(String(e?.code || ''))
+// Запрос цен (ответ { data, error }): новых колонок нет — тот же запрос без них.
+async function withRateColumns(run) {
+  const res = await run(rateColumns())
+  if (res?.error && reuseColumns && isMissingColumn(res.error)) {
+    reuseColumns = false
+    return run(rateColumns())
+  }
+  return res
+}
 export const SOURCE_COLUMNS = 'id, tender_id, estimate_name, source, s3_document_id, file_name, sheet_name, column_map, '
   + 'source_version, positions, positions_count, row_version, parsed_by, parsed_at'
 const TENDER_COLUMNS = 'id, tender_type, parent_tender_id, public_tender_number, work_description, status, deleted_at, object_id, '
@@ -215,14 +230,23 @@ export async function deleteSource(src) {
 
 // ── Расценки ────────────────────────────────────────────────────────────────────────────────────────
 export async function loadRates(mainId) {
-  return fetchAllRows((from, to) => db.from('tender_vor_supply_rates').select(RATE_COLUMNS)
+  const all = () => fetchAllRows((from, to) => db.from('tender_vor_supply_rates').select(rateColumns())
     .eq('tender_id', mainId).order('id', { ascending: true }).range(from, to))
+  try {
+    return await all()
+  } catch (e) {
+    if (!reuseColumns || !isMissingColumn(e)) throw e
+    reuseColumns = false
+    return all()
+  }
 }
 
 async function currentRate(where) {
-  let q = db.from('tender_vor_supply_rates').select(RATE_COLUMNS)
-  for (const [k, v] of Object.entries(where)) q = q.eq(k, v)
-  const { data } = await q.limit(1)
+  const { data } = await withRateColumns((cols) => {
+    let q = db.from('tender_vor_supply_rates').select(cols)
+    for (const [k, v] of Object.entries(where)) q = q.eq(k, v)
+    return q.limit(1)
+  })
   return data?.[0] || null
 }
 
@@ -230,23 +254,25 @@ async function currentRate(where) {
 export const positionUnit = (p) => (p.units ? p.units.map((u) => u.unit).filter(Boolean).join(', ') : p.unit) || null
 
 // Записать цену (mode 'unit') или сумму (mode 'total') позиции. rate — текущая расценка позиции (или null).
+// source — цена другого тендера ({ rateId, kind: 'pick' | 'auto' }): день расценки и отметку копии ставит база.
 // Ответ: { status: 'ok', row } | { status: 'conflict', current } — значение не записано, current — что в базе.
-export async function saveRate({ rate, mainId, estimateName, position, mode, value }) {
+export async function saveRate({ rate, mainId, estimateName, position, mode, value, source = null }) {
   const payload = {
     price_input: mode,
     input_value: value,
     volume_at_input: position.units ? null : position.volume,
     unit: positionUnit(position),
+    ...(source?.rateId ? { source_rate_id: source.rateId, source_kind: source.kind || 'pick' } : {}),
   }
   if (rate) {
-    const { data, error } = await db.from('tender_vor_supply_rates').update(payload)
-      .eq('id', rate.id).eq('row_version', rate.row_version).select(RATE_COLUMNS)
+    const { data, error } = await withRateColumns((cols) => db.from('tender_vor_supply_rates').update(payload)
+      .eq('id', rate.id).eq('row_version', rate.row_version).select(cols))
     if (error) fail(error)
     if (data?.length) return { status: 'ok', row: data[0] }
     return { status: 'conflict', current: await currentRate({ id: rate.id }) }
   }
-  const { data, error } = await db.from('tender_vor_supply_rates')
-    .insert({ tender_id: mainId, estimate_name: estimateName, material_name: position.name, ...payload }).select(RATE_COLUMNS)
+  const { data, error } = await withRateColumns((cols) => db.from('tender_vor_supply_rates')
+    .insert({ tender_id: mainId, estimate_name: estimateName, material_name: position.name, ...payload }).select(cols))
   if (error?.code === '23505') {
     return { status: 'conflict', current: await currentRate({ tender_id: mainId, estimate_name: estimateName, material_name: position.name }) }
   }
@@ -321,6 +347,59 @@ export async function removeLinks(ids) {
   }
 }
 
+// ── Цены из других тендеров (миграция 20261023) ─────────────────────────────────────────────────────
+// Источник — свои (не скопированные) цены снабжения всех тендеров не старше 3 месяцев по дням, по Москве; та же
+// ед. изм. Считает и пишет база. Функций ещё нет (миграция не применена, шлюз их не знает) — null: таблица
+// работает как раньше.
+async function reuseRpc(name, args) {
+  const { data, error } = await db.rpc(name, args)
+  if (error) {
+    if (classifyError(error)?.kind === 'missing') return null
+    fail(error)
+  }
+  return data
+}
+
+// Одинаковым позициям без цены (то же наименование по ключу и та же ед. изм.) — самая свежая цена другого
+// тендера. Цену не перезаписывает, убранную вручную не возвращает. Ответ — сколько подставлено.
+export async function autofillFromOtherTenders(mainId) {
+  const n = await reuseRpc('supply_autofill', { p_tender: mainId })
+  return n == null ? null : Number(n) || 0
+}
+
+// Сколько похожих цен у позиций: items — [{ doc, k, name, unit }], порциями по 200 (база больше не берёт).
+// Ответ — [{ estimate_name, k, n }] только у позиций, где похожие есть.
+export const SUGGEST_BATCH = 200
+export async function loadSuggestionCounts(mainId, items) {
+  const out = []
+  for (const chunk of chunkList(items, SUGGEST_BATCH)) {
+    const rows = await reuseRpc('supply_suggestion_counts', { p_tender: mainId, p_items: chunk })
+    if (rows == null) return null
+    out.push(...rows)
+  }
+  return out
+}
+
+// Похожие цены одной позиции — для меню: от самых недавних, до 15. Ответ держится 5 минут (меню открывают и
+// закрывают); fresh — заново.
+const SUGGEST_TTL_MS = 5 * 60 * 1000
+const suggestCache = new Map()
+export async function loadRateSuggestions(mainId, { estimateName, name, unit }, { fresh = false } = {}) {
+  const key = JSON.stringify([mainId, estimateName, name, unit])
+  const hit = suggestCache.get(key)
+  if (!fresh && hit && Date.now() - hit.at < SUGGEST_TTL_MS) return hit.rows
+  const rows = await reuseRpc('supply_rate_suggestions', { p_tender: mainId, p_estimate: estimateName, p_name: name, p_unit: unit, p_limit: 15 })
+  if (rows == null) return null
+  if (suggestCache.size > 500) suggestCache.clear()
+  suggestCache.set(key, { rows, at: Date.now() })
+  return rows
+}
+
+// Откуда скопированы цены тендера: тендер, объект, ВОР, наименование и документ исходной цены, день расценки.
+export async function loadRateOrigins(mainId) {
+  return reuseRpc('supply_rate_origins', { p_tender: mainId })
+}
+
 // ── Синхронизация и история ─────────────────────────────────────────────────────────────────────────
 // Признак «что-то изменилось»: последний номер в журнале расценок тендера и версии списков позиций.
 export async function loadLogMarker(mainId) {
@@ -357,7 +436,7 @@ export async function loadChangedRateIds(mainId, fromId, limit = 1000) {
 export async function loadRatesByIds(mainId, ids) {
   const out = []
   for (const chunk of chunkList(ids)) {
-    const { data, error } = await db.from('tender_vor_supply_rates').select(RATE_COLUMNS).eq('tender_id', mainId).in('id', chunk)
+    const { data, error } = await withRateColumns((cols) => db.from('tender_vor_supply_rates').select(cols).eq('tender_id', mainId).in('id', chunk))
     if (error) fail(error)
     out.push(...(data || []))
   }

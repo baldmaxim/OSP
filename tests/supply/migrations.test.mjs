@@ -9,10 +9,12 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8')
-// Пары миграций: расценка (20261020) и ссылки на документы к позициям (20261022, переопределяет перенос ВОР).
+// Пары миграций: расценка (20261020), ссылки на документы к позициям (20261022, переопределяет перенос ВОР) и цены
+// из других тендеров (20261023, переопределяет расчёт и пересобирает реестр СУ-10 — у Яндекса он в osp_private).
 const PAIRS = [
   { name: '20261020_supply_pricing', functions: 8, revoke: /REVOKE ALL ON TABLE public\.tender_supply_sources, public\.tender_supply_rate_log, public\.tender_supply_progress\s+FROM PUBLIC, anon, authenticated;/ },
   { name: '20261022_supply_links', functions: 2, revoke: /REVOKE ALL ON TABLE public\.tender_supply_links FROM PUBLIC, anon, authenticated;/ },
+  { name: '20261023_supply_rate_reuse', functions: 8, revoke: /REVOKE ALL ON TABLE public\.supply_rates_registry_mv FROM PUBLIC, anon, authenticated;/, privateSchema: true },
 ]
 
 // Без комментариев и с одинаковыми пробелами — сравниваются только сами команды.
@@ -33,6 +35,8 @@ function statements(sql, re) {
 for (const pair of PAIRS) {
   const SUPABASE = read('supabase', 'migrations', `${pair.name}.sql`)
   const YANDEX = read('migration', 'yandex', `${pair.name}.sql`)
+  // Закрытые объекты Яндекса (реестр) лежат в osp_private, в Supabase — в public: для сравнения схема одна.
+  const YANDEX_SAME = pair.privateSchema ? YANDEX.replace(/osp_private\./g, 'public.') : YANDEX
 
   it(`${pair.name}: функции те же и с теми же телами; отметка osp:internal — только у служебных функций Яндекса`, () => {
     const a = functions(SUPABASE)
@@ -49,7 +53,7 @@ for (const pair of PAIRS) {
     }
   })
 
-  it(`${pair.name}: колонки, таблицы, представление, индексы и триггеры совпадают`, () => {
+  it(`${pair.name}: колонки, таблицы, представления, индексы и триггеры совпадают`, () => {
     for (const re of [
       /ALTER TABLE public\.tender_vor_supply_rates ADD COLUMN[^;]*;/g,
       /CREATE TABLE IF NOT EXISTS public\.\w+ \([^;]*;/g,
@@ -57,7 +61,10 @@ for (const pair of PAIRS) {
       /CREATE (UNIQUE )?INDEX[^;]*;/g,
       /CREATE TRIGGER[^;]*;/g,
       /ADD CONSTRAINT[^;]*;/g,
-    ]) assert.deepEqual(statements(YANDEX, re), statements(SUPABASE, re), String(re))
+      /CREATE MATERIALIZED VIEW[^;]*;/g,
+      /ALTER (MATERIALIZED VIEW|INDEX)[^;]*;/g,
+      /(DISABLE|ENABLE) TRIGGER[^;]*;/g,
+    ]) assert.deepEqual(statements(YANDEX_SAME, re), statements(SUPABASE, re), String(re))
   })
 
   it(`${pair.name}: в миграции Яндекса нет ролей Supabase и транзакции; в Supabase — есть транзакция и снятие прав у гостя`, () => {

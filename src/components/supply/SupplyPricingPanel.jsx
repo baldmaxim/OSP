@@ -5,6 +5,7 @@ import SupplyMoneyCell from './SupplyMoneyCell'
 import SupplyConflictDialog from './SupplyConflictDialog'
 import SupplyRateHistory from './SupplyRateHistory'
 import SupplyLinkDialog from './SupplyLinkDialog'
+import SupplySuggestMenu from './SupplySuggestMenu'
 import { IconAlert, IconAlertCircle, IconCheck, IconClock, IconHistory, IconLink, IconPencil, IconRefresh, IconTrash } from '../icons/ActionIcons'
 import { IconFileSpreadsheet, IconUpload } from '../icons/BsmIcons'
 import { IconSearch } from '../icons/ToolbarIcons'
@@ -12,11 +13,12 @@ import { IconChevronDown } from '../icons/TenderHubIcons'
 import { fetchEmployees, employeesById } from '../../services/employees'
 import { requestDownloadUrl } from '../../services/s3'
 import {
-  classifyError, clearRate, deleteSource, downloadVorFile, estimateSignatures, loadChangeMarker, loadChangedRateIds,
-  isWebLink, loadEstimateItems, loadLinks, loadLinksMarker, loadPricingBundle, loadPricingContext, loadPricingData, loadRates,
-  loadRatesByIds, loadSources, loadVorFiles, removeLinks, renameEstimate, saveLinks, saveRate, saveSource, sourcesSignature,
+  autofillFromOtherTenders, classifyError, clearRate, deleteSource, downloadVorFile, estimateSignatures, loadChangeMarker,
+  loadChangedRateIds, isWebLink, loadEstimateItems, loadLinks, loadLinksMarker, loadPricingBundle, loadPricingContext,
+  loadPricingData, loadRateOrigins, loadRates, loadRatesByIds, loadSources, loadSuggestionCounts, loadVorFiles, removeLinks,
+  renameEstimate, saveLinks, saveRate, saveSource, sourcesSignature, SUGGEST_BATCH,
 } from '../../services/supplyPricing'
-import { rateUnitPrice } from '../../utils/supplyRateHelpers'
+import { fmtPriceDate, isFreshPriceDate, rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
 import { buildSupplyPositions, positionsFromEstimate } from '../../utils/vorMaterials'
 import { VOR_PARSER_VERSION } from '../../utils/vorFiles'
@@ -56,6 +58,14 @@ const loadSheetReader = () => import('../../utils/vorMaterialsSheet')
 // позиции, с ценой или без; одной позиции — «+ ссылка» в строке, нескольким сразу — отметить строки и «Ссылка на
 // документ». Таблицы ссылок ещё нет в базе — колонки нет, остальное работает как раньше.
 //
+// Цены из других тендеров (миграция 20261023). Одинаковые позиции без цены (то же наименование по ключу и та же
+// ед. изм.) получают самую свежую цену другого тендера не старше 3 месяцев сами — при открытии у того, у кого право
+// правки, одним вызовом базы (supply_autofill); в строке — «цена из тендера № …» с днём расценки и документом.
+// У позиции без своей цены, где есть похожие (наименование совпадает частично), — «похожие цены: N»: меню от самых
+// недавних, «Взять» записывает цену с отметкой, откуда она, и прикладывает документ исходной позиции, если своего
+// нет. Сколько похожих — спрашивается только для показанных строк, порциями. Функций ещё нет в базе — ничего этого
+// нет, остальное работает как раньше.
+//
 // Больше VIRTUALIZE_FROM строк (у больших тендеров до 2,3 тыс. позиций) — в таблице только видимые строки
 // (VirtualTableBody, прокрутка внутри, шапка и итог закреплены): иначе каждое сохранение заставляло браузер
 // заново раскладывать и рисовать всю таблицу — секунды на слабом компьютере.
@@ -76,6 +86,12 @@ const linksMarker = (list) => `${list.length}|${list.reduce((m, l) => (String(l.
 
 const ACTIVE_STATUSES = new Set(['saving', 'queued', 'error', 'conflict'])
 const VIRTUALIZE_FROM = 150
+const SIMILAR_DELAY_MS = 250
+const SIMILAR_PAUSE_MS = 30000
+// Позиция, у которой спросить похожие цены: своей цены нет (пусто или скопирована), одна ед. изм.
+const wantsSimilar = (row) => !!row.p.k && !row.p.units && !!String(row.p.unit || '').trim() && (!row.rate || !!row.rate.source_kind)
+// У скопированной цены её источник — тоже среди похожих (свежий — в счёте базы): показываем остальные.
+const similarOthers = (row, n) => (row.rate?.source_rate_id && isFreshPriceDate(row.rate.price_date) ? Math.max(0, n - 1) : n)
 
 // Почему ВОР не загрузился и что сделать.
 const PROBLEM_TEXT = {
@@ -192,7 +208,7 @@ const storeDrafts = (mainId, drafts) => {
   try {
     const keep = {}
     for (const [k, d] of Object.entries(drafts)) {
-      if (ACTIVE_STATUSES.has(d.status) && !d.auto) keep[k] = { mode: d.mode, value: d.value, estimateName: d.estimateName, at: d.at }
+      if (ACTIVE_STATUSES.has(d.status) && !d.auto) keep[k] = { mode: d.mode, value: d.value, estimateName: d.estimateName, at: d.at, source: d.source || undefined }
     }
     if (Object.keys(keep).length) localStorage.setItem(draftsKey(mainId), JSON.stringify(keep))
     else localStorage.removeItem(draftsKey(mainId))
@@ -253,6 +269,14 @@ export default function SupplyPricingPanel({
   const [linkBusy, setLinkBusy] = useState(false)
   const [linkError, setLinkError] = useState('')
   const linksMarkerRef = useRef(null)
+  // Цены из других тендеров: reuseOff — функций в базе ещё нет; origins — откуда скопированы цены (id цены →
+  // тендер, объект, документ); similar — сколько похожих у позиции («ВОР∣ключ» → n); suggest — открытое меню.
+  const [reuseOff, setReuseOff] = useState(false)
+  const reuseOffRef = useRef(false)
+  const [origins, setOrigins] = useState(() => new Map())
+  const [similar, setSimilar] = useState(() => new Map())
+  const [suggest, setSuggest] = useState(null) // { row, anchor }
+  const [reuseNote, setReuseNote] = useState('')
 
   const mainId = ctx?.mainId || null
   const editable = canEditRole && !!ctx && !ctx.locked && !missing
@@ -653,6 +677,9 @@ export default function SupplyPricingPanel({
     const a = autoFilled.current.get(key)
     return !!a && !!rate && a.id === rate.id && a.version === rate.row_version
   }, [])
+  // Цену можно заменить подстановкой из такой же позиции этого тендера: её подставили мы за этот сеанс или база
+  // из другого тендера (своя цена этого тендера важнее чужой).
+  const replaceable = useCallback((key, rate) => isOwnAuto(key, rate) || rate?.source_kind === 'auto', [isOwnAuto])
 
   const reloadContext = useCallback(async () => {
     try {
@@ -662,21 +689,23 @@ export default function SupplyPricingPanel({
   }, [ctx, tenderId, updateCtx])
 
   // Цену позиции — в такие же позиции других ВОР, где цены ещё нет (решение пользователя 16.10), и туда, куда
-  // её подставили за этот сеанс, если там с тех пор ничего не меняли (исправили цену — исправится и там).
+  // её подставили за этот сеанс или база из другого тендера, если там с тех пор ничего не меняли (исправили цену —
+  // исправится и там). Выбранная из другого тендера цена переходит с той же отметкой и днём расценки.
   const fillIdentical = useCallback((estimateName, position, row) => {
     const price = roundMoney(rateUnitPrice(row))
     if (!(price > 0)) return
+    const source = row.source_rate_id ? { rateId: row.source_rate_id, kind: row.source_kind } : null
     const taken = (name, k) => {
       const key = posKey(name, k)
       const d = draftsRef.current[key]
       if (d && !d.auto) return true
       const r = rateIn(ratesRef.current, key)
       if (!r) return false
-      return !isOwnAuto(key, r) || (r.price_input === 'unit' && Number(r.supply_price) === price)
+      return !replaceable(key, r) || (r.price_input === 'unit' && Number(r.supply_price) === price && (r.source_rate_id || null) === (source?.rateId || null))
     }
     const targets = identicalTargets(docViewsRef.current, estimateName, position, taken)
     for (const t of targets) {
-      runSaveRef.current(posKey(t.name, t.position.k), { mode: 'unit', value: price, estimateName: t.name, position: t.position, auto: true, from: estimateName })
+      runSaveRef.current(posKey(t.name, t.position.k), { mode: 'unit', value: price, estimateName: t.name, position: t.position, auto: true, from: estimateName, source })
     }
     if (targets.length) {
       const docs = [...new Set(targets.map((t) => `«${t.name}»`))].join(', ')
@@ -684,7 +713,7 @@ export default function SupplyPricingPanel({
       clearTimeout(fillTimer.current)
       fillTimer.current = setTimeout(() => setFillNote(''), FILL_NOTE_MS)
     }
-  }, [draftsRef, ratesRef, isOwnAuto])
+  }, [draftsRef, ratesRef, replaceable])
 
   const runSave = useCallback(async (key, intent) => {
     if (inflight.current.has(key)) {
@@ -700,13 +729,13 @@ export default function SupplyPricingPanel({
     const rate = rateIn(ratesRef.current, key)
     try {
       // Подстановка в одинаковую позицию: цену там поставил человек — его не трогаем.
-      if (intent.auto && rate && !isOwnAuto(key, rate)) {
+      if (intent.auto && rate && !replaceable(key, rate)) {
         if (!queued.current.has(key)) setDraft(key, null)
         return
       }
       const res = intent.mode === 'clear'
         ? (rate ? await clearRate(rate) : { status: 'ok', row: null })
-        : await saveRate({ rate, mainId, estimateName: intent.estimateName, position: intent.position, mode: intent.mode, value: intent.value })
+        : await saveRate({ rate, mainId, estimateName: intent.estimateName, position: intent.position, mode: intent.mode, value: intent.value, source: intent.source })
       const ok = res.status === 'ok' || reached(res.current, intent)
       const row = res.status === 'ok' ? res.row : res.current
       if (ok) {
@@ -745,7 +774,7 @@ export default function SupplyPricingPanel({
             retryTimers.current.delete(key)
             const d = draftsRef.current[key]
             if (d?.status === 'error' && d.kind === 'retry') {
-              runSaveRef.current(key, { mode: d.mode, value: d.value, estimateName: d.estimateName, position: d.position, auto: d.auto, from: d.from })
+              runSaveRef.current(key, { mode: d.mode, value: d.value, estimateName: d.estimateName, position: d.position, auto: d.auto, from: d.from, source: d.source })
             }
           }, delay))
         }
@@ -759,7 +788,7 @@ export default function SupplyPricingPanel({
         runSaveRef.current(key, next)
       }
     }
-  }, [mainId, ratesRef, draftsRef, applyRow, setDraft, flashRow, reloadContext, fillIdentical, isOwnAuto])
+  }, [mainId, ratesRef, draftsRef, applyRow, setDraft, flashRow, reloadContext, fillIdentical, replaceable])
   runSaveRef.current = runSave
 
   // Ячейка отдала набранное (через секунду после ввода, при уходе из поля). Строка и черновик — последние
@@ -801,7 +830,7 @@ export default function SupplyPricingPanel({
     const owner = docViews.find((x) => x.name === estimateName)
     const position = d.position || owner?.positions.find((p) => posKey(estimateName, p.k) === key)
     if (!position) return
-    runSave(key, { mode: d.mode, value: d.value, estimateName, position })
+    runSave(key, { mode: d.mode, value: d.value, estimateName, position, source: d.source })
   }
   const discardDraft = (key) => {
     const timer = retryTimers.current.get(key)
@@ -952,6 +981,124 @@ export default function SupplyPricingPanel({
     wasActive.current = active
   }, [active, mainId])
 
+  // ── Цены из других тендеров ───────────────────────────────────────────────────────────────────────
+  const turnReuseOff = useCallback(() => {
+    reuseOffRef.current = true
+    setReuseOff(true)
+  }, [])
+
+  // Одинаковые позиции — сами: при открытии и когда изменились списки позиций (новый ВОР, заменённый файл). Пишет
+  // база; новые цены — через журнал, как чужие правки (только эти строки).
+  const autofillKey = useRef('')
+  const autofillBusy = useRef(false)
+  const autofillTotal = useRef(0)
+  const [autofillTick, setAutofillTick] = useState(0)
+  useEffect(() => {
+    if (loading || missing || !editable || !mainId || reuseOffRef.current || !sources.length) return
+    const key = sourcesSignature(sources)
+    if (autofillKey.current === key) return
+    if (autofillBusy.current) return
+    autofillKey.current = key
+    autofillBusy.current = true
+    ;(async () => {
+      try {
+        const n = await autofillFromOtherTenders(mainId)
+        if (n == null) { turnReuseOff(); return }
+        if (n > 0) {
+          autofillTotal.current += n
+          setReuseNote(`Из других тендеров подставлено цен: ${autofillTotal.current} — то же наименование и ед. изм., не старше 3 месяцев.`)
+          const m = await loadChangeMarker(mainId)
+          if (m.logId > (logIdRef.current ?? 0)) await syncRates(m.logId)
+        }
+      } catch {
+        autofillKey.current = '' // сеть — при следующем изменении списков или открытии
+      } finally {
+        autofillBusy.current = false
+        // Пока шёл вызов, списки изменились — ещё раз.
+        setAutofillTick((t) => t + 1)
+      }
+    })()
+  }, [loading, missing, editable, mainId, sources, syncRates, turnReuseOff, autofillTick])
+
+  // Откуда скопированы цены — для пометки в строке; спрашиваем только про новые копии.
+  const originsAsked = useRef(new Set())
+  useEffect(() => {
+    if (!mainId || missing || reuseOff) return
+    const fresh = rates.filter((r) => r.source_kind && !origins.has(r.id) && !originsAsked.current.has(r.id))
+    if (!fresh.length) return
+    for (const r of fresh) originsAsked.current.add(r.id)
+    let alive = true
+    loadRateOrigins(mainId)
+      .then((rows) => {
+        if (!alive) return
+        if (rows == null) { turnReuseOff(); return }
+        setOrigins(new Map(rows.map((o) => [o.rate_id, o])))
+      })
+      .catch(() => { for (const r of fresh) originsAsked.current.delete(r.id) })
+    return () => { alive = false }
+  }, [rates, origins, mainId, missing, reuseOff, turnReuseOff])
+
+  // Сколько похожих цен — только у показанных строк: строка при отрисовке встаёт в очередь, очередь уходит в базу
+  // порцией (до SUGGEST_BATCH) через SIMILAR_DELAY_MS. Прокрутили — следующие строки так же.
+  const similarWant = useRef(new Map())
+  const similarAsked = useRef(new Set())
+  const similarTimer = useRef(null)
+  const similarPausedUntil = useRef(0)
+  const flushSimilarRef = useRef(null)
+  flushSimilarRef.current = async () => {
+    similarTimer.current = null
+    if (!mainId || reuseOffRef.current || !similarWant.current.size) return
+    if (Date.now() < similarPausedUntil.current) {
+      similarTimer.current = setTimeout(() => flushSimilarRef.current?.(), similarPausedUntil.current - Date.now())
+      return
+    }
+    const batch = [...similarWant.current.values()].slice(0, SUGGEST_BATCH)
+    for (const it of batch) { similarWant.current.delete(it.key); similarAsked.current.add(it.key) }
+    try {
+      const rows = await loadSuggestionCounts(mainId, batch.map(({ doc, k, name, unit }) => ({ doc, k, name, unit })))
+      if (rows == null) { turnReuseOff(); return }
+      setSimilar((prev) => {
+        const next = new Map(prev)
+        for (const it of batch) next.set(it.key, 0)
+        for (const r of rows) next.set(posKey(r.estimate_name, r.k), r.n)
+        return next
+      })
+    } catch {
+      // Сеть или перегрузка — те же строки ещё раз, но не сразу.
+      for (const it of batch) { similarAsked.current.delete(it.key); similarWant.current.set(it.key, it) }
+      similarPausedUntil.current = Date.now() + SIMILAR_PAUSE_MS
+    }
+    if (similarWant.current.size && !similarTimer.current) similarTimer.current = setTimeout(() => flushSimilarRef.current?.(), SIMILAR_DELAY_MS)
+  }
+  const noteSimilar = (row) => {
+    if (reuseOffRef.current || !activeRef.current || !wantsSimilar(row)) return
+    if (similarAsked.current.has(row.key) || similarWant.current.has(row.key)) return
+    similarWant.current.set(row.key, { key: row.key, doc: row.doc, k: row.p.k, name: row.p.name, unit: row.p.unit })
+    if (!similarTimer.current) similarTimer.current = setTimeout(() => flushSimilarRef.current?.(), SIMILAR_DELAY_MS)
+  }
+  useEffect(() => () => clearTimeout(similarTimer.current), [])
+
+  // «Взять» из меню похожих: цена за единицу с отметкой источника; документ исходной позиции — если своего нет.
+  const pickSuggestion = (row, s) => {
+    setSuggest(null)
+    runSave(row.key, { mode: 'unit', value: Number(s.unit_price), estimateName: row.doc, position: row.p, source: { rateId: s.rate_id, kind: 'pick' } })
+    if (linksByKey && s.url && !linksByKey.get(row.key)) {
+      saveLinks(mainId, [{ estimateName: row.doc, name: row.p.name }], s.url)
+        .then((saved) => setLinks((prev) => {
+          const byId = new Map((prev || []).map((l) => [l.id, l]))
+          for (const r of saved) byId.set(r.id, r)
+          return [...byId.values()]
+        }))
+        .catch((e) => setNotice(`Цена взята, а документ к позиции не прикрепился: ${e.message}`))
+    }
+  }
+  const closeSuggest = useCallback((restoreFocus) => {
+    setSuggest((cur) => {
+      if (restoreFocus && cur?.anchor?.isConnected) setTimeout(() => cur.anchor.focus(), 0)
+      return null
+    })
+  }, [])
+
   // ── Выгрузка в Excel: по листу на ВОР, как лист «Материалы» ВОР ─────────────────────────────────────
   const exportExcel = async () => {
     let XLSX
@@ -1087,6 +1234,7 @@ export default function SupplyPricingPanel({
     removeDuplicates,
     toggleSelect,
     editLink: (key) => openLinkDialog(new Set([key])),
+    suggest: (row, anchor) => setSuggest((cur) => (cur?.row.key === row.key ? null : { row, anchor })),
   }
   const act = useCallback((name, ...args) => actionsRef.current[name](...args), [])
 
@@ -1179,9 +1327,14 @@ export default function SupplyPricingPanel({
   const renderItem = (it) => {
     if (it.kind === 'head') return renderHead(it.s, it.first)
     if (it.kind === 'empty') return <tr key={`empty:${it.s.doc.name}`}><td colSpan={colCount} className="no-data">В этом ВОР нет позиций</td></tr>
+    const { row } = it
+    if (!reuseOff) noteSimilar(row)
     return (
-      <PriceRow key={it.row.key} row={it.row} flash={flash[it.row.key]} editable={editable} nameOf={nameOf} act={act}
-        linksOn={linksOn} link={linksByKey?.get(it.row.key) || null} selectable={selectable} selected={selected.has(it.row.key)} />
+      <PriceRow key={row.key} row={row} flash={flash[row.key]} editable={editable} nameOf={nameOf} act={act}
+        linksOn={linksOn} link={linksByKey?.get(row.key) || null} selectable={selectable} selected={selected.has(row.key)}
+        origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null}
+        similar={!reuseOff && wantsSimilar(row) ? similarOthers(row, similar.get(row.key) || 0) : 0}
+        suggestOpen={suggest?.row.key === row.key} />
     )
   }
 
@@ -1280,6 +1433,7 @@ export default function SupplyPricingPanel({
                 <span className="sp-save-status sp-muted">Цены сохраняются сами — через секунду после ввода или при переходе в другое поле</span>
               )}
               {fillNote && <span className="sp-fill-note">{fillNote}</span>}
+              {reuseNote && !fillNote && <span className="sp-fill-note">{reuseNote}</span>}
               {selectable && selected.size > 0 && (
                 <span className="sp-sel-bar">
                   <span>Отмечено: <b className="ui-num">{selected.size}</b></span>
@@ -1379,6 +1533,11 @@ export default function SupplyPricingPanel({
           />
         </Suspense>
       )}
+      {suggest && (
+        <SupplySuggestMenu anchor={suggest.anchor} mainId={mainId} row={suggest.row} editable={editable}
+          currentSourceId={rateIn(ratesRef.current, suggest.row.key)?.source_rate_id || null}
+          onPick={(s) => pickSuggestion(suggest.row, s)} onClose={closeSuggest} />
+      )}
       {linkDialog && (
         <SupplyLinkDialog targets={linkDialog.targets} busy={linkBusy} error={linkError}
           onSave={saveLink} onRemove={removeLink} onClose={() => { if (!linkBusy) setLinkDialog(null) }} />
@@ -1419,8 +1578,9 @@ const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.rate === b.row.rate 
   && a.row.duplicates.length === b.row.duplicates.length
   && a.flash === b.flash && a.editable === b.editable && a.nameOf === b.nameOf && a.act === b.act
   && a.linksOn === b.linksOn && a.link === b.link && a.selectable === b.selectable && a.selected === b.selected
+  && a.origin === b.origin && a.similar === b.similar && a.suggestOpen === b.suggestOpen
 
-const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, linksOn, link, selectable, selected }) {
+const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, linksOn, link, selectable, selected, origin, similar, suggestOpen }) {
   const { p, draft, view, index, gi } = row
   const mixed = !!p.units
   const noVolume = !mixed && !(view.volume > 0)
@@ -1453,6 +1613,16 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, lin
           <span className="sp-hint is-warn">
             ещё цен на это наименование: {row.duplicates.length} (из Excel)
             {editable && <button type="button" className="sp-link-btn" onClick={() => act('removeDuplicates', row)}>оставить последнюю</button>}
+          </span>
+        )}
+        {row.rate?.source_kind && !draft && <OriginHint rate={row.rate} origin={origin} />}
+        {similar > 0 && (
+          <span className="sp-hint">
+            <button type="button" className={`sp-similar-btn${suggestOpen ? ' is-open' : ''}`} aria-haspopup="dialog" aria-expanded={suggestOpen}
+              aria-label={`Похожие цены других позиций: ${similar}. ${p.name} (ВОР «${row.doc}»)`}
+              onClick={(e) => act('suggest', row, e.currentTarget)}>
+              {row.rate?.source_kind ? 'другие похожие цены' : 'похожие цены'}: <span className="ui-num">{similar}</span> <IconChevronDown size={14} />
+            </button>
           </span>
         )}
       </td>
@@ -1498,6 +1668,41 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, lin
     </tr>
   )
 }, samePriceRow)
+
+// Откуда цена: скопирована из другого тендера сама (то же наименование) или выбрана из похожих. День расценки —
+// исходной цены; старше 3 месяцев — пометка (такая цена больше никуда сама не подставится).
+function OriginHint({ rate, origin }) {
+  const [copied, setCopied] = useState(false)
+  const date = rate.price_date
+  const tender = origin?.tender_number != null ? `тендера № ${origin.tender_number}` : 'другого тендера'
+  const title = [origin?.material_name && `«${origin.material_name}»`, origin?.object_name, origin?.estimate_name && `ВОР «${origin.estimate_name}»`,
+    date && `день расценки ${fmtPriceDate(date)}`].filter(Boolean).join(' · ')
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(origin.url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* без доступа к буферу — путь виден в подсказке */ }
+  }
+  return (
+    <span className="sp-hint sp-origin" title={title || undefined}>
+      {rate.source_kind === 'pick'
+        ? <>цена похожей позиции{origin?.material_name ? <> «{origin.material_name}»</> : null} из {tender}</>
+        : <>цена из {tender}</>}
+      {origin?.object_name && <> · {origin.object_name}</>}
+      {date && <> · от <span className="ui-num">{fmtPriceDate(date)}</span></>}
+      {date && !isFreshPriceDate(date) && <span className="sp-origin-stale"> · старше 3 месяцев</span>}
+      {origin?.url && (
+        <>
+          {' · документ: '}
+          {isWebLink(origin.url)
+            ? <a href={origin.url} target="_blank" rel="noopener noreferrer" className="link" title={origin.url}>Открыть</a>
+            : <button type="button" className="link sp-doc-copy" onClick={copy} title={`${origin.url} — сетевой путь, нажмите, чтобы скопировать`}>{copied ? 'Скопировано' : 'Скопировать'}</button>}
+        </>
+      )}
+    </span>
+  )
+}
 
 // Состояние строки — значки с подписью для диктора, по трём постоянным местам: сохраняется / сохранено
 // (галочка остаётся, пока цена есть) / не сохранено / изменено другим; объём изменился или «отменить ввод»;

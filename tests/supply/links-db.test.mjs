@@ -48,7 +48,7 @@ describe('Ссылки на документы к позициям расцен�
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     for (const m of candidateMigrations()) {
-      if (m.startsWith('20261020_') || m.startsWith('20261022_')) continue
+      if (/^2026102[023]_/.test(m)) continue
       psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     }
     psqlAt(db.port, null, { file: PRICING })

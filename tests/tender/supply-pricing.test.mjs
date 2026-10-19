@@ -159,6 +159,70 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  // Цены, позиции и ссылки грузит только таблица расценки — на странице снабжения или во вкладке карточки, когда её
+  // открыли. Реестр — одно число «N из M» из базы (tender_supply_progress); карточка до вкладки — только счётчик.
+  it('цены грузятся только в расценке: реестр и карточка без строк цен; повторное открытие — без скачивания файлов ВОР и записи', async () => {
+    const ROW_TABLES = ['tender_vor_supply_rates', 'tender_supply_sources', 'tender_supply_links', 'tender_supply_rate_log']
+    const settle = async (page) => {
+      await page.waitForFunction(() => window.__supabaseStats.active === 0)
+      await page.waitForTimeout(500)
+      await page.waitForFunction(() => window.__supabaseStats.active === 0)
+    }
+    const requests = (page) => page.evaluate(() => window.__supabaseStats.requests)
+    // Строки цен, позиций, ссылок, журнала; счётчик вкладки карточки (head, без range) — не строки.
+    const rowRequests = (list) => list.filter((r) => ROW_TABLES.includes(r.table)
+      && !(r.table === 'tender_vor_supply_rates' && r.op === 'select' && r.count && !r.range))
+    // Подстановка цен из других тендеров — функция базы (rpc): пишет, только когда есть что подставить, — отдельно.
+    const writes = (list) => list.filter((r) => r.op !== 'select' && r.op !== 'rpc')
+
+    const registry = await open('&matTenders=1&bigPricing=2000', '/tenders/materials')
+    try {
+      await registry.page.locator('.tp-pricing-link').first().waitFor({ timeout: 120000 })
+      await settle(registry.page)
+      const list = await requests(registry.page)
+      assert.deepEqual(rowRequests(list), [], 'реестр не читает строки цен')
+      assert.ok(list.some((r) => r.table === 'tender_supply_progress'), 'реестр берёт «N из M» из базы')
+      assert.deepEqual(registry.errors, [])
+    } finally {
+      await registry.context.close()
+    }
+
+    const card = await open('&bigPricing=2000', '/tenders/tender-p')
+    try {
+      const tab = card.page.getByRole('button', { name: /Расценки снабжения/ }).first()
+      await tab.waitFor({ timeout: 120000 })
+      await settle(card.page)
+      assert.deepEqual(rowRequests(await requests(card.page)), [], 'карточка до открытия вкладки цены не грузит')
+      const before = (await requests(card.page)).length
+      await tab.click()
+      await card.page.locator('.sp-table').waitFor({ timeout: 120000 })
+      await settle(card.page)
+      const opened = (await requests(card.page)).slice(before)
+      assert.equal(opened.filter((r) => r.table === 'tender_vor_supply_rates' && r.range).length, 1, 'вкладка загрузила цены один раз')
+      assert.deepEqual(writes(opened), [], 'открытие вкладки ничего не пишет')
+      assert.deepEqual(card.errors, [])
+    } finally {
+      await card.context.close()
+    }
+
+    // Позиции ВОР уже в базе (версия файла совпадает) — ни при первом, ни при повторном открытии файлы не скачиваются.
+    const first = await openPage()
+    try {
+      for (const r of [first, await openPage('', { context: first.context })]) {
+        await settle(r.page)
+        const list = await requests(r.page)
+        assert.equal(list.filter((q) => q.table === 'tender_vor_supply_rates' && q.range).length, 1, 'цены — один раз за открытие')
+        assert.deepEqual(writes(list), [], 'открытие страницы ничего не пишет')
+        assert.ok(list.filter((q) => q.table === 'rpc:supply_autofill').length <= 1, 'подстановка — не больше одного вызова')
+        assert.equal(await r.page.locator('.sp-similar-btn, .sp-origin').count(), 0, 'функций подбора нет — ни пометок, ни меню')
+        assert.deepEqual(await r.page.evaluate(() => window.__fakeFileRequests || []), [], 'файлы ВОР не скачиваются')
+        assert.deepEqual(r.errors, [])
+      }
+    } finally {
+      await first.context.close()
+    }
+  })
+
   it('сохраняется само, без Enter: через секунду после ввода; галочка у строки остаётся, вверху — «Все цены сохранены»', async () => {
     const { page, context, errors } = await openPage()
     try {
@@ -428,6 +492,106 @@ describe('Расценка снабжением: таблица', { skip: !launc
       assert.equal(await page.getByLabel(price('Изоляция K-Flex 13×15', 'ОВ')).isDisabled(), true)
       assert.match(plain(await page.getByLabel(price('Изоляция K-Flex 13×15', 'ОВ')).inputValue()), /96,00/)
       await page.getByText('ещё не загружены в расценку', { exact: false }).waitFor()
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // Цены из других тендеров (миграция 20261023; стенд — reuse=1, у тендера № 445 «ЖК Север» свежие цены).
+  it('цены из других тендеров: одинаковая позиция — сама, с пометкой и документом; похожие — меню от новых, «Взять» с отметкой и документом', async () => {
+    const { page, context, errors } = await openPage('&reuse=1')
+    try {
+      // Кран в ОВ — тот же, что у № 445 (шт): подставлен сам; в ВК у крана «компл» — нет.
+      const kran = rowOf(page, 'Кран шаровой Ду15', 'ОВ')
+      // Сначала — «цена из другого тендера · от …» (по строке цены), следом — номер, объект и документ.
+      await kran.locator('.sp-origin', { hasText: 'тендера № 445' }).waitFor({ timeout: 30000 })
+      const hint = await kran.locator('.sp-origin').innerText()
+      assert.match(hint, /цена из тендера № 445 · ЖК Север · от \d\d\.\d\d\.\d{4}/)
+      assert.equal(await kran.locator('.sp-origin a', { hasText: 'Открыть' }).getAttribute('href'), 'https://disk.example.ru/d/chek-445')
+      assert.match(plain(await page.getByLabel(price('Кран шаровой Ду15', 'ОВ')).inputValue()), /^512,50$/)
+      const kranRate = await rateOf(page, 'Кран шаровой Ду15', 'ОВ')
+      assert.equal(kranRate.source_kind, 'auto')
+      assert.equal(kranRate.source_rate_id, 'o-kran')
+      assert.equal(await rateOf(page, 'Кран шаровой Ду15', 'ВК'), null, 'другая ед. изм. — не подставляется')
+      await page.getByText('Из других тендеров подставлено цен: 1', { exact: false }).waitFor()
+      // Хомут: та же позиция у № 445, но цене больше 3 месяцев — ни сама, ни в меню.
+      assert.equal(await rateOf(page, 'Хомут монтажный', 'ОВ'), null)
+
+      // Труба медная Ø12,7 — две похожие; меню с клавиатуры: Enter, стрелка вниз, Enter — вторая (с документом).
+      const truba = rowOf(page, 'Труба медная Ø12,7', 'ОВ')
+      const btn = truba.locator('.sp-similar-btn')
+      await btn.waitFor()
+      assert.match(plain(await btn.innerText()), /похожиецены:2/)
+      assert.equal(await rowOf(page, 'Хомут монтажный', 'ОВ').locator('.sp-similar-btn').count(), 0)
+      await btn.focus()
+      await page.keyboard.press('Enter')
+      const menu = page.getByRole('dialog', { name: 'Похожие цены: Труба медная Ø12,7' })
+      await menu.locator('li').first().waitFor()
+      assert.deepEqual(await menu.locator('.sp-suggest-name').evaluateAll((els) => els.map((e) => e.firstChild.textContent)),
+        ['Труба медная Ø12,7 мм (бухта)', 'Труба медная Ø15,9'], 'от новых к старым')
+      assert.match(await menu.locator('li').nth(1).innerText(), /тендер № 445[\s\S]*ЖК Север[\s\S]*ВОР «ОВ-2»[\s\S]*документ: Открыть/)
+      await page.waitForFunction(() => document.activeElement?.matches('.sp-suggest li'))
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Enter')
+      await menu.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Труба медная Ø12,7' && r.source_kind === 'pick'))
+      const r = await rateOf(page, 'Труба медная Ø12,7', 'ОВ')
+      assert.equal(r.source_rate_id, 'o-truba-2')
+      assert.equal(Number(r.supply_price), 1100)
+      assert.equal(r.price_input, 'unit')
+      await truba.getByText('цена похожей позиции «Труба медная Ø15,9» из тендера № 445', { exact: false }).waitFor()
+      // Документ исходной позиции — к позиции (своего не было); та же труба в ВК — с той же отметкой.
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Труба медная Ø12,7' && l.url === 'https://disk.example.ru/d/chek-17'))
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((x) => x.estimate_name === 'ВК' && x.source_rate_id === 'o-truba-2'))
+      await rowOf(page, 'труба медная ∅12.7', 'ВК').locator('.sp-origin').waitFor()
+      const batches = await page.evaluate(() => window.__supabaseStats.requests.filter((q) => q.table === 'rpc:supply_suggestion_counts').map((q) => q.args.p_items.length))
+      assert.ok(batches.length >= 1 && batches.every((n) => n <= 200))
+
+      // Своя цена — уже своя: отметка снимается, кнопка похожих пропадает.
+      await enter(page.getByLabel(price('Кран шаровой Ду15', 'ОВ')), '600')
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.find((x) => x.material_name === 'Кран шаровой Ду15' && x.estimate_name === 'ОВ')?.source_kind === null)
+      await kran.locator('.sp-origin').waitFor({ state: 'detached' })
+      assert.equal(await kran.locator('.sp-similar-btn').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('цены из других тендеров без права правки: ничего не подставляется, меню только для просмотра, Esc закрывает', async () => {
+    const { page, context, errors } = await openPage('&reuse=1&canEdit=0')
+    try {
+      const btn = rowOf(page, 'Труба медная Ø12,7', 'ОВ').locator('.sp-similar-btn')
+      await btn.waitFor()
+      await btn.click()
+      const menu = page.getByRole('dialog', { name: /Похожие цены/ })
+      await menu.locator('li').first().waitFor()
+      assert.equal(await menu.getByRole('button', { name: /Взять/ }).count(), 0)
+      await page.keyboard.press('Escape')
+      await menu.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => document.activeElement?.classList.contains('sp-similar-btn'))
+      const tables = await page.evaluate(() => window.__supabaseStats.requests.map((q) => q.table))
+      assert.ok(!tables.includes('rpc:supply_autofill'), 'без права правки подстановки нет')
+      assert.equal(await rateOf(page, 'Кран шаровой Ду15', 'ОВ'), null)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('похожие цены спрашиваются только для показанных строк и порциями: 2 тыс. позиций — не все сразу', async () => {
+    const { page, context, errors } = await openPage('&reuse=1&bigPricing=2000')
+    try {
+      const counted = () => page.evaluate(() => window.__supabaseStats.requests.filter((q) => q.table === 'rpc:supply_suggestion_counts').map((q) => q.args.p_items.length))
+      await page.waitForFunction(() => window.__supabaseStats.requests.some((q) => q.table === 'rpc:supply_suggestion_counts'))
+      await page.waitForTimeout(800)
+      const first = await counted()
+      const asked = first.reduce((a, n) => a + n, 0)
+      assert.ok(first.every((n) => n <= 200), String(first))
+      assert.ok(asked > 0 && asked < 400, `спрошено ${asked} из ~1300 нерасценённых`)
+      await page.locator('.sp-table-wrap').evaluate((el) => { el.scrollTop = el.scrollHeight / 2 })
+      await page.waitForFunction((n) => window.__supabaseStats.requests.filter((q) => q.table === 'rpc:supply_suggestion_counts').length > n, first.length)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

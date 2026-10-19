@@ -215,7 +215,7 @@ const { data } = await db
 | `tender_counterparty_proposals` | Price proposals | `estimate_item_id`, `counterparty_id` |
 | `tender_documents` | Tender attachments (Google Drive links) | `tender_id` (CASCADE) |
 | `tender_proposal_files` | Uploaded Excel КП files from contractors | `tender_id`, `counterparty_id` (CASCADE) |
-| `tender_vor_supply_rates` | Расценки от снабжения по материалам ВОР тендера (task 398). Привязка к документу-ВОР через `estimate_name`; сопоставление с позициями по `material_name` (`material_key`). Стоимость = `material_consumption × (supply_price_exact ?? supply_price)`. Ввод на сайте — см. «Расценка снабжением на сайте». | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_name)` |
+| `tender_vor_supply_rates` | Расценки от снабжения по материалам ВОР тендера (task 398). Привязка к документу-ВОР через `estimate_name`; сопоставление с позициями по `material_name` (`material_key`). Стоимость = `material_consumption × (supply_price_exact ?? supply_price)`. День расценки `price_date` (по Москве) и копии цен других тендеров (`source_rate_id`, `source_kind`) — 20261023. Ввод на сайте — см. «Расценка снабжением на сайте». | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_name)` |
 | `tender_supply_sources` | Позиции ВОР для расценки снабжением: разобранный лист «Материалы» файла из «ВОРов и РД» или вкладка «ВОР» карточки; строка на основной тендер и ВОР (`positions jsonb`) | `tender_id` (CASCADE), `s3_document_id` (SET NULL), `UNIQUE(tender_id, estimate_name)` |
 | `tender_supply_rate_log` | Журнал каждого изменения расценки снабжения (триггер): было / стало, кто, когда | без FK (не мешает удалению тендера) |
 | `tender_supply_links` | Ссылка на документ (чек, счёт, КП поставщика) к позиции расценки снабжением — колонка «Документ» (миграция 20261022): одна на (тендер, ВОР, `material_key`), отдельно от цены; адрес http(s) или `\\сервер\папка` | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_key)` |
@@ -493,6 +493,22 @@ curl -H "X-API-Key: <ключ>" \
   (сетевой путь) и карандаш, нет ссылки — «+ ссылка», домен не показывается; проверка адреса — и в базе. Права и
   закрытие — как у цен; перенос ВОР (`supply_estimate_rename`) переносит и ссылки. Таблицы ещё нет — колонки нет,
   остальное работает (`loadLinks` → null). Отметка строк — только на компьютере.
+- **Цены из других тендеров** (миграция 20261023, решения пользователя 19.10). Источник — свои (не скопированные) цены
+  снабжения всех тендеров; день расценки `price_date` — только день, по Москве, ставит триггер расчёта при вводе или
+  смене самой цены (перенос ВОР, ед. изм., прямая правка колонок его не меняют); прежним — день `updated_at` по Москве.
+  Свежая — не старше 3 месяцев по дням (граница включительно); старшие остаются в реестре, но не подставляются и не
+  предлагаются. **Одинаковые** (тот же `material_key` и `kp_norm_unit`) — сами: `supply_autofill` при открытии у того, у
+  кого право правки, и при смене списков позиций; только где цены нет и в журнале нет записей по позиции (убранная
+  вручную не вернётся), пишет `source_kind='auto'` — сразу видно в карточке и «Сравнении КП». **Похожие** (общее слово,
+  доля общих слов и чисел ≥ 0,5 — `supply_name_similarity`; одни общие числа — не похожи) — «похожие цены: N» под
+  наименованием: счётчики `supply_suggestion_counts` только для показанных строк, порциями ≤ 200; меню
+  [SupplySuggestMenu](src/components/supply/SupplySuggestMenu.jsx) (`supply_rate_suggestions`: от новых, тендер № / объект /
+  ВОР / день / документ), «Взять» — `source_kind='pick'` + документ исходной позиции, если своего нет. Копия хранит
+  `source_rate_id` / `source_tender_id` и **день исходной цены**, источником сама не служит (иначе старая цена
+  «молодела» бы, переезжая из тендера в тендер); правка цены — уже своя (отметка снимается, день — сегодня). Подстановка
+  внутри тендера переносит отметку копии и заменяет копии `auto` (своя цена тендера важнее чужой). Пометка в строке —
+  `supply_rate_origins`. Реестр СУ-10 копии не показывает, его дата — день расценки. Функций/колонок нет — ничего этого
+  нет, остальное работает (`reuseRpc` → null, `RATE_COLUMNS` без новых колонок). Стенд — `reuse=1`.
 - **Ввод цены ИЛИ суммы; расчёт — в базе** (триггер `tender_vor_supply_rates_compute`): страница пишет `price_input`
   (`unit`|`total`), `input_value`, `volume_at_input`; база считает `supply_price` (копейки), `supply_price_exact` (сумма /
   объём) и `supply_total`. Запись только `supply_price` (импорт Excel, старая вкладка) → `price_input='import'`, точная
@@ -521,10 +537,11 @@ curl -H "X-API-Key: <ключ>" \
   на открытие и подвисания при прокрутке. Тест — `tests/tender/large-lists.test.mjs` (стенд: `bigPricing=N`, `matTenders=1`).
 - Ключ `material_key` / `positions[].k` = `supply_norm_name()` — порт `normName` на SQL; совпадение сторожит
   `tests/supply/norm-name.test.mjs`. Меняете `normName` — меняйте и функцию (новой миграцией) и пересчитайте колонку.
-- База Яндекса — `migration/yandex/20261020_supply_pricing.sql` и `20261022_supply_links.sql` (тела функций совпадают —
-  `tests/supply/migrations.test.mjs`); проверки для прода — `migration/backup/checks/20261020.sql` / `20261022.sql`, откаты —
-  `migration/rollback/20261020_supply_pricing_rollback.sql` / `20261022_supply_links_rollback.sql`; база ссылок —
-  `tests/supply/links-db.test.mjs`.
+- База Яндекса — `migration/yandex/20261020_supply_pricing.sql`, `20261022_supply_links.sql` и
+  `20261023_supply_rate_reuse.sql` (тела функций совпадают — `tests/supply/migrations.test.mjs`; реестр СУ-10 у Яндекса в
+  `osp_private`); проверки для прода — `migration/backup/checks/20261020.sql` / `20261022.sql` / `20261023.sql`, откаты —
+  `migration/rollback/*_rollback.sql` тех же дат; база ссылок — `tests/supply/links-db.test.mjs`, цен из других
+  тендеров — `tests/supply/reuse-db.test.mjs`.
 
 ## Договорные расценки (Larix) — четвёртая вкладка реестра расценок (миграции 20261018, 20261021)
 

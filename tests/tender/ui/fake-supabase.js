@@ -11,6 +11,8 @@
 // window.__fakeGenerated[таблица](строка) — вычисляемые колонки (GENERATED): считаются до проверки ключа.
 // window.__fakeFiles[s3_key] — содержимое файла (data: URL): хранилище отдаёт его по ссылке на скачивание;
 // window.__fakeFileRequests — какие файлы запрашивали.
+// window.__fakeRpc[имя](аргументы) → { data, error } — функции базы (db.rpc); функции нет — пустой ответ, как
+// раньше. Вызов учитывается в window.__supabaseStats как { table: 'rpc:<имя>', op: 'rpc' }.
 const LATENCY_MS = Number(new URLSearchParams(window.location.search).get('latency') || 120)
 
 const db = window.__fakeDb
@@ -184,7 +186,18 @@ async function run(q) {
 
 export const supabase = {
   from: (table) => builder(table),
-  rpc: async () => ({ data: null, error: null }),
+  rpc: async (name, args = {}) => {
+    stats.active++
+    stats.maxActive = Math.max(stats.maxActive, stats.active)
+    stats.requests.push({ table: `rpc:${name}`, op: 'rpc', range: null, count: null, ids: null, args })
+    await new Promise((r) => setTimeout(r, LATENCY_MS))
+    stats.active--
+    const handler = window.__fakeRpc?.[name]
+    if (!handler) return { data: null, error: null }
+    // Функция могла писать в таблицы — кэш выборок сбрасывается весь.
+    sortedCache.clear()
+    return handler(args)
+  },
   functions: {
     invoke: async (name, opts = {}) => {
       const key = opts.body?.s3_key

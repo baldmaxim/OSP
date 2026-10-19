@@ -386,6 +386,85 @@
   font: inherit;
 }
 
+/* ── Цены из других тендеров ───────────────────────────────────────────── */
+.sp-origin { color: #075985; }
+.sp-origin .link, .sp-origin .sp-doc-copy { font-size: inherit; }
+.sp-origin-stale { color: var(--warning-color); }
+.sp-similar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-link);
+  font: inherit;
+  cursor: pointer;
+}
+.sp-similar-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+.sp-similar-btn > svg { transition: transform 0.15s; }
+.sp-similar-btn.is-open > svg { transform: rotate(180deg); }
+.sp-suggest {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  max-height: min(26rem, calc(100vh - 2rem));
+  border: 1px solid var(--border-color-dark);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.2);
+  font-family: var(--ui-font);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  outline: none;
+}
+.sp-suggest-head { display: flex; flex-direction: column; gap: 0.125rem; padding: 0.625rem 0.875rem 0.5rem; border-bottom: 1px solid var(--border-color); }
+.sp-suggest-title { font-weight: var(--ui-semibold); }
+.sp-suggest-empty { margin: 0; padding: 0.75rem 0.875rem; color: var(--text-secondary); }
+.sp-suggest-list { margin: 0; padding: 0.25rem 0; list-style: none; overflow: auto; }
+.sp-suggest-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid var(--border-color);
+  outline: none;
+}
+.sp-suggest-list > li:last-child { border-bottom: 0; }
+.sp-suggest-list > li:hover, .sp-suggest-list > li:focus-visible { background: var(--hover-bg); }
+.sp-suggest-list > li:focus-visible { box-shadow: inset 2px 0 0 var(--primary-color); }
+.sp-suggest-list > li.is-current { background: var(--success-light); }
+.sp-suggest-info { min-width: 0; }
+.sp-suggest-name { display: block; overflow-wrap: anywhere; font-weight: var(--ui-medium); }
+.sp-suggest-side { display: flex; align-items: center; gap: 0.75rem; }
+.sp-suggest-price { font-weight: var(--ui-semibold); white-space: nowrap; }
+.sp-suggest-tag {
+  display: inline-block;
+  margin-left: 0.375rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--hover-bg);
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  font-weight: var(--ui-regular);
+  white-space: nowrap;
+}
+.sp-suggest-tag.is-current { background: transparent; color: #15803d; }
+.sp-suggest-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.125rem 0.75rem;
+  margin-top: 0.125rem;
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.sp-suggest-take { height: 1.75rem; padding: 0 0.75rem; font-size: var(--ui-hint); }
+
 /* ── Цены без позиции ──────────────────────────────────────────────────── */
 .sp-orphans { margin-top: 0.75rem; font-size: var(--ui-text); }
 .sp-orphans summary { cursor: pointer; font-weight: var(--ui-medium); }
@@ -495,6 +574,9 @@
 [data-theme='dark'] .sp-st.is-remote { color: #7dd3fc; }
 [data-theme='dark'] .sp-save-status.is-ok { color: #86efac; }
 [data-theme='dark'] .sp-fill-note { color: #7dd3fc; }
+[data-theme='dark'] .sp-origin { color: #7dd3fc; }
+[data-theme='dark'] .sp-suggest { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+[data-theme='dark'] .sp-suggest-tag.is-current { color: #86efac; }
 
 /* ── Телефон: строка — карточка ─────────────────────────────────────────── */
 @media (max-width: 640px) {
@@ -537,4 +619,8 @@
   .sp-table tfoot tr { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 0.5rem 0.75rem; }
   .sp-table tfoot td { border: 0; }
   .sp-orphans li { grid-template-columns: 1fr auto auto; }
+  /* Меню похожих — во всю ширину экрана, с отступом 16px. */
+  .sp-suggest { left: 1rem !important; right: 1rem; width: auto !important; }
+  .sp-suggest-list > li { grid-template-columns: 1fr; gap: 0.375rem; }
+  .sp-suggest-side { justify-content: space-between; }
 }

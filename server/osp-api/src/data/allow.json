@@ -1014,16 +1014,37 @@
     "report_client_version": [
       "authenticated"
     ],
+    "supply_autofill": [
+      "authenticated"
+    ],
     "supply_can_edit": [
       "authenticated"
     ],
     "supply_estimate_rename": [
       "authenticated"
     ],
+    "supply_name_similarity": [
+      "authenticated"
+    ],
+    "supply_name_tokens": [
+      "authenticated"
+    ],
+    "supply_name_words": [
+      "authenticated"
+    ],
     "supply_norm_name": [
       "authenticated"
     ],
+    "supply_rate_origins": [
+      "authenticated"
+    ],
+    "supply_rate_suggestions": [
+      "authenticated"
+    ],
     "supply_rates_locked": [
+      "authenticated"
+    ],
+    "supply_suggestion_counts": [
       "authenticated"
     ],
     "touch_last_login": [

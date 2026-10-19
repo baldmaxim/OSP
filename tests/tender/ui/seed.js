@@ -239,6 +239,73 @@ if (params.get('missing') === '1') {
   window.__fakeErrors = { tender_supply_sources: { code: '42P01', message: 'relation "public.tender_supply_sources" does not exist' } }
 }
 
+// Цены из других тендеров (миграция 20261023). reuse=1 — функции базы есть: у тендера № 445 «ЖК Север» свежие
+// цены — тот же кран (подставится сам в ОВ; в ВК у крана другая ед. изм.), похожие трубы (меню) и старый хомут
+// (старше 3 месяцев — ни сам, ни в меню). Без reuse функций нет, как до миграции: таблица работает как раньше.
+const dayAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10)
+const OTHER_RATES = [
+  { id: 'o-kran', estimate_name: 'ВК-2', material_name: 'Кран шаровой Ду15', unit: 'шт', unit_price: 512.5, price_date: dayAgo(5), url: 'https://disk.example.ru/d/chek-445' },
+  { id: 'o-truba-1', estimate_name: 'ОВ-2', material_name: 'Труба медная Ø12,7 мм (бухта)', unit: 'м', unit_price: 980, price_date: dayAgo(2), url: null },
+  { id: 'o-truba-2', estimate_name: 'ОВ-2', material_name: 'Труба медная Ø15,9', unit: 'м', unit_price: 1100, price_date: dayAgo(20), url: 'https://disk.example.ru/d/chek-17' },
+  { id: 'o-homut', estimate_name: 'ОВ-2', material_name: 'Хомут монтажный', unit: 'шт', unit_price: 35, price_date: dayAgo(120), url: null },
+].map((r) => ({ ...r, k: normName(r.material_name), tender_id: 'tender-o', tender_number: 445, object_name: 'ЖК Север' }))
+const freshRate = (o) => o.price_date >= dayAgo(91)
+const nameWords = (s) => String(s).toLowerCase().split(/[^a-zа-яё]+/).filter((w) => w.length >= 3)
+const similarRates = (name, unit) => {
+  const w = new Set(nameWords(name))
+  return OTHER_RATES.filter((o) => o.unit === unit && freshRate(o) && nameWords(o.material_name).some((x) => w.has(x)))
+    .sort((a, b) => b.price_date.localeCompare(a.price_date))
+}
+if (params.get('reuse') === '1') {
+  window.__fakeRpc = {
+    supply_autofill({ p_tender }) {
+      const fdb = window.__fakeDb
+      let n = 0
+      for (const src of fdb.tender_supply_sources.filter((x) => x.tender_id === p_tender)) {
+        for (const p of src.positions) {
+          if (p.units || !p.unit) continue
+          if (fdb.tender_vor_supply_rates.some((r) => r.tender_id === p_tender && r.estimate_name === src.estimate_name && r.material_key === p.k)) continue
+          if (fdb.tender_supply_rate_log.some((l) => l.tender_id === p_tender && l.estimate_name === src.estimate_name && normName(l.material_name) === p.k)) continue
+          const o = OTHER_RATES.filter((x) => x.k === p.k && x.unit === p.unit && freshRate(x)).sort((a, b) => b.price_date.localeCompare(a.price_date))[0]
+          if (!o) continue
+          const now = new Date().toISOString()
+          const row = { id: crypto.randomUUID(), tender_id: p_tender, estimate_name: src.estimate_name, material_name: p.name, unit: p.unit,
+            price_input: 'unit', input_value: o.unit_price, volume_at_input: p.volume, source_rate_id: o.id, source_kind: 'auto', created_at: now, updated_at: now }
+          window.__fakeTriggers.tender_vor_supply_rates(row, null)
+          fdb.tender_vor_supply_rates.push(row)
+          window.__fakeAfter.tender_vor_supply_rates('insert', row, null)
+          n += 1
+        }
+      }
+      return { data: n, error: null }
+    },
+    supply_suggestion_counts({ p_items }) {
+      return { data: p_items.map((i) => ({ estimate_name: i.doc, k: i.k, n: similarRates(i.name, i.unit).length })).filter((r) => r.n > 0), error: null }
+    },
+    supply_rate_suggestions({ p_name, p_unit, p_limit = 15 }) {
+      return {
+        data: similarRates(p_name, p_unit).slice(0, p_limit).map((o) => ({
+          rate_id: o.id, tender_id: o.tender_id, tender_number: o.tender_number, object_name: o.object_name, estimate_name: o.estimate_name,
+          material_name: o.material_name, unit: o.unit, unit_price: o.unit_price, price_date: o.price_date, url: o.url, similarity: 0.8,
+          same_name: o.k === normName(p_name),
+        })),
+        error: null,
+      }
+    },
+    supply_rate_origins({ p_tender }) {
+      return {
+        data: window.__fakeDb.tender_vor_supply_rates.filter((r) => r.tender_id === p_tender && r.source_kind).map((r) => {
+          const o = OTHER_RATES.find((x) => x.id === r.source_rate_id)
+          return { rate_id: r.id, source_kind: r.source_kind, source_tender_id: r.source_tender_id, tender_number: o?.tender_number ?? null,
+            object_name: o?.object_name ?? null, estimate_name: o?.estimate_name ?? null, material_name: o?.material_name ?? null,
+            price_date: r.price_date, url: o?.url ?? null }
+        }),
+        error: null,
+      }
+    },
+  }
+}
+
 // Триггер расчёта tender_vor_supply_rates (миграция 20261020) — та же логика, что в базе.
 const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100
 window.__fakeTriggers = {
@@ -259,6 +326,16 @@ window.__fakeTriggers = {
       Object.assign(row, { price_input: 'import', input_value: row.supply_price, volume_at_input: null, supply_price_exact: null, supply_total: null })
     }
     row.material_key = normName(row.material_name)
+    // День расценки и копия цены другого тендера (миграция 20261023) — как в базе.
+    const priced = !old || row.supply_price !== old.supply_price || row.supply_price_exact !== old.supply_price_exact
+    const src = row.source_rate_id && (!old || row.source_rate_id !== old.source_rate_id) ? OTHER_RATES.find((o) => o.id === row.source_rate_id) : null
+    if (src) {
+      Object.assign(row, { price_date: src.price_date, source_tender_id: src.tender_id, source_kind: row.source_kind || 'pick' })
+    } else if (priced || !old?.price_date) {
+      Object.assign(row, { price_date: dayAgo(0), source_rate_id: null, source_tender_id: null, source_kind: null })
+    } else {
+      Object.assign(row, { price_date: old.price_date, source_rate_id: old.source_rate_id ?? null, source_tender_id: old.source_tender_id ?? null, source_kind: old.source_kind ?? null })
+    }
   },
   // Список позиций: ключ k, число позиций и версия — как триггер tender_supply_sources_compute.
   tender_supply_sources(row, old) {

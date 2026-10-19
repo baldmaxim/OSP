@@ -71,6 +71,7 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | tender_proposal_files | TenderCounterpartyFiles и др. | вставка/удаление — canEditTenders; **проверка КП — роль** admin/суперадмин/economist; замечания — admin/суперадмин/engineer; стадия — **суперадмин** |
 | tender_estimate_items, tender_winners, tender_docs, tender_doc_links | TenderDetailPage, TendersPage | E(tenders) / canEditTenders |
 | tender_vor_supply_rates, tender_supply_sources, tender_supply_links (20261022) | TenderDetailPage (импорт Excel), SupplyPricingPanel (цены, позиции, ссылки на документы) | **в базе (20261020):** E(tenders) **или** E(tenders_materials); тендер на материалы «Завершён» — триггер отказывает всем |
+| supply_autofill, supply_suggestion_counts, supply_rate_suggestions, supply_rate_origins (20261023) | SupplyPricingPanel, SupplySuggestMenu (цены из других тендеров) | функции с правами вызывающего: читают и пишут через правила по строкам цен; подстановка — только при `supply_can_edit()` и незакрытом тендере |
 | tender_supply_rate_log | только триггер на tender_vor_supply_rates | записи пользователя нет; читает сотрудник |
 | tender_rd_codes, tender_rd_document_codes | TenderRdCodesTab, TenderVorRdPanel | E(tenders); в «ВОРах и РД» — E(tenders) **или** E(vors) |
 | tender_audit_log | TendersPage, TenderDetailPage, CostPlansPage, VorsPage | пишется при правках |

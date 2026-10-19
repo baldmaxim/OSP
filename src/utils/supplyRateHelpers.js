@@ -61,3 +61,23 @@ export const rateUnitPrice = (r) => {
   if (exact != null && exact !== '' && Number.isFinite(Number(exact))) return Number(exact)
   return Number(r?.supply_price)
 }
+
+// Миграция 20261023: день расценки — по Москве; из других тендеров берутся цены не старше 3 месяцев по дням
+// (граница включительно), как в базе: дата ≥ сегодня − 3 месяца (конец месяца — как в PostgreSQL: 31.05 → 28.02).
+export const moscowToday = (now = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow' }).format(now)
+
+export function freshSince(today) {
+  const [y, m, d] = String(today).split('-').map(Number)
+  const first = new Date(Date.UTC(y, m - 1 - 3, 1))
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
+  first.setUTCDate(Math.min(d, last))
+  return first.toISOString().slice(0, 10)
+}
+
+export const isFreshPriceDate = (date, today = moscowToday()) => !!date && String(date).slice(0, 10) >= freshSince(today)
+
+// «2026-10-12» → «12.10.2026».
+export const fmtPriceDate = (date) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ''))
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : ''
+}
