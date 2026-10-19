@@ -8,6 +8,20 @@ export const isWorkItem = (it) => {
   return c.startsWith('Р')
 }
 
+// Код строки ВОР «мат.», «мат», «Мат», «материал» — материал.
+export const isMaterialCode = (code) => /^мат/.test(String(code ?? '').trim().toLowerCase())
+
+// Строка ВОР — материал для расценки снабжением. Строже isWorkItem («всё, что не Р, — материал»): так в расценку
+// попадали шапка ВОР («Предмет тендера:», «КОД», строка номеров колонок) и анкета претендента («Наличие
+// авансирования — да/нет»), как у тендера 445. Материал — код «мат…»; без кода — только с ед. изм. и расходом > 0
+// (в части ВОР материалы записаны без кода — грунтовка, эмаль у тендера 181); другой код — не материал.
+export function isSupplyMaterial({ code, unit, volume }) {
+  const c = String(code ?? '').trim()
+  if (c) return isMaterialCode(c)
+  const v = volumeOf(volume)
+  return !!String(unit ?? '').trim() && v != null && v > 0
+}
+
 // task 260 / 398: строки одного вида (materials | works), сложенные по наименованию + ед. изм. без регистра.
 // ratesMap (supplyKey → цена за единицу) — для материалов добавляет «стоимость от снабжения» (Σ объём × цена).
 // Разделы и разделители документов (_isDocDivider) не участвуют.
@@ -37,7 +51,7 @@ export function aggregateEstimate(items, type, ratesMap = null) {
 }
 
 // Объём: число или null (пусто, не число). Ноль — это ноль.
-const volumeOf = (v) => {
+function volumeOf(v) {
   if (v == null || v === '') return null
   const n = Number(v)
   return Number.isFinite(n) ? n : null
@@ -77,13 +91,15 @@ function roundVolume(v) {
   return v == null ? null : Math.round(v * 10000) / 10000
 }
 
-// Позиции материалов ВОР карточки по документам: Map(estimate_name → позиции).
+// Позиции материалов ВОР карточки по документам: Map(estimate_name → позиции). Материал — isSupplyMaterial.
+// Каждый ВОР карточки есть в карте, даже без материалов (пустой список): прежний список позиций такого ВОР
+// автозагрузка обновит до пустого, а имя ВОР годится для привязки.
 export function positionsFromEstimate(items) {
   const byDoc = new Map()
   for (const it of items) {
-    if (it.is_section || isWorkItem(it)) continue
     const doc = it.estimate_name || 'Основная смета'
     if (!byDoc.has(doc)) byDoc.set(doc, [])
+    if (it.is_section || !isSupplyMaterial({ code: it.code, unit: it.unit, volume: it.material_consumption })) continue
     byDoc.get(doc).push({ name: it.cost_name, unit: it.unit, volume: it.material_consumption })
   }
   const out = new Map()

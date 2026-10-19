@@ -269,3 +269,21 @@ window.__fakeTriggers = {
     row.parsed_at = new Date().toISOString()
   },
 }
+
+// Ссылки на документы к позициям расценки (миграция 20261022): одна на (тендер, ВОР, ключ наименования).
+//   noLinks=1 — таблицы ссылок нет (миграция не применена): колонки «Документ» нет, остальное работает;
+//   seedLink=1 — у изоляции в ОВ уже есть ссылка (просмотр без права правки).
+window.__fakeDb.tender_supply_links = params.get('seedLink') === '1'
+  ? [{ id: 'link-p-3', tender_id: 'tender-p', estimate_name: 'ОВ', material_name: 'Изоляция K-Flex 13×15', material_key: normName('Изоляция K-Flex 13×15'),
+    url: 'https://disk.example.ru/d/schet-15', updated_by: 'user-2', updated_at: '2026-10-18T09:00:00Z', created_at: '2026-10-18T09:00:00Z' }]
+  : []
+window.__fakeUnique.tender_supply_links = ['tender_id', 'estimate_name', 'material_key']
+window.__fakeGenerated = { tender_supply_links: (r) => ({ material_key: normName(r.material_name) }) }
+window.__fakeTriggers.tender_supply_links = (row) => {
+  row.url = String(row.url).trim()
+  row.updated_by = 'user-1'
+  row.updated_at = new Date().toISOString()
+}
+if (params.get('noLinks') === '1') {
+  window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_supply_links: { code: '42P01', message: 'relation "public.tender_supply_links" does not exist' } }
+}

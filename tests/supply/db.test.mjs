@@ -48,7 +48,8 @@ describe('Расценка снабжением на сайте: база', { sk
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     for (const m of candidateMigrations()) {
-      if (m.startsWith('20261020_')) continue
+      // Эта миграция — ниже; 20261022 (ссылки на документы) требует её и проверяется в links-db.test.mjs.
+      if (m.startsWith('20261020_') || m.startsWith('20261022_')) continue
       psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     }
     psqlAt(db.port, null, { file: MIGRATION })

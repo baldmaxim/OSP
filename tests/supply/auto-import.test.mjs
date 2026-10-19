@@ -54,6 +54,18 @@ describe('Автозагрузка: вкладка «ВОР» и уборка', 
     assert.deepEqual(planTabImports([src({ estimate_name: 'ОВ', s3_document_id: 'f1' })], docs, sigs), [])
   })
 
+  it('прежний список (старое правило «всё, что не Р») обновляется один раз — и до пустого, если материалов нет', () => {
+    const sig = new Map([['Корпус 1', { count: 10, latest: '2026-10-10' }], ['Пусто', { count: 3, latest: '2026-10-10' }]])
+    const old = [
+      src({ estimate_name: 'Корпус 1', source: 'vor_tab', source_version: 'vor:10:2026-10-10' }),
+      src({ estimate_name: 'Пусто', source: 'vor_tab', source_version: 'vor:3:2026-10-10' }),
+    ]
+    const jobs = planTabImports(old, docs, sig)
+    assert.deepEqual(jobs.map((j) => [j.name, j.positions.length, j.version]), [['Корпус 1', 1, 'vor2:10:2026-10-10'], ['Пусто', 0, 'vor2:3:2026-10-10']])
+    // Новый ВОР без материалов списка не заводит.
+    assert.deepEqual(planTabImports([], new Map([['Пусто', []]]), sig), [])
+  })
+
   it('уборка: пустые списки из вкладки «ВОР» при файлах и от удалённых файлов; с ценами — остаются', () => {
     const sources = [
       src({ estimate_name: 'ОВ', s3_document_id: 'f1' }),

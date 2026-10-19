@@ -282,6 +282,109 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  it('файл ВОР без листа «Материалы», но с колонкой «КОД» — позиции из строк «мат.» самого ВОР, не из вкладки', async () => {
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['', 'Предмет тендера:', 'Электромонтажные работы'],
+      ['№ п/п', 'КОД', 'Наименование затрат', 'Ед. изм.', 'Объем по виду работ', 'Общий расход'],
+      [1, 2, 3, 4, 5, 6],
+      ['1', 'Р', 'Прокладка кабеля', 'м', 4000, ''],
+      ['', 'мат.', 'Кабель ВВГнг 3×2,5', 'м', '', 4200],
+      ['', 'мат.', 'Щит ЩРН-24', 'шт', '', 2],
+      ['', '', 'Наличие авансирования', 'да/нет'],
+    ]), 'ВОР')
+    const dataUrl = `data:application/octet-stream;base64,${XLSX.write(wb, { type: 'base64', bookType: 'xlsx' })}`
+    const init = { fn: (url) => { window.__fakeFiles = { 'tenders/tender-q/x-ВОР_Корпус7.xlsx': url } }, arg: dataUrl }
+    const { page, context, errors } = await open('&noSheetFile=1', '/tenders/materials/mat-q/pricing', { init })
+    try {
+      await page.getByText('ВОР «ВОР_Корпус7»', { exact: true }).waitFor({ timeout: 120000 })
+      await page.getByText('строки с кодом «мат.»', { exact: false }).first().waitFor()
+      const src = await page.evaluate(() => window.__fakeDb.tender_supply_sources.find((x) => x.tender_id === 'tender-q' && x.source === 'vor_file'))
+      assert.deepEqual(src.positions.map((x) => [x.name, x.unit, x.volume]), [['Кабель ВВГнг 3×2,5', 'м', 4200], ['Щит ЩРН-24', 'шт', 2]])
+      assert.equal(src.column_map.mode, 'code')
+      assert.equal(await page.locator('.sp-problem').count(), 0, 'причины «не загрузился» нет')
+      assert.equal(await page.getByText('Наличие авансирования').count(), 0, 'анкета претендента — не позиция')
+      assert.equal(await page.getByLabel(price('Прокладка кабеля', 'ВОР_Корпус7')).count(), 0, 'работа — не позиция')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('ссылка на документ к позиции без цены: «+ ссылка», неверный адрес — подсказка, сохранённая — ссылка в строке', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      const row = rowOf(page, 'Кран шаровой Ду15', 'ОВ')
+      await row.getByRole('button', { name: /Прикрепить ссылку на документ: Кран шаровой Ду15/ }).click()
+      const dialog = page.getByRole('dialog', { name: 'Ссылка на документ' })
+      await dialog.getByRole('textbox').fill('javascript:alert(1)')
+      await dialog.getByRole('button', { name: 'Сохранить' }).click()
+      await dialog.getByText('Нужна ссылка вида https://', { exact: false }).waitFor()
+      assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links.length), 0, 'неверный адрес не записан')
+      await dialog.getByRole('textbox').fill('  https://disk.example.ru/d/chek-777  ')
+      await dialog.getByRole('button', { name: 'Сохранить' }).click()
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.some((l) => l.material_name === 'Кран шаровой Ду15'))
+      const link = await page.evaluate(() => window.__fakeDb.tender_supply_links.find((l) => l.material_name === 'Кран шаровой Ду15'))
+      assert.deepEqual([link.tender_id, link.estimate_name, link.url], ['tender-p', 'ОВ', 'https://disk.example.ru/d/chek-777'])
+      const a = row.getByRole('link', { name: 'Открыть документ к «Кран шаровой Ду15»' })
+      assert.equal(await a.getAttribute('href'), 'https://disk.example.ru/d/chek-777')
+      assert.equal(await a.getAttribute('target'), '_blank')
+      assert.equal(await rateOf(page, 'Кран шаровой Ду15', 'ОВ'), null, 'цены по-прежнему нет — ссылка от неё не зависит')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('ссылка нескольким сразу: отметить строки и весь ВОР → одна ссылка всем; сетевой путь; убрать у отмеченных', async () => {
+    const { page, context, errors } = await openPage()
+    try {
+      await page.getByLabel('Отметить все позиции ВОР «ВК»').check()
+      await page.getByLabel('Отметить: Изоляция K-Flex 13×15 (ВОР «ОВ»)').check()
+      await page.locator('.sp-sel-bar', { hasText: 'Отмечено: 3' }).waitFor()
+      await page.getByRole('button', { name: 'Ссылка на документ' }).click()
+      const dialog = page.getByRole('dialog', { name: /Ссылка на документ — 3 позициям/ })
+      await dialog.getByRole('textbox').fill('\\\\su10-fs\\Снабжение\\Счёт 15.pdf')
+      await dialog.getByRole('button', { name: 'Прикрепить к 3' }).click()
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.length === 3)
+      const urls = await page.evaluate(() => [...new Set(window.__fakeDb.tender_supply_links.map((l) => l.url))])
+      assert.deepEqual(urls, ['\\\\su10-fs\\Снабжение\\Счёт 15.pdf'])
+      assert.equal(await page.locator('.sp-sel-bar').count(), 0, 'отметка снята после прикрепления')
+      assert.equal(await rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ').getByRole('button', { name: 'Скопировать путь к документу «Изоляция K-Flex 13×15»' }).count(), 1)
+      // Убрать у двух из трёх: отметить ВОР «ВК» → «Убрать ссылку (2)».
+      await page.getByLabel('Отметить все позиции ВОР «ВК»').check()
+      await page.getByRole('button', { name: 'Ссылка на документ' }).click()
+      await page.getByRole('dialog').getByRole('button', { name: 'Убрать ссылку (2)' }).click()
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_links.length === 1)
+      assert.equal(await page.evaluate(() => window.__fakeDb.tender_supply_links[0].estimate_name), 'ОВ')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('ссылки без права правки — видны, но без «+ ссылка» и отметок; без таблицы ссылок — колонки нет, цены вводятся', async () => {
+    const viewer = await openPage('&canEdit=0&seedLink=1')
+    try {
+      await viewer.page.getByRole('link', { name: 'Открыть документ к «Изоляция K-Flex 13×15»' }).waitFor()
+      assert.equal(await viewer.page.getByRole('button', { name: /Прикрепить ссылку/ }).count(), 0)
+      assert.equal(await viewer.page.locator('.sp-select').count(), 0)
+      assert.deepEqual(viewer.errors, [])
+    } finally {
+      await viewer.context.close()
+    }
+    const old = await openPage('&noLinks=1')
+    try {
+      assert.equal(await old.page.getByRole('columnheader', { name: 'Документ' }).count(), 0)
+      assert.equal(await old.page.locator('.sp-select').count(), 0)
+      await enter(old.page.getByLabel(price('Кран шаровой Ду15', 'ОВ')), '321')
+      await old.page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.some((r) => r.material_name === 'Кран шаровой Ду15' && r.supply_price === 321))
+      assert.deepEqual(old.errors, [])
+    } finally {
+      await old.context.close()
+    }
+  })
+
   it('цену изменил другой пользователь — значение не записано, окно выбора; «Записать моё» — по новой версии', async () => {
     const { page, context, errors } = await openPage()
     try {

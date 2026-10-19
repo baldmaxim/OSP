@@ -5,7 +5,9 @@ import { normName } from './supplyRateHelpers.js'
 
 const baseName = (fileName) => String(fileName || '').replace(/\.[^.]+$/, '').trim()
 export const fileVersion = (doc) => `file:${doc.id}:${doc.created_at}`
-export const estimateVersion = (sig) => `vor:${sig.count}:${sig.latest || ''}`
+// vor2 — позиции из вкладки «ВОР» отбираются по коду «мат» (isSupplyMaterial, 19.10): прежние списки (vor:…, с
+// шапкой и анкетой ВОР) перечитываются один раз сами — цены не трогаются.
+export const estimateVersion = (sig) => `vor2:${sig.count}:${sig.latest || ''}`
 
 // Имя ВОР для файла: прежняя привязка этого файла → ВОР карточки с тем же именем (без учёта регистра и
 // пробелов) → прежний список с тем же именем файла → имя файла без расширения.
@@ -44,8 +46,9 @@ export function planTabImports(sources, docs, signatures) {
   if (sources.some((s) => s.source === 'vor_file')) return []
   const jobs = []
   for (const [name, positions] of docs) {
-    if (!positions.length) continue
     const existing = sources.find((s) => s.estimate_name === name) || null
+    // Материалов нет: новый список не заводим, а прежний (собранный старым правилом) — обновляем до пустого.
+    if (!positions.length && !existing) continue
     const version = estimateVersion(signatures.get(name) || { count: 0 })
     if (existing && existing.source_version === version) continue
     jobs.push({ name, existing, positions, version })

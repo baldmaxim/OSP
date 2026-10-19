@@ -218,6 +218,7 @@ const { data } = await db
 | `tender_vor_supply_rates` | Расценки от снабжения по материалам ВОР тендера (task 398). Привязка к документу-ВОР через `estimate_name`; сопоставление с позициями по `material_name` (`material_key`). Стоимость = `material_consumption × (supply_price_exact ?? supply_price)`. Ввод на сайте — см. «Расценка снабжением на сайте». | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_name)` |
 | `tender_supply_sources` | Позиции ВОР для расценки снабжением: разобранный лист «Материалы» файла из «ВОРов и РД» или вкладка «ВОР» карточки; строка на основной тендер и ВОР (`positions jsonb`) | `tender_id` (CASCADE), `s3_document_id` (SET NULL), `UNIQUE(tender_id, estimate_name)` |
 | `tender_supply_rate_log` | Журнал каждого изменения расценки снабжения (триггер): было / стало, кто, когда | без FK (не мешает удалению тендера) |
+| `tender_supply_links` | Ссылка на документ (чек, счёт, КП поставщика) к позиции расценки снабжением — колонка «Документ» (миграция 20261022): одна на (тендер, ВОР, `material_key`), отдельно от цены; адрес http(s) или `\\сервер\папка` | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_key)` |
 | `bsm_contract_rates` | Agreed material rates | `object_id` (CASCADE) |
 | `bsm_supply_rates` | Supply dept rates (has `applied_at` date) | `object_id` (CASCADE) |
 | `bsm_contractor_rates` | Contractor-specific rates | `object_id`, `counterparty_id` (CASCADE) |
@@ -466,8 +467,13 @@ curl -H "X-API-Key: <ключ>" \
   «Сравнении КП», выгрузке ВОР и реестре СУ-10 (после пересчёта MV, до 10 минут). Отдельной «передачи» нет.
 - **Позиции загружаются сами, без кнопки** ([supplyAutoImport.js](src/utils/supplyAutoImport.js), при открытии таблицы у
   того, у кого право правки): сначала лист «Материалы» Excel-файлов ВОР из «ВОРов и РД» основного тендера
-  ([vorMaterialsSheet.js](src/utils/vorMaterialsSheet.js): шапка по словам, строка номеров колонок пропускается), если ни
-  один файл не дал позиций — вкладка «ВОР» карточки ([vorMaterials.js](src/utils/vorMaterials.js)). Новый/заменённый файл и
+  ([vorMaterialsSheet.js](src/utils/vorMaterialsSheet.js): шапка по словам, строка номеров колонок пропускается); листа
+  «Материалы» нет — сам лист ВОР по колонке «КОД» (`readMaterialsByCodeBytes`, листы по одному, сначала с «ВОР» в имени,
+  объём — «Общий расход», карта колонок `mode: 'code'`); если ни один файл не дал позиций — вкладка «ВОР» карточки
+  ([vorMaterials.js](src/utils/vorMaterials.js)). **Материал — `isSupplyMaterial`:** код «мат…»; без кода — только с ед. изм.
+  и расходом > 0; любой другой код (работа «Р», шапка «Предмет тендера:» / «КОД», номера колонок) и анкета претендента —
+  не материал (раньше брали всё, что не «Р», и у тендера 445 в расценку попали шапка и анкета). Прежние списки из
+  вкладки перечитываются сами (версия `vor2:`), отказы файлов в браузере — по `VOR_PARSER_VERSION`. Новый/заменённый файл и
   перезагруженная вкладка «ВОР» подхватываются так же; пустые устаревшие списки убираются, цены не трогаются никогда.
   Не загрузилось — жёлтая плашка с причиной (нет листа, шапка не распознана, нет позиций, файл не читается, не скачался) и
   «Указать лист и колонки» / «Повторить». Причина из-за самого файла запоминается в `localStorage` до замены файла —
@@ -479,6 +485,14 @@ curl -H "X-API-Key: <ключ>" \
 - **Одинаковые позиции** (то же наименование по `normName` и те же ед. изм.) в других ВОР тендера получают введённую
   цену за единицу сами — только там, где цены ещё нет (решение пользователя 16.10), и там, куда цену подставили за этот
   сеанс и с тех пор не меняли (исправили цену — исправится и там); правленные вручную — свои.
+- **Ссылка на документ** (чек, счёт, КП поставщика) — колонка «Документ» справа от «Итого» (`tender_supply_links`,
+  миграция 20261022): к любой позиции, с ценой или без (решение пользователя 19.10), и остаётся, если цену очистили.
+  Одной позиции — «+ ссылка» / карандаш в строке; нескольким — отметить строки (или весь ВОР в его шапке) и «Ссылка
+  на документ» в строке состояния ([SupplyLinkDialog](src/components/supply/SupplyLinkDialog.jsx), upsert по ключу
+  позиции). Вид — как «Ссылка на КП» реестра тендеров на материалы: «Открыть» (http(s), новая вкладка) или «Скопировать»
+  (сетевой путь) и карандаш, нет ссылки — «+ ссылка», домен не показывается; проверка адреса — и в базе. Права и
+  закрытие — как у цен; перенос ВОР (`supply_estimate_rename`) переносит и ссылки. Таблицы ещё нет — колонки нет,
+  остальное работает (`loadLinks` → null). Отметка строк — только на компьютере.
 - **Ввод цены ИЛИ суммы; расчёт — в базе** (триггер `tender_vor_supply_rates_compute`): страница пишет `price_input`
   (`unit`|`total`), `input_value`, `volume_at_input`; база считает `supply_price` (копейки), `supply_price_exact` (сумма /
   объём) и `supply_total`. Запись только `supply_price` (импорт Excel, старая вкладка) → `price_input='import'`, точная
@@ -507,8 +521,10 @@ curl -H "X-API-Key: <ключ>" \
   на открытие и подвисания при прокрутке. Тест — `tests/tender/large-lists.test.mjs` (стенд: `bigPricing=N`, `matTenders=1`).
 - Ключ `material_key` / `positions[].k` = `supply_norm_name()` — порт `normName` на SQL; совпадение сторожит
   `tests/supply/norm-name.test.mjs`. Меняете `normName` — меняйте и функцию (новой миграцией) и пересчитайте колонку.
-- База Яндекса — `migration/yandex/20261020_supply_pricing.sql` (тела функций совпадают — `tests/supply/migrations.test.mjs`);
-  проверка для прода — `migration/backup/checks/20261020.sql`, откат — `migration/rollback/20261020_supply_pricing_rollback.sql`.
+- База Яндекса — `migration/yandex/20261020_supply_pricing.sql` и `20261022_supply_links.sql` (тела функций совпадают —
+  `tests/supply/migrations.test.mjs`); проверки для прода — `migration/backup/checks/20261020.sql` / `20261022.sql`, откаты —
+  `migration/rollback/20261020_supply_pricing_rollback.sql` / `20261022_supply_links_rollback.sql`; база ссылок —
+  `tests/supply/links-db.test.mjs`.
 
 ## Договорные расценки (Larix) — четвёртая вкладка реестра расценок (миграции 20261018, 20261021)
 

@@ -8,6 +8,7 @@
 // window.__fakeErrors[таблица] — ответ ошибкой на любой запрос к таблице (например, «таблицы нет»).
 // window.__fakeUnique[таблица] — колонки уникального ключа: вставка дубля отвечает 23505, как база.
 // window.__fakeAfter[таблица](op, строка, прежняя) — триггер «после записи» (журнал расценок).
+// window.__fakeGenerated[таблица](строка) — вычисляемые колонки (GENERATED): считаются до проверки ключа.
 // window.__fakeFiles[s3_key] — содержимое файла (data: URL): хранилище отдаёт его по ссылке на скачивание;
 // window.__fakeFileRequests — какие файлы запрашивали.
 const LATENCY_MS = Number(new URLSearchParams(window.location.search).get('latency') || 120)
@@ -136,7 +137,9 @@ async function run(q) {
   if (q.op === 'insert' || q.op === 'upsert') {
     const keys = q.onConflict ? q.onConflict.split(',').map((s) => s.trim()) : null
     const affected = []
-    for (const input of q.payload) {
+    const generated = window.__fakeGenerated?.[q.table]
+    for (const raw of q.payload) {
+      const input = generated ? { ...raw, ...generated(raw) } : raw
       const existing = keys ? rows.find((r) => keys.every((k) => String(r[k]) === String(input[k]))) : null
       if (existing) {
         const old = { ...existing }

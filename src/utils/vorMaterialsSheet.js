@@ -3,7 +3,13 @@
 // Шапку ищем сами: в первых 30 строках — строка, где есть «Наименование» и «Кол-во / Количество / Объём /
 // Расход» (единица — «Ед. изм.», необязательна). Цены и суммы файла не читаются: их вводит снабжение.
 // Не нашли — страница предлагает сопоставить колонки вручную (тот же разбор с явной картой колонок).
+//
+// Листа «Материалы» нет — запасной разбор самого листа ВОР (readMaterialsByCodeBytes): шапка с колонкой «КОД»,
+// материалы — строки с кодом «мат.» / «мат» (isSupplyMaterial, как у вкладки «ВОР» карточки), объём — «Общий
+// расход». Листы читаются по одному (сначала с «ВОР» в имени) до первого подходящего; результат автозагрузка
+// хранит в базе (список позиций, карта колонок mode: 'code') — при следующих открытиях файл не разбирается.
 import * as XLSX from 'xlsx'
+import { isSupplyMaterial } from './vorMaterials.js'
 
 export const HEADER_SCAN_ROWS = 30
 export const MATERIALS_COLUMN_FIELDS = [
@@ -111,12 +117,104 @@ export function parseMaterialsSheet(ws, map) {
   return out
 }
 
+// ── Лист ВОР целиком: колонка «КОД», материалы — строки «мат.» ──────────────────────────────────────
+// Признак колонки шапки ВОР. Объём материала — «Общий расход» (в ВОР рядом «Объём по виду работ» — объём работы).
+function codeHeaderKind(text) {
+  const t = norm(text)
+  if (!t) return null
+  if (/^код(?![а-яё])/.test(t)) return { field: 'code', rank: 1 }
+  if (/наименован/.test(t)) return { field: 'name', rank: 1 }
+  if (/^ед\.?(\s|$)|ед\.?\s*изм|единиц/.test(t)) return { field: 'unit', rank: 1 }
+  if (/цена|стоимост|расценк|сумм/.test(t)) return null
+  if (/расход/.test(t)) return { field: 'volume', rank: 1 }
+  if (/объ[её]м|кол-?во|количеств/.test(t)) return { field: 'volume', rank: 2 }
+  return null
+}
+
+// Шапка листа ВОР: { headerRow (1-based), consumption, columns: { code, name, unit, volume } } | null.
+// consumption — объём взят из «расхода»: только тогда строку без кода можно счесть материалом (по расходу > 0).
+export function detectCodeColumns(ws) {
+  const range = sheetRange(ws)
+  if (!range) return null
+  const lastRow = Math.min(range.e.r, range.s.r + HEADER_SCAN_ROWS - 1)
+  for (let r = range.s.r; r <= lastRow; r++) {
+    const found = {}
+    let consumption = false
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const text = cellValue(ws, r, c)
+      const kind = codeHeaderKind(text)
+      if (!kind) continue
+      const prev = found[kind.field]
+      if (!prev || kind.rank < prev.rank) {
+        found[kind.field] = { col: c, rank: kind.rank }
+        if (kind.field === 'volume') consumption = /расход/.test(norm(text))
+      }
+    }
+    if (found.code && found.name && found.volume) {
+      return { headerRow: r + 1, consumption, columns: { code: found.code.col, name: found.name.col, unit: found.unit?.col ?? null, volume: found.volume.col } }
+    }
+  }
+  return null
+}
+
+// Строки-материалы листа ВОР по карте колонок с кодом. Разделы, работы («Р»), шапка, номера колонок, итоги и
+// анкета претендента — не материалы (isSupplyMaterial); строка без кода — материал только при объёме из расхода.
+export function parseCodeSheet(ws, map) {
+  const range = sheetRange(ws)
+  const out = { rows: [], skipped: { sections: 0, totals: 0, empty: 0 } }
+  if (!range || !map?.columns || map.columns.code == null || map.columns.name == null || map.columns.volume == null) return out
+  const first = Math.max(range.s.r, map.headerRow ?? 0)
+  for (let r = first; r <= range.e.r; r++) {
+    const name = String(cellValue(ws, r, map.columns.name) ?? '').replace(/\s+/g, ' ').trim()
+    if (!name) { out.skipped.empty += 1; continue }
+    if (TOTAL_ROW.test(name.toLowerCase())) { out.skipped.totals += 1; continue }
+    const code = String(cellValue(ws, r, map.columns.code) ?? '').trim()
+    const unit = map.columns.unit == null ? '' : String(cellValue(ws, r, map.columns.unit) ?? '').replace(/\s+/g, ' ').trim()
+    const volume = parseVolume(cellValue(ws, r, map.columns.volume))
+    if (!isSupplyMaterial({ code, unit, volume: code || map.consumption ? volume : null })) { out.skipped.sections += 1; continue }
+    out.rows.push({ name, unit, volume, row: r + 1 })
+  }
+  return out
+}
+
+const codeResult = (sheetName, det, parsed) => ({
+  sheetName,
+  map: { mode: 'code', sheetName, headerRow: det.headerRow, startRow: null, endRow: null, consumption: det.consumption, columns: det.columns },
+  ...parsed,
+})
+
+// Листа «Материалы» нет: листы книги по одному (сначала с «ВОР» в имени, не больше CODE_SHEETS_MAX) — первый с
+// колонкой «КОД» и строками-материалами. Нет такого → { error: 'no_sheet', codeTried: true }; колонка «КОД» есть,
+// а материалов нет → { error: 'no_material_codes', sheetName }.
+const CODE_SHEETS_MAX = 6
+export function readMaterialsByCodeBytes(bytes, sheetNames) {
+  const isVor = (n) => (/вор/i.test(n) ? 1 : 0)
+  const order = [...sheetNames].sort((a, b) => isVor(b) - isVor(a)).slice(0, CODE_SHEETS_MAX)
+  let noCodes = null
+  for (const name of order) {
+    const ws = XLSX.read(bytes, { ...READ_OPTIONS, sheets: [name] }).Sheets[name]
+    const det = ws && detectCodeColumns(ws)
+    if (!det) continue
+    const parsed = parseCodeSheet(ws, det)
+    if (parsed.rows.length) return codeResult(name, det, parsed)
+    noCodes = noCodes || { error: 'no_material_codes', sheetName: name, sheetNames }
+  }
+  return noCodes || { error: 'no_sheet', codeTried: true, sheetNames }
+}
+
 // Книга → разбор листа «Материалы» со своей шапкой. Нет листа → { error: 'no_sheet' };
 // шапка не распознана → { error: 'no_header', sheetName } (тогда — ручное сопоставление).
+// Сохранённая карта mode: 'code' — тот же лист ВОР с колонкой «КОД» (новая версия файла разбирается сразу).
 export function readMaterialsFromWorkbook(workbook, manualMap = null) {
   const sheetName = manualMap?.sheetName || findMaterialsSheet(workbook)
   if (!sheetName || !workbook.Sheets[sheetName]) return { error: 'no_sheet', sheetNames: workbook?.SheetNames || [] }
   const ws = workbook.Sheets[sheetName]
+  if (manualMap?.mode === 'code') {
+    const det = detectCodeColumns(ws)
+    if (!det) return { error: 'no_header', sheetName, sheetNames: workbook.SheetNames }
+    const parsed = parseCodeSheet(ws, det)
+    return parsed.rows.length ? codeResult(sheetName, det, parsed) : { error: 'no_material_codes', sheetName, sheetNames: workbook.SheetNames }
+  }
   let map = manualMap?.columns ? manualMap : detectMaterialsColumns(ws)
   if (!map) return { error: 'no_header', sheetName, sheetNames: workbook.SheetNames }
   // Колонки заданы вручную, а строка начала — нет: данные после строки с «Наименование» в колонке наименования.

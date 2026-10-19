@@ -151,7 +151,8 @@
 /* ── Таблица (sp-dense) ─────────────────────────────────────────────────
    Ширины по замерам: № — «999»; ед. — «шт., м²»; объём — «12 345,6789»; цена — поле «1 234 567,00»;
    сумма — поле «123 456 789,00»; состояние — три места под значки (сохранено / объём / история).
-   Сумма = 42,5rem + наименование ≥ 16rem. */
+   Сумма = 42,5rem + наименование ≥ 16rem. С колонкой «Документ» (8rem: «Открыть» / «Скопировать» и карандаш) и отметкой строк
+   (2,25rem) — 52,75rem + наименование ≥ 14rem: помещается в рабочую область 1440 px с меню без прокрутки. */
 .sp-table-wrap { border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-secondary); }
 /* Больше 150 строк — в таблице только видимые строки (VirtualTableBody): прокрутка внутри, шапка и итог
    закреплены. overflow-anchor выключен: окно строк само ставит распорки по измеренным высотам, а якорение
@@ -173,6 +174,40 @@
 .sp-table .sp-c-price { width: 9.5rem; }
 .sp-table .sp-c-total { width: 11rem; }
 .sp-table .sp-c-state { width: 6rem; }
+.sp-table .sp-c-sel { width: 2.25rem; }
+.sp-table .sp-c-doc { width: 8rem; }
+.ui-work.ui-work .sp-table.has-links { min-width: 66.75rem; }
+.ui-work.ui-work .sp-table :is(th, td).sp-sel { padding-left: 0.5rem; padding-right: 0; text-align: center; }
+.sp-select { width: 1rem; height: 1rem; margin: 0; cursor: pointer; accent-color: var(--primary-color); vertical-align: middle; }
+.sp-select:disabled { cursor: default; }
+.sp-section-line .sp-select { margin-right: 0.25rem; }
+.ui-work.ui-work .sp-table > tbody > tr.is-selected > td { background: #eff6ff; }
+
+/* Ссылка на документ — как «Ссылка на КП» реестра тендеров на материалы: «Открыть» / «Скопировать» и карандаш;
+   нет ссылки — пунктирная «+ ссылка» (tp-add-link из workUi.css). */
+.sp-doc-cell { display: flex; align-items: center; gap: 0.25rem; min-height: 1.875rem; }
+.sp-doc-copy { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.sp-doc-edit { flex: none; width: 1.5rem; height: 1.5rem; }
+
+/* «Отмечено: N · Ссылка на документ · Снять отметку» — в строке состояния, справа. */
+.sp-sel-bar { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; margin-left: auto; }
+.sp-sel-action { display: inline-flex; align-items: center; gap: 0.375rem; height: 1.75rem; padding: 0 0.625rem; font-size: var(--ui-hint); }
+.sp-link-targets { margin: 0 0 0.5rem; padding-left: 1.25rem; }
+.sp-link-targets li { margin: 0.125rem 0; }
+.sp-modal-lead { margin: 0 0 0.75rem; font-weight: var(--ui-medium); }
+.sp-link-field { display: flex; flex-direction: column; gap: 0.375rem; margin: 0.25rem 0 0.5rem; font-size: var(--ui-hint); color: var(--text-secondary); }
+.sp-link-field input {
+  height: var(--ui-control-h, 2.25rem);
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-text);
+}
+.sp-link-field input[aria-invalid='true'] { border-color: var(--danger-color); }
+.sp-link-remove { margin-right: auto; }
 .ui-work.ui-work .sp-table > thead > tr > th {
   font-size: var(--ui-hint);
   line-height: var(--ui-hint-lh);
@@ -254,7 +289,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 1rem;
-  min-height: 1.75rem;
+  min-height: 2rem; /* вмещает кнопку «Ссылка на документ» — таблица не сдвигается, когда отмечают строки */
   margin: 0 0 0.375rem;
   font-size: var(--ui-hint);
   line-height: var(--ui-hint-lh);
@@ -454,6 +489,7 @@
 [data-theme='dark'] .sp-status.is-work { background: #0c4a6e; color: #bae6fd; }
 [data-theme='dark'] .sp-status.is-done { color: #bbf7d0; }
 [data-theme='dark'] .ui-work.ui-work .sp-table > tbody > tr.is-remote > td { background: #0c4a6e; }
+[data-theme='dark'] .ui-work.ui-work .sp-table > tbody > tr.is-selected > td { background: #1e3a5f; }
 [data-theme='dark'] .ui-work.ui-work .sp-table > tbody > tr.is-error > td,
 [data-theme='dark'] .ui-work.ui-work .sp-table > tbody > tr.is-conflict > td { background: #450a0a; }
 [data-theme='dark'] .sp-st.is-remote { color: #7dd3fc; }
@@ -493,6 +529,9 @@
     font-size: var(--ui-hint);
   }
   .sp-table td.sp-state { grid-column: 1 / -1; }
+  .sp-table td.sp-doc { grid-column: 1 / -1; }
+  /* Отметка нескольких позиций — на компьютере; на телефоне ссылка прикладывается к позиции в её карточке. */
+  .sp-table :is(th, td).sp-sel, .sp-section-line .sp-select, .sp-sel-bar { display: none; }
   /* Значков нет (позиция не расценена) — пустой полосы под карточкой тоже нет. */
   .sp-table td.sp-state:not(:has(.sp-st, .sp-icon-btn)) { display: none; }
   .sp-table tfoot tr { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 0.5rem 0.75rem; }

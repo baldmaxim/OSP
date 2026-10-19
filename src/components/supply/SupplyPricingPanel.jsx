@@ -4,7 +4,8 @@ import VirtualTableBody from '../VirtualTableBody'
 import SupplyMoneyCell from './SupplyMoneyCell'
 import SupplyConflictDialog from './SupplyConflictDialog'
 import SupplyRateHistory from './SupplyRateHistory'
-import { IconAlert, IconAlertCircle, IconCheck, IconClock, IconHistory, IconRefresh, IconTrash } from '../icons/ActionIcons'
+import SupplyLinkDialog from './SupplyLinkDialog'
+import { IconAlert, IconAlertCircle, IconCheck, IconClock, IconHistory, IconLink, IconPencil, IconRefresh, IconTrash } from '../icons/ActionIcons'
 import { IconFileSpreadsheet, IconUpload } from '../icons/BsmIcons'
 import { IconSearch } from '../icons/ToolbarIcons'
 import { IconChevronDown } from '../icons/TenderHubIcons'
@@ -12,12 +13,13 @@ import { fetchEmployees, employeesById } from '../../services/employees'
 import { requestDownloadUrl } from '../../services/s3'
 import {
   classifyError, clearRate, deleteSource, downloadVorFile, estimateSignatures, loadChangeMarker, loadChangedRateIds,
-  loadEstimateItems, loadPricingBundle, loadPricingContext, loadPricingData, loadRates, loadRatesByIds, loadSources,
-  loadVorFiles, renameEstimate, saveRate, saveSource, sourcesSignature,
+  isWebLink, loadEstimateItems, loadLinks, loadLinksMarker, loadPricingBundle, loadPricingContext, loadPricingData, loadRates,
+  loadRatesByIds, loadSources, loadVorFiles, removeLinks, renameEstimate, saveLinks, saveRate, saveSource, sourcesSignature,
 } from '../../services/supplyPricing'
 import { rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
 import { buildSupplyPositions, positionsFromEstimate } from '../../utils/vorMaterials'
+import { VOR_PARSER_VERSION } from '../../utils/vorFiles'
 import {
   estimateVersion, fileVersion, identicalTargets, planCleanup, planFileImports, planTabImports,
 } from '../../utils/supplyAutoImport'
@@ -50,6 +52,10 @@ const loadSheetReader = () => import('../../utils/vorMaterialsSheet')
 // подставляется в такие же позиции других ВОР, где цены нет (и туда, куда её подставили за этот сеанс, если
 // там ничего не меняли).
 //
+// Колонка «Документ» — ссылка на чек, счёт или КП поставщика (tender_supply_links, миграция 20261022): к любой
+// позиции, с ценой или без; одной позиции — «+ ссылка» в строке, нескольким сразу — отметить строки и «Ссылка на
+// документ». Таблицы ссылок ещё нет в базе — колонки нет, остальное работает как раньше.
+//
 // Больше VIRTUALIZE_FROM строк (у больших тендеров до 2,3 тыс. позиций) — в таблице только видимые строки
 // (VirtualTableBody, прокрутка внутри, шапка и итог закреплены): иначе каждое сохранение заставляло браузер
 // заново раскладывать и рисовать всю таблицу — секунды на слабом компьютере.
@@ -65,31 +71,40 @@ const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', { day: '2-
 const fmtClock = (iso) => (iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '')
 const posKey = (estimateName, k) => `${estimateName}∣${k}`
 const draftsKey = (mainId) => `supply-pricing-drafts:${mainId}`
+// Признак «ссылки менялись» — как loadLinksMarker: сколько их и время последней правки.
+const linksMarker = (list) => `${list.length}|${list.reduce((m, l) => (String(l.updated_at || '') > m ? String(l.updated_at) : m), '')}`
+
 const ACTIVE_STATUSES = new Set(['saving', 'queued', 'error', 'conflict'])
 const VIRTUALIZE_FROM = 150
 
 // Почему ВОР не загрузился и что сделать.
 const PROBLEM_TEXT = {
-  no_sheet: (p) => `в файле нет листа «Материалы»${p.sheetNames?.length ? ` (листы: ${p.sheetNames.join(', ')})` : ''}. `
+  no_sheet: (p) => `в файле нет листа «Материалы»${p.sheetNames?.length ? ` (листы: ${p.sheetNames.join(', ')})` : ''}`
+    + `${p.codeTried ? ' и нет листа ВОР с колонкой «КОД» и строками «мат.»' : ''}. `
     + 'Добавьте лист «Материалы» с колонками «Наименование», «Ед. изм.», «Объём» и загрузите файл в «ВОРы и РД» заново — или укажите лист вручную.',
+  no_material_codes: (p) => `листа «Материалы» нет, а на листе «${p.sheetName}» есть колонка «КОД», но нет строк с кодом «мат.» (и строк без кода с расходом). Укажите лист и колонки вручную.`,
   no_header: (p) => `на листе «${p.sheetName}» не нашли шапку: в первых 30 строках нужны колонки «Наименование» и «Объём» (или «Кол-во»). Укажите колонки вручную.`,
   empty: (p) => `на листе «${p.sheetName}» нет позиций: все строки — разделы, итоги или пустые. Проверьте колонки.`,
   broken: (p) => `файл не читается как книга Excel${p.message ? ` (${p.message})` : ''}. Откройте его в Excel, сохраните как .xlsx и загрузите в «ВОРы и РД» заново.`,
   error: (p) => `файл не скачался (${p.message}). Повторите позже; если не поможет — загрузите файл в «ВОРы и РД» заново.`,
 }
 // Причины, которые зависят от самого файла: запоминаются до замены файла или «Повторить».
-const FILE_PROBLEMS = new Set(['no_sheet', 'no_header', 'empty', 'broken'])
+const FILE_PROBLEMS = new Set(['no_sheet', 'no_header', 'empty', 'broken', 'no_material_codes'])
 
 const failureKey = (doc) => `supply-vor-failed:${doc.id}`
 function readFailure(doc) {
   try {
     const v = JSON.parse(localStorage.getItem(failureKey(doc)) || 'null')
-    return v && v.version === fileVersion(doc) ? { doc, kind: v.kind, sheetNames: v.sheetNames, sheetName: v.sheetName, message: v.message } : null
+    return v && v.version === fileVersion(doc) && v.parser === VOR_PARSER_VERSION
+      ? { doc, kind: v.kind, sheetNames: v.sheetNames, sheetName: v.sheetName, message: v.message, codeTried: v.codeTried }
+      : null
   } catch { return null }
 }
 function storeFailure(p) {
   try {
-    localStorage.setItem(failureKey(p.doc), JSON.stringify({ version: fileVersion(p.doc), kind: p.kind, sheetNames: p.sheetNames, sheetName: p.sheetName, message: p.message }))
+    localStorage.setItem(failureKey(p.doc), JSON.stringify({
+      version: fileVersion(p.doc), parser: VOR_PARSER_VERSION, kind: p.kind, sheetNames: p.sheetNames, sheetName: p.sheetName, message: p.message, codeTried: p.codeTried,
+    }))
   } catch { /* приватный режим — только на этот сеанс */ }
 }
 function forgetFailure(doc) {
@@ -232,6 +247,12 @@ export default function SupplyPricingPanel({
   const [fillNote, setFillNote] = useState('')
   const [lastSavedAt, setLastSavedAt] = useState(null)
   const [bindTarget, setBindTarget] = useState({})
+  const [links, setLinks] = useState(null) // null — таблицы ссылок ещё нет в базе (миграция 20261022)
+  const [selected, setSelected] = useState(() => new Set()) // отмеченные позиции (ключи «ВОР∣ключ»)
+  const [linkDialog, setLinkDialog] = useState(null) // { targets }
+  const [linkBusy, setLinkBusy] = useState(false)
+  const [linkError, setLinkError] = useState('')
+  const linksMarkerRef = useRef(null)
 
   const mainId = ctx?.mainId || null
   const editable = canEditRole && !!ctx && !ctx.locked && !missing
@@ -276,6 +297,8 @@ export default function SupplyPricingPanel({
     setFiles(d.files)
     setSources(d.sources)
     setRates(d.rates)
+    setLinks(d.links ?? null)
+    linksMarkerRef.current = d.links ? linksMarker(d.links) : null
     if (d.items) setLoadedItems(d.items)
   }, [setRates, setSources])
 
@@ -404,9 +427,12 @@ export default function SupplyPricingPanel({
         }
         let result = sheet.readMaterialsFromWorkbook(wb)
         if ((result.error === 'no_header' || result.error === 'no_sheet') && saved?.columns && wb.Sheets[saved.sheetName]) result = sheet.readMaterialsFromWorkbook(wb, saved)
+        // Листа «Материалы» нет — сам лист ВОР: колонка «КОД», материалы — строки «мат.» (один раз на версию файла:
+        // дальше позиции лежат в базе, а причина отказа — в браузере).
+        if (result.error === 'no_sheet') result = sheet.readMaterialsByCodeBytes(bytes, wb.SheetNames)
         const positions = result.error ? [] : buildSupplyPositions(result.rows)
         if (result.error || !positions.length) {
-          remember({ doc: job.doc, kind: result.error || 'empty', sheetNames: result.sheetNames || wb.SheetNames, sheetName: result.sheetName })
+          remember({ doc: job.doc, kind: result.error || 'empty', sheetNames: result.sheetNames || wb.SheetNames, sheetName: result.sheetName, codeTried: result.codeTried })
           continue
         }
         try {
@@ -487,6 +513,16 @@ export default function SupplyPricingPanel({
     for (const list of m.values()) list.sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')))
     return m
   }, [rates])
+
+  // Ссылки на документы по позициям; null — колонки «Документ» нет (таблицы ссылок ещё нет в базе).
+  const linksByKey = useMemo(() => {
+    if (!links) return null
+    const m = new Map()
+    for (const l of links) m.set(posKey(l.estimate_name, l.material_key), l)
+    return m
+  }, [links])
+  const linksOn = linksByKey !== null
+  const selectable = linksOn && editable
 
   // Позиции — только от списков (не пересобираются при каждой цене: строки таблицы не перерисовываются зря).
   const sourceViews = useMemo(() => sources.map((s) => ({ source: s, name: s.estimate_name, positions: mergePositions(s.positions) })), [sources])
@@ -878,6 +914,13 @@ export default function SupplyPricingPanel({
         const m = await loadChangeMarker(mainId)
         if (m.logId > logIdRef.current) await syncRates(m.logId)
         if (m.sources !== sourcesSigRef.current) setSources(await loadSources(mainId))
+        if (linksMarkerRef.current != null && await loadLinksMarker(mainId) !== linksMarkerRef.current) {
+          const fresh = await loadLinks(mainId)
+          if (fresh) {
+            linksMarkerRef.current = linksMarker(fresh)
+            setLinks(fresh)
+          }
+        }
       } catch { /* сеть — следующий раз */ } finally {
         busy = false
       }
@@ -921,17 +964,18 @@ export default function SupplyPricingPanel({
     const wb = XLSX.utils.book_new()
     const used = new Set()
     for (const d of docViews) {
-      const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед. с доставкой и НДС, ₽', 'Итого с НДС, ₽']]
+      const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед. с доставкой и НДС, ₽', 'Итого с НДС, ₽', ...(linksOn ? ['Документ'] : [])]]
       d.positions.forEach((p, i) => {
         const rate = ratesByKey.get(posKey(d.name, p.k))?.[0] || null
         const v = rowView(p, rate, null)
         aoa.push([i + 1, p.name, p.units ? p.units.map((u) => u.unit).filter(Boolean).join(', ') : (p.unit || ''),
           p.units ? p.units.map((u) => `${fmtVolume(u.volume)} ${u.unit || ''}`).join('; ') : (p.volume ?? ''),
-          v.unitPrice != null ? roundMoney(v.unitPrice) : '', v.total ?? ''])
+          v.unitPrice != null ? roundMoney(v.unitPrice) : '', v.total ?? '',
+          ...(linksOn ? [linksByKey.get(posKey(d.name, p.k))?.url || ''] : [])])
       })
       aoa.push(['', 'Итого', '', '', '', d.total])
       const ws = XLSX.utils.aoa_to_sheet(aoa)
-      ws['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 18 }]
+      ws['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 40 }]
       let name = (docViews.length === 1 ? 'Материалы' : `Материалы ${d.name}`).replace(/[\\/:*?[\]]/g, ' ').slice(0, 31)
       for (let i = 2; used.has(name); i++) name = `${name.slice(0, 27)} (${i})`
       used.add(name)
@@ -959,6 +1003,77 @@ export default function SupplyPricingPanel({
     return next
   })
 
+  // ── Отметка позиций и ссылки на документы ─────────────────────────────────────────────────────────
+  const toggleSelect = (key) => setSelected((prev) => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
+  const setSelectedKeys = (keys, on) => setSelected((prev) => {
+    const next = new Set(prev)
+    for (const k of keys) { if (on) next.add(k); else next.delete(k) }
+    return next
+  })
+
+  // Окно ссылки для позиций по ключам: одна (кнопка в строке) или все отмеченные.
+  const openLinkDialog = (keys) => {
+    const targets = []
+    for (const d of docViewsRef.current) {
+      for (const p of d.positions) {
+        const key = posKey(d.name, p.k)
+        if (keys.has(key)) targets.push({ key, name: p.name, estimateName: d.name, link: linksByKey?.get(key) || null })
+      }
+    }
+    if (!targets.length) return
+    setLinkError('')
+    setLinkDialog({ targets })
+  }
+  const linkDone = (text) => {
+    setFillNote(text)
+    clearTimeout(fillTimer.current)
+    fillTimer.current = setTimeout(() => setFillNote(''), FILL_NOTE_MS)
+  }
+  const saveLink = async (url) => {
+    const { targets } = linkDialog
+    setLinkBusy(true)
+    setLinkError('')
+    try {
+      const rows = await saveLinks(mainId, targets.map((t) => ({ estimateName: t.estimateName, name: t.name })), url)
+      setLinks((prev) => {
+        const byId = new Map((prev || []).map((l) => [l.id, l]))
+        for (const r of rows) byId.set(r.id, r)
+        return [...byId.values()]
+      })
+      if (targets.length > 1) setSelected(new Set())
+      setLinkDialog(null)
+      linkDone(targets.length > 1 ? `Ссылка на документ прикреплена к ${targets.length} позициям.` : `Ссылка на документ к «${targets[0].name}» сохранена.`)
+    } catch (e) {
+      setLinkError(e.message)
+      if (e.kind === 'locked') reloadContext()
+    } finally {
+      setLinkBusy(false)
+    }
+  }
+  const removeLink = async () => {
+    const { targets } = linkDialog
+    const ids = targets.map((t) => t.link?.id).filter(Boolean)
+    setLinkBusy(true)
+    setLinkError('')
+    try {
+      await removeLinks(ids)
+      const gone = new Set(ids)
+      setLinks((prev) => (prev || []).filter((l) => !gone.has(l.id)))
+      if (targets.length > 1) setSelected(new Set())
+      setLinkDialog(null)
+      linkDone(ids.length > 1 ? `Ссылки убраны у ${ids.length} позиций.` : 'Ссылка на документ убрана.')
+    } catch (e) {
+      setLinkError(e.message)
+      if (e.kind === 'locked') reloadContext()
+    } finally {
+      setLinkBusy(false)
+    }
+  }
+
   // Действия строк — через одну стабильную функцию: строки таблицы (memo) перерисовываются только когда
   // меняются их собственные данные, а не при каждом сохранении в соседней строке.
   const actionsRef = useRef(null)
@@ -970,6 +1085,8 @@ export default function SupplyPricingPanel({
     acceptVolume,
     history: (row) => setHistoryFor({ position: row.p, rate: row.rate, estimateName: row.doc, key: row.key }),
     removeDuplicates,
+    toggleSelect,
+    editLink: (key) => openLinkDialog(new Set([key])),
   }
   const act = useCallback((name, ...args) => actionsRef.current[name](...args), [])
 
@@ -986,6 +1103,11 @@ export default function SupplyPricingPanel({
     : !canEditRole ? 'Только просмотр: вводить цены могут снабжение и тендерный отдел (право правки раздела).' : ''
   const fromTab = docViews.length > 0 && docViews.every((d) => d.source.source === 'vor_tab')
 
+  // Колонки: [отметка] № · наименование · ед. · объём · цена · итог · [документ] · состояние.
+  const colCount = 7 + (linksOn ? 1 : 0) + (selectable ? 1 : 0)
+  const shownKeys = items.filter((it) => it.kind === 'row').map((it) => it.row.key)
+  const shownSelected = shownKeys.filter((k) => selected.has(k)).length
+
   // Строка-шапка ВОР: имя, «расценено N из M», сумма, источник и действия, пометки.
   const renderHead = ({ doc: d, open }, first) => {
     const notes = docNotes.get(d.name) || []
@@ -994,8 +1116,16 @@ export default function SupplyPricingPanel({
     const hasRates = rates.some((r) => r.estimate_name === d.name)
     return (
       <tr key={`head:${d.name}`} className={`sp-section-head${first ? ' is-first' : ''}`}>
-        <td colSpan={7}>
+        <td colSpan={colCount}>
           <div className="sp-section-line">
+            {selectable && (() => {
+              const keys = d.positions.map((p) => posKey(d.name, p.k))
+              const n = keys.filter((k) => selected.has(k)).length
+              return (
+                <SelectBox checked={keys.length > 0 && n === keys.length} indeterminate={n > 0 && n < keys.length} disabled={!keys.length}
+                  onChange={(on) => setSelectedKeys(keys, on)} label={`Отметить все позиции ВОР «${d.name}»`} />
+              )
+            })()}
             <button type="button" className={`sp-section-toggle${open ? ' is-open' : ''}`} onClick={() => toggleDoc(d.name)} aria-expanded={open}
               aria-label={`${open ? 'Свернуть' : 'Развернуть'} ВОР «${d.name}»`}>
               <IconChevronDown size={16} />
@@ -1007,7 +1137,7 @@ export default function SupplyPricingPanel({
           </div>
           <div className="sp-section-meta">
             {s.source === 'vor_file'
-              ? <>файл «{s.file_name || 'удалён'}», лист «{s.sheet_name || 'Материалы'}»</>
+              ? <>файл «{s.file_name || 'удалён'}», лист «{s.sheet_name || 'Материалы'}»{s.column_map?.mode === 'code' ? ', строки с кодом «мат.»' : ''}</>
               : <>вкладка «ВОР» карточки тендера</>}
             <span> · загружено {fmtTime(s.parsed_at)}{nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : ''}</span>
             {s.source === 'vor_file' && s.s3_document_id && files.some((f) => f.id === s.s3_document_id) && (
@@ -1048,8 +1178,11 @@ export default function SupplyPricingPanel({
   }
   const renderItem = (it) => {
     if (it.kind === 'head') return renderHead(it.s, it.first)
-    if (it.kind === 'empty') return <tr key={`empty:${it.s.doc.name}`}><td colSpan={7} className="no-data">В этом ВОР нет позиций</td></tr>
-    return <PriceRow key={it.row.key} row={it.row} flash={flash[it.row.key]} editable={editable} nameOf={nameOf} act={act} />
+    if (it.kind === 'empty') return <tr key={`empty:${it.s.doc.name}`}><td colSpan={colCount} className="no-data">В этом ВОР нет позиций</td></tr>
+    return (
+      <PriceRow key={it.row.key} row={it.row} flash={flash[it.row.key]} editable={editable} nameOf={nameOf} act={act}
+        linksOn={linksOn} link={linksByKey?.get(it.row.key) || null} selectable={selectable} selected={selected.has(it.row.key)} />
+    )
   }
 
   return (
@@ -1076,7 +1209,7 @@ export default function SupplyPricingPanel({
               ? <>Файл «{p.doc.file_name}» не загружен: есть более новый файл того же ВОР «{p.name}».</>
               : <>ВОР{p.doc ? <> из файла «{p.doc.file_name}»</> : p.name ? <> «{p.name}»</> : ''} не загрузился: {(PROBLEM_TEXT[p.kind] || PROBLEM_TEXT.error)(p)}</>}
           </span>
-          {editable && p.doc && ['no_sheet', 'no_header', 'empty'].includes(p.kind) && (
+          {editable && p.doc && ['no_sheet', 'no_header', 'empty', 'no_material_codes'].includes(p.kind) && (
             <button type="button" className="sp-link-btn" onClick={() => setMappingFile(p.doc)}>Указать лист и колонки</button>
           )}
           {editable && p.doc && (p.kind === 'error' || p.kind === 'broken') && <button type="button" className="sp-link-btn" onClick={() => retryFile(p.doc)}>Повторить</button>}
@@ -1095,7 +1228,7 @@ export default function SupplyPricingPanel({
         </div>
       )}
       {fromTab && (
-        <p className="sp-muted sp-source-hint">Файлов ВОР с листом «Материалы» в «ВОРах и РД» нет — позиции взяты из вкладки «ВОР» карточки тендера.</p>
+        <p className="sp-muted sp-source-hint">Файлов ВОР с листом «Материалы» или колонкой «КОД» в «ВОРах и РД» нет — позиции взяты из вкладки «ВОР» карточки тендера: строки с кодом «мат.».</p>
       )}
 
       {!missing && docViews.length === 0 && !importing && (
@@ -1147,34 +1280,55 @@ export default function SupplyPricingPanel({
                 <span className="sp-save-status sp-muted">Цены сохраняются сами — через секунду после ввода или при переходе в другое поле</span>
               )}
               {fillNote && <span className="sp-fill-note">{fillNote}</span>}
+              {selectable && selected.size > 0 && (
+                <span className="sp-sel-bar">
+                  <span>Отмечено: <b className="ui-num">{selected.size}</b></span>
+                  <button type="button" className="btn-secondary sp-sel-action" onClick={() => openLinkDialog(selected)}>
+                    <IconLink size={16} /> Ссылка на документ
+                  </button>
+                  <button type="button" className="sp-link-btn" onClick={() => setSelected(new Set())}>Снять отметку</button>
+                </span>
+              )}
             </div>
           )}
 
           <div ref={tableWrapRef} className={`table-container sp-table-wrap${virtual ? ' is-virtual' : ''}`}>
-            <table className="data-table sp-table">
+            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}`}>
               <colgroup>
+                {selectable && <col className="sp-c-sel" />}
                 <col className="sp-c-num" /><col className="sp-c-name" /><col className="sp-c-unit" /><col className="sp-c-vol" />
-                <col className="sp-c-price" /><col className="sp-c-total" /><col className="sp-c-state" />
+                <col className="sp-c-price" /><col className="sp-c-total" />
+                {linksOn && <col className="sp-c-doc" />}
+                <col className="sp-c-state" />
               </colgroup>
               <thead>
                 <tr>
+                  {selectable && (
+                    <th className="sp-sel">
+                      <SelectBox checked={shownKeys.length > 0 && shownSelected === shownKeys.length}
+                        indeterminate={shownSelected > 0 && shownSelected < shownKeys.length} disabled={!shownKeys.length}
+                        onChange={(on) => setSelectedKeys(shownKeys, on)} label="Отметить все показанные позиции" />
+                    </th>
+                  )}
                   <th>№</th>
                   <th>Наименование</th>
                   <th>Ед. изм.</th>
                   <th className="ui-money">Объём</th>
                   <th className="ui-money" title="Как в листе «Материалы» ВОР: цена с учётом доставки и НДС">Цена за ед. с доставкой и НДС, ₽</th>
                   <th className="ui-money" title="Объём × цена за единицу, с НДС">Итого с НДС, ₽</th>
+                  {linksOn && <th title="Ссылка на чек, счёт или КП поставщика">Документ</th>}
                   <th><span className="ui-sr-only">Состояние</span></th>
                 </tr>
               </thead>
               {virtual
-                ? <VirtualTableBody rowCount={items.length} renderRow={(i) => renderItem(items[i])} colSpan={7} scrollRef={tableWrapRef} rowHeight={44} />
+                ? <VirtualTableBody rowCount={items.length} renderRow={(i) => renderItem(items[i])} colSpan={colCount} scrollRef={tableWrapRef} rowHeight={44} />
                 : <tbody>{items.map(renderItem)}</tbody>}
               <tfoot>
                 <tr>
-                  <td colSpan={4}>Итого{docViews.length > 1 ? ` по ${docViews.length} ВОР` : ''} · расценено <span className="ui-num">{grand.priced}</span> из <span className="ui-num">{grand.positions}</span></td>
+                  <td colSpan={selectable ? 5 : 4}>Итого{docViews.length > 1 ? ` по ${docViews.length} ВОР` : ''} · расценено <span className="ui-num">{grand.priced}</span> из <span className="ui-num">{grand.positions}</span></td>
                   <td />
                   <td className="ui-money"><b>{formatAmount(grand.total)}</b></td>
+                  {linksOn && <td />}
                   <td />
                 </tr>
               </tfoot>
@@ -1225,6 +1379,10 @@ export default function SupplyPricingPanel({
           />
         </Suspense>
       )}
+      {linkDialog && (
+        <SupplyLinkDialog targets={linkDialog.targets} busy={linkBusy} error={linkError}
+          onSave={saveLink} onRemove={removeLink} onClose={() => { if (!linkBusy) setLinkDialog(null) }} />
+      )}
       {conflict && (
         <SupplyConflictDialog
           conflict={{ position: conflict.position, mine: conflict.intent.mode === 'clear' ? null : conflict.intent, current: conflict.current }}
@@ -1260,8 +1418,9 @@ const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.rate === b.row.rate 
   && a.row.gi === b.row.gi && a.row.index === b.row.index && a.row.doc === b.row.doc
   && a.row.duplicates.length === b.row.duplicates.length
   && a.flash === b.flash && a.editable === b.editable && a.nameOf === b.nameOf && a.act === b.act
+  && a.linksOn === b.linksOn && a.link === b.link && a.selectable === b.selectable && a.selected === b.selected
 
-const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act }) {
+const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, linksOn, link, selectable, selected }) {
   const { p, draft, view, index, gi } = row
   const mixed = !!p.units
   const noVolume = !mixed && !(view.volume > 0)
@@ -1273,8 +1432,14 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act }) {
         (flash?.kind === 'remote' || flash?.kind === 'auto') && 'is-remote',
         draft?.status === 'error' && 'is-error',
         draft?.status === 'conflict' && 'is-conflict',
+        selected && 'is-selected',
       ].filter(Boolean).join(' ')}
     >
+      {selectable && (
+        <td className="sp-sel" data-label="">
+          <SelectBox checked={selected} onChange={() => act('toggleSelect', row.key)} label={`Отметить: ${p.name} (ВОР «${row.doc}»)`} />
+        </td>
+      )}
       <td className="ui-rownum" data-label="№">{index + 1}</td>
       <td className="sp-name" data-label="Наименование">
         <span>{p.name}</span>
@@ -1322,6 +1487,11 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act }) {
           onCommit={(raw) => act('commit', row, 'total', raw)}
         />
       </td>
+      {linksOn && (
+        <td className="sp-doc" data-label="Документ">
+          <LinkCell link={link} editable={editable} name={p.name} doc={row.doc} nameOf={nameOf} onEdit={() => act('editLink', row.key)} />
+        </td>
+      )}
       <td className="sp-state" data-label="">
         <RowState row={row} flash={flash} editable={editable} nameOf={nameOf} act={act} />
       </td>
@@ -1381,5 +1551,52 @@ function RowState({ row, flash, editable, nameOf, act }) {
       <span className="sp-slot">{middle}</span>
       <span className="sp-slot">{history}</span>
     </div>
+  )
+}
+
+// Отметка строки / ВОР / всех показанных; indeterminate — отмечена часть.
+function SelectBox({ checked, indeterminate = false, disabled = false, onChange, label }) {
+  const ref = useRef(null)
+  useEffect(() => { if (ref.current) ref.current.indeterminate = indeterminate }, [indeterminate])
+  return (
+    <input ref={ref} type="checkbox" className="sp-select" checked={checked} disabled={disabled} aria-label={label} title={label}
+      onChange={(e) => onChange(e.target.checked)} />
+  )
+}
+
+// Ссылка на документ позиции — как «Ссылка на КП» в реестре тендеров на материалы: есть — «Открыть» (адрес http(s),
+// новая вкладка) или «Скопировать» (сетевой путь браузер не откроет), адрес — в подсказке; правка — карандаш. Нет —
+// «+ ссылка» у того, у кого право правки, иначе «—».
+function LinkCell({ link, editable, name, doc, nameOf, onEdit }) {
+  const [copied, setCopied] = useState(false)
+  if (!link) {
+    return editable
+      ? <button type="button" className="tp-add-link" onClick={onEdit} title="Добавить ссылку на документ"
+          aria-label={`Прикрепить ссылку на документ: ${name} (ВОР «${doc}»)`}>+ ссылка</button>
+      : <span className="sp-muted">—</span>
+  }
+  const who = nameOf(link.updated_by)
+  const title = `${link.url}${link.updated_at ? ` · ${fmtTime(link.updated_at)}` : ''}${who ? `, ${who}` : ''}`
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link.url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* без доступа к буферу — путь виден в подсказке */ }
+  }
+  return (
+    <span className="sp-doc-cell">
+      {isWebLink(link.url)
+        ? <a href={link.url} target="_blank" rel="noopener noreferrer" className="link" title={title}
+            aria-label={`Открыть документ к «${name}»`}>Открыть</a>
+        : <button type="button" className="link sp-doc-copy" onClick={copy} title={`${title} — сетевой путь, нажмите, чтобы скопировать`}
+            aria-label={`Скопировать путь к документу «${name}»`}>{copied ? 'Скопировано' : 'Скопировать'}</button>}
+      {editable && (
+        <button type="button" className="sp-icon-btn sp-doc-edit" onClick={onEdit} title="Изменить ссылку"
+          aria-label={`Изменить ссылку на документ: ${name} (ВОР «${doc}»)`}>
+          <IconPencil size={14} />
+        </button>
+      )}
+    </span>
   )
 }

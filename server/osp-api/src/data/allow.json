@@ -774,6 +774,14 @@
         "update"
       ]
     },
+    "tender_supply_links": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "tender_supply_progress": {
       "authenticated": [
         "select"

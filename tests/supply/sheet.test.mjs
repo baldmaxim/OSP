@@ -6,9 +6,9 @@ import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
 import {
   findMaterialsSheet, detectMaterialsColumns, parseMaterialsSheet, readMaterialsFromWorkbook, parseVolume, isWorkbookFileName,
-  readMaterialsWorkbookBytes,
+  readMaterialsWorkbookBytes, readMaterialsByCodeBytes, detectCodeColumns,
 } from '../../src/utils/vorMaterialsSheet.js'
-import { buildSupplyPositions, positionsFromEstimate, aggregateEstimate, isWorkItem } from '../../src/utils/vorMaterials.js'
+import { buildSupplyPositions, positionsFromEstimate, aggregateEstimate, isWorkItem, isSupplyMaterial } from '../../src/utils/vorMaterials.js'
 import { normName } from '../../src/utils/supplyRateHelpers.js'
 
 function book(sheets) {
@@ -158,6 +158,87 @@ describe('Чтение файла ВОР для автозагрузки — т�
     // Текст (например, PDF с расширением .xlsx) SheetJS читает как таблицу из одного листа.
     const wb = readMaterialsWorkbookBytes(new TextEncoder().encode('%PDF-1.4 не книга'))
     assert.equal(readMaterialsFromWorkbook(wb).error, 'no_sheet')
+  })
+})
+
+describe('Без листа «Материалы»: сам лист ВОР по колонке «КОД»', () => {
+  const bytes = (sheets) => {
+    const wb = XLSX.utils.book_new()
+    for (const [name, aoa] of Object.entries(sheets)) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), name)
+    return XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+  }
+  // Как ВОР тендера 445 «ОЗДС»: шапка тендера в колонке «КОД», строка номеров колонок, разделы, работы «Р»,
+  // материалы «мат.», материал без кода с расходом, «Итого», анкета претендента с единицами «да/нет».
+  const VOR = [
+    ['', 'Предмет тендера:', 'Выполнение комплекса электромонтажных работ'],
+    ['', 'Объект:', 'Многофункциональный жилой комплекс (ЛОТ 33)'],
+    ['№ п/п', 'КОД', 'Наименование затрат', 'Ед. изм.', 'Объем по виду работ', 'Общий расход'],
+    [1, 2, 3, 4, 5, 6],
+    ['', '', 'Монтаж кабельно-проводниковой продукции'],
+    ['1', 'Р', 'Монтаж (протяжка) кабеля слаботочных систем', 'м. пог.', 1110, ''],
+    ['', 'мат.', 'Кабель силовой ППГнг(А)-HF 2х1,5', 'м', '', 1050.6],
+    ['', 'Мат', 'Труба гофрированная из ПВХ, ∅20мм', 'м', '', '1 132,2'],
+    ['', '', 'Грунтовка ГФ-021 (ГОСТ 25129-82) - 2 слоя', 'кг', '', 25.16],
+    ['', '', 'Итого'],
+    ['', '', 'Наличие авансирования', 'да (%) / нет'],
+    ['', '', 'Сайт компании', 'ссылка'],
+  ]
+
+  it('материалы — строки «мат.» и без кода с расходом; объём — «Общий расход»; шапка, работы и анкета — нет', () => {
+    const r = readMaterialsByCodeBytes(bytes({ 'КП': [['Коммерческое предложение']], 'Зил33 ВОР ОЗДС': VOR }), ['КП', 'Зил33 ВОР ОЗДС'])
+    assert.equal(r.error, undefined)
+    assert.equal(r.sheetName, 'Зил33 ВОР ОЗДС')
+    assert.equal(r.map.mode, 'code')
+    assert.deepEqual(r.rows.map((x) => [x.name, x.unit, x.volume]), [
+      ['Кабель силовой ППГнг(А)-HF 2х1,5', 'м', 1050.6],
+      ['Труба гофрированная из ПВХ, ∅20мм', 'м', 1132.2],
+      ['Грунтовка ГФ-021 (ГОСТ 25129-82) - 2 слоя', 'кг', 25.16],
+    ])
+  })
+
+  it('лист с «ВОР» в имени — первым, даже если «КП» тоже с колонкой «КОД»', () => {
+    const kp = [['КОД', 'Наименование', 'Ед. изм.', 'Общий расход'], ['мат.', 'Из КП подрядчика', 'шт', 1]]
+    const r = readMaterialsByCodeBytes(bytes({ 'КП': kp, 'ВОР': VOR }), ['КП', 'ВОР'])
+    assert.equal(r.sheetName, 'ВОР')
+  })
+
+  it('колонки «КОД» нет нигде — «нет листа» с пометкой; «КОД» есть, а материалов нет — своя причина', () => {
+    const none = readMaterialsByCodeBytes(bytes({ 'РАБОТЫ': [['Наименование', 'Объём'], ['Монтаж', 5]] }), ['РАБОТЫ'])
+    assert.deepEqual(none, { error: 'no_sheet', codeTried: true, sheetNames: ['РАБОТЫ'] })
+    const works = readMaterialsByCodeBytes(bytes({ 'ВОР': [['КОД', 'Наименование', 'Ед. изм.', 'Объем по виду работ'], ['Р', 'Монтаж', 'м', 5]] }), ['ВОР'])
+    assert.equal(works.error, 'no_material_codes')
+    assert.equal(works.sheetName, 'ВОР')
+  })
+
+  it('сохранённая карта mode: code — тот же разбор (новая версия файла — сразу, без поиска листов)', () => {
+    const wb = book({ 'ВОР': VOR })
+    const r = readMaterialsFromWorkbook(wb, { mode: 'code', sheetName: 'ВОР' })
+    assert.equal(r.rows.length, 3)
+    assert.equal(detectCodeColumns(wb.Sheets['ВОР']).consumption, true)
+  })
+})
+
+describe('Вкладка «ВОР» карточки: материалы — по коду «мат»', () => {
+  it('строки тендера 445: шапка, номера колонок, работы и анкета — не материалы; 181: материал без кода с расходом — материал', () => {
+    const items = [
+      { estimate_name: 'ОЗДС', code: 'Предмет тендера:', cost_name: 'Выполнение комплекса работ', is_section: false },
+      { estimate_name: 'ОЗДС', code: 'КОД', cost_name: 'Наименование затрат', unit: 'Ед. изм.', is_section: false },
+      { estimate_name: 'ОЗДС', code: '2', cost_name: '3', unit: '5', material_consumption: 7, is_section: false },
+      { estimate_name: 'ОЗДС', code: 'Р', cost_name: 'Монтаж ДР', unit: 'шт', material_consumption: null, is_section: false },
+      { estimate_name: 'ОЗДС', code: 'мат.', cost_name: 'Дератизатор (ДР)', unit: 'шт', material_consumption: 4, is_section: false },
+      { estimate_name: 'ОЗДС', code: null, cost_name: 'Наличие авансирования', unit: 'да (%) / нет', material_consumption: null, is_section: false },
+      { estimate_name: 'ОЗДС', code: null, cost_name: 'Субподрядные работы объекта', is_section: true },
+      { estimate_name: 'Лот 33', code: 'Мат', cost_name: 'Труба Ø16х1,6', unit: 'тн', material_consumption: 0.02, is_section: false },
+      { estimate_name: 'Лот 33', code: 'Работа', cost_name: 'Монтаж ограждения', unit: 'м', material_consumption: 10, is_section: false },
+      { estimate_name: 'Лот 33', code: null, cost_name: 'Грунтовка ГФ-021', unit: 'кг', material_consumption: 25.16, is_section: false },
+      { estimate_name: 'Пустой', code: 'Р', cost_name: 'Только работа', unit: 'м', is_section: false },
+    ]
+    const docs = positionsFromEstimate(items)
+    assert.deepEqual(docs.get('ОЗДС').map((p) => p.name), ['Дератизатор (ДР)'])
+    assert.deepEqual(docs.get('Лот 33').map((p) => p.name), ['Труба Ø16х1,6', 'Грунтовка ГФ-021'])
+    assert.deepEqual(docs.get('Пустой'), [], 'ВОР без материалов — пустой список, а не пропуск')
+    assert.ok(isSupplyMaterial({ code: ' МАТ. ' }) && isSupplyMaterial({ code: 'материал' }))
+    assert.ok(!isSupplyMaterial({ code: '', unit: 'кг', volume: 0 }) && !isSupplyMaterial({ code: '', unit: '', volume: 5 }))
   })
 })
 

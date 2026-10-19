@@ -104,11 +104,11 @@ export async function loadPricingContext(id) {
 // Всё для таблицы расценки по основному тендеру — одновременно: файлы ВОР, списки позиций, цены, последний
 // номер журнала и (если карточка их не дала) строки вкладки «ВОР».
 export async function loadPricingData(mainId, { withItems = false } = {}) {
-  const [files, sources, rates, logId, items] = await Promise.all([
-    loadVorFiles(mainId), loadSources(mainId), loadRates(mainId), loadLogMarker(mainId),
+  const [files, sources, rates, logId, links, items] = await Promise.all([
+    loadVorFiles(mainId), loadSources(mainId), loadRates(mainId), loadLogMarker(mainId), loadLinks(mainId),
     withItems ? loadEstimateItems(mainId) : null,
   ])
-  return { files, sources, rates, logId, items }
+  return { files, sources, rates, logId, links, items }
 }
 
 // Открытие таблицы за два шага к серверу вместо цепочки: тендер, затем всё остальное разом. ctx уже есть
@@ -261,6 +261,64 @@ export async function clearRate(rate) {
   if (error) fail(error)
   if (data?.length) return { status: 'ok', row: null }
   return { status: 'conflict', current: await currentRate({ id: rate.id }) }
+}
+
+// ── Ссылки на документы (чек, счёт, КП поставщика) к позициям (миграция 20261022) ─────────────────────
+// Ссылка живёт отдельно от цены: одна на позицию ВОР — (тендер, ВОР, ключ наименования), как у цен.
+export const LINK_COLUMNS = 'id, tender_id, estimate_name, material_name, material_key, url, updated_by, updated_at'
+
+// Адрес http(s) или сетевой путь \\сервер\папка (как проверяет база). Ответ: { url } | { error }.
+export function normalizeLinkUrl(raw) {
+  const url = String(raw ?? '').trim()
+  if (!url) return { error: 'Вставьте ссылку на документ' }
+  if (url.length > 2000) return { error: 'Ссылка длиннее 2000 знаков' }
+  if (/^https?:\/\/\S/i.test(url) || /^\\\\\S/.test(url)) return { url }
+  return { error: 'Нужна ссылка вида https://… или сетевой путь \\\\сервер\\папка' }
+}
+export const isWebLink = (url) => /^https?:\/\//i.test(String(url || ''))
+
+// Ссылки тендера. Таблицы ещё нет (миграция не применена или шлюз её не знает) — null: таблица расценки
+// работает как раньше, без колонки «Документ».
+export async function loadLinks(mainId) {
+  try {
+    return await fetchAllRows((from, to) => db.from('tender_supply_links').select(LINK_COLUMNS)
+      .eq('tender_id', mainId).order('id', { ascending: true }).range(from, to))
+  } catch (e) {
+    if (classifyError(e)?.kind === 'missing') return null
+    fail(e)
+  }
+}
+
+// Признак «ссылки менялись»: сколько их и когда последняя правка (удаление меняет число, правка — время).
+export async function loadLinksMarker(mainId) {
+  const [cnt, last] = await Promise.all([
+    db.from('tender_supply_links').select('id', { count: 'exact', head: true }).eq('tender_id', mainId),
+    db.from('tender_supply_links').select('updated_at').eq('tender_id', mainId).order('updated_at', { ascending: false }).limit(1),
+  ])
+  if (cnt.error) fail(cnt.error)
+  if (last.error) fail(last.error)
+  return `${cnt.count ?? 0}|${last.data?.[0]?.updated_at || ''}`
+}
+
+// Одна ссылка — нескольким позициям сразу (у кого была — заменяется). targets: [{ estimateName, name }].
+export async function saveLinks(mainId, targets, url) {
+  const out = []
+  for (const chunk of chunkList(targets, 200)) {
+    const { data, error } = await db.from('tender_supply_links')
+      .upsert(chunk.map((t) => ({ tender_id: mainId, estimate_name: t.estimateName, material_name: t.name, url })),
+        { onConflict: 'tender_id,estimate_name,material_key' })
+      .select(LINK_COLUMNS)
+    if (error) fail(error)
+    out.push(...(data || []))
+  }
+  return out
+}
+
+export async function removeLinks(ids) {
+  for (const chunk of chunkList(ids)) {
+    const { error } = await db.from('tender_supply_links').delete().in('id', chunk)
+    if (error) fail(error)
+  }
 }
 
 // ── Синхронизация и история ─────────────────────────────────────────────────────────────────────────
