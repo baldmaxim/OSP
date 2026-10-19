@@ -20,7 +20,7 @@ import PaperclipIcon from '../components/icons/PaperclipIcon'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import useBodyClass from '../hooks/useBodyClass'
 import { copyToClipboard } from '../utils/clipboard'
-import { parseAmount, formatAmount, formatAmountLive } from '../utils/money'
+import { parseAmount, formatAmount, formatAmountLive, amountChange } from '../utils/money'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 import './DcRequestsPage.css'
@@ -316,6 +316,9 @@ function formatBytes(bytes) {
 
 // task 371: инлайн-ввод суммы с красивым форматированием.
 //   В фокусе — «сырое» число для редактирования, вне фокуса — «1 000 000,00».
+//   Сумма может быть отрицательной (ДС на уменьшение стоимости): минус первым символом.
+const AMOUNT_INPUT_HINT = 'Уменьшение стоимости — со знаком минус'
+const liveAmount = (raw) => formatAmountLive(raw, { allowNegative: true })
 function AmountCellInput({ value, disabled, onSave }) {
   const [focused, setFocused] = useState(false)
   const [draft, setDraft] = useState('')
@@ -329,8 +332,9 @@ function AmountCellInput({ value, disabled, onSave }) {
       value={display}
       disabled={disabled}
       placeholder="—"
-      onFocus={() => { setFocused(true); setDraft(value != null ? formatAmountLive(String(value)) : '') }}
-      onChange={(e) => setDraft(formatAmountLive(e.target.value))}
+      title={AMOUNT_INPUT_HINT}
+      onFocus={() => { setFocused(true); setDraft(value != null ? liveAmount(String(value)) : '') }}
+      onChange={(e) => setDraft(liveAmount(e.target.value))}
       onBlur={() => { setFocused(false); onSave(draft) }}
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
     />
@@ -1306,7 +1310,7 @@ function DcRequestsPage() {
       const done = tasks.filter(t => t.is_completed).length
       const before = req.amount_before
       const after = req.amount_after
-      const diff = (before != null && after != null) ? before - after : null
+      const { diff, pct } = amountChange(before, after)
       return {
         '№': idx + 1,
         'Объект': req.objects?.name || '',
@@ -1318,9 +1322,7 @@ function DcRequestsPage() {
         'Было подано, ₽ (с НДС 22%)': before != null ? before : '',
         'Утверждено, ₽ (с НДС 22%)': after != null ? after : '',
         'Разница, ₽': diff != null ? diff : '',
-        'Изменение, %': (diff != null && Number.isFinite(Number(before)) && Number(before) !== 0)
-          ? Number((-(diff / Number(before)) * 100).toFixed(2))
-          : '',
+        'Изменение, %': pct != null ? Number(pct.toFixed(2)) : '',
         'Статус': STATUS_LABEL[req.status || 'in_work'] || '',
         'Итог проверки': hasVerdict(req) ? (CHECK_STATUS_LABEL[req.check_status] || '') : '',
         'Заключение по проверке': req.check_result_notes || '',
@@ -1801,15 +1803,11 @@ function DcRequestsPage() {
                   const docsOpen = expandedDocs.has(req.id)
 
                   // task 370: разница сумм («Было подано» − «Утверждено»). >0 → удешевление.
+                  // Процент — от модуля поданной суммы (суммы бывают отрицательными), со знаком
+                  // изменения: < 0 — утверждено меньше поданного. «Было подано» пусто или 0 — без процента.
                   const amountBefore = req.amount_before
                   const amountAfter = req.amount_after
-                  const amountDiff = (amountBefore != null && amountAfter != null)
-                    ? amountBefore - amountAfter
-                    : null
-                  // Процент изменения — от поданной суммы. Если «Было подано» пусто или 0 — не считаем.
-                  const amountPct = (amountDiff != null && Number.isFinite(Number(amountBefore)) && Number(amountBefore) !== 0)
-                    ? (amountDiff / Number(amountBefore)) * 100
-                    : null
+                  const { diff: amountDiff, pct: amountPct } = amountChange(amountBefore, amountAfter)
 
                   return (
                     <tr key={req.id} className={req.deleted_at ? 'row-deleted' : ''}>
@@ -1963,7 +1961,7 @@ function DcRequestsPage() {
                               <span className="dcr-diff-abs">{amountDiff > 0 ? '↓' : '↑'} {formatAmount(Math.abs(amountDiff))} ₽</span>
                               {amountPct != null && (
                                 <span className="dcr-diff-pct">
-                                  {amountPct > 0 ? '−' : '+'}{formatPercent(Math.abs(amountPct))}%
+                                  {amountPct < 0 ? '−' : '+'}{formatPercent(Math.abs(amountPct))}%
                                 </span>
                               )}
                             </div>
@@ -2438,6 +2436,7 @@ function DcRequestsPage() {
                     value={formData.amount_before}
                     onChange={handleInputChange}
                     placeholder="0"
+                    title={AMOUNT_INPUT_HINT}
                   />
                 </div>
 
@@ -2451,6 +2450,7 @@ function DcRequestsPage() {
                     value={formData.amount_after}
                     onChange={handleInputChange}
                     placeholder="0"
+                    title={AMOUNT_INPUT_HINT}
                   />
                 </div>
 

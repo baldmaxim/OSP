@@ -20,7 +20,7 @@ npm run check:transport # доступ к серверу только через
 npm run test:psdc    # ПСДЦ: движок в БД, XLSX, UI (PostgreSQL + Chromium)
 npm run test:tender  # карточка тендера: производительность UI, страница расценки снабжением (Chromium)
 npm run test:supply  # расценка снабжением: база на слепке прода (Docker), лист «Материалы», normName = SQL
-npm run test:contracts # договоры: путь к Larix.CPM, импорт из Excel (без базы и браузера)
+npm run test:contracts # договоры: путь к Larix.CPM, импорт из Excel, суммы «Заявки на ДС» со знаком (без базы и браузера)
 npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
 npm run test:deploy  # deploy/publish.sh и rollback.sh на временных каталогах; портал в Docker (deploy/docker): связка из трёх контейнеров на копии прода, выкладка с возвратом (Docker)
 npm run test:backup  # migration/backup: копия, проверка восстановлением, прогон миграций; migration/target: разведка базы (Docker)
