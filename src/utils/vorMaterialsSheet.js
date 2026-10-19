@@ -143,7 +143,5 @@ export function readMaterialsWorkbookBytes(bytes, extraSheets = []) {
   return XLSX.read(bytes, { ...READ_OPTIONS, sheets: wanted })
 }
 
-// Файл ВОР из «ВОРов и РД» годится, если это книга Excel (в старой категории vor бывают PDF и РД).
-export function isWorkbookFileName(name) {
-  return /\.(xlsx|xlsm|xls)$/i.test(String(name || ''))
-}
+// Файл ВОР из «ВОРов и РД» годится, если это книга Excel — проверка в модуле без библиотеки Excel.
+export { isWorkbookFileName } from './vorFiles.js'

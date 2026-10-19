@@ -1,5 +1,6 @@
 // Стенд тендеров в браузере (данные в памяти).
-//   route   — начальный адрес: /tenders/tender-1 (карточка, по умолчанию) или /tenders/construction (реестр);
+//   route   — начальный адрес: /tenders/tender-1 (карточка, по умолчанию), /tenders/construction или
+//             /tenders/materials (реестры);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -24,6 +25,7 @@ const route = params.get('route') || '/tenders/tender-1'
 const routes = (
   <Routes>
     <Route path="/tenders/construction" element={<TendersPage department="construction" tenderType="main" />} />
+    <Route path="/tenders/materials" element={<TendersPage key="tenders-materials" tenderType="materials" />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
     <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />
     <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />

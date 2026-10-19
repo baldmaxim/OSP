@@ -83,8 +83,17 @@ const registry = Array.from({ length: TENDERS }, (_, i) => {
   }
 })
 
+// matTenders=1 — у каждого основного тендера реестра свой тендер на материалы (реестр «Тендеры на материалы»).
+const MATERIALS = params.get('matTenders') === '1'
+  ? registry.map((t, i) => ({
+    ...t, id: `mat-${i + 1}`, tender_type: 'materials', parent_tender_id: t.id, public_tender_number: 1000 + i,
+    status: ['Не начат', 'В работе', 'Завершён', 'Не требуется'][i % 4], materials_priority: i % 5 === 0 ? 'high' : null,
+    materials_resp_name: i % 2 ? 'Снабженцев С. С.' : null, materials_proposal_deadline: '2026-10-30', materials_tender: [],
+  }))
+  : []
+
 window.__fakeDb = {
-  tenders: registry,
+  tenders: [...registry, ...MATERIALS],
   objects,
   contacts,
   app_settings: [],
@@ -152,6 +161,36 @@ window.__fakeDb.tender_supply_sources = [{
   sheet_name: 'Материалы', column_map: null, source_version: 'file:doc-vor-p2:2026-10-12T09:10:00Z', positions: PRICING_POSITIONS_VK,
   positions_count: PRICING_POSITIONS_VK.length, row_version: 1, parsed_by: 'user-2', parsed_at: '2026-10-12T09:15:00Z',
 }]
+
+// bigPricing=N — у tender-p вместо двух маленьких ВОР N позиций (по 300 на ВОР), треть расценена: замер
+// загрузки и отклика таблицы на объёме больших тендеров прода (до 2,3 тыс. позиций).
+const BIG_PRICING = Number(params.get('bigPricing') || 0)
+if (BIG_PRICING > 0) {
+  const units = ['м', 'шт', 'м²', 'кг', 'т', 'компл']
+  window.__fakeDb.tender_supply_sources = []
+  for (let v = 0; v * 300 < BIG_PRICING; v++) {
+    const name = `Корпус ${v + 1}`
+    const positions = Array.from({ length: Math.min(300, BIG_PRICING - v * 300) }, (_, i) => {
+      const n = `Материал ${v + 1}.${i + 1} — труба стальная электросварная Ø${57 + (i % 40)}×3,5 ГОСТ 10704-91`
+      return { name: n, unit: units[i % units.length], volume: 10 + (i % 97) * 3.5, order: i + 1, k: normName(n) }
+    })
+    window.__fakeDb.tender_supply_sources.push({
+      id: `src-big-${v}`, tender_id: 'tender-p', estimate_name: name, source: 'vor_tab', s3_document_id: null, file_name: null,
+      sheet_name: null, column_map: null, source_version: `vor:${positions.length}:2026-10-01T10:00:00Z`, positions,
+      positions_count: positions.length, row_version: 1, parsed_by: 'user-2', parsed_at: '2026-10-12T09:05:00Z',
+    })
+    positions.forEach((p, i) => {
+      if (i % 3) return
+      window.__fakeDb.tender_vor_supply_rates.push({
+        id: `rate-big-${v}-${i}`, tender_id: 'tender-p', estimate_name: name, material_name: p.name, unit: p.unit,
+        supply_price: 100 + i, supply_price_exact: null, supply_total: Math.round((100 + i) * p.volume * 100) / 100, price_input: 'unit',
+        input_value: 100 + i, volume_at_input: p.volume, row_version: 1, updated_by: 'user-2', updated_at: '2026-10-12T10:00:00Z',
+        created_at: '2026-10-12T10:00:00Z', material_key: p.k,
+      })
+    })
+  }
+  window.__fakeDb.s3_documents = window.__fakeDb.s3_documents.filter((d) => d.owner_id !== 'tender-p')
+}
 
 // Тендер без файлов ВОР: позиции берутся из вкладки «ВОР» карточки (tender_estimate_items).
 window.__fakeDb.tenders.push(

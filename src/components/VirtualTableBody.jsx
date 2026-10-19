@@ -25,7 +25,12 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 // Вместо готового массива `rows` можно передать `rowCount` + `renderRow(index)`: тогда
 // элементы создаются только для окна. Для таблиц «позиции × контрагенты» это разница
 // между сотнями тысяч JSX-ячеек на каждую перерисовку и несколькими сотнями.
-export default function VirtualTableBody({ rows, rowCount, renderRow, colSpan, scrollRef, rowHeight = 40, overscan = 14 }) {
+//
+// `viewport` — таблица без своей прокрутки (реестр в прокручиваемой .main-content или окне):
+// окно строк считается по положению <tbody> относительно экрана, прокрутку ловит любой
+// предок (scroll с захватом на document). Строки такого <tbody> не служат якорем прокрутки
+// (overflow-anchor: none) — по той же причине, что выше.
+export default function VirtualTableBody({ rows, rowCount, renderRow, colSpan, scrollRef, viewport = false, rowHeight = 40, overscan = 14 }) {
   const count = rows ? rows.length : (rowCount || 0)
   const tbodyRef = useRef(null)
   const heightsRef = useRef([])      // высота каждой строки: измеренная или оценочная
@@ -52,11 +57,21 @@ export default function VirtualTableBody({ rows, rowCount, renderRow, colSpan, s
   }, [count, rowHeight, rebuildOffsets])
 
   const compute = useCallback(() => {
-    const el = scrollRef?.current
     const off = offsetsRef.current
-    if (!el || off.length !== count + 1) return
-    const top = el.scrollTop
-    const vh = el.clientHeight || 800
+    if (off.length !== count + 1) return
+    let top
+    let vh
+    if (viewport) {
+      const tb = tbodyRef.current
+      if (!tb) return
+      top = Math.max(0, -tb.getBoundingClientRect().top)
+      vh = window.innerHeight || 800
+    } else {
+      const el = scrollRef?.current
+      if (!el) return
+      top = el.scrollTop
+      vh = el.clientHeight || 800
+    }
     // Бинарный поиск первой строки, попадающей во вьюпорт (высоты разные — деление не годится).
     let lo = 0
     let hi = count
@@ -70,9 +85,21 @@ export default function VirtualTableBody({ rows, rowCount, renderRow, colSpan, s
     const nextStart = Math.max(0, lo - overscan)
     const nextEnd = Math.min(count, end + overscan)
     setRange(prev => (prev.start === nextStart && prev.end === nextEnd ? prev : { start: nextStart, end: nextEnd }))
-  }, [scrollRef, count, overscan])
+  }, [scrollRef, viewport, count, overscan])
 
   useEffect(() => {
+    if (viewport) {
+      let raf = 0
+      const onScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(compute) }
+      compute()
+      document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+      window.addEventListener('resize', onScroll)
+      return () => {
+        cancelAnimationFrame(raf)
+        document.removeEventListener('scroll', onScroll, { capture: true })
+        window.removeEventListener('resize', onScroll)
+      }
+    }
     const el = scrollRef?.current
     if (!el) { setRange({ start: 0, end: count }); return }
     let raf = 0
@@ -85,7 +112,7 @@ export default function VirtualTableBody({ rows, rowCount, renderRow, colSpan, s
       el.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', onScroll)
     }
-  }, [scrollRef, count, compute, version])
+  }, [scrollRef, viewport, count, compute, version])
 
   // Измеряем реальные высоты отрисованных строк — только при смене окна или набора
   // строк (setVersion в deps нет, поэтому цепочка обновлений не зацикливается:
@@ -120,7 +147,7 @@ export default function VirtualTableBody({ rows, rowCount, renderRow, colSpan, s
   const padBottom = ready ? Math.max(0, off[count] - off[end]) : Math.max(0, (count - end) * rowHeight)
 
   return (
-    <tbody ref={tbodyRef}>
+    <tbody ref={tbodyRef} style={viewport ? { overflowAnchor: 'none' } : undefined}>
       {padTop > 0 && (
         <tr aria-hidden className="vt-spacer">
           <td colSpan={colSpan} style={{ height: padTop, padding: 0, border: 0 }} />

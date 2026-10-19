@@ -1,8 +1,7 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import * as XLSX from 'xlsx'
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRole } from '../../contexts/RoleContext'
+import VirtualTableBody from '../VirtualTableBody'
 import SupplyMoneyCell from './SupplyMoneyCell'
-import SupplyImportDialog from './SupplyImportDialog'
 import SupplyConflictDialog from './SupplyConflictDialog'
 import SupplyRateHistory from './SupplyRateHistory'
 import { IconAlert, IconAlertCircle, IconCheck, IconClock, IconHistory, IconRefresh, IconTrash } from '../icons/ActionIcons'
@@ -13,13 +12,12 @@ import { fetchEmployees, employeesById } from '../../services/employees'
 import { requestDownloadUrl } from '../../services/s3'
 import {
   classifyError, clearRate, deleteSource, downloadVorFile, estimateSignatures, loadChangeMarker, loadChangedRateIds,
-  loadPricingBundle, loadPricingContext, loadPricingData, loadRates, loadRatesByIds, loadSources, loadVorFiles,
-  readMaterialsWorkbookBytes, renameEstimate, saveRate, saveSource, sourcesSignature,
+  loadEstimateItems, loadPricingBundle, loadPricingContext, loadPricingData, loadRates, loadRatesByIds, loadSources,
+  loadVorFiles, renameEstimate, saveRate, saveSource, sourcesSignature,
 } from '../../services/supplyPricing'
 import { rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
 import { buildSupplyPositions, positionsFromEstimate } from '../../utils/vorMaterials'
-import { readMaterialsFromWorkbook } from '../../utils/vorMaterialsSheet'
 import {
   estimateVersion, fileVersion, identicalTargets, planCleanup, planFileImports, planTabImports,
 } from '../../utils/supplyAutoImport'
@@ -27,6 +25,11 @@ import './SupplyPricing.css'
 // Рабочий стиль (docs/UI_GUIDELINES.md): корень панели — .ui-work, и в карточке тендера тоже.
 import '../../styles/fonts.css'
 import '../../styles/workUi.css'
+
+// Библиотека Excel (430 КБ) и окно сопоставления колонок — только по требованию: разбор файла ВОР, выгрузка,
+// «Указать лист и колонки». Таблица открывается без них.
+const SupplyImportDialog = lazy(() => import('./SupplyImportDialog'))
+const loadSheetReader = () => import('../../utils/vorMaterialsSheet')
 
 // Расценка материалов ВОР снабжением (миграция 20261020) — одна таблица в двух местах: вкладка «Расценки
 // снабжения» карточки тендера (тендерный отдел) и страница /tenders/materials/:id/pricing (снабжение, которому
@@ -46,6 +49,10 @@ import '../../styles/workUi.css'
 // Чужие правки — опросом журнала раз в 20 с: перечитываются только изменившиеся строки. Цена позиции
 // подставляется в такие же позиции других ВОР, где цены нет (и туда, куда её подставили за этот сеанс, если
 // там ничего не меняли).
+//
+// Больше VIRTUALIZE_FROM строк (у больших тендеров до 2,3 тыс. позиций) — в таблице только видимые строки
+// (VirtualTableBody, прокрутка внутри, шапка и итог закреплены): иначе каждое сохранение заставляло браузер
+// заново раскладывать и рисовать всю таблицу — секунды на слабом компьютере.
 
 const POLL_MS = 20000
 const RETRY_DELAYS = [5000, 15000, 30000, 60000]
@@ -59,6 +66,7 @@ const fmtClock = (iso) => (iso ? new Date(iso).toLocaleTimeString('ru-RU', { hou
 const posKey = (estimateName, k) => `${estimateName}∣${k}`
 const draftsKey = (mainId) => `supply-pricing-drafts:${mainId}`
 const ACTIVE_STATUSES = new Set(['saving', 'queued', 'error', 'conflict'])
+const VIRTUALIZE_FROM = 150
 
 // Почему ВОР не загрузился и что сделать.
 const PROBLEM_TEXT = {
@@ -281,7 +289,8 @@ export default function SupplyPricingPanel({
     setMissing(false)
     ;(async () => {
       try {
-        const b = await loadPricingBundle(tenderId, { ctx: ctxProp, withItems: wantItems.current })
+        // Строки вкладки «ВОР» (у больших ВОР — десятки тысяч) таблица не ждёт: они грузятся следом, фоном.
+        const b = await loadPricingBundle(tenderId, { ctx: ctxProp })
         if (!alive) return
         updateCtx(b.ctx)
         if (!b.ctx) return
@@ -291,6 +300,11 @@ export default function SupplyPricingPanel({
           return
         }
         applyData(b)
+        if (wantItems.current) {
+          loadEstimateItems(b.ctx.mainId)
+            .then((items) => { if (alive) setLoadedItems(items) })
+            .catch(() => { if (alive) setLoadedItems([]) })
+        }
         const stored = loadStoredDrafts(b.ctx.mainId)
         if (Object.keys(stored).length) {
           setDrafts(Object.fromEntries(Object.entries(stored).map(([k, d]) => [k, {
@@ -368,6 +382,7 @@ export default function SupplyPricingPanel({
         else fresh.push(j)
       }
       let fileSourceCreated = sources.some((s) => s.source === 'vor_file')
+      const sheet = fresh.length ? await loadSheetReader() : null
       for (const [i, job] of fresh.entries()) {
         setImporting({ label: `файл «${job.doc.file_name}»`, done: i, total: fresh.length })
         let bytes
@@ -382,13 +397,13 @@ export default function SupplyPricingPanel({
         const saved = job.existing?.column_map
         let wb
         try {
-          wb = readMaterialsWorkbookBytes(bytes, saved?.sheetName ? [saved.sheetName] : [])
+          wb = sheet.readMaterialsWorkbookBytes(bytes, saved?.sheetName ? [saved.sheetName] : [])
         } catch (e) {
           remember({ doc: job.doc, kind: 'broken', message: e.message })
           continue
         }
-        let result = readMaterialsFromWorkbook(wb)
-        if ((result.error === 'no_header' || result.error === 'no_sheet') && saved?.columns && wb.Sheets[saved.sheetName]) result = readMaterialsFromWorkbook(wb, saved)
+        let result = sheet.readMaterialsFromWorkbook(wb)
+        if ((result.error === 'no_header' || result.error === 'no_sheet') && saved?.columns && wb.Sheets[saved.sheetName]) result = sheet.readMaterialsFromWorkbook(wb, saved)
         const positions = result.error ? [] : buildSupplyPositions(result.rows)
         if (result.error || !positions.length) {
           remember({ doc: job.doc, kind: result.error || 'empty', sheetNames: result.sheetNames || wb.SheetNames, sheetName: result.sheetName })
@@ -547,6 +562,21 @@ export default function SupplyPricingPanel({
       return { doc: d, rows, open }
     })
   }, [docViews, ratesByKey, drafts, search, filter, collapsed])
+
+  // Строки таблицы подряд — шапки ВОР и позиции: так их рисует и обычная таблица, и окно видимых строк.
+  const items = useMemo(() => {
+    const out = []
+    for (const s of sections) {
+      if (!s.rows.length && (search || filter !== 'all')) continue
+      out.push({ kind: 'head', s, first: out.length === 0 })
+      if (!s.open) continue
+      if (!s.rows.length) out.push({ kind: 'empty', s })
+      for (const row of s.rows) out.push({ kind: 'row', row })
+    }
+    return out
+  }, [sections, search, filter])
+  const virtual = items.length > VIRTUALIZE_FROM
+  const tableWrapRef = useRef(null)
 
   // ── Сохранение ────────────────────────────────────────────────────────────────────────────────────
   const setDraft = useCallback((key, value) => {
@@ -880,7 +910,14 @@ export default function SupplyPricingPanel({
   }, [active, mainId])
 
   // ── Выгрузка в Excel: по листу на ВОР, как лист «Материалы» ВОР ─────────────────────────────────────
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    let XLSX
+    try {
+      XLSX = await import('xlsx')
+    } catch (e) {
+      setNotice(`Выгрузка не открылась: ${e.message}`)
+      return
+    }
     const wb = XLSX.utils.book_new()
     const used = new Set()
     for (const d of docViews) {
@@ -948,6 +985,72 @@ export default function SupplyPricingPanel({
     ? 'Тендер на материалы завершён — расценки только для чтения. Чтобы изменить, верните тендеру на материалы прежний статус.'
     : !canEditRole ? 'Только просмотр: вводить цены могут снабжение и тендерный отдел (право правки раздела).' : ''
   const fromTab = docViews.length > 0 && docViews.every((d) => d.source.source === 'vor_tab')
+
+  // Строка-шапка ВОР: имя, «расценено N из M», сумма, источник и действия, пометки.
+  const renderHead = ({ doc: d, open }, first) => {
+    const notes = docNotes.get(d.name) || []
+    const s = d.source
+    const complete = d.positions.length > 0 && d.priced === d.positions.length
+    const hasRates = rates.some((r) => r.estimate_name === d.name)
+    return (
+      <tr key={`head:${d.name}`} className={`sp-section-head${first ? ' is-first' : ''}`}>
+        <td colSpan={7}>
+          <div className="sp-section-line">
+            <button type="button" className={`sp-section-toggle${open ? ' is-open' : ''}`} onClick={() => toggleDoc(d.name)} aria-expanded={open}
+              aria-label={`${open ? 'Свернуть' : 'Развернуть'} ВОР «${d.name}»`}>
+              <IconChevronDown size={16} />
+            </button>
+            <span className="sp-section-name">ВОР «{d.name}»</span>
+            {complete && <span className="sp-section-done" title="Все позиции расценены"><IconCheck size={14} /> расценён</span>}
+            <span className="sp-section-count ui-num">расценено {d.priced} из {d.positions.length}</span>
+            <span className="sp-section-sum ui-num">{formatAmount(d.total)} ₽</span>
+          </div>
+          <div className="sp-section-meta">
+            {s.source === 'vor_file'
+              ? <>файл «{s.file_name || 'удалён'}», лист «{s.sheet_name || 'Материалы'}»</>
+              : <>вкладка «ВОР» карточки тендера</>}
+            <span> · загружено {fmtTime(s.parsed_at)}{nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : ''}</span>
+            {s.source === 'vor_file' && s.s3_document_id && files.some((f) => f.id === s.s3_document_id) && (
+              <>
+                <button type="button" className="sp-link-btn" onClick={() => downloadFile(s.s3_document_id)}>скачать файл</button>
+                {editable && (
+                  <button type="button" className="sp-link-btn" onClick={() => setMappingFile(files.find((f) => f.id === s.s3_document_id))}>колонки листа</button>
+                )}
+              </>
+            )}
+            {excelImport && editable && (
+              <button type="button" className="sp-link-btn" onClick={() => excelImport.onImport(d.name)}>
+                <IconUpload size={14} /> загрузить цены из Excel
+              </button>
+            )}
+            {editable && hasRates && (
+              <button type="button" className="sp-link-btn is-danger" onClick={() => clearDoc(d)}>очистить цены</button>
+            )}
+          </div>
+          {notes.map((n, i) => (
+            <div key={i} className="sp-section-note">
+              <IconAlert size={14} /> {n.text}
+              {n.kind === 'bind' && editable && (
+                <span className="sp-bind">
+                  <select value={bindTarget[d.name] || ''} onChange={(e) => setBindTarget((prev) => ({ ...prev, [d.name]: e.target.value }))}
+                    aria-label={`ВОР карточки для «${d.name}»`}>
+                    <option value="">ВОР карточки…</option>
+                    {(estimate?.names || []).map((n2) => <option key={n2} value={n2}>{n2}</option>)}
+                  </select>
+                  <button type="button" className="sp-link-btn" disabled={!bindTarget[d.name]} onClick={() => bindDoc(d.name)}>Привязать</button>
+                </span>
+              )}
+            </div>
+          ))}
+        </td>
+      </tr>
+    )
+  }
+  const renderItem = (it) => {
+    if (it.kind === 'head') return renderHead(it.s, it.first)
+    if (it.kind === 'empty') return <tr key={`empty:${it.s.doc.name}`}><td colSpan={7} className="no-data">В этом ВОР нет позиций</td></tr>
+    return <PriceRow key={it.row.key} row={it.row} flash={flash[it.row.key]} editable={editable} nameOf={nameOf} act={act} />
+  }
 
   return (
     <div className={`ui-work sp-panel sp-panel-${variant}`}>
@@ -1047,7 +1150,7 @@ export default function SupplyPricingPanel({
             </div>
           )}
 
-          <div className="table-container sp-table-wrap">
+          <div ref={tableWrapRef} className={`table-container sp-table-wrap${virtual ? ' is-virtual' : ''}`}>
             <table className="data-table sp-table">
               <colgroup>
                 <col className="sp-c-num" /><col className="sp-c-name" /><col className="sp-c-unit" /><col className="sp-c-vol" />
@@ -1064,74 +1167,9 @@ export default function SupplyPricingPanel({
                   <th><span className="ui-sr-only">Состояние</span></th>
                 </tr>
               </thead>
-              {sections.map(({ doc: d, rows, open }) => {
-                if (!rows.length && (search || filter !== 'all')) return null
-                const notes = docNotes.get(d.name) || []
-                const s = d.source
-                const complete = d.positions.length > 0 && d.priced === d.positions.length
-                const hasRates = rates.some((r) => r.estimate_name === d.name)
-                return (
-                  <tbody key={d.name} className="sp-section">
-                    <tr className="sp-section-head">
-                      <td colSpan={7}>
-                        <div className="sp-section-line">
-                          <button type="button" className={`sp-section-toggle${open ? ' is-open' : ''}`} onClick={() => toggleDoc(d.name)} aria-expanded={open}
-                            aria-label={`${open ? 'Свернуть' : 'Развернуть'} ВОР «${d.name}»`}>
-                            <IconChevronDown size={16} />
-                          </button>
-                          <span className="sp-section-name">ВОР «{d.name}»</span>
-                          {complete && <span className="sp-section-done" title="Все позиции расценены"><IconCheck size={14} /> расценён</span>}
-                          <span className="sp-section-count ui-num">расценено {d.priced} из {d.positions.length}</span>
-                          <span className="sp-section-sum ui-num">{formatAmount(d.total)} ₽</span>
-                        </div>
-                        <div className="sp-section-meta">
-                          {s.source === 'vor_file'
-                            ? <>файл «{s.file_name || 'удалён'}», лист «{s.sheet_name || 'Материалы'}»</>
-                            : <>вкладка «ВОР» карточки тендера</>}
-                          <span> · загружено {fmtTime(s.parsed_at)}{nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : ''}</span>
-                          {s.source === 'vor_file' && s.s3_document_id && files.some((f) => f.id === s.s3_document_id) && (
-                            <>
-                              <button type="button" className="sp-link-btn" onClick={() => downloadFile(s.s3_document_id)}>скачать файл</button>
-                              {editable && (
-                                <button type="button" className="sp-link-btn" onClick={() => setMappingFile(files.find((f) => f.id === s.s3_document_id))}>колонки листа</button>
-                              )}
-                            </>
-                          )}
-                          {excelImport && editable && (
-                            <button type="button" className="sp-link-btn" onClick={() => excelImport.onImport(d.name)}>
-                              <IconUpload size={14} /> загрузить цены из Excel
-                            </button>
-                          )}
-                          {editable && hasRates && (
-                            <button type="button" className="sp-link-btn is-danger" onClick={() => clearDoc(d)}>очистить цены</button>
-                          )}
-                        </div>
-                        {notes.map((n, i) => (
-                          <div key={i} className="sp-section-note">
-                            <IconAlert size={14} /> {n.text}
-                            {n.kind === 'bind' && editable && (
-                              <span className="sp-bind">
-                                <select value={bindTarget[d.name] || ''} onChange={(e) => setBindTarget((prev) => ({ ...prev, [d.name]: e.target.value }))}
-                                  aria-label={`ВОР карточки для «${d.name}»`}>
-                                  <option value="">ВОР карточки…</option>
-                                  {(estimate?.names || []).map((n2) => <option key={n2} value={n2}>{n2}</option>)}
-                                </select>
-                                <button type="button" className="sp-link-btn" disabled={!bindTarget[d.name]} onClick={() => bindDoc(d.name)}>Привязать</button>
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </td>
-                    </tr>
-                    {open && rows.length === 0 && (
-                      <tr><td colSpan={7} className="no-data">В этом ВОР нет позиций</td></tr>
-                    )}
-                    {open && rows.map((row) => (
-                      <PriceRow key={row.key} row={row} flash={flash[row.key]} editable={editable} nameOf={nameOf} act={act} />
-                    ))}
-                  </tbody>
-                )
-              })}
+              {virtual
+                ? <VirtualTableBody rowCount={items.length} renderRow={(i) => renderItem(items[i])} colSpan={7} scrollRef={tableWrapRef} rowHeight={44} />
+                : <tbody>{items.map(renderItem)}</tbody>}
               <tfoot>
                 <tr>
                   <td colSpan={4}>Итого{docViews.length > 1 ? ` по ${docViews.length} ВОР` : ''} · расценено <span className="ui-num">{grand.priced}</span> из <span className="ui-num">{grand.positions}</span></td>
@@ -1171,19 +1209,21 @@ export default function SupplyPricingPanel({
       )}
 
       {mappingFile && (
-        <SupplyImportDialog
-          mainId={mainId}
-          files={[mappingFile]}
-          sources={sources}
-          onClose={() => setMappingFile(null)}
-          onSaved={async ({ close }) => {
-            failedFiles.current.delete(mappingFile.id)
-            forgetFailure(mappingFile)
-            try { await reloadData(mainId) } catch (e) { setNotice(e.message) }
-            setProblems((prev) => prev.filter((p) => p.doc?.id !== mappingFile.id))
-            if (close) setMappingFile(null)
-          }}
-        />
+        <Suspense fallback={null}>
+          <SupplyImportDialog
+            mainId={mainId}
+            files={[mappingFile]}
+            sources={sources}
+            onClose={() => setMappingFile(null)}
+            onSaved={async ({ close }) => {
+              failedFiles.current.delete(mappingFile.id)
+              forgetFailure(mappingFile)
+              try { await reloadData(mainId) } catch (e) { setNotice(e.message) }
+              setProblems((prev) => prev.filter((p) => p.doc?.id !== mappingFile.id))
+              if (close) setMappingFile(null)
+            }}
+          />
+        </Suspense>
       )}
       {conflict && (
         <SupplyConflictDialog

@@ -153,6 +153,19 @@
    сумма — поле «123 456 789,00»; состояние — три места под значки (сохранено / объём / история).
    Сумма = 42,5rem + наименование ≥ 16rem. */
 .sp-table-wrap { border: 1px solid var(--border-color); border-radius: var(--ui-radius); background: var(--bg-secondary); }
+/* Больше 150 строк — в таблице только видимые строки (VirtualTableBody): прокрутка внутри, шапка и итог
+   закреплены. overflow-anchor выключен: окно строк само ставит распорки по измеренным высотам, а якорение
+   прокрутки браузера в ответ на их смену переписывало бы scrollTop (строки «прыгали» бы сами). */
+.sp-table-wrap.is-virtual { max-height: max(24rem, calc(100vh - 10rem)); overflow: auto; overflow-anchor: none; padding-bottom: 0; }
+/* Итог прижат к нижнему краю окна прокрутки. Нижний отступ блока — ноль: общее правило .table-container
+   реестров (padding-bottom 16 px) сдвигало закреплённый итог вверх, и в щель под ним были видны строки. */
+.ui-work.ui-work .sp-table-wrap.is-virtual .sp-table > tfoot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+}
+.ui-work.ui-work .sp-table-wrap.is-virtual .sp-table > tfoot > tr > td { background: var(--bg-secondary); }
+.sp-table tr.vt-spacer > td { background: transparent; }
 .ui-work.ui-work .sp-table { table-layout: fixed; width: 100%; min-width: 58.5rem; border-collapse: collapse; }
 .sp-table .sp-c-num { width: 3rem; }
 .sp-table .sp-c-unit { width: 5rem; }
@@ -279,13 +292,13 @@
 
 /* ── Секция ВОР: строка-шапка над позициями ВОР ────────────────────────────
    Заметная граница между ВОР: подложка, рамка сверху, имя ВОР крупнее, сумма ВОР справа. */
-.ui-work.ui-work .sp-table > tbody.sp-section > tr.sp-section-head > td {
+.ui-work.ui-work .sp-table > tbody > tr.sp-section-head > td {
   padding: 0.5rem 0.625rem;
   border-top: 2px solid var(--border-color-dark);
   background: var(--bg-tertiary, var(--hover-bg));
 }
-.ui-work.ui-work .sp-table > tbody.sp-section:first-of-type > tr.sp-section-head > td { border-top: 0; }
-.ui-work.ui-work .sp-table > tbody.sp-section > tr.sp-section-head:hover { background: none; }
+.ui-work.ui-work .sp-table > tbody > tr.sp-section-head.is-first > td { border-top: 0; }
+.ui-work.ui-work .sp-table > tbody > tr.sp-section-head:hover { background: none; }
 .sp-section-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; }
 .sp-section-toggle {
   display: inline-flex;
@@ -465,8 +478,11 @@
   .ui-work.ui-work .sp-table > tbody > tr > td { padding: 0; border: 0; background: none; }
   .ui-work.ui-work .sp-table > tbody > tr.is-unpriced { background: var(--warning-light); }
   .sp-table td.sp-name { grid-column: 1 / -1; font-weight: var(--ui-medium); }
-  .ui-work.ui-work .sp-table > tbody.sp-section > tr.sp-section-head { display: block; padding: 0; }
-  .ui-work.ui-work .sp-table > tbody.sp-section > tr.sp-section-head > td { display: block; padding: 0.5rem 0.75rem; }
+  .ui-work.ui-work .sp-table > tbody > tr.sp-section-head { display: block; padding: 0; }
+  .ui-work.ui-work .sp-table > tbody > tr.sp-section-head > td { display: block; padding: 0.5rem 0.75rem; }
+  .ui-work.ui-work .sp-table > tbody > tr.vt-spacer { display: block; padding: 0; border: 0; }
+  .ui-work.ui-work .sp-table > tbody > tr.vt-spacer > td { display: block; }
+  .sp-table-wrap.is-virtual { max-height: 75vh; }
   .sp-section-meta, .sp-section-note { margin-left: 0; }
   .sp-summary-inline { white-space: normal; }
   .sp-table td.ui-rownum { display: none; }

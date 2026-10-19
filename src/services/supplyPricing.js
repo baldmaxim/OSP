@@ -14,7 +14,9 @@ import { chunkList } from '../utils/inChunks'
 import { isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
 import { fetchFileBytes } from './s3'
 import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './tenderVorRd'
-import { isWorkbookFileName, readMaterialsWorkbookBytes, readWorkbookBytes } from '../utils/vorMaterialsSheet'
+import { isWorkbookFileName } from '../utils/vorFiles'
+// Библиотека Excel (vorMaterialsSheet → xlsx, 430 КБ) — только по требованию: сервис импортирует и реестр
+// тендеров (прогресс расценки), которому она не нужна.
 
 // Статусы тендера на материалы, после которых расценки только для чтения (как supply_rates_locked в базе).
 export const MATERIALS_LOCK_STATUSES = ['Завершён', 'Завершен']
@@ -138,7 +140,8 @@ export async function loadVorFiles(mainId) {
 
 // Вся книга — для окна «Указать лист и колонки» (выбор листа).
 export async function fetchVorWorkbook(doc) {
-  return readWorkbookBytes(await fetchFileBytes(doc.s3_key))
+  const [{ readWorkbookBytes }, bytes] = await Promise.all([import('../utils/vorMaterialsSheet'), fetchFileBytes(doc.s3_key)])
+  return readWorkbookBytes(bytes)
 }
 
 // Автозагрузка: скачивание и разбор — по отдельности. Не скачалось — сеть или хранилище (повторить можно);
@@ -146,7 +149,6 @@ export async function fetchVorWorkbook(doc) {
 export async function downloadVorFile(doc) {
   return fetchFileBytes(doc.s3_key)
 }
-export { readMaterialsWorkbookBytes }
 
 // Признак версии источника: файл — id и время загрузки; вкладка «ВОР» — число строк и время загрузки.
 export { fileVersion, estimateVersion } from '../utils/supplyAutoImport.js'

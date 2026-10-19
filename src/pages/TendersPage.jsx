@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '../api'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
+import VirtualTableBody from '../components/VirtualTableBody'
 import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable'
 import { participantChangeAffectsCounts, createIdBatcher } from '../utils/tenderCountsLive'
 import { saveAs } from 'file-saver'
@@ -64,6 +65,9 @@ import '../styles/workUi.css'
 // (показывается и в «ВОРах и РД»).
 // Сколько копить события по участникам, прежде чем перечитать счётчики затронутых тендеров.
 const COUNTS_LIVE_DELAY_MS = 1500
+// Реестр тендеров на материалы длиннее — только видимые строки (renderMaterialsRow).
+const VIRTUAL_MATERIALS_FROM = 120
+const isPhoneWidth = () => typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 640px)').matches
 
 const TENDER_RESPONSIBLES = TENDER_DUTY_NAMES
 const RESPONSIBLE_OVERRIDE_KEY = DUTY_OVERRIDE_KEY
@@ -2633,6 +2637,326 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const tenderObjectIds = [...new Set(tenders.map(t => t.object_id).filter(Boolean))]
   const tenderObjects = objects.filter(o => tenderObjectIds.includes(o.id))
 
+  // Строка реестра тендеров на материалы. Больше VIRTUAL_MATERIALS_FROM строк (на проде их 360+) — в таблице
+  // только видимые строки (VirtualTableBody по положению на экране): 74 элемента и 5 значков в каждой строке
+  // давали 27 тыс. элементов, открытие — секунды отрисовки, прокрутка — подвисания на перерисовке. На телефоне —
+  // все строки, как раньше (там строки-карточки и своя вёрстка).
+  const virtualMaterials = isMaterialsView && sortedTenders.length > VIRTUAL_MATERIALS_FROM && !isPhoneWidth()
+  // Строки, уже построенные в этой отрисовке страницы: при прокрутке окно сдвигается без перерисовки страницы,
+  // и React пропускает строки с тем же элементом — строятся только новые, а не все видимые заново.
+  const materialsRowCache = new Map()
+  const cachedMaterialsRow = (tender) => {
+    let row = materialsRowCache.get(tender.id)
+    if (!row) {
+      row = renderMaterialsRow(tender)
+      materialsRowCache.set(tender.id, row)
+    }
+    return row
+  }
+  const renderMaterialsRow = (tender) => (
+    <tr
+      key={tender.id}
+      className={[
+        isOverdue(tender) || isMaterialsOverdue(tender) ? 'overdue-row' : '',
+        tender.materials_priority === 'high' ? 'mat-prio-high-row' : '',
+      ].filter(Boolean).join(' ')}
+    >
+      <td className="tp-num">
+        {tenderNumberOf(tender) ?? '—'}
+      </td>
+      <td>
+        {tenderObjectName(tender, '—')}
+      </td>
+      <td>
+        {/* Описание — из основного тендера; переход — в него.
+            До трёх строк, длиннее — «Показать полностью». */}
+        <ClampText
+          text={tender.work_description}
+          wrap={tender.parent_tender_id && canOpenTenderCard ? (body) => (
+            <Link
+              to={`/tenders/${tender.parent_tender_id}`}
+              className="row-link primary ui-title-link tp-desc-link"
+              title="Открыть тендер основного строительства (Ctrl+клик или средняя кнопка — в новой вкладке)"
+            >
+              {body}
+            </Link>
+          ) : undefined}
+        />
+        {/* Расценка материалов ВОР снабжением — второй строкой, без отдельной колонки:
+            описанию и так остаётся ≈ 15rem на 1920. */}
+        <SupplyPricingLink tender={tender} progress={supplyProgress.get(tender.parent_tender_id || tender.id)} />
+      </td>
+      {/* Приоритет: низкий / средний / высокий. Высокий подсвечивается
+          и чипом, и полосой слева у всей строки. */}
+      <td>
+        <FilterDropdown
+          className={`mat-prio-fdrop prio-${tender.materials_priority || 'none'}`}
+          label=""
+          allLabel="Не указан"
+          value={tender.materials_priority || ''}
+          onChange={(v) => handleUpdateMaterialsPriority(tender.id, v)}
+          disabled={!canEditTenders}
+          options={[{ value: '', label: 'Не указан' }, ...MATERIALS_PRIORITY_OPTIONS]}
+          formatTrigger={() => (
+            tender.materials_priority
+              ? <span className={`mat-prio-chip prio-${tender.materials_priority}`}>{MATERIALS_PRIORITY_LABEL[tender.materials_priority]}</span>
+              : <span className="mat-muted">Не указан</span>
+          )}
+          renderOption={(o) => (
+            o.value
+              ? <span className={`mat-prio-chip prio-${o.value}`}>{o.label}</span>
+              : <span className="mat-muted">Не указан</span>
+          )}
+        />
+      </td>
+      {/* Ответственный — только сотрудник снабжения из реестра. */}
+      <td>
+        {(() => {
+          const resp = materialsResponsibleOf(tender)
+          return (
+            <>
+              <FilterDropdown
+                className="mat-resp-fdrop"
+                label="" searchable
+                searchPlaceholder="Поиск сотрудника снабжения…"
+                allLabel="Не назначен"
+                value={tender.materials_resp_user_id || ''}
+                onChange={(v) => handleUpdateMaterialsResponsible(tender.id, v)}
+                disabled={!canEditTenders}
+                options={[
+                  { value: '', label: 'Не назначен' },
+                  ...supplyEmployees.map(emp => ({ value: emp.user_id, label: emp.display_name })),
+                ]}
+                // В ячейке — «Фамилия И. О.» обычным текстом, в списке
+                // выбора — полное ФИО с инициалами-кружком.
+                formatTrigger={() => (
+                  resp.name
+                    ? <PersonName full={resp.name} className="mat-person-name" />
+                    : <span className="mat-muted">Не назначен</span>
+                )}
+                renderOption={(o) => (
+                  o.value
+                    ? <span className="mat-person">
+                        <span className="mat-avatar" aria-hidden>{personInitials(o.label)}</span>
+                        <span className="mat-person-name">{o.label}</span>
+                      </span>
+                    : <span className="mat-muted">Не назначен</span>
+                )}
+              />
+              {supplyLoadError && canEditTenders && (
+                <div className="mat-note is-warn">{supplyLoadError}</div>
+              )}
+              {resp.name && !resp.fromRegistry && (
+                <div className="mat-note" title="Назначен до перехода на выбор из сотрудников снабжения — переназначьте">
+                  не из реестра снабжения
+                </div>
+              )}
+            </>
+          )
+        })()}
+      </td>
+      {/* Ответственный по основному тендеру (основное строительство). */}
+      <td className="mat-main-resp">
+        {tender.parent_tender?.responsible_contact?.full_name
+          ? <PersonName full={tender.parent_tender.responsible_contact.full_name} />
+          : <span className="mat-muted">Не назначен</span>}
+      </td>
+      {/* Сроки тендерных процедур — из основного тендера (основное строительство).
+          Здесь только просмотр: меняются исключительно в основном тендере. */}
+      <td className="mat-proc-dates" title="Срок из тендера основного строительства — меняется там">
+        <DateRangeCell
+          start={tender.parent_tender?.tender_start_date}
+          end={tender.parent_tender?.tender_end_date}
+          disabled
+          overdue={!!tender.parent_tender?.tender_end_date
+            && tender.parent_tender.tender_end_date < today
+            && !isCompletedStatus(tender.status)}
+          showCountdown={!isCompletedStatus(tender.status)}
+          onChange={() => {}}
+        />
+      </td>
+      <td className={isMaterialsOverdue(tender) ? 'mat-deadline-overdue' : undefined}>
+        {/* Период «с … по …»: «по» — прежний срок (materials_proposal_deadline),
+            по нему считаются просрочка и сортировка; «с» — новое поле. */}
+        <DateRangeCell
+          start={tender.materials_proposal_start_date}
+          end={tender.materials_proposal_deadline}
+          disabled={!canEditTenders}
+          overdue={isMaterialsOverdue(tender)}
+          showCountdown={!isCompletedStatus(tender.status)}
+          onChange={(field, value) => (field === 'start'
+            ? handleUpdateMaterialsStart(tender.id, value)
+            : handleUpdateMaterialsDeadline(tender.id, value))}
+        />
+      </td>
+      <td>
+        {tender.materials_proposal_link ? (
+          <div className="tp-link-row">
+            <a
+              href={tender.materials_proposal_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="link"
+            >
+              Открыть
+            </a>
+            {canEditTenders && (
+              <button
+                type="button"
+                className="btn-icon btn-edit"
+                onClick={() => handleUpdateMaterialsLink(tender.id, tender.materials_proposal_link)}
+                title="Изменить ссылку"
+                aria-label="Изменить ссылку на КП"
+              >
+                <IconPencil size={14} />
+              </button>
+            )}
+          </div>
+        ) : (
+          canEditTenders ? (
+            <button
+              type="button"
+              className="tp-add-link"
+              onClick={() => handleUpdateMaterialsLink(tender.id, '')}
+              title="Добавить ссылку на КП"
+            >
+              + ссылка
+            </button>
+          ) : (
+            <span className="mat-muted">—</span>
+          )
+        )}
+      </td>
+      <td>
+        {isCompletedTab || !canEditTenders ? (
+          <span className={`status-badge tp-status-badge ${getStatusBadgeClass(tender.status)}`}>
+            {tender.status}
+          </span>
+        ) : (
+          <StatusDropdown
+            value={tender.status}
+            options={materialsStatusOptions}
+            onChange={(next) => handleStatusChange(tender.id, next)}
+            getBadgeClass={getStatusBadgeClass}
+            ariaLabel="Статус тендера"
+          />
+        )}
+      </td>
+      {!hideNotes && (
+        <td className="mat-notes-cell">
+          {tenderNotesEdit?.tenderId === tender.id ? (
+            <div className="tc-notes-edit">
+              <textarea
+                className="tc-notes-textarea"
+                autoFocus
+                value={tenderNotesEdit.draft}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setTenderNotesEdit(prev => (prev && prev.tenderId === tender.id ? { ...prev, draft: value } : prev))
+                }}
+                onKeyDown={(e) => { if (e.key === 'Escape') setTenderNotesEdit(null) }}
+                placeholder="Примечание по тендеру…"
+                rows={3}
+              />
+              <div className="tc-notes-actions">
+                <button
+                  type="button"
+                  className="tc-notes-btn tc-notes-btn-save"
+                  onClick={() => handleSaveTenderNotes(tender)}
+                  disabled={savingNotes}
+                >
+                  {savingNotes ? 'Сохранение…' : 'Сохранить'}
+                </button>
+                <button
+                  type="button"
+                  className="tc-notes-btn tc-notes-btn-cancel"
+                  onClick={() => setTenderNotesEdit(null)}
+                  disabled={savingNotes}
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mat-notes-view">
+              {tender.notes
+                ? <span className="mat-notes-text"><ClampText text={tender.notes} /></span>
+                : <span className="mat-muted">—</span>}
+              <span className="mat-notes-tools">
+                {canEditTenders && (
+                  <button
+                    type="button"
+                    className="tc-notes-icon"
+                    onClick={() => setTenderNotesEdit({ tenderId: tender.id, draft: tender.notes || '' })}
+                    title={tender.notes ? 'Редактировать примечание' : 'Добавить примечание'}
+                    aria-label="Редактировать примечание"
+                  >
+                    <PencilIcon />
+                  </button>
+                )}
+                {tender.notes && (
+                  <button
+                    type="button"
+                    className="tc-notes-icon"
+                    onClick={() => openTenderNotesHistory(tender)}
+                    title="История изменений примечания"
+                    aria-label="История изменений примечания"
+                  >
+                    <HistoryIcon />
+                  </button>
+                )}
+              </span>
+            </div>
+          )}
+        </td>
+      )}
+      <td className="actions-cell">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
+          {/* task 246 (исправление): в тендер на материалы нельзя «заходить внутрь» —
+              кнопка открытия его собственной карточки убрана */}
+          {activeTab === 'deleted' ? (
+            <>
+              {canEditTenders && (
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => handleRestoreTender(tender.id, tenderObjectName(tender, 'тендер'))}
+                  title="Восстановить"
+                  aria-label="Восстановить тендер"
+                >
+                  <IconRestore />
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="btn-icon btn-delete"
+                  onClick={() => handleHardDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
+                  title="Удалить безвозвратно (только для администратора)"
+                  aria-label="Удалить тендер безвозвратно"
+                >
+                  <IconTrash />
+                </button>
+              )}
+            </>
+          ) : (
+            isAdmin && (
+              <button
+                type="button"
+                className="btn-icon btn-delete"
+                onClick={() => handleDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
+                title="Переместить в Корзину (только для администратора)"
+                aria-label="Переместить тендер в корзину"
+              >
+                <IconTrash />
+              </button>
+            )
+          )}
+        </div>
+      </td>
+    </tr>
+  )
+
   return (
     <div className={`tenders-page${uiWork ? ' ui-work' : ''}${denseRegistry ? ' tp-dense' : ''}${isMaterialsView ? ' tp-dense-mat' : ''}`}>
       {/* Акцент шапки — тон направления: разделы отличаются с одного взгляда. */}
@@ -3141,8 +3465,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   <th className="actions-column"><span className="ui-sr-only">Действия</span></th>
                 </tr>
               </thead>
-              <tbody>
-                {sortedTenders.length === 0 ? (
+              {sortedTenders.length === 0 ? (
+                <tbody>
                   <tr>
                     <td colSpan={hideNotes ? 11 : 12} className="no-data">
                       {activeTab === 'deleted'
@@ -3152,312 +3476,13 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           : `Нет тендеров на материалы со статусом «${activeTab}»`}
                     </td>
                   </tr>
-                ) : (
-                  sortedTenders.map((tender) => (
-                    <tr
-                      key={tender.id}
-                      className={[
-                        isOverdue(tender) || isMaterialsOverdue(tender) ? 'overdue-row' : '',
-                        tender.materials_priority === 'high' ? 'mat-prio-high-row' : '',
-                      ].filter(Boolean).join(' ')}
-                    >
-                      <td className="tp-num">
-                        {tenderNumberOf(tender) ?? '—'}
-                      </td>
-                      <td>
-                        {tenderObjectName(tender, '—')}
-                      </td>
-                      <td>
-                        {/* Описание — из основного тендера; переход — в него.
-                            До трёх строк, длиннее — «Показать полностью». */}
-                        <ClampText
-                          text={tender.work_description}
-                          wrap={tender.parent_tender_id && canOpenTenderCard ? (body) => (
-                            <Link
-                              to={`/tenders/${tender.parent_tender_id}`}
-                              className="row-link primary ui-title-link tp-desc-link"
-                              title="Открыть тендер основного строительства (Ctrl+клик или средняя кнопка — в новой вкладке)"
-                            >
-                              {body}
-                            </Link>
-                          ) : undefined}
-                        />
-                        {/* Расценка материалов ВОР снабжением — второй строкой, без отдельной колонки:
-                            описанию и так остаётся ≈ 15rem на 1920. */}
-                        <SupplyPricingLink tender={tender} progress={supplyProgress.get(tender.parent_tender_id || tender.id)} />
-                      </td>
-                      {/* Приоритет: низкий / средний / высокий. Высокий подсвечивается
-                          и чипом, и полосой слева у всей строки. */}
-                      <td>
-                        <FilterDropdown
-                          className={`mat-prio-fdrop prio-${tender.materials_priority || 'none'}`}
-                          label=""
-                          allLabel="Не указан"
-                          value={tender.materials_priority || ''}
-                          onChange={(v) => handleUpdateMaterialsPriority(tender.id, v)}
-                          disabled={!canEditTenders}
-                          options={[{ value: '', label: 'Не указан' }, ...MATERIALS_PRIORITY_OPTIONS]}
-                          formatTrigger={() => (
-                            tender.materials_priority
-                              ? <span className={`mat-prio-chip prio-${tender.materials_priority}`}>{MATERIALS_PRIORITY_LABEL[tender.materials_priority]}</span>
-                              : <span className="mat-muted">Не указан</span>
-                          )}
-                          renderOption={(o) => (
-                            o.value
-                              ? <span className={`mat-prio-chip prio-${o.value}`}>{o.label}</span>
-                              : <span className="mat-muted">Не указан</span>
-                          )}
-                        />
-                      </td>
-                      {/* Ответственный — только сотрудник снабжения из реестра. */}
-                      <td>
-                        {(() => {
-                          const resp = materialsResponsibleOf(tender)
-                          return (
-                            <>
-                              <FilterDropdown
-                                className="mat-resp-fdrop"
-                                label="" searchable
-                                searchPlaceholder="Поиск сотрудника снабжения…"
-                                allLabel="Не назначен"
-                                value={tender.materials_resp_user_id || ''}
-                                onChange={(v) => handleUpdateMaterialsResponsible(tender.id, v)}
-                                disabled={!canEditTenders}
-                                options={[
-                                  { value: '', label: 'Не назначен' },
-                                  ...supplyEmployees.map(emp => ({ value: emp.user_id, label: emp.display_name })),
-                                ]}
-                                // В ячейке — «Фамилия И. О.» обычным текстом, в списке
-                                // выбора — полное ФИО с инициалами-кружком.
-                                formatTrigger={() => (
-                                  resp.name
-                                    ? <PersonName full={resp.name} className="mat-person-name" />
-                                    : <span className="mat-muted">Не назначен</span>
-                                )}
-                                renderOption={(o) => (
-                                  o.value
-                                    ? <span className="mat-person">
-                                        <span className="mat-avatar" aria-hidden>{personInitials(o.label)}</span>
-                                        <span className="mat-person-name">{o.label}</span>
-                                      </span>
-                                    : <span className="mat-muted">Не назначен</span>
-                                )}
-                              />
-                              {supplyLoadError && canEditTenders && (
-                                <div className="mat-note is-warn">{supplyLoadError}</div>
-                              )}
-                              {resp.name && !resp.fromRegistry && (
-                                <div className="mat-note" title="Назначен до перехода на выбор из сотрудников снабжения — переназначьте">
-                                  не из реестра снабжения
-                                </div>
-                              )}
-                            </>
-                          )
-                        })()}
-                      </td>
-                      {/* Ответственный по основному тендеру (основное строительство). */}
-                      <td className="mat-main-resp">
-                        {tender.parent_tender?.responsible_contact?.full_name
-                          ? <PersonName full={tender.parent_tender.responsible_contact.full_name} />
-                          : <span className="mat-muted">Не назначен</span>}
-                      </td>
-                      {/* Сроки тендерных процедур — из основного тендера (основное строительство).
-                          Здесь только просмотр: меняются исключительно в основном тендере. */}
-                      <td className="mat-proc-dates" title="Срок из тендера основного строительства — меняется там">
-                        <DateRangeCell
-                          start={tender.parent_tender?.tender_start_date}
-                          end={tender.parent_tender?.tender_end_date}
-                          disabled
-                          overdue={!!tender.parent_tender?.tender_end_date
-                            && tender.parent_tender.tender_end_date < today
-                            && !isCompletedStatus(tender.status)}
-                          showCountdown={!isCompletedStatus(tender.status)}
-                          onChange={() => {}}
-                        />
-                      </td>
-                      <td className={isMaterialsOverdue(tender) ? 'mat-deadline-overdue' : undefined}>
-                        {/* Период «с … по …»: «по» — прежний срок (materials_proposal_deadline),
-                            по нему считаются просрочка и сортировка; «с» — новое поле. */}
-                        <DateRangeCell
-                          start={tender.materials_proposal_start_date}
-                          end={tender.materials_proposal_deadline}
-                          disabled={!canEditTenders}
-                          overdue={isMaterialsOverdue(tender)}
-                          showCountdown={!isCompletedStatus(tender.status)}
-                          onChange={(field, value) => (field === 'start'
-                            ? handleUpdateMaterialsStart(tender.id, value)
-                            : handleUpdateMaterialsDeadline(tender.id, value))}
-                        />
-                      </td>
-                      <td>
-                        {tender.materials_proposal_link ? (
-                          <div className="tp-link-row">
-                            <a
-                              href={tender.materials_proposal_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="link"
-                            >
-                              Открыть
-                            </a>
-                            {canEditTenders && (
-                              <button
-                                type="button"
-                                className="btn-icon btn-edit"
-                                onClick={() => handleUpdateMaterialsLink(tender.id, tender.materials_proposal_link)}
-                                title="Изменить ссылку"
-                                aria-label="Изменить ссылку на КП"
-                              >
-                                <IconPencil size={14} />
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          canEditTenders ? (
-                            <button
-                              type="button"
-                              className="tp-add-link"
-                              onClick={() => handleUpdateMaterialsLink(tender.id, '')}
-                              title="Добавить ссылку на КП"
-                            >
-                              + ссылка
-                            </button>
-                          ) : (
-                            <span className="mat-muted">—</span>
-                          )
-                        )}
-                      </td>
-                      <td>
-                        {isCompletedTab || !canEditTenders ? (
-                          <span className={`status-badge tp-status-badge ${getStatusBadgeClass(tender.status)}`}>
-                            {tender.status}
-                          </span>
-                        ) : (
-                          <StatusDropdown
-                            value={tender.status}
-                            options={materialsStatusOptions}
-                            onChange={(next) => handleStatusChange(tender.id, next)}
-                            getBadgeClass={getStatusBadgeClass}
-                            ariaLabel="Статус тендера"
-                          />
-                        )}
-                      </td>
-                      {!hideNotes && (
-                        <td className="mat-notes-cell">
-                          {tenderNotesEdit?.tenderId === tender.id ? (
-                            <div className="tc-notes-edit">
-                              <textarea
-                                className="tc-notes-textarea"
-                                autoFocus
-                                value={tenderNotesEdit.draft}
-                                onChange={(e) => {
-                                  const value = e.target.value
-                                  setTenderNotesEdit(prev => (prev && prev.tenderId === tender.id ? { ...prev, draft: value } : prev))
-                                }}
-                                onKeyDown={(e) => { if (e.key === 'Escape') setTenderNotesEdit(null) }}
-                                placeholder="Примечание по тендеру…"
-                                rows={3}
-                              />
-                              <div className="tc-notes-actions">
-                                <button
-                                  type="button"
-                                  className="tc-notes-btn tc-notes-btn-save"
-                                  onClick={() => handleSaveTenderNotes(tender)}
-                                  disabled={savingNotes}
-                                >
-                                  {savingNotes ? 'Сохранение…' : 'Сохранить'}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="tc-notes-btn tc-notes-btn-cancel"
-                                  onClick={() => setTenderNotesEdit(null)}
-                                  disabled={savingNotes}
-                                >
-                                  Отмена
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="mat-notes-view">
-                              {tender.notes
-                                ? <span className="mat-notes-text"><ClampText text={tender.notes} /></span>
-                                : <span className="mat-muted">—</span>}
-                              <span className="mat-notes-tools">
-                                {canEditTenders && (
-                                  <button
-                                    type="button"
-                                    className="tc-notes-icon"
-                                    onClick={() => setTenderNotesEdit({ tenderId: tender.id, draft: tender.notes || '' })}
-                                    title={tender.notes ? 'Редактировать примечание' : 'Добавить примечание'}
-                                    aria-label="Редактировать примечание"
-                                  >
-                                    <PencilIcon />
-                                  </button>
-                                )}
-                                {tender.notes && (
-                                  <button
-                                    type="button"
-                                    className="tc-notes-icon"
-                                    onClick={() => openTenderNotesHistory(tender)}
-                                    title="История изменений примечания"
-                                    aria-label="История изменений примечания"
-                                  >
-                                    <HistoryIcon />
-                                  </button>
-                                )}
-                              </span>
-                            </div>
-                          )}
-                        </td>
-                      )}
-                      <td className="actions-cell">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
-                          {/* task 246 (исправление): в тендер на материалы нельзя «заходить внутрь» —
-                              кнопка открытия его собственной карточки убрана */}
-                          {activeTab === 'deleted' ? (
-                            <>
-                              {canEditTenders && (
-                                <button
-                                  type="button"
-                                  className="btn-icon"
-                                  onClick={() => handleRestoreTender(tender.id, tenderObjectName(tender, 'тендер'))}
-                                  title="Восстановить"
-                                  aria-label="Восстановить тендер"
-                                >
-                                  <IconRestore />
-                                </button>
-                              )}
-                              {isAdmin && (
-                                <button
-                                  type="button"
-                                  className="btn-icon btn-delete"
-                                  onClick={() => handleHardDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
-                                  title="Удалить безвозвратно (только для администратора)"
-                                  aria-label="Удалить тендер безвозвратно"
-                                >
-                                  <IconTrash />
-                                </button>
-                              )}
-                            </>
-                          ) : (
-                            isAdmin && (
-                              <button
-                                type="button"
-                                className="btn-icon btn-delete"
-                                onClick={() => handleDeleteTender(tender.id, tenderObjectName(tender, 'тендер'))}
-                                title="Переместить в Корзину (только для администратора)"
-                                aria-label="Переместить тендер в корзину"
-                              >
-                                <IconTrash />
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
+                </tbody>
+              ) : virtualMaterials ? (
+                <VirtualTableBody viewport rowCount={sortedTenders.length} renderRow={(i) => cachedMaterialsRow(sortedTenders[i])}
+                  colSpan={hideNotes ? 11 : 12} rowHeight={96} />
+              ) : (
+                <tbody>{sortedTenders.map(renderMaterialsRow)}</tbody>
+              )}
             </>
           ) : (
           <>
