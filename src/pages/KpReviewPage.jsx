@@ -71,10 +71,8 @@ function TenderDeptBadge({ tender }) {
 }
 
 // Отбор по направлению — галочки справа от поиска, можно несколько сразу;
-// ничего не отмечено — показываем все КП. Совместные в этот набор не входят:
-// их галочка появляется, только когда такие КП есть в очереди, — иначе при
-// любом отборе они пропадали бы из списка без способа их найти.
-const DEPT_FILTER_KEYS = ['construction', 'warranty', 'other']
+// ничего не отмечено — показываем все КП.
+const DEPT_FILTER_KEYS = ['construction', 'warranty', 'other', 'joint']
 
 const IconCheck = () => (
   <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
@@ -369,9 +367,6 @@ function KpReviewPage() {
     return c
   }, [rows, inDepts])
 
-  const hasJoint = useMemo(() => rows.some(r => tenderDeptKey(r.tenders) === 'joint'), [rows])
-  const deptKeys = hasJoint || depts.has('joint') ? [...DEPT_FILTER_KEYS, 'joint'] : DEPT_FILTER_KEYS
-
   // Строки открытого этапа и поиска — без отбора по направлениям.
   const tabRows = useMemo(() => {
     const s = search.trim().toLowerCase()
@@ -476,7 +471,7 @@ function KpReviewPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
         <div className="kprv-depts" role="group" aria-label="Направление тендера">
-          {deptKeys.map(key => (
+          {DEPT_FILTER_KEYS.map(key => (
             <DeptFilter
               key={key}
               deptKey={key}
