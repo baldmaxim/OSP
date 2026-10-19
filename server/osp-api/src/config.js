@@ -118,6 +118,16 @@ export function parseLarix(env, { dbUrl, supabaseUrl, supabaseServiceKey }) {
   return larix
 }
 
+// Включена, но без базы или хранилища — служба не запускается (выкладка откатится), а не молчит без загрузки.
+export function parseSupplyImport(env) {
+  if (env.OSP_SUPPLY_IMPORT !== '1') return false
+  if (!env.OSP_DB_URL) throw new Error('OSP_SUPPLY_IMPORT=1: нужен OSP_DB_URL')
+  if (!(env.S3_ENDPOINT && env.S3_BUCKET && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY)) {
+    throw new Error('OSP_SUPPLY_IMPORT=1: нужно хранилище (S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY)')
+  }
+  return true
+}
+
 export function loadConfig(env = process.env) {
   const list = (v) => String(v || '').split(',').map((s) => s.trim()).filter(Boolean)
   return {
@@ -161,6 +171,9 @@ export function loadConfig(env = process.env) {
     keepPreTransferFiles: env.OSP_KEEP_PRE_TRANSFER_FILES !== '0',
     // Пересчёт реестра расценок раз в 10 минут (в Supabase это делало расписание pg_cron).
     registryRefresh: env.OSP_REGISTRY_REFRESH === '1',
+    // Позиции ВОР для расценки снабжением — заранее, на сервере, раз в 10 минут (src/lib/supplyImport.js): статус
+    // «Расценка: N из M» в реестре тендеров на материалы — у всех тендеров, без открытия расценки.
+    supplyImport: parseSupplyImport(env),
     larix: parseLarix(env, { dbUrl: env.OSP_DB_URL || '', supabaseUrl: env.SUPABASE_URL || '', supabaseServiceKey: env.SUPABASE_SERVICE_ROLE_KEY || '' }),
     // Вход: supabase — как раньше; both — пилот своего входа; own — только свой вход (src/lib/auth/).
     authMode: parseAuthMode(env.AUTH_MODE),

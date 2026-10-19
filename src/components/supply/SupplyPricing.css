@@ -177,6 +177,31 @@
 .sp-table .sp-c-sel { width: 2.25rem; }
 .sp-table .sp-c-doc { width: 8rem; }
 .ui-work.ui-work .sp-table.has-links { min-width: 66.75rem; }
+/* «Дата цены» (миграция 20261023): 6,5rem под «19.10.2026», у администратора — ещё ФИО того, кто поставил цену. */
+.sp-table .sp-c-date { width: 6.5rem; }
+.sp-table.has-authors .sp-c-date { width: 9.5rem; }
+@media (min-width: 641px) {
+  .ui-work.ui-work .sp-table.has-dates { min-width: 65rem; }
+  .ui-work.ui-work .sp-table.has-dates.has-links { min-width: 73.25rem; }
+  .ui-work.ui-work .sp-table.has-authors { min-width: 68rem; }
+  .ui-work.ui-work .sp-table.has-authors.has-links { min-width: 76.25rem; }
+}
+.sp-date-cell { display: flex; flex-direction: column; min-height: 1.875rem; justify-content: center; }
+.sp-author { color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); overflow-wrap: anywhere; }
+.sp-author.is-auto { color: #075985; }
+.sp-author.is-unknown { font-style: italic; }
+.sp-date-filter { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; color: var(--text-secondary); font-size: var(--ui-text); }
+.sp-date-filter input {
+  height: 2rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.sp-date-filter.is-active input { border-color: var(--primary-color); }
 .ui-work.ui-work .sp-table :is(th, td).sp-sel { padding-left: 0.5rem; padding-right: 0; text-align: center; }
 .sp-select { width: 1rem; height: 1rem; margin: 0; cursor: pointer; accent-color: var(--primary-color); vertical-align: middle; }
 .sp-select:disabled { cursor: default; }
@@ -575,6 +600,7 @@
 [data-theme='dark'] .sp-save-status.is-ok { color: #86efac; }
 [data-theme='dark'] .sp-fill-note { color: #7dd3fc; }
 [data-theme='dark'] .sp-origin { color: #7dd3fc; }
+[data-theme='dark'] .sp-author.is-auto { color: #7dd3fc; }
 [data-theme='dark'] .sp-suggest { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
 [data-theme='dark'] .sp-suggest-tag.is-current { color: #86efac; }
 
@@ -583,6 +609,7 @@
   .sp-page { padding: 0.75rem 1rem 1.5rem; }
   .sp-registry-hint { display: none; }
   .sp-search { flex: 1 1 100%; }
+  .sp-date-filter { flex: 1 1 100%; }
   .ui-work.ui-work .sp-table { min-width: 0; table-layout: auto; }
   .sp-table colgroup, .sp-table thead { display: none; }
   .sp-table, .sp-table tbody, .sp-table tfoot { display: block; }

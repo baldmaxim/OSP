@@ -3357,10 +3357,12 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                           {MATERIALS_PRIORITY_LABEL[tender.materials_priority]}
                         </span>
                       )}
-                      {supply?.positions > 0 && (
+                      {supply?.positions > 0 ? (
                         <span title={`Расценено снабжением: ${supply.priced} из ${supply.positions} позиций`}>
                           Расценка {supply.priced}/{supply.positions}
                         </span>
+                      ) : PRICING_STATUS[supply?.status] && (
+                        <span className={`tp-mrow-pricing${PRICING_STATUS[supply.status].cls}`}>Расценка: {PRICING_STATUS[supply.status].text}</span>
                       )}
                       {kp?.total > 0 && (
                         <span
@@ -5665,20 +5667,49 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 
 export default TendersPage
 
-// «Расценка: N из M» под описанием тендера на материалы: сколько позиций ВОР расценено, переход в расценку.
+// «Расценка: N из M» под описанием тендера на материалы: сколько позиций ВОР расценено, переход в расценку. Позиции
+// разбирает служба osp-api заранее (supplyImport), поэтому статус есть и у тендера, расценку которого не открывали:
+// «ВОР не загрузился» (причина — в подсказке), «нет ВОР», «загружается»; «открыть» — пока служба его не смотрела.
+const PRICING_STATUS = {
+  issues: { text: 'ВОР не загрузился', cls: ' is-warn' },
+  no_vor: { text: 'нет ВОР', cls: ' is-muted' },
+  pending: { text: 'загружается', cls: ' is-muted' },
+  locked: { text: 'завершён', cls: ' is-muted' },
+}
 function SupplyPricingLink({ tender, progress }) {
   const has = progress && progress.positions > 0
   const pct = has ? Math.round((progress.priced / progress.positions) * 100) : 0
+  const st = !has ? PRICING_STATUS[progress?.status] : null
+  const reasons = st && progress.status === 'issues'
+    ? (progress.issues || []).map((i) => `«${i.file_name || i.name || 'ВОР'}»: ${pricingIssueText(i)}`).join('\n')
+    : ''
   return (
     <Link
       to={`/tenders/materials/${tender.id}/pricing`}
-      className={`link tp-pricing-link${has && progress.priced === progress.positions ? ' is-complete' : ''}`}
-      title="Расценка материалов ВОР снабжением на сайте"
+      className={`link tp-pricing-link${has && progress.priced === progress.positions ? ' is-complete' : ''}${st?.cls || ''}`}
+      title={reasons ? `Позиции ВОР не загрузились:\n${reasons}` : 'Расценка материалов ВОР снабжением на сайте'}
     >
-      <span>Расценка: <span className="ui-num">{has ? `${progress.priced} из ${progress.positions}` : 'открыть'}</span></span>
+      <span>Расценка: <span className="ui-num">{has ? `${progress.priced} из ${progress.positions}` : (st?.text || 'открыть')}</span></span>
       {has && (
         <span className="tp-pricing-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
       )}
     </Link>
   )
+}
+
+// Причина отказа разбора файла ВОР одной фразой (подробно — на странице расценки).
+const PRICING_ISSUE_TEXT = {
+  no_sheet: 'нет листа «Материалы» и листа ВОР с колонкой «КОД»',
+  no_header: 'не найдена шапка листа',
+  no_material_codes: 'нет строк с кодом «мат.»',
+  empty: 'нет позиций',
+  broken: 'файл не читается как Excel',
+  too_large: 'файл слишком большой — загрузится при открытии расценки',
+  timeout: 'разбор занял слишком долго — загрузится при открытии расценки',
+  memory: 'файл слишком тяжёлый — загрузится при открытии расценки',
+  missing: 'файла нет в хранилище — загрузите его в «ВОРы и РД» заново',
+  too_many: 'больше 20 000 позиций — проверьте лист и колонки',
+}
+function pricingIssueText(i) {
+  return PRICING_ISSUE_TEXT[i.kind] || 'не скачался, повторим'
 }

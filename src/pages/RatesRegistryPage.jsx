@@ -5,7 +5,7 @@ import FilterDropdown from '../components/FilterDropdown'
 import LarixRegistrySection from './LarixRegistrySection'
 import {
   fmtMoney, fmtDate, fmtRefreshed, describeRegistryError, PAGE_SIZES, useDebounced,
-  applyInFilter, fetchAllRows, downloadXlsx, todayStamp,
+  applyInFilter, fetchAllRows, downloadXlsx, todayStamp, moscowDayStart, moscowDayEnd, fmtMoscowDate,
 } from '../utils/ratesRegistry'
 import './RatesRegistryPage.css'
 
@@ -80,8 +80,9 @@ function SupplyRegistrySection() {
     q = applyInFilter(q, 'tender_id', tenderIds, optionCounts.current.tenders)
     if (priceMin !== '' && !isNaN(Number(priceMin))) q = q.gte('price', Number(priceMin))
     if (priceMax !== '' && !isNaN(Number(priceMax))) q = q.lte('price', Number(priceMax))
-    if (dateFrom) q = q.gte('rate_date', dateFrom)
-    if (dateTo) q = q.lte('rate_date', `${dateTo}T23:59:59`)
+    // День расценки — по Москве (см. moscowDayStart).
+    if (dateFrom) q = q.gte('rate_date', moscowDayStart(dateFrom))
+    if (dateTo) q = q.lte('rate_date', moscowDayEnd(dateTo))
     return q
   }, [debouncedSearch, objectIds, tenderIds, priceMin, priceMax, dateFrom, dateTo])
 
@@ -204,7 +205,7 @@ function SupplyRegistrySection() {
         r.unit || '',
         r.price != null ? Number(r.price) : '',
         r.tender_desc || '',
-        r.rate_date ? fmtDate(r.rate_date) : '',
+        r.rate_date ? fmtMoscowDate(r.rate_date) : '',
       ])
       downloadXlsx(headers, dataRows, 'Расценки СУ-10', `Реестр расценок (СУ-10) ${todayStamp()}.xlsx`, [6, 10, 24, 46, 10, 14, 40, 14])
     } catch (err) {
@@ -355,7 +356,7 @@ function SupplyRegistrySection() {
                     </td>
                     <td className="rr-td-unit">{r.unit || '—'}</td>
                     <td className="rr-td-price">{fmtMoney(r.price)}</td>
-                    <td className="rr-td-date">{fmtDate(r.rate_date)}</td>
+                    <td className="rr-td-date">{fmtMoscowDate(r.rate_date)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -201,6 +201,8 @@ export const supabase = {
   functions: {
     invoke: async (name, opts = {}) => {
       const key = opts.body?.s3_key
+      // Все попытки скачать файл (и те, что хранилище стенда не отдаст) — для проверки «не скачивает».
+      if (name === 's3-presign' && key) (window.__fakePresignRequests ||= []).push(key)
       if (name === 's3-presign' && key && window.__fakeFiles?.[key]) {
         window.__fakeFileRequests ||= []
         window.__fakeFileRequests.push(key)

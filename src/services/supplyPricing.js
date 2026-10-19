@@ -25,7 +25,7 @@ export const RATE_COLUMNS = 'id, tender_id, estimate_name, material_name, unit, 
   + 'price_input, input_value, volume_at_input, row_version, updated_by, updated_at, created_at, material_key'
 // Цены из других тендеров (миграция 20261023): день расценки и откуда скопирована цена. Колонок ещё нет — цены
 // читаются без них (таблица работает как раньше); проверяется один раз за сеанс.
-const REUSE_COLUMNS = ', price_date, source_rate_id, source_tender_id, source_kind'
+const REUSE_COLUMNS = ', price_date, price_by, source_rate_id, source_tender_id, source_kind'
 let reuseColumns = true
 const rateColumns = () => (reuseColumns ? RATE_COLUMNS + REUSE_COLUMNS : RATE_COLUMNS)
 const isMissingColumn = (e) => ['42703', 'PGRST204'].includes(String(e?.code || ''))
@@ -119,11 +119,11 @@ export async function loadPricingContext(id) {
 // Всё для таблицы расценки по основному тендеру — одновременно: файлы ВОР, списки позиций, цены, последний
 // номер журнала и (если карточка их не дала) строки вкладки «ВОР».
 export async function loadPricingData(mainId, { withItems = false } = {}) {
-  const [files, sources, rates, logId, links, items] = await Promise.all([
-    loadVorFiles(mainId), loadSources(mainId), loadRates(mainId), loadLogMarker(mainId), loadLinks(mainId),
+  const [files, sources, rates, logId, links, importState, items] = await Promise.all([
+    loadVorFiles(mainId), loadSources(mainId), loadRates(mainId), loadLogMarker(mainId), loadLinks(mainId), loadImportState(mainId),
     withItems ? loadEstimateItems(mainId) : null,
   ])
-  return { files, sources, rates, logId, links, items }
+  return { files, sources, rates, logId, links, importState, items }
 }
 
 // Открытие таблицы за два шага к серверу вместо цепочки: тендер, затем всё остальное разом. ctx уже есть
@@ -453,24 +453,43 @@ export async function loadRateHistory(mainId, { rateId, estimateName, materialNa
   return data || []
 }
 
-// Прогресс по основным тендерам для реестра тендеров на материалы: Map(mainId → { positions, priced }).
-// Нет представления (миграция не применена) — пустая карта, реестр работает по-старому.
+// Состояние разбора позиций ВОР службой osp-api (миграция 20261024): разбирает ли она тендер, что вышло и какие
+// файлы не разобрались. Таблицы ещё нет — null: страница работает как раньше (сама разбирает файлы).
+export async function loadImportState(mainId) {
+  const { data, error } = await db.from('tender_supply_import_state')
+    .select('tender_id, status, issues, positions_count, checked_at').eq('tender_id', mainId).maybeSingle()
+  if (error) return null
+  return data || { tender_id: mainId, status: null, issues: [] }
+}
+
+// Прогресс по основным тендерам для реестра тендеров на материалы: Map(mainId → { positions, priced, status, issues }).
+// status — состояние разбора службой osp-api (ok | no_vor | issues | locked | pending): статус виден и у тендера,
+// расценку которого ещё не открывали. Нет представления (миграция не применена) — пустая карта; нет таблицы
+// состояния — без status, реестр работает по-старому.
 export async function loadSupplyProgress(mainIds) {
   const out = new Map()
   const ids = [...new Set(mainIds.filter(Boolean))]
+  const entry = (id) => {
+    if (!out.has(id)) out.set(id, { positions: 0, priced: 0, status: null, issues: [] })
+    return out.get(id)
+  }
+  let statesOn = true
   for (const chunk of chunkList(ids)) {
-    const { data, error } = await db.from('tender_supply_progress')
-      .select('tender_id, positions_count, priced_count').in('tender_id', chunk)
-    if (error) {
-      if (classifyError(error)?.kind === 'missing') return out
-      throw error
+    const [progress, states] = await Promise.all([
+      db.from('tender_supply_progress').select('tender_id, positions_count, priced_count').in('tender_id', chunk),
+      statesOn ? db.from('tender_supply_import_state').select('tender_id, status, issues').in('tender_id', chunk) : { data: [] },
+    ])
+    if (progress.error) {
+      if (classifyError(progress.error)?.kind === 'missing') return out
+      throw progress.error
     }
-    for (const r of data || []) {
-      const cur = out.get(r.tender_id) || { positions: 0, priced: 0 }
+    if (states.error) statesOn = false
+    for (const r of progress.data || []) {
+      const cur = entry(r.tender_id)
       cur.positions += r.positions_count || 0
       cur.priced += r.priced_count || 0
-      out.set(r.tender_id, cur)
     }
+    for (const r of states.data || []) Object.assign(entry(r.tender_id), { status: r.status, issues: r.issues || [] })
   }
   return out
 }

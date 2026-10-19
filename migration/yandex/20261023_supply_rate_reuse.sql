@@ -49,6 +49,7 @@ $$;
 -- ── 2. Колонки расценок ──────────────────────────────────────────────────────────────────────────────
 ALTER TABLE public.tender_vor_supply_rates
   ADD COLUMN IF NOT EXISTS price_date date,
+  ADD COLUMN IF NOT EXISTS price_by uuid,
   ADD COLUMN IF NOT EXISTS source_rate_id uuid,
   ADD COLUMN IF NOT EXISTS source_tender_id uuid,
   ADD COLUMN IF NOT EXISTS source_kind text,
@@ -61,6 +62,7 @@ ALTER TABLE public.tender_vor_supply_rates ADD CONSTRAINT tender_vor_supply_rate
   CHECK ((source_kind IS NULL OR source_kind IN ('auto', 'pick')) AND (source_rate_id IS NULL) = (source_kind IS NULL));
 
 COMMENT ON COLUMN public.tender_vor_supply_rates.price_date IS 'День расценки (по Москве): когда ввели или изменили саму цену; у копии — день исходной цены';
+COMMENT ON COLUMN public.tender_vor_supply_rates.price_by IS 'Кто поставил цену: вошедший при вводе, импорте Excel и выборе из похожих; у сама подставленной — пусто';
 COMMENT ON COLUMN public.tender_vor_supply_rates.source_rate_id IS 'Цена скопирована из этой расценки другого тендера (без FK: исходную могут удалить)';
 COMMENT ON COLUMN public.tender_vor_supply_rates.source_tender_id IS 'Тендер исходной цены — номер виден, даже если её удалили';
 COMMENT ON COLUMN public.tender_vor_supply_rates.source_kind IS 'auto — подставлена сама (одинаковая позиция), pick — выбрана из похожих';
@@ -74,6 +76,11 @@ ALTER TABLE public.tender_vor_supply_rates DISABLE TRIGGER USER;
 UPDATE public.tender_vor_supply_rates
    SET price_date = (coalesce(updated_at, created_at, now()) AT TIME ZONE 'Europe/Moscow')::date
  WHERE price_date IS NULL;
+UPDATE public.tender_vor_supply_rates r
+   SET price_by = coalesce((SELECT l.changed_by FROM public.tender_supply_rate_log l
+                            WHERE l.rate_id = r.id AND l.op IN ('insert', 'update') AND l.new_price IS DISTINCT FROM l.old_price
+                            ORDER BY l.id DESC LIMIT 1), r.updated_by)
+ WHERE r.price_by IS NULL AND r.source_rate_id IS NULL;
 ALTER TABLE public.tender_vor_supply_rates ENABLE TRIGGER USER;
 
 CREATE INDEX IF NOT EXISTS tender_vor_supply_rates_reuse_idx
@@ -147,13 +154,16 @@ BEGIN
     NEW.price_date := v_src.price_date;
     NEW.source_tender_id := v_src.tender_id;
     NEW.source_kind := coalesce(NEW.source_kind, 'pick');
+    NEW.price_by := CASE WHEN NEW.source_kind = 'pick' THEN auth.uid() END;
   ELSIF v_priced OR OLD.price_date IS NULL THEN
     NEW.source_rate_id := NULL;
     NEW.source_tender_id := NULL;
     NEW.source_kind := NULL;
     NEW.price_date := (now() AT TIME ZONE 'Europe/Moscow')::date;
+    NEW.price_by := auth.uid();
   ELSE
     NEW.price_date := OLD.price_date;
+    NEW.price_by := OLD.price_by;
     NEW.source_rate_id := OLD.source_rate_id;
     NEW.source_tender_id := OLD.source_tender_id;
     NEW.source_kind := OLD.source_kind;
@@ -271,15 +281,15 @@ AS $$
   LIMIT least(greatest(coalesce(p_limit, 15), 1), 50)
 $$;
 
--- Откуда скопированы цены тендера: тендер, объект, ВОР, наименование и документ исходной цены, день расценки.
+-- Откуда скопированы цены тендера: тендер, объект, ВОР, наименование, документ и автор исходной цены, день расценки.
 CREATE OR REPLACE FUNCTION public.supply_rate_origins(p_tender uuid)
   RETURNS TABLE (rate_id uuid, source_kind text, source_tender_id uuid, tender_number integer, object_name text,
-                 estimate_name text, material_name text, price_date date, url text)
+                 estimate_name text, material_name text, price_date date, url text, source_price_by uuid)
   LANGUAGE sql STABLE
   SET search_path = public, pg_temp
 AS $$
   SELECT r.id, r.source_kind, r.source_tender_id, t.public_tender_number, coalesce(o.name, t.custom_object_name),
-         s.estimate_name, s.material_name, r.price_date, l.url
+         s.estimate_name, s.material_name, r.price_date, l.url, s.price_by
   FROM public.tender_vor_supply_rates r
   LEFT JOIN public.tender_vor_supply_rates s ON s.id = r.source_rate_id
   LEFT JOIN public.tenders t ON t.id = r.source_tender_id

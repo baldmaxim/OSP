@@ -3,7 +3,7 @@
 with
 cols as (
   select column_name from information_schema.columns where table_schema = 'public' and table_name = 'tender_vor_supply_rates'
-    and column_name in ('price_date', 'source_rate_id', 'source_tender_id', 'source_kind', 'name_tokens', 'name_words', 'unit_key')
+    and column_name in ('price_date', 'price_by', 'source_rate_id', 'source_tender_id', 'source_kind', 'name_tokens', 'name_words', 'unit_key')
 ),
 fn as (
   select p.proname, p.prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -11,8 +11,8 @@ fn as (
     'supply_suggestion_counts', 'supply_rate_suggestions', 'supply_rate_origins')
 ),
 checks(n, ok, what) as (
-  select 1, (select count(*) from cols) = 7,
-         'у расценок семь новых колонок: день расценки, источник копии (расценка, тендер, способ), слова наименования, ед. изм. в едином виде'
+  select 1, (select count(*) from cols) = 8,
+         'у расценок восемь новых колонок: день расценки, кто поставил цену, источник копии (расценка, тендер, способ), слова наименования, ед. изм. в едином виде'
   union all
   select 2, not exists (select 1 from public.tender_vor_supply_rates where price_date is null),
          'у каждой цены есть день расценки (прежним — по времени изменения, по Москве)'

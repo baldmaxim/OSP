@@ -239,6 +239,22 @@ if (params.get('missing') === '1') {
   window.__fakeErrors = { tender_supply_sources: { code: '42P01', message: 'relation "public.tender_supply_sources" does not exist' } }
 }
 
+// Состояние разбора позиций службой osp-api (миграция 20261024).
+//   importStates=1 — реестр: у tender-1 файл ВОР не разобрался, у tender-2 ВОР нет, tender-3 — ещё в очереди;
+//   serverIssue=1 — у tender-p служба уже знает, что файл ВОР_ЭОМ (brokenFile=1) не читается: страница его не скачивает.
+window.__fakeDb.tender_supply_import_state = [
+  ...(params.get('importStates') === '1' ? [
+    { tender_id: 'tender-1', status: 'issues', positions_count: 0, checked_at: '2026-10-19T10:00:00Z',
+      issues: [{ doc_id: 'doc-x', file_name: 'ВОР_ЭОМ.xlsx', version: 'file:doc-x:1', parser: 2, kind: 'no_sheet' }] },
+    { tender_id: 'tender-2', status: 'no_vor', positions_count: 0, checked_at: '2026-10-19T10:00:00Z', issues: [] },
+    { tender_id: 'tender-3', status: 'pending', positions_count: 0, checked_at: '2026-10-19T10:00:00Z', issues: [] },
+  ] : []),
+  ...(params.get('serverIssue') === '1' ? [
+    { tender_id: 'tender-p', status: 'ok', positions_count: 6, checked_at: '2026-10-19T10:00:00Z',
+      issues: [{ doc_id: 'doc-vor-bad', file_name: 'ВОР_ЭОМ.xlsx', version: 'file:doc-vor-bad:2026-10-13T09:00:00Z', parser: 2, kind: 'broken', message: 'zip повреждён' }] },
+  ] : []),
+]
+
 // Цены из других тендеров (миграция 20261023). reuse=1 — функции базы есть: у тендера № 445 «ЖК Север» свежие
 // цены — тот же кран (подставится сам в ОВ; в ВК у крана другая ед. изм.), похожие трубы (меню) и старый хомут
 // (старше 3 месяцев — ни сам, ни в меню). Без reuse функций нет, как до миграции: таблица работает как раньше.
@@ -257,6 +273,9 @@ const similarRates = (name, unit) => {
     .sort((a, b) => b.price_date.localeCompare(a.price_date))
 }
 if (params.get('reuse') === '1') {
+  // Колонки 20261023 у прежней цены: день расценки и кто поставил; сам пользователь стенда — в справочнике ФИО.
+  Object.assign(window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-3'), { price_date: dayAgo(3), price_by: 'user-2' })
+  window.__fakeDb.employee_directory.push({ user_id: 'user-1', display_name: 'Стендов С. С.', full_name: 'Стендов Стенд Стендович', email: 't@example.invalid', role: 'admin' })
   window.__fakeRpc = {
     supply_autofill({ p_tender }) {
       const fdb = window.__fakeDb
@@ -298,7 +317,7 @@ if (params.get('reuse') === '1') {
           const o = OTHER_RATES.find((x) => x.id === r.source_rate_id)
           return { rate_id: r.id, source_kind: r.source_kind, source_tender_id: r.source_tender_id, tender_number: o?.tender_number ?? null,
             object_name: o?.object_name ?? null, estimate_name: o?.estimate_name ?? null, material_name: o?.material_name ?? null,
-            price_date: r.price_date, url: o?.url ?? null }
+            price_date: r.price_date, url: o?.url ?? null, source_price_by: o ? 'user-2' : null }
         }),
         error: null,
       }
@@ -326,15 +345,18 @@ window.__fakeTriggers = {
       Object.assign(row, { price_input: 'import', input_value: row.supply_price, volume_at_input: null, supply_price_exact: null, supply_total: null })
     }
     row.material_key = normName(row.material_name)
-    // День расценки и копия цены другого тендера (миграция 20261023) — как в базе.
+    // День расценки, автор и копия цены другого тендера (миграция 20261023) — как в базе; без reuse=1 колонок нет.
+    if (params.get('reuse') !== '1') return
     const priced = !old || row.supply_price !== old.supply_price || row.supply_price_exact !== old.supply_price_exact
     const src = row.source_rate_id && (!old || row.source_rate_id !== old.source_rate_id) ? OTHER_RATES.find((o) => o.id === row.source_rate_id) : null
     if (src) {
       Object.assign(row, { price_date: src.price_date, source_tender_id: src.tender_id, source_kind: row.source_kind || 'pick' })
+      row.price_by = row.source_kind === 'pick' ? 'user-1' : null
     } else if (priced || !old?.price_date) {
-      Object.assign(row, { price_date: dayAgo(0), source_rate_id: null, source_tender_id: null, source_kind: null })
+      Object.assign(row, { price_date: dayAgo(0), price_by: 'user-1', source_rate_id: null, source_tender_id: null, source_kind: null })
     } else {
-      Object.assign(row, { price_date: old.price_date, source_rate_id: old.source_rate_id ?? null, source_tender_id: old.source_tender_id ?? null, source_kind: old.source_kind ?? null })
+      Object.assign(row, { price_date: old.price_date, price_by: old.price_by ?? null, source_rate_id: old.source_rate_id ?? null,
+        source_tender_id: old.source_tender_id ?? null, source_kind: old.source_kind ?? null })
     }
   },
   // Список позиций: ключ k, число позиций и версия — как триггер tender_supply_sources_compute.

@@ -598,6 +598,89 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  // Дата цены и автор (20261023), статус разбора службой osp-api (20261024).
+  it('дата цены у каждой цены и фильтр по ней; администратору — кто поставил цену', async () => {
+    const { page, context, errors } = await openPage('&reuse=1')
+    try {
+      const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10)
+      const shown = (name, vor) => page.getByLabel(price(name, vor)).count()
+      const kran = rowOf(page, 'Кран шаровой Ду15', 'ОВ')
+      await kran.locator('.sp-origin', { hasText: 'тендера № 445' }).waitFor({ timeout: 30000 })
+      await page.getByRole('columnheader', { name: 'Дата цены, кто' }).waitFor()
+      const iso = rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ')
+      assert.match(await iso.locator('.sp-date-cell').innerText(), /^\d\d\.\d\d\.\d{4}\s+Петров П\. П\.$/)
+      assert.match(await kran.locator('.sp-date-cell').innerText(), /автоматически/)
+      assert.match(await kran.locator('.sp-date-cell').getAttribute('title'), /поставил: автоматически \(цену поставил Петров П\. П\.\)/)
+
+      // Своя цена — сегодняшний день и тот, кто вошёл.
+      await enter(page.getByLabel(price('Труба медная Ø12,7', 'ОВ')), '400')
+      const truba = rowOf(page, 'Труба медная Ø12,7', 'ОВ')
+      await truba.locator('.sp-author', { hasText: 'Стендов С. С.' }).waitFor()
+      const [y, m, d] = day(0).split('-')
+      assert.match(await truba.locator('.sp-date-cell').innerText(), new RegExp(`^${d}\\.${m}\\.${y}`))
+
+      // С позавчера — только сегодняшние цены; с 4 дней по 2 дня назад — только изоляция (3 дня), кран — 5 дней.
+      await page.getByLabel('Дата цены: с').fill(day(2))
+      await page.waitForFunction(() => !document.querySelector('[aria-label^="Цена за единицу: Изоляция"]'))
+      assert.equal(await shown('Труба медная Ø12,7', 'ОВ'), 1)
+      assert.equal(await shown('Кран шаровой Ду15', 'ОВ'), 0)
+      assert.equal(await shown('Хомут монтажный', 'ОВ'), 0, 'без цены — не попадает')
+      await page.getByLabel('Дата цены: с').fill(day(4))
+      await page.getByLabel('Дата цены: по').fill(day(2))
+      await page.waitForFunction(() => !!document.querySelector('[aria-label^="Цена за единицу: Изоляция"]'))
+      assert.equal(await shown('Труба медная Ø12,7', 'ОВ'), 0)
+      assert.equal(await shown('Кран шаровой Ду15', 'ОВ'), 0)
+      await page.getByRole('button', { name: 'сбросить' }).click()
+      await page.waitForFunction(() => !!document.querySelector('[aria-label^="Цена за единицу: Хомут"]'))
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('без прав администратора — дата цены без автора', async () => {
+    const { page, context, errors } = await openPage('&reuse=1&canEdit=0')
+    try {
+      await page.getByRole('columnheader', { name: 'Дата цены', exact: true }).waitFor()
+      assert.match(await rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ').locator('.sp-date-cell').innerText(), /^\d\d\.\d\d\.\d{4}$/)
+      assert.equal(await page.locator('.sp-author').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('реестр тендеров на материалы: статус расценки у всех тендеров — «ВОР не загрузился» с причиной, «нет ВОР», «загружается»', async () => {
+    const { page, context, errors } = await open('&matTenders=1&importStates=1', '/tenders/materials')
+    try {
+      const link = (id) => page.locator(`a.tp-pricing-link[href$="/tenders/materials/${id}/pricing"]`)
+      await link('mat-1').filter({ hasText: 'ВОР не загрузился' }).waitFor({ timeout: 120000 })
+      assert.match(await link('mat-1').getAttribute('title'), /«ВОР_ЭОМ\.xlsx»: нет листа «Материалы»/)
+      assert.match(await link('mat-1').getAttribute('class'), /is-warn/)
+      assert.match(await link('mat-2').innerText(), /Расценка: нет ВОР/)
+      assert.match(await link('mat-3').innerText(), /Расценка: загружается/)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('файл, который служба osp-api не смогла разобрать, страница не скачивает — причина видна сразу, и без права правки', async () => {
+    for (const q of ['&brokenFile=1&serverIssue=1', '&brokenFile=1&serverIssue=1&canEdit=0']) {
+      const { page, context, errors } = await openPage(q)
+      try {
+        await page.getByText('ВОР из файла «ВОР_ЭОМ.xlsx» не загрузился: файл не читается', { exact: false }).waitFor()
+        await page.waitForTimeout(400)
+        const asked = await page.evaluate(() => window.__fakePresignRequests || [])
+        assert.ok(!asked.some((k) => k.includes('ВОР_ЭОМ')), `скачивали: ${asked.join(', ')}`)
+        assert.equal(await page.getByText('ещё не загружены в расценку', { exact: false }).count(), 0, q)
+        assert.deepEqual(errors, [])
+      } finally {
+        await context.close()
+      }
+    }
+  })
+
   it('миграция не применена — понятное сообщение, страница не падает', async () => {
     const { page, context, errors } = await openPage('&missing=1')
     try {

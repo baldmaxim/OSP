@@ -827,3 +827,7 @@ tr:hover .mat-notes-tools { opacity: 1; }
 .tp-pricing-bar { display: inline-block; width: 3rem; height: 4px; border-radius: 2px; background: var(--border-color); overflow: hidden; }
 .tp-pricing-bar > span { display: block; height: 100%; background: var(--ui-link, var(--primary-color)); }
 .tp-pricing-link.is-complete .tp-pricing-bar > span { background: var(--success-color); }
+/* Статус без позиций: «ВОР не загрузился» — предупреждение, «нет ВОР» / «загружается» — серым. Вес выше, чем у
+   цвета ссылок рабочего стиля (:is(.link, .row-link.primary:not(…)) весит как три класса). */
+.ui-work.ui-work .tp-grid a.tp-pricing-link.tp-pricing-link.is-warn, .tp-mrow-pricing.is-warn { color: var(--warning-color); }
+.ui-work.ui-work .tp-grid a.tp-pricing-link.tp-pricing-link.is-muted, .tp-mrow-pricing.is-muted { color: var(--text-secondary); }

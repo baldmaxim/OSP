@@ -128,8 +128,10 @@ describe('Цены снабжения из других тендеров: баз
     assert.equal(out.split('\n').filter((l) => l.startsWith('OK ')).length, 5, out)
   })
 
-  it('прежние цены: день расценки — по Москве от времени изменения (22:30 UTC 18.10 → 19.10)', () => {
-    assert.equal(rate(`id = '${legacyId}'`).price_date, '2026-10-19')
+  it('прежние цены: день расценки — по Москве от времени изменения (22:30 UTC 18.10 → 19.10); кто поставил — из журнала', () => {
+    const r = rate(`id = '${legacyId}'`)
+    assert.equal(r.price_date, '2026-10-19')
+    assert.equal(r.price_by, U.supply)
   })
 
   it('день расценки ставит ввод цены; ед. изм., перенос ВОР и прямая правка колонок его не меняют', () => {
@@ -139,16 +141,21 @@ describe('Цены снабжения из других тендеров: баз
       update public.tender_vor_supply_rates set price_date = ${today} - 5 where id = '${id}';
       alter table public.tender_vor_supply_rates enable trigger user;`)
     const before = rate(`id = '${id}'`).price_date
+    assert.equal(rate(`id = '${id}'`).price_by, U.supply, 'кто поставил цену')
     as(U.supply, `update public.tender_vor_supply_rates set unit = 'штук' where id = '${id}'`)
     as(U.tender, `select public.supply_estimate_rename('${TA}', 'ОВ', 'ОВ-1')`)
-    as(U.supply, `update public.tender_vor_supply_rates set price_date = ${today}, source_kind = 'auto', source_tender_id = '${TB}' where id = '${id}'`)
+    as(U.supply, `update public.tender_vor_supply_rates set price_date = ${today}, source_kind = 'auto', source_tender_id = '${TB}',
+      price_by = '${U.viewer}' where id = '${id}'`)
     const r = rate(`id = '${id}'`)
     assert.equal(r.price_date, before, 'дата не «помолодела»')
+    assert.equal(r.price_by, U.supply, 'автор цены — тот, кто её ставил, а не кто переносил ВОР или правил колонку')
+    assert.equal(r.updated_by, U.supply)
     assert.equal(r.estimate_name, 'ОВ-1')
     assert.equal(r.source_kind, null)
     assert.equal(r.source_tender_id, null)
-    as(U.supply, `update public.tender_vor_supply_rates set input_value = 430 where id = '${id}'`)
+    as(U.tender, `update public.tender_vor_supply_rates set input_value = 430 where id = '${id}'`)
     assert.equal(rate(`id = '${id}'`).price_date, sql(`select ${today}`), 'новая цена — сегодня')
+    assert.equal(rate(`id = '${id}'`).price_by, U.tender, 'новая цена — новый автор')
     // Импорт Excel (только supply_price) — тоже новая цена.
     sql(`alter table public.tender_vor_supply_rates disable trigger user;
       update public.tender_vor_supply_rates set price_date = ${today} - 5 where id = '${id}';
@@ -194,6 +201,7 @@ describe('Цены снабжения из других тендеров: баз
     assert.equal(pipe.source_tender_id, TA)
     assert.equal(pipe.price_date, src.price_date, 'дата — исходной цены')
     assert.equal(pipe.updated_by, U.supply)
+    assert.equal(pipe.price_by, null, 'подставлена сама — автора в этом тендере нет')
     assert.ok(rate(`tender_id = '${TC}' and material_name = 'Отвод 90° 57х3,5'`), '«шт» = «штук»')
     assert.ok(rate(`tender_id = '${TC}' and material_name = 'Задвижка 30с41нж Ду100'`), 'ровно 3 месяца — ещё свежая')
     for (const name of ['Кабель ВВГнг 3×2,5', 'Фильтр сетчатый Ду50', 'Манометр 0-10 бар']) {
@@ -290,6 +298,7 @@ describe('Цены снабжения из других тендеров: баз
     const r = rate(`tender_id = '${TC}' and material_name = 'Кабель ВВГнг 3×2,5'`)
     assert.equal(r.source_kind, 'pick')
     assert.equal(r.source_tender_id, TB)
+    assert.equal(r.price_by, U.supply, 'взял из похожих — он и поставил')
     assert.equal(r.price_date, src.price_date)
     const copy = rate(`tender_id = '${TC}' and material_name = 'Труба стальная Ø57×3,5'`)
     assert.throws(() => as(U.supply, `update public.tender_vor_supply_rates set source_rate_id = '${copy.id}', source_kind = 'pick' where id = '${r.id}'`),
@@ -303,6 +312,7 @@ describe('Цены снабжения из других тендеров: баз
     assert.equal(pipe.estimate_name, 'ОВ-1')
     assert.equal(pipe.material_name, 'Труба стальная Ø57×3,5')
     assert.equal(pipe.url, 'https://disk.example.ru/chek-57')
+    assert.equal(pipe.source_price_by, U.supply, 'автор исходной цены')
     assert.ok(origins.some((o) => o.rate_id === r.id && o.source_kind === 'pick' && o.material_name === 'Труба стальная Ø57×4'))
   })
 

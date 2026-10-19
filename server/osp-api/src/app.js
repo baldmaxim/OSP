@@ -41,6 +41,7 @@ import { createWriteBarrier } from './lib/writeBarrier.js'
 import { createLoadStatus, isFinalLoad } from './lib/loadStatus.js'
 import { createLarixClient } from './lib/larixClient.js'
 import { createLarixSync, dbTarget, supabaseTarget } from './lib/larixSync.js'
+import { createSupplyImport } from './lib/supplyImport.js'
 import { createSecretBox } from './lib/auth/secretBox.js'
 import { createPasswordVerifier } from './lib/auth/passwords.js'
 import { loadBlocklist } from './lib/auth/policy.js'
@@ -359,6 +360,15 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     }, REGISTRY_REFRESH_MS)
     timer.unref()
     app.addHook('onClose', async () => clearInterval(timer))
+  }
+
+  // Позиции ВОР для расценки снабжением — заранее, раз в 10 минут (src/lib/supplyImport.js): разбор файлов в
+  // отдельном процессе, запись — служебная, при барьере записи такт пропускается.
+  if (db && config.supplyImport) {
+    const supplyImport = createSupplyImport({ db, s3: getS3(), bucket: config.s3.bucket, log: app.log, ...deps.supplyImport })
+    const stopSupplyImport = supplyImport.start({ isReadOnly })
+    app.addHook('onClose', async () => stopSupplyImport())
+    app.decorate('supplyImport', supplyImport)
   }
 
   // Договорные расценки из Larix.CPM: раз в день в выбранные базы (src/lib/larixSync.js). Когда пора —

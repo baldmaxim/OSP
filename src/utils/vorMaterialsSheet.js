@@ -9,7 +9,7 @@
 // расход». Листы читаются по одному (сначала с «ВОР» в имени) до первого подходящего; результат автозагрузка
 // хранит в базе (список позиций, карта колонок mode: 'code') — при следующих открытиях файл не разбирается.
 import * as XLSX from 'xlsx'
-import { isSupplyMaterial } from './vorMaterials.js'
+import { buildSupplyPositions, isSupplyMaterial } from './vorMaterials.js'
 
 export const HEADER_SCAN_ROWS = 30
 export const MATERIALS_COLUMN_FIELDS = [
@@ -239,6 +239,32 @@ export function readMaterialsWorkbookBytes(bytes, extraSheets = []) {
   const wanted = [...new Set([findMaterialsSheet({ SheetNames: names }), ...extraSheets])].filter((n) => n && names.includes(n))
   if (!wanted.length) return { SheetNames: names, Sheets: {} }
   return XLSX.read(bytes, { ...READ_OPTIONS, sheets: wanted })
+}
+
+// Один файл ВОР → позиции для расценки — так их загружает автозагрузка: и страница расценки, и служба osp-api
+// (server/osp-api/src/shared — копия этого модуля, scripts/sync-osp-api-shared.mjs). Лист «Материалы» со своей шапкой
+// или по сохранённой карте колонок saved (column_map прежнего списка); листа «Материалы» нет — сам лист ВОР по
+// колонке «КОД». Ответ: { positions, sheetName, map } | { error, sheetNames, sheetName, codeTried, message }; error —
+// причина из файла (broken, no_sheet, no_header, no_material_codes, empty).
+export function parseVorFileBytes(bytes, saved = null) {
+  let wb
+  try {
+    wb = readMaterialsWorkbookBytes(bytes, saved?.sheetName ? [saved.sheetName] : [])
+  } catch (e) {
+    return { error: 'broken', message: String(e?.message || e) }
+  }
+  try {
+    let result = readMaterialsFromWorkbook(wb)
+    if ((result.error === 'no_header' || result.error === 'no_sheet') && saved?.columns && wb.Sheets[saved.sheetName]) result = readMaterialsFromWorkbook(wb, saved)
+    if (result.error === 'no_sheet') result = readMaterialsByCodeBytes(bytes, wb.SheetNames)
+    const positions = result.error ? [] : buildSupplyPositions(result.rows)
+    if (result.error || !positions.length) {
+      return { error: result.error || 'empty', sheetNames: result.sheetNames || wb.SheetNames, sheetName: result.sheetName, codeTried: result.codeTried }
+    }
+    return { positions, sheetName: result.sheetName, map: result.map }
+  } catch (e) {
+    return { error: 'broken', message: String(e?.message || e) }
+  }
 }
 
 // Файл ВОР из «ВОРов и РД» годится, если это книга Excel — проверка в модуле без библиотеки Excel.

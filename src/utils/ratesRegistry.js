@@ -22,6 +22,17 @@ export const fmtDate = (iso) => {
   return d.toLocaleDateString('ru-RU')
 }
 
+// Расценки снабжения СУ-10 (миграция 20261023): дата — день расценки, полночь по Москве. Границы фильтра и показ —
+// тоже по Москве: иначе фильтр «с 19.10» (полночь UTC) отсекал бы цену 19.10 (полночь Москвы — 21:00 UTC 18.10).
+const MSK_DAY_FMT = new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric' })
+export const moscowDayStart = (day) => new Date(`${day}T00:00:00+03:00`).toISOString()
+export const moscowDayEnd = (day) => new Date(new Date(`${day}T00:00:00+03:00`).getTime() + 86400000 - 1).toISOString()
+export const fmtMoscowDate = (iso) => {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? '—' : MSK_DAY_FMT.format(d)
+}
+
 // Отметка свежести данных. Сегодняшнее время показываем без даты — так короче
 // и сразу понятно, насколько давно был пересчёт.
 export const fmtRefreshed = (iso) => {

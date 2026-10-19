@@ -9,12 +9,14 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8')
-// Пары миграций: расценка (20261020), ссылки на документы к позициям (20261022, переопределяет перенос ВОР) и цены
-// из других тендеров (20261023, переопределяет расчёт и пересобирает реестр СУ-10 — у Яндекса он в osp_private).
+// Пары миграций: расценка (20261020), ссылки на документы к позициям (20261022, переопределяет перенос ВОР), цены
+// из других тендеров (20261023, переопределяет расчёт и пересобирает реестр СУ-10 — у Яндекса он в osp_private) и
+// состояние разбора позиций службой osp-api (20261024).
 const PAIRS = [
   { name: '20261020_supply_pricing', functions: 8, revoke: /REVOKE ALL ON TABLE public\.tender_supply_sources, public\.tender_supply_rate_log, public\.tender_supply_progress\s+FROM PUBLIC, anon, authenticated;/ },
   { name: '20261022_supply_links', functions: 2, revoke: /REVOKE ALL ON TABLE public\.tender_supply_links FROM PUBLIC, anon, authenticated;/ },
   { name: '20261023_supply_rate_reuse', functions: 8, revoke: /REVOKE ALL ON TABLE public\.supply_rates_registry_mv FROM PUBLIC, anon, authenticated;/, privateSchema: true },
+  { name: '20261024_supply_import_state', functions: 0, revoke: /REVOKE ALL ON TABLE public\.tender_supply_import_state FROM PUBLIC, anon, authenticated;/ },
 ]
 
 // Без комментариев и с одинаковыми пробелами — сравниваются только сами команды.

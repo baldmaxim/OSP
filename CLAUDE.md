@@ -218,6 +218,7 @@ const { data } = await db
 | `tender_vor_supply_rates` | Расценки от снабжения по материалам ВОР тендера (task 398). Привязка к документу-ВОР через `estimate_name`; сопоставление с позициями по `material_name` (`material_key`). Стоимость = `material_consumption × (supply_price_exact ?? supply_price)`. День расценки `price_date` (по Москве) и копии цен других тендеров (`source_rate_id`, `source_kind`) — 20261023. Ввод на сайте — см. «Расценка снабжением на сайте». | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_name)` |
 | `tender_supply_sources` | Позиции ВОР для расценки снабжением: разобранный лист «Материалы» файла из «ВОРов и РД» или вкладка «ВОР» карточки; строка на основной тендер и ВОР (`positions jsonb`) | `tender_id` (CASCADE), `s3_document_id` (SET NULL), `UNIQUE(tender_id, estimate_name)` |
 | `tender_supply_rate_log` | Журнал каждого изменения расценки снабжения (триггер): было / стало, кто, когда | без FK (не мешает удалению тендера) |
+| `tender_supply_import_state` | Состояние разбора позиций ВОР службой osp-api (миграция 20261024): статус по основному тендеру для реестра тендеров на материалы и причины отказов файлов; пишет только служба | `tender_id` (PK, CASCADE) |
 | `tender_supply_links` | Ссылка на документ (чек, счёт, КП поставщика) к позиции расценки снабжением — колонка «Документ» (миграция 20261022): одна на (тендер, ВОР, `material_key`), отдельно от цены; адрес http(s) или `\\сервер\папка` | `tender_id` (CASCADE), `UNIQUE(tender_id, estimate_name, material_key)` |
 | `bsm_contract_rates` | Agreed material rates | `object_id` (CASCADE) |
 | `bsm_supply_rates` | Supply dept rates (has `applied_at` date) | `object_id` (CASCADE) |
@@ -509,6 +510,25 @@ curl -H "X-API-Key: <ключ>" \
   внутри тендера переносит отметку копии и заменяет копии `auto` (своя цена тендера важнее чужой). Пометка в строке —
   `supply_rate_origins`. Реестр СУ-10 копии не показывает, его дата — день расценки. Функций/колонок нет — ничего этого
   нет, остальное работает (`reuseRpc` → null, `RATE_COLUMNS` без новых колонок). Стенд — `reuse=1`.
+- **Дата цены и кто поставил** (20261023): колонка «Дата цены» (день расценки) и фильтр «Дата цены с … по …» в таблице
+  (без цены — не попадает); администратору (`isAdmin` / `isSuperAdmin`) в той же колонке — кто поставил цену
+  (`price_by`: свой ввод, импорт Excel, «Взять» — вошедший; сама подставленная — «автоматически», автор исходной — в
+  подсказке; до 16.10.2026 журнала цен не было — «не записан»). `updated_by` — по-прежнему последний, кто менял строку
+  (перенос ВОР тоже); прямой правкой колонок ни дату, ни автора не подменить (триггер держит прежние). Реестр СУ-10:
+  дата — полночь по Москве, фильтр дат — по Москве (`moscowDayStart` / `moscowDayEnd` в `utils/ratesRegistry.js`).
+- **Позиции ВОР — заранее, на сервере** (20261024, `OSP_SUPPLY_IMPORT=1`, [supplyImport.js](server/osp-api/src/lib/supplyImport.js)):
+  раз в 10 минут служба osp-api делает то же, что автозагрузка страницы, для всех основных тендеров с тендером на
+  материалы — одним кодом (`parseVorFileBytes` в `vorMaterialsSheet.js`, копии `src/utils` в `server/osp-api/src/shared`,
+  `node scripts/sync-osp-api-shared.mjs`; расхождение роняет `tests/osp-api/shared-sync.test.mjs`). Итог —
+  `tender_supply_import_state` (`ok` | `no_vor` | `issues` | `locked` | `pending` + причины): реестр тендеров на
+  материалы показывает «Расценка: N из M» / «ВОР не загрузился» (причины — в подсказке) / «нет ВОР» / «загружается» без
+  открытия расценки, а страница не скачивает файл, который служба не смогла разобрать (`serverFailure`), и без права
+  правки показывает эти причины. Разбор — в отдельном процессе (192 МБ, низкий приоритет, таймаут 2 мин: у osp-api
+  384 МБ / 0,45 CPU), за проход ≤ 40 файлов и 6 минут, файл > 25 МБ не скачивается (его разберёт страница); неразборный,
+  тяжёлый, отсутствующий в хранилище файл и список > 20 000 позиций — не повторяются до новой версии файла или разбора;
+  повторный проход без изменений ничего не пишет. Замер на копии прода 15.10: первый проход 2,8 с (347 тендеров, 144
+  списка из вкладок «ВОР»), следующие — 0,4 с; книга 19 МБ разбирается за 0,5 с, лист ВОР на 40 тыс. строк — 3,5 с.
+  Тест — `tests/supply/server-import.test.mjs`; стенд UI — `importStates=1`, `serverIssue=1`.
 - **Ввод цены ИЛИ суммы; расчёт — в базе** (триггер `tender_vor_supply_rates_compute`): страница пишет `price_input`
   (`unit`|`total`), `input_value`, `volume_at_input`; база считает `supply_price` (копейки), `supply_price_exact` (сумма /
   объём) и `supply_total`. Запись только `supply_price` (импорт Excel, старая вкладка) → `price_input='import'`, точная
@@ -537,9 +557,10 @@ curl -H "X-API-Key: <ключ>" \
   на открытие и подвисания при прокрутке. Тест — `tests/tender/large-lists.test.mjs` (стенд: `bigPricing=N`, `matTenders=1`).
 - Ключ `material_key` / `positions[].k` = `supply_norm_name()` — порт `normName` на SQL; совпадение сторожит
   `tests/supply/norm-name.test.mjs`. Меняете `normName` — меняйте и функцию (новой миграцией) и пересчитайте колонку.
-- База Яндекса — `migration/yandex/20261020_supply_pricing.sql`, `20261022_supply_links.sql` и
-  `20261023_supply_rate_reuse.sql` (тела функций совпадают — `tests/supply/migrations.test.mjs`; реестр СУ-10 у Яндекса в
-  `osp_private`); проверки для прода — `migration/backup/checks/20261020.sql` / `20261022.sql` / `20261023.sql`, откаты —
+- База Яндекса — `migration/yandex/20261020_supply_pricing.sql`, `20261022_supply_links.sql`,
+  `20261023_supply_rate_reuse.sql` и `20261024_supply_import_state.sql` (тела функций совпадают —
+  `tests/supply/migrations.test.mjs`; реестр СУ-10 у Яндекса в `osp_private`); проверки для прода —
+  `migration/backup/checks/20261020.sql` … `20261024.sql`, откаты —
   `migration/rollback/*_rollback.sql` тех же дат; база ссылок — `tests/supply/links-db.test.mjs`, цен из других
   тендеров — `tests/supply/reuse-db.test.mjs`.
 

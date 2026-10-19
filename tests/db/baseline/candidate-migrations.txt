@@ -8,3 +8,4 @@
 20261020_supply_pricing.sql
 20261022_supply_links.sql
 20261023_supply_rate_reuse.sql
+20261024_supply_import_state.sql

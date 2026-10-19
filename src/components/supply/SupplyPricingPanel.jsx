@@ -20,7 +20,7 @@ import {
 } from '../../services/supplyPricing'
 import { fmtPriceDate, isFreshPriceDate, rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
-import { buildSupplyPositions, positionsFromEstimate } from '../../utils/vorMaterials'
+import { positionsFromEstimate } from '../../utils/vorMaterials'
 import { VOR_PARSER_VERSION } from '../../utils/vorFiles'
 import {
   estimateVersion, fileVersion, identicalTargets, planCleanup, planFileImports, planTabImports,
@@ -125,6 +125,14 @@ function storeFailure(p) {
 }
 function forgetFailure(doc) {
   try { localStorage.removeItem(failureKey(doc)) } catch { /* нечего забывать */ }
+}
+// Отказ, который уже записала служба osp-api (tender_supply_import_state, миграция 20261024): тот же файл той же
+// версии этим же разбором — страница его не скачивает. Только причины из самого файла: большой или тяжёлый для
+// сервера файл страница разбирает сама.
+function serverFailure(state, doc) {
+  const i = (state?.issues || []).find((x) => x.doc_id === doc.id && x.version === fileVersion(doc)
+    && x.parser === VOR_PARSER_VERSION && FILE_PROBLEMS.has(x.kind))
+  return i ? { doc, kind: i.kind, sheetNames: i.sheetNames || undefined, sheetName: i.sheetName || undefined, message: i.message || undefined, codeTried: !!i.codeTried } : null
 }
 
 // Позиции из базы уже сгруппированы по ключу; на случай совпадения ключей — склеиваем в одну позицию.
@@ -236,8 +244,10 @@ export default function SupplyPricingPanel({
   ctx: ctxProp = null, tenderId = null, estimateItems: itemsProp = null, onRatesChange, onContext, excelImport = null,
   refreshToken = 0, variant = 'page', active = true,
 }) {
-  const { canEdit, user } = useRole()
+  const { canEdit, user, isAdmin, isSuperAdmin } = useRole()
   const canEditRole = canEdit('tenders') || canEdit('tenders_materials')
+  // Администратору в колонке «Дата цены» — ещё и кто поставил цену.
+  const showAuthor = !!(isAdmin || isSuperAdmin)
   const myId = user?.id || null
 
   const [ctx, setCtx] = useState(ctxProp)
@@ -277,6 +287,12 @@ export default function SupplyPricingPanel({
   const [similar, setSimilar] = useState(() => new Map())
   const [suggest, setSuggest] = useState(null) // { row, anchor }
   const [reuseNote, setReuseNote] = useState('')
+  // Состояние разбора позиций службой osp-api: null — службы/таблицы нет (миграция 20261024).
+  const [importState, setImportState, importStateRef] = useSyncedState(null)
+  const ignoreServerFailure = useRef(new Set()) // «Повторить» — файл разбирается заново, даже если служба не смогла
+  // Фильтр по дню расценки (с … по …), строки вида «ГГГГ-ММ-ДД».
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
 
   const mainId = ctx?.mainId || null
   const editable = canEditRole && !!ctx && !ctx.locked && !missing
@@ -323,8 +339,9 @@ export default function SupplyPricingPanel({
     setRates(d.rates)
     setLinks(d.links ?? null)
     linksMarkerRef.current = d.links ? linksMarker(d.links) : null
+    setImportState(d.importState ?? null)
     if (d.items) setLoadedItems(d.items)
-  }, [setRates, setSources])
+  }, [setRates, setSources, setImportState])
 
   const reloadData = useCallback(async (id) => applyData(await loadPricingData(id)), [applyData])
 
@@ -425,6 +442,7 @@ export default function SupplyPricingPanel({
       const fresh = []
       for (const j of jobs) {
         const known = failedFiles.current.get(j.doc.id) || readFailure(j.doc)
+          || (!ignoreServerFailure.current.has(j.doc.id) && serverFailure(importStateRef.current, j.doc))
         if (known) found.push(known)
         else fresh.push(j)
       }
@@ -441,28 +459,17 @@ export default function SupplyPricingPanel({
           else remember(p)
           continue
         }
-        const saved = job.existing?.column_map
-        let wb
-        try {
-          wb = sheet.readMaterialsWorkbookBytes(bytes, saved?.sheetName ? [saved.sheetName] : [])
-        } catch (e) {
-          remember({ doc: job.doc, kind: 'broken', message: e.message })
-          continue
-        }
-        let result = sheet.readMaterialsFromWorkbook(wb)
-        if ((result.error === 'no_header' || result.error === 'no_sheet') && saved?.columns && wb.Sheets[saved.sheetName]) result = sheet.readMaterialsFromWorkbook(wb, saved)
-        // Листа «Материалы» нет — сам лист ВОР: колонка «КОД», материалы — строки «мат.» (один раз на версию файла:
-        // дальше позиции лежат в базе, а причина отказа — в браузере).
-        if (result.error === 'no_sheet') result = sheet.readMaterialsByCodeBytes(bytes, wb.SheetNames)
-        const positions = result.error ? [] : buildSupplyPositions(result.rows)
-        if (result.error || !positions.length) {
-          remember({ doc: job.doc, kind: result.error || 'empty', sheetNames: result.sheetNames || wb.SheetNames, sheetName: result.sheetName, codeTried: result.codeTried })
+        // Лист «Материалы», иначе сам лист ВОР по колонке «КОД» — тот же разбор, что у службы osp-api (один раз на
+        // версию файла: дальше позиции лежат в базе, а причина отказа — в базе и в браузере).
+        const parsed = sheet.parseVorFileBytes(bytes, job.existing?.column_map)
+        if (parsed.error) {
+          remember({ doc: job.doc, kind: parsed.error, message: parsed.message, sheetNames: parsed.sheetNames, sheetName: parsed.sheetName, codeTried: parsed.codeTried })
           continue
         }
         try {
           await saveSource({
             existing: job.existing, mainId, estimateName: job.name, source: 'vor_file', doc: job.doc,
-            sheetName: result.sheetName, columnMap: result.map, sourceVersion: fileVersion(job.doc), positions,
+            sheetName: parsed.sheetName, columnMap: parsed.map, sourceVersion: fileVersion(job.doc), positions: parsed.positions,
           })
           changed = true
           fileSourceCreated = true
@@ -507,7 +514,7 @@ export default function SupplyPricingPanel({
         setAutoTick((t) => t + 1)
       }
     }
-  }, [mainId, estimate, files, sources, ratesRef, setSources])
+  }, [mainId, estimate, files, sources, ratesRef, setSources, importStateRef])
 
   // Запуск — когда изменились файлы, списки позиций или ВОР карточки; без права правки — не пишем.
   useEffect(() => {
@@ -521,6 +528,7 @@ export default function SupplyPricingPanel({
 
   const retryFile = (doc) => {
     failedFiles.current.delete(doc.id)
+    ignoreServerFailure.current.add(doc.id)
     forgetFailure(doc)
     autoKey.current = ''
     runAutoImport()
@@ -595,11 +603,14 @@ export default function SupplyPricingPanel({
     return out
   }, [sources, files, estimate, estimateItems, editable])
 
-  // Без права правки автозагрузки нет: какие файлы ещё не загружены.
-  const pendingForViewer = useMemo(() => {
+  // Без права правки автозагрузки нет: какие файлы ещё не загружены, и почему не загрузились (если служба osp-api
+  // уже пробовала) — те же плашки, без кнопок.
+  const viewerJobs = useMemo(() => {
     if (editable || !estimate) return []
     return planFileImports(files, sources, estimate.names).jobs
   }, [editable, estimate, files, sources])
+  const viewerProblems = useMemo(() => viewerJobs.map((j) => serverFailure(importState, j.doc)).filter(Boolean), [viewerJobs, importState])
+  const pendingForViewer = useMemo(() => viewerJobs.filter((j) => !viewerProblems.some((p) => p.doc.id === j.doc.id)), [viewerJobs, viewerProblems])
 
   const sections = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -613,6 +624,10 @@ export default function SupplyPricingPanel({
         return { p, index, key, rate, duplicates: list.slice(1), draft, view: rowView(p, rate, draft), doc: d.name }
       }).filter((r) => {
         if (q && !r.p.name.toLowerCase().includes(q)) return false
+        if (dateFrom || dateTo) {
+          const d = r.rate?.price_date
+          if (!d || (dateFrom && d < dateFrom) || (dateTo && d > dateTo)) return false
+        }
         if (filter === 'unpriced') return !r.view.priced
         if (filter === 'priced') return r.view.priced
         return true
@@ -621,20 +636,20 @@ export default function SupplyPricingPanel({
       for (const r of rows) r.gi = open ? gi++ : -1
       return { doc: d, rows, open }
     })
-  }, [docViews, ratesByKey, drafts, search, filter, collapsed])
+  }, [docViews, ratesByKey, drafts, search, filter, collapsed, dateFrom, dateTo])
 
   // Строки таблицы подряд — шапки ВОР и позиции: так их рисует и обычная таблица, и окно видимых строк.
   const items = useMemo(() => {
     const out = []
     for (const s of sections) {
-      if (!s.rows.length && (search || filter !== 'all')) continue
+      if (!s.rows.length && (search || filter !== 'all' || dateFrom || dateTo)) continue
       out.push({ kind: 'head', s, first: out.length === 0 })
       if (!s.open) continue
       if (!s.rows.length) out.push({ kind: 'empty', s })
       for (const row of s.rows) out.push({ kind: 'row', row })
     }
     return out
-  }, [sections, search, filter])
+  }, [sections, search, filter, dateFrom, dateTo])
   const virtual = items.length > VIRTUALIZE_FROM
   const tableWrapRef = useRef(null)
 
@@ -1111,18 +1126,22 @@ export default function SupplyPricingPanel({
     const wb = XLSX.utils.book_new()
     const used = new Set()
     for (const d of docViews) {
-      const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед. с доставкой и НДС, ₽', 'Итого с НДС, ₽', ...(linksOn ? ['Документ'] : [])]]
+      const aoa = [['№', 'Наименование', 'Ед. изм.', 'Объём', 'Цена за ед. с доставкой и НДС, ₽', 'Итого с НДС, ₽',
+        ...(datesOn ? ['Дата цены'] : []), ...(datesOn && showAuthor ? ['Цену поставил'] : []), ...(linksOn ? ['Документ'] : [])]]
       d.positions.forEach((p, i) => {
         const rate = ratesByKey.get(posKey(d.name, p.k))?.[0] || null
         const v = rowView(p, rate, null)
         aoa.push([i + 1, p.name, p.units ? p.units.map((u) => u.unit).filter(Boolean).join(', ') : (p.unit || ''),
           p.units ? p.units.map((u) => `${fmtVolume(u.volume)} ${u.unit || ''}`).join('; ') : (p.volume ?? ''),
           v.unitPrice != null ? roundMoney(v.unitPrice) : '', v.total ?? '',
+          ...(datesOn ? [fmtPriceDate(rate?.price_date)] : []),
+          ...(datesOn && showAuthor ? [rate ? authorText(rate, origins.get(rate.id), nameOf) : ''] : []),
           ...(linksOn ? [linksByKey.get(posKey(d.name, p.k))?.url || ''] : [])])
       })
       aoa.push(['', 'Итого', '', '', '', d.total])
       const ws = XLSX.utils.aoa_to_sheet(aoa)
-      ws['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 18 }, { wch: 40 }]
+      ws['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
+        ...(datesOn ? [{ wch: 12 }] : []), ...(datesOn && showAuthor ? [{ wch: 28 }] : []), { wch: 40 }]
       let name = (docViews.length === 1 ? 'Материалы' : `Материалы ${d.name}`).replace(/[\\/:*?[\]]/g, ' ').slice(0, 31)
       for (let i = 2; used.has(name); i++) name = `${name.slice(0, 27)} (${i})`
       used.add(name)
@@ -1251,8 +1270,10 @@ export default function SupplyPricingPanel({
     : !canEditRole ? 'Только просмотр: вводить цены могут снабжение и тендерный отдел (право правки раздела).' : ''
   const fromTab = docViews.length > 0 && docViews.every((d) => d.source.source === 'vor_tab')
 
-  // Колонки: [отметка] № · наименование · ед. · объём · цена · итог · [документ] · состояние.
-  const colCount = 7 + (linksOn ? 1 : 0) + (selectable ? 1 : 0)
+  // Колонки: [отметка] № · наименование · ед. · объём · цена · итог · [дата цены] · [документ] · состояние.
+  // «Дата цены» — день расценки (миграция 20261023); колонок ещё нет в базе — нет и её, и фильтра по дате.
+  const datesOn = rates.length ? rates.some((r) => 'price_date' in r) : !reuseOff
+  const colCount = 7 + (linksOn ? 1 : 0) + (selectable ? 1 : 0) + (datesOn ? 1 : 0)
   const shownKeys = items.filter((it) => it.kind === 'row').map((it) => it.row.key)
   const shownSelected = shownKeys.filter((k) => selected.has(k)).length
 
@@ -1287,7 +1308,7 @@ export default function SupplyPricingPanel({
             {s.source === 'vor_file'
               ? <>файл «{s.file_name || 'удалён'}», лист «{s.sheet_name || 'Материалы'}»{s.column_map?.mode === 'code' ? ', строки с кодом «мат.»' : ''}</>
               : <>вкладка «ВОР» карточки тендера</>}
-            <span> · загружено {fmtTime(s.parsed_at)}{nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : ''}</span>
+            <span> · загружено {fmtTime(s.parsed_at)}{s.parsed_by ? (nameOf(s.parsed_by) ? `, ${nameOf(s.parsed_by)}` : '') : ' автоматически'}</span>
             {s.source === 'vor_file' && s.s3_document_id && files.some((f) => f.id === s.s3_document_id) && (
               <>
                 <button type="button" className="sp-link-btn" onClick={() => downloadFile(s.s3_document_id)}>скачать файл</button>
@@ -1332,7 +1353,7 @@ export default function SupplyPricingPanel({
     return (
       <PriceRow key={row.key} row={row} flash={flash[row.key]} editable={editable} nameOf={nameOf} act={act}
         linksOn={linksOn} link={linksByKey?.get(row.key) || null} selectable={selectable} selected={selected.has(row.key)}
-        origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null}
+        origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null} datesOn={datesOn} showAuthor={showAuthor}
         similar={!reuseOff && wantsSimilar(row) ? similarOthers(row, similar.get(row.key) || 0) : 0}
         suggestOpen={suggest?.row.key === row.key} />
     )
@@ -1354,7 +1375,7 @@ export default function SupplyPricingPanel({
           <span>Загружаем позиции ВОР: {importing.label}{importing.total > 1 ? ` (${importing.done + 1} из ${importing.total})` : ''}…</span>
         </div>
       )}
-      {problems.map((p, i) => (
+      {(editable ? problems : viewerProblems).map((p, i) => (
         <div key={`${p.doc?.id || p.name}-${i}`} className="sp-banner is-warn sp-problem" role="alert">
           <IconAlert size={16} />
           <span>
@@ -1371,7 +1392,10 @@ export default function SupplyPricingPanel({
       {pendingForViewer.length > 0 && (
         <div className="sp-banner" role="status">
           <IconRefresh size={16} />
-          <span>Файлы ВОР ещё не загружены в расценку: {pendingForViewer.map((j) => `«${j.doc.file_name}»`).join(', ')}. Загрузятся сами, когда тендер откроет снабжение или тендерный отдел.</span>
+          <span>
+            Файлы ВОР ещё не загружены в расценку: {pendingForViewer.map((j) => `«${j.doc.file_name}»`).join(', ')}.
+            {importState ? ' Загрузятся сами в течение 10 минут.' : ' Загрузятся сами, когда тендер откроет снабжение или тендерный отдел.'}
+          </span>
         </div>
       )}
       {notice && (
@@ -1407,6 +1431,17 @@ export default function SupplyPricingPanel({
                 <button key={k} type="button" className={`sp-filter-btn${filter === k ? ' active' : ''}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>{label}</button>
               ))}
             </div>
+            {datesOn && (
+              <div className={`sp-date-filter${dateFrom || dateTo ? ' is-active' : ''}`} role="group" aria-label="Дата цены">
+                <span>Дата цены</span>
+                <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} aria-label="Дата цены: с" />
+                <span aria-hidden="true">—</span>
+                <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} aria-label="Дата цены: по" />
+                {(dateFrom || dateTo) && (
+                  <button type="button" className="sp-link-btn" onClick={() => { setDateFrom(''); setDateTo('') }}>сбросить</button>
+                )}
+              </div>
+            )}
             {docViews.length > 1 && (
               <button type="button" className="sp-link-btn" onClick={() => setCollapsed(collapsed.size ? new Set() : new Set(docViews.map((d) => d.name)))}>
                 {collapsed.size ? 'Развернуть все ВОР' : 'Свернуть все ВОР'}
@@ -1447,11 +1482,12 @@ export default function SupplyPricingPanel({
           )}
 
           <div ref={tableWrapRef} className={`table-container sp-table-wrap${virtual ? ' is-virtual' : ''}`}>
-            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}`}>
+            <table className={`data-table sp-table${linksOn ? ' has-links' : ''}${datesOn ? (showAuthor ? ' has-dates has-authors' : ' has-dates') : ''}`}>
               <colgroup>
                 {selectable && <col className="sp-c-sel" />}
                 <col className="sp-c-num" /><col className="sp-c-name" /><col className="sp-c-unit" /><col className="sp-c-vol" />
                 <col className="sp-c-price" /><col className="sp-c-total" />
+                {datesOn && <col className="sp-c-date" />}
                 {linksOn && <col className="sp-c-doc" />}
                 <col className="sp-c-state" />
               </colgroup>
@@ -1470,6 +1506,11 @@ export default function SupplyPricingPanel({
                   <th className="ui-money">Объём</th>
                   <th className="ui-money" title="Как в листе «Материалы» ВОР: цена с учётом доставки и НДС">Цена за ед. с доставкой и НДС, ₽</th>
                   <th className="ui-money" title="Объём × цена за единицу, с НДС">Итого с НДС, ₽</th>
+                  {datesOn && (
+                    <th title={showAuthor ? 'День расценки (по Москве) и кто поставил цену' : 'День расценки — когда ввели или изменили цену (по Москве)'}>
+                      {showAuthor ? 'Дата цены, кто' : 'Дата цены'}
+                    </th>
+                  )}
                   {linksOn && <th title="Ссылка на чек, счёт или КП поставщика">Документ</th>}
                   <th><span className="ui-sr-only">Состояние</span></th>
                 </tr>
@@ -1482,6 +1523,7 @@ export default function SupplyPricingPanel({
                   <td colSpan={selectable ? 5 : 4}>Итого{docViews.length > 1 ? ` по ${docViews.length} ВОР` : ''} · расценено <span className="ui-num">{grand.priced}</span> из <span className="ui-num">{grand.positions}</span></td>
                   <td />
                   <td className="ui-money"><b>{formatAmount(grand.total)}</b></td>
+                  {datesOn && <td />}
                   {linksOn && <td />}
                   <td />
                 </tr>
@@ -1579,8 +1621,9 @@ const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.rate === b.row.rate 
   && a.flash === b.flash && a.editable === b.editable && a.nameOf === b.nameOf && a.act === b.act
   && a.linksOn === b.linksOn && a.link === b.link && a.selectable === b.selectable && a.selected === b.selected
   && a.origin === b.origin && a.similar === b.similar && a.suggestOpen === b.suggestOpen
+  && a.datesOn === b.datesOn && a.showAuthor === b.showAuthor
 
-const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, linksOn, link, selectable, selected, origin, similar, suggestOpen }) {
+const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, linksOn, link, selectable, selected, origin, similar, suggestOpen, datesOn, showAuthor }) {
   const { p, draft, view, index, gi } = row
   const mixed = !!p.units
   const noVolume = !mixed && !(view.volume > 0)
@@ -1657,6 +1700,11 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, lin
           onCommit={(raw) => act('commit', row, 'total', raw)}
         />
       </td>
+      {datesOn && (
+        <td className="sp-date" data-label="Дата цены">
+          <PriceDateCell rate={draft ? null : row.rate} showAuthor={showAuthor} nameOf={nameOf} origin={origin} />
+        </td>
+      )}
       {linksOn && (
         <td className="sp-doc" data-label="Документ">
           <LinkCell link={link} editable={editable} name={p.name} doc={row.doc} nameOf={nameOf} onEdit={() => act('editLink', row.key)} />
@@ -1668,6 +1716,39 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, lin
     </tr>
   )
 }, samePriceRow)
+
+// Кто поставил цену — для администратора: свой ввод, импорт Excel или «Взять» — вошедший (price_by, до миграции —
+// последний, кто менял строку); подставленная сама из другого тендера — «автоматически» (автор исходной цены — в
+// подсказке и в выгрузке). Цены, загруженные до 16.10.2026, автора не знают: журнала цен тогда не было.
+const AUTHOR_UNKNOWN = 'не записан'
+function authorText(rate, origin, nameOf) {
+  if (rate.source_kind === 'auto') {
+    const src = nameOf(origin?.source_price_by)
+    return `автоматически${src ? ` (цену поставил ${src})` : ''}`
+  }
+  const id = rate.price_by ?? rate.updated_by
+  return id ? (nameOf(id) || '—') : AUTHOR_UNKNOWN
+}
+
+// Дата цены (день расценки) — у всех; администратору — и кто поставил.
+function PriceDateCell({ rate, showAuthor, nameOf, origin }) {
+  if (!rate) return <span className="sp-muted">—</span>
+  const date = fmtPriceDate(rate.price_date)
+  const author = showAuthor ? authorText(rate, origin, nameOf) : ''
+  const title = [date && `день расценки ${date}`, rate.source_kind === 'pick' && 'цена взята из похожих',
+    author && (author === AUTHOR_UNKNOWN ? 'кто поставил — не записан: цена загружена до 16.10.2026, когда автор не записывался' : `поставил: ${author}`)]
+    .filter(Boolean).join(' · ')
+  return (
+    <span className="sp-date-cell" title={title || undefined}>
+      <span className="ui-num">{date || '—'}</span>
+      {showAuthor && (
+        <span className={`sp-author${rate.source_kind === 'auto' ? ' is-auto' : ''}${author === AUTHOR_UNKNOWN ? ' is-unknown' : ''}`}>
+          {rate.source_kind === 'auto' ? 'автоматически' : author}
+        </span>
+      )}
+    </span>
+  )
+}
 
 // Откуда цена: скопирована из другого тендера сама (то же наименование) или выбрана из похожих. День расценки —
 // исходной цены; старше 3 месяцев — пометка (такая цена больше никуда сама не подставится).
