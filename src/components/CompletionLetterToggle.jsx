@@ -36,13 +36,13 @@ export function isCompletionLetterRelevant(status) {
 }
 
 // short — короткая подпись для плотного реестра; полный смысл остаётся в подсказке.
-export default function CompletionLetterToggle({ tender, canEdit = false, onToggle, short = false }) {
+// iconOnly — только конверт (список тендеров на телефоне); подпись — для диктора.
+export default function CompletionLetterToggle({ tender, canEdit = false, onToggle, short = false, iconOnly = false }) {
   if (!isCompletionLetterRelevant(tender?.status)) return null
 
   const sent = !!tender.completion_letter_sent
-  const label = short
-    ? 'Письмо'
-    : (sent ? 'Письмо о завершении отправлено' : 'Письмо о завершении')
+  const fullLabel = sent ? 'Письмо о завершении отправлено' : 'Письмо о завершении'
+  const label = short ? 'Письмо' : fullLabel
   const cls = `tgpub ${sent ? 'is-pub' : 'is-unpub'}`
 
   const title = sent
@@ -52,7 +52,7 @@ export default function CompletionLetterToggle({ tender, canEdit = false, onTogg
   if (!canEdit) {
     return (
       <span className={`${cls} is-readonly`} title={sent ? title : 'Письмо о завершении не отправлено'}>
-        <IconMail checked={sent} /> <span>{label}</span>
+        <IconMail checked={sent} /> <span className={iconOnly ? 'ui-sr-only' : undefined}>{iconOnly ? fullLabel : label}</span>
       </span>
     )
   }
@@ -64,7 +64,7 @@ export default function CompletionLetterToggle({ tender, canEdit = false, onTogg
       title={title}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(tender.id, !sent) }}
     >
-      <IconMail checked={sent} /> <span>{label}</span>
+      <IconMail checked={sent} /> <span className={iconOnly ? 'ui-sr-only' : undefined}>{iconOnly ? fullLabel : label}</span>
     </button>
   )
 }

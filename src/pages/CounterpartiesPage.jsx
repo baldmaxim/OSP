@@ -12,8 +12,8 @@ import S3DocumentList from '../components/S3DocumentList'
 import { fetchCounterpartyDocSummary } from '../services/s3'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import { diffWords } from '../utils/textDiff'
+import { shortPersonName } from '../utils/personName'
 import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils/counterpartyGroups'
-import '../components/MobileCards.css'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
@@ -1873,55 +1873,54 @@ function CounterpartiesPage() {
               )}
             </div>
           ) : isPhone ? (
-            <div className="mcard-list">
+            /* Телефон: плотный список, как у тендеров — название, виды работ,
+               ИНН и первый контакт; телефон контакта — ссылка «позвонить».
+               Карточку открывает кнопка-название, растянутая на всю строку
+               (::after); ссылка на звонок лежит поверх неё, а не внутри кнопки. */
+            <>
+            <ul className="cp-mlist">
               {filteredCounterparties.slice(0, visibleCount).map((cp) => {
                 const c0 = (cp.counterparty_contacts || [])[0]
+                const phone = (c0?.phone || '').split(';').map(p => p.trim()).find(Boolean)
                 const isBl = cp.status === 'blacklist'
                 return (
-                  <div
-                    key={cp.id}
-                    className="mcard is-tappable"
-                    onClick={() => openDetail(cp)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter') openDetail(cp) }}
-                  >
-                    <div className="mcard-head">
-                      <span className="mcard-title" style={{ fontSize: '0.9375rem' }}>{cp.name}</span>
-                      <span className="mcard-chip" style={{
-                        color: isBl ? '#dc2626' : '#15803d',
-                        background: isBl ? 'rgba(220,38,38,0.12)' : 'rgba(22,163,74,0.12)',
-                      }}>{isBl ? 'ЧС' : 'Активный'}</span>
+                  <li key={cp.id} className={`cp-mrow${isBl ? ' is-blacklist' : ''}`}>
+                    <div className="cp-mrow-top">
+                      <button type="button" className="cp-mrow-open" onClick={() => openDetail(cp)}>
+                        {cp.name}
+                      </button>
+                      {isBl && <span className="cp-mrow-bl" title="Чёрный список">ЧС</span>}
+                      <CounterpartyDocBadges summary={docSummaryByCp.get(cp.id)} />
                     </div>
-                    <div className="mcard-rows">
-                      {cp.work_type && (
-                        <div className="mcard-row"><span className="mcard-label">Вид работ</span><span className="mcard-value">{cp.work_type}</span></div>
-                      )}
-                      {cp.inn && (
-                        <div className="mcard-row"><span className="mcard-label">ИНН</span><span className="mcard-value">{cp.inn}</span></div>
-                      )}
-                      {c0 && (
-                        <div className="mcard-row"><span className="mcard-label">Контакт</span><span className="mcard-value">{c0.full_name}{c0.phone ? ` · ${c0.phone}` : ''}</span></div>
-                      )}
-                    </div>
-                    <div className="mcard-foot">
-                      <CounterpartyDocBadges summary={docSummaryByCp.get(cp.id)} showDate />
-                      <span className="mcard-open">Открыть ›</span>
-                    </div>
-                  </div>
+                    {cp.work_type && <div className="cp-mrow-wt">{cp.work_type}</div>}
+                    {(cp.inn || c0) && (
+                      <div className="cp-mrow-meta">
+                        {cp.inn && <span className="cp-mrow-inn">ИНН {cp.inn}</span>}
+                        {c0?.full_name && <span className="cp-mrow-person" title={c0.full_name}>{shortPersonName(c0.full_name)}</span>}
+                        {phone && (
+                          <a href={`tel:${phone}`} className="cp-mrow-tel" aria-label={`Позвонить: ${phone}`}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            {phone}
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </li>
                 )
               })}
-              {visibleCount < filteredCounterparties.length && (
+            </ul>
+            {visibleCount < filteredCounterparties.length && (
+              <div className="cp-mlist-more">
                 <button
                   type="button"
                   className="btn-secondary"
-                  style={{ alignSelf: 'center' }}
                   onClick={() => setVisibleCount(v => v + RENDER_STEP)}
                 >
                   Показать ещё {Math.min(RENDER_STEP, filteredCounterparties.length - visibleCount)}
                 </button>
-              )}
-            </div>
+              </div>
+            )}
+            </>
           ) : (
             <div className="table-wrapper">
               <table className="compact-table">

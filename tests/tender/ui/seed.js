@@ -4,6 +4,7 @@ const params = new URLSearchParams(window.location.search)
 const ITEMS = Number(params.get('items') || 5000)
 const CPS = Number(params.get('cps') || 10)
 const DOCS = ['Корпус 1', 'Корпус 2', 'Паркинг']
+const CP_CONTACTS = params.get('cpContacts') === '1'
 
 const counterparties = Array.from({ length: CPS }, (_, i) => ({ id: `cp-${i + 1}`, name: `Подрядчик ${String(i + 1).padStart(2, '0')}` }))
 const items = []
@@ -92,7 +93,16 @@ window.__fakeDb = {
     { id: `rd-${i}-2`, tender_id: t.id, code: `2026-${t.public_tender_number}-КЖ`, title: 'Конструкции железобетонные', sort_order: 20 },
   ]),
   tender_counterparties: [...registry.slice(1, 9).map((t, i) => ({ id: `tch-${i}`, tender_id: t.id, counterparty_id: 'cp-1', status: i % 3 === 0 ? 'declined' : 'proposal_provided', sort_order: 0, tenders: { id: t.id, work_description: t.work_description, tender_start_date: t.tender_start_date, tender_end_date: t.tender_end_date, objects: { name: t.objects.name } } })), ...counterparties.map((cp, i) => ({ id: `tc-${i + 1}`, tender_id: 'tender-1', counterparty_id: cp.id, status: 'proposal_provided', sort_order: i, invited_at: '2026-08-01', counterparties: { ...cp, counterparty_contacts: [] } }))],
-  counterparties: counterparties.map(cp => ({ ...cp, status: 'active', inn: '123456789012', work_type: 'Фасадные работы', counterparty_contacts: [] })),
+  // ?cpContacts=1 — у контрагентов есть контакты с телефонами, третий — в чёрном списке (реестр контрагентов на телефоне).
+  counterparties: counterparties.map((cp, i) => ({
+    ...cp,
+    status: CP_CONTACTS && i === 2 ? 'blacklist' : 'active',
+    inn: '123456789012',
+    work_type: CP_CONTACTS && i % 4 === 1 ? 'Фасадные работы, Кровельные работы, Устройство вентилируемых фасадов, Остекление, Благоустройство территории' : 'Фасадные работы',
+    counterparty_contacts: CP_CONTACTS && i % 2 === 0
+      ? [{ id: `cpc-${i}`, counterparty_id: cp.id, full_name: 'Сапаров Ержан Болатович', phone: '+7 701 555-12-34; +7 727 300-00-00', email: 'sales@example.invalid' }]
+      : [],
+  })),
   tender_estimate_items: items,
   tender_counterparty_proposals: proposals,
   tender_vor_supply_rates: [],

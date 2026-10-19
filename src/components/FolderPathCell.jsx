@@ -16,6 +16,10 @@ import './FolderPathCell.css'
 //
 // Это путь у КОНКРЕТНОЙ записи реестра. Путь к общей папке всего раздела —
 // отдельный компонент RootFolderPathButton (иконка в шапке страницы).
+//
+// compact — свёрнут в значок папки (список тендеров на телефоне: строка не
+// должна расти из-за пути). Нажатие раскрывает обычный вид, значок папки в нём
+// сворачивает обратно; пустой путь — значок «указать путь» сразу открывает ввод.
 
 const IconFolder = ({ size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -52,6 +56,7 @@ export default function FolderPathCell({
   // Подсказка и доступное имя «пустой» ссылки — когда подпись сокращена.
   addTitle,
   placeholder = '\\\\su10-fs\\Тендеры\\ЖК Алия\\Фасады',
+  compact = false,
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -59,6 +64,8 @@ export default function FolderPathCell({
   const [copied, setCopied] = useState(false)
   // Путь показан хвостом; по клику разворачивается целиком.
   const [expanded, setExpanded] = useState(false)
+  // compact: путь раскрыт из значка.
+  const [opened, setOpened] = useState(false)
 
   const startEdit = () => { setDraft(value || ''); setEditing(true) }
 
@@ -75,6 +82,8 @@ export default function FolderPathCell({
     try {
       await onSave(draft.trim())
       setEditing(false)
+      // Сохранённый путь остаётся на виду — видно, что записалось; очищенный — снова значок.
+      if (compact) setOpened(!!draft.trim())
     } catch {
       // Сообщение показывает вызывающий код. Поле оставляем открытым: иначе
       // при неудачном сохранении набранный путь молча пропадёт.
@@ -111,6 +120,23 @@ export default function FolderPathCell({
     )
   }
 
+  if (compact && !opened) {
+    if (!value && !canEdit) return null
+    return (
+      <button
+        type="button"
+        className={`fpath-compact${value ? ' has-value' : ''}`}
+        title={value || addLabel}
+        aria-label={value ? 'Показать путь к папке' : addLabel}
+        aria-expanded={value ? false : undefined}
+        onClick={(e) => { e.stopPropagation(); if (value) setOpened(true); else startEdit() }}
+      >
+        <IconFolder size={15} />
+        {!value && <span aria-hidden="true">+</span>}
+      </button>
+    )
+  }
+
   if (!value) {
     if (!canEdit) return null
     return (
@@ -134,8 +160,17 @@ export default function FolderPathCell({
     : value
 
   return (
-    <div className={`fpath${expanded ? ' is-expanded' : ''}`} title={value}>
-      <IconFolder />
+    <div className={`fpath${expanded ? ' is-expanded' : ''}${compact ? ' is-compact-open' : ''}`} title={value}>
+      {compact ? (
+        <button
+          type="button"
+          className="fpath-icon"
+          onClick={(e) => { e.stopPropagation(); setOpened(false); setExpanded(false) }}
+          title="Свернуть путь"
+          aria-label="Свернуть путь к папке"
+          aria-expanded={true}
+        ><IconFolder /></button>
+      ) : <IconFolder />}
       <span
         className="fpath-text"
         role="button"

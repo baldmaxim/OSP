@@ -56,7 +56,6 @@ import PersonName from '../components/PersonName'
 import { IconPencil, IconTrash, IconRestore, IconLetter } from '../components/icons/ActionIcons'
 import '../components/Tenders.css'
 import '../components/TendersRegistryPolish.css'
-import '../components/MobileCards.css'
 // Общий рабочий стиль разделов (docs/UI_GUIDELINES.md) — после стилей страницы.
 import '../styles/fonts.css'
 import '../styles/workUi.css'
@@ -2988,86 +2987,97 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             Тендеры не найдены
           </div>
         ) : (
-          <div className="mcard-list">
-            {sortedTenders.map((tender) => (
-              <div
-                key={tender.id}
-                className={`mcard tp-mcard${isOverdue(tender) ? ' mcard-overdue' : ''}`}
-              >
-                {/* Ссылка — только информационная часть. Кнопки пути к папке и
-                    отметки вынесены из неё: внутри ссылки их тапы то уводили
-                    со страницы, то глушили переход в тендер. */}
-                {/* Тендер на материалы — в его расценку (она открыта и снабжению); основной — в карточку. */}
-                <Link
-                  to={isMaterialsView ? `/tenders/materials/${tender.id}/pricing` : (canOpenTenderCard ? `/tenders/${tender.id}` : '#')}
-                  className="tp-mcard-main"
-                  onClick={(e) => { if (!isMaterialsView && !canOpenTenderCard) e.preventDefault() }}
-                >
-                <div className="mcard-head">
-                  <span className="mcard-num">Тендер №{tenderNumberOf(tender) ?? '—'}</span>
-                  {tender.status && (
-                    <span className={`status-badge ${getStatusBadgeClass(tender.status)}`} style={{ padding: '0.1875rem 0.5rem', borderRadius: '6px', fontSize: '0.6875rem', fontWeight: 600 }}>
-                      {tender.status}
+          /* Телефон: плотный список, как строки реестра на компьютере — номер и
+             объект в строку, описание в две строки, срок, ответственный и КП одной
+             строкой, под ней статус и отметки мелкими кнопками. Статус не рядом с
+             объектом: там он съедал половину строки и обрезал название. Прежняя
+             карточка (подписи «метка — значение», отметки во всю ширину, кнопка
+             «Открыть тендер») занимала 270–320 px: на экран помещалось два тендера. */
+          <ul className="tp-mlist">
+            {sortedTenders.map((tender) => {
+              const overdue = isOverdue(tender)
+              const rowOverdue = overdue || (isMaterialsView && isMaterialsOverdue(tender))
+              const kp = tenderProposalCounts[tender.id]
+              const supply = isMaterialsView ? supplyProgress.get(tender.parent_tender_id || tender.id) : null
+              const respName = tender.responsible_contact?.full_name
+              const period = tender.parent_tender
+                ? formatShortDateRange(tender.parent_tender.tender_start_date, tender.parent_tender.tender_end_date)
+                : formatShortDateRange(tender.tender_start_date, tender.tender_end_date)
+              return (
+                <li key={tender.id} className={`tp-mrow${rowOverdue ? ' is-overdue' : ''}`}>
+                  {/* Ссылка — только информационная часть. Отметки и путь к папке
+                      вынесены из неё: внутри ссылки их тапы то уводили со страницы,
+                      то глушили переход в тендер. */}
+                  {/* Тендер на материалы — в его расценку (она открыта и снабжению); основной — в карточку. */}
+                  <Link
+                    to={isMaterialsView ? `/tenders/materials/${tender.id}/pricing` : (canOpenTenderCard ? `/tenders/${tender.id}` : '#')}
+                    className="tp-mrow-main"
+                    onClick={(e) => { if (!isMaterialsView && !canOpenTenderCard) e.preventDefault() }}
+                  >
+                    <span className="tp-mrow-top">
+                      <span className="tp-mrow-num">№{tenderNumberOf(tender) ?? '—'}</span>
+                      <span className="tp-mrow-obj">{tenderObjectName(tender)}</span>
                     </span>
-                  )}
-                </div>
-                <div className="mcard-title">{tenderObjectName(tender)}</div>
-                {tender.work_description && (
-                  <div className="mcard-desc tp-mcard-desc">{tender.work_description}</div>
-                )}
-                <div className="mcard-rows">
-                  <div className="mcard-row">
-                    <span className="mcard-label">Ответственный</span>
-                    <span className="mcard-value">{tender.responsible_contact?.full_name || '—'}</span>
-                  </div>
-                  <div className="mcard-row">
-                    <span className="mcard-label">Срок процедур</span>
-                    <span className={`mcard-value${isOverdue(tender) ? ' is-overdue' : ''}`}>
-                      {tender.parent_tender
-                        ? formatDateRange(tender.parent_tender.tender_start_date, tender.parent_tender.tender_end_date)
-                        : formatDateRange(tender.tender_start_date, tender.tender_end_date)}
+                    {tender.work_description && (
+                      <span className="tp-mrow-desc">{tender.work_description}</span>
+                    )}
+                    <span className="tp-mrow-meta">
+                      {period && (
+                        <span className={`tp-mrow-date${overdue ? ' is-overdue' : ''}`}>{breakAfterDash(period)}</span>
+                      )}
+                      {respName
+                        ? <PersonName full={respName} className="tp-mrow-person" />
+                        : <span className="tp-mrow-muted">Не назначен</span>}
+                      {isMaterialsView && tender.materials_priority && (
+                        <span className={`mat-prio-chip prio-${tender.materials_priority}`}>
+                          {MATERIALS_PRIORITY_LABEL[tender.materials_priority]}
+                        </span>
+                      )}
+                      {supply?.positions > 0 && (
+                        <span title={`Расценено снабжением: ${supply.priced} из ${supply.positions} позиций`}>
+                          Расценка {supply.priced}/{supply.positions}
+                        </span>
+                      )}
+                      {kp?.total > 0 && (
+                        <span
+                          className={kp.proposalProvided === kp.total ? 'tp-mrow-kp-full' : undefined}
+                          title={`КП предоставили ${kp.proposalProvided} из ${kp.total} участников`}
+                        >
+                          КП {kp.proposalProvided}/{kp.total}
+                        </span>
+                      )}
                     </span>
-                  </div>
-                  {isMaterialsView && supplyProgress.get(tender.parent_tender_id || tender.id)?.positions > 0 && (
-                    <div className="mcard-row">
-                      <span className="mcard-label">Расценка</span>
-                      <span className="mcard-value">
-                        {supplyProgress.get(tender.parent_tender_id || tender.id).priced} из {supplyProgress.get(tender.parent_tender_id || tender.id).positions} позиций
-                      </span>
-                    </div>
-                  )}
-                  {tenderProposalCounts[tender.id]?.total > 0 && (
-                    <div className="mcard-row">
-                      <span className="mcard-label">КП</span>
-                      <span className="mcard-value">
-                        {tenderProposalCounts[tender.id].proposalProvided} из {tenderProposalCounts[tender.id].total} участников
-                      </span>
-                    </div>
-                  )}
-                </div>
-                </Link>
-                <div className="tp-mcard-extra">
-                  <TgPublishToggle tender={tender} canEdit={canToggleTgPublished} onToggle={handleToggleTgPublished} />
-                  <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} />
-                  {department === 'construction' && (
-                    <RdCheckToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleRdChecked} />
-                  )}
-                  {(tender.folder_path || canEditTenders) && (
-                    <FolderPathCell
-                      value={tender.folder_path}
-                      canEdit={canEditTenders}
-                      onSave={(v) => handleSaveFolderPath(tender.id, v)}
-                    />
-                  )}
-                </div>
-                {canOpenTenderCard && (
-                  <Link to={`/tenders/${isMaterialsView ? (tender.parent_tender_id || tender.id) : tender.id}`} className="tp-mcard-open">
-                    Открыть тендер <span aria-hidden>›</span>
                   </Link>
-                )}
-              </div>
-            ))}
-          </div>
+                  <div className="tp-mrow-flags">
+                    {tender.status && (
+                      <span className={`status-badge ${getStatusBadgeClass(tender.status)} tp-mrow-status`}>
+                        {tender.status}
+                      </span>
+                    )}
+                    <TgPublishToggle tender={tender} canEdit={canToggleTgPublished} onToggle={handleToggleTgPublished} short />
+                    <CompletionLetterToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleCompletionLetter} iconOnly />
+                    {department === 'construction' && (
+                      <RdCheckToggle tender={tender} canEdit={canEditTenders} onToggle={handleToggleRdChecked} short />
+                    )}
+                    {(tender.folder_path || canEditTenders) && (
+                      <FolderPathCell
+                        compact
+                        value={tender.folder_path}
+                        canEdit={canEditTenders}
+                        onSave={(v) => handleSaveFolderPath(tender.id, v)}
+                      />
+                    )}
+                    {/* Строка тендера на материалы ведёт в расценку; карточка основного тендера — отдельной ссылкой. */}
+                    {isMaterialsView && canOpenTenderCard && (
+                      <Link to={`/tenders/${tender.parent_tender_id || tender.id}`} className="tp-mrow-parent">
+                        Тендер <span aria-hidden>›</span>
+                      </Link>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
         )
       ) : (
       <div className="table-container">

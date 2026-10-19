@@ -4,6 +4,7 @@ import './TgPublishToggle.css'
 // документация в пакете проверена. Внешне и по поведению — как «Публикация в ТГ»
 // (те же стили .tgpub): зелёная, когда отмечено; кто и когда — в подсказке.
 // Клик (для редакторов) переключает состояние; onToggle(tenderId, next).
+// short — подпись «РД» (список тендеров на телефоне), полная — в подсказке и для диктора.
 
 function fmtDate(iso) {
   if (!iso) return ''
@@ -21,9 +22,9 @@ const IconBox = ({ checked }) => (
   </svg>
 )
 
-export default function RdCheckToggle({ tender, canEdit = false, onToggle }) {
+export default function RdCheckToggle({ tender, canEdit = false, onToggle, short = false }) {
   const checked = !!tender.rd_checked
-  const label = 'Проверка РД'
+  const label = short ? 'РД' : 'Проверка РД'
   const cls = `tgpub ${checked ? 'is-pub' : 'is-unpub'}`
 
   const title = checked
@@ -43,6 +44,7 @@ export default function RdCheckToggle({ tender, canEdit = false, onToggle }) {
       type="button"
       className={cls}
       title={title}
+      aria-label={short ? 'Проверка РД' : undefined}
       aria-pressed={checked}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(tender.id, !checked) }}
     >
