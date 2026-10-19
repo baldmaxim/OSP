@@ -15,6 +15,7 @@ import TgPublishToggle from '../components/TgPublishToggle'
 import { tgEventDescription, tgPatch, tgSkipSupported, tgState } from '../utils/tgPublish'
 import CompletionLetterToggle from '../components/CompletionLetterToggle'
 import RdCheckToggle from '../components/RdCheckToggle'
+import VorDivisionChip from '../components/VorDivisionChip'
 import FolderPathCell from '../components/FolderPathCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
@@ -29,6 +30,7 @@ import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIG
 import { formatDateRange as formatShortDateRange, breakAfterDash } from '../utils/dateRange'
 import DateRangeCell from '../components/DateRangeCell'
 import { vorStartDate } from '../utils/vorDates'
+import { VOR_DIVISION_LABEL, DIVISION_MIGRATION_HINT, isMissingDivisionColumnError, vorDivisionLogPayload } from '../utils/vorDivisions'
 import {
   fetchSupplyEmployees, materialsResponsibleOf, isMissingMaterialsColumnError, SUPPLY_MIGRATION_HINT,
   MATERIALS_PRIORITY_OPTIONS, MATERIALS_PRIORITY_LABEL, personInitials,
@@ -137,6 +139,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // тендеры: публикацию в Telegram-канале ведёт он. role — эффективная роль
   // (с учётом «Просмотра от имени роли» у администратора).
   const canToggleTgPublished = canEditTenders || role === ROLES.ECONOMIST
+  // Подразделение ВОР под описанием работ — то же поле, что в «ВОРах и РД», и
+  // правит его тот же круг, что там: правка «Тендеров» или «ВОРов и РД».
+  const canEditVorDivision = canEdit('tenders') || canEdit('vors')
   // Телефон: список рендерим карточками вместо широкой таблицы
   const isPhone = useIsPhone()
   // Руководитель строительства (привязан к объекту) не видит внутренние примечания,
@@ -1405,6 +1410,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       alert(err.code === '42703' || /rd_checked/.test(err.message || '')
         ? 'Не удалось сохранить отметку: не применена миграция 20260917_add_rd_checked_to_tenders.'
         : 'Ошибка: ' + err.message)
+    }
+  }
+
+  // Подразделение ВОР (tenders.vor_division) — общее с «ВОРами и РД»: пишем
+  // только эту колонку, в журнал — та же запись, что из «ВОРов». Открытые
+  // «ВОРы и РД» (свои и коллег) получат правку онлайн-подпиской на tenders.
+  const handleChangeVorDivision = async (tenderId, next) => {
+    const oldValue = tenders.find(t => t.id === tenderId)?.vor_division || null
+    if (oldValue === next) return
+    try {
+      const { error } = await db.from('tenders').update({ vor_division: next }).eq('id', tenderId)
+      if (error) throw error
+      setTenders(prev => prev.map(t => t.id === tenderId ? { ...t, vor_division: next } : t))
+      logTenderEvent(tenderId, 'field_updated', vorDivisionLogPayload(oldValue, next))
+    } catch (err) {
+      console.error('Ошибка изменения подразделения ВОР:', err.message)
+      alert(isMissingDivisionColumnError(err) ? DIVISION_MIGRATION_HINT : 'Ошибка: ' + err.message)
     }
   }
 
@@ -3352,6 +3374,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       {respName
                         ? <PersonName full={respName} className="tp-mrow-person" />
                         : <span className="tp-mrow-muted">Не назначен</span>}
+                      {/* Подразделение ВОР на телефоне — только показ (правка — в
+                          строке реестра на компьютере или в «ВОРах и РД»). */}
+                      {denseRegistry && isConstructionTender(tender) && VOR_DIVISION_LABEL[tender.vor_division] && (
+                        <span className="tp-mrow-div" title="Подразделение ВОР">{VOR_DIVISION_LABEL[tender.vor_division]}</span>
+                      )}
                       {isMaterialsView && tender.materials_priority && (
                         <span className={`mat-prio-chip prio-${tender.materials_priority}`}>
                           {MATERIALS_PRIORITY_LABEL[tender.materials_priority]}
@@ -3671,6 +3698,16 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       {/* Отметки хода тендера — в одну строку, а не столбиком:
                           три плашки друг под другом делали строку в 240px. */}
                       <div className="tender-flags">
+                        {/* Подразделение ВОР — только у тендеров, которые есть в
+                            «ВОРах и РД» (isConstructionTender); колонки ещё нет
+                            (миграция 20260927) — плашки нет. */}
+                        {denseRegistry && isConstructionTender(tender) && 'vor_division' in tender && (
+                          <VorDivisionChip
+                            value={tender.vor_division}
+                            canEdit={canEditVorDivision}
+                            onChange={(v) => handleChangeVorDivision(tender.id, v)}
+                          />
+                        )}
                         <TgPublishToggle
                           tender={tender}
                           canEdit={canToggleTgPublished}

@@ -22,6 +22,10 @@ import { shortPersonName } from '../utils/personName'
 import { vorStartDate } from '../utils/vorDates'
 import { useClampOverflow } from '../utils/clampMeasure'
 import { DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
+import {
+  VOR_DIVISIONS, VOR_DIVISION_LABEL, DIVISION_MIGRATION_HINT, isMissingDivisionColumnError, vorDivisionLogPayload,
+} from '../utils/vorDivisions'
+import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable'
 import './CostPlansPage.css'
 // Типографика раздела (этап 1): шрифт Inter с нашего сервера и шкала размеров —
 // только внутри «ВОРов и РД». Правила — docs/UI_GUIDELINES.md.
@@ -44,21 +48,9 @@ const STATUS_LABELS = {
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required']
 
-// Подразделение, готовящее ВОР (tenders.vor_division, миграция 20260927).
-const VOR_DIVISIONS = [
-  { value: 'monolith', label: 'Монолит' },
-  { value: 'nvf_spk', label: 'НВФ/СПК' },
-  { value: 'general', label: 'Общестроительные работы' },
-  { value: 'hvac_water', label: 'ОВиВК' },
-  { value: 'electrical', label: 'ЭОМ/СС' },
-]
-const VOR_DIVISION_LABEL = Object.fromEntries(VOR_DIVISIONS.map(d => [d.value, d.label]))
+// Значение фильтра «Подразделение» для тендеров без подразделения. Сами
+// подразделения — utils/vorDivisions.js (общие с реестром тендеров).
 const NO_DIVISION = '__none__'
-const DIVISION_MIGRATION_HINT = 'Подразделение недоступно: в базе не применена миграция 20260927_tender_vor_division.'
-
-function isMissingDivisionColumnError(err) {
-  return (err?.code === '42703' || err?.code === 'PGRST204') && /vor_division/.test(String(err?.message || ''))
-}
 
 // Направления страницы: основное строительство и совместные тендеры.
 const SCOPES = [
@@ -340,6 +332,22 @@ function VorsPage() {
     fetchTenders()
   }, [fetchTenders])
 
+  // Онлайн-обновления тендеров — как в реестре «Тендеры»: правка из реестра
+  // (подразделение под описанием работ, статус ВОР, сроки) или от коллеги
+  // подмешивается в уже загруженную строку, без перезагрузки страницы. Только
+  // скалярные поля: связей (objects, ответственные) в событии нет. Новые и
+  // удалённые тендеры не перечитываем — появятся при следующем открытии.
+  useRealtimeTable({
+    table: 'tenders',
+    onUpdate: (newRow, oldRow) => {
+      const patch = changedScalarFields(newRow, oldRow)
+      if (Object.keys(patch).length === 0) return
+      setAllRows(prev => (prev.some(t => t._kind === 'tender' && t.id === newRow.id)
+        ? prev.map(t => (t._kind === 'tender' && t.id === newRow.id ? { ...t, ...patch } : t))
+        : prev))
+    },
+  })
+
   // Список небольшой (сотрудники СТО) — грузим сразу: выпадашка есть в каждой строке.
   useEffect(() => { loadStoEmployees() }, [])
 
@@ -385,16 +393,7 @@ function VorsPage() {
       const { error } = await db.from(tableOf(tenderId)).update({ vor_division: next }).eq('id', tenderId)
       if (error) throw error
       setAllRows(prev => prev.map(t => (t.id === tenderId ? { ...t, vor_division: next } : t)))
-      const oldLabel = VOR_DIVISION_LABEL[oldValue] || null
-      const newLabel = VOR_DIVISION_LABEL[next] || null
-      logTenderEvent(tenderId, 'field_updated', {
-        fieldName: 'vor_division',
-        oldValue: oldLabel,
-        newValue: newLabel,
-        description: newLabel
-          ? (oldLabel ? `Сменено подразделение ВОР: ${oldLabel} → ${newLabel}` : `Указано подразделение ВОР: ${newLabel}`)
-          : `Снято подразделение ВОР (было: ${oldLabel})`,
-      })
+      logTenderEvent(tenderId, 'field_updated', vorDivisionLogPayload(oldValue, next))
     } catch (err) {
       console.error('Ошибка изменения подразделения ВОР:', err.message)
       alert(isMissingDivisionColumnError(err) ? DIVISION_MIGRATION_HINT : 'Ошибка: ' + err.message)

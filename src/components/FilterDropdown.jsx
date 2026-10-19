@@ -39,6 +39,9 @@ export default function FilterDropdown({
   // Необязательный inline-стиль на корень (напр. проброс CSS-переменной цвета статуса).
   style = null,
   multiple = false,
+  // Необязательная подсказка триггера вместо «Метка: значение» (напр. пояснение,
+  // где ещё меняется это поле).
+  triggerTitle = null,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -164,7 +167,7 @@ export default function FilterDropdown({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={label ? `${label}: ${selectedLabel}` : selectedLabel}
+        title={triggerTitle || (label ? `${label}: ${selectedLabel}` : selectedLabel)}
       >
         {icon && <span className="fdrop-icon" aria-hidden>{icon}</span>}
         {label && <span className="fdrop-label">{label}</span>}

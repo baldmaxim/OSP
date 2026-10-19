@@ -1,0 +1,44 @@
+/* Подразделение ВОР под описанием работ в реестре тендеров (VorDivisionChip).
+   Плашка того же размера, что соседняя отметка «ТГ» (.tgpub): шрифт — вторичная
+   подпись ячейки (--ui-hint), без стрелки списка. Заполнено — лёгкий акцентный
+   фон, как у чипа подразделения в «ВОРах и РД»; пусто — пунктир «указать». */
+.fdrop.vdiv-fdrop { display: inline-flex; max-width: 100%; min-width: 0; }
+
+.vdiv,
+.fdrop.fdrop.vdiv-fdrop .fdrop-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: 0 0.3125rem;
+  border: 1px dashed var(--border-color-dark, #cbd5e1);
+  border-radius: var(--ui-radius, 5px);
+  background: none;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-size: var(--ui-hint, 0.6875rem);
+  line-height: var(--ui-hint-lh, 0.9375rem);
+  font-weight: var(--ui-medium, 500);
+  white-space: nowrap;
+}
+.vdiv > svg,
+.fdrop.vdiv-fdrop .fdrop-icon svg { flex-shrink: 0; width: 11px; height: 11px; }
+.fdrop.fdrop.vdiv-fdrop .fdrop-icon { margin: 0; color: inherit; }
+.fdrop.fdrop.vdiv-fdrop .fdrop-value { min-width: 0; overflow: visible; font-weight: inherit; color: inherit; }
+.fdrop.vdiv-fdrop .fdrop-arrow { display: none; }
+
+.vdiv.is-set,
+.fdrop.fdrop.vdiv-fdrop.is-set .fdrop-trigger {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--primary-color) 30%, transparent);
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  color: var(--text-primary);
+}
+.fdrop.fdrop.vdiv-fdrop .fdrop-trigger:hover,
+.fdrop.fdrop.vdiv-fdrop.is-open .fdrop-trigger {
+  border-color: var(--primary-color);
+  color: var(--text-primary);
+}
+.vdiv { cursor: default; }

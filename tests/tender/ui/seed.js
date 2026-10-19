@@ -75,6 +75,8 @@ const registry = Array.from({ length: TENDERS }, (_, i) => {
     folder_path: i % 2 === 0 ? `\\\\su10-fs\\Тендеры\\${obj.name}\\Тендер ${200 - i}` : null,
     tg_published: i % 2 === 1,
     vor_status: 'in_progress',
+    // Подразделение ВОР (общее с «ВОРами и РД»): у части тендеров указано, у первого — нет.
+    vor_division: [null, 'monolith', 'general', null, 'electrical'][i % 5],
     cost_plan_status: 'completed',
     notes: 'Примечание к тендеру',
     tender_winners: [],

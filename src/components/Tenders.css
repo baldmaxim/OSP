@@ -1892,6 +1892,8 @@
   .tenders-page .tp-mrow-kp-full { color: #047857; font-weight: 600; }
   [data-theme='dark'] .tenders-page .tp-mrow-kp-full { color: #6ee7b7; }
   .tenders-page .tp-mrow-meta .mat-prio-chip { padding: 0 0.375rem; font-size: 0.6875rem; line-height: 1rem; }
+  /* Подразделение ВОР — та же плашка, что под описанием в реестре на компьютере. */
+  .tenders-page .tp-mrow-div { padding: 0 0.375rem; border-radius: 6px; background: color-mix(in srgb, var(--primary-color) 10%, transparent); color: var(--text-primary); font-size: 0.6875rem; line-height: 1rem; }
 
   /* Статус слева, отметки — мелкими кнопками справа, одной строкой: не
      хватает места — сжимается статус (многоточие), а не переносятся отметки.
