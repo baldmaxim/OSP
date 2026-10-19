@@ -73,6 +73,17 @@ function TenderDeptBadge({ tender }) {
 // Отбор по направлению — галочки справа от поиска, можно несколько сразу;
 // ничего не отмечено — показываем все КП.
 const DEPT_FILTER_KEYS = ['construction', 'warranty', 'other', 'joint']
+// Выбор переживает обновление страницы — хранится в браузере пользователя.
+const DEPTS_STORAGE_KEY = 'kpReview:depts'
+
+function loadSavedDepts() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DEPTS_STORAGE_KEY) || '[]')
+    return new Set(Array.isArray(saved) ? saved.filter(k => DEPT_FILTER_KEYS.includes(k)) : [])
+  } catch {
+    return new Set()
+  }
+}
 
 const IconCheck = () => (
   <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
@@ -213,7 +224,10 @@ function KpReviewPage() {
   const [tab, setTab] = useState('pending')
   const [search, setSearch] = useState('')
   // Отмеченные направления (ключи DEPT_BADGE); пустой набор — без отбора.
-  const [depts, setDepts] = useState(() => new Set())
+  const [depts, setDepts] = useState(loadSavedDepts)
+  useEffect(() => {
+    try { localStorage.setItem(DEPTS_STORAGE_KEY, JSON.stringify([...depts])) } catch { /* приватный режим */ }
+  }, [depts])
   // По умолчанию — как раньше: свежие КП сверху.
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
   const [reviewFile, setReviewFile] = useState(null)
