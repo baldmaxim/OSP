@@ -988,5 +988,115 @@
     "to": "empty",
     "why": "новая таблица: ссылки на документы (чек, счёт, КП поставщика) к позициям расценки снабжением (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «Тендеры на материалы»",
     "candidate": "20261022_supply_links.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "admin",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "employee_full",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "employee_none",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "vors_only",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "contractor_own",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "contractor_noorg",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "unapproved",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "blocked",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "no_user_roles",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "anon",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261024",
+    "class": "service_role",
+    "table": "tender_supply_import_state",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
+    "candidate": "20261024_supply_import_state.sql"
   }
 ]
