@@ -138,4 +138,81 @@ describe('Подразделение ВОР в реестре тендеров �
       await close()
     }
   })
+
+  // Фильтр в заголовке «Описание работ»: по умолчанию — все, в том числе без подразделения;
+  // выбранный виден (заливка, подпись, сброс, черта у заголовка) и сохраняется, как остальные фильтры.
+  it('фильтр по подразделению в заголовке «Описание работ»', async () => {
+    const { page, errors, close } = await openPage('route=/tenders/construction&tenders=10&items=20&cps=2&latency=0')
+    try {
+      await page.locator('table.tenders-registry > tbody > tr').first().waitFor({ timeout: 120000 })
+      const th = page.locator('table.tenders-registry > thead th', { has: page.locator('.vdivf-fdrop') })
+      const filter = th.locator('.fdrop.vdivf-fdrop')
+      // Порядок — сортировка реестра (по дате), сравниваем наборы номеров.
+      const shownNums = async () => (await page.locator('table.tenders-registry > tbody .tp-num-value').allTextContents()).sort()
+      const divisionOf = (num) => registryRow(page, num).locator('.vdiv-fdrop .fdrop-value').textContent()
+      const all = await shownNums()
+      assert.equal(all.length, 10, 'по умолчанию — все тендеры, в том числе без подразделения')
+      assert.match(await th.textContent(), /^Описание работ/)
+      assert.equal(await filter.locator('.fdrop-value').textContent(), 'Все подразделения')
+      assert.equal(await filter.evaluate((el) => el.classList.contains('is-active')), false)
+      assert.equal(await th.evaluate((el) => el.classList.contains('tp-th-filtered')), false)
+      assert.equal(await th.locator('.vdivf-clear').count(), 0)
+
+      await filter.locator('.fdrop-trigger').click()
+      // Числа — по реестру без этого фильтра: у 10 тендеров по кругу [—, Монолит, Общестрой, —, ЭОМ].
+      assert.deepEqual(await page.locator('.fdrop-panel .fdrop-option-text').allTextContents(),
+        ['Монолит (2)', 'НВФ/СПК (0)', 'Общестроительные работы (2)', 'ОВиВК (0)', 'ЭОМ/СС (2)', 'Не указано (4)'])
+      await pick(page, 'Монолит')
+      await page.keyboard.press('Escape')
+      assert.deepEqual(await shownNums(), ['194', '199'])
+      for (const n of await shownNums()) assert.match(await divisionOf(n), /Монолит$/)
+      assert.match(await filter.locator('.fdrop-value').textContent(), /Монолит$/)
+      assert.equal(await filter.evaluate((el) => el.classList.contains('is-active')), true)
+      assert.equal(await th.evaluate((el) => el.classList.contains('tp-th-filtered')), true)
+      // Заливка выбранного фильтра отличается от пустого — видно глазом, а не только по классу.
+      assert.notEqual(await filter.locator('.fdrop-trigger').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)')
+      assert.equal(await page.locator('.tp-filters-reset').count(), 1, '«Сбросить все» учитывает фильтр')
+
+      // «Не указано» — тендеры без подразделения.
+      await filter.locator('.fdrop-trigger').click()
+      await pick(page, 'Не указано')
+      await page.keyboard.press('Escape')
+      assert.deepEqual(await shownNums(), ['192', '194', '195', '197', '199', '200'])
+      assert.match(await filter.locator('.fdrop-value').textContent(), /Подразделений: 2$/)
+
+      // Сохраняется, как остальные фильтры реестра.
+      await page.reload()
+      await page.locator('table.tenders-registry > tbody > tr').first().waitFor({ timeout: 120000 })
+      assert.deepEqual(await shownNums(), ['192', '194', '195', '197', '199', '200'])
+
+      // Сброс рядом с фильтром — снова все.
+      await th.locator('.vdivf-clear').click()
+      assert.deepEqual(await shownNums(), all)
+      assert.equal(await filter.locator('.fdrop-value').textContent(), 'Все подразделения')
+      assert.equal(await th.evaluate((el) => el.classList.contains('tp-th-filtered')), false)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('телефон: фильтр по подразделению — в панели фильтров', async () => {
+    const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${stand.url}?route=/tenders/construction&tenders=10&items=20&cps=2&latency=0`)
+      await page.locator('.tp-mlist > li').first().waitFor({ timeout: 120000 })
+      const all = await page.locator('.tp-mlist > li').count()
+      await page.locator('.tp-filters-toggle').click()
+      const item = page.locator('.tp-filters .tender-filter-item', { hasText: 'Подразделение:' })
+      await item.locator('.fdrop-trigger').click()
+      await pick(page, 'ЭОМ/СС')
+      await page.keyboard.press('Escape')
+      assert.equal(await page.locator('.tp-mlist > li').count(), 2)
+      assert.ok(all > 2)
+      assert.equal(await page.locator('.tp-filters-count').textContent(), '1')
+    } finally {
+      await context.close().catch(() => {})
+    }
+  })
 })

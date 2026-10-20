@@ -15,6 +15,10 @@ export const VOR_DIVISIONS = [
 
 export const VOR_DIVISION_LABEL = Object.fromEntries(VOR_DIVISIONS.map(d => [d.value, d.label]))
 
+// Значение фильтра «Подразделение» для тендеров без подразделения — в обоих
+// разделах (фильтр «ВОРов и РД» и заголовок «Описание работ» реестра).
+export const NO_VOR_DIVISION = '__none__'
+
 export const DIVISION_MIGRATION_HINT = 'Подразделение недоступно: в базе не применена миграция 20260927_tender_vor_division.'
 
 export function isMissingDivisionColumnError(err) {

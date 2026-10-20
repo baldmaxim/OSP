@@ -1,0 +1,73 @@
+/* Фильтр по подразделению ВОР в заголовке «Описание работ» (VorDivisionFilter).
+   Подпись колонки и фильтр — в строку, при нехватке ширины фильтр переносится
+   под подпись. Не выбран — тихая пунктирная плашка размера заголовка
+   («Все подразделения»); выбран — заливка и рамка акцентом, текст основного
+   цвета (контраст как у текста таблицы), рядом кнопка сброса, а у самого
+   заголовка — акцентная черта снизу: видно и при прокрутке к шапке. */
+.tp-th-desc {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.375rem;
+  max-width: 100%;
+}
+.tenders-registry > thead > tr > th.tp-th-filtered { box-shadow: inset 0 -2px 0 var(--primary-color); }
+
+.vdivf { display: inline-flex; align-items: center; max-width: 100%; min-width: 0; }
+.fdrop.vdivf-fdrop { display: inline-flex; max-width: 100%; min-width: 0; }
+
+.fdrop.fdrop.vdivf-fdrop .fdrop-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  height: auto;
+  min-height: 1.125rem;
+  padding: 0 0.3125rem;
+  border: 1px dashed var(--border-color-dark, #cbd5e1);
+  border-radius: var(--ui-radius, 5px);
+  background: none;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-size: var(--ui-th, 0.6875rem);
+  line-height: var(--ui-th-lh, 0.9375rem);
+  font-weight: var(--ui-medium, 500);
+  white-space: nowrap;
+}
+.fdrop.fdrop.vdivf-fdrop .fdrop-icon { margin: 0; color: inherit; }
+.fdrop.vdivf-fdrop .fdrop-icon svg { flex-shrink: 0; width: 11px; height: 11px; }
+.fdrop.fdrop.vdivf-fdrop .fdrop-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: inherit; color: inherit; }
+.fdrop.fdrop.vdivf-fdrop .fdrop-arrow { margin-left: 0; font-size: 0.625rem; color: inherit; }
+.fdrop.fdrop.vdivf-fdrop .fdrop-trigger:hover,
+.fdrop.fdrop.vdivf-fdrop.is-open .fdrop-trigger {
+  border-color: var(--primary-color);
+  color: var(--text-primary);
+}
+
+/* Выбран: плашка и кнопка сброса — одна группа, сброс справа впритык. */
+.fdrop.fdrop.vdivf-fdrop.is-active .fdrop-trigger {
+  border: 1px solid var(--primary-color);
+  border-radius: var(--ui-radius, 5px) 0 0 var(--ui-radius, 5px);
+  background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+  color: var(--text-primary);
+  font-weight: var(--ui-semibold, 600);
+}
+.fdrop.fdrop.vdivf-fdrop.is-active .fdrop-icon { color: var(--ui-link, var(--primary-color)); }
+
+.vdivf-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  width: 1.125rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--primary-color);
+  border-left: 0;
+  border-radius: 0 var(--ui-radius, 5px) var(--ui-radius, 5px) 0;
+  background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.vdivf-clear:hover { background: color-mix(in srgb, var(--primary-color) 28%, transparent); }
+.vdivf-clear:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }

@@ -16,6 +16,7 @@ import { tgEventDescription, tgPatch, tgSkipSupported, tgState } from '../utils/
 import CompletionLetterToggle from '../components/CompletionLetterToggle'
 import RdCheckToggle from '../components/RdCheckToggle'
 import VorDivisionChip from '../components/VorDivisionChip'
+import VorDivisionFilter from '../components/VorDivisionFilter'
 import FolderPathCell from '../components/FolderPathCell'
 import RootFolderPathButton from '../components/RootFolderPathButton'
 import DocStorageStructureModal from '../components/DocStorageStructureModal'
@@ -30,7 +31,7 @@ import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIG
 import { formatDateRange as formatShortDateRange, breakAfterDash } from '../utils/dateRange'
 import DateRangeCell from '../components/DateRangeCell'
 import { vorStartDate } from '../utils/vorDates'
-import { VOR_DIVISION_LABEL, DIVISION_MIGRATION_HINT, isMissingDivisionColumnError, vorDivisionLogPayload } from '../utils/vorDivisions'
+import { VOR_DIVISION_LABEL, NO_VOR_DIVISION, DIVISION_MIGRATION_HINT, isMissingDivisionColumnError, vorDivisionLogPayload } from '../utils/vorDivisions'
 import {
   fetchSupplyEmployees, materialsResponsibleOf, isMissingMaterialsColumnError, SUPPLY_MIGRATION_HINT,
   MATERIALS_PRIORITY_OPTIONS, MATERIALS_PRIORITY_LABEL, personInitials,
@@ -294,6 +295,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [statusFilter, setStatusFilter] = useState(() => Array.isArray(savedFilters.statusFilter) ? savedFilters.statusFilter : [])
   // Тендеры на материалы: фильтр по приоритету ('high' | 'medium' | 'low' | '__none__').
   const [priorityFilter, setPriorityFilter] = useState(() => Array.isArray(savedFilters.priorityFilter) ? savedFilters.priorityFilter : [])
+  // Основное строительство: фильтр по подразделению ВОР (коды, NO_VOR_DIVISION —
+  // «Не указано») — в заголовке «Описание работ». Пусто — все, в том числе без подразделения.
+  const [divisionFilter, setDivisionFilter] = useState(() => Array.isArray(savedFilters.divisionFilter) ? savedFilters.divisionFilter : [])
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState(() => typeof savedFilters.searchQuery === 'string' ? savedFilters.searchQuery : '')
   // Компактный вид: скрывает столбцы «ВОРы и РД», «План затрат», «Тендер на материалы», «Сводная КП»
@@ -316,10 +320,10 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   useEffect(() => {
     try {
       localStorage.setItem(filtersStorageKey, JSON.stringify({
-        activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, priorityFilter, sortField, sortOrder,
+        activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, priorityFilter, divisionFilter, sortField, sortOrder,
       }))
     } catch { /* noop */ }
-  }, [filtersStorageKey, activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, priorityFilter, sortField, sortOrder])
+  }, [filtersStorageKey, activeTab, searchQuery, objectFilter, responsibleFilter, statusFilter, priorityFilter, divisionFilter, sortField, sortOrder])
   const [formData, setFormData] = useState({
     object_id: '',
     work_description: '',
@@ -2431,7 +2435,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // useMemo обязателен: компонент перерисовывается на любое состояние (открытие
   // попапа, наведение, ввод в поиск), а фильтрация и сортировка идут по всему
   // реестру. Без мемоизации сотни тендеров пересчитывались на каждый рендер.
-  const filteredByTab = useMemo(() => tenders.filter(tender => {
+  const filteredBeforeDivision = useMemo(() => tenders.filter(tender => {
     // task 212: Фильтр по вкладке — 'all' | <конкретный статус> | 'deleted'
     if (activeTab === 'deleted') {
       if (!tender.deleted_at) return false
@@ -2482,6 +2486,23 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
     return true
   }), [tenders, activeTab, objectFilter, responsibleFilter, statusFilter, priorityFilter, isMaterialsView, searchQuery])
+
+  // Подразделение ВОР — отдельным шагом: числа в списке фильтра считаются по
+  // реестру с остальными фильтрами, но без него самого. Фильтр есть только у
+  // основного строительства (denseRegistry) — в других реестрах не применяется.
+  const divisionFilterOn = denseRegistry && divisionFilter.length > 0
+  const filteredByTab = useMemo(() => (divisionFilterOn
+    ? filteredBeforeDivision.filter(t => divisionFilter.includes(t.vor_division || NO_VOR_DIVISION))
+    : filteredBeforeDivision), [filteredBeforeDivision, divisionFilterOn, divisionFilter])
+  const divisionCounts = useMemo(() => {
+    if (!denseRegistry) return null
+    const counts = new Map()
+    for (const t of filteredBeforeDivision) {
+      const key = t.vor_division || NO_VOR_DIVISION
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+    return counts
+  }, [denseRegistry, filteredBeforeDivision])
 
   // Приоритет сортируется по весу, а не по алфавиту: «high» > «medium» > «low».
   // Не указанный уходит в конец при любом направлении (пустое значение).
@@ -3209,8 +3230,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             aria-expanded={mobileFiltersOpen}
           >
             Фильтры
-            {(objectFilter.length + responsibleFilter.length + statusFilter.length + priorityFilter.length) > 0 && (
-              <span className="tp-filters-count">{objectFilter.length + responsibleFilter.length + statusFilter.length + priorityFilter.length}</span>
+            {(objectFilter.length + responsibleFilter.length + statusFilter.length + priorityFilter.length + (divisionFilterOn ? divisionFilter.length : 0)) > 0 && (
+              <span className="tp-filters-count">{objectFilter.length + responsibleFilter.length + statusFilter.length + priorityFilter.length + (divisionFilterOn ? divisionFilter.length : 0)}</span>
             )}
             <span className="tp-filters-chevron" aria-hidden>▾</span>
           </button>
@@ -3285,6 +3306,15 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
         </div>
         )}
 
+        {/* На компьютере фильтр — в заголовке «Описание работ»; на телефоне
+            шапки таблицы нет, поэтому он здесь. */}
+        {denseRegistry && isPhone && (
+        <div className="tender-filter-item">
+          <span className="tender-filter-label">Подразделение:</span>
+          <VorDivisionFilter value={divisionFilter} onChange={setDivisionFilter} counts={divisionCounts} />
+        </div>
+        )}
+
         <div className="tender-filter-item">
           <span className="tender-filter-label">Ответственный:</span>
           <FilterDropdown
@@ -3316,11 +3346,11 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           />
         </div>
 
-        {(objectFilter.length > 0 || responsibleFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || searchQuery) && (
+        {(objectFilter.length > 0 || responsibleFilter.length > 0 || statusFilter.length > 0 || priorityFilter.length > 0 || divisionFilterOn || searchQuery) && (
           <button
             type="button"
             className="tp-filters-reset"
-            onClick={() => { setObjectFilter([]); setResponsibleFilter([]); setStatusFilter([]); setPriorityFilter([]); setSearchQuery('') }}
+            onClick={() => { setObjectFilter([]); setResponsibleFilter([]); setStatusFilter([]); setPriorityFilter([]); setDivisionFilter([]); setSearchQuery('') }}
           >
             Сбросить все
           </button>
@@ -3549,7 +3579,17 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               {uiWork
                 ? <th style={{ minWidth: '160px' }} title="Наименование объекта">Объект</th>
                 : <th style={{ minWidth: '160px' }}>Наименование<br />объекта</th>}
-              <th style={{ minWidth: '140px', maxWidth: '220px' }}>Описание работ</th>
+              <th
+                style={{ minWidth: '140px', maxWidth: '220px' }}
+                className={divisionFilterOn ? 'tp-th-filtered' : undefined}
+              >
+                {denseRegistry ? (
+                  <span className="tp-th-desc">
+                    <span>Описание работ</span>
+                    <VorDivisionFilter inHeader value={divisionFilter} onChange={setDivisionFilter} counts={divisionCounts} />
+                  </span>
+                ) : 'Описание работ'}
+              </th>
               {!isCompletedTab && <th style={{ width: '100px' }}>Статус</th>}
               {isCompletedTab && <th style={{ width: '130px' }}>Победитель</th>}
               <th

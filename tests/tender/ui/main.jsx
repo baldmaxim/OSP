@@ -8,6 +8,9 @@
 //   cpContacts=1 — у контрагентов контакты с телефонами и один в чёрном списке;
 //   shell=1 — страница внутри обвязки приложения (.layout / .main-content и полоса меню телефона):
 //             на телефоне прокрутка зависит от неё, без обвязки стенд прокручивает окно.
+//   callReminder=1 — показать вторничное напоминание об обзвоне (TenderCallReminder); без него оно
+//             отмечено закрытым на эту неделю: во вторник окно открывалось поверх реестра и
+//             перекрывало строки — тесты реестра падали раз в неделю.
 // window.__navigate(путь) — переход между разделами без перезагрузки (данные в памяти сохраняются):
 //             так проверяется, что правка в одном разделе видна в другом (/tenders/construction ↔ /vors).
 import './seed.js'
@@ -21,9 +24,16 @@ import TenderDetailPage from '../../../src/pages/TenderDetailPage'
 import CounterpartiesPage from '../../../src/pages/CounterpartiesPage'
 import SupplyPricingPage from '../../../src/pages/SupplyPricingPage'
 import VorsPage from '../../../src/pages/VorsPage'
+import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
 const route = params.get('route') || '/tenders/tender-1'
+
+if (params.get('callReminder') !== '1') {
+  try {
+    for (const d of ['construction', 'all']) localStorage.setItem(`tenderCallReminder:${d}`, weekKey(new Date()))
+  } catch { /* приватный режим */ }
+}
 
 function NavBridge() {
   window.__navigate = useNavigate()

@@ -23,7 +23,7 @@ import { vorStartDate } from '../utils/vorDates'
 import { useClampOverflow } from '../utils/clampMeasure'
 import { DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import {
-  VOR_DIVISIONS, VOR_DIVISION_LABEL, DIVISION_MIGRATION_HINT, isMissingDivisionColumnError, vorDivisionLogPayload,
+  VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION, DIVISION_MIGRATION_HINT, isMissingDivisionColumnError, vorDivisionLogPayload,
 } from '../utils/vorDivisions'
 import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable'
 import './CostPlansPage.css'
@@ -48,9 +48,9 @@ const STATUS_LABELS = {
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'completed', 'not_required']
 
-// Значение фильтра «Подразделение» для тендеров без подразделения. Сами
+// Значение фильтра «Подразделение» для тендеров без подразделения. Оно и сами
 // подразделения — utils/vorDivisions.js (общие с реестром тендеров).
-const NO_DIVISION = '__none__'
+const NO_DIVISION = NO_VOR_DIVISION
 
 // Направления страницы: основное строительство и совместные тендеры.
 const SCOPES = [

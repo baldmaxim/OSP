@@ -139,3 +139,17 @@ export const IconDocsStack = ({ size }) => (
     <path d="M9 11h5M9 14h5" />
   </TbSvg>
 )
+
+// Фильтр колонки — воронка
+export const IconFilter = ({ size }) => (
+  <TbSvg size={size}>
+    <path d="M3 4h18l-7 8.5V19l-4 2v-8.5Z" />
+  </TbSvg>
+)
+
+// Сбросить — крестик
+export const IconClose = ({ size }) => (
+  <TbSvg size={size}>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </TbSvg>
+)
