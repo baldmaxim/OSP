@@ -2555,6 +2555,45 @@
   cursor: default;
 }
 
+/* Тип документа: договоры и ДС / договоры / ДС. Выбранный сегмент залит
+   основным цветом — по реестру сразу видно, что именно в нём показано. */
+.rf-doc-kind {
+  display: inline-flex;
+  gap: 2px;
+  height: 40px;
+  padding: 3px;
+  box-sizing: border-box;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.rf-doc-kind-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+.rf-doc-kind-btn:hover:not(.is-active) { color: var(--text-primary); background: var(--bg-secondary); }
+/* Тёмный вариант основного цвета: белый текст на --primary-color не дотягивает до 4,5:1. */
+.rf-doc-kind-btn.is-active {
+  color: #fff;
+  background: var(--primary-hover);
+}
+[data-theme='dark'] .rf-doc-kind-btn.is-active {
+  color: #0f172a;
+  background: var(--primary-color);
+}
+
 /* ===== Сортируемые заголовки ===== */
 .contracts-table-compact th.th-sortable {
   cursor: pointer;
@@ -3062,6 +3101,8 @@
   font-size: 0.8125rem;
   color: var(--text-secondary);
 }
+/* Та же пагинация над таблицей: отступ снизу вместо верхнего. */
+.registry-pagination.is-top { padding: 0 0.25rem 0.5rem; }
 .rp-info { color: var(--text-tertiary); }
 .rp-controls {
   display: flex;
@@ -3132,6 +3173,8 @@
     margin-left: 0;
     width: 100%;
   }
+  .rf-doc-kind { display: flex; width: 100%; }
+  .rf-doc-kind-btn { flex: 1 1 0; justify-content: center; padding: 0 0.5rem; }
   /* Вкладки-реестры прокручиваются горизонтально, не переносясь на 2 ряда */
   .status-tabs {
     padding: 0 1rem;
@@ -3203,6 +3246,47 @@
   color: var(--text-tertiary);
   font-size: 0.625rem;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+/* «Договоры и ДС»: тот же бейдж — кнопка, раскрывает ДС под договором. */
+.ds-count-badge.ds-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: 1px solid var(--border-color);
+  font-family: inherit;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.ds-count-badge.ds-toggle:hover { border-color: var(--primary-color); color: var(--text-primary); }
+.ds-count-badge.ds-toggle.is-open {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  color: var(--primary-color);
+}
+.ds-toggle-chev { display: inline-block; transition: transform 0.15s ease; }
+.ds-toggle.is-open .ds-toggle-chev { transform: rotate(90deg); }
+
+/* ДС под своим договором: отступ-линия слева и чуть другой фон, чтобы
+   вложенные строки не путались с договорами. */
+.contracts-table-compact tbody tr.contract-row.is-nested-ds > td {
+  background: color-mix(in srgb, var(--primary-color) 3%, var(--bg-primary));
+}
+.contracts-table-compact tbody tr.contract-row.is-nested-ds > td:first-child {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary-color) 55%, transparent);
+}
+.contracts-table-compact tbody tr.contract-row.is-nested-ds .cell-contract-num {
+  padding-left: 1.25rem;
+}
+.contracts-table-compact .cell-num-nested { color: var(--primary-color); font-weight: 700; }
+.ds-parent-note {
+  display: inline-block;
+  margin-top: 0.25rem;
+  margin-left: 0.3rem;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
   white-space: nowrap;
 }
 

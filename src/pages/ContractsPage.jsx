@@ -89,10 +89,37 @@ const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(s => [s.value, s.labe
 const SCOPES = [
   { key: 'all', label: 'Все договоры', hint: 'Полный реестр компании, включая договоры, которые ведёт не наш отдел' },
   { key: 'ours', label: 'Наши договоры', hint: 'Договоры, которые обрабатывает наш отдел' },
-  // Отдельное представление: ДС в общий список договоров не подмешиваются, иначе
-  // реестр раздваивается и суммы считаются дважды.
-  { key: 'amendments', label: 'Дополнительные соглашения', hint: 'Все ДС: на изменение ВОР и на дополнительные работы' },
 ]
+
+// Договоры и ДС лежат в одной таблице; что показывать — фильтр «Документ»
+// (вместо прежнего отдельного представления «Дополнительные соглашения»).
+// «Договоры и ДС» — строки договоров, ДС раскрываются под своим договором;
+// «ДС» — соглашения отдельными строками. ДС не подмешиваются в список договоров
+// строками: иначе реестр раздваивается и суммы считаются дважды.
+// Выбор запоминается в браузере: после перезагрузки реестр открывается тем же.
+const DOC_KINDS = [
+  { key: 'all', label: 'Договоры и ДС', hint: 'Договоры; ДС раскрываются под своим договором по кнопке «ДС: N»' },
+  { key: 'contracts', label: 'Договоры', hint: 'Только договоры' },
+  { key: 'amendments', label: 'ДС', hint: 'Только ДС отдельными строками: на изменение ВОР и на дополнительные работы' },
+]
+const DOC_KIND_STORAGE_KEY = 'contracts-doc-kind'
+const docKindOf = (c) => ((c.record_type || DOC_TYPE.CONTRACT) === DOC_TYPE.CONTRACT ? 'contracts' : 'amendments')
+
+function readStoredDocKind() {
+  try {
+    const saved = localStorage.getItem(DOC_KIND_STORAGE_KEY)
+    return DOC_KINDS.some(k => k.key === saved) ? saved : 'all'
+  } catch { return 'all' }
+}
+
+// Сортировка по номеру: «2» раньше «10», документы без номера — в конце при
+// любом направлении.
+function compareDocNumbers(a, b, dir) {
+  const na = (a.contract_number || '').trim()
+  const nb = (b.contract_number || '').trim()
+  if (!na || !nb) return na ? -1 : nb ? 1 : 0
+  return na.localeCompare(nb, 'ru', { numeric: true, sensitivity: 'base' }) * dir
+}
 
 // Генподрядный коэффициент — наценка: во сколько сумма генподряда больше суммы
 // подряда. 100 млн генподряда против 93 млн подряда → 107,5%.
@@ -358,6 +385,11 @@ function ContractRegistry() {
   const [activeTab, setActiveTab] = useState('all')
   // Охват реестра: все договоры компании или только те, что ведёт наш отдел.
   const [scope, setScope] = useState('all')
+  // Тип документа: договоры, ДС или оба (DOC_KINDS).
+  const [docKind, setDocKind] = useState(readStoredDocKind)
+  useEffect(() => {
+    try { localStorage.setItem(DOC_KIND_STORAGE_KEY, docKind) } catch { /* noop */ }
+  }, [docKind])
 
   const [contracts, setContracts] = useState([])
   const [objects, setObjects] = useState([])
@@ -434,7 +466,7 @@ function ContractRegistry() {
 
   // Пагинация реестра
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(25)
+  const [pageSize, setPageSize] = useState(100)
 
   // Реестр договоров — общий для обоих отделов: и основное строительство (ОС),
   // и гарантийное обслуживание (ГО). Фильтра по статусу объекта здесь нет намеренно —
@@ -1162,27 +1194,84 @@ function ContractRegistry() {
   // Считаем по ЖИВЫМ документам — удалённый ДС на условия не влияет.
   const docIndex = useMemo(() => buildDocIndex(contracts.filter(c => !c.deleted_at)), [contracts])
 
-  const isAmendmentsView = scope === 'amendments'
+  // Только ДС — колонка «Изменяемый документ», подписи ДС и фильтр «Тип ДС».
+  const isAmendmentsView = docKind === 'amendments'
+  // «Договоры и ДС»: строки — договоры, их ДС раскрываются под строкой.
+  const nestDs = docKind === 'all'
+  const rowKind = isAmendmentsView ? 'amendments' : 'contracts'
 
   const scopeCounts = useMemo(() => {
-    const live = contracts.filter(c => !c.deleted_at)
-    const docs = live.filter(c => (c.record_type || DOC_TYPE.CONTRACT) === DOC_TYPE.CONTRACT)
-    return {
-      all: docs.length,
-      ours: docs.filter(c => c.handled_by_us).length,
-      amendments: live.filter(isAmendment).length,
+    const live = contracts.filter(c => !c.deleted_at && docKindOf(c) === rowKind)
+    return { all: live.length, ours: live.filter(c => c.handled_by_us).length }
+  }, [contracts, rowKind])
+
+  // Охват и тип документа применяются до вкладок и счётчиков — «Наши договоры»
+  // это тот же реестр, просто суженный, поэтому и статусные счётчики считаются в нём.
+  const scopedContracts = useMemo(
+    () => contracts.filter(c => docKindOf(c) === rowKind && (scope !== 'ours' || c.handled_by_us)),
+    [contracts, scope, rowKind])
+
+  // Все ДС каждого договора (всё дерево, а не только прямые), по порядку появления.
+  // Корень — root_contract_id (заполняет триггер); без него поднимаемся по родителям.
+  const dsByRoot = useMemo(() => {
+    const byId = new Map(contracts.map(c => [c.id, c]))
+    const map = new Map()
+    for (const c of contracts) {
+      if (docKindOf(c) !== 'amendments') continue
+      let rootId = c.root_contract_id
+      if (!rootId || rootId === c.id) {
+        let cur = c
+        for (let i = 0; i < 50 && cur?.parent_contract_id; i++) cur = byId.get(cur.parent_contract_id)
+        rootId = cur && cur !== c ? cur.id : null
+      }
+      if (!rootId) continue
+      if (!map.has(rootId)) map.set(rootId, [])
+      map.get(rootId).push(c)
     }
+    for (const list of map.values()) list.sort((a, b) => Number(a.display_id) - Number(b.display_id))
+    return map
   }, [contracts])
 
-  // Охват реестра применяется до вкладок и счётчиков — «Наши договоры» это тот же
-  // реестр, просто суженный, поэтому и статусные счётчики должны считаться в нём.
-  const scopedContracts = useMemo(() => {
-    // Договоры и ДС лежат в одной таблице, поэтому список всегда разделяем по типу:
-    // иначе ДС удвоили бы реестр договоров и его суммы.
-    if (scope === 'amendments') return contracts.filter(isAmendment)
-    const own = contracts.filter(c => (c.record_type || DOC_TYPE.CONTRACT) === DOC_TYPE.CONTRACT)
-    return scope === 'ours' ? own.filter(c => c.handled_by_us) : own
-  }, [contracts, scope])
+  // ДС под договором — в том же состоянии, что и вкладка: живые, а в «Удалённых» — удалённые.
+  const nestedDsOf = (contractId) => (dsByRoot.get(contractId) || [])
+    .filter(ds => !!ds.deleted_at === (activeTab === 'deleted'))
+
+  // Поиск в «Договоры и ДС» находит договор и по номеру, ID или предмету его ДС —
+  // у таких договоров ДС раскрыты сразу.
+  const dsSearchHits = useMemo(() => {
+    const q = searchText.trim().toLowerCase()
+    const hits = new Set()
+    if (!nestDs || !q) return hits
+    const deletedTab = activeTab === 'deleted'
+    for (const [rootId, list] of dsByRoot) {
+      const found = list.some(ds => !!ds.deleted_at === deletedTab && [
+        ds.contract_number,
+        ds.display_id != null ? String(ds.display_id) : '',
+        ds.work_name,
+      ].filter(Boolean).join(' ').toLowerCase().includes(q))
+      if (found) hits.add(rootId)
+    }
+    return hits
+  }, [nestDs, searchText, activeTab, dsByRoot])
+
+  // Раскрытые ДС: найденные поиском раскрыты сразу, кнопка «ДС: N» переключает
+  // от этого состояния. Новый поиск — заново от найденного.
+  const [dsToggled, setDsToggled] = useState(() => new Set())
+  useEffect(() => { setDsToggled(new Set()) }, [searchText])
+  const isDsOpen = (contractId) => dsSearchHits.has(contractId) !== dsToggled.has(contractId)
+  const toggleDsOpen = (contractId) => setDsToggled(prev => {
+    const next = new Set(prev)
+    if (next.has(contractId)) next.delete(contractId)
+    else next.add(contractId)
+    return next
+  })
+
+  // «Тип ДС» есть только в представлении ДС — при уходе из него отбор снимаем,
+  // иначе невидимый фильтр оставил бы пустой список.
+  const changeDocKind = (kind) => {
+    setDocKind(kind)
+    if (kind !== 'amendments') setFilterDsType('')
+  }
 
   // Реестр загружается целиком; по вкладкам фильтруем в памяти (мгновенно).
   const tabContracts = useMemo(() => scopedContracts.filter(c => {
@@ -1240,12 +1329,16 @@ function ContractRegistry() {
           c.notes,
           c.objects?.name,
         ].filter(Boolean).join(' ').toLowerCase()
-        if (!hay.includes(q)) return false
+        if (!hay.includes(q) && !dsSearchHits.has(c.id)) return false
       }
       return true
     })
 
     const dir = sortDir === 'asc' ? 1 : -1
+    if (sortKey === 'number') {
+      return [...list].sort((a, b) => compareDocNumbers(a, b, dir)
+        || (a.contract_date || '').localeCompare(b.contract_date || ''))
+    }
     const getVal = (c) => {
       switch (sortKey) {
         case 'counterparty': return (contractParties(c)[0]?.name || '').toLowerCase()
@@ -1268,7 +1361,7 @@ function ContractRegistry() {
       if (so !== 0) return so
       return (a.contract_date || '').localeCompare(b.contract_date || '')
     })
-  }, [tabContracts, filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, searchText, sortKey, sortDir, isOverdue, normNameById, docIndex])
+  }, [tabContracts, filterObjectIds, filterDsType, filterLawyerId, onlyOverdue, onlyNoLarix, searchText, sortKey, sortDir, isOverdue, normNameById, docIndex, dsSearchHits])
 
   const hasActiveFilters = !!(filterObjectIds.length || filterDsType || filterLawyerId || searchText || onlyOverdue || onlyNoLarix)
 
@@ -1303,12 +1396,47 @@ function ContractRegistry() {
   const pagedContracts = filteredSortedContracts.slice(pageStart, pageStart + pageSize)
   const rangeFrom = totalCount === 0 ? 0 : pageStart + 1
   const rangeTo = Math.min(pageStart + pageSize, totalCount)
+  // Род. падеж для пустых состояний: «Нет договоров / соглашений».
+  const docNounGen = pluralContracts(0, isAmendmentsView)
+
+  // Строки таблицы: в «Договоры и ДС» под договором с раскрытыми ДС идут его ДС.
+  const tableRows = []
+  pagedContracts.forEach((doc, index) => {
+    tableRows.push({ doc, index, nested: false })
+    if (nestDs && isDsOpen(doc.id)) {
+      for (const ds of nestedDsOf(doc.id)) tableRows.push({ doc: ds, index, nested: true })
+    }
+  })
+
+  // Пагинация — над таблицей и под ней, одна и та же (обычная функция-рендер).
+  const renderPagination = (position) => (
+    <div className={`registry-pagination is-${position}`}>
+      <span className="rp-info">
+        Показано {rangeFrom}–{rangeTo} из {totalCount} {pluralContracts(totalCount, isAmendmentsView)}
+      </span>
+      <div className="rp-controls">
+        <label className="rp-size">
+          Строк на странице:
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+            {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <div className="rp-pager">
+          <button className="rp-btn" onClick={() => setPage(1)} disabled={currentPage <= 1} title="Первая">«</button>
+          <button className="rp-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} title="Назад">‹</button>
+          <span className="rp-page">Стр. {currentPage} из {pageCount}</span>
+          <button className="rp-btn" onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage >= pageCount} title="Вперёд">›</button>
+          <button className="rp-btn" onClick={() => setPage(pageCount)} disabled={currentPage >= pageCount} title="Последняя">»</button>
+        </div>
+      </div>
+    </div>
+  )
 
   // При смене вкладки/фильтров/сортировки — на первую страницу и закрыть раскрытие.
   useEffect(() => {
     setPage(1)
     setExpandedContractId(null)
-  }, [activeTab, scope, filterObjectIds, filterDsType, filterLawyerId, searchText, onlyOverdue, onlyNoLarix, sortKey, sortDir, pageSize])
+  }, [activeTab, scope, docKind, filterObjectIds, filterDsType, filterLawyerId, searchText, onlyOverdue, onlyNoLarix, sortKey, sortDir, pageSize])
 
   // Закрываем раскрытие при перелистывании страниц.
   useEffect(() => {
@@ -1930,6 +2058,24 @@ function ContractRegistry() {
 
       {/* Панель фильтров реестра */}
       <div className="registry-filters">
+        <div className="rf-field">
+          <span className="rf-label" id="rf-doc-kind-label">Документ</span>
+          <div className="rf-doc-kind" role="radiogroup" aria-labelledby="rf-doc-kind-label">
+            {DOC_KINDS.map(k => (
+              <button
+                key={k.key}
+                type="button"
+                role="radio"
+                aria-checked={docKind === k.key}
+                title={k.hint}
+                className={`rf-doc-kind-btn${docKind === k.key ? ' is-active' : ''}`}
+                onClick={() => changeDocKind(k.key)}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="rf-field rf-field-search">
           <label className="rf-label">Поиск</label>
           <input
@@ -1939,7 +2085,9 @@ function ContractRegistry() {
             onChange={(e) => setSearchText(e.target.value)}
             placeholder={isAmendmentsView
               ? 'Поиск по ID, № ДС, основному договору, контрагенту'
-              : 'Поиск по ID, контрагенту, работам, № договора'}
+              : docKind === 'all'
+                ? 'Поиск по ID, № договора или ДС, контрагенту, работам'
+                : 'Поиск по ID, контрагенту, работам, № договора'}
           />
         </div>
         <div className="rf-field rf-field-object">
@@ -2008,12 +2156,16 @@ function ContractRegistry() {
         </div>
       </div>
 
+      {!loading && totalCount > 0 && renderPagination('top')}
+
       {loading ? (
         <div className="loading">Загрузка...</div>
       ) : isPhone ? (
         filteredSortedContracts.length === 0 ? (
           <div className="no-data" style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-            {hasActiveFilters ? 'Нет договоров под выбранные фильтры.' : isDeletedTab ? 'Нет удалённых договоров.' : 'Договоров пока нет.'}
+            {hasActiveFilters
+              ? `Нет ${docNounGen} под выбранные фильтры.`
+              : isDeletedTab ? `Нет удалённых ${docNounGen}.` : `Нет ${docNounGen}.`}
           </div>
         ) : (
           <div className="mcard-list">
@@ -2087,6 +2239,10 @@ function ContractRegistry() {
                   </div>
                   <div className="mcard-foot">
                     <span className="mcard-chip">{dsDate ? `от ${dsDate}` : 'дата не указана'}</span>
+                    {/* ДС на телефоне — в карточке договора, здесь только их число. */}
+                    {nestDs && nestedDsOf(contract.id).length > 0 && (
+                      <span className="mcard-chip">ДС: {nestedDsOf(contract.id).length}</span>
+                    )}
                     <span className="mcard-open">Открыть ›</span>
                   </div>
                 </Link>
@@ -2115,7 +2271,7 @@ function ContractRegistry() {
             <tr>
               {showRowNumber && <th>№</th>}
               {sortableTh('object', 'Объект')}
-              <th>{isAmendmentsView ? 'ДС / тип' : 'Договор / № ДС'}</th>
+              {sortableTh('number', isAmendmentsView ? 'ДС / тип' : 'Договор / № ДС')}
               {isAmendmentsView && <th>Изменяемый документ</th>}
               {sortableTh('counterparty', 'Контрагент')}
               <th>{isAmendmentsView ? 'Предмет ДС' : 'Работы'}</th>
@@ -2132,20 +2288,20 @@ function ContractRegistry() {
               <tr>
                 <td colSpan={tableColCount} className="no-data">
                   {hasActiveFilters
-                    ? `Нет ${isAmendmentsView ? 'соглашений' : 'договоров'} под выбранные фильтры.`
+                    ? `Нет ${docNounGen} под выбранные фильтры.`
                     : isDeletedTab
-                      ? `Нет удалённых ${isAmendmentsView ? 'соглашений' : 'договоров'}.`
+                      ? `Нет удалённых ${docNounGen}.`
                       : activeTab === 'all'
                         ? isAmendmentsView
                           ? 'Дополнительных соглашений пока нет. Создать ДС можно из строки договора или из его карточки.'
                           : 'Договоров пока нет.'
                         : activeTab === 'requests'
                           ? 'Нет заявок на стадии заключения.'
-                          : `Нет ${isAmendmentsView ? 'соглашений' : 'договоров'} со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
+                          : `Нет ${docNounGen} со статусом «${STATUS_LABEL[activeTab] || activeTab}».`}
                 </td>
               </tr>
             ) : (
-              pagedContracts.map((contract, index) => {
+              tableRows.map(({ doc: contract, index, nested }) => {
                 const appendices = contractAppendicesMap[contract.id] || []
                 const isExpanded = expandedContractId === contract.id
                 // При переключении договора выбор приложений сбрасываем — он относится
@@ -2167,17 +2323,22 @@ function ContractRegistry() {
                 const actualAmount = amendmentCount > 0 ? contractActualAmount(contract, docIndex) : null
                 // Условия с учётом завершённых ДС на изменение ВОР (сумма — отдельно, выше).
                 const shown = amendmentCount > 0 ? currentTerms(contract, docIndex).view : contract
+                // «Договоры и ДС»: кнопка «ДС: N» у договора раскрывает все его ДС.
+                const nestedDsCount = nestDs && !nested ? nestedDsOf(contract.id).length : 0
+                const dsOpen = nestedDsCount > 0 && isDsOpen(contract.id)
                 return (
                 <Fragment key={contract.id}>
                 <tr
-                  className={`contract-row ${isDeletedTab ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}`}
+                  className={`contract-row ${isDeletedTab ? 'row-deleted' : ''} ${isExpanded ? 'is-expanded' : ''}${nested ? ' is-nested-ds' : ''}${dsOpen ? ' has-ds-open' : ''}`}
                   onClick={toggleExpand}
-                  title="Нажмите, чтобы раскрыть договор"
+                  title={nested ? 'Нажмите, чтобы раскрыть соглашение' : 'Нажмите, чтобы раскрыть договор'}
                 >
                   {showRowNumber && (
                     <td className="cell-num">
                       <span className={`expand-chev ${isExpanded ? 'open' : ''}`} aria-hidden>▸</span>
-                      <span className="cell-num-value">{pageStart + index + 1}</span>
+                      {nested
+                        ? <span className="cell-num-value cell-num-nested" aria-hidden>↳</span>
+                        : <span className="cell-num-value">{pageStart + index + 1}</span>}
                       {appendices.length > 0 && <span className="expand-badge" title={`Приложений: ${appendices.length}`}>{appendices.length}</span>}
                     </td>
                   )}
@@ -2216,7 +2377,25 @@ function ContractRegistry() {
                         {DOC_TYPE_SHORT[contract.record_type]}
                       </span>
                     )}
-                    {amendmentCount > 0 && (
+                    {/* Вложенное ДС, которое меняет другое ДС, а не сам договор. */}
+                    {nested && parentDoc && isAmendment(parentDoc) && (
+                      <span className="ds-parent-note" title="Изменяемый документ">
+                        к ДС {parentDoc.contract_number ? `№ ${parentDoc.contract_number}` : `ID ${parentDoc.display_id}`}
+                      </span>
+                    )}
+                    {nestedDsCount > 0 && (
+                      <button
+                        type="button"
+                        className={`ds-count-badge ds-toggle${dsOpen ? ' is-open' : ''}`}
+                        onClick={() => toggleDsOpen(contract.id)}
+                        aria-expanded={dsOpen}
+                        title={dsOpen ? 'Свернуть дополнительные соглашения' : 'Показать дополнительные соглашения к договору'}
+                      >
+                        <span className="ds-toggle-chev" aria-hidden>▸</span>
+                        ДС: {nestedDsCount}
+                      </button>
+                    )}
+                    {!nestDs && amendmentCount > 0 && (
                       <span
                         className="ds-count-badge"
                         title={`Дополнительных соглашений к этому документу: ${amendmentCount}`}
@@ -2727,28 +2906,7 @@ function ContractRegistry() {
       </div>
       )}
 
-      {!loading && totalCount > 0 && (
-        <div className="registry-pagination">
-          <span className="rp-info">
-            Показано {rangeFrom}–{rangeTo} из {totalCount} {pluralContracts(totalCount, isAmendmentsView)}
-          </span>
-          <div className="rp-controls">
-            <label className="rp-size">
-              Строк на странице:
-              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-                {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
-            <div className="rp-pager">
-              <button className="rp-btn" onClick={() => setPage(1)} disabled={currentPage <= 1} title="Первая">«</button>
-              <button className="rp-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} title="Назад">‹</button>
-              <span className="rp-page">Стр. {currentPage} из {pageCount}</span>
-              <button className="rp-btn" onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage >= pageCount} title="Вперёд">›</button>
-              <button className="rp-btn" onClick={() => setPage(pageCount)} disabled={currentPage >= pageCount} title="Последняя">»</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {!loading && totalCount > 0 && renderPagination('bottom')}
 
       {/* Модалка добавления/редактирования договора */}
       {showImportModal && canEditContracts && (
