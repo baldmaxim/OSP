@@ -1028,16 +1028,40 @@
     "supply_estimate_rename": [
       "authenticated"
     ],
+    "supply_name_heads": [
+      "authenticated"
+    ],
+    "supply_name_nums": [
+      "authenticated"
+    ],
+    "supply_name_pieces": [
+      "authenticated"
+    ],
+    "supply_name_prepare": [
+      "authenticated"
+    ],
+    "supply_name_score": [
+      "authenticated"
+    ],
     "supply_name_similarity": [
       "authenticated"
     ],
+    "supply_name_stems": [
+      "authenticated"
+    ],
     "supply_name_tokens": [
+      "authenticated"
+    ],
+    "supply_name_word_share": [
       "authenticated"
     ],
     "supply_name_words": [
       "authenticated"
     ],
     "supply_norm_name": [
+      "authenticated"
+    ],
+    "supply_norm_number": [
       "authenticated"
     ],
     "supply_rate_origins": [
@@ -1047,6 +1071,9 @@
       "authenticated"
     ],
     "supply_rates_locked": [
+      "authenticated"
+    ],
+    "supply_stem_word": [
       "authenticated"
     ],
     "supply_suggestion_counts": [

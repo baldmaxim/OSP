@@ -10,6 +10,7 @@ export const UPLOAD_SITES = [
   { file: 'src/components/TenderFinalDocBlock.jsx', calls: 1, owner: 'tender', table: 'tender_docs' }, // ensureTenderFinalDoc → tender_docs
   { file: 'src/services/tenderProposalFiles.js', calls: 2, owner: 'tender', table: 'tenders' }, // КП и файл замечаний
   { file: 'src/services/tenderVorRd.js', calls: 1, owner: 'tender', table: 'tenders' },
+  { file: 'src/services/supplyPricing.js', calls: 1, owner: 'tender', table: 'tenders' }, // счёт / КП поставщика к позициям расценки (основной тендер)
   { file: 'src/services/psdc.js', calls: 1, owner: 'general', table: 'psdc' },
   { file: 'src/pages/GeneralDocumentsPage.jsx', calls: 1, owner: 'general_document', table: 'general_documents' },
   { file: 'src/pages/ObjectDetailPage.jsx', calls: 1, owner: 'object', table: 'objects' },

@@ -10,13 +10,15 @@ import { IconAlert, IconAlertCircle, IconCheck, IconClock, IconHistory, IconLink
 import { IconFileSpreadsheet, IconUpload } from '../icons/BsmIcons'
 import { IconSearch } from '../icons/ToolbarIcons'
 import { IconChevronDown } from '../icons/TenderHubIcons'
+import PaperclipIcon from '../icons/PaperclipIcon'
 import { fetchEmployees, employeesById } from '../../services/employees'
 import { requestDownloadUrl } from '../../services/s3'
 import {
-  autofillFromOtherTenders, classifyError, clearRate, deleteSource, downloadVorFile, estimateSignatures, loadChangeMarker,
-  loadChangedRateIds, isWebLink, loadEstimateItems, loadLinks, loadLinksMarker, loadPricingBundle, loadPricingContext,
-  loadPricingData, loadRateOrigins, loadRates, loadRatesByIds, loadSources, loadSuggestionCounts, loadVorFiles, removeLinks,
-  renameEstimate, saveLinks, saveRate, saveSource, sourcesSignature, SUGGEST_BATCH,
+  autofillFromOtherTenders, classifyError, clearRate, deleteSource, deleteSupplyDoc, downloadVorFile, estimateSignatures,
+  loadChangeMarker, loadChangedRateIds, isWebLink, linkFilesEnabled, loadDocsByIds, loadEstimateItems, loadLinks,
+  loadLinksMarker, loadPricingBundle, loadPricingContext, loadPricingData, loadRateOrigins, loadRates, loadRatesByIds,
+  loadSources, loadSuggestionCounts, loadVorFiles, removeLinks, renameEstimate, saveLinks, saveRate, saveSource,
+  sourcesSignature, SUGGEST_BATCH, uploadSupplyDoc,
 } from '../../services/supplyPricing'
 import { fmtPriceDate, isFreshPriceDate, rateUnitPrice } from '../../utils/supplyRateHelpers'
 import { formatAmount, parseAmount, roundMoney } from '../../utils/money'
@@ -25,6 +27,7 @@ import { VOR_PARSER_VERSION } from '../../utils/vorFiles'
 import {
   estimateVersion, fileVersion, identicalTargets, planCleanup, planFileImports, planTabImports,
 } from '../../utils/supplyAutoImport'
+import { positionGroups } from '../../utils/supplyDocMatch'
 import './SupplyPricing.css'
 // Рабочий стиль (docs/UI_GUIDELINES.md): корень панели — .ui-work, и в карточке тендера тоже.
 import '../../styles/fonts.css'
@@ -34,6 +37,11 @@ import '../../styles/workUi.css'
 // «Указать лист и колонки». Таблица открывается без них.
 const SupplyImportDialog = lazy(() => import('./SupplyImportDialog'))
 const loadSheetReader = () => import('../../utils/vorMaterialsSheet')
+// Распознавание счёта / КП поставщика (Excel — xlsx, PDF — pdf.js) — тоже только по требованию.
+const SupplyDocImportDialog = lazy(() => import('./SupplyDocImportDialog'))
+const S3DocumentPreview = lazy(() => import('../S3DocumentPreview'))
+// Цены из документа поставщика пишутся по нескольку разом — не сотни запросов одновременно.
+const DOC_APPLY_PARALLEL = 4
 
 // Расценка материалов ВОР снабжением (миграция 20261020) — одна таблица в двух местах: вкладка «Расценки
 // снабжения» карточки тендера (тендерный отдел) и страница /tenders/materials/:id/pricing (снабжение, которому
@@ -54,9 +62,14 @@ const loadSheetReader = () => import('../../utils/vorMaterialsSheet')
 // подставляется в такие же позиции других ВОР, где цены нет (и туда, куда её подставили за этот сеанс, если
 // там ничего не меняли).
 //
-// Колонка «Документ» — ссылка на чек, счёт или КП поставщика (tender_supply_links, миграция 20261022): к любой
-// позиции, с ценой или без; одной позиции — «+ ссылка» в строке, нескольким сразу — отметить строки и «Ссылка на
-// документ». Таблицы ссылок ещё нет в базе — колонки нет, остальное работает как раньше.
+// Колонка «Документ» — чек, счёт или КП поставщика (tender_supply_links, миграция 20261022): к любой позиции, с ценой
+// или без; одной позиции — «+ документ» в строке, нескольким сразу — отметить строки и «Документ». Документ — ссылка
+// (адрес, сетевой путь) или файл в хранилище документов тендера (миграция 20261025; без неё — только ссылка). Таблицы
+// ссылок ещё нет в базе — колонки нет, остальное работает как раньше.
+//
+// «Цены из счёта / КП» — распознавание документа поставщика в Excel или PDF (SupplyDocImportDialog): строки с ценами
+// сопоставляются с позициями всех ВОР (точно по наименованию, иначе по похожести), человек проверяет, и цены пишутся
+// как ввод руками — той же очередью записей с версией строки; файл становится документом позиций, получивших цену.
 //
 // Цены из других тендеров (миграция 20261023). Одинаковые позиции без цены (то же наименование по ключу и та же
 // ед. изм.) получают самую свежую цену другого тендера не старше 3 месяцев сами — при открытии у того, у кого право
@@ -81,6 +94,8 @@ const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('ru-RU', { day: '2-
 const fmtClock = (iso) => (iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '')
 const posKey = (estimateName, k) => `${estimateName}∣${k}`
 const draftsKey = (mainId) => `supply-pricing-drafts:${mainId}`
+// Документ позиции для выгрузки: адрес или «файл: имя».
+const linkLabel = (link, docs) => (!link ? '' : link.s3_document_id ? `файл: ${docs.get(link.s3_document_id)?.file_name || 'загружен на сайт'}` : link.url || '')
 // Признак «ссылки менялись» — как loadLinksMarker: сколько их и время последней правки.
 const linksMarker = (list) => `${list.length}|${list.reduce((m, l) => (String(l.updated_at || '') > m ? String(l.updated_at) : m), '')}`
 
@@ -279,6 +294,10 @@ export default function SupplyPricingPanel({
   const [linkBusy, setLinkBusy] = useState(false)
   const [linkError, setLinkError] = useState('')
   const linksMarkerRef = useRef(null)
+  // Файлы-документы позиций (id → строка s3_documents): имя и ключ для просмотра. Файл бывает и другого тендера.
+  const [linkDocs, setLinkDocs] = useState(() => new Map())
+  const [preview, setPreview] = useState(null) // файл документа в окне просмотра
+  const [docImport, setDocImport] = useState(null) // { groups } — окно «Цены из счёта / КП»
   // Цены из других тендеров: reuseOff — функций в базе ещё нет; origins — откуда скопированы цены (id цены →
   // тендер, объект, документ); similar — сколько похожих у позиции («ВОР∣ключ» → n); suggest — открытое меню.
   const [reuseOff, setReuseOff] = useState(false)
@@ -555,6 +574,34 @@ export default function SupplyPricingPanel({
   }, [links])
   const linksOn = linksByKey !== null
   const selectable = linksOn && editable
+  // Документ-файл к позиции (миграция 20261025): колонка s3_document_id есть в базе.
+  const filesOn = linksOn && linkFilesEnabled()
+
+  // Имена и ключи файлов-документов — для колонки «Документ» (каждый файл спрашиваем один раз).
+  const docsAsked = useRef(new Set())
+  useEffect(() => {
+    if (!links) return
+    const missing = [...new Set(links.map((l) => l.s3_document_id).filter((id) => id && !docsAsked.current.has(id)))]
+    if (!missing.length) return
+    for (const id of missing) docsAsked.current.add(id)
+    loadDocsByIds(missing)
+      .then((rows) => setLinkDocs((prev) => {
+        const next = new Map(prev)
+        for (const d of rows) next.set(d.id, d)
+        return next
+      }))
+      .catch(() => { for (const id of missing) docsAsked.current.delete(id) })
+  }, [links])
+  const rememberDoc = useCallback((doc) => {
+    if (!doc?.id) return
+    docsAsked.current.add(doc.id)
+    setLinkDocs((prev) => new Map(prev).set(doc.id, doc))
+  }, [])
+  const mergeLinks = useCallback((rows) => setLinks((prev) => {
+    const byId = new Map((prev || []).map((l) => [l.id, l]))
+    for (const r of rows) byId.set(r.id, r)
+    return [...byId.values()]
+  }), [])
 
   // Позиции — только от списков (не пересобираются при каждой цене: строки таблицы не перерисовываются зря).
   const sourceViews = useMemo(() => sources.map((s) => ({ source: s, name: s.estimate_name, positions: mergePositions(s.positions) })), [sources])
@@ -762,7 +809,8 @@ export default function SupplyPricingPanel({
         flashRow(key, intent.auto ? { kind: 'auto', from: intent.from } : { kind: 'saved' }, intent.auto ? REMOTE_FLASH_MS : SAVED_FLASH_MS)
         if (!intent.auto) {
           setLastSavedAt(new Date().toISOString())
-          if (row) fillIdentical(intent.estimateName, intent.position, row)
+          // fill: false — цены из документа поставщика: одинаковые позиции других ВОР пишутся той же пачкой.
+          if (row && intent.fill !== false) fillIdentical(intent.estimateName, intent.position, row)
         }
       } else if (intent.auto) {
         if (res.current) applyRow(null, res.current)
@@ -789,7 +837,7 @@ export default function SupplyPricingPanel({
             retryTimers.current.delete(key)
             const d = draftsRef.current[key]
             if (d?.status === 'error' && d.kind === 'retry') {
-              runSaveRef.current(key, { mode: d.mode, value: d.value, estimateName: d.estimateName, position: d.position, auto: d.auto, from: d.from, source: d.source })
+              runSaveRef.current(key, { mode: d.mode, value: d.value, estimateName: d.estimateName, position: d.position, auto: d.auto, from: d.from, source: d.source, fill: d.fill })
             }
           }, delay))
         }
@@ -1093,19 +1141,85 @@ export default function SupplyPricingPanel({
   }
   useEffect(() => () => clearTimeout(similarTimer.current), [])
 
-  // «Взять» из меню похожих: цена за единицу с отметкой источника; документ исходной позиции — если своего нет.
+  // «Взять» из меню похожих: цена за единицу с отметкой источника; документ исходной позиции (адрес или файл) — если
+  // своего нет.
   const pickSuggestion = (row, s) => {
     setSuggest(null)
     runSave(row.key, { mode: 'unit', value: Number(s.unit_price), estimateName: row.doc, position: row.p, source: { rateId: s.rate_id, kind: 'pick' } })
-    if (linksByKey && s.url && !linksByKey.get(row.key)) {
-      saveLinks(mainId, [{ estimateName: row.doc, name: row.p.name }], s.url)
-        .then((saved) => setLinks((prev) => {
-          const byId = new Map((prev || []).map((l) => [l.id, l]))
-          for (const r of saved) byId.set(r.id, r)
-          return [...byId.values()]
-        }))
+    const doc = s.doc_id && filesOn ? { docId: s.doc_id } : s.url ? { url: s.url } : null
+    if (linksByKey && doc && !linksByKey.get(row.key)) {
+      if (doc.docId) rememberDoc({ id: s.doc_id, file_name: s.doc_name, s3_key: s.doc_key })
+      saveLinks(mainId, [{ estimateName: row.doc, name: row.p.name }], doc)
+        .then(mergeLinks)
         .catch((e) => setNotice(`Цена взята, а документ к позиции не прикрепился: ${e.message}`))
     }
+  }
+
+  // ── Цены из счёта / КП поставщика ─────────────────────────────────────────────────────────────────
+  // Что сейчас в расценке у позиций группы: свои цены, цены из других тендеров, позиции без цены.
+  const currentOf = useCallback((group) => {
+    const own = []
+    let copies = 0
+    let empty = 0
+    for (const t of group.targets) {
+      const r = rateIn(ratesRef.current, posKey(t.doc, t.position.k))
+      if (!r) empty += 1
+      else if (r.source_kind) copies += 1
+      else own.push(rateUnitPrice(r))
+    }
+    return { own, copies, empty }
+  }, [ratesRef])
+
+  // Записать цены строк документа: сначала файл (не загрузился — ничего не пишем, человек решает), затем цены всех
+  // позиций групп — той же очередью, что ввод руками (версия строки, повтор при сбое сети, «изменено другим»), по
+  // нескольку разом; та же своя цена не переписывается. Затем файл — документом этих позиций (прежний заменяется).
+  const applyDocPrices = async ({ lines, file, attach }, onProgress) => {
+    let doc = null
+    if (attach && file) {
+      try {
+        doc = await uploadSupplyDoc(mainId, file)
+        rememberDoc(doc)
+      } catch (e) {
+        return { error: `Файл не загрузился (${e.message}). Цены не записаны — повторите или снимите «Прикрепить файл».` }
+      }
+    }
+    const jobs = []
+    for (const l of lines) {
+      for (const t of l.group.targets) {
+        const key = posKey(t.doc, t.position.k)
+        const rate = rateIn(ratesRef.current, key)
+        const same = !!rate && !rate.source_kind && rate.price_input === 'unit' && roundMoney(rateUnitPrice(rate)) === l.price
+        jobs.push({ key, target: t, price: l.price, same })
+      }
+    }
+    const queue = jobs.filter((j) => !j.same)
+    let done = jobs.length - queue.length
+    onProgress?.(done, jobs.length)
+    let next = 0
+    const worker = async () => {
+      while (next < queue.length) {
+        const j = queue[next++]
+        await runSaveRef.current(j.key, { mode: 'unit', value: j.price, estimateName: j.target.doc, position: j.target.position, fill: false })
+        done += 1
+        onProgress?.(done, jobs.length)
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(DOC_APPLY_PARALLEL, queue.length) }, worker))
+    let attached = 0
+    if (doc) {
+      try {
+        const rows = await saveLinks(mainId, jobs.map((j) => ({ estimateName: j.target.doc, name: j.target.position.name })), { docId: doc.id })
+        mergeLinks(rows)
+        attached = rows.length
+      } catch (e) {
+        setNotice(`Цены записаны, а файл к позициям не прикрепился: ${e.message}`)
+      }
+    }
+    const failed = queue.filter((j) => ['error', 'conflict'].includes(draftsRef.current[j.key]?.status)).length
+    setDocImport(null)
+    linkDone(`Из «${file?.name || 'документа'}»: цен записано ${queue.length - failed}${jobs.length > queue.length ? `, ещё у ${jobs.length - queue.length} та же цена` : ''}`
+      + `${failed ? `, не сохранено ${failed} — строки с красным значком` : ''}${attached ? `; файл — документ ${attached} позиций` : ''}.`)
+    return { ok: true }
   }
   const closeSuggest = useCallback((restoreFocus) => {
     setSuggest((cur) => {
@@ -1136,7 +1250,7 @@ export default function SupplyPricingPanel({
           v.unitPrice != null ? roundMoney(v.unitPrice) : '', v.total ?? '',
           ...(datesOn ? [fmtPriceDate(rate?.price_date)] : []),
           ...(datesOn && showAuthor ? [rate ? authorText(rate, origins.get(rate.id), nameOf) : ''] : []),
-          ...(linksOn ? [linksByKey.get(posKey(d.name, p.k))?.url || ''] : [])])
+          ...(linksOn ? [linkLabel(linksByKey.get(posKey(d.name, p.k)), linkDocs)] : [])])
       })
       aoa.push(['', 'Итого', '', '', '', d.total])
       const ws = XLSX.utils.aoa_to_sheet(aoa)
@@ -1199,25 +1313,44 @@ export default function SupplyPricingPanel({
     clearTimeout(fillTimer.current)
     fillTimer.current = setTimeout(() => setFillNote(''), FILL_NOTE_MS)
   }
-  const saveLink = async (url) => {
+  // doc — { url } (ссылка), { docId } (уже загруженный файл) или { file } (загрузить и прикрепить).
+  const saveLink = async (doc) => {
     const { targets } = linkDialog
     setLinkBusy(true)
     setLinkError('')
     try {
-      const rows = await saveLinks(mainId, targets.map((t) => ({ estimateName: t.estimateName, name: t.name })), url)
-      setLinks((prev) => {
-        const byId = new Map((prev || []).map((l) => [l.id, l]))
-        for (const r of rows) byId.set(r.id, r)
-        return [...byId.values()]
-      })
+      let target = doc
+      if (doc.file) {
+        const uploaded = await uploadSupplyDoc(mainId, doc.file)
+        rememberDoc(uploaded)
+        target = { docId: uploaded.id }
+      }
+      const rows = await saveLinks(mainId, targets.map((t) => ({ estimateName: t.estimateName, name: t.name })), target)
+      mergeLinks(rows)
       if (targets.length > 1) setSelected(new Set())
       setLinkDialog(null)
-      linkDone(targets.length > 1 ? `Ссылка на документ прикреплена к ${targets.length} позициям.` : `Ссылка на документ к «${targets[0].name}» сохранена.`)
+      const what = target.docId ? 'Файл' : 'Ссылка на документ'
+      linkDone(targets.length > 1 ? `${what} — документ ${targets.length} позиций.` : `${what} к «${targets[0].name}» сохранен${target.docId ? '' : 'а'}.`)
     } catch (e) {
       setLinkError(e.message)
       if (e.kind === 'locked') reloadContext()
     } finally {
       setLinkBusy(false)
+    }
+  }
+  // Удалить файл документа (из окна «Документ»): пропадает у всех позиций, где он документ, — и в других тендерах,
+  // куда цену брали вместе с ним.
+  const deleteFile = async (doc) => {
+    const used = (links || []).filter((l) => l.s3_document_id === doc.id).length
+    if (!window.confirm(`Удалить файл «${doc.file_name}»?${used ? `\n\nОн документ у позиций этого тендера: ${used} — у них документа не станет.` : ''}`
+      + '\nЕсли цену брали в другие тендеры вместе с этим файлом, там документ тоже пропадёт.')) return false
+    try {
+      await deleteSupplyDoc(doc)
+      setLinks((prev) => (prev || []).filter((l) => l.s3_document_id !== doc.id))
+      return true
+    } catch (e) {
+      setLinkError(`Файл не удалился: ${e.message}`)
+      return false
     }
   }
   const removeLink = async () => {
@@ -1231,7 +1364,7 @@ export default function SupplyPricingPanel({
       setLinks((prev) => (prev || []).filter((l) => !gone.has(l.id)))
       if (targets.length > 1) setSelected(new Set())
       setLinkDialog(null)
-      linkDone(ids.length > 1 ? `Ссылки убраны у ${ids.length} позиций.` : 'Ссылка на документ убрана.')
+      linkDone(ids.length > 1 ? `Документ убран у ${ids.length} позиций.` : 'Документ убран.')
     } catch (e) {
       setLinkError(e.message)
       if (e.kind === 'locked') reloadContext()
@@ -1254,6 +1387,7 @@ export default function SupplyPricingPanel({
     toggleSelect,
     editLink: (key) => openLinkDialog(new Set([key])),
     suggest: (row, anchor) => setSuggest((cur) => (cur?.row.key === row.key ? null : { row, anchor })),
+    openFile: (doc) => setPreview(doc),
   }
   const act = useCallback((name, ...args) => actionsRef.current[name](...args), [])
 
@@ -1345,6 +1479,7 @@ export default function SupplyPricingPanel({
       </tr>
     )
   }
+  const linkDocOf = (link) => (link?.s3_document_id ? (linkDocs.get(link.s3_document_id) || null) : null)
   const renderItem = (it) => {
     if (it.kind === 'head') return renderHead(it.s, it.first)
     if (it.kind === 'empty') return <tr key={`empty:${it.s.doc.name}`}><td colSpan={colCount} className="no-data">В этом ВОР нет позиций</td></tr>
@@ -1352,7 +1487,8 @@ export default function SupplyPricingPanel({
     if (!reuseOff) noteSimilar(row)
     return (
       <PriceRow key={row.key} row={row} flash={flash[row.key]} editable={editable} nameOf={nameOf} act={act}
-        linksOn={linksOn} link={linksByKey?.get(row.key) || null} selectable={selectable} selected={selected.has(row.key)}
+        linksOn={linksOn} link={linksByKey?.get(row.key) || null} linkDoc={linkDocOf(linksByKey?.get(row.key))}
+        selectable={selectable} selected={selected.has(row.key)}
         origin={row.rate?.source_kind ? (origins.get(row.rate.id) || null) : null} datesOn={datesOn} showAuthor={showAuthor}
         similar={!reuseOff && wantsSimilar(row) ? similarOthers(row, similar.get(row.key) || 0) : 0}
         suggestOpen={suggest?.row.key === row.key} />
@@ -1450,6 +1586,12 @@ export default function SupplyPricingPanel({
             <div className="sp-toolbar-right">
               <span className="sp-summary-inline" aria-live="polite">Расценено <b className="ui-num">{grand.priced}</b> из <b className="ui-num">{grand.positions}</b> · Итого <b className="ui-num">{formatAmount(grand.total)} ₽</b></span>
               <span className="sp-muted sp-registry-hint">В реестре «Расценки от снабжения СУ-10» — в течение 10 минут</span>
+              {editable && (
+                <button type="button" className="btn-secondary" onClick={() => setDocImport({ groups: positionGroups(docViewsRef.current) })}
+                  title="Распознать цены в счёте, КП или УПД поставщика (Excel или PDF) и записать их в позиции ВОР">
+                  <IconUpload size={16} /> Цены из счёта / КП
+                </button>
+              )}
               <button type="button" className="btn-secondary" onClick={exportExcel}><IconFileSpreadsheet size={16} /> Скачать Excel</button>
             </div>
           </div>
@@ -1473,7 +1615,7 @@ export default function SupplyPricingPanel({
                 <span className="sp-sel-bar">
                   <span>Отмечено: <b className="ui-num">{selected.size}</b></span>
                   <button type="button" className="btn-secondary sp-sel-action" onClick={() => openLinkDialog(selected)}>
-                    <IconLink size={16} /> Ссылка на документ
+                    <IconLink size={16} /> Документ
                   </button>
                   <button type="button" className="sp-link-btn" onClick={() => setSelected(new Set())}>Снять отметку</button>
                 </span>
@@ -1578,11 +1720,23 @@ export default function SupplyPricingPanel({
       {suggest && (
         <SupplySuggestMenu anchor={suggest.anchor} mainId={mainId} row={suggest.row} editable={editable}
           currentSourceId={rateIn(ratesRef.current, suggest.row.key)?.source_rate_id || null}
-          onPick={(s) => pickSuggestion(suggest.row, s)} onClose={closeSuggest} />
+          onPick={(s) => pickSuggestion(suggest.row, s)} onClose={closeSuggest}
+          onOpenFile={(doc) => { setSuggest(null); setPreview(doc) }} />
       )}
       {linkDialog && (
-        <SupplyLinkDialog targets={linkDialog.targets} busy={linkBusy} error={linkError}
-          onSave={saveLink} onRemove={removeLink} onClose={() => { if (!linkBusy) setLinkDialog(null) }} />
+        <SupplyLinkDialog mainId={mainId} targets={linkDialog.targets} busy={linkBusy} error={linkError} filesOn={filesOn}
+          onSave={saveLink} onRemove={removeLink} onDeleteFile={deleteFile} onClose={() => { if (!linkBusy) setLinkDialog(null) }} />
+      )}
+      {docImport && (
+        <Suspense fallback={<div className="sp-modal-backdrop"><div className="sp-modal"><p className="sp-modal-body">Открываем…</p></div></div>}>
+          <SupplyDocImportDialog groups={docImport.groups} currentOf={currentOf} filesOn={filesOn}
+            onApply={applyDocPrices} onClose={() => setDocImport(null)} />
+        </Suspense>
+      )}
+      {preview && (
+        <Suspense fallback={null}>
+          <S3DocumentPreview doc={preview} onClose={() => setPreview(null)} />
+        </Suspense>
       )}
       {conflict && (
         <SupplyConflictDialog
@@ -1619,11 +1773,11 @@ const samePriceRow = (a, b) => a.row.p === b.row.p && a.row.rate === b.row.rate 
   && a.row.gi === b.row.gi && a.row.index === b.row.index && a.row.doc === b.row.doc
   && a.row.duplicates.length === b.row.duplicates.length
   && a.flash === b.flash && a.editable === b.editable && a.nameOf === b.nameOf && a.act === b.act
-  && a.linksOn === b.linksOn && a.link === b.link && a.selectable === b.selectable && a.selected === b.selected
+  && a.linksOn === b.linksOn && a.link === b.link && a.linkDoc === b.linkDoc && a.selectable === b.selectable && a.selected === b.selected
   && a.origin === b.origin && a.similar === b.similar && a.suggestOpen === b.suggestOpen
   && a.datesOn === b.datesOn && a.showAuthor === b.showAuthor
 
-const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, linksOn, link, selectable, selected, origin, similar, suggestOpen, datesOn, showAuthor }) {
+const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, linksOn, link, linkDoc, selectable, selected, origin, similar, suggestOpen, datesOn, showAuthor }) {
   const { p, draft, view, index, gi } = row
   const mixed = !!p.units
   const noVolume = !mixed && !(view.volume > 0)
@@ -1658,7 +1812,7 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, lin
             {editable && <button type="button" className="sp-link-btn" onClick={() => act('removeDuplicates', row)}>оставить последнюю</button>}
           </span>
         )}
-        {row.rate?.source_kind && !draft && <OriginHint rate={row.rate} origin={origin} />}
+        {row.rate?.source_kind && !draft && <OriginHint rate={row.rate} origin={origin} onOpenFile={(doc) => act('openFile', doc)} />}
         {similar > 0 && (
           <span className="sp-hint">
             <button type="button" className={`sp-similar-btn${suggestOpen ? ' is-open' : ''}`} aria-haspopup="dialog" aria-expanded={suggestOpen}
@@ -1707,7 +1861,8 @@ const PriceRow = memo(function PriceRow({ row, flash, editable, nameOf, act, lin
       )}
       {linksOn && (
         <td className="sp-doc" data-label="Документ">
-          <LinkCell link={link} editable={editable} name={p.name} doc={row.doc} nameOf={nameOf} onEdit={() => act('editLink', row.key)} />
+          <LinkCell link={link} file={linkDoc} editable={editable} name={p.name} doc={row.doc} nameOf={nameOf}
+            onEdit={() => act('editLink', row.key)} onOpenFile={(d) => act('openFile', d)} />
         </td>
       )}
       <td className="sp-state" data-label="">
@@ -1751,8 +1906,9 @@ function PriceDateCell({ rate, showAuthor, nameOf, origin }) {
 }
 
 // Откуда цена: скопирована из другого тендера сама (то же наименование) или выбрана из похожих. День расценки —
-// исходной цены; старше 3 месяцев — пометка (такая цена больше никуда сама не подставится).
-function OriginHint({ rate, origin }) {
+// исходной цены; старше 3 месяцев — пометка (такая цена больше никуда сама не подставится). Документ исходной
+// позиции — адрес или файл (миграция 20261025).
+function OriginHint({ rate, origin, onOpenFile }) {
   const [copied, setCopied] = useState(false)
   const date = rate.price_date
   const tender = origin?.tender_number != null ? `тендера № ${origin.tender_number}` : 'другого тендера'
@@ -1773,7 +1929,13 @@ function OriginHint({ rate, origin }) {
       {origin?.object_name && <> · {origin.object_name}</>}
       {date && <> · от <span className="ui-num">{fmtPriceDate(date)}</span></>}
       {date && !isFreshPriceDate(date) && <span className="sp-origin-stale"> · старше 3 месяцев</span>}
-      {origin?.url && (
+      {origin?.doc_key ? (
+        <>
+          {' · документ: '}
+          <button type="button" className="link sp-doc-copy" title={origin.doc_name || 'файл'}
+            onClick={() => onOpenFile({ id: origin.doc_id, file_name: origin.doc_name, s3_key: origin.doc_key })}>файл</button>
+        </>
+      ) : origin?.url && (
         <>
           {' · документ: '}
           {isWebLink(origin.url)
@@ -1850,19 +2012,38 @@ function SelectBox({ checked, indeterminate = false, disabled = false, onChange,
   )
 }
 
-// Ссылка на документ позиции — как «Ссылка на КП» в реестре тендеров на материалы: есть — «Открыть» (адрес http(s),
-// новая вкладка) или «Скопировать» (сетевой путь браузер не откроет), адрес — в подсказке; правка — карандаш. Нет —
-// «+ ссылка» у того, у кого право правки, иначе «—».
-function LinkCell({ link, editable, name, doc, nameOf, onEdit }) {
+// Документ позиции — как «Ссылка на КП» в реестре тендеров на материалы: ссылка — «Открыть» (адрес http(s), новая
+// вкладка) или «Скопировать» (сетевой путь браузер не откроет), адрес — в подсказке; файл — скрепка и имя файла,
+// открывается в окне просмотра. Правка — карандаш. Нет — «+ документ» у того, у кого право правки, иначе «—».
+function LinkCell({ link, file, editable, name, doc, nameOf, onEdit, onOpenFile }) {
   const [copied, setCopied] = useState(false)
   if (!link) {
     return editable
-      ? <button type="button" className="tp-add-link" onClick={onEdit} title="Добавить ссылку на документ"
-          aria-label={`Прикрепить ссылку на документ: ${name} (ВОР «${doc}»)`}>+ ссылка</button>
+      ? <button type="button" className="tp-add-link" onClick={onEdit} title="Прикрепить документ: ссылку или файл"
+          aria-label={`Прикрепить документ: ${name} (ВОР «${doc}»)`}>+ документ</button>
       : <span className="sp-muted">—</span>
   }
   const who = nameOf(link.updated_by)
-  const title = `${link.url}${link.updated_at ? ` · ${fmtTime(link.updated_at)}` : ''}${who ? `, ${who}` : ''}`
+  const stamp = `${link.updated_at ? ` · ${fmtTime(link.updated_at)}` : ''}${who ? `, ${who}` : ''}`
+  const edit = editable && (
+    <button type="button" className="sp-icon-btn sp-doc-edit" onClick={onEdit} title="Изменить документ"
+      aria-label={`Изменить документ: ${name} (ВОР «${doc}»)`}>
+      <IconPencil size={14} />
+    </button>
+  )
+  if (link.s3_document_id) {
+    const fileName = file?.file_name || 'файл'
+    return (
+      <span className="sp-doc-cell">
+        <button type="button" className="link sp-doc-copy sp-doc-file" disabled={!file?.s3_key} onClick={() => onOpenFile(file)}
+          title={`${fileName}${stamp}`} aria-label={`Открыть файл документа «${fileName}» к «${name}»`}>
+          <PaperclipIcon size={14} /><span className="sp-doc-file-name">{fileName}</span>
+        </button>
+        {edit}
+      </span>
+    )
+  }
+  const title = `${link.url}${stamp}`
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(link.url)
@@ -1877,12 +2058,7 @@ function LinkCell({ link, editable, name, doc, nameOf, onEdit }) {
             aria-label={`Открыть документ к «${name}»`}>Открыть</a>
         : <button type="button" className="link sp-doc-copy" onClick={copy} title={`${title} — сетевой путь, нажмите, чтобы скопировать`}
             aria-label={`Скопировать путь к документу «${name}»`}>{copied ? 'Скопировано' : 'Скопировать'}</button>}
-      {editable && (
-        <button type="button" className="sp-icon-btn sp-doc-edit" onClick={onEdit} title="Изменить ссылку"
-          aria-label={`Изменить ссылку на документ: ${name} (ВОР «${doc}»)`}>
-          <IconPencil size={14} />
-        </button>
-      )}
+      {edit}
     </span>
   )
 }

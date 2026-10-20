@@ -233,6 +233,113 @@
 }
 .sp-link-field input[aria-invalid='true'] { border-color: var(--danger-color); }
 .sp-link-remove { margin-right: auto; }
+
+/* Документ — файл: скрепка и имя файла (в колонку 8rem — с многоточием, полное имя — в подсказке). */
+.sp-doc-file { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; max-width: 100%; color: var(--ui-link); }
+.sp-doc-file > svg { flex: none; }
+.sp-doc-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-doc-cell .sp-doc-file { flex: 0 1 auto; }
+
+/* Окно «Документ»: вкладки «Ссылка / Файл», загрузка с компьютера, список файлов тендера. */
+.sp-doc-mode { margin: 0 0 0.75rem; }
+.sp-doc-files { display: grid; gap: 0.5rem; margin-bottom: 0.5rem; }
+.sp-doc-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.sp-doc-upload .btn-secondary { display: inline-flex; align-items: center; gap: 0.375rem; }
+.sp-doc-chosen { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; overflow-wrap: anywhere; }
+.sp-doc-list-title { margin: 0.25rem 0 0; color: var(--text-secondary); font-size: var(--ui-hint); }
+.sp-doc-list { margin: 0; padding: 0; list-style: none; max-height: 14rem; overflow: auto; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
+.sp-doc-list > li { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.5rem; border-bottom: 1px solid var(--border-color); }
+.sp-doc-list > li:last-child { border-bottom: 0; }
+.sp-doc-list > li.is-picked { background: var(--hover-bg); }
+.sp-doc-list label { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0 0.5rem; flex: 1; min-width: 0; cursor: pointer; }
+.sp-doc-list label > .sp-muted { grid-column: 2; }
+.sp-doc-name { overflow-wrap: anywhere; }
+
+/* Окно «Цены из счёта / КП». */
+.sp-modal-docimport { width: min(76rem, 100%); }
+.sp-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+  padding: 1.25rem;
+  border: 1px dashed var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-primary);
+}
+.sp-drop.is-over { border-color: var(--primary-color); background: var(--hover-bg); }
+.sp-drop .btn-primary { display: inline-flex; align-items: center; gap: 0.375rem; }
+.sp-drop-status { display: flex; align-items: flex-start; gap: 0.375rem; margin: 0.5rem 0 0; }
+.sp-di-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.75rem; margin-bottom: 0.5rem; }
+.sp-di-file { display: inline-flex; align-items: center; gap: 0.25rem; font-weight: var(--ui-medium); overflow-wrap: anywhere; }
+.sp-di-summary b { color: var(--text-primary); font-weight: var(--ui-semibold); }
+.sp-di-vat { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin: 0 0 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: var(--ui-radius); }
+.sp-di-vat legend { padding: 0 0.25rem; color: var(--text-secondary); font-size: var(--ui-hint); }
+.sp-di-vat label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
+.sp-di-rate {
+  width: 3.5rem;
+  height: 1.75rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: right;
+}
+.sp-di-delivery { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0 0 0.5rem; }
+.sp-di-delivery input { margin-top: 0.2rem; }
+.sp-di-wrap { margin-top: 0.5rem; max-height: 55vh; overflow: auto; }
+.ui-work.ui-work .sp-di-table { min-width: 56rem; table-layout: fixed; }
+.sp-di-table .sp-di-c-sel { width: 2.25rem; }
+.sp-di-table .sp-di-c-doc { width: auto; }
+.sp-di-table .sp-di-c-price { width: 9rem; }
+.sp-di-table .sp-di-c-pos { width: 24rem; }
+.sp-di-table .sp-di-c-now { width: 10rem; }
+.ui-work.ui-work .sp-di-table > thead > tr > th { position: sticky; top: 0; z-index: 1; font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.ui-work.ui-work .sp-di-table > tbody > tr > td { vertical-align: top; }
+.ui-work.ui-work .sp-di-table > tbody > tr.is-unmatched > td { color: var(--text-secondary); }
+.sp-di-sel { text-align: center; }
+.sp-di-sel input { width: 1rem; height: 1rem; margin: 0.25rem 0 0; accent-color: var(--primary-color); }
+.sp-di-name { display: block; overflow-wrap: anywhere; }
+.sp-di-meta { display: flex; flex-wrap: wrap; gap: 0 0.75rem; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-di-price { font-weight: var(--ui-semibold); white-space: nowrap; }
+.sp-di-pos select {
+  width: 100%;
+  height: 1.875rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-th);
+}
+.sp-di-match { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; margin-top: 0.25rem; }
+.sp-di-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--hover-bg);
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+.sp-di-tag.is-exact { background: var(--success-light); color: #15803d; }
+.sp-di-tag.is-warn { background: var(--warning-light); color: var(--warning-color); }
+.sp-di-search { display: grid; gap: 0.25rem; }
+.sp-di-search .ui-search { width: 100%; }
+.sp-di-found { margin: 0; padding: 0; list-style: none; max-height: 10rem; overflow: auto; }
+.sp-di-found > li { padding: 0.125rem 0; }
+.sp-di-found .sp-link-btn { text-align: left; text-decoration: none; }
+.sp-di-now { font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+.sp-di-actions { flex-wrap: wrap; align-items: center; }
+.sp-di-attach { display: inline-flex; align-items: center; gap: 0.5rem; margin-right: auto; }
+.sp-di-progress { color: var(--text-secondary); }
+.sp-suggest-tag.is-score { background: transparent; }
 .ui-work.ui-work .sp-table > thead > tr > th {
   font-size: var(--ui-hint);
   line-height: var(--ui-hint-lh);
@@ -603,6 +710,7 @@
 [data-theme='dark'] .sp-author.is-auto { color: #7dd3fc; }
 [data-theme='dark'] .sp-suggest { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
 [data-theme='dark'] .sp-suggest-tag.is-current { color: #86efac; }
+[data-theme='dark'] .sp-di-tag.is-exact { color: #86efac; }
 
 /* ── Телефон: строка — карточка ─────────────────────────────────────────── */
 @media (max-width: 640px) {
@@ -650,4 +758,12 @@
   .sp-suggest { left: 1rem !important; right: 1rem; width: auto !important; }
   .sp-suggest-list > li { grid-template-columns: 1fr; gap: 0.375rem; }
   .sp-suggest-side { justify-content: space-between; }
+  /* «Цены из счёта / КП» на телефоне: строка документа — карточкой. */
+  .ui-work.ui-work .sp-di-table { min-width: 0; table-layout: auto; }
+  .sp-di-table colgroup, .sp-di-table thead { display: none; }
+  .sp-di-table, .sp-di-table tbody { display: block; }
+  .ui-work.ui-work .sp-di-table > tbody > tr { display: grid; grid-template-columns: auto 1fr auto; gap: 0.25rem 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
+  .ui-work.ui-work .sp-di-table > tbody > tr > td { padding: 0; border: 0; }
+  .sp-di-table td.sp-di-pos, .sp-di-table td.sp-di-now { grid-column: 1 / -1; }
+  .sp-di-wrap { max-height: none; }
 }

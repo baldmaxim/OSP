@@ -50,7 +50,8 @@ export async function startStand(srcRoot) {
     }],
     resolve: { dedupe: ['react', 'react-dom', 'react-router-dom'] },
     server: { host: '127.0.0.1', port, strictPort: true, fs: { allow: [REPO, srcRoot] } },
-    optimizeDeps: { include: ['react', 'react-dom/client', 'react-router-dom', 'xlsx', 'pizzip', 'file-saver'] },
+    // pdf.js — сразу: иначе Vite находит его при первом распознавании PDF и перезагружает страницу посреди теста.
+    optimizeDeps: { include: ['react', 'react-dom/client', 'react-router-dom', 'xlsx', 'pizzip', 'file-saver', 'pdfjs-dist/legacy/build/pdf.mjs'] },
   })
   await server.listen()
   return { server, url: `http://127.0.0.1:${port}/index.html` }

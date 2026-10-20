@@ -12,7 +12,7 @@ import { db } from '../api'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { chunkList } from '../utils/inChunks'
 import { isAuthError, SESSION_EXPIRED_MESSAGE } from '../utils/supabaseError'
-import { fetchFileBytes } from './s3'
+import { deleteDocument, fetchFileBytes, uploadFile } from './s3'
 import { VOR_STATEMENT_CATEGORY, LEGACY_VOR_CATEGORY, isNetworkError } from './tenderVorRd'
 import { isWorkbookFileName } from '../utils/vorFiles'
 // Библиотека Excel (vorMaterialsSheet → xlsx, 430 КБ) — только по требованию: сервис импортирует и реестр
@@ -290,8 +290,18 @@ export async function clearRate(rate) {
 }
 
 // ── Ссылки на документы (чек, счёт, КП поставщика) к позициям (миграция 20261022) ─────────────────────
-// Ссылка живёт отдельно от цены: одна на позицию ВОР — (тендер, ВОР, ключ наименования), как у цен.
+// Ссылка живёт отдельно от цены: одна на позицию ВОР — (тендер, ВОР, ключ наименования), как у цен. С миграцией
+// 20261025 документ — адрес или файл (s3_document_id, файл в хранилище документов тендера); колонки ещё нет — только
+// адрес, как раньше (проверяется один раз за сеанс).
 export const LINK_COLUMNS = 'id, tender_id, estimate_name, material_name, material_key, url, updated_by, updated_at'
+let linkFiles = true
+const linkColumns = () => (linkFiles ? `${LINK_COLUMNS}, s3_document_id` : LINK_COLUMNS)
+// Можно ли прикреплять к позициям файлы (колонка s3_document_id есть в базе).
+export const linkFilesEnabled = () => linkFiles
+// Файлы документов поставщиков — в хранилище документов основного тендера, своей категорией: другие списки файлов
+// тендера (ВОРы и РД, пакет, КП) их не показывают, подрядчику они закрыты (правило s3_documents по категориям).
+export const SUPPLY_DOC_CATEGORY = 'supply_doc'
+const DOC_COLUMNS = 'id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at, uploaded_by_name'
 
 // Адрес http(s) или сетевой путь \\сервер\папка (как проверяет база). Ответ: { url } | { error }.
 export function normalizeLinkUrl(raw) {
@@ -306,10 +316,15 @@ export const isWebLink = (url) => /^https?:\/\//i.test(String(url || ''))
 // Ссылки тендера. Таблицы ещё нет (миграция не применена или шлюз её не знает) — null: таблица расценки
 // работает как раньше, без колонки «Документ».
 export async function loadLinks(mainId) {
+  const all = () => fetchAllRows((from, to) => db.from('tender_supply_links').select(linkColumns())
+    .eq('tender_id', mainId).order('id', { ascending: true }).range(from, to))
   try {
-    return await fetchAllRows((from, to) => db.from('tender_supply_links').select(LINK_COLUMNS)
-      .eq('tender_id', mainId).order('id', { ascending: true }).range(from, to))
+    return await all()
   } catch (e) {
+    if (linkFiles && isMissingColumn(e)) {
+      linkFiles = false
+      return loadLinks(mainId)
+    }
     if (classifyError(e)?.kind === 'missing') return null
     fail(e)
   }
@@ -326,18 +341,57 @@ export async function loadLinksMarker(mainId) {
   return `${cnt.count ?? 0}|${last.data?.[0]?.updated_at || ''}`
 }
 
-// Одна ссылка — нескольким позициям сразу (у кого была — заменяется). targets: [{ estimateName, name }].
-export async function saveLinks(mainId, targets, url) {
+// Один документ — нескольким позициям сразу (у кого был — заменяется). targets: [{ estimateName, name }]; doc —
+// { url } (адрес) или { docId } (файл из хранилища документов тендера).
+export async function saveLinks(mainId, targets, doc) {
+  const target = doc?.docId ? { url: null, s3_document_id: doc.docId } : { url: doc?.url ?? null, ...(linkFiles ? { s3_document_id: null } : {}) }
   const out = []
   for (const chunk of chunkList(targets, 200)) {
     const { data, error } = await db.from('tender_supply_links')
-      .upsert(chunk.map((t) => ({ tender_id: mainId, estimate_name: t.estimateName, material_name: t.name, url })),
+      .upsert(chunk.map((t) => ({ tender_id: mainId, estimate_name: t.estimateName, material_name: t.name, ...target })),
         { onConflict: 'tender_id,estimate_name,material_key' })
-      .select(LINK_COLUMNS)
+      .select(linkColumns())
+    if (error) {
+      if (doc?.docId && isMissingColumn(error)) {
+        linkFiles = false
+        fail({ code: '42703', message: 'Прикрепить файл к позиции нельзя: на сервере не применено обновление базы. Сообщите администратору.' })
+      }
+      fail(error)
+    }
+    out.push(...(data || []))
+  }
+  return out
+}
+
+// ── Файлы документов поставщиков (миграция 20261025) ─────────────────────────────────────────────────
+export async function loadSupplyDocs(mainId) {
+  const { data, error } = await db.from('s3_documents').select(DOC_COLUMNS)
+    .eq('owner_type', 'tender').eq('owner_id', mainId).eq('doc_category', SUPPLY_DOC_CATEGORY)
+    .order('created_at', { ascending: false })
+  if (error) fail(error)
+  return data || []
+}
+
+// Файлы по id — для колонки «Документ»: у позиции бывает и файл другого тендера (цена взята из похожих вместе с
+// документом). Порциями — длинный .in() не проходит шлюз.
+export async function loadDocsByIds(ids) {
+  const out = []
+  for (const chunk of chunkList([...new Set(ids)].filter(Boolean))) {
+    const { data, error } = await db.from('s3_documents').select(DOC_COLUMNS).in('id', chunk)
     if (error) fail(error)
     out.push(...(data || []))
   }
   return out
+}
+
+// Загрузить файл документа поставщика в хранилище документов основного тендера.
+export async function uploadSupplyDoc(mainId, file) {
+  return uploadFile({ file, ownerType: 'tender', ownerId: mainId, category: SUPPLY_DOC_CATEGORY })
+}
+
+// Удалить файл: пропадает у всех позиций, где он документ (ON DELETE CASCADE).
+export async function deleteSupplyDoc(doc) {
+  await deleteDocument(doc)
 }
 
 export async function removeLinks(ids) {

@@ -31,6 +31,7 @@
     "docx-preview": "^0.3.7",
     "docxtemplater": "^3.68.3",
     "file-saver": "^2.0.5",
+    "pdfjs-dist": "6.4.299",
     "pizzip": "^3.2.0",
     "playwright": "^1.60.0",
     "react": "^18.3.1",

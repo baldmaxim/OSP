@@ -17,6 +17,8 @@ const PAIRS = [
   { name: '20261022_supply_links', functions: 2, revoke: /REVOKE ALL ON TABLE public\.tender_supply_links FROM PUBLIC, anon, authenticated;/ },
   { name: '20261023_supply_rate_reuse', functions: 8, revoke: /REVOKE ALL ON TABLE public\.supply_rates_registry_mv FROM PUBLIC, anon, authenticated;/, privateSchema: true },
   { name: '20261024_supply_import_state', functions: 0, revoke: /REVOKE ALL ON TABLE public\.tender_supply_import_state FROM PUBLIC, anon, authenticated;/ },
+  // Файл документа к позиции и новая похожесть: триггер ссылок, 9 функций похожести и 3 функции подбора.
+  { name: '20261025_supply_docs_similarity', functions: 13, revoke: /REVOKE ALL ON FUNCTION public\.supply_name_score\(text\[\], text\[\], text\[\], text\[\], numeric\) FROM PUBLIC, anon;/ },
 ]
 
 // Без комментариев и с одинаковыми пробелами — сравниваются только сами команды.

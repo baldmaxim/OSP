@@ -380,8 +380,13 @@ window.__fakeDb.tender_supply_links = params.get('seedLink') === '1'
   : []
 window.__fakeUnique.tender_supply_links = ['tender_id', 'estimate_name', 'material_key']
 window.__fakeGenerated = { tender_supply_links: (r) => ({ material_key: normName(r.material_name) }) }
-window.__fakeTriggers.tender_supply_links = (row) => {
-  row.url = String(row.url).trim()
+// Как tender_supply_links_touch (20261025): документ — адрес или файл; записали одно — другое снимается.
+window.__fakeTriggers.tender_supply_links = (row, old) => {
+  row.url = row.url == null ? null : (String(row.url).trim() || null)
+  if (old) {
+    if (row.url && row.url !== old.url && (row.s3_document_id ?? null) === (old.s3_document_id ?? null)) row.s3_document_id = null
+    else if (row.s3_document_id && row.s3_document_id !== old.s3_document_id && (row.url ?? null) === (old.url ?? null)) row.url = null
+  }
   row.updated_by = 'user-1'
   row.updated_at = new Date().toISOString()
 }

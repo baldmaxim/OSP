@@ -13,7 +13,29 @@
 // window.__fakeFileRequests — какие файлы запрашивали.
 // window.__fakeRpc[имя](аргументы) → { data, error } — функции базы (db.rpc); функции нет — пустой ответ, как
 // раньше. Вызов учитывается в window.__supabaseStats как { table: 'rpc:<имя>', op: 'rpc' }.
+// Загрузка файла (s3-presign upload → PUT по ссылке): ссылка ведёт в «хранилище» стенда — PUT перехватывается здесь,
+// файл ложится в window.__fakeFiles[s3_key] (data: URL) и отдаётся потом по ссылке на скачивание;
+// window.__fakeUploads — что загружали ({ s3_key, size, type }).
 const LATENCY_MS = Number(new URLSearchParams(window.location.search).get('latency') || 120)
+const FAKE_S3 = 'https://fake-s3.invalid/'
+const realFetch = window.fetch.bind(window)
+window.fetch = async (url, init = {}) => {
+  const href = String(url?.url || url)
+  if (!href.startsWith(FAKE_S3)) return realFetch(url, init)
+  const key = decodeURIComponent(href.slice(FAKE_S3.length))
+  if ((init.method || 'GET').toUpperCase() === 'PUT') {
+    const blob = init.body instanceof Blob ? init.body : new Blob([init.body ?? ''])
+    const dataUrl = await new Promise((resolve) => {
+      const r = new FileReader()
+      r.onload = () => resolve(r.result)
+      r.readAsDataURL(blob)
+    })
+    window.__fakeFiles = { ...(window.__fakeFiles || {}), [key]: dataUrl }
+    ;(window.__fakeUploads ||= []).push({ s3_key: key, size: blob.size, type: blob.type })
+    return new Response(null, { status: 200 })
+  }
+  return new Response(null, { status: 404 })
+}
 
 const db = window.__fakeDb
 const stats = window.__supabaseStats = { requests: [], active: 0, maxActive: 0 }
@@ -95,6 +117,14 @@ function builder(table) {
   return self
 }
 
+// Ответ записи с .select(): массив строк, с .single() — одна строка (как PostgREST).
+function written(q, affected) {
+  if (!q.returning) return { data: null, error: null }
+  const data = affected.map((r) => ({ ...r }))
+  if (q.single) return data.length ? { data: data[0], error: null } : { data: null, error: { message: 'Строка не найдена', code: 'PGRST116' } }
+  return { data, error: null }
+}
+
 async function run(q) {
   stats.active++
   stats.maxActive = Math.max(stats.maxActive, stats.active)
@@ -161,7 +191,7 @@ async function run(q) {
         affected.push(row)
       }
     }
-    return { data: q.returning ? affected.map((r) => ({ ...r })) : null, error: null }
+    return written(q, affected)
   }
 
   if (q.op === 'update') {
@@ -172,7 +202,7 @@ async function run(q) {
       trigger?.(r, old)
       after?.('update', r, old)
     }
-    return { data: q.returning ? affected.map((r) => ({ ...r })) : null, error: null }
+    return written(q, affected)
   }
 
   if (q.op === 'delete') {
@@ -200,6 +230,16 @@ export const supabase = {
   },
   functions: {
     invoke: async (name, opts = {}) => {
+      const action = opts.body?.action
+      if (name === 's3-presign' && action === 'upload') {
+        const b = opts.body
+        const s3Key = `tenders/${b.owner_id}/${uuid()}-${b.file_name}`
+        return { data: { s3_key: s3Key, presigned_url: FAKE_S3 + encodeURIComponent(s3Key), expires_in: 900 }, error: null }
+      }
+      if (name === 's3-presign' && action === 'delete') {
+        if (window.__fakeFiles) delete window.__fakeFiles[opts.body.s3_key]
+        return { data: { ok: true }, error: null }
+      }
       const key = opts.body?.s3_key
       // Все попытки скачать файл (и те, что хранилище стенда не отдаст) — для проверки «не скачивает».
       if (name === 's3-presign' && key) (window.__fakePresignRequests ||= []).push(key)

@@ -5,11 +5,13 @@ import { formatAmount } from '../../utils/money'
 import { fmtPriceDate } from '../../utils/supplyRateHelpers'
 
 // Меню похожих цен позиции (миграция 20261023): расценки снабжения других тендеров (и других ВОР этого) с похожим
-// наименованием, той же ед. изм., не старше 3 месяцев — от самых недавних. «Взять» — цена за единицу в позицию с
-// отметкой, откуда она; документ исходной позиции прикладывается, если у позиции своего нет. Без права правки —
-// только просмотр. Поверх страницы (портал): прокрутка таблицы его не обрезает; прокрутили или кликнули мимо —
-// закрывается. Клавиатура: стрелки — по строкам, Enter — взять, Esc — закрыть.
-export default function SupplySuggestMenu({ anchor, mainId, row, editable, currentSourceId = null, onPick, onClose }) {
+// наименованием, той же ед. изм., не старше 3 месяцев. С миграцией 20261025 — сначала то же наименование, затем самые
+// похожие (размер «700x700» и числа наименования важнее слов), затем самые новые; у каждой — тот ли размер и документ
+// исходной позиции (ссылка или файл). «Взять» — цена за единицу в позицию с отметкой, откуда она; документ исходной
+// позиции прикладывается, если у позиции своего нет. Без права правки — только просмотр. Поверх страницы (портал):
+// прокрутка таблицы его не обрезает; прокрутили или кликнули мимо — закрывается. Клавиатура: стрелки — по строкам,
+// Enter — взять, Esc — закрыть.
+export default function SupplySuggestMenu({ anchor, mainId, row, editable, currentSourceId = null, onPick, onClose, onOpenFile }) {
   const [state, setState] = useState({ loading: true, rows: [], error: '' })
   const [pos, setPos] = useState(null)
   const menuRef = useRef(null)
@@ -73,6 +75,8 @@ export default function SupplySuggestMenu({ anchor, mainId, row, editable, curre
   }
 
   const title = `Похожие цены: ${row.p.name}`
+  // Новый подбор (20261025) отдаёт похожесть и размер — порядок «самые похожие первыми»; прежний — от новых.
+  const byScore = state.rows.some((s) => 'same_size' in s)
   return createPortal(
     <div
       ref={menuRef}
@@ -85,7 +89,7 @@ export default function SupplySuggestMenu({ anchor, mainId, row, editable, curre
     >
       <div className="sp-suggest-head">
         <span className="sp-suggest-title">Цены похожих позиций</span>
-        <span className="sp-muted">та же ед. изм. ({unit || '—'}), не старше 3 месяцев, сначала новые</span>
+        <span className="sp-muted">та же ед. изм. ({unit || '—'}), не старше 3 месяцев, {byScore ? 'сначала самые похожие' : 'сначала новые'}</span>
       </div>
       {state.loading && <p className="sp-suggest-empty">Ищем похожие цены…</p>}
       {state.error && <p className="sp-suggest-empty sp-error-text" role="alert">{state.error}</p>}
@@ -110,6 +114,8 @@ export default function SupplySuggestMenu({ anchor, mainId, row, editable, curre
                   <span className="sp-suggest-name">
                     {s.material_name}
                     {s.same_name && <span className="sp-suggest-tag">то же наименование</span>}
+                    {!s.same_name && s.same_size && <span className="sp-suggest-tag">тот же размер</span>}
+                    {!s.same_name && s.similarity != null && byScore && <span className="sp-suggest-tag is-score">похоже на {Math.round(Number(s.similarity) * 100)} %</span>}
                     {current && <span className="sp-suggest-tag is-current">сейчас в позиции</span>}
                   </span>
                   <span className="sp-suggest-meta">
@@ -117,7 +123,10 @@ export default function SupplySuggestMenu({ anchor, mainId, row, editable, curre
                     {s.object_name && <span>{s.object_name}</span>}
                     <span>ВОР «{s.estimate_name}»</span>
                     <span className="ui-num">{fmtPriceDate(s.price_date)}</span>
-                    {s.url && (isWebLink(s.url)
+                    {s.doc_key ? (
+                      <button type="button" className="link sp-doc-copy" title={s.doc_name || 'файл'}
+                        onClick={() => onOpenFile?.({ id: s.doc_id, file_name: s.doc_name, s3_key: s.doc_key })}>документ: файл</button>
+                    ) : s.url && (isWebLink(s.url)
                       ? <a href={s.url} target="_blank" rel="noopener noreferrer" className="link" title={s.url}>документ: Открыть</a>
                       : <span title={s.url}>документ: сетевой путь</span>)}
                   </span>
