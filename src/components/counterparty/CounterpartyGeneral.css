@@ -119,7 +119,7 @@
   overflow-wrap: anywhere;
 }
 
-/* ── Аффилированные компании (группа «Связей») ─────────────────────────── */
+/* ── Аффилированные компании (группа counterparty_relations) ───────────── */
 .cpg-affiliates { list-style: none; margin: 0 0 0.625rem; padding: 0; display: flex; flex-direction: column; gap: 0.375rem; }
 .cpg-affiliate {
   display: flex;
@@ -218,7 +218,39 @@
 .cpg-search-inn { flex-shrink: 0; font-size: 0.75rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 
 /* ── Договоры и ДС ─────────────────────────────────────────────────────── */
-.cpg-contracts-count { margin: -0.25rem 0 0.5rem; font-size: 0.75rem; color: var(--text-secondary); }
+.cpg-contracts-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin: -0.25rem 0 0.5rem;
+}
+.cpg-contracts-count { font-size: 0.75rem; color: var(--text-secondary); }
+.cpg-attach-btn { font-size: 0.8125rem; font-weight: 500; }
+
+/* Выбор договора для «Прикрепить договор». */
+.cpg-attach { margin-bottom: 0.75rem; }
+.cpg-attach-row { display: flex; align-items: center; gap: 0.75rem; }
+.cpg-attach-row .cpg-search { flex: 1 1 auto; min-width: 0; }
+.cpg-attach-row .cpg-link-btn { font-size: 0.8125rem; }
+.cpg-attach-note { margin-top: 0.375rem; }
+.cpg-choice { align-items: flex-start; }
+.cpg-choice .cpg-search-inn { max-width: 45%; text-align: right; overflow-wrap: anywhere; }
+.cpg-choice:disabled { cursor: progress; opacity: 0.6; }
+
+/* Договор, прикреплённый вручную: пометка — администратору, «открепить» — с правом правки. */
+.cpg-manual {
+  padding: 0 0.375rem;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  cursor: help;
+}
+.cpg-icon-btn.cpg-detach { width: 1.5rem; height: 1.5rem; }
 .cpg-table-wrap { overflow-x: auto; }
 .cpg-contracts-table {
   width: 100%;

@@ -2,9 +2,13 @@
 //   • колонки «Примечание» в реестре нет — примечание правится во вкладке и сохраняется в базу;
 //   • НДС: ставка или «без НДС», запись в базу и в журнал «Изменения»; без колонок (миграция 20261026 не
 //     применена) — подпись вместо списка; без права правки — только текст;
-//   • аффилированные компании — группа «Связей»: добавить, исключить, открыть карточку компании;
+//   • аффилированные компании — группа counterparty_relations: добавить, исключить, открыть карточку компании;
+//     отдельной кнопки и окна «Связи» в реестре больше нет;
 //   • договоры и ДС, где контрагент — сторона (основной или вторая сторона), ДС — под своим договором,
-//     чужие договоры не попадают; на телефоне — карточки, без прокрутки вбок.
+//     чужие договоры не попадают; на телефоне — карточки, без прокрутки вбок;
+//   • договор можно прикрепить к контрагенту вручную и открепить (миграция 20261031): администратор видит пометку
+//     «добавлен вручную» и кто прикрепил; без права правки — ни прикрепить, ни открепить, пометки нет;
+//     без таблицы привязок — раздел как раньше, без «Прикрепить договор».
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -87,7 +91,7 @@ describe('Карточка контрагента: «Общая информац
     } finally { await close() }
   })
 
-  it('аффилированные компании — группа «Связей»: добавить, исключить, открыть карточку', async () => {
+  it('аффилированные компании: добавить, исключить, открыть карточку; кнопки «Связи» в реестре нет', async () => {
     const { page, errors, close } = await openPage(`${BASE}&cpCard=1`)
     try {
       await openCard(page, 'Подрядчик 01')
@@ -102,8 +106,9 @@ describe('Карточка контрагента: «Общая информац
       const pairs = await page.evaluate(() => window.__fakeDb.counterparty_relations.map(r => `${r.counterparty_id}>${r.related_counterparty_id}`))
       assert.ok(pairs.includes('cp-1>cp-5'), pairs.join(' '))
 
-      // Кнопка «Связи» в строке реестра считает ту же группу.
-      assert.match(await page.locator('tr.table-row', { hasText: 'Подрядчик 01' }).locator('.cp-relations-btn').innerText(), /2/)
+      // Отдельной кнопки и окна «Связи» больше нет — всё в «Общей информации».
+      assert.equal(await page.locator('.cp-relations-btn').count(), 0)
+      assert.equal(await page.locator('table.compact-table').getByText('Связи', { exact: false }).count(), 0)
 
       await page.locator('.cpg-affiliate', { hasText: 'Подрядчик 02' }).locator('.cpg-icon-btn').click()
       await page.waitForFunction(() => !window.__fakeDb.counterparty_relations.some(r => r.counterparty_id === 'cp-2' || r.related_counterparty_id === 'cp-2'))
@@ -123,17 +128,67 @@ describe('Карточка контрагента: «Общая информац
       await openCard(page, 'Подрядчик 01')
       const table = page.locator('table.cpg-contracts-table')
       await table.waitFor()
-      assert.equal(await page.locator('.cpg-contracts-count').innerText(), 'Договоров: 2 · ДС: 2')
+      assert.equal(await page.locator('.cpg-contracts-count').innerText(), 'Договоров: 3 · ДС: 2')
       const rows = await table.locator('tbody tr').allInnerTexts()
-      assert.equal(rows.length, 4, rows.join('\n'))
+      assert.equal(rows.length, 5, rows.join('\n'))
       assert.match(rows[0], /Договор\s+№ П-15\/26\s+от 02\.03\.2026/)
       assert.match(rows[0], /ЖК Северный/)
       assert.match(rows[0], /с учётом ДС 1\s250\s000,00 ₽/)
       assert.match(rows[1], /ДС на дополнительные работы\s+№ ДС-1/)
       assert.match(rows[2], /ДС на изменение ВОР\s+№ ДС-2/)
       assert.match(rows[3], /Договор\s+№ Т-7/)
+      // Прикреплённый вручную — тоже здесь, а пометку видит только администратор (у своих договоров её нет).
+      assert.match(rows[4], /Договор\s+№ Л-3\s+от 01\.06\.2024/)
+      assert.match(rows[4], /ЖК Южный/)
+      assert.equal(await table.locator('.cpg-manual').count(), 1)
+      assert.match(await table.locator('tbody tr').nth(4).locator('.cpg-manual').innerText(), /добавлен вручную/)
       assert.ok(!rows.join('\n').includes('ЧУЖОЙ'), 'чужой договор не показан')
       assert.equal(await table.locator('tbody tr').first().locator('a.cpg-doc-link').getAttribute('href'), '/contracts/k-1')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('договор прикрепляется вручную и открепляется; в журнале «Изменения» — обе записи', async () => {
+    const { page, errors, close } = await openPage(`${BASE}&cpCard=1`)
+    try {
+      await openCard(page, 'Подрядчик 01')
+      const table = page.locator('table.cpg-contracts-table')
+      await table.waitFor()
+      // Пометка администратору — кто прикрепил и когда.
+      const mark = table.locator('tbody tr', { hasText: 'Л-3' }).locator('.cpg-manual')
+      assert.match(await mark.getAttribute('title'), /прикрепил: Петров П\. П\./)
+
+      await page.locator('.cpg-attach-btn').click()
+      const search = page.locator('.cpg-attach input.cpg-search')
+      // Уже показанные договоры выбор не предлагает.
+      await search.fill('П-15')
+      await page.locator('.cpg-search-results', { hasText: 'Не найдено' }).waitFor()
+      // Поиск — по номеру, предмету, объекту и контрагенту, слова в любом порядке.
+      await search.fill('объект другой')
+      const option = page.locator('.cpg-choice', { hasText: 'ЧУЖОЙ-1' })
+      await option.waitFor()
+      assert.match(await option.innerText(), /Другой объект · Подрядчик 04/)
+      await option.click()
+      await page.waitForFunction(() => window.__fakeDb.counterparty_contract_links.some(l => l.counterparty_id === 'cp-1' && l.contract_id === 'k-3'))
+      await table.locator('tbody tr', { hasText: 'ЧУЖОЙ-1' }).waitFor()
+      assert.equal(await page.locator('.cpg-attach').count(), 0, 'выбор закрылся')
+      assert.equal(await page.locator('.cpg-contracts-count').innerText(), 'Договоров: 4 · ДС: 2')
+      assert.match(await table.locator('tbody tr', { hasText: 'ЧУЖОЙ-1' }).locator('.cpg-manual').getAttribute('title'), /Стендов С\. С\./)
+      const link = await page.evaluate(() => window.__fakeDb.counterparty_contract_links.find(l => l.contract_id === 'k-3'))
+      assert.equal(link.created_by, 'user-1', 'кто прикрепил — ставит база, а не страница')
+
+      // Открепить можно только прикреплённый вручную: у своих договоров кнопки нет.
+      assert.equal(await table.locator('tbody tr', { hasText: 'П-15/26' }).locator('.cpg-detach').count(), 0)
+      await table.locator('tbody tr', { hasText: 'Л-3' }).locator('.cpg-detach').click()
+      await page.waitForFunction(() => !window.__fakeDb.counterparty_contract_links.some(l => l.contract_id === 'k-4'))
+      await table.locator('tbody tr', { hasText: 'Л-3' }).waitFor({ state: 'detached' })
+      assert.ok(await page.evaluate(() => window.__fakeDb.contracts.some(k => k.id === 'k-4' && !k.deleted_at)), 'сам договор остался')
+
+      const log = await page.evaluate(() => window.__fakeDb.counterparty_audit_log.filter(r => r.counterparty_id === 'cp-1').map(r => r.description))
+      assert.ok(log.includes('Прикреплён договор № ЧУЖОЙ-1 от 01.01.2026'), log.join(' | '))
+      assert.ok(log.includes('Откреплён договор № Л-3 от 01.06.2024'), log.join(' | '))
+      await page.locator('.cp-detail-tab', { hasText: 'Изменения' }).click()
+      await page.locator('.cp-audit-item', { hasText: 'Откреплён договор № Л-3' }).waitFor()
       assert.deepEqual(errors, [])
     } finally { await close() }
   })
@@ -149,6 +204,11 @@ describe('Карточка контрагента: «Общая информац
       assert.equal(await ro.page.locator('.cpg-notes-text').innerText(), 'Работает только по предоплате')
       assert.equal(await ro.page.locator('input.cpg-search').count(), 0)
       assert.equal(await ro.page.locator('.cpg-affiliate .cpg-icon-btn').count(), 0)
+      // Прикреплённый вручную договор виден, но без пометки (она — администратору) и без «открепить».
+      await ro.page.locator('table.cpg-contracts-table tbody tr', { hasText: 'Л-3' }).waitFor()
+      assert.equal(await ro.page.locator('.cpg-attach-btn').count(), 0)
+      assert.equal(await ro.page.locator('.cpg-manual').count(), 0)
+      assert.equal(await ro.page.locator('.cpg-detach').count(), 0)
       assert.deepEqual(ro.errors, [])
     } finally { await ro.close() }
 
@@ -160,6 +220,16 @@ describe('Карточка контрагента: «Общая информац
       assert.match(await old.page.locator('.cpg-field', { hasText: 'НДС' }).innerText(), /появится после обновления базы/)
       assert.deepEqual(old.errors, [])
     } finally { await old.close() }
+
+    // Таблицы привязок нет (миграция 20261031 не применена): договоры — как раньше, прикрепить нельзя.
+    const noLinks = await openPage(`${BASE}&cpCard=1&cpLinks=0`)
+    try {
+      await openCard(noLinks.page, 'Подрядчик 01')
+      await noLinks.page.locator('table.cpg-contracts-table').waitFor()
+      assert.equal(await noLinks.page.locator('.cpg-contracts-count').innerText(), 'Договоров: 2 · ДС: 2')
+      assert.equal(await noLinks.page.locator('.cpg-attach-btn').count(), 0)
+      assert.deepEqual(noLinks.errors, [])
+    } finally { await noLinks.close() }
   })
 
   it('телефон: договоры карточками, вкладка без прокрутки вбок', async () => {
@@ -170,7 +240,8 @@ describe('Карточка контрагента: «Общая информац
       await row.waitFor({ timeout: 60000 })
       await row.locator('.cp-mrow-open').click()
       await page.locator('.cpg-contract-card').first().waitFor()
-      assert.equal(await page.locator('.cpg-contract-card').count(), 2)
+      assert.equal(await page.locator('.cpg-contract-card').count(), 3)
+      assert.equal(await page.locator('.cpg-contract-card .cpg-manual').count(), 1)
       assert.equal(await page.locator('.cpg-contract-card-row.is-ds').count(), 2)
       const overflow = await page.evaluate(() => {
         const body = document.querySelector('.cp-detail-body')

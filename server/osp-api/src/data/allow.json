@@ -230,6 +230,13 @@
         "update"
       ]
     },
+    "counterparty_contract_links": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select"
+      ]
+    },
     "counterparty_relations": {
       "anon": [
         "select"

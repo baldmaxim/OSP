@@ -1,9 +1,9 @@
-// Карточка контрагента, вкладка «Общая информация»: НДС контрагента (ставка или «без НДС») и договоры с ДС
-// контрагента группами «договор и его ДС».
+// Карточка контрагента, вкладка «Общая информация»: НДС контрагента (ставка или «без НДС»), договоры с ДС
+// контрагента группами «договор и его ДС» и поиск договора для «Прикрепить договор».
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { VAT_EXEMPT, VAT_NONE, vatFromSelect, vatSelectValue, vatText } from '../../src/utils/counterpartyVat.js'
-import { docTitle, groupCounterpartyDocs } from '../../src/utils/counterpartyDocs.js'
+import { docTitle, groupCounterpartyDocs, searchContractChoices } from '../../src/utils/counterpartyDocs.js'
 
 describe('НДС контрагента', () => {
   it('выпадающий список ↔ поля базы', () => {
@@ -77,5 +77,30 @@ describe('Договоры и ДС контрагента', () => {
       { kind: 'Договор', num: '№ 15-П', date: '03.02.2026' })
     assert.deepEqual(docTitle(doc({ record_type: 'ds_extra' })),
       { kind: 'ДС на дополнительные работы', num: 'без номера', date: '' })
+  })
+})
+
+describe('Выбор договора для «Прикрепить договор»', () => {
+  const choices = [
+    { id: 'a', contract_number: 'П-15/26', work_name: 'Устройство фасада', objects: { name: 'ЖК Северный' }, counterparties: { name: 'ООО «Фасад»' } },
+    { id: 'b', contract_number: 'Т-7', work_name: 'Кровля', objects: { name: 'БЦ Восток' }, counterparties: { name: 'ООО «Кровля-Сервис»' } },
+    { id: 'c', contract_number: 'Л-3', work_name: null, objects: null, counterparties: null },
+  ]
+  const ids = (list) => list.map(c => c.id)
+
+  it('каждое слово — в номере, предмете, объекте или контрагенте, в любом порядке, без учёта регистра', () => {
+    assert.deepEqual(ids(searchContractChoices(choices, 'п-15', new Set())), ['a'])
+    assert.deepEqual(ids(searchContractChoices(choices, 'восток кровля', new Set())), ['b'])
+    assert.deepEqual(ids(searchContractChoices(choices, 'фасад северный', new Set())), ['a'])
+    // Слово из одного договора, второе — из другого: не совпадение.
+    assert.deepEqual(ids(searchContractChoices(choices, 'фасад восток', new Set())), [])
+    // Пустых полей не боится.
+    assert.deepEqual(ids(searchContractChoices(choices, 'л-3', new Set())), ['c'])
+  })
+
+  it('пустой запрос — ничего; показанные в разделе — не предлагаются; не больше предела', () => {
+    assert.deepEqual(searchContractChoices(choices, '   ', new Set()), [])
+    assert.deepEqual(ids(searchContractChoices(choices, 'ооо', new Set(['a']))), ['b'])
+    assert.deepEqual(ids(searchContractChoices(choices, 'ооо', new Set(), 1)), ['a'])
   })
 })

@@ -116,7 +116,8 @@
       "Bash(PROBE_CQ=1 node v-matrix-fontpref-cq.mjs new 12 1416,1440,1460,1920)",
       "Bash(PROBE_CQ=1 node v-matrix-fontpref-cq.mjs new 16 1872,1888,1920)",
       "Bash(node .tmp-preview/cr-fixprobe.mjs)",
-      "Bash(grep -n \"115.75rem\\\\|118rem\\\\|overflow-x: auto; }\\\\|btn-primary, .btn-secondary, .dcr-link-btn\\\\|dcr-doc-chip {\\\\|dcr-doc-chip > :is\\\\|dcr-docs-toggle, .dcr-doc-add\\\\|dcr-amount-input {\\\\|dcr-folder-path-copy { width\\\\|actions-cell .btn-icon { width\\\\|dcr-doc-chip-desc::before\\\\|dcr-material-edit {\\\\|шапка таблицы прилипает\\\\|проигрывало workUi\\\\|не обрезается\" src/pages/DcRequestsPage.css)"
+      "Bash(grep -n \"115.75rem\\\\|118rem\\\\|overflow-x: auto; }\\\\|btn-primary, .btn-secondary, .dcr-link-btn\\\\|dcr-doc-chip {\\\\|dcr-doc-chip > :is\\\\|dcr-docs-toggle, .dcr-doc-add\\\\|dcr-amount-input {\\\\|dcr-folder-path-copy { width\\\\|actions-cell .btn-icon { width\\\\|dcr-doc-chip-desc::before\\\\|dcr-material-edit {\\\\|шапка таблицы прилипает\\\\|проигрывало workUi\\\\|не обрезается\" src/pages/DcRequestsPage.css)",
+      "Bash(git ls-remote *)"
     ],
     "deny": [],
     "ask": []

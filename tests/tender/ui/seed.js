@@ -541,3 +541,22 @@ window.__fakeRpc = {
     return { data: { moved, replaced: 0, dropped: 0, links: 0 }, error: null }
   },
 }
+
+// Договор, прикреплённый к контрагенту вручную (миграция 20261031): у «Подрядчика 01» — договор «Л-3» «Подрядчика 05»
+// (прикрепил Петров П. П.); при прикреплении кто прикрепил ставит «триггер». У договоров — контрагент (выбор договора
+// ищет и по нему). cpLinks=0 — таблицы привязок нет, как до миграции.
+if (CP_CARD) {
+  const fdb = window.__fakeDb
+  fdb.contracts.push({ id: 'k-4', display_id: 106, record_type: 'dp', parent_contract_id: null, root_contract_id: null, counterparty_id: 'cp-5',
+    status: 'completed', deleted_at: null, contract_number: 'Л-3', contract_date: '2024-06-01', contract_amount: 300000,
+    psdc_total: null, currency: 'RUB', work_name: 'Кровля паркинга', changed_fields: [], objects: { name: 'ЖК Южный' } })
+  for (const k of fdb.contracts) k.counterparties = { name: fdb.counterparties.find((c) => c.id === k.counterparty_id)?.name }
+  fdb.counterparty_contract_links = [{ id: 'cl-1', counterparty_id: 'cp-1', contract_id: 'k-4', created_by: 'user-2', created_at: '2026-10-20T07:30:00Z' }]
+  window.__fakeUnique.counterparty_contract_links = ['counterparty_id', 'contract_id']
+  window.__fakeTriggers.counterparty_contract_links = (row) => { row.created_by = 'user-1' }
+  fdb.employee_directory.push({ user_id: 'user-1', display_name: 'Стендов С. С.', full_name: 'Стендов Стенд Стендович', email: 't@example.invalid', role: 'admin' })
+  if (params.get('cpLinks') === '0') {
+    window.__fakeErrors = { ...(window.__fakeErrors || {}),
+      counterparty_contract_links: { code: 'PGRST205', message: "Could not find the table 'public.counterparty_contract_links' in the schema cache" } }
+  }
+}

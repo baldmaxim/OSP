@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useMemo, useDeferredValue, useTransition, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useDeferredValue, useTransition, useCallback } from 'react'
 import { db } from '../api'
-import { fetchAllRowsParallel } from '../utils/fetchAllRows'
+import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import * as XLSX from 'xlsx'
 import { formatPhone } from '../utils/phoneFormat'
 import { generateUUID } from '../utils/uuid'
@@ -14,28 +14,62 @@ import { diffWords } from '../utils/textDiff'
 import { shortPersonName } from '../utils/personName'
 import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils/counterpartyGroups'
 import { vatFromSelect, vatText } from '../utils/counterpartyVat'
+import { docTitle } from '../utils/counterpartyDocs'
 import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
-// Supabase/PostgREST отдаёт максимум 1000 строк за запрос. Тянем всё постранично.
-const SB_PAGE = 1000
-// `makeQuery(from, to)` должен создавать НОВЫЙ запрос с .range(from, to) и стабильной
-// сортировкой (иначе строки могут теряться/повторяться между страницами).
-async function fetchAllRows(makeQuery) {
-  const all = []
-  for (let from = 0; ; from += SB_PAGE) {
-    const { data, error } = await makeQuery(from, from + SB_PAGE - 1)
-    if (error) throw error
-    if (data?.length) all.push(...data)
-    if (!data || data.length < SB_PAGE) break
-  }
-  return all
-}
-
 // Инкрементальный рендер: сколько строк показываем изначально и на сколько прирастаем
 // по кнопке «Показать ещё» — чтобы DOM оставался лёгким на больших списках.
 const RENDER_STEP = 100
+
+const EMPTY_CP_FORM = {
+  name: '',
+  work_type: '',
+  department: '',
+  inn: '',
+  kpp: '',
+  legal_address: '',
+  actual_address: '',
+  website: '',
+  status: 'active',
+  notes: '',
+}
+const EMPTY_CONTACT_FORM = { full_name: '', position: '', phone: '', email: '' }
+
+const TENDER_STATUS_LABEL = {
+  request_sent: 'Запрос отправлен',
+  declined: 'Отказался',
+  proposal_provided: 'Предоставил КП',
+  accepted_for_work: 'Принят в работу',
+}
+
+const ruCollator = new Intl.Collator('ru')
+
+// «Вид работ» хранится строкой через запятую.
+const splitWorkTypes = (value) => (value || '').split(',').map(wt => wt.trim()).filter(Boolean)
+
+const fmtRuDate = (iso) => (iso
+  ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  : null)
+
+// Колонки файла импорта: шаблон, инструкция и разбор читают один список.
+const IMPORT_COLUMNS = [
+  { name: 'Наименование организации', required: true, example: 'ООО «Стройком»' },
+  { name: 'Категория работ', example: 'Основное строительство, Гарантийный отдел' },
+  { name: 'Вид работ', example: 'Строительно-монтажные работы' },
+  { name: 'ИНН', example: '7728123456' },
+  { name: 'КПП', example: '772801001' },
+  { name: 'Юридический адрес', example: 'г. Москва, ул. Ленина, д. 1' },
+  { name: 'Фактический адрес', example: 'г. Москва, ул. Ленина, д. 1' },
+  { name: 'Ссылка на сайт', example: 'https://stroykom.ru' },
+  { name: 'Статус', example: 'Действующий или Черный список' },
+  { name: 'Примечание', example: 'Хороший подрядчик, рекомендуем' },
+  { name: 'ФИО контакта', example: 'Иванов Иван Иванович' },
+  { name: 'Должность контакта', example: 'Директор' },
+  { name: 'Телефон контакта', example: '+7 (999) 123-45-67' },
+  { name: 'Email контакта', example: 'director@stroykom.ru' },
+]
 
 // ── История изменений контрагента (миграция 20260829) ───────────────────────
 // Подписи полей карточки для ленты «Изменения».
@@ -83,6 +117,8 @@ const CP_EVENT_LABEL = {
   contact_removed: 'Удалено контактное лицо',
   soft_deleted: 'Перенесён в «Удалённые»',
   restored: 'Восстановлен',
+  contract_linked: 'Прикреплён договор',
+  contract_unlinked: 'Откреплён договор',
 }
 
 function fmtAuditDateTime(ts) {
@@ -90,6 +126,55 @@ function fmtAuditDateTime(ts) {
   const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleDateString('ru-RU') + ', ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
+// Подформа контакта в окне контрагента: подписи и поля.
+const SUB_LABEL_STYLE = { fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' }
+const SUB_INPUT_STYLE = { width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.875rem', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }
+
+// Несколько телефонов или адресов почты в одном поле базы — через «;». Два вида: подформа контакта в окне
+// контрагента (form) и отдельное окно контакта (modal, поля — по стилям .form-group).
+const MULTI_STYLES = {
+  form: {
+    input: { ...SUB_INPUT_STYLE, width: undefined, flex: 1 },
+    remove: { padding: '0 0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.875rem' },
+    add: { marginTop: '0.25rem', padding: '0.25rem 0.5rem', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem' },
+  },
+  modal: {
+    input: { flex: 1 },
+    remove: { padding: '0 0.5rem', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer' },
+    add: { marginTop: '0.25rem', padding: '0.25rem 0', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem', textAlign: 'left' },
+  },
+}
+
+function MultiValueInput({ value, onChange, type, placeholder, format, addLabel, removeTitle, variant }) {
+  const styles = MULTI_STYLES[variant]
+  const items = (value || '').split(';').map(x => x.trim())
+  return (
+    <>
+      {items.map((item, idx) => (
+        <div key={idx} style={{ display: 'flex', gap: '0.25rem', marginBottom: idx < items.length - 1 ? '0.25rem' : 0 }}>
+          <input
+            type={type}
+            value={item}
+            onChange={(e) => onChange(items.map((x, i) => (i === idx ? (format ? format(e.target.value) : e.target.value) : x)).join('; '))}
+            placeholder={placeholder}
+            style={styles.input}
+          />
+          {items.length > 1 && (
+            <button
+              type="button"
+              onClick={() => onChange(items.filter((_, i) => i !== idx).join('; '))}
+              style={styles.remove}
+              title={removeTitle}
+              aria-label={removeTitle}
+            >×</button>
+          )}
+        </div>
+      ))}
+      <button type="button" onClick={() => onChange((value || '') + '; ')} style={styles.add}>{addLabel}</button>
+    </>
+  )
 }
 
 function CounterpartiesPage() {
@@ -121,25 +206,8 @@ function CounterpartiesPage() {
   const [docSummaryByCp, setDocSummaryByCp] = useState(() => new Map())
   const fileInputRef = useRef(null)
 
-  const [counterpartyFormData, setCounterpartyFormData] = useState({
-    name: '',
-    work_type: '',
-    department: '',
-    inn: '',
-    kpp: '',
-    legal_address: '',
-    actual_address: '',
-    website: '',
-    status: 'active',
-    notes: '',
-  })
-
-  const [contactFormData, setContactFormData] = useState({
-    full_name: '',
-    position: '',
-    phone: '',
-    email: '',
-  })
+  const [counterpartyFormData, setCounterpartyFormData] = useState(EMPTY_CP_FORM)
+  const [contactFormData, setContactFormData] = useState(EMPTY_CONTACT_FORM)
 
   // Контакты, которые добавляются при создании/редактировании контрагента
   const [tempContacts, setTempContacts] = useState([])
@@ -166,12 +234,8 @@ function CounterpartiesPage() {
   const [wtfSearch, setWtfSearch] = useState('')
   const [wtfOpen, setWtfOpen] = useState(false)
 
-  // Связи между контрагентами
-  const [relations, setRelations] = useState([]) // [{counterparty_id, related_counterparty_id}]
-  const [showRelationModal, setShowRelationModal] = useState(false)
-  // Для какого контрагента открыта модалка связей.
-  const [relationTargetId, setRelationTargetId] = useState(null)
-  const [relationSearchQuery, setRelationSearchQuery] = useState('')
+  // Аффилированные компании — пары counterparty_relations, читаются группами («Общая информация» карточки).
+  const [relations, setRelations] = useState([]) // [{id, counterparty_id, related_counterparty_id}]
 
   // task 196: история участия в тендерах — лениво грузим при раскрытии строки
   const [tenderHistoryMap, setTenderHistoryMap] = useState({}) // { counterpartyId: [{tender_id, status, work_description, tender_start_date, tender_end_date, object_name}] }
@@ -200,13 +264,6 @@ function CounterpartiesPage() {
   // task 326: поиск по справочнику видов работ
   const [wtDirSearch, setWtDirSearch] = useState('')
 
-  const TENDER_STATUS_LABEL = {
-    request_sent: 'Запрос отправлен',
-    declined: 'Отказался',
-    proposal_provided: 'Предоставил КП',
-    accepted_for_work: 'Принят в работу',
-  }
-
   useEffect(() => {
     fetchCounterparties()
     fetchRelations()
@@ -214,7 +271,7 @@ function CounterpartiesPage() {
   }, [])
 
   // Блокируем скролл body при открытой модалке
-  const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showRelationModal || showWorkTypeModal || importResult || detailCp
+  const anyModalOpen = showCounterpartyModal || showContactModal || showImportInstructionsModal || showWorkTypeModal || importResult || detailCp
   useEffect(() => {
     if (anyModalOpen) {
       document.body.classList.add('modal-open')
@@ -224,67 +281,51 @@ function CounterpartiesPage() {
     return () => document.body.classList.remove('modal-open')
   }, [anyModalOpen])
 
+  // Контрагенты, карточки компаний и сводка документов — одновременно: друг от друга они не зависят,
+  // а последовательно складывались в три полные задержки сети на каждом открытии раздела.
   const fetchCounterparties = async () => {
+    setLoading(true)
+    // task 302: карточки компаний. Только doc_category='general' — чтобы документы СБ/Прочие (та же
+    // owner_type='counterparty', категории 'sb_approval'/'other') не попадали в «карточку компании».
+    const cardsTask = fetchAllRowsParallel((from, to, withCount) => db
+      .from('s3_documents')
+      .select('id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at', withCount ? { count: 'exact' } : undefined)
+      .eq('owner_type', 'counterparty')
+      .eq('doc_category', 'general')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to))
+      .then((cards) => {
+        const map = new Map()
+        for (const c of cards) if (!map.has(c.owner_id)) map.set(c.owner_id, c) // latest first из order
+        return map
+      })
+      .catch((err) => {
+        console.warn('Не удалось загрузить карточки компаний:', err.message)
+        return new Map()
+      })
+    // Сводка документов «Согласование СБ» / «Должная осмотрительность» — значки в строке (task 422).
+    const summaryTask = fetchCounterpartyDocSummary().catch((err) => {
+      console.warn('Не удалось загрузить сводку документов контрагентов:', err.message)
+      return new Map()
+    })
     try {
-      setLoading(true)
-      // Постранично (снимаем потолок 1000). Тай-брейк по id — стабильная пагинация
-      // при неуникальных именах.
-      // Страницы — ПАРАЛЛЕЛЬНО: контрагентов несколько тысяч, и последовательный
-      // обход по 1000 строк складывался в несколько полных задержек сети подряд
-      // на каждом открытии раздела. Первый запрос заодно приносит общее число строк.
+      // Постранично (потолок PostgREST — 1000 строк), страницы параллельно; тай-брейк по id — стабильная
+      // пагинация при неуникальных именах.
       const data = await fetchAllRowsParallel((from, to, withCount) => db
         .from('counterparties')
-        .select(`
-          *,
-          counterparty_contacts (
-            id,
-            full_name,
-            position,
-            phone,
-            email
-          )
-        `, withCount ? { count: 'exact' } : undefined)
+        .select('*, counterparty_contacts (id, full_name, position, phone, email)', withCount ? { count: 'exact' } : undefined)
         .order('name', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to))
-
       setCounterparties(data)
-
-      // task 302: карточки компаний — тоже постранично (иначе >1000 карточек обрежется).
-      // Только doc_category='general' — чтобы документы СБ/Прочие (та же owner_type='counterparty',
-      // категории 'sb_approval'/'other') не попадали в «карточку компании».
-      try {
-        const cards = await fetchAllRowsParallel((from, to, withCount) => db
-          .from('s3_documents')
-          .select('id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at', withCount ? { count: 'exact' } : undefined)
-          .eq('owner_type', 'counterparty')
-          .eq('doc_category', 'general')
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: true })
-          .range(from, to))
-        const map = new Map()
-        for (const c of cards) {
-          if (!map.has(c.owner_id)) map.set(c.owner_id, c) // latest first из order
-        }
-        setCardsByCp(map)
-      } catch (cardsError) {
-        console.warn('Не удалось загрузить карточки компаний:', cardsError.message)
-        setCardsByCp(new Map())
-      }
-
-      // Сводка документов «Согласование СБ» / «Должная осмотрительность» по всем
-      // контрагентам — для иконок-индикаторов в строке (task 422).
-      try {
-        setDocSummaryByCp(await fetchCounterpartyDocSummary())
-      } catch (sumError) {
-        console.warn('Не удалось загрузить сводку документов контрагентов:', sumError.message)
-        setDocSummaryByCp(new Map())
-      }
     } catch (error) {
       console.error('Ошибка загрузки контрагентов:', error.message)
-    } finally {
-      setLoading(false)
     }
+    const [cards, summary] = await Promise.all([cardsTask, summaryTask])
+    setCardsByCp(cards)
+    setDocSummaryByCp(summary)
+    setLoading(false)
   }
 
   const fetchRelations = async () => {
@@ -348,24 +389,16 @@ function CounterpartiesPage() {
           .eq('id', editingWorkType.id)
         if (error) throw error
         // Если у вида работ было старое имя — синхронизируем все counterparties.work_type,
-        // где это значение упоминается в comma-separated списке.
+        // где это значение упоминается в comma-separated списке. Порциями по 8 одновременно:
+        // по одному запросу подряд переименование популярного вида шло десятки секунд.
         if (editingWorkType.name !== name) {
           const old = editingWorkType.name
-          const affected = counterparties.filter(cp => {
-            const list = (cp.work_type || '').split(',').map(x => x.trim())
-            return list.includes(old)
-          })
-          for (const cp of affected) {
-            const newList = (cp.work_type || '')
-              .split(',')
-              .map(x => x.trim())
-              .map(x => (x === old ? name : x))
-              .filter(Boolean)
-            const uniq = [...new Set(newList)]
-            await db
+          const affected = counterparties.filter(cp => splitWorkTypes(cp.work_type).includes(old))
+          for (let i = 0; i < affected.length; i += 8) {
+            await Promise.all(affected.slice(i, i + 8).map(cp => db
               .from('counterparties')
-              .update({ work_type: uniq.join(', ') })
-              .eq('id', cp.id)
+              .update({ work_type: [...new Set(splitWorkTypes(cp.work_type).map(x => (x === old ? name : x)))].join(', ') })
+              .eq('id', cp.id)))
           }
         }
       } else {
@@ -387,10 +420,7 @@ function CounterpartiesPage() {
   }
 
   const handleDeleteWorkType = async (wt) => {
-    const used = counterparties.filter(cp => {
-      const list = (cp.work_type || '').split(',').map(x => x.trim())
-      return list.includes(wt.name)
-    }).length
+    const used = workTypeUsage.get(wt.name) || 0
     const msg = used > 0
       ? `Вид работ «${wt.name}» используется у ${used} контрагент(ов). Удалить из справочника? У контрагентов значение останется текстом до ручной правки.`
       : `Удалить вид работ «${wt.name}»?`
@@ -404,28 +434,17 @@ function CounterpartiesPage() {
     }
   }
 
-  // Связи — ГРУППАМИ, а не парами (utils/counterpartyGroups.js): если A связан
+  const counterpartyById = useMemo(() => new Map(counterparties.map(c => [c.id, c])), [counterparties])
+
+  // Аффилированные — ГРУППАМИ, а не парами (utils/counterpartyGroups.js): если A связан
   // с B, а B с C, то у каждого из троих видны двое остальных. Раньше показывались
   // только прямые пары, и у второстепенного юрлица пропадала часть группы.
   const relationGroups = useMemo(() => buildRelationGroups(relations), [relations])
 
-  // Получить связанных контрагентов для данного id (вся группа, кроме него самого)
+  // Вся группа, кроме самого контрагента, — в порядке реестра.
   const getRelatedCounterparties = (counterpartyId) => {
     const relatedIds = new Set(groupMatesOf(relationGroups, counterpartyId))
-    return counterparties.filter(c => relatedIds.has(c.id))
-  }
-
-  // Кол-во связей по каждому контрагенту (для бейджа на кнопке) — размер группы без него.
-  const relationCountById = useMemo(() => {
-    const counts = new Map()
-    for (const [id, members] of relationGroups) counts.set(id, members.size - 1)
-    return counts
-  }, [relationGroups])
-
-  const openRelations = (counterpartyId) => {
-    setRelationTargetId(counterpartyId)
-    setRelationSearchQuery('')
-    setShowRelationModal(true)
+    return relatedIds.size ? counterparties.filter(c => relatedIds.has(c.id)) : []
   }
 
   const handleAddRelation = async (counterpartyId, relatedId) => {
@@ -433,10 +452,9 @@ function CounterpartiesPage() {
     // Это меняет связи у всех её участников, поэтому спрашиваем явно.
     const otherMates = groupMatesOf(relationGroups, relatedId)
     if (otherMates.length > 0) {
-      const nameById = new Map(counterparties.map(c => [c.id, c.name]))
-      const addedName = nameById.get(relatedId) || 'Контрагент'
-      const list = otherMates.map(id => `• ${nameById.get(id) || id}`).join('\n')
-      if (!window.confirm(`${addedName} уже связан с:\n${list}\n\nГруппы объединятся — все эти контрагенты станут связаны между собой. Продолжить?`)) return false
+      const nameOf = (id) => counterpartyById.get(id)?.name
+      const list = otherMates.map(id => `• ${nameOf(id) || id}`).join('\n')
+      if (!window.confirm(`${nameOf(relatedId) || 'Контрагент'} уже связан с:\n${list}\n\nГруппы объединятся — все эти контрагенты станут связаны между собой. Продолжить?`)) return false
     }
     try {
       // Пара сохраняется в одном направлении; группа собирается при чтении.
@@ -452,7 +470,6 @@ function CounterpartiesPage() {
         throw error
       }
       await fetchRelations()
-      setRelationSearchQuery('')
       return true
     } catch (error) {
       console.error('Ошибка добавления связи:', error.message)
@@ -467,7 +484,7 @@ function CounterpartiesPage() {
   // контрагентом — см. planRemoveFromGroup.
   const handleRemoveRelation = async (targetId, otherId) => {
     const members = relationGroups.get(otherId)
-    const otherName = counterparties.find(c => c.id === otherId)?.name || 'Контрагент'
+    const otherName = counterpartyById.get(otherId)?.name || 'Контрагент'
     if (members && members.size > 2
       && !window.confirm(`${otherName} будет исключён из группы связанных контрагентов — связь пропадёт у всех участников группы (${members.size - 1}). Продолжить?`)) {
       return
@@ -508,6 +525,14 @@ function CounterpartiesPage() {
         changed_by_name: userProfile?.full_name || null,
       }])
       if (error) console.error('Не удалось записать историю контрагента:', error.message)
+      // Лента «Изменения» уже открывалась — перечитается при следующем открытии, а не покажет
+      // прежний снимок без этой правки.
+      else setAuditMap(prev => {
+        if (!(counterpartyId in prev)) return prev
+        const next = { ...prev }
+        delete next[counterpartyId]
+        return next
+      })
     } catch (err) {
       console.error('Ошибка записи истории контрагента:', err?.message || err)
     }
@@ -668,18 +693,7 @@ function CounterpartiesPage() {
 
       setShowCounterpartyModal(false)
       setEditingCounterparty(null)
-      setCounterpartyFormData({
-        name: '',
-        work_type: '',
-        department: '',
-        inn: '',
-        kpp: '',
-        legal_address: '',
-        actual_address: '',
-        website: '',
-        status: 'active',
-        notes: '',
-      })
+      setCounterpartyFormData(EMPTY_CP_FORM)
       setTempContacts([])
       fetchCounterparties()
     } catch (error) {
@@ -732,12 +746,7 @@ function CounterpartiesPage() {
 
       setShowContactModal(false)
       setEditingContact(null)
-      setContactFormData({
-        full_name: '',
-        position: '',
-        phone: '',
-        email: '',
-      })
+      setContactFormData(EMPTY_CONTACT_FORM)
       fetchCounterparties()
     } catch (error) {
       console.error('Ошибка сохранения контакта:', error.message)
@@ -759,11 +768,7 @@ function CounterpartiesPage() {
       status: counterparty.status || 'active',
       notes: counterparty.notes || '',
     })
-    // Парсим виды работ из строки в массив
-    const parsedWorkTypes = counterparty.work_type
-      ? counterparty.work_type.split(',').map(wt => wt.trim()).filter(wt => wt)
-      : []
-    setWorkTypes(parsedWorkTypes)
+    setWorkTypes(splitWorkTypes(counterparty.work_type))
     setWtSearch('')
     setWtDropdownOpen(false)
     // Загружаем существующие контакты в tempContacts
@@ -790,12 +795,7 @@ function CounterpartiesPage() {
     }
 
     // Очищаем форму контакта
-    setContactFormData({
-      full_name: '',
-      position: '',
-      phone: '',
-      email: '',
-    })
+    setContactFormData(EMPTY_CONTACT_FORM)
   }
 
   const handleEditTempContact = (index) => {
@@ -807,23 +807,13 @@ function CounterpartiesPage() {
     setTempContacts(tempContacts.filter((_, i) => i !== index))
     if (editingTempContactIndex === index) {
       setEditingTempContactIndex(null)
-      setContactFormData({
-        full_name: '',
-        position: '',
-        phone: '',
-        email: '',
-      })
+      setContactFormData(EMPTY_CONTACT_FORM)
     }
   }
 
   const handleCancelEditTempContact = () => {
     setEditingTempContactIndex(null)
-    setContactFormData({
-      full_name: '',
-      position: '',
-      phone: '',
-      email: '',
-    })
+    setContactFormData(EMPTY_CONTACT_FORM)
   }
 
   const handleAddContact = (counterparty) => {
@@ -832,12 +822,7 @@ function CounterpartiesPage() {
     // версиями браузера/Supabase глубокий объект иногда вызывает stack overflow при сериализации).
     setSelectedCounterparty({ id: counterparty.id, name: counterparty.name })
     setEditingContact(null)
-    setContactFormData({
-      full_name: '',
-      position: '',
-      phone: '',
-      email: '',
-    })
+    setContactFormData(EMPTY_CONTACT_FORM)
     setShowContactModal(true)
   }
 
@@ -911,12 +896,11 @@ function CounterpartiesPage() {
     })
   }
 
+  // Только видимые строки (вкладка, фильтр, поиск). Раньше выбирался весь загруженный список — и
+  // «В корзину» на вкладке «Активные» уносило заодно чёрный список, а «Удалить безвозвратно» на
+  // «Удалённых» — действующих контрагентов.
   const handleSelectAll = () => {
-    if (selectedCounterpartyIds.length === counterparties.length) {
-      setSelectedCounterpartyIds([])
-    } else {
-      setSelectedCounterpartyIds(counterparties.map(cp => cp.id))
-    }
+    setSelectedCounterpartyIds(allVisibleSelected ? [] : filteredCounterparties.map(cp => cp.id))
   }
 
   const handleBulkDelete = async () => {
@@ -967,7 +951,7 @@ function CounterpartiesPage() {
 
   // Функция для обновления статуса контрагента
   const handleStatusChange = async (counterpartyId, newStatus) => {
-    const prevStatus = counterparties.find(cp => cp.id === counterpartyId)?.status ?? null
+    const prevStatus = counterpartyById.get(counterpartyId)?.status ?? null
     try {
       const { error } = await db
         .from('counterparties')
@@ -995,7 +979,7 @@ function CounterpartiesPage() {
   // сохранение по blur.
   const handleNotesChange = async (counterpartyId, rawNotes) => {
     const notes = rawNotes.trim() || null
-    const prevNotes = counterparties.find(cp => cp.id === counterpartyId)?.notes ?? null
+    const prevNotes = counterpartyById.get(counterpartyId)?.notes ?? null
     // Сохранение идёт по blur — без этой проверки простой уход из поля писал бы
     // в историю пустую правку.
     if ((prevNotes || '') === (notes || '')) return
@@ -1018,7 +1002,7 @@ function CounterpartiesPage() {
   // НДС контрагента — во вкладке «Общая информация» (миграция 20261026). В CP_FIELD_LABEL его нет
   // намеренно: форма редактирования НДС не отправляет, и сравнение полей формы писало бы ложную правку.
   const handleVatChange = async (counterpartyId, selectValue) => {
-    const prev = counterparties.find(cp => cp.id === counterpartyId)
+    const prev = counterpartyById.get(counterpartyId)
     const next = vatFromSelect(selectValue)
     if (!prev) return
     const prevRate = prev.vat_rate == null ? null : Number(prev.vat_rate)
@@ -1048,30 +1032,26 @@ function CounterpartiesPage() {
     }
   }
 
+  // Договор прикреплён к контрагенту вручную или откреплён (раздел «Договоры и ДС» карточки пишет сам) — в журнал.
+  const handleContractLinkChange = (counterpartyId, eventType, doc) => {
+    const t = docTitle(doc)
+    const label = `${t.num}${t.date ? ` от ${t.date}` : ''}`
+    logCpEvent(counterpartyId, eventType, {
+      fieldName: 'contract',
+      oldValue: eventType === 'contract_unlinked' ? label : null,
+      newValue: eventType === 'contract_linked' ? label : null,
+      description: `${CP_EVENT_LABEL[eventType]} ${label}`,
+    })
+  }
+
   const handleAddNewCounterparty = () => {
     setEditingCounterparty(null)
-    setCounterpartyFormData({
-      name: '',
-      work_type: '',
-      department: '',
-      inn: '',
-      kpp: '',
-      legal_address: '',
-      actual_address: '',
-      website: '',
-      status: 'active',
-      notes: '',
-    })
+    setCounterpartyFormData(EMPTY_CP_FORM)
     setWorkTypes([])
     setWtSearch('')
     setWtDropdownOpen(false)
     setTempContacts([])
-    setContactFormData({
-      full_name: '',
-      position: '',
-      phone: '',
-      email: '',
-    })
+    setContactFormData(EMPTY_CONTACT_FORM)
     setEditingTempContactIndex(null)
     setShowCounterpartyModal(true)
   }
@@ -1121,13 +1101,10 @@ function CounterpartiesPage() {
 
     // Порядок берём как есть: filteredCounterparties уже отсортирован так же —
     // активные сверху, чёрный список снизу, внутри по имени.
-    const sorted = exportList
-
     const rows = []
-    sorted.forEach((cp, idx) => {
-      const num = idx + 1
+    exportList.forEach((cp, idx) => {
       const baseRow = [
-        num,
+        idx + 1,
         cp.name || '',
         cp.department || '',
         cp.work_type || '',
@@ -1140,35 +1117,18 @@ function CounterpartiesPage() {
         vatLabel(cp),
         cp.notes || '',
       ]
-
+      // Для второго и последующих контактов основные поля пустые — строки с контактами
+      // одной организации визуально группируются.
+      const blankRow = baseRow.map(() => '')
       const contacts = cp.counterparty_contacts || []
-      if (contacts.length === 0) {
-        rows.push([...baseRow, '', '', '', ''])
-      } else {
-        contacts.forEach((contact, ci) => {
-          // Для второго и последующих контактов оставляем основные поля пустыми,
-          // чтобы строки с контактами одной организации визуально группировались
-          const isFirst = ci === 0
-          rows.push([
-            isFirst ? num : '',
-            isFirst ? cp.name || '' : '',
-            isFirst ? cp.department || '' : '',
-            isFirst ? cp.work_type || '' : '',
-            isFirst ? cp.inn || '' : '',
-            isFirst ? cp.kpp || '' : '',
-            isFirst ? cp.legal_address || '' : '',
-            isFirst ? cp.actual_address || '' : '',
-            isFirst ? cp.website || '' : '',
-            isFirst ? statusLabel(cp.status) : '',
-            isFirst ? vatLabel(cp) : '',
-            isFirst ? cp.notes || '' : '',
-            contact.full_name || '',
-            contact.position || '',
-            contact.phone ? formatPhone(contact.phone) : '',
-            contact.email || '',
-          ])
-        })
-      }
+      if (contacts.length === 0) rows.push([...baseRow, '', '', '', ''])
+      contacts.forEach((contact, ci) => rows.push([
+        ...(ci === 0 ? baseRow : blankRow),
+        contact.full_name || '',
+        contact.position || '',
+        contact.phone ? formatPhone(contact.phone) : '',
+        contact.email || '',
+      ]))
     })
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
@@ -1215,23 +1175,7 @@ function CounterpartiesPage() {
   }
 
   const handleDownloadTemplate = () => {
-    const headers = [
-      'Наименование организации',
-      'Категория работ',
-      'Вид работ',
-      'ИНН',
-      'КПП',
-      'Юридический адрес',
-      'Фактический адрес',
-      'Ссылка на сайт',
-      'Статус',
-      'Примечание',
-      'ФИО контакта',
-      'Должность контакта',
-      'Телефон контакта',
-      'Email контакта'
-    ]
-
+    const headers = IMPORT_COLUMNS.map(c => c.name)
     const exampleRows = [
       ['ООО "Стройком"', 'Основное строительство', 'Строительно-монтажные работы', '7728123456', '772801001', 'г. Москва, ул. Ленина, д. 1', 'г. Москва, ул. Ленина, д. 1', 'https://stroykom.ru', 'Действующий', '', 'Иванов Иван Иванович', 'Директор', '+7(999)123-45-67', 'ivanov@stroykom.ru'],
       ['ООО "Стройком"', '', '', '7728123456', '772801001', '', '', '', '', '', 'Сидоров Сергей Петрович', 'Главный инженер', '+7(999)765-43-21', 'sidorov@stroykom.ru'],
@@ -1259,90 +1203,39 @@ function CounterpartiesPage() {
     setImporting(true)
 
     try {
-      const data = await file.arrayBuffer()
-      const workbook = XLSX.read(data)
+      const workbook = XLSX.read(await file.arrayBuffer())
       const worksheet = workbook.Sheets[workbook.SheetNames[0]]
       const jsonData = XLSX.utils.sheet_to_json(worksheet)
+      // Шапка и начало листа — один раз: гиперссылка сайта читается из ячейки по номеру колонки.
+      const headers = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] || []
+      const origin = XLSX.utils.decode_range(worksheet['!ref'] || 'A1').s
 
-      // Логируем первую строку для проверки названий столбцов
-      if (jsonData.length > 0) {
-        console.log('=== ДИАГНОСТИКА ИМПОРТА ===')
-        console.log('Столбцы в Excel файле:', Object.keys(jsonData[0]))
-        console.log('Первая строка данных:', jsonData[0])
-
-        // Проверяем конкретно наличие столбца Email контакта
-        const emailColumn = Object.keys(jsonData[0]).find(key =>
-          key.toLowerCase().includes('email') || key.toLowerCase().includes('почт')
-        )
-        if (emailColumn) {
-          console.log(`✓ Найден столбец с email: "${emailColumn}"`)
-          console.log(`  Значение в первой строке: "${jsonData[0][emailColumn]}"`)
-        } else {
-          console.warn('⚠️ Столбец Email контакта не найден!')
-          console.warn('  Доступные столбцы:', Object.keys(jsonData[0]))
-        }
-
-        // Проверяем соответствие заголовков и столбцов
-        const headers = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0]
-        console.log('Заголовки со столбцами:')
-        headers.forEach((header, index) => {
-          const col = XLSX.utils.encode_col(index)
-          console.log(`  Столбец ${col}: "${header}"`)
-        })
-
-        // Проверяем наличие гиперссылок в worksheet
-        const range = XLSX.utils.decode_range(worksheet['!ref'])
-        console.log('Проверяем гиперссылки в первых 5 строках:')
-        for (let R = range.s.r; R <= Math.min(range.s.r + 5, range.e.r); R++) {
-          for (let C = range.s.c; C <= range.e.c; C++) {
-            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
-            const cell = worksheet[cellAddress]
-            if (cell && cell.l) { // l - это гиперссылка
-              const colLetter = XLSX.utils.encode_col(C)
-              const headerName = headers[C] || 'без заголовка'
-              console.log(`Ячейка ${cellAddress} (столбец ${colLetter} - "${headerName}"): значение="${cell.v}", ссылка="${cell.l.Target}"`)
-            }
-          }
-        }
-      }
-
-      const errors = []
-      // Группируем данные по контрагентам (по имени + ИНН для уникальности)
-      const counterpartiesMap = new Map()
-
-      // Функция для извлечения гиперссылок из ячейки
-      const getHyperlinkFromCell = (rowIndex, columnName) => {
-        // Находим индекс столбца по имени
-        const headers = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0]
+      // Ячейка «Ссылка на сайт» бывает гиперссылкой с подписью — берём адрес, а не подпись.
+      // __rowNum__ — номер строки листа (пустые строки sheet_to_json пропускает).
+      const getHyperlinkFromCell = (row, columnName) => {
         const colIndex = headers.indexOf(columnName)
         if (colIndex === -1) return null
-
-        // Получаем адрес ячейки (rowIndex + 1 т.к. есть заголовок, + 1 т.к. начинается с 1)
-        const cellAddress = XLSX.utils.encode_cell({ r: rowIndex + 1, c: colIndex })
-        const cell = worksheet[cellAddress]
-
-        // Проверяем наличие гиперссылки
-        if (cell && cell.l && cell.l.Target) {
-          return cell.l.Target
-        }
-        return null
+        const cell = worksheet[XLSX.utils.encode_cell({ r: row.__rowNum__, c: origin.c + colIndex })]
+        return cell?.l?.Target || null
       }
 
-      // Определяем названия столбцов для контактов (с учетом возможных вариантов написания)
+      // Колонки контакта — с учётом возможных вариантов написания.
       const getColumnValue = (row, possibleNames) => {
         for (const name of possibleNames) {
           const key = Object.keys(row).find(k => k.trim().toLowerCase() === name.toLowerCase())
-          if (key && row[key]) {
-            return String(row[key]).trim()
-          }
+          if (key && row[key]) return String(row[key]).trim()
         }
         return null
       }
+      const text = (value) => (value ? String(value).trim() : null)
+
+      const errors = []
+      // Группируем строки по контрагентам (имя + ИНН): несколько строк — несколько контактов.
+      const counterpartiesMap = new Map()
 
       jsonData.forEach((row, index) => {
-        const rowNumber = index + 2
+        const rowNumber = (row.__rowNum__ ?? index + 1) + 1
 
-        // Проверяем обязательное поле - наименование организации
         if (!row['Наименование организации']) {
           errors.push(`Строка ${rowNumber}: отсутствует обязательное поле "Наименование организации"`)
           return
@@ -1350,76 +1243,34 @@ function CounterpartiesPage() {
 
         const counterpartyName = String(row['Наименование организации']).trim()
         const counterpartyInn = row['ИНН'] ? String(row['ИНН']).trim() : ''
-
-        // Уникальный ключ для группировки (имя + ИНН)
         const counterpartyKey = `${counterpartyName}_${counterpartyInn}`
 
-        // Если контрагент уже есть в Map, добавляем только контакт
         if (!counterpartiesMap.has(counterpartyKey)) {
-          // Пытаемся получить ссылку на сайт из гиперссылки или из обычного текста
-          let websiteUrl = null
-
-          // Ищем название столбца с учетом возможных пробелов
-          const websiteColumnNames = Object.keys(row).filter(key => key.trim() === 'Ссылка на сайт')
-          const websiteColumnName = websiteColumnNames[0] || 'Ссылка на сайт'
-
-          const hyperlinkUrl = getHyperlinkFromCell(index, websiteColumnName)
-
-          if (hyperlinkUrl) {
-            websiteUrl = hyperlinkUrl
-            console.log(`Строка ${rowNumber}: Найдена гиперссылка для "${counterpartyName}": ${hyperlinkUrl}`)
-          } else if (row[websiteColumnName]) {
-            websiteUrl = String(row[websiteColumnName]).trim()
-            console.log(`Строка ${rowNumber}: Найдена текстовая ссылка для "${counterpartyName}": ${websiteUrl}`)
-          } else {
-            console.log(`Строка ${rowNumber}: Ссылка на сайт отсутствует для "${counterpartyName}"`)
-          }
-
+          // Название колонки сайта — с учётом пробелов по краям.
+          const websiteColumnName = Object.keys(row).find(key => key.trim() === 'Ссылка на сайт') || 'Ссылка на сайт'
           counterpartiesMap.set(counterpartyKey, {
             name: counterpartyName,
-            department: row['Категория работ'] ? String(row['Категория работ']).trim() : null,
-            work_type: row['Вид работ'] ? String(row['Вид работ']).trim() : null,
+            department: text(row['Категория работ']),
+            work_type: text(row['Вид работ']),
             inn: counterpartyInn || null,
-            kpp: row['КПП'] ? String(row['КПП']).trim() : null,
-            legal_address: row['Юридический адрес'] ? String(row['Юридический адрес']).trim() : null,
-            actual_address: row['Фактический адрес'] ? String(row['Фактический адрес']).trim() : null,
-            website: websiteUrl,
+            kpp: text(row['КПП']),
+            legal_address: text(row['Юридический адрес']),
+            actual_address: text(row['Фактический адрес']),
+            website: getHyperlinkFromCell(row, websiteColumnName) || text(row[websiteColumnName]),
             status: row['Статус'] === 'Черный список' ? 'blacklist' : 'active',
-            notes: row['Примечание'] ? String(row['Примечание']).trim() : null,
-            contacts: []
+            notes: text(row['Примечание']),
+            contacts: [],
           })
         }
 
-        // Добавляем контакт к контрагенту (если указан)
         const contactFullName = getColumnValue(row, ['ФИО контакта', 'ФИО', 'Контактное лицо'])
         if (contactFullName) {
-          const counterpartyData = counterpartiesMap.get(counterpartyKey)
-
-          // Используем гибкий поиск для всех полей контакта
-          const contactEmail = getColumnValue(row, [
-            'Email контакта',
-            'E-mail контакта',
-            'Email',
-            'E-mail',
-            'Электронная почта',
-            'Почта'
-          ])
-
-          const contactData = {
+          counterpartiesMap.get(counterpartyKey).contacts.push({
             full_name: contactFullName,
             position: getColumnValue(row, ['Должность контакта', 'Должность']),
             phone: getColumnValue(row, ['Телефон контакта', 'Телефон', 'Тел.']),
-            email: contactEmail,
-          }
-          console.log(`Строка ${rowNumber}: Добавляем контакт для "${counterpartyName}":`, contactData)
-
-          if (!contactEmail) {
-            console.warn(`Строка ${rowNumber}: Email не найден для контакта "${contactFullName}"`)
-          }
-
-          counterpartyData.contacts.push(contactData)
-        } else {
-          console.log(`Строка ${rowNumber}: Поле "ФИО контакта" пустое или отсутствует`)
+            email: getColumnValue(row, ['Email контакта', 'E-mail контакта', 'Email', 'E-mail', 'Электронная почта', 'Почта']),
+          })
         }
       })
 
@@ -1427,53 +1278,43 @@ function CounterpartiesPage() {
 
       if (counterpartiesToInsert.length === 0) {
         setImportResult({ success: [], contacts: 0, errors: [...errors, 'Не найдено корректных данных для импорта'], totalParsed: jsonData.length })
-        setImporting(false)
         return
       }
 
       // Вставляем контрагентов по одному, чтобы отловить ошибки поштучно
       const successList = []
       const failList = [...errors]
+      let contactsInserted = 0
 
       for (const { contacts, ...cpData } of counterpartiesToInsert) {
         try {
           const { data: inserted, error: cpError } = await db
             .from('counterparties')
             .insert([cpData])
-            .select()
-
+            .select('id, name')
           if (cpError) throw cpError
+          successList.push(inserted[0].name)
 
-          successList.push(inserted[0])
-
-          // Вставляем контакты
-          if (contacts.length > 0 && inserted[0]) {
-            const contactsToInsert = contacts.map(c => ({ ...c, counterparty_id: inserted[0].id }))
+          if (contacts.length > 0) {
             const { error: contactsErr } = await db
               .from('counterparty_contacts')
-              .insert(contactsToInsert)
-            if (contactsErr) {
-              failList.push(`${cpData.name}: контакты не загружены — ${contactsErr.message}`)
-            }
+              .insert(contacts.map(c => ({ ...c, counterparty_id: inserted[0].id })))
+            if (contactsErr) failList.push(`${cpData.name}: контакты не загружены — ${contactsErr.message}`)
+            else contactsInserted += contacts.length
           }
         } catch (err) {
           failList.push(`${cpData.name}: ${err.message}`)
         }
       }
 
-      const totalContacts = successList.length > 0 ? counterpartiesToInsert
-        .filter(c => successList.some(s => s.name === c.name))
-        .reduce((sum, c) => sum + c.contacts.length, 0) : 0
-
       setImportResult({
-        success: successList.map(s => s.name),
-        contacts: totalContacts,
+        success: successList,
+        contacts: contactsInserted,
         errors: failList,
         totalParsed: counterpartiesToInsert.length
       })
 
       fetchCounterparties()
-      event.target.value = ''
     } catch (error) {
       console.error('Ошибка импорта:', error)
       setImportResult({
@@ -1483,78 +1324,71 @@ function CounterpartiesPage() {
         totalParsed: 0
       })
     } finally {
+      // Тот же файл можно выбрать повторно (иначе onChange не сработает).
+      event.target.value = ''
       setImporting(false)
     }
   }
 
-  // Получить уникальные виды работ (мемоизация)
-  const uniqueWorkTypes = useMemo(() => [...new Set(
-    counterparties
-      .flatMap(c => (c.work_type || '').split(',').map(wt => wt.trim()))
-      .filter(wt => wt !== '')
-  )].sort((a, b) => a.localeCompare(b, 'ru')), [counterparties])
+  // Уникальные виды работ (для фильтра) и сколько действующих контрагентов у каждого (справочник).
+  const { uniqueWorkTypes, workTypeUsage } = useMemo(() => {
+    const all = new Set()
+    const usage = new Map()
+    for (const c of counterparties) {
+      for (const wt of splitWorkTypes(c.work_type)) {
+        all.add(wt)
+        if (!c.deleted_at) usage.set(wt, (usage.get(wt) || 0) + 1)
+      }
+    }
+    return { uniqueWorkTypes: [...all].sort(ruCollator.compare), workTypeUsage: usage }
+  }, [counterparties])
+
+  // Текст поиска по каждому контрагенту (поля карточки и контакты) — один раз на загрузку списка, а не
+  // на каждую букву поиска. Поля разделены переводом строки: совпадение не склеивается из двух полей.
+  const searchTextById = useMemo(() => {
+    const map = new Map()
+    for (const c of counterparties) {
+      const parts = [c.name, c.work_type, c.inn, c.kpp, c.legal_address, c.actual_address, c.website, c.notes]
+      for (const ct of c.counterparty_contacts || []) parts.push(ct.full_name, ct.position, ct.phone, ct.email)
+      map.set(c.id, parts.filter(Boolean).join('\n').toLowerCase())
+    }
+    return map
+  }, [counterparties])
 
   // Фильтрация контрагентов (мемоизация)
-  const filteredCounterparties = useMemo(() => counterparties.filter(counterparty => {
-    // task 197 + 201: фильтр по активной вкладке (активные / чёрный список / удалённые)
-    if (activeTab === 'deleted') {
-      if (!counterparty.deleted_at) return false
-    } else if (activeTab === 'blacklist') {
-      if (counterparty.deleted_at) return false
-      if (counterparty.status !== 'blacklist') return false
-    } else {
-      // 'active'
-      if (counterparty.deleted_at) return false
-      if (counterparty.status === 'blacklist') return false
-    }
-
-    // Фильтр по виду работ (проверяем каждый вид отдельно)
-    if (workTypeFilter) {
-      const types = (counterparty.work_type || '').split(',').map(wt => wt.trim())
-      if (!types.includes(workTypeFilter)) return false
-    }
-
+  const filteredCounterparties = useMemo(() => {
     // task 339: фильтрация по deferred-значению — отвязана от ввода в input
-    if (!deferredSearchQuery.trim()) return true
+    const query = deferredSearchQuery.trim() ? deferredSearchQuery.toLowerCase() : ''
+    return counterparties.filter(counterparty => {
+      // task 197 + 201: фильтр по активной вкладке (активные / чёрный список / удалённые)
+      if (activeTab === 'deleted') {
+        if (!counterparty.deleted_at) return false
+      } else if (counterparty.deleted_at || (counterparty.status === 'blacklist') !== (activeTab === 'blacklist')) {
+        return false
+      }
+      // Фильтр по виду работ (проверяем каждый вид отдельно)
+      if (workTypeFilter && !splitWorkTypes(counterparty.work_type).includes(workTypeFilter)) return false
+      return !query || searchTextById.get(counterparty.id).includes(query)
+    }).sort((a, b) => {
+      // Сортировка: активные сверху, черный список снизу, внутри — по имени
+      if ((a.status === 'blacklist') !== (b.status === 'blacklist')) return a.status === 'blacklist' ? 1 : -1
+      return ruCollator.compare(a.name || '', b.name || '')
+    })
+  }, [counterparties, searchTextById, workTypeFilter, deferredSearchQuery, activeTab])
 
-    const query = deferredSearchQuery.toLowerCase()
-
-    // Поиск по основным полям контрагента
-    const matchesCounterparty =
-      (counterparty.name && counterparty.name.toLowerCase().includes(query)) ||
-      (counterparty.work_type && counterparty.work_type.toLowerCase().includes(query)) ||
-      (counterparty.inn && counterparty.inn.toLowerCase().includes(query)) ||
-      (counterparty.kpp && counterparty.kpp.toLowerCase().includes(query)) ||
-      (counterparty.legal_address && counterparty.legal_address.toLowerCase().includes(query)) ||
-      (counterparty.actual_address && counterparty.actual_address.toLowerCase().includes(query)) ||
-      (counterparty.website && counterparty.website.toLowerCase().includes(query)) ||
-      (counterparty.notes && counterparty.notes.toLowerCase().includes(query))
-
-    // Поиск по контактам
-    const matchesContact = counterparty.counterparty_contacts && counterparty.counterparty_contacts.some(contact =>
-      (contact.full_name && contact.full_name.toLowerCase().includes(query)) ||
-      (contact.position && contact.position.toLowerCase().includes(query)) ||
-      (contact.phone && contact.phone.toLowerCase().includes(query)) ||
-      (contact.email && contact.email.toLowerCase().includes(query))
-    )
-
-    return matchesCounterparty || matchesContact
-  }).sort((a, b) => {
-    // Сортировка: активные сверху, черный список снизу
-    if (a.status === 'blacklist' && b.status !== 'blacklist') return 1
-    if (a.status !== 'blacklist' && b.status === 'blacklist') return -1
-    // Если статусы одинаковые, сортируем по имени
-    return (a.name || '').localeCompare(b.name || '', 'ru')
-  }), [counterparties, workTypeFilter, deferredSearchQuery, activeTab])
+  const selectedSet = useMemo(() => new Set(selectedCounterpartyIds), [selectedCounterpartyIds])
+  const allVisibleSelected = filteredCounterparties.length > 0 && filteredCounterparties.every(cp => selectedSet.has(cp.id))
 
   // При смене вкладки/фильтра/поиска показываем список с начала (лёгкий первый экран).
   useEffect(() => {
     setVisibleCount(RENDER_STEP)
   }, [activeTab, workTypeFilter, deferredSearchQuery])
 
-  const activeCount = counterparties.filter(c => !c.deleted_at && c.status !== 'blacklist').length
-  const blacklistCount = counterparties.filter(c => !c.deleted_at && c.status === 'blacklist').length
-  const deletedCount = counterparties.filter(c => c.deleted_at).length
+  const tabCounts = useMemo(() => {
+    const counts = { active: 0, blacklist: 0, deleted: 0 }
+    for (const c of counterparties) counts[c.deleted_at ? 'deleted' : c.status === 'blacklist' ? 'blacklist' : 'active'] += 1
+    return counts
+  }, [counterparties])
 
   // task 196: подгружаем историю участия в тендерах (lazy)
   const fetchTenderHistory = async (counterpartyId) => {
@@ -1621,7 +1455,7 @@ function CounterpartiesPage() {
   // Колонки НДС появляются с миграцией 20261026; select('*') без них их просто не отдаёт.
   const vatSupported = counterparties.length === 0 || Object.prototype.hasOwnProperty.call(counterparties[0], 'vat_exempt')
   // Карточка открыта со снимком строки; правки (примечание, НДС) идут в список — показываем свежую.
-  const detailCpLive = detailCp ? (counterparties.find(c => c.id === detailCp.id) || detailCp) : null
+  const detailCpLive = detailCp ? (counterpartyById.get(detailCp.id) || detailCp) : null
 
   return (
     <div className="counterparties-page">
@@ -1735,7 +1569,7 @@ function CounterpartiesPage() {
           <div className="toolbar-selection">
             <span>Выбрано: {selectedCounterpartyIds.length}</span>
             <button className="btn-link" onClick={handleSelectAll}>
-              {selectedCounterpartyIds.length === filteredCounterparties.length ? 'Снять' : 'Выбрать все'}
+              {allVisibleSelected ? 'Снять' : 'Выбрать все'}
             </button>
             <button className="btn-bulk-delete" onClick={handleBulkDelete}>
               {activeTab === 'deleted' ? 'Удалить безвозвратно' : 'В корзину'}
@@ -1752,21 +1586,21 @@ function CounterpartiesPage() {
             onClick={() => switchTab('active')}
           >
             Активные
-            <span className="cp-tab-count">{activeCount}</span>
+            <span className="cp-tab-count">{tabCounts.active}</span>
           </button>
           <button
             className={`cp-tab cp-tab-blacklist ${activeTab === 'blacklist' ? 'active' : ''}`}
             onClick={() => switchTab('blacklist')}
           >
             Чёрный список
-            {blacklistCount > 0 && <span className="cp-tab-count">{blacklistCount}</span>}
+            {tabCounts.blacklist > 0 && <span className="cp-tab-count">{tabCounts.blacklist}</span>}
           </button>
           <button
             className={`cp-tab cp-tab-deleted ${activeTab === 'deleted' ? 'active' : ''}`}
             onClick={() => switchTab('deleted')}
           >
             Удалённые
-            {deletedCount > 0 && <span className="cp-tab-count">{deletedCount}</span>}
+            {tabCounts.deleted > 0 && <span className="cp-tab-count">{tabCounts.deleted}</span>}
           </button>
           {/* task 321: справочник видов работ — отдельная вкладка */}
           <button
@@ -1867,11 +1701,7 @@ function CounterpartiesPage() {
                         </td>
                       </tr>
                     ) : filteredWt.map((wt, idx) => {
-                      const used = counterparties.filter(cp => {
-                        if (cp.deleted_at) return false
-                        const list = (cp.work_type || '').split(',').map(x => x.trim())
-                        return list.includes(wt.name)
-                      }).length
+                      const used = workTypeUsage.get(wt.name) || 0
                       return (
                         <tr key={wt.id}>
                           <td style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
@@ -1980,7 +1810,7 @@ function CounterpartiesPage() {
                     <th className="col-checkbox">
                       <input
                         type="checkbox"
-                        checked={filteredCounterparties.length > 0 && selectedCounterpartyIds.length === filteredCounterparties.length}
+                        checked={allVisibleSelected}
                         onChange={handleSelectAll}
                       />
                     </th>
@@ -1999,187 +1829,170 @@ function CounterpartiesPage() {
                   {filteredCounterparties.slice(0, visibleCount).map((counterparty, cpIndex) => {
                     const contacts = counterparty.counterparty_contacts || []
                     const contactsCount = contacts.length
-                    const relCount = relationCountById.get(counterparty.id) || 0
+                    const isSelected = selectedSet.has(counterparty.id)
 
                     return (
-                      <React.Fragment key={counterparty.id}>
-                        <tr
-                          className={`table-row ${selectedCounterpartyIds.includes(counterparty.id) ? 'selected' : ''} ${counterparty.status === 'blacklist' ? 'blacklist' : ''}`}
-                          onClick={() => openDetail(counterparty)}
-                        >
-                          <td className="col-num">{cpIndex + 1}</td>
-                          <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
-                            {/* task 333: bulk-select только с правом редактирования */}
-                            {canEditCp && (
-                              <input
-                                type="checkbox"
-                                checked={selectedCounterpartyIds.includes(counterparty.id)}
-                                onChange={() => handleSelectCounterparty(counterparty.id)}
-                              />
-                            )}
-                          </td>
-                          <td className="col-name">
-                            <span className="company-name">{counterparty.name}</span>
-                            <CounterpartyCardChip
-                              counterparty={counterparty}
-                              card={cardsByCp.get(counterparty.id) || null}
-                              canEdit={canEditCp}
-                              onChange={(newCard) => setCardsByCp(prev => {
-                                const next = new Map(prev)
-                                if (newCard) next.set(counterparty.id, newCard)
-                                else next.delete(counterparty.id)
-                                return next
-                              })}
+                      <tr
+                        key={counterparty.id}
+                        className={`table-row ${isSelected ? 'selected' : ''} ${counterparty.status === 'blacklist' ? 'blacklist' : ''}`}
+                        onClick={() => openDetail(counterparty)}
+                      >
+                        <td className="col-num">{cpIndex + 1}</td>
+                        <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
+                          {/* task 333: bulk-select только с правом редактирования */}
+                          {canEditCp && (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleSelectCounterparty(counterparty.id)}
                             />
-                            {/* task 422: индикаторы Согласование СБ / Должная осмотрительность.
-                                Клик открывает detail-модалку на вкладке «Документы». */}
-                            <CounterpartyDocBadges
-                              summary={docSummaryByCp.get(counterparty.id)}
-                              showDate
-                              onOpen={() => openDetail(counterparty, 'documents')}
-                            />
-                            {(canEditCp || relCount > 0) && (
-                              <button
-                                type="button"
-                                className={`cp-relations-btn ${relCount > 0 ? 'has-rel' : ''}`}
-                                onClick={(e) => { e.stopPropagation(); openRelations(counterparty.id) }}
-                                title="Связи с другими контрагентами"
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                  <path d="M9 17H7A5 5 0 0 1 7 7h2" />
-                                  <path d="M15 7h2a5 5 0 1 1 0 10h-2" />
-                                  <line x1="8" x2="16" y1="12" y2="12" />
-                                </svg>
-                                <span>Связи{relCount > 0 ? ':' : ''}</span>
-                                {relCount > 0 && <span className="cp-rel-count">{relCount}</span>}
-                              </button>
-                            )}
-                          </td>
-                          <td className="col-worktype">
-                            {counterparty.work_type ? (
-                              <div className="worktype-list">
-                                {counterparty.work_type.split(',').map((wt, i) => (
-                                  <span key={i} className="worktype-tag">{wt.trim()}</span>
-                                ))}
-                              </div>
-                            ) : <span className="empty-cell">--</span>}
-                          </td>
-                          {/* task 196: только ИНН, без КПП */}
-                          <td className="col-inn">
-                            <span className="inn-value">{counterparty.inn || '--'}</span>
-                          </td>
-                          {/* task 199: «Контакты» — только Должность + ФИО, телефоны в отдельном столбце */}
-                          <td className="col-contact-name" onClick={(e) => e.stopPropagation()}>
-                            {contactsCount > 0 ? (
-                              <div className="contacts-stack">
-                                {contacts.map((c) => (
-                                  <div key={c.id} className="contact-stack-item">
-                                    {c.position && <div className="contact-position">{c.position}</div>}
-                                    <div className="contact-name">{c.full_name}</div>
+                          )}
+                        </td>
+                        <td className="col-name">
+                          <span className="company-name">{counterparty.name}</span>
+                          <CounterpartyCardChip
+                            counterparty={counterparty}
+                            card={cardsByCp.get(counterparty.id) || null}
+                            canEdit={canEditCp}
+                            onChange={(newCard) => setCardsByCp(prev => {
+                              const next = new Map(prev)
+                              if (newCard) next.set(counterparty.id, newCard)
+                              else next.delete(counterparty.id)
+                              return next
+                            })}
+                          />
+                          {/* task 422: индикаторы Согласование СБ / Должная осмотрительность.
+                              Клик открывает detail-модалку на вкладке «Документы». */}
+                          <CounterpartyDocBadges
+                            summary={docSummaryByCp.get(counterparty.id)}
+                            showDate
+                            onOpen={() => openDetail(counterparty, 'documents')}
+                          />
+                        </td>
+                        <td className="col-worktype">
+                          {counterparty.work_type ? (
+                            <div className="worktype-list">
+                              {counterparty.work_type.split(',').map((wt, i) => (
+                                <span key={i} className="worktype-tag">{wt.trim()}</span>
+                              ))}
+                            </div>
+                          ) : <span className="empty-cell">--</span>}
+                        </td>
+                        {/* task 196: только ИНН, без КПП */}
+                        <td className="col-inn">
+                          <span className="inn-value">{counterparty.inn || '--'}</span>
+                        </td>
+                        {/* task 199: «Контакты» — только Должность + ФИО, телефоны в отдельном столбце */}
+                        <td className="col-contact-name" onClick={(e) => e.stopPropagation()}>
+                          {contactsCount > 0 ? (
+                            <div className="contacts-stack">
+                              {contacts.map((c) => (
+                                <div key={c.id} className="contact-stack-item">
+                                  {c.position && <div className="contact-position">{c.position}</div>}
+                                  <div className="contact-name">{c.full_name}</div>
+                                </div>
+                              ))}
+                              {canEditCp && (
+                                <button
+                                  className="btn-add-contact-inline"
+                                  onClick={() => handleAddContact(counterparty)}
+                                  title="Добавить контакт"
+                                >+ контакт</button>
+                              )}
+                            </div>
+                          ) : canEditCp ? (
+                            <button
+                              className="btn-add-contact-inline btn-add-contact-empty"
+                              onClick={() => handleAddContact(counterparty)}
+                            >+ контакт</button>
+                          ) : (
+                            <span className="empty-cell">—</span>
+                          )}
+                        </td>
+                        {/* task 199: телефоны — отдельный столбец */}
+                        <td className="col-contact-phone" onClick={(e) => e.stopPropagation()}>
+                          {contactsCount > 0 && contacts.some(c => c.phone) ? (
+                            <div className="contacts-stack contacts-stack-phones">
+                              {contacts.map((c) => (
+                                c.phone ? (
+                                  <div key={c.id} className="phone-cell">
+                                    {c.phone.split(';').map((ph, i) => (
+                                      ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
+                                    ))}
                                   </div>
-                                ))}
+                                ) : (
+                                  <span key={c.id} className="empty-cell">--</span>
+                                )
+                              ))}
+                            </div>
+                          ) : <span className="empty-cell">--</span>}
+                        </td>
+                        <td className="col-contact-email" onClick={(e) => e.stopPropagation()}>
+                          {contactsCount > 0 && contacts.some(c => c.email) ? (
+                            <div className="contacts-stack contacts-stack-emails">
+                              {contacts.map((c) => (
+                                c.email ? (
+                                  <div key={c.id} className="phone-cell">
+                                    {c.email.split(';').map((em, i) => (
+                                      em.trim() && <a key={i} href={`mailto:${em.trim()}`} className="contact-link">{em.trim()}</a>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span key={c.id} className="empty-cell">--</span>
+                                )
+                              ))}
+                            </div>
+                          ) : <span className="empty-cell">--</span>}
+                        </td>
+                        <td className="col-website" onClick={(e) => e.stopPropagation()}>
+                          {counterparty.website ? (
+                            <a href={counterparty.website} target="_blank" rel="noopener noreferrer" className="contact-link">
+                              ссылка
+                            </a>
+                          ) : <span className="empty-cell">--</span>}
+                        </td>
+                        <td className="col-status" onClick={(e) => e.stopPropagation()}>
+                          {/* task 333: select становится disabled при read-only */}
+                          <select
+                            className={`status-select-mini ${counterparty.status === 'blacklist' ? 'blacklist' : 'active'}`}
+                            value={counterparty.status || 'active'}
+                            onChange={(e) => handleStatusChange(counterparty.id, e.target.value)}
+                            disabled={!canEditCp}
+                          >
+                            <option value="active">Активный</option>
+                            <option value="blacklist">ЧС</option>
+                          </select>
+                        </td>
+                        <td className="col-actions" onClick={(e) => e.stopPropagation()}>
+                          {/* task 333: actions только для can_edit (hard-delete — отдельно admin-only) */}
+                          <div className="actions-group">
+                            {activeTab === 'deleted' ? (
+                              <>
                                 {canEditCp && (
-                                  <button
-                                    className="btn-add-contact-inline"
-                                    onClick={() => handleAddContact(counterparty)}
-                                    title="Добавить контакт"
-                                  >+ контакт</button>
-                                )}
-                              </div>
-                            ) : canEditCp ? (
-                              <button
-                                className="btn-add-contact-inline btn-add-contact-empty"
-                                onClick={() => handleAddContact(counterparty)}
-                              >+ контакт</button>
-                            ) : (
-                              <span className="empty-cell">—</span>
-                            )}
-                          </td>
-                          {/* task 199: телефоны — отдельный столбец */}
-                          <td className="col-contact-phone" onClick={(e) => e.stopPropagation()}>
-                            {contactsCount > 0 && contacts.some(c => c.phone) ? (
-                              <div className="contacts-stack contacts-stack-phones">
-                                {contacts.map((c) => (
-                                  c.phone ? (
-                                    <div key={c.id} className="phone-cell">
-                                      {c.phone.split(';').map((ph, i) => (
-                                        ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <span key={c.id} className="empty-cell">--</span>
-                                  )
-                                ))}
-                              </div>
-                            ) : <span className="empty-cell">--</span>}
-                          </td>
-                          <td className="col-contact-email" onClick={(e) => e.stopPropagation()}>
-                            {contactsCount > 0 && contacts.some(c => c.email) ? (
-                              <div className="contacts-stack contacts-stack-emails">
-                                {contacts.map((c) => (
-                                  c.email ? (
-                                    <div key={c.id} className="phone-cell">
-                                      {c.email.split(';').map((em, i) => (
-                                        em.trim() && <a key={i} href={`mailto:${em.trim()}`} className="contact-link">{em.trim()}</a>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <span key={c.id} className="empty-cell">--</span>
-                                  )
-                                ))}
-                              </div>
-                            ) : <span className="empty-cell">--</span>}
-                          </td>
-                          <td className="col-website" onClick={(e) => e.stopPropagation()}>
-                            {counterparty.website ? (
-                              <a href={counterparty.website} target="_blank" rel="noopener noreferrer" className="contact-link">
-                                ссылка
-                              </a>
-                            ) : <span className="empty-cell">--</span>}
-                          </td>
-                          <td className="col-status" onClick={(e) => e.stopPropagation()}>
-                            {/* task 333: select становится disabled при read-only */}
-                            <select
-                              className={`status-select-mini ${counterparty.status === 'blacklist' ? 'blacklist' : 'active'}`}
-                              value={counterparty.status || 'active'}
-                              onChange={(e) => handleStatusChange(counterparty.id, e.target.value)}
-                              disabled={!canEditCp}
-                            >
-                              <option value="active">Активный</option>
-                              <option value="blacklist">ЧС</option>
-                            </select>
-                          </td>
-                          <td className="col-actions" onClick={(e) => e.stopPropagation()}>
-                            {/* task 333: actions только для can_edit (hard-delete — отдельно admin-only) */}
-                            <div className="actions-group">
-                              {activeTab === 'deleted' ? (
-                                <>
-                                  {canEditCp && (
-                                    <button className="btn-action btn-action-restore" onClick={() => handleRestoreCounterparty(counterparty.id)} title="Восстановить">
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>
-                                    </button>
-                                  )}
-                                  {isAdmin && (
-                                    <button className="btn-action delete" onClick={() => handleHardDeleteCounterparty(counterparty.id, counterparty.name)} title="Удалить безвозвратно (админ)">
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                                    </button>
-                                  )}
-                                </>
-                              ) : canEditCp ? (
-                                <>
-                                  {/* task 196: иконка открытия полной карточки компании */}
-                                  <button className="btn-action btn-action-card" onClick={() => handleEditCounterparty(counterparty)} title="Открыть полную карточку">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+                                  <button className="btn-action btn-action-restore" onClick={() => handleRestoreCounterparty(counterparty.id)} title="Восстановить">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>
                                   </button>
-                                  <button className="btn-action delete" onClick={() => handleDeleteCounterparty(counterparty.id, counterparty.name)} title="В корзину">
+                                )}
+                                {isAdmin && (
+                                  <button className="btn-action delete" onClick={() => handleHardDeleteCounterparty(counterparty.id, counterparty.name)} title="Удалить безвозвратно (админ)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                                   </button>
-                                </>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      </React.Fragment>
+                                )}
+                              </>
+                            ) : canEditCp ? (
+                              <>
+                                {/* task 196: иконка открытия полной карточки компании */}
+                                <button className="btn-action btn-action-card" onClick={() => handleEditCounterparty(counterparty)} title="Открыть полную карточку">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+                                </button>
+                                <button className="btn-action delete" onClick={() => handleDeleteCounterparty(counterparty.id, counterparty.name)} title="В корзину">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
                     )
                   })}
                   {visibleCount < filteredCounterparties.length && (
@@ -2266,6 +2079,7 @@ function CounterpartiesPage() {
                   counterparty={detailCpLive}
                   counterparties={counterparties}
                   canEdit={canEditCp}
+                  isAdmin={isAdmin}
                   canViewContracts={canView('contracts')}
                   isPhone={isPhone}
                   vatSupported={vatSupported}
@@ -2275,6 +2089,7 @@ function CounterpartiesPage() {
                   onAddAffiliate={(other) => handleAddRelation(detailCp.id, other.id)}
                   onRemoveAffiliate={(other) => handleRemoveRelation(detailCp.id, other.id)}
                   onOpenCounterparty={(other) => openDetail(other)}
+                  onContractLinkChange={(event, doc) => handleContractLinkChange(detailCp.id, event, doc)}
                 />
               )}
 
@@ -2344,9 +2159,6 @@ function CounterpartiesPage() {
                   <ul className="cp-history-cards">
                     {tenderHistoryMap[detailCp.id].map((h) => {
                       const status = h.status || 'request_sent'
-                      const fmt = (iso) => iso
-                        ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                        : '—'
                       return (
                         <li key={h.tender_id}>
                           <a href={`/tenders/${h.tender_id}`} className="cp-history-card">
@@ -2360,7 +2172,7 @@ function CounterpartiesPage() {
                             <div className="cp-history-card-desc">{h.work_description || '—'}</div>
                             <div className="cp-history-card-foot">
                               <span>{(h.tender_start_date || h.tender_end_date)
-                                ? `${fmt(h.tender_start_date)} → ${fmt(h.tender_end_date)}`
+                                ? `${fmtRuDate(h.tender_start_date) || '—'} → ${fmtRuDate(h.tender_end_date) || '—'}`
                                 : 'Сроки не указаны'}</span>
                               <span className="cp-history-card-open">Открыть ›</span>
                             </div>
@@ -2384,11 +2196,8 @@ function CounterpartiesPage() {
                       <tbody>
                         {tenderHistoryMap[detailCp.id].map((h, i) => {
                           const status = h.status || 'request_sent'
-                          const formatDate = (iso) => iso
-                            ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                            : null
-                          const startDate = formatDate(h.tender_start_date)
-                          const endDate = formatDate(h.tender_end_date)
+                          const startDate = fmtRuDate(h.tender_start_date)
+                          const endDate = fmtRuDate(h.tender_end_date)
                           return (
                             <tr key={h.tender_id}>
                               <td className="tender-history-num">{i + 1}</td>
@@ -2759,7 +2568,7 @@ function CounterpartiesPage() {
                 {/* Форма добавления/редактирования контакта */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem', marginBottom: '0.75rem' }}>
                   <div style={{ gridColumn: '1 / -1' }}>
-                    <label style={{ fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' }}>
+                    <label style={SUB_LABEL_STYLE}>
                       ФИО
                     </label>
                     <input
@@ -2772,11 +2581,11 @@ function CounterpartiesPage() {
                         })
                       }
                       placeholder="Иванов Иван Иванович"
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.875rem', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                      style={SUB_INPUT_STYLE}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' }}>
+                    <label style={SUB_LABEL_STYLE}>
                       Должность
                     </label>
                     <input
@@ -2789,88 +2598,37 @@ function CounterpartiesPage() {
                         })
                       }
                       placeholder="Директор"
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.875rem', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                      style={SUB_INPUT_STYLE}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' }}>
+                    <label style={SUB_LABEL_STYLE}>
                       Телефон
                     </label>
-                    {(contactFormData.phone || '').split(';').map((ph, phIdx, arr) => (
-                      <div key={phIdx} style={{ display: 'flex', gap: '0.25rem', marginBottom: phIdx < arr.length - 1 ? '0.25rem' : 0 }}>
-                        <input
-                          type="tel"
-                          value={ph.trim()}
-                          onChange={(e) => {
-                            const phones = (contactFormData.phone || '').split(';').map(p => p.trim())
-                            phones[phIdx] = formatPhone(e.target.value)
-                            setContactFormData({ ...contactFormData, phone: phones.join('; ') })
-                          }}
-                          placeholder="+7(916)712-69-10"
-                          style={{ flex: 1, padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.875rem', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
-                        />
-                        {arr.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const phones = (contactFormData.phone || '').split(';').map(p => p.trim()).filter((_, i) => i !== phIdx)
-                              setContactFormData({ ...contactFormData, phone: phones.join('; ') })
-                            }}
-                            style={{ padding: '0 0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.875rem' }}
-                            title="Удалить номер"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setContactFormData({ ...contactFormData, phone: (contactFormData.phone || '') + '; ' })}
-                      style={{ marginTop: '0.25rem', padding: '0.25rem 0.5rem', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem' }}
-                    >
-                      + Ещё номер
-                    </button>
+                    <MultiValueInput
+                      variant="form"
+                      type="tel"
+                      value={contactFormData.phone}
+                      onChange={(phone) => setContactFormData({ ...contactFormData, phone })}
+                      format={formatPhone}
+                      placeholder="+7(916)712-69-10"
+                      addLabel="+ Ещё номер"
+                      removeTitle="Удалить номер"
+                    />
                   </div>
                   <div style={{ gridColumn: '1 / -1' }}>
-                    <label style={{ fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '0.25rem', display: 'block' }}>
+                    <label style={SUB_LABEL_STYLE}>
                       Email
                     </label>
-                    {(contactFormData.email || '').split(';').map((em, emIdx, arr) => (
-                      <div key={emIdx} style={{ display: 'flex', gap: '0.25rem', marginBottom: emIdx < arr.length - 1 ? '0.25rem' : 0 }}>
-                        <input
-                          type="email"
-                          value={em.trim()}
-                          onChange={(e) => {
-                            const emails = (contactFormData.email || '').split(';').map(x => x.trim())
-                            emails[emIdx] = e.target.value
-                            setContactFormData({ ...contactFormData, email: emails.join('; ') })
-                          }}
-                          placeholder="email@example.com"
-                          style={{ flex: 1, padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.875rem', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
-                        />
-                        {arr.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const emails = (contactFormData.email || '').split(';').map(x => x.trim()).filter((_, i) => i !== emIdx)
-                              setContactFormData({ ...contactFormData, email: emails.join('; ') })
-                            }}
-                            style={{ padding: '0 0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.875rem' }}
-                            title="Удалить email"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setContactFormData({ ...contactFormData, email: (contactFormData.email || '') + '; ' })}
-                      style={{ marginTop: '0.25rem', padding: '0.25rem 0.5rem', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem' }}
-                    >
-                      + Ещё email
-                    </button>
+                    <MultiValueInput
+                      variant="form"
+                      type="email"
+                      value={contactFormData.email}
+                      onChange={(email) => setContactFormData({ ...contactFormData, email })}
+                      placeholder="email@example.com"
+                      addLabel="+ Ещё email"
+                      removeTitle="Удалить email"
+                    />
                   </div>
                 </div>
 
@@ -2980,74 +2738,29 @@ function CounterpartiesPage() {
 
                 <div className="form-group">
                   <label>Телефон</label>
-                  {(contactFormData.phone || '').split(';').map((ph, phIdx, arr) => (
-                    <div key={phIdx} style={{ display: 'flex', gap: '0.25rem', marginBottom: phIdx < arr.length - 1 ? '0.25rem' : 0 }}>
-                      <input
-                        type="tel"
-                        value={ph.trim()}
-                        onChange={(e) => {
-                          const phones = (contactFormData.phone || '').split(';').map(p => p.trim())
-                          phones[phIdx] = formatPhone(e.target.value)
-                          setContactFormData({ ...contactFormData, phone: phones.join('; ') })
-                        }}
-                        placeholder="+7(916)712-69-10"
-                        style={{ flex: 1 }}
-                      />
-                      {arr.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const phones = (contactFormData.phone || '').split(';').map(p => p.trim()).filter((_, i) => i !== phIdx)
-                            setContactFormData({ ...contactFormData, phone: phones.join('; ') })
-                          }}
-                          style={{ padding: '0 0.5rem', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer' }}
-                        >×</button>
-                      )}
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setContactFormData({ ...contactFormData, phone: (contactFormData.phone || '') + '; ' })}
-                    style={{ marginTop: '0.25rem', padding: '0.25rem 0', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem', textAlign: 'left' }}
-                  >
-                    + Ещё номер
-                  </button>
+                  <MultiValueInput
+                    variant="modal"
+                    type="tel"
+                    value={contactFormData.phone}
+                    onChange={(phone) => setContactFormData({ ...contactFormData, phone })}
+                    format={formatPhone}
+                    placeholder="+7(916)712-69-10"
+                    addLabel="+ Ещё номер"
+                    removeTitle="Удалить номер"
+                  />
                 </div>
 
                 <div className="form-group full-width">
                   <label>Email</label>
-                  {(contactFormData.email || '').split(';').map((em, emIdx, arr) => (
-                    <div key={emIdx} style={{ display: 'flex', gap: '0.25rem', marginBottom: emIdx < arr.length - 1 ? '0.25rem' : 0 }}>
-                      <input
-                        type="email"
-                        value={em.trim()}
-                        onChange={(e) => {
-                          const emails = (contactFormData.email || '').split(';').map(x => x.trim())
-                          emails[emIdx] = e.target.value
-                          setContactFormData({ ...contactFormData, email: emails.join('; ') })
-                        }}
-                        placeholder="email@example.com"
-                        style={{ flex: 1 }}
-                      />
-                      {arr.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const emails = (contactFormData.email || '').split(';').map(x => x.trim()).filter((_, i) => i !== emIdx)
-                            setContactFormData({ ...contactFormData, email: emails.join('; ') })
-                          }}
-                          style={{ padding: '0 0.5rem', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer' }}
-                        >×</button>
-                      )}
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setContactFormData({ ...contactFormData, email: (contactFormData.email || '') + '; ' })}
-                    style={{ marginTop: '0.25rem', padding: '0.25rem 0', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem', textAlign: 'left' }}
-                  >
-                    + Ещё email
-                  </button>
+                  <MultiValueInput
+                    variant="modal"
+                    type="email"
+                    value={contactFormData.email}
+                    onChange={(email) => setContactFormData({ ...contactFormData, email })}
+                    placeholder="email@example.com"
+                    addLabel="+ Ещё email"
+                    removeTitle="Удалить email"
+                  />
                 </div>
               </div>
 
@@ -3123,94 +2836,6 @@ function CounterpartiesPage() {
       )}
 
       {/* Modal с инструкцией по импорту */}
-      {/* Модалка связей контрагента: текущие связи (с удалением) + добавление новой.
-          Клик по подложке не закрывает — только крестик. */}
-      {showRelationModal && (() => {
-        const target = counterparties.find(c => c.id === relationTargetId)
-        const currentRelated = getRelatedCounterparties(relationTargetId)
-        const relatedIdSet = new Set(currentRelated.map(r => r.id))
-        const q = relationSearchQuery.trim().toLowerCase()
-        const available = counterparties.filter(c => {
-          if (c.id === relationTargetId) return false
-          if (relatedIdSet.has(c.id)) return false
-          if (!q) return true
-          return (c.name && c.name.toLowerCase().includes(q)) || (c.inn && c.inn.toLowerCase().includes(q))
-        })
-        return (
-          <div className="modal-overlay">
-            <div className="modal relation-modal">
-              <div className="modal-header">
-                <h3>Связи{target ? ` — ${target.name}` : ''}</h3>
-                <button className="modal-close" onClick={() => { setShowRelationModal(false); setRelationSearchQuery('') }}>&times;</button>
-              </div>
-              <div className="relation-modal-body">
-                {/* Текущие связи */}
-                <div className="relation-section">
-                  <div className="relation-section-title">
-                    Текущие связи{currentRelated.length > 0 ? ` (${currentRelated.length})` : ''}
-                  </div>
-                  {currentRelated.length > 1 && (
-                    <div className="relation-group-hint">
-                      Связь общая для группы: все перечисленные контрагенты связаны и между собой.
-                    </div>
-                  )}
-                  {currentRelated.length === 0 ? (
-                    <div className="relation-empty">Связей пока нет</div>
-                  ) : (
-                    <div className="relation-chips">
-                      {currentRelated.map(r => (
-                        <span key={r.id} className="relation-chip">
-                          <span className="relation-chip-name">{r.name}</span>
-                          {canEditCp && (
-                            <button
-                              type="button"
-                              className="relation-chip-remove"
-                              onClick={() => handleRemoveRelation(relationTargetId, r.id)}
-                              title="Исключить из группы связанных"
-                              aria-label="Исключить из группы связанных"
-                            >&times;</button>
-                          )}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Добавить связь */}
-                {canEditCp && (
-                  <div className="relation-section">
-                    <div className="relation-section-title">Добавить связь</div>
-                    <input
-                      type="text"
-                      placeholder="Поиск контрагента..."
-                      value={relationSearchQuery}
-                      onChange={(e) => setRelationSearchQuery(e.target.value)}
-                      className="relation-search-input"
-                    />
-                    <div className="relation-list">
-                      {available.slice(0, 20).map(c => (
-                        <div
-                          key={c.id}
-                          className="relation-option"
-                          onClick={() => handleAddRelation(relationTargetId, c.id)}
-                        >
-                          <span className="relation-option-name">{c.name}</span>
-                          {c.inn && <span className="relation-option-inn">ИНН: {c.inn}</span>}
-                          {c.work_type && <span className="relation-option-worktype">{c.work_type}</span>}
-                        </div>
-                      ))}
-                      {available.length === 0 && (
-                        <div className="relation-empty">Нет доступных контрагентов</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      })()}
-
       {showImportInstructionsModal && (
         <div className="modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowImportInstructionsModal(false) }}>
           <div className="modal" style={{ maxWidth: '800px' }}>
@@ -3254,78 +2879,15 @@ function CounterpartiesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Наименование организации</td>
-                      <td style={{ padding: '0.5rem' }}>
-                        <span style={{ color: '#b91c1c', fontWeight: '600' }}>Да</span>
-                      </td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>ООО «Стройком»</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Категория работ</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>Основное строительство, Гарантийный отдел</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Вид работ</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>Строительно-монтажные работы</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>ИНН</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>7728123456</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>КПП</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>772801001</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Юридический адрес</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>г. Москва, ул. Ленина, д. 1</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Фактический адрес</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>г. Москва, ул. Ленина, д. 1</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Ссылка на сайт</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>https://stroykom.ru</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Статус</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>Действующий или Черный список</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Примечание</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>Хороший подрядчик, рекомендуем</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>ФИО контакта</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>Иванов Иван Иванович</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Должность контакта</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>Директор</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Телефон контакта</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>+7 (999) 123-45-67</td>
-                    </tr>
-                    <tr>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>Email контакта</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>
-                      <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>director@stroykom.ru</td>
-                    </tr>
+                    {IMPORT_COLUMNS.map((col, i) => (
+                      <tr key={col.name} style={i < IMPORT_COLUMNS.length - 1 ? { borderBottom: '1px solid var(--border-color)' } : undefined}>
+                        <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>{col.name}</td>
+                        {col.required
+                          ? <td style={{ padding: '0.5rem' }}><span style={{ color: '#b91c1c', fontWeight: '600' }}>Да</span></td>
+                          : <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)' }}>Нет</td>}
+                        <td style={{ padding: '0.5rem', color: 'var(--text-tertiary)', fontSize: '0.8125rem' }}>{col.example}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>

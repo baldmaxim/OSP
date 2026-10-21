@@ -17,13 +17,14 @@ function Field({ label, children }) {
 }
 
 // Вкладка «Общая информация» карточки контрагента: реквизиты, НДС, примечание, аффилированные компании и
-// договоры с ДС. Аффилированные — это группа «Связей» (counterparty_relations, utils/counterpartyGroups.js):
-// добавление и исключение идут теми же обработчиками страницы, что и в окне «Связи». Записи делает
-// страница (onSave…, onAdd…, onRemove…): у неё список контрагентов и журнал правок.
+// договоры с ДС. Аффилированные — группа связанных контрагентов (counterparty_relations, читается группами —
+// utils/counterpartyGroups.js). Записи делает страница (onSave…, onAdd…, onRemove…, onContractLinkChange):
+// у неё список контрагентов и журнал правок; договоры прикрепляет и открепляет сам раздел «Договоры и ДС».
 export default function CounterpartyGeneralTab({
   counterparty,
   counterparties,
   canEdit,
+  isAdmin,
   canViewContracts,
   isPhone,
   vatSupported,
@@ -33,6 +34,7 @@ export default function CounterpartyGeneralTab({
   onAddAffiliate,
   onRemoveAffiliate,
   onOpenCounterparty,
+  onContractLinkChange,
 }) {
   const [vatSaving, setVatSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -170,7 +172,7 @@ export default function CounterpartyGeneralTab({
               Аффилированные компании{affiliates.length > 0 ? ` (${affiliates.length})` : ''}
             </h4>
             <p className="cpg-hint">
-              Тот же список, что «Связи» в реестре: компании группы связаны между собой.
+              Компании группы связаны между собой: добавленная видна в карточке каждой.
             </p>
             {affiliates.length === 0 ? (
               <div className="cpg-muted">Не указаны.</div>
@@ -232,7 +234,8 @@ export default function CounterpartyGeneralTab({
       <section className="cpg-section cpg-contracts">
         <h4 className="cpg-section-title">Договоры и ДС</h4>
         {canViewContracts
-          ? <CounterpartyContracts counterpartyId={cp.id} isPhone={isPhone} />
+          ? <CounterpartyContracts key={cp.id} counterpartyId={cp.id} isPhone={isPhone} canEdit={canEdit}
+              isAdmin={isAdmin} onLinkChange={onContractLinkChange} />
           : <div className="cpg-muted">Нет доступа к разделу «Договоры и ДС».</div>}
       </section>
     </div>

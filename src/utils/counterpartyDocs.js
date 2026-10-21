@@ -13,6 +13,22 @@ export function docTitle(doc) {
   return { kind, num, date: fmtDate(doc.contract_date) }
 }
 
+// Выбор договора для «Прикрепить договор»: каждое слово запроса — в номере, предмете, объекте или контрагенте
+// договора (в любом порядке: «П-15 северный»); уже показанные в разделе — не предлагаются.
+export function searchContractChoices(choices, query, excludeIds, limit = 8) {
+  const words = String(query || '').toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return []
+  const out = []
+  for (const c of choices) {
+    if (excludeIds.has(c.id)) continue
+    const hay = [c.contract_number, c.work_name, c.objects?.name, c.counterparties?.name].join(' ').toLowerCase()
+    if (!words.every(w => hay.includes(w))) continue
+    out.push(c)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
 // Группы: корень (договор; ДС, чей родитель не загружен, — тоже корень, чтобы не потерялось) и его ДС
 // сверху вниз с глубиной. Свежие договоры — выше. actual — сумма договора с завершёнными ДС, только если
 // она отличается от суммы самого договора.

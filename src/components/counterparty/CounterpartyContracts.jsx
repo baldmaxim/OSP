@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { db } from '../../api'
-import { chunkList } from '../../utils/inChunks'
 import { formatMoney } from '../../utils/estimateImport'
 import { DOC_TYPE, effectiveDocumentAmount } from '../../utils/contractAmendments'
-import { docTitle, groupCounterpartyDocs } from '../../utils/counterpartyDocs'
+import { docTitle, groupCounterpartyDocs, searchContractChoices } from '../../utils/counterpartyDocs'
+import {
+  attachContract, detachContract, loadContractChoices, loadCounterpartyDocs,
+} from '../../services/counterpartyContracts'
+import { employeeName, employeesById, fetchEmployees } from '../../services/employees'
 
 // Держать в согласии со STATUS_OPTIONS в ContractsPage.jsx.
 const STATUS_LABEL = {
@@ -14,41 +16,16 @@ const STATUS_LABEL = {
   completed: 'Завершено',
 }
 
-const DOC_FIELDS = 'id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, '
-  + 'contract_number, contract_date, contract_amount, psdc_total, currency, work_name, objects(name)'
+// ФИО тех, кто прикрепил договор, — только администратору; справочник один на все карточки.
+let employeesPromise = null
+const loadEmployeeMap = () => {
+  employeesPromise ||= fetchEmployees().then(employeesById).catch((err) => { employeesPromise = null; throw err })
+  return employeesPromise
+}
 
-// В адрес уходят два списка id (id.in и root_contract_id.in) — порция меньше обычной.
-const ROOT_CHUNK = 50
-
-// Договоры и ДС, где контрагент — сторона: основной контрагент договора (contracts.counterparty_id) или одна
-// из сторон (contract_counterparties). ДС берутся всем деревом договора: сторону ДС не переназначает.
-async function loadCounterpartyDocs(counterpartyId) {
-  const [direct, parties] = await Promise.all([
-    db.from('contracts').select('id, root_contract_id').eq('counterparty_id', counterpartyId).is('deleted_at', null),
-    db.from('contract_counterparties').select('contracts(id, root_contract_id, deleted_at)').eq('counterparty_id', counterpartyId),
-  ])
-  if (direct.error) throw direct.error
-  if (parties.error) throw parties.error
-  const roots = new Set()
-  for (const d of direct.data || []) roots.add(d.root_contract_id || d.id)
-  for (const p of parties.data || []) {
-    const c = p.contracts
-    if (c && !c.deleted_at) roots.add(c.root_contract_id || c.id)
-  }
-  if (roots.size === 0) return []
-  const parts = await Promise.all(chunkList([...roots], ROOT_CHUNK).map(async (ids) => {
-    const list = ids.join(',')
-    const { data, error } = await db
-      .from('contracts')
-      .select(DOC_FIELDS)
-      .or(`id.in.(${list}),root_contract_id.in.(${list})`)
-      .is('deleted_at', null)
-    if (error) throw error
-    return data || []
-  }))
-  const byId = new Map()
-  for (const row of parts.flat()) byId.set(row.id, row)
-  return [...byId.values()]
+const fmtDateTime = (ts) => {
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? '' : `${d.toLocaleDateString('ru-RU')}, ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
 }
 
 function StatusBadge({ status }) {
@@ -56,52 +33,187 @@ function StatusBadge({ status }) {
   return <span className={`cpg-cstatus cpg-cstatus-${value}`}>{STATUS_LABEL[value] || value}</span>
 }
 
-export default function CounterpartyContracts({ counterpartyId, isPhone }) {
-  const [state, setState] = useState({ loading: true, error: '', docs: [] })
+const docLink = (doc, children) => (
+  <a href={`/contracts/${doc.id}`} target="_blank" rel="noopener noreferrer" className="cpg-doc-link"
+     title="Открыть карточку документа в новой вкладке">{children}</a>
+)
+
+// Договор в разделе только благодаря ручной привязке: администратору — пометка (кто и когда прикрепил),
+// с правом правки — «открепить».
+function ManualControls({ doc, link, isAdmin, canEdit, names, onDetach }) {
+  if (!link) return null
+  const t = docTitle(doc)
+  const who = names ? employeeName(names, link.created_by, 'не записан') : ''
+  const title = ['Прикреплён к контрагенту вручную', who && `прикрепил: ${who}`, link.created_at && fmtDateTime(link.created_at)]
+    .filter(Boolean).join(' · ')
+  return (
+    <>
+      {isAdmin && <span className="cpg-manual" title={title}>добавлен вручную</span>}
+      {canEdit && (
+        <button type="button" className="cpg-icon-btn cpg-detach" onClick={() => onDetach(doc)}
+                title="Открепить договор от контрагента" aria-label={`Открепить ${t.kind.toLowerCase()} ${t.num} от контрагента`}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      )}
+    </>
+  )
+}
+
+// Выбор договора из реестра: поиск по номеру, предмету, объекту и контрагенту.
+function AttachPicker({ excludeIds, onPick, onClose }) {
+  const [query, setQuery] = useState('')
+  const [choices, setChoices] = useState(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    loadContractChoices()
+      .then((list) => { if (alive) setChoices(list) })
+      .catch((err) => { if (alive) setError(err?.message || 'ошибка запроса') })
+    return () => { alive = false }
+  }, [])
+
+  const found = useMemo(() => (choices ? searchContractChoices(choices, query, excludeIds) : []), [choices, query, excludeIds])
+
+  const pick = async (choice) => {
+    setBusy(true)
+    if (!(await onPick(choice))) setBusy(false)
+  }
+
+  return (
+    <div className="cpg-attach">
+      <div className="cpg-attach-row">
+        <input
+          type="text"
+          className="cpg-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
+          placeholder="№ договора, предмет, объект или контрагент"
+          aria-label="Поиск договора в реестре «Договоры и ДС»"
+          disabled={busy}
+          autoFocus
+        />
+        <button type="button" className="cpg-link-btn" onClick={onClose}>Отмена</button>
+      </div>
+      {error ? (
+        <div className="cpg-muted cpg-attach-note">Не удалось загрузить реестр договоров: {error}</div>
+      ) : query.trim() && (
+        <ul className="cpg-search-results">
+          {!choices ? (
+            <li className="cpg-muted cpg-search-empty">Загрузка реестра договоров…</li>
+          ) : found.length === 0 ? (
+            <li className="cpg-muted cpg-search-empty">Не найдено в реестре «Договоры и ДС»</li>
+          ) : found.map((c) => {
+            const t = docTitle(c)
+            return (
+              <li key={c.id}>
+                <button type="button" className="cpg-search-option cpg-choice" onClick={() => pick(c)} disabled={busy}>
+                  <span className="cpg-search-name">{t.num}{t.date ? ` от ${t.date}` : ''}{c.work_name ? ` · ${c.work_name}` : ''}</span>
+                  <span className="cpg-search-inn">{[c.objects?.name, c.counterparties?.name].filter(Boolean).join(' · ')}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// Монтируется заново на каждого контрагента (key в CounterpartyGeneralTab): открытый выбор договора не
+// переезжает в карточку другой компании.
+export default function CounterpartyContracts({ counterpartyId, isPhone, canEdit, isAdmin, onLinkChange }) {
+  const [state, setState] = useState({ loading: true, error: '', docs: [], manual: new Map(), linksSupported: false })
+  const [picking, setPicking] = useState(false)
+  const [names, setNames] = useState(null)
   // Карточку переключили на другого контрагента, пока шёл запрос, — опоздавший ответ не показываем.
   const requestRef = useRef(0)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ quiet = false } = {}) => {
     const request = ++requestRef.current
-    setState({ loading: true, error: '', docs: [] })
+    if (!quiet) setState(s => ({ ...s, loading: true, error: '', docs: [] }))
     try {
-      const docs = await loadCounterpartyDocs(counterpartyId)
-      if (request === requestRef.current) setState({ loading: false, error: '', docs })
+      const data = await loadCounterpartyDocs(counterpartyId)
+      if (request === requestRef.current) setState({ loading: false, error: '', ...data })
     } catch (err) {
       console.error('Договоры контрагента:', err?.message || err)
-      if (request === requestRef.current) setState({ loading: false, error: err?.message || 'ошибка запроса', docs: [] })
+      if (request === requestRef.current) setState(s => ({ ...s, loading: false, error: err?.message || 'ошибка запроса', docs: [] }))
     }
   }, [counterpartyId])
 
   useEffect(() => { load() }, [load])
 
-  const groups = useMemo(() => groupCounterpartyDocs(state.docs), [state.docs])
+  const hasManual = state.manual.size > 0
+  useEffect(() => {
+    if (!isAdmin || !hasManual || names) return
+    loadEmployeeMap().then(setNames).catch(() => {})
+  }, [isAdmin, hasManual, names])
 
-  const contractsCount = groups.filter(g => g.root.record_type === DOC_TYPE.CONTRACT).length
-  const amendmentsCount = state.docs.length - contractsCount
+  const groups = useMemo(() => groupCounterpartyDocs(state.docs), [state.docs])
+  const shownIds = useMemo(() => new Set(state.docs.map(d => d.id)), [state.docs])
+
+  const attach = async (choice) => {
+    try {
+      await attachContract(counterpartyId, choice.id)
+    } catch (err) {
+      alert('Не удалось прикрепить договор: ' + (err?.message || err))
+      return false
+    }
+    onLinkChange?.('contract_linked', choice)
+    setPicking(false)
+    await load({ quiet: true })
+    return true
+  }
+
+  const detach = async (doc) => {
+    const t = docTitle(doc)
+    if (!window.confirm(`Открепить договор ${t.num} от контрагента? Сам договор останется в реестре «Договоры и ДС».`)) return
+    try {
+      await detachContract(counterpartyId, doc.id)
+    } catch (err) {
+      alert('Не удалось открепить договор: ' + (err?.message || err))
+      return
+    }
+    onLinkChange?.('contract_unlinked', doc)
+    await load({ quiet: true })
+  }
 
   if (state.loading) return <div className="cpg-muted">Загрузка договоров…</div>
   if (state.error) {
     return (
       <div className="cpg-muted">
         Не удалось загрузить договоры: {state.error}{' '}
-        <button type="button" className="cpg-link-btn" onClick={load}>Повторить</button>
+        <button type="button" className="cpg-link-btn" onClick={() => load()}>Повторить</button>
       </div>
     )
   }
-  if (groups.length === 0) return <div className="cpg-muted">Договоров и ДС с этим контрагентом нет.</div>
 
-  const docLink = (doc, children) => (
-    <a href={`/contracts/${doc.id}`} target="_blank" rel="noopener noreferrer" className="cpg-doc-link"
-       title="Открыть карточку документа в новой вкладке">{children}</a>
-  )
+  const contractsCount = groups.filter(g => g.root.record_type === DOC_TYPE.CONTRACT).length
+  const amendmentsCount = state.docs.length - contractsCount
+  const canAttach = canEdit && state.linksSupported
+  const manualProps = (doc) => ({
+    doc, link: state.manual.get(doc.id), isAdmin, canEdit, names, onDetach: detach,
+  })
 
   return (
     <>
-      <div className="cpg-contracts-count">
-        Договоров: {contractsCount}{amendmentsCount > 0 ? ` · ДС: ${amendmentsCount}` : ''}
+      <div className="cpg-contracts-bar">
+        <span className="cpg-contracts-count">
+          {groups.length === 0
+            ? 'Договоров и ДС с этим контрагентом нет.'
+            : `Договоров: ${contractsCount}${amendmentsCount > 0 ? ` · ДС: ${amendmentsCount}` : ''}`}
+        </span>
+        {canAttach && !picking && (
+          <button type="button" className="cpg-link-btn cpg-attach-btn" onClick={() => setPicking(true)}>
+            + Прикрепить договор
+          </button>
+        )}
       </div>
-      {isPhone ? (
+      {picking && <AttachPicker excludeIds={shownIds} onPick={attach} onClose={() => setPicking(false)} />}
+
+      {groups.length === 0 ? null : isPhone ? (
         <ul className="cpg-contract-cards">
           {groups.map(({ root, children, actual }) => (
             <li key={root.id} className="cpg-contract-card">
@@ -114,6 +226,7 @@ export default function CounterpartyContracts({ counterpartyId, isPhone }) {
                       <div>
                         <span className="cpg-doc-kind">{t.kind}</span>
                         {docLink(doc, `${t.num}${t.date ? ` от ${t.date}` : ''}`)}
+                        {depth < 0 && <ManualControls {...manualProps(doc)} />}
                       </div>
                       <StatusBadge status={doc.status} />
                     </div>
@@ -161,6 +274,7 @@ export default function CounterpartyContracts({ counterpartyId, isPhone }) {
                           <span className="cpg-doc-kind">{t.kind}</span>
                           {docLink(doc, t.num)}
                           {t.date && <span className="cpg-doc-date">от {t.date}</span>}
+                          {depth < 0 && <ManualControls {...manualProps(doc)} />}
                         </div>
                       </td>
                       <td>{depth < 0 ? (doc.objects?.name || <span className="muted-dash">—</span>) : null}</td>
