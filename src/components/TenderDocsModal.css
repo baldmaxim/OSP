@@ -328,6 +328,100 @@
   color: var(--text-tertiary) !important;
 }
 
+/* ── Контакт площадки ──────────────────────────────────────────────────── */
+.tdm-site-object {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.tdm-site-object-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+.tdm-site-object select {
+  flex: 0 1 36rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.tdm-site-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.tdm-site-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: 3.25rem;
+  padding: 0.6rem 1rem;
+  background: var(--bg-secondary);
+}
+.tdm-site-row + .tdm-site-row { border-top: 1px solid var(--border-color); }
+.tdm-site-row.is-editing { grid-template-columns: minmax(0, 1fr); gap: 0.6rem; background: var(--bg-primary); }
+.tdm-site-div { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
+.tdm-site-person { min-width: 0; }
+.tdm-site-meta {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.tdm-site-meta a { color: var(--ui-link, var(--primary-color)); text-decoration: none; }
+.tdm-site-meta a:hover { text-decoration: underline; }
+.tdm-site-none { font-size: 0.875rem; color: var(--text-tertiary); }
+.tdm-site-row.is-empty .tdm-site-div { color: var(--text-secondary); }
+.tdm-site-actions { display: flex; align-items: center; gap: 0.25rem; }
+.tdm-site-assign { padding: 0.3rem 0.75rem; font-size: 0.8125rem; }
+
+/* .tdm-modal — перебить общее «.modal form { padding: 2rem }» других разделов. */
+.tdm-modal .tdm-site-form {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem 0.75rem;
+}
+.tdm-site-form label { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.tdm-site-form label span { font-size: 0.75rem; color: var(--text-tertiary); }
+.tdm-site-form input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+}
+.tdm-site-form input:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; }
+.tdm-site-error { grid-column: 1 / -1; margin: 0; font-size: 0.8125rem; color: var(--danger-color); }
+.tdm-site-form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 0.5rem; }
+.tdm-site-empty-state { margin: 0; color: var(--text-tertiary); }
+.tdm-site-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ui-link, var(--primary-color));
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .tdm-actions {
   display: flex;
   justify-content: flex-end;
@@ -339,8 +433,16 @@
   .tdm-overlay { padding: 0; }
   .tdm-modal { width: 100vw; height: 100vh; border-radius: 0; }
   .tdm-head, .tdm-actions { padding-left: 1rem; padding-right: 1rem; }
-  .tdm-tabs { padding: 0 1rem; gap: 0.25rem; }
-  .tdm-tab { font-size: 0.875rem; }
+  /* Пять вкладок в ширину телефона не входят — ряд прокручивается. */
+  .tdm-tabs { padding: 0 1rem; gap: 0.5rem; overflow-x: auto; scrollbar-width: none; }
+  .tdm-tab { font-size: 0.875rem; white-space: nowrap; flex: 0 0 auto; }
+  .tdm-site-object { flex-direction: column; align-items: stretch; gap: 0.35rem; }
+  .tdm-site-object select { flex: none; width: 100%; }
+  .tdm-site-row,
+  .tdm-site-row.is-editing { grid-template-columns: minmax(0, 1fr) auto; gap: 0.25rem 0.75rem; padding: 0.6rem 0.75rem; }
+  .tdm-site-div { grid-column: 1 / -1; }
+  .tdm-modal .tdm-site-form { grid-column: 1 / -1; grid-template-columns: 1fr; }
+  .tdm-site-form input { font-size: 1rem; }
   .tdm-body { padding: 1rem; }
   .tdm-body--guide { grid-template-columns: 1fr; gap: 0.75rem; }
   .tdm-cards { grid-template-columns: 1fr; }

@@ -5,12 +5,18 @@ import {
   JOINT_INCOMING, JOINT_RULES, JOINT_CHECKLIST, JOINT_OPEN_QUESTIONS,
 } from '../utils/jointTenderGuide'
 import { IconMail, IconFolderTree, IconPhone } from './icons/ToolbarIcons'
+import SiteContactsTab from './SiteContactsTab'
 import './TenderDocsModal.css'
 
 // task 435: «Документы» раздела тендеров — три вкладки в одном окне:
 //   Материалы    — шаблон письма, структура хранения, предпросмотр напоминания;
 //   Инструкция   — порядок ведения тендера от запроса объекта до итогов;
 //   Сотрудники СТО — сметно-технический отдел по направлениям работ.
+//
+// В «Основном строительстве» — ещё «Контакт площадки» (SiteContactsTab): кто встречает
+// подрядчика на объекте по каждому подразделению ВОР; назначает администратор, контакт
+// уходит в письмо подрядчикам. В других направлениях вкладки нет: подразделения ВОР — только
+// у основного строительства.
 //
 // В направлении «Совместные тендеры» добавляется четвёртая вкладка со своей
 // инструкцией (utils/jointTenderGuide.js). Она открывается там первой: правила
@@ -80,8 +86,12 @@ export default function TenderDocsModal({
   canPreviewReminder = false,
   department = 'construction',
   initialTab,
+  objects = [],
+  canEditSiteContacts = false,
+  initialSiteObjectId = null,
 }) {
   const isJoint = department === 'joint'
+  const hasSiteContacts = department === 'construction'
   // По кнопке «Документы» окно открывается как везде — на «Материалах»; на
   // инструкцию по совместным тендерам ведёт отдельная кнопка в шапке раздела
   // (initialTab='joint'), а её вкладка в любом случае стоит первой.
@@ -110,6 +120,7 @@ export default function TenderDocsModal({
             { key: 'materials', label: 'Материалы' },
             { key: 'guide', label: 'Инструкция' },
             { key: 'sto', label: 'Сотрудники СТО' },
+            ...(hasSiteContacts ? [{ key: 'site', label: 'Контакт площадки' }] : []),
           ].map(t => (
             <button
               key={t.key}
@@ -475,6 +486,15 @@ export default function TenderDocsModal({
               ))}
             </div>
           </div>
+        )}
+
+        {/* ── Контакт площадки ──────────────────────────────────────────── */}
+        {tab === 'site' && hasSiteContacts && (
+          <SiteContactsTab
+            objects={objects}
+            canEdit={canEditSiteContacts}
+            initialObjectId={initialSiteObjectId}
+          />
         )}
 
         <div className="tdm-actions">

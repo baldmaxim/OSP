@@ -1318,5 +1318,115 @@
     "to": "empty",
     "why": "новая таблица: версии ВОР в расценке снабжением — что изменилось в позициях и снимок цен (на копии пусто); читает сотрудник, пишут только триггер и «просмотрено»",
     "candidate": "20261029_supply_vor_versions.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "admin",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "employee_full",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "employee_none",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "vors_only",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "contractor_own",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "contractor_noorg",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "unapproved",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "blocked",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "no_user_roles",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "anon",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
+  },
+  {
+    "release": "20261030",
+    "class": "service_role",
+    "table": "object_site_contacts",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: контакты площадки по объекту и подразделению ВОР — ФИО, телефон, Telegram для письма подрядчикам (на копии пусто); читает сотрудник, назначает только администратор",
+    "candidate": "20261030_site_contacts.sql"
   }
 ]

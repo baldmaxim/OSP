@@ -457,6 +457,14 @@
         "update"
       ]
     },
+    "object_site_contacts": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "object_staff": {
       "anon": [
         "select"

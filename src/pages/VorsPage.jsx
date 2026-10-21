@@ -26,7 +26,7 @@ import { vorStartDate } from '../utils/vorDates'
 import { useClampOverflow } from '../utils/clampMeasure'
 import { DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import {
-  VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION, DIVISION_MIGRATION_HINT, isMissingDivisionColumnError, vorDivisionLogPayload,
+  VOR_DIVISIONS, VOR_DIVISION_LABEL, NO_VOR_DIVISION, DIVISION_MIGRATION_HINT, isMissingDivisionColumnError, vorDivisionLogPayload, vorDivisionSaveError,
 } from '../utils/vorDivisions'
 import { useRealtimeTable, changedScalarFields } from '../hooks/useRealtimeTable'
 import './CostPlansPage.css'
@@ -463,7 +463,7 @@ function VorsPage() {
       logTenderEvent(tenderId, 'field_updated', vorDivisionLogPayload(oldValue, next))
     } catch (err) {
       console.error('Ошибка изменения подразделения ВОР:', err.message)
-      alert(isMissingDivisionColumnError(err) ? DIVISION_MIGRATION_HINT : 'Ошибка: ' + err.message)
+      alert(vorDivisionSaveError(err))
     }
   }
 

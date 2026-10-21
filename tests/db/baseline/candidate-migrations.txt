@@ -13,3 +13,4 @@
 20261026_counterparty_vat.sql
 20261027_vor_rd_sets.sql
 20261029_supply_vor_versions.sql
+20261030_site_contacts.sql

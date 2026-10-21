@@ -5,12 +5,15 @@
 // Правка в одном разделе видна в другом: обе страницы читают и пишут только эту
 // колонку, а изменения коллег приходят онлайн-подпиской на tenders
 // (useRealtimeTable). Подписи и коды — только здесь, CHECK в базе — те же коды.
+// «Отделка» — с миграции 20261030_site_contacts (до неё база её не примет). По тем же
+// кодам — контакты площадки (object_site_contacts) в «Документах раздела» тендеров.
 export const VOR_DIVISIONS = [
   { value: 'monolith', label: 'Монолит' },
   { value: 'nvf_spk', label: 'НВФ/СПК' },
   { value: 'general', label: 'Общестроительные работы' },
   { value: 'hvac_water', label: 'ОВиВК' },
   { value: 'electrical', label: 'ЭОМ/СС' },
+  { value: 'finishing', label: 'Отделка' },
 ]
 
 export const VOR_DIVISION_LABEL = Object.fromEntries(VOR_DIVISIONS.map(d => [d.value, d.label]))
@@ -23,6 +26,16 @@ export const DIVISION_MIGRATION_HINT = 'Подразделение недост�
 
 export function isMissingDivisionColumnError(err) {
   return (err?.code === '42703' || err?.code === 'PGRST204') && /vor_division/.test(String(err?.message || ''))
+}
+
+// Текст отказа при смене подразделения — одинаковый в обоих разделах. Нарушение CHECK —
+// новое подразделение («Отделка») в базе, где миграция 20261030 ещё не применена.
+export function vorDivisionSaveError(err) {
+  if (isMissingDivisionColumnError(err)) return DIVISION_MIGRATION_HINT
+  if (err?.code === '23514' && /division/.test(String(err?.message || ''))) {
+    return 'Это подразделение станет доступно после обновления базы (миграция 20261030_site_contacts).'
+  }
+  return 'Ошибка: ' + (err?.message || err)
 }
 
 // Запись в журнал тендера о смене подразделения — одинаковая из обоих разделов.

@@ -8,8 +8,9 @@ import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import { VOR_DIVISIONS, VOR_DIVISION_LABEL, vorDivisionLogPayload } from '../../src/utils/vorDivisions.js'
 
 describe('Подразделение ВОР: справочник и журнал', () => {
-  it('коды — те же, что в CHECK миграции 20260927', () => {
-    assert.deepEqual(VOR_DIVISIONS.map((d) => d.value), ['monolith', 'nvf_spk', 'general', 'hvac_water', 'electrical'])
+  it('коды — те же, что в CHECK миграций 20260927 и 20261030 («Отделка»)', () => {
+    assert.deepEqual(VOR_DIVISIONS.map((d) => d.value), ['monolith', 'nvf_spk', 'general', 'hvac_water', 'electrical', 'finishing'])
+    assert.equal(VOR_DIVISION_LABEL.finishing, 'Отделка')
     assert.equal(VOR_DIVISION_LABEL.general, 'Общестроительные работы')
   })
 
@@ -161,7 +162,7 @@ describe('Подразделение ВОР в реестре тендеров �
       await filter.locator('.fdrop-trigger').click()
       // Числа — по реестру без этого фильтра: у 10 тендеров по кругу [—, Монолит, Общестрой, —, ЭОМ].
       assert.deepEqual(await page.locator('.fdrop-panel .fdrop-option-text').allTextContents(),
-        ['Монолит (2)', 'НВФ/СПК (0)', 'Общестроительные работы (2)', 'ОВиВК (0)', 'ЭОМ/СС (2)', 'Не указано (4)'])
+        ['Монолит (2)', 'НВФ/СПК (0)', 'Общестроительные работы (2)', 'ОВиВК (0)', 'ЭОМ/СС (2)', 'Отделка (0)', 'Не указано (4)'])
       await pick(page, 'Монолит')
       await page.keyboard.press('Escape')
       assert.deepEqual(await shownNums(), ['194', '199'])

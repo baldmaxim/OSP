@@ -32,7 +32,9 @@ import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIG
 import { formatDateRange as formatShortDateRange, breakAfterDash } from '../utils/dateRange'
 import DateRangeCell from '../components/DateRangeCell'
 import { vorStartDate } from '../utils/vorDates'
-import { VOR_DIVISION_LABEL, NO_VOR_DIVISION, DIVISION_MIGRATION_HINT, isMissingDivisionColumnError, vorDivisionLogPayload } from '../utils/vorDivisions'
+import { VOR_DIVISION_LABEL, NO_VOR_DIVISION, vorDivisionLogPayload, vorDivisionSaveError } from '../utils/vorDivisions'
+import { SITE_CONTACT_LINE, formatSiteContact, fillSiteContact, upgradeLetterTemplate } from '../utils/siteContacts'
+import { fetchSiteContact } from '../services/siteContacts'
 import {
   fetchSupplyEmployees, materialsResponsibleOf, isMissingMaterialsColumnError, SUPPLY_MIGRATION_HINT,
   MATERIALS_PRIORITY_OPTIONS, MATERIALS_PRIORITY_LABEL, personInitials,
@@ -181,6 +183,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   // С какой вкладки открыть это окно: у совместных тендеров есть кнопка
   // «Инструкция», которая ведёт сразу в их раздел инструкции.
   const [docsInitialTab, setDocsInitialTab] = useState(null)
+  // Объект, с которого открыть вкладку «Контакт площадки» (из письма без контакта).
+  const [docsSiteObjectId, setDocsSiteObjectId] = useState(null)
   // Справочник сотрудников сметно-технического отдела.
   // Предпросмотр вторничного напоминания — кнопка в шапке только у администратора.
   const [reminderPreview, setReminderPreview] = useState(false)
@@ -270,6 +274,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 Срок подачи заявок на участие в тендере: {start_date}-{end_date} гг.
 
 Для получения дополнительных разъяснений и уточнений вы можете связаться с нами по телефону {employee_phone} или отправить запрос на электронную почту {employee_email}, в теле письма указать по какому тендеру и объекту обращаетесь.
+${SITE_CONTACT_LINE}
 
 Мы рассчитываем на плодотворное сотрудничество и надеемся на участие вашей компании в тендере.
 
@@ -282,12 +287,19 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 Телефон для связи: {employee_phone}
 Почта: {employee_email}`
 
-  // Ключ версионный: в шаблон добавлены тема письма и № тендера, и сохранённый
-  // раньше вариант их не содержит. Без смены ключа никто из тех, кто хоть раз
-  // нажимал «Сохранить шаблон», нововведений бы не увидел.
-  const LETTER_TEMPLATE_KEY = 'letterTemplate:v2'
+  // Ключ версионный: в шаблон добавлены тема письма и № тендера (v2), затем строка
+  // о выезде на объект с контактом площадки (v3). Сохранённый в v2 шаблон не
+  // выбрасывается: строка встаёт в него после «…по какому тендеру и объекту
+  // обращаетесь.» (upgradeLetterTemplate), остальные правки пользователя остаются.
+  const LETTER_TEMPLATE_KEY = 'letterTemplate:v3'
   const [letterTemplate, setLetterTemplate] = useState(() => {
-    return localStorage.getItem(LETTER_TEMPLATE_KEY) || DEFAULT_LETTER_TEMPLATE
+    try {
+      return localStorage.getItem(LETTER_TEMPLATE_KEY)
+        || upgradeLetterTemplate(localStorage.getItem('letterTemplate:v2'))
+        || DEFAULT_LETTER_TEMPLATE
+    } catch {
+      return DEFAULT_LETTER_TEMPLATE
+    }
   })
   const [templateSaved, setTemplateSaved] = useState(false)
   // Фильтры множественного выбора: пустой массив = фильтр не применён.
@@ -1431,7 +1443,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
       logTenderEvent(tenderId, 'field_updated', vorDivisionLogPayload(oldValue, next))
     } catch (err) {
       console.error('Ошибка изменения подразделения ВОР:', err.message)
-      alert(isMissingDivisionColumnError(err) ? DIVISION_MIGRATION_HINT : 'Ошибка: ' + err.message)
+      alert(vorDivisionSaveError(err))
     }
   }
 
@@ -1488,15 +1500,58 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     }
   }
 
+  // Контакт площадки для письма по тендеру основного строительства: по объекту и
+  // подразделению ВОР тендера, читается в момент формирования. Нет подразделения или
+  // контакта — письмо не формируется (решение отдела: подрядчику нужен контакт для
+  // выезда). Администратору из строки реестра предлагаем сразу открыть вкладку
+  // «Контакт площадки» на этом объекте; из формы тендера — только сообщение (окно
+  // формы осталось бы поверх). Таблицы ещё нет (база без миграции 20261030) или
+  // колонки подразделения — письмо как раньше, без строки о выезде.
+  // → { ok, contact }; contact=null — строка о выезде в письмо не идёт.
+  const resolveSiteContact = async (tender, { offerOpen = false } = {}) => {
+    if (!isConstructionTender(tender) || !('vor_division' in tender)) return { ok: true, contact: null }
+    const objectName = tenderObjectName(tender, 'объект')
+    const division = tender.vor_division
+    if (!division) {
+      alert('Укажите подразделение ВОР у тендера (плашка под описанием работ) — контакт площадки для письма '
+        + 'подбирается по объекту и подразделению.')
+      return { ok: false, contact: null }
+    }
+    let res
+    try {
+      res = await fetchSiteContact(tender.object_id, division)
+    } catch (err) {
+      alert('Не удалось получить контакт площадки: ' + describeSupabaseError(err))
+      return { ok: false, contact: null }
+    }
+    if (!res.supported) return { ok: true, contact: null }
+    if (res.contact) return { ok: true, contact: res.contact }
+    const label = VOR_DIVISION_LABEL[division] || division
+    const message = `На объекте «${objectName}» не назначен контакт площадки для подразделения «${label}» — `
+      + 'без него письмо подрядчикам не формируется.'
+    if (isAdmin && offerOpen) {
+      if (window.confirm(`${message}\n\nОткрыть «Контакт площадки» и назначить?`)) {
+        setDocsInitialTab('site')
+        setDocsSiteObjectId(tender.object_id)
+        setShowDocsMenu(true)
+      }
+    } else {
+      alert(`${message} Назначает администратор: «Документы» → «Контакт площадки».`)
+    }
+    return { ok: false, contact: null }
+  }
+
   // Открыть модалку с шаблоном письма прямо из строки таблицы (без перехода в редактирование).
-  const handleShowLetterForTender = (tender) => {
+  const handleShowLetterForTender = async (tender) => {
     if (!tender.responsible_contact_id) {
       alert('Сначала назначьте ответственного по тендеру — без него нельзя сформировать письмо.')
       return
     }
+    const site = await resolveSiteContact(tender, { offerOpen: true })
+    if (!site.ok) return
     const objectName = tenderObjectName(tender, '[Объект не указан]')
     const employee = responsibleContacts.find(c => c.id === tender.responsible_contact_id)
-    const letter = generateRequestLetter(tender, objectName, employee)
+    const letter = generateRequestLetter(tender, objectName, employee, site.contact)
     setGeneratedLetter(letter)
     setShowLetterModal(true)
   }
@@ -2305,7 +2360,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     return `${day}.${month}.${year}`
   }
 
-  const generateRequestLetter = (tenderData, objectName, employee) => {
+  // siteContact — контакт площадки (resolveSiteContact); null — строки о выезде в письме нет.
+  const generateRequestLetter = (tenderData, objectName, employee, siteContact = null) => {
     const replacements = {
       '{work_description}': tenderData.work_description || '[Описание работ]',
       '{object_name}': objectName || '[Объект не указан]',
@@ -2326,7 +2382,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
     for (const [key, value] of Object.entries(replacements)) {
       result = result.replaceAll(key, value)
     }
-    return result
+    return fillSiteContact(result, siteContact ? formatSiteContact(siteContact) : null)
   }
 
   const handleSaveTemplate = () => {
@@ -3051,7 +3107,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
             <button
               type="button"
               className="btn-view-toggle"
-              onClick={() => { setDocsInitialTab(null); setShowDocsMenu(true) }}
+              onClick={() => { setDocsInitialTab(null); setDocsSiteObjectId(null); setShowDocsMenu(true) }}
               title="Материалы и инструменты раздела: шаблон письма, структура хранения"
             >
               <IconDocsStack size={15} />
@@ -4561,6 +4617,9 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
           onClose={() => setShowDocsMenu(false)}
           department={department}
           initialTab={docsInitialTab || undefined}
+          objects={objects}
+          canEditSiteContacts={isAdmin}
+          initialSiteObjectId={docsSiteObjectId}
           canPreviewReminder={isAdmin}
           onOpenLetterTemplate={() => { setShowDocsMenu(false); setActiveTab('template') }}
           onOpenStorageStructure={() => { setShowDocsMenu(false); setShowStorageStructure(true) }}
@@ -4594,6 +4653,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
               ['{employee_phone}', 'Телефон сотрудника'],
               ['{employee_email}', 'Email сотрудника'],
               ['{tender_package_link}', 'Ссылка на тендерный пакет'],
+              ['{site_contact}', 'Контакт площадки: ФИО, телефон, Telegram — по объекту и подразделению тендера'],
             ].map(([variable, label]) => (
               <span
                 key={variable}
@@ -5017,15 +5077,22 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => {
+                    onClick={async () => {
                       const selectedObject = objects.find(obj => obj.id === formData.object_id)
                       const objectName = selectedObject?.name || '[Объект не указан]'
                       const selectedContact = responsibleContacts.find(c => c.id === formData.responsible_contact_id)
+                      // Подразделения в форме нет (оно правится плашкой в реестре) — берём у
+                      // редактируемого тендера; объект — из формы.
+                      const site = await resolveSiteContact({
+                        ...editingTender, ...formData, objects: selectedObject || editingTender?.objects,
+                      })
+                      if (!site.ok) return
                       // Номера в форме нет — он присваивается базой, берём из редактируемого тендера.
                       const letter = generateRequestLetter(
                         { ...formData, public_tender_number: editingTender?.public_tender_number },
                         objectName,
                         selectedContact,
+                        site.contact,
                       )
                       setGeneratedLetter(letter)
                       setShowLetterModal(true)
