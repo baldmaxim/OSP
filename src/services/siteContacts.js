@@ -1,7 +1,7 @@
 // Контакты площадки (миграция 20261030_site_contacts): кто встречает подрядчика на
 // объекте, если потребуется выезд. Строка — объект + подразделение ВОР (одна на пару):
-// ФИО, телефон, Telegram. Подставляются в письмо подрядчикам по объекту и подразделению
-// тендера; без контакта письмо по тендеру основного строительства не формируется.
+// ФИО, телефон, Telegram. В письмо подрядчикам по объекту и подразделению тендера идут
+// ФИО и телефон; подразделению без контакта временно — руководитель строительства объекта.
 //
 // Права — в базе: читает сотрудник, назначает только администратор (is_admin()).
 import { db } from '../api'
@@ -52,6 +52,27 @@ export async function fetchSiteContact(objectId, division) {
     throw error
   }
   return { contact: data || null, supported: true }
+}
+
+// Руководители строительства объектов («Общая информация → Объекты», object_staff) —
+// временный контакт площадки подразделений без своего. objectId — один объект (письмо),
+// без него — все (вкладка). → Map<object_id, [{ full_name, phone }]> в порядке карточки объекта.
+export async function fetchObjectManagers(objectId = null) {
+  const rows = await fetchAllRows((from, to) => {
+    let q = db
+      .from('object_staff')
+      .select('object_id, sort_order, contacts(full_name, phone)')
+      .eq('staff_role', 'construction_manager')
+    if (objectId) q = q.eq('object_id', objectId)
+    return q.order('sort_order', { ascending: true }).order('id', { ascending: true }).range(from, to)
+  })
+  const map = new Map()
+  for (const r of rows) {
+    if (!r.contacts) continue
+    if (!map.has(r.object_id)) map.set(r.object_id, [])
+    map.get(r.object_id).push({ full_name: r.contacts.full_name, phone: r.contacts.phone })
+  }
+  return map
 }
 
 // Назначить или заменить контакт подразделения на объекте (одна строка на пару).

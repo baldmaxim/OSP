@@ -364,7 +364,7 @@
 }
 .tdm-site-row {
   display: grid;
-  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr) auto;
   align-items: center;
   gap: 1rem;
   min-height: 3.25rem;
@@ -384,8 +384,37 @@
 }
 .tdm-site-meta a { color: var(--ui-link, var(--primary-color)); text-decoration: none; }
 .tdm-site-meta a:hover { text-decoration: underline; }
-.tdm-site-none { font-size: 0.875rem; color: var(--text-tertiary); }
-.tdm-site-row.is-empty .tdm-site-div { color: var(--text-secondary); }
+/* Подразделение без своего контакта: временно руководитель строительства — янтарная
+   черта и плашка; нет и его — красные. Цвет — не единственный признак: есть подписи. */
+.tdm-site-row.is-temp { box-shadow: inset 3px 0 0 var(--warning-color); }
+.tdm-site-row.is-missing { box-shadow: inset 3px 0 0 var(--danger-color); background: color-mix(in srgb, var(--danger-color) 5%, var(--bg-secondary)); }
+.tdm-site-row.is-temp .tdm-person { font-weight: 500; color: var(--text-secondary); }
+.tdm-site-person-item + .tdm-site-person-item { margin-top: 0.35rem; }
+.tdm-site-badge {
+  display: inline-block;
+  margin-bottom: 0.25rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.tdm-site-badge.is-temp { color: var(--warning-color); background: var(--warning-light); border: 1px solid var(--warning-muted); }
+.tdm-site-badge.is-missing { color: var(--danger-color); background: var(--danger-light); border: 1px solid var(--danger-muted); }
+.tdm-site-hint { display: block; margin-top: 0.2rem; font-size: 0.75rem; color: var(--warning-color); }
+.tdm-site-hint.is-missing { color: var(--danger-color); font-size: 0.8125rem; }
+.tdm-site-warn-text { color: var(--warning-color); }
+.tdm-site-alert {
+  margin: 0 0 0.85rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0 10px 10px 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+.tdm-site-alert.is-temp { border-left: 3px solid var(--warning-color); background: var(--warning-light); color: var(--text-primary); }
+.tdm-site-alert.is-error { border-left: 3px solid var(--danger-color); background: var(--danger-light); color: var(--danger-color); }
+.tdm-site-alert a { color: inherit; text-decoration: underline; }
 .tdm-site-actions { display: flex; align-items: center; gap: 0.25rem; }
 .tdm-site-assign { padding: 0.3rem 0.75rem; font-size: 0.8125rem; }
 

@@ -33,8 +33,11 @@ import { formatDateRange as formatShortDateRange, breakAfterDash } from '../util
 import DateRangeCell from '../components/DateRangeCell'
 import { vorStartDate } from '../utils/vorDates'
 import { VOR_DIVISION_LABEL, NO_VOR_DIVISION, vorDivisionLogPayload, vorDivisionSaveError } from '../utils/vorDivisions'
-import { SITE_CONTACT_LINE, formatSiteContact, fillSiteContact, upgradeLetterTemplate } from '../utils/siteContacts'
-import { fetchSiteContact } from '../services/siteContacts'
+import {
+  SITE_CONTACT_LINE, SITE_CONTACT_MISSING, TENDER_MAILBOX, ATTACHMENT_BLOCK,
+  pickSiteContact, fillSiteContact, upgradeLetterTemplate,
+} from '../utils/siteContacts'
+import { fetchSiteContact, fetchObjectManagers } from '../services/siteContacts'
 import {
   fetchSupplyEmployees, materialsResponsibleOf, isMissingMaterialsColumnError, SUPPLY_MIGRATION_HINT,
   MATERIALS_PRIORITY_OPTIONS, MATERIALS_PRIORITY_LABEL, personInitials,
@@ -263,6 +266,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [showLetterModal, setShowLetterModal] = useState(false)
   const [generatedLetter, setGeneratedLetter] = useState('')
   const [letterCopied, setLetterCopied] = useState(false)
+  // Предупреждение о контакте площадки в окне письма: { level: 'warn' | 'error', text, objectId } | null.
+  const [letterNotice, setLetterNotice] = useState(null)
 
   const DEFAULT_LETTER_TEMPLATE = `Тема письма: Объект {object_name} / Тендер № {tender_number} / Приглашение на участие в тендере на выполнение работ {work_description}
 
@@ -273,29 +278,29 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
 В связи с этим, мы приглашаем вашу компанию принять участие в тендере и предоставить свои предложения для рассмотрения.
 Срок подачи заявок на участие в тендере: {start_date}-{end_date} гг.
 
-Для получения дополнительных разъяснений и уточнений вы можете связаться с нами по телефону {employee_phone} или отправить запрос на электронную почту {employee_email}, в теле письма указать по какому тендеру и объекту обращаетесь.
+Для получения дополнительных разъяснений и уточнений вы можете связаться с нами по телефону {employee_phone} или отправить запрос на электронную почту ${TENDER_MAILBOX}, в теле письма указать по какому тендеру и объекту обращаетесь.
 ${SITE_CONTACT_LINE}
 
 Мы рассчитываем на плодотворное сотрудничество и надеемся на участие вашей компании в тендере.
 
-Приложение: ссылка на тендерную документацию:
+${ATTACHMENT_BLOCK}
 {tender_package_link}
 
 С уважением,
 {employee_position} ООО "СУ-10"
 {employee_name}
 Телефон для связи: {employee_phone}
-Почта: {employee_email}`
+Почта: ${TENDER_MAILBOX}`
 
-  // Ключ версионный: в шаблон добавлены тема письма и № тендера (v2), затем строка
-  // о выезде на объект с контактом площадки (v3). Сохранённый в v2 шаблон не
-  // выбрасывается: строка встаёт в него после «…по какому тендеру и объекту
-  // обращаетесь.» (upgradeLetterTemplate), остальные правки пользователя остаются.
-  const LETTER_TEMPLATE_KEY = 'letterTemplate:v3'
+  // Ключ версионный: в шаблон добавлены тема письма и № тендера (v2), строка о выезде
+  // на объект с контактом площадки (v3), общий ящик tender.osp@su10.ru вместо почты
+  // ответственного и пояснение к тендерной документации (v4). Сохранённый раньше шаблон
+  // не выбрасывается: upgradeLetterTemplate дописывает в него новое, правки остаются.
+  const LETTER_TEMPLATE_KEY = 'letterTemplate:v4'
   const [letterTemplate, setLetterTemplate] = useState(() => {
     try {
       return localStorage.getItem(LETTER_TEMPLATE_KEY)
-        || upgradeLetterTemplate(localStorage.getItem('letterTemplate:v2'))
+        || upgradeLetterTemplate(localStorage.getItem('letterTemplate:v3') || localStorage.getItem('letterTemplate:v2'))
         || DEFAULT_LETTER_TEMPLATE
     } catch {
       return DEFAULT_LETTER_TEMPLATE
@@ -1500,45 +1505,54 @@ ${SITE_CONTACT_LINE}
     }
   }
 
-  // Контакт площадки для письма по тендеру основного строительства: по объекту и
-  // подразделению ВОР тендера, читается в момент формирования. Нет подразделения или
-  // контакта — письмо не формируется (решение отдела: подрядчику нужен контакт для
-  // выезда). Администратору из строки реестра предлагаем сразу открыть вкладку
-  // «Контакт площадки» на этом объекте; из формы тендера — только сообщение (окно
-  // формы осталось бы поверх). Таблицы ещё нет (база без миграции 20261030) или
-  // колонки подразделения — письмо как раньше, без строки о выезде.
-  // → { ok, contact }; contact=null — строка о выезде в письмо не идёт.
-  const resolveSiteContact = async (tender, { offerOpen = false } = {}) => {
-    if (!isConstructionTender(tender) || !('vor_division' in tender)) return { ok: true, contact: null }
+  // Контакт площадки для письма по тендеру основного строительства — по объекту и
+  // подразделению ВОР тендера, читается в момент формирования. Письмо формируется всегда:
+  // подразделению без контакта (и тендеру без подразделения) временно ставится руководитель
+  // строительства объекта («Общая информация → Объекты»), нет и его — пометка
+  // SITE_CONTACT_MISSING, которую инженер заменит сам; в обоих случаях в окне письма —
+  // предупреждение. База без миграции 20261030 — как подразделение без контакта.
+  // → { text, notice }; text = null — строки о выезде в письме нет (не основное строительство).
+  const resolveSiteContact = async (tender) => {
+    if (!isConstructionTender(tender)) return { text: null, notice: null }
     const objectName = tenderObjectName(tender, 'объект')
-    const division = tender.vor_division
-    if (!division) {
-      alert('Укажите подразделение ВОР у тендера (плашка под описанием работ) — контакт площадки для письма '
-        + 'подбирается по объекту и подразделению.')
-      return { ok: false, contact: null }
-    }
-    let res
-    try {
-      res = await fetchSiteContact(tender.object_id, division)
-    } catch (err) {
-      alert('Не удалось получить контакт площадки: ' + describeSupabaseError(err))
-      return { ok: false, contact: null }
-    }
-    if (!res.supported) return { ok: true, contact: null }
-    if (res.contact) return { ok: true, contact: res.contact }
-    const label = VOR_DIVISION_LABEL[division] || division
-    const message = `На объекте «${objectName}» не назначен контакт площадки для подразделения «${label}» — `
-      + 'без него письмо подрядчикам не формируется.'
-    if (isAdmin && offerOpen) {
-      if (window.confirm(`${message}\n\nОткрыть «Контакт площадки» и назначить?`)) {
-        setDocsInitialTab('site')
-        setDocsSiteObjectId(tender.object_id)
-        setShowDocsMenu(true)
+    const division = tender.vor_division || null
+    const failures = []
+    let own = null
+    if (division) {
+      try {
+        own = (await fetchSiteContact(tender.object_id, division)).contact
+      } catch (err) {
+        failures.push(`контакт подразделения (${describeSupabaseError(err)})`)
       }
-    } else {
-      alert(`${message} Назначает администратор: «Документы» → «Контакт площадки».`)
     }
-    return { ok: false, contact: null }
+    let managers = []
+    if (!own) {
+      try {
+        managers = (await fetchObjectManagers(tender.object_id)).get(tender.object_id) || []
+      } catch (err) {
+        failures.push(`руководителя строительства (${describeSupabaseError(err)})`)
+      }
+    }
+    const pick = pickSiteContact(own, managers)
+    if (pick.source === 'division') return { text: pick.text, notice: null }
+    const why = division
+      ? `подразделению «${VOR_DIVISION_LABEL[division] || division}» на объекте «${objectName}» не назначен контакт площадки`
+      : 'у тендера не указано подразделение ВОР (плашка под описанием работ)'
+    const failed = failures.length ? ` Не удалось получить ${failures.join(' и ')}.` : ''
+    let text
+    if (pick.source === 'manager') {
+      text = `Временное решение: ${why}, поэтому в письме — руководитель строительства объекта. `
+        + `Требуется назначить ответственного подразделения.${failed}`
+    } else if (failures.length) {
+      text = `Контакт площадки не подставлен.${failed} Впишите контакт в письмо вручную вместо «${SITE_CONTACT_MISSING}».`
+    } else {
+      text = `Контакт площадки не подставлен: ${why}, а в карточке объекта не указан руководитель строительства `
+        + `(«Общая информация → Объекты»). Впишите контакт в письмо вручную вместо «${SITE_CONTACT_MISSING}».`
+    }
+    return {
+      text: pick.text,
+      notice: { level: pick.source === 'manager' ? 'warn' : 'error', text, objectId: tender.object_id },
+    }
   }
 
   // Открыть модалку с шаблоном письма прямо из строки таблицы (без перехода в редактирование).
@@ -1547,12 +1561,12 @@ ${SITE_CONTACT_LINE}
       alert('Сначала назначьте ответственного по тендеру — без него нельзя сформировать письмо.')
       return
     }
-    const site = await resolveSiteContact(tender, { offerOpen: true })
-    if (!site.ok) return
+    const site = await resolveSiteContact(tender)
     const objectName = tenderObjectName(tender, '[Объект не указан]')
     const employee = responsibleContacts.find(c => c.id === tender.responsible_contact_id)
-    const letter = generateRequestLetter(tender, objectName, employee, site.contact)
+    const letter = generateRequestLetter(tender, objectName, employee, site.text)
     setGeneratedLetter(letter)
+    setLetterNotice(site.notice)
     setShowLetterModal(true)
   }
 
@@ -2360,8 +2374,8 @@ ${SITE_CONTACT_LINE}
     return `${day}.${month}.${year}`
   }
 
-  // siteContact — контакт площадки (resolveSiteContact); null — строки о выезде в письме нет.
-  const generateRequestLetter = (tenderData, objectName, employee, siteContact = null) => {
+  // siteContactText — контакт площадки (resolveSiteContact); null — строки о выезде в письме нет.
+  const generateRequestLetter = (tenderData, objectName, employee, siteContactText = null) => {
     const replacements = {
       '{work_description}': tenderData.work_description || '[Описание работ]',
       '{object_name}': objectName || '[Объект не указан]',
@@ -2374,7 +2388,8 @@ ${SITE_CONTACT_LINE}
       '{employee_name}': employee?.full_name || '[ФИО не указано]',
       '{employee_position}': employee?.position || 'Сотрудник отдела сопровождения подрядчиков',
       '{employee_phone}': employee?.phone || '[Телефон не указан]',
-      '{employee_email}': employee?.email || '[Email не указан]',
+      // Почта для вопросов — общий ящик отдела; переменная осталась в старых шаблонах.
+      '{employee_email}': TENDER_MAILBOX,
       '{tender_package_link}': tenderData.tender_package_link || '[Ссылка не указана]'
     }
 
@@ -2382,7 +2397,7 @@ ${SITE_CONTACT_LINE}
     for (const [key, value] of Object.entries(replacements)) {
       result = result.replaceAll(key, value)
     }
-    return fillSiteContact(result, siteContact ? formatSiteContact(siteContact) : null)
+    return fillSiteContact(result, siteContactText)
   }
 
   const handleSaveTemplate = () => {
@@ -4651,9 +4666,8 @@ ${SITE_CONTACT_LINE}
               ['{employee_name}', 'ФИО сотрудника'],
               ['{employee_position}', 'Должность'],
               ['{employee_phone}', 'Телефон сотрудника'],
-              ['{employee_email}', 'Email сотрудника'],
               ['{tender_package_link}', 'Ссылка на тендерный пакет'],
-              ['{site_contact}', 'Контакт площадки: ФИО, телефон, Telegram — по объекту и подразделению тендера'],
+              ['{site_contact}', 'Контакт площадки: ФИО и телефон по объекту и подразделению тендера (не назначен — руководитель строительства объекта)'],
             ].map(([variable, label]) => (
               <span
                 key={variable}
@@ -5086,15 +5100,15 @@ ${SITE_CONTACT_LINE}
                       const site = await resolveSiteContact({
                         ...editingTender, ...formData, objects: selectedObject || editingTender?.objects,
                       })
-                      if (!site.ok) return
                       // Номера в форме нет — он присваивается базой, берём из редактируемого тендера.
                       const letter = generateRequestLetter(
                         { ...formData, public_tender_number: editingTender?.public_tender_number },
                         objectName,
                         selectedContact,
-                        site.contact,
+                        site.text,
                       )
                       setGeneratedLetter(letter)
+                      setLetterNotice(site.notice)
                       setShowLetterModal(true)
                     }}
                     title="Сгенерировать письмо для подрядчиков"
@@ -5679,6 +5693,46 @@ ${SITE_CONTACT_LINE}
               }}>
                 Тендер успешно создан! Ниже готовое письмо для отправки контрагентам:
               </p>
+
+              {letterNotice && (
+                <div
+                  className={`letter-site-notice is-${letterNotice.level}`}
+                  role={letterNotice.level === 'error' ? 'alert' : 'status'}
+                  style={{
+                    marginBottom: '1rem',
+                    padding: '0.6rem 0.85rem',
+                    borderLeft: `3px solid var(${letterNotice.level === 'error' ? '--danger-color' : '--warning-color'})`,
+                    borderRadius: '0 8px 8px 0',
+                    background: `var(${letterNotice.level === 'error' ? '--danger-light' : '--warning-light'})`,
+                    color: letterNotice.level === 'error' ? 'var(--danger-color)' : 'var(--text-primary)',
+                    fontSize: '0.875rem',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {letterNotice.text}
+                  {/* Из формы тендера не предлагаем: окно «Документов» открылось бы под формой. */}
+                  {isAdmin && !showModal && letterNotice.objectId && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        className="letter-site-notice-open"
+                        onClick={() => {
+                          setShowLetterModal(false)
+                          setLetterCopied(false)
+                          setDocsInitialTab('site')
+                          setDocsSiteObjectId(letterNotice.objectId)
+                          setShowDocsMenu(true)
+                        }}
+                        style={{
+                          padding: 0, border: 'none', background: 'none', color: 'inherit',
+                          font: 'inherit', fontWeight: 600, textDecoration: 'underline', cursor: 'pointer',
+                        }}
+                      >Назначить в «Контакт площадки»</button>
+                    </>
+                  )}
+                </div>
+              )}
 
               <div style={{
                 backgroundColor: 'var(--bg-tertiary)',
