@@ -1,15 +1,18 @@
-import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useId, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { db } from '../api'
 import { fetchAllRows } from '../utils/fetchAllRows'
 import { useRole } from '../contexts/RoleContext'
 import VorRdModal from '../components/VorRdModal'
 import VorRequestModal from '../components/VorRequestModal'
+import VorRdSetsPanel from '../components/VorRdSetsPanel'
 import {
   fetchVorRequests, fetchVorRequestDocCounts, countVorRequestDocs,
   VOR_REQUESTS_TABLE, VOR_REQUESTS_MIGRATION_HINT,
 } from '../services/vorRequests'
 import { countVorRdDocs, fetchVorRdDocCounts } from '../services/tenderVorRd'
+import { fetchVorRdSets } from '../services/vorRdSets'
+import { rdSetOwnerId, compareRdSets } from '../utils/vorRdSets'
 import { fetchStoEmployees, vorResponsibleOf, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
 import PaperclipIcon from '../components/icons/PaperclipIcon'
 import DateRangeCell from '../components/DateRangeCell'
@@ -70,6 +73,9 @@ function inScope(row, scope) {
 // Статусы, при которых срок подготовки ВОР больше не отслеживается.
 const VOR_CLOSED = ['completed', 'not_required']
 
+// Пустой список комплектов — один и тот же массив, чтобы не создавать его в каждой строке.
+const NO_SETS = []
+
 // Порции отрисовки таблицы: первый экран и добавка на каждый следующий кадр.
 const ROWS_FIRST = 50
 const ROWS_STEP = 400
@@ -115,6 +121,25 @@ function ClampedDescription({ text, renderAction }) {
       )}
     </>
   )
+}
+
+// Стрелка раскрытия списка комплектов РД (символ ▸ не во всех шрифтах — SVG).
+const IconChevronRight = () => (
+  <svg className="vr-rd-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <path d="m9 6 6 6-6 6" />
+  </svg>
+)
+
+// Нажатие по строке раскрывает комплекты РД — кроме нажатий по ссылкам, кнопкам,
+// спискам и полям строки (у них своё действие), выделения текста и нажатий во
+// всплывающих окнах: они рисуются порталом в <body>, но React доносит их событие
+// до строки — поэтому проверяем, что цель действительно внутри строки.
+const ROW_CONTROLS = 'a, button, input, select, textarea, label, [role="button"], .fdrop, .drc'
+function isRowToggleClick(e) {
+  if (!e.currentTarget.contains(e.target)) return false
+  if (e.target.closest(ROW_CONTROLS)) return false
+  return !window.getSelection?.()?.toString()
 }
 
 // «Иванов Иван Иванович» → «ИИ»: две первые буквы фамилии и имени.
@@ -210,6 +235,12 @@ function VorsPage() {
   // task 393: документы «ВОРы и РД» (S3, категория 'vor')
   const [vorDocsModalTenderId, setVorDocsModalTenderId] = useState(null)
   const [vorDocCounts, setVorDocCounts] = useState({}) // tenderId → число документов
+  // Комплекты РД (миграция 20261027): все разом — сводка «ВОР готов N из M» нужна
+  // в каждой строке. status: 'loading' | 'ok' | 'missing' (нет таблицы) | 'error'.
+  const [rdSets, setRdSets] = useState([])
+  const [rdSetsStatus, setRdSetsStatus] = useState('loading')
+  // Раскрытые строки (id тендера или заявки) — можно несколько сразу.
+  const [expandedIds, setExpandedIds] = useState(() => new Set())
 
   const loadStoEmployees = async () => {
     try {
@@ -332,6 +363,42 @@ function VorsPage() {
     fetchTenders()
   }, [fetchTenders])
 
+  // Комплекты РД — отдельно от реестра и не задерживая его: таблица показывается
+  // сразу, сводка в строках появляется, когда список придёт.
+  useEffect(() => {
+    let alive = true
+    fetchVorRdSets()
+      .then(({ rows, supported }) => {
+        if (!alive) return
+        setRdSets(rows)
+        setRdSetsStatus(supported ? 'ok' : 'missing')
+      })
+      .catch((err) => {
+        console.error('Ошибка загрузки комплектов РД:', err.message)
+        if (alive) setRdSetsStatus('error')
+      })
+    return () => { alive = false }
+  }, [])
+
+  // Комплекты по владельцу (тендер или заявка), в порядке списка — он же № п/п.
+  const rdSetsByOwner = useMemo(() => {
+    const map = new Map()
+    for (const set of rdSets) {
+      const key = rdSetOwnerId(set)
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(set)
+    }
+    for (const list of map.values()) list.sort(compareRdSets)
+    return map
+  }, [rdSets])
+
+  const toggleExpanded = (id) => setExpandedIds(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+
   // Онлайн-обновления тендеров — как в реестре «Тендеры»: правка из реестра
   // (подразделение под описанием работ, статус ВОР, сроки) или от коллеги
   // подмешивается в уже загруженную строку, без перезагрузки страницы. Только
@@ -404,7 +471,9 @@ function VorsPage() {
     if (newStatus === 'completed') {
       const tender = tenders.find(t => t.id === tenderId)
       const hasDocs = (vorDocCounts[tenderId] || 0) > 0
-      if (!tender?.vor_link && !hasDocs) {
+      // Ссылка у комплекта РД — тоже ссылка на РД и ВОР.
+      const hasSetLink = (rdSetsByOwner.get(tenderId) || []).some(s => s.link)
+      if (!tender?.vor_link && !hasDocs && !hasSetLink) {
         alert('Нельзя установить статус «Завершён»: нет ни ссылки, ни прикреплённого документа на ВОРы и РД.')
         return
       }
@@ -826,12 +895,44 @@ function VorsPage() {
                 </td>
               </tr>
             ) : (
-              renderedRows.map((t) => (
-                <tr key={t.id} className={t._kind === 'request' ? 'vor-request-row' : undefined}>
+              renderedRows.map((t) => {
+                const sets = rdSetsByOwner.get(t.id) || NO_SETS
+                const open = expandedIds.has(t.id)
+                const readySets = sets.filter(s => s.vor_ready).length
+                const ownerLabel = t._kind === 'request'
+                  ? `заявка № ${t.request_number}`
+                  : `тендер № ${t.public_tender_number ?? '—'}`
+                return (
+                <Fragment key={t.id}>
+                <tr
+                  className={`vr-main-row${t._kind === 'request' ? ' vor-request-row' : ''}${open ? ' is-open' : ''}`}
+                  onClick={(e) => { if (isRowToggleClick(e)) toggleExpanded(t.id) }}
+                >
                   <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
-                    {t._kind === 'request'
-                      ? <span className="vor-request-badge" title="Заявка на ВОР без тендера">Заявка<br />№ {t.request_number}</span>
-                      : (t.public_tender_number ?? '—')}
+                    {/* Раскрытие комплектов РД — кнопкой (с клавиатуры) или нажатием
+                        по свободному месту строки. */}
+                    <button
+                      type="button"
+                      className={`vr-rd-toggle${open ? ' is-open' : ''}`}
+                      aria-expanded={open}
+                      aria-controls={open ? `vr-rd-${t.id}` : undefined}
+                      aria-label={`Комплекты РД: ${ownerLabel}`}
+                      title={open ? 'Скрыть комплекты РД' : 'Показать комплекты РД'}
+                      onClick={() => toggleExpanded(t.id)}
+                    >
+                      <IconChevronRight />
+                      {t._kind === 'request'
+                        ? <span className="vor-request-badge" title="Заявка на ВОР без тендера">Заявка<br />№ {t.request_number}</span>
+                        : <span>{t.public_tender_number ?? '—'}</span>}
+                    </button>
+                    {sets.length > 0 && (
+                      <div
+                        className={`vr-rd-count${readySets === sets.length ? ' is-done' : ''}`}
+                        title={`ВОР готов по ${readySets} из ${sets.length} комплектов РД`}
+                      >
+                        {readySets} из {sets.length}
+                      </div>
+                    )}
                   </td>
                   <td>
                     {t.object_id && canOpenObject ? (
@@ -1030,7 +1131,25 @@ function VorsPage() {
                     </select>
                   </td>
                 </tr>
-              ))
+                {open && (
+                  <tr className="vr-rd-row" id={`vr-rd-${t.id}`}>
+                    <td colSpan={9}>
+                      <VorRdSetsPanel
+                        owner={{ kind: t._kind === 'request' ? 'request' : 'tender', id: t.id }}
+                        ownerLabel={ownerLabel}
+                        sets={sets}
+                        status={rdSetsStatus}
+                        canEdit={canEditVors}
+                        onAdded={(row) => setRdSets(prev => [...prev, row])}
+                        onChanged={(row) => setRdSets(prev => prev.map(x => (x.id === row.id ? row : x)))}
+                        onRemoved={(id) => setRdSets(prev => prev.filter(x => x.id !== id))}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+                )
+              })
             )}
           </tbody>
         </table>

@@ -1,0 +1,291 @@
+/* Комплекты РД под строкой «ВОРов и РД» (VorRdSetsPanel). Шкала — токены --ui-*
+   (src/styles/workUi.css), правила — docs/UI_GUIDELINES.md.
+   Таблица вложена в .data-table страницы, поэтому её общие правила (липкая шапка,
+   прописные заголовки, зебра, отступы) сюда доходят — ниже они перебиты явно:
+   селекторы с table.vrs-table сильнее правил .cost-plans-page .data-table. */
+
+.vrs-panel {
+  --vrs-yes: #15803d;         /* зелёный текст на светло-зелёном — 4,8:1 */
+  padding: 0.75rem 1rem 0.875rem 1.75rem;
+  cursor: default;
+}
+[data-theme='dark'] .vrs-panel { --vrs-yes: var(--success-color); }
+
+.vrs-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.vrs-title {
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  font-weight: var(--ui-semibold);
+  color: var(--text-primary);
+}
+.vrs-sum {
+  padding: 0 0.375rem;
+  border-radius: var(--ui-radius);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  font-weight: var(--ui-medium);
+  font-variant-numeric: tabular-nums;
+}
+.vrs-sum.is-done { background: var(--success-light); color: var(--vrs-yes); }
+
+.vrs-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+}
+.vrs-note.is-error { color: var(--danger-color); }
+
+/* ── Таблица ─────────────────────────────────────────────────────────────── */
+.vrs-table-wrap {
+  max-width: 90rem;
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+}
+.vors-page .vrs-panel table.vrs-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 58.5rem;           /* сумма колонок ниже (34.5rem) + по 12rem комплекту и примечанию */
+  border-collapse: collapse;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+}
+.vrs-col-num { width: 4.25rem; }   /* «№ п/п» в одну строку */
+/* .vrs-col-name, .vrs-col-note — без ширины: делят остаток */
+.vrs-col-ready { width: 6.5rem; }
+.vrs-col-due { width: 10rem; }     /* поле даты «дд.мм.гггг» + значок календаря */
+.vrs-col-link { width: 11rem; }
+.vrs-col-act { width: 2.75rem; }
+
+.vors-page .vrs-panel table.vrs-table th {
+  position: static;
+  padding: 0.375rem 0.5rem;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+  text-transform: none;
+  letter-spacing: normal;
+  text-align: left;
+  white-space: normal;
+  vertical-align: bottom;
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+}
+.vors-page .vrs-panel table.vrs-table td {
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+  color: var(--text-primary);
+  font-weight: var(--ui-regular);
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  overflow-wrap: break-word;
+}
+.vors-page .vrs-panel table.vrs-table :is(th, td):last-child { border-right: none; }
+.vors-page .vrs-panel table.vrs-table tbody tr:last-child td { border-bottom: none; }
+.vors-page .vrs-panel table.vrs-table tbody tr,
+.vors-page .vrs-panel table.vrs-table tbody tr:hover { background: transparent; }
+.vors-page .vrs-panel table.vrs-table .vrs-num {
+  text-align: center;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.vors-page .vrs-panel table.vrs-table th.vrs-num { white-space: nowrap; }
+.vors-page .vrs-panel table.vrs-table td.vrs-num { padding-top: 0.5rem; }
+/* Просмотр без правки: полей нет — текст на одной линии с номером строки. */
+.vors-page .vrs-panel table.vrs-table.is-readonly td { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.vrs-table.is-readonly .vrs-ready-chip { margin-top: 0; }
+.vrs-table.is-readonly .vrs-link { min-height: 0; }
+.vors-page .vrs-panel table.vrs-table td.vrs-act { text-align: center; }
+
+/* ── Поля правки на месте ────────────────────────────────────────────────── */
+.vrs-field {
+  display: block;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.25rem 0.375rem;
+  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  box-sizing: border-box;
+}
+.vrs-field::placeholder { color: var(--text-tertiary); }
+.vrs-field:hover { border-color: var(--border-color-dark); }
+.vrs-field:focus { border-color: var(--primary-color); background: var(--bg-secondary); }
+.vrs-field.is-saving { opacity: 0.7; }
+.vrs-field.is-error { border-color: var(--danger-color); background: var(--danger-light); }
+/* Примечание растёт по тексту (где браузер умеет), не выше ~7 строк. */
+.vrs-field.is-multiline {
+  resize: vertical;
+  field-sizing: content;
+  max-height: 10rem;
+  overflow: auto;
+}
+.vrs-date { font-variant-numeric: tabular-nums; }
+.vrs-date.is-overdue { color: var(--danger-color); font-weight: var(--ui-medium); }
+.vrs-date-text { font-variant-numeric: tabular-nums; }
+
+.vrs-due-hint {
+  margin-top: 0.125rem;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  font-weight: var(--ui-medium);
+}
+.vrs-due-hint.is-overdue { color: var(--danger-color); }
+.vrs-due-hint.is-soon { color: var(--warning-color); }
+
+.vrs-empty { color: var(--text-tertiary); }
+.vrs-note-text { white-space: pre-wrap; }
+
+/* ── ВОР готов: Да / Нет ─────────────────────────────────────────────────── */
+.vrs-ready {
+  display: inline-flex;
+  margin-top: 0.125rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  overflow: hidden;
+}
+.vrs-ready-opt {
+  min-width: 2.5rem;
+  height: 1.75rem;
+  padding: 0 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+  cursor: pointer;
+}
+.vrs-ready-opt + .vrs-ready-opt { border-left: 1px solid var(--border-color-dark); }
+.vrs-ready-opt:hover:not(.is-on) { background: var(--hover-bg); color: var(--text-primary); }
+.vrs-ready-opt:disabled { cursor: progress; }
+.vrs-ready-opt.is-yes.is-on { background: var(--success-light); color: var(--vrs-yes); }
+.vrs-ready-opt.is-no.is-on { background: var(--bg-tertiary); color: var(--text-primary); }
+.vrs-ready-chip {
+  display: inline-block;
+  margin-top: 0.25rem;
+  padding: 0 0.5rem;
+  border-radius: var(--ui-radius);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+}
+.vrs-ready-chip.is-yes { background: var(--success-light); color: var(--vrs-yes); }
+
+/* ── Ссылка ──────────────────────────────────────────────────────────────── */
+.vrs-link {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 2rem;
+}
+.vrs-link-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ui-link);
+  font: inherit;
+  font-size: var(--ui-text);
+  font-weight: var(--ui-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vrs-link-open:hover { text-decoration: underline; }
+.vrs-add-link {
+  margin-top: 0.125rem;
+  min-height: 1.75rem;
+  padding: 0 0.5rem;
+  border: 1px dashed var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: none;
+  color: var(--ui-link);
+  font: inherit;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  font-weight: var(--ui-medium);
+  cursor: pointer;
+}
+.vrs-add-link:hover { border-color: var(--primary-color); }
+.vrs-link-edit { display: grid; gap: 0.25rem; }
+.vrs-link-actions { display: flex; gap: 0.25rem; }
+.vrs-field-error {
+  color: var(--danger-color);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+}
+
+/* ── Кнопки ──────────────────────────────────────────────────────────────── */
+.vrs-btn {
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  font-weight: var(--ui-medium);
+  cursor: pointer;
+}
+.vrs-btn.is-primary { border-color: var(--primary-color); background: var(--primary-color); color: #fff; }
+[data-theme='dark'] .vrs-btn.is-primary { color: #0f172a; }
+.vrs-btn:disabled { opacity: 0.6; cursor: progress; }
+
+.vrs-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-top: 0.125rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.vrs-link .vrs-icon-btn { margin-top: 0; }
+.vrs-icon-btn:hover { color: var(--primary-color); border-color: var(--border-color); background: var(--hover-bg); }
+.vrs-icon-btn.is-danger:hover { color: var(--danger-color); }
+
+.vrs-foot { margin-top: 0.5rem; }
+.vrs-add {
+  height: 2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--primary-color);
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--ui-link);
+  font: inherit;
+  font-size: var(--ui-text);
+  line-height: var(--ui-text-lh);
+  font-weight: var(--ui-medium);
+  cursor: pointer;
+}
+.vrs-add:hover { background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
+.vrs-add:disabled { opacity: 0.6; cursor: progress; }

@@ -382,3 +382,73 @@ body.vors-typography :is(.drc-done, .drc-link) {
   white-space: nowrap;
   border: 0;
 }
+
+/* ── Комплекты РД под строкой (VorRdSetsPanel) ──────────────────────────────
+   Строка раскрывается нажатием: стрелка с номером в первой колонке — то же для
+   клавиатуры. Раскрытая строка и её список отмечены полосой слева и общим
+   фоном, чтобы было видно, к какому тендеру относится список. */
+.cost-plans-page.vors-page .vors-table > tbody > tr.vr-main-row { cursor: pointer; }
+.cost-plans-page.vors-page .vr-rd-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  max-width: 100%;
+  padding: 0.125rem 0.25rem 0.125rem 0.125rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cost-plans-page.vors-page .vr-rd-toggle:hover {
+  border-color: var(--border-color);
+  background: var(--hover-bg);
+}
+.cost-plans-page.vors-page .vr-rd-chevron {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 0.15s ease;
+}
+.cost-plans-page.vors-page .vr-rd-toggle.is-open .vr-rd-chevron {
+  transform: rotate(90deg);
+  color: var(--primary-color);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cost-plans-page.vors-page .vr-rd-chevron { transition: none; }
+}
+/* «2 из 5» — по скольким комплектам ВОР готов. */
+.cost-plans-page.vors-page .vr-rd-count {
+  margin-top: 0.125rem;
+  color: var(--text-secondary);
+  font-size: var(--vr-hint);
+  line-height: var(--vr-hint-lh);
+  font-weight: var(--vr-medium);
+  white-space: nowrap;
+}
+/* Все готовы — зелёным (#15803d на белом — 5:1; --success-color светлой темы — 3,3:1). */
+.cost-plans-page.vors-page .vr-rd-count.is-done { color: #15803d; }
+[data-theme='dark'] .cost-plans-page.vors-page .vr-rd-count.is-done { color: var(--success-color); }
+
+.cost-plans-page.vors-page .vors-table > tbody > tr.vr-main-row.is-open,
+.cost-plans-page.vors-page .vors-table > tbody > tr.vr-rd-row {
+  background: color-mix(in srgb, var(--primary-color) 6%, var(--bg-secondary));
+}
+.cost-plans-page.vors-page .vors-table > tbody > tr.vr-main-row.is-open > td { border-bottom-color: transparent; }
+.cost-plans-page.vors-page .vors-table > tbody > tr.vr-main-row.is-open > td:first-child,
+.cost-plans-page.vors-page .vors-table > tbody > tr.vr-rd-row > td {
+  box-shadow: inset 3px 0 0 var(--primary-color);
+}
+.cost-plans-page.vors-page .vors-table > tbody > tr.vr-rd-row > td { padding: 0; }
+/* Таблица раздела шире окна на 1366 px (min-width выше) и прокручивается вбок —
+   список комплектов держится в видимой части: шириной с окно прокрутки (cqw) и
+   прилипает к его левому краю. Без поддержки cqw — на всю ширину строки. */
+.cost-plans-page.vors-page .table-container { container-type: inline-size; }
+.cost-plans-page.vors-page .vr-rd-row .vrs-panel {
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: 100%;
+  width: 100cqw;
+}

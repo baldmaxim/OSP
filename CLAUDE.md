@@ -233,6 +233,7 @@ const { data } = await db
 | `psdc_batches` | Пакет массовой загрузки ПСДЦ | — |
 | `osp_private.larix_rates` → вью `larix_rates_registry` | Договорные расценки из Larix.CPM (см. раздел «Договорные расценки (Larix)»): строка = позиция договора с ценой материалов и ценой работ, повторы схлопнуты. Пишет только загрузка osp-api; прежняя `larix_contract_rates` (строка × вид) с 20261021 не пишется | `osp_contract_id` (наш договор, без FK) |
 | `larix_sync_runs` / `larix_sync_stage` | Журнал загрузок из Larix (статус, причина, списки фильтров) и порции текущей загрузки | `larix_sync_stage.run_id` (CASCADE) |
+| `vor_rd_sets` | Комплекты РД в «ВОРах и РД» (миграция 20261027): список под строкой тендера или заявки, раскрывается нажатием по строке или стрелкой у номера ([VorRdSetsPanel](src/components/VorRdSetsPanel.jsx)). Комплект РД, ВОР готов (да / нет), срок выдачи ВОРа, ссылка (http(s) или `\\сервер\папка`), примечание; № п/п не хранится — порядок `sort_order`. Читает сотрудник, пишет правка «Тендеров» или «ВОРов и РД» (`vor_rd_can_edit()`). Ссылка комплекта открывает статус ВОР «Завершён», как ссылка и файлы раздела. Тест — `tests/tender/vor-rd-sets.test.mjs` | `tender_id` или `vor_request_id` — ровно одно (CASCADE) |
 
 **Key ENUMs:**
 - `objects.status`: `'main_construction'` | `'warranty_service'`

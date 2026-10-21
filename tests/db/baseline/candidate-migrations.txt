@@ -10,3 +10,4 @@
 20261023_supply_rate_reuse.sql
 20261024_supply_import_state.sql
 20261025_supply_docs_similarity.sql
+20261027_vor_rd_sets.sql

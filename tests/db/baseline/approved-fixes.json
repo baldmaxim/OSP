@@ -1098,5 +1098,115 @@
     "to": "empty",
     "why": "новая таблица: состояние разбора позиций ВОР службой osp-api (статус расценки в реестре тендеров на материалы, на копии пусто); читает сотрудник, пишет только служба",
     "candidate": "20261024_supply_import_state.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "admin",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "employee_full",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "employee_none",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "vors_only",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "contractor_own",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "contractor_noorg",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "unapproved",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "blocked",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "no_user_roles",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "anon",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
+  },
+  {
+    "release": "20261027",
+    "class": "service_role",
+    "table": "vor_rd_sets",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: комплекты РД под строкой «ВОРов и РД» (на копии пусто); читает сотрудник, пишет право правки «Тендеры» или «ВОРы и РД»",
+    "candidate": "20261027_vor_rd_sets.sql"
   }
 ]
