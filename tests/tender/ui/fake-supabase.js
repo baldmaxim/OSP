@@ -60,7 +60,10 @@ function applyFilters(rows, filters) {
     if (f.op === 'is') return f.val === null ? r[f.col] == null : r[f.col] === f.val
     if (f.op === 'in') return f.val.map(String).includes(String(r[f.col]))
     if (f.op === 'gt') return r[f.col] > f.val
-    if (f.op === 'or') return f.conds.some((c) => (c.op === 'is' ? r[c.col] == null : String(r[c.col]) === c.val))
+    if (f.op === 'or') {
+      return f.conds.some((c) => (c.op === 'is' ? r[c.col] == null
+        : c.op === 'in' ? c.val.includes(String(r[c.col])) : String(r[c.col]) === c.val))
+    }
     return true
   }))
 }
@@ -94,13 +97,15 @@ function builder(table) {
     gt(col, val) { q.filters.push({ op: 'gt', col, val }); return self },
     neq() { return self },
     not() { return self },
-    // «a.eq.1,b.is.null» — как PostgREST; прочие операторы стенду не нужны.
+    // «a.eq.1,b.is.null,c.in.(x,y)» — как PostgREST; прочие операторы стенду не нужны.
+    // Запятые внутри списка in.(…) условия не делят.
     or(expr) {
-      const conds = String(expr).split(',').map((part) => {
+      const conds = String(expr).split(/,(?![^(]*\))/).map((part) => {
         const [col, op, ...rest] = part.split('.')
-        return { col, op, val: rest.join('.') }
+        const val = rest.join('.')
+        return op === 'in' ? { col, op, val: val.replace(/^\(|\)$/g, '').split(',') } : { col, op, val }
       })
-      if (conds.every((c) => c.op === 'eq' || (c.op === 'is' && c.val === 'null'))) q.filters.push({ op: 'or', conds })
+      if (conds.every((c) => c.op === 'eq' || c.op === 'in' || (c.op === 'is' && c.val === 'null'))) q.filters.push({ op: 'or', conds })
       return self
     },
     order(col, opts = {}) { q.orders.push({ col, asc: opts.ascending !== false }); return self },

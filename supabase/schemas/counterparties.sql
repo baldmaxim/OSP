@@ -13,7 +13,12 @@ CREATE TABLE IF NOT EXISTS counterparties (
   website VARCHAR(500),
   status counterparty_status DEFAULT 'active',
   notes TEXT,
+  -- НДС контрагента (миграция 20261026): ставка, % либо «без НДС»; ни того ни другого — не указан.
+  vat_rate NUMERIC(5, 2),
+  vat_exempt BOOLEAN NOT NULL DEFAULT false,
   deleted_at TIMESTAMPTZ,
+  CONSTRAINT counterparties_vat_check
+    CHECK ((vat_rate IS NULL OR (vat_rate >= 0 AND vat_rate <= 100)) AND NOT (vat_exempt AND vat_rate IS NOT NULL)),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -65,5 +70,7 @@ COMMENT ON COLUMN counterparties.actual_address IS 'Фактический ад�
 COMMENT ON COLUMN counterparties.website IS 'Ссылка на сайт контрагента';
 COMMENT ON COLUMN counterparties.status IS 'Статус контрагента (действующий/черный список)';
 COMMENT ON COLUMN counterparties.notes IS 'Примечания к контрагенту';
+COMMENT ON COLUMN counterparties.vat_rate IS 'Ставка НДС контрагента, % (0/5/7/10/20/22); NULL — не указана или «без НДС»';
+COMMENT ON COLUMN counterparties.vat_exempt IS 'Контрагент работает без НДС (УСН, освобождение)';
 COMMENT ON COLUMN counterparties.created_at IS 'Дата и время создания записи';
 COMMENT ON COLUMN counterparties.updated_at IS 'Дата и время последнего обновления записи';

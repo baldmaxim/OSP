@@ -18,7 +18,7 @@ npm run preview      # Preview production build
 npm run lint         # Run ESLint (--max-warnings 0)
 npm run check:transport # доступ к серверу только через src/api/ (0 нарушений)
 npm run test:psdc    # ПСДЦ: движок в БД, XLSX, UI (PostgreSQL + Chromium)
-npm run test:tender  # карточка тендера: производительность UI, страница расценки снабжением (Chromium)
+npm run test:tender  # карточка тендера: производительность UI, страница расценки снабжением, карточка контрагента (Chromium)
 npm run test:supply  # расценка снабжением: база на слепке прода (Docker), лист «Материалы», normName = SQL
 npm run test:contracts # договоры: путь к Larix.CPM, импорт из Excel, суммы «Заявки на ДС» со знаком (без базы и браузера)
 npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
@@ -206,7 +206,7 @@ const { data } = await db
 |-------|---------|------------------|
 | `objects` | Construction sites | - |
 | `contacts` | Personnel linked to objects | `object_id` |
-| `counterparties` | Contractor directory | - |
+| `counterparties` | Contractor directory. Карточка (клик по строке) — вкладка «Общая информация» ([components/counterparty/](src/components/counterparty/)): реквизиты, НДС (`vat_rate` / `vat_exempt` — ставка или «без НДС», миграция 20261026), примечание (колонки в реестре нет), аффилированные компании = группа «Связей» (`counterparty_relations`), договоры и ДС, где контрагент — сторона (`contracts.counterparty_id` или `contract_counterparties`) | - |
 | `counterparty_contacts` | Contact persons | `counterparty_id` (CASCADE) |
 | `contracts` | Contract registry | `object_id`, `counterparty_id` |
 | `tenders` | Tender management | `object_id`, `winner_counterparty_id`, `responsible_contact_id` |

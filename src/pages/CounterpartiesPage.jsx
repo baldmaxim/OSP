@@ -7,13 +7,14 @@ import { generateUUID } from '../utils/uuid'
 import { useRole } from '../contexts/RoleContext'
 import CounterpartyCardChip from '../components/CounterpartyCardChip'
 import CounterpartyDocBadges from '../components/CounterpartyDocBadges'
-import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import S3DocumentList from '../components/S3DocumentList'
 import { fetchCounterpartyDocSummary } from '../services/s3'
 import { useIsPhone } from '../hooks/useMediaQuery'
 import { diffWords } from '../utils/textDiff'
 import { shortPersonName } from '../utils/personName'
 import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils/counterpartyGroups'
+import { vatFromSelect, vatText } from '../utils/counterpartyVat'
+import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
@@ -92,7 +93,7 @@ function fmtAuditDateTime(ts) {
 }
 
 function CounterpartiesPage() {
-  const { isAdmin, canEdit, userProfile } = useRole()
+  const { isAdmin, canEdit, canView, userProfile } = useRole()
   // task 333: гейт add/edit/delete и inline-editing для раздела «counterparties».
   const canEditCp = canEdit('counterparties')
   const [counterparties, setCounterparties] = useState([])
@@ -143,9 +144,10 @@ function CounterpartiesPage() {
   // Контакты, которые добавляются при создании/редактировании контрагента
   const [tempContacts, setTempContacts] = useState([])
   const [editingTempContactIndex, setEditingTempContactIndex] = useState(null)
-  // Detail-модалка контрагента (по клику на строку): история тендеров + документы + редактирование.
+  // Detail-модалка контрагента (по клику на строку): общая информация, документы, история тендеров,
+  // журнал правок + редактирование.
   const [detailCp, setDetailCp] = useState(null)
-  const [detailTab, setDetailTab] = useState('documents') // 'documents' | 'history' | 'changes'
+  const [detailTab, setDetailTab] = useState('general') // 'general' | 'documents' | 'history' | 'changes'
   // История изменений контрагента: { counterpartyId: [события] }, ленивая загрузка.
   const [auditMap, setAuditMap] = useState({})
   const [auditLoadingId, setAuditLoadingId] = useState(null)
@@ -434,7 +436,7 @@ function CounterpartiesPage() {
       const nameById = new Map(counterparties.map(c => [c.id, c.name]))
       const addedName = nameById.get(relatedId) || 'Контрагент'
       const list = otherMates.map(id => `• ${nameById.get(id) || id}`).join('\n')
-      if (!window.confirm(`${addedName} уже связан с:\n${list}\n\nГруппы объединятся — все эти контрагенты станут связаны между собой. Продолжить?`)) return
+      if (!window.confirm(`${addedName} уже связан с:\n${list}\n\nГруппы объединятся — все эти контрагенты станут связаны между собой. Продолжить?`)) return false
     }
     try {
       // Пара сохраняется в одном направлении; группа собирается при чтении.
@@ -445,15 +447,17 @@ function CounterpartiesPage() {
       if (error) {
         if (error.code === '23505') {
           alert('Эта связь уже существует')
-          return
+          return false
         }
         throw error
       }
       await fetchRelations()
       setRelationSearchQuery('')
+      return true
     } catch (error) {
       console.error('Ошибка добавления связи:', error.message)
       alert('Ошибка: ' + error.message)
+      return false
     }
   }
 
@@ -987,7 +991,8 @@ function CounterpartiesPage() {
     }
   }
 
-  // task 203: правка примечания прямо в таблице (сохранение по blur)
+  // Примечание — во вкладке «Общая информация» карточки (из таблицы реестра колонка убрана),
+  // сохранение по blur.
   const handleNotesChange = async (counterpartyId, rawNotes) => {
     const notes = rawNotes.trim() || null
     const prevNotes = counterparties.find(cp => cp.id === counterpartyId)?.notes ?? null
@@ -1007,6 +1012,39 @@ function CounterpartiesPage() {
     } catch (error) {
       console.error('Ошибка обновления примечания:', error.message)
       alert('Ошибка обновления примечания: ' + error.message)
+    }
+  }
+
+  // НДС контрагента — во вкладке «Общая информация» (миграция 20261026). В CP_FIELD_LABEL его нет
+  // намеренно: форма редактирования НДС не отправляет, и сравнение полей формы писало бы ложную правку.
+  const handleVatChange = async (counterpartyId, selectValue) => {
+    const prev = counterparties.find(cp => cp.id === counterpartyId)
+    const next = vatFromSelect(selectValue)
+    if (!prev) return
+    const prevRate = prev.vat_rate == null ? null : Number(prev.vat_rate)
+    if (prevRate === next.vat_rate && !!prev.vat_exempt === next.vat_exempt) return
+    try {
+      const { error } = await db
+        .from('counterparties')
+        .update(next)
+        .eq('id', counterpartyId)
+      if (error) throw error
+      setCounterparties(list =>
+        list.map(cp => (cp.id === counterpartyId ? { ...cp, ...next } : cp))
+      )
+      const before = vatText(prev)
+      const after = vatText(next)
+      await logCpEvent(counterpartyId, 'field_updated', {
+        fieldName: 'vat',
+        oldValue: before,
+        newValue: after,
+        description: `НДС: ${before} → ${after}`,
+      })
+    } catch (error) {
+      console.error('Ошибка обновления НДС:', error.message)
+      alert(['42703', 'PGRST204'].includes(error.code) || /vat_/.test(error.message || '')
+        ? 'НДС пока нельзя сохранить: база ещё не обновлена (миграция 20261026).'
+        : 'Ошибка обновления НДС: ' + error.message)
     }
   }
 
@@ -1064,12 +1102,16 @@ function CounterpartiesPage() {
       'Фактический адрес',
       'Ссылка на сайт',
       'Статус',
+      'НДС',
       'Примечание',
       'ФИО контакта',
       'Должность контакта',
       'Телефон контакта',
       'Email контакта'
     ]
+
+    // Без колонок НДС (миграция 20261026) — пустая ячейка, а не «не указан».
+    const vatLabel = (cp) => (cp.vat_exempt || cp.vat_rate != null ? vatText(cp) : '')
 
     const statusLabel = (status) => {
       if (status === 'blacklist') return 'Черный список'
@@ -1095,6 +1137,7 @@ function CounterpartiesPage() {
         cp.actual_address || '',
         cp.website || '',
         statusLabel(cp.status),
+        vatLabel(cp),
         cp.notes || '',
       ]
 
@@ -1117,6 +1160,7 @@ function CounterpartiesPage() {
             isFirst ? cp.actual_address || '' : '',
             isFirst ? cp.website || '' : '',
             isFirst ? statusLabel(cp.status) : '',
+            isFirst ? vatLabel(cp) : '',
             isFirst ? cp.notes || '' : '',
             contact.full_name || '',
             contact.position || '',
@@ -1141,6 +1185,7 @@ function CounterpartiesPage() {
       { wch: 38 },  // Факт. адрес
       { wch: 24 },  // Сайт
       { wch: 14 },  // Статус
+      { wch: 10 },  // НДС
       { wch: 28 },  // Примечание
       { wch: 28 },  // ФИО
       { wch: 22 },  // Должность
@@ -1565,13 +1610,18 @@ function CounterpartiesPage() {
     }
   }
 
-  // Функция для раскрытия/скрытия строки
-  // Клик по строке открывает detail-модалку контрагента (история + документы).
-  const openDetail = (counterparty) => {
+  // Клик по строке открывает detail-модалку контрагента — по умолчанию «Общая информация»;
+  // значки документов СБ / должной осмотрительности открывают сразу «Документы».
+  const openDetail = (counterparty, tab = 'general') => {
     setDetailCp(counterparty)
-    setDetailTab('documents') // по умолчанию открываем «Документы»
+    setDetailTab(tab)
     fetchTenderHistory(counterparty.id) // ленивая загрузка истории (task 196)
   }
+
+  // Колонки НДС появляются с миграцией 20261026; select('*') без них их просто не отдаёт.
+  const vatSupported = counterparties.length === 0 || Object.prototype.hasOwnProperty.call(counterparties[0], 'vat_exempt')
+  // Карточка открыта со снимком строки; правки (примечание, НДС) идут в список — показываем свежую.
+  const detailCpLive = detailCp ? (counterparties.find(c => c.id === detailCp.id) || detailCp) : null
 
   return (
     <div className="counterparties-page">
@@ -1941,7 +1991,6 @@ function CounterpartiesPage() {
                     <th className="col-contact-phone">Телефон</th>
                     <th className="col-contact-email">Email</th>
                     <th className="col-website">Сайт</th>
-                    <th className="col-notes">Примечание</th>
                     <th className="col-status">Статус</th>
                     <th className="col-actions"></th>
                   </tr>
@@ -1987,7 +2036,7 @@ function CounterpartiesPage() {
                             <CounterpartyDocBadges
                               summary={docSummaryByCp.get(counterparty.id)}
                               showDate
-                              onOpen={() => openDetail(counterparty)}
+                              onOpen={() => openDetail(counterparty, 'documents')}
                             />
                             {(canEditCp || relCount > 0) && (
                               <button
@@ -2088,31 +2137,6 @@ function CounterpartiesPage() {
                               </a>
                             ) : <span className="empty-cell">--</span>}
                           </td>
-                          {/* task 203 + 330: редактируемое примечание прямо в таблице
-                              с авторасширением по контенту (без ручного drag). */}
-                          <td className="col-notes" onClick={(e) => e.stopPropagation()}>
-                            {/* task 333: read-only режим — отдаём текстом без textarea.
-                                Перф: AutoGrowTextarea с useLayoutEffect вместо inline ref —
-                                иначе на странице с сотнями строк каждый ввод вызывал
-                                тысячи принудительных layout-вычислений. */}
-                            {canEditCp ? (
-                              <AutoGrowTextarea
-                                className="notes-edit"
-                                defaultValue={counterparty.notes || ''}
-                                placeholder="Примечание…"
-                                minHeight={32}
-                                onBlur={(e) => {
-                                  if (e.target.value.trim() !== (counterparty.notes || '')) {
-                                    handleNotesChange(counterparty.id, e.target.value)
-                                  }
-                                }}
-                              />
-                            ) : (
-                              counterparty.notes
-                                ? <span className="notes-readonly">{counterparty.notes}</span>
-                                : <span className="empty-cell">—</span>
-                            )}
-                          </td>
                           <td className="col-status" onClick={(e) => e.stopPropagation()}>
                             {/* task 333: select становится disabled при read-only */}
                             <select
@@ -2160,7 +2184,7 @@ function CounterpartiesPage() {
                   })}
                   {visibleCount < filteredCounterparties.length && (
                     <tr className="show-more-row">
-                      <td colSpan="12">
+                      <td colSpan="11">
                         <button
                           type="button"
                           className="btn-show-more"
@@ -2207,6 +2231,13 @@ function CounterpartiesPage() {
             <div className="cp-detail-tabs">
               <button
                 type="button"
+                className={`cp-detail-tab ${detailTab === 'general' ? 'active' : ''}`}
+                onClick={() => setDetailTab('general')}
+              >
+                Общая информация
+              </button>
+              <button
+                type="button"
                 className={`cp-detail-tab ${detailTab === 'documents' ? 'active' : ''}`}
                 onClick={() => setDetailTab('documents')}
               >
@@ -2230,6 +2261,23 @@ function CounterpartiesPage() {
             </div>
 
             <div className="cp-detail-body">
+              {detailTab === 'general' && (
+                <CounterpartyGeneralTab
+                  counterparty={detailCpLive}
+                  counterparties={counterparties}
+                  canEdit={canEditCp}
+                  canViewContracts={canView('contracts')}
+                  isPhone={isPhone}
+                  vatSupported={vatSupported}
+                  affiliates={getRelatedCounterparties(detailCp.id)}
+                  onSaveNotes={(text) => handleNotesChange(detailCp.id, text)}
+                  onSaveVat={(value) => handleVatChange(detailCp.id, value)}
+                  onAddAffiliate={(other) => handleAddRelation(detailCp.id, other.id)}
+                  onRemoveAffiliate={(other) => handleRemoveRelation(detailCp.id, other.id)}
+                  onOpenCounterparty={(other) => openDetail(other)}
+                />
+              )}
+
               {detailTab === 'changes' && (
                 auditLoadingId === detailCp.id ? (
                   <div className="tender-history-loading">Загрузка истории…</div>

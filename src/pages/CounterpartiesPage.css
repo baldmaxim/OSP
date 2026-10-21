@@ -332,16 +332,14 @@
   font-variant-numeric: tabular-nums;
 }
 .col-checkbox { width: 36px; text-align: center; }
-.col-name { width: 17%; }
-.col-worktype { width: 14%; }
+.col-name { width: 22%; }
+.col-worktype { width: 18%; }
 .col-inn { width: 9%; font-size: 0.75rem; }
-.col-contact-name { width: 17%; }
+.col-contact-name { width: 19%; }
 /* task 202: телефон фикс. минимальной ширины — формат +7(000)000-00-00 (16 симв.) */
 .col-contact-phone { width: 132px; font-size: 0.75rem; }
 .col-contact-email { width: 14%; font-size: 0.75rem; }
 .col-website { width: 5%; text-align: center; }
-/* task 199: «Примечание» — шире */
-.col-notes { width: 18%; font-size: 0.75rem; }
 .col-status { width: 9%; }
 .col-actions { width: 6%; text-align: center; }
 
@@ -1741,51 +1739,6 @@
 .contacts-stack-emails .contact-link {
   word-break: break-all;
   overflow-wrap: anywhere;
-}
-
-/* Примечание */
-.col-notes .notes-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  color: var(--text-secondary);
-  line-height: 1.35;
-}
-
-/* task 203 + 330: редактируемое примечание прямо в таблице.
-   resize: none — высота управляется автоматически из JS по scrollHeight. */
-.col-notes textarea.notes-edit {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 2rem;
-  padding: 0.25rem 0.375rem;
-  font: inherit;
-  font-size: 0.75rem;
-  line-height: 1.35;
-  color: var(--text-primary);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  resize: none;
-  overflow: hidden;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.col-notes textarea.notes-edit::placeholder {
-  color: var(--text-tertiary);
-  opacity: 0.6;
-}
-
-.col-notes textarea.notes-edit:hover {
-  border-color: var(--border-color);
-}
-
-.col-notes textarea.notes-edit:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  background: var(--bg-secondary);
 }
 
 /* Иконка «Открыть полную карточку» */

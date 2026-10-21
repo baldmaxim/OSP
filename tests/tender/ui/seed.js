@@ -5,6 +5,9 @@ const ITEMS = Number(params.get('items') || 5000)
 const CPS = Number(params.get('cps') || 10)
 const DOCS = ['Корпус 1', 'Корпус 2', 'Паркинг']
 const CP_CONTACTS = params.get('cpContacts') === '1'
+// ?cpCard=1 — карточка контрагента «Общая информация»: колонки НДС есть (миграция 20261026), у «Подрядчика 01»
+// примечание, ставка 22 %, связь с «Подрядчиком 02», договор с двумя ДС, договор, где он вторая сторона, и чужой договор.
+const CP_CARD = params.get('cpCard') === '1'
 
 const counterparties = Array.from({ length: CPS }, (_, i) => ({ id: `cp-${i + 1}`, name: `Подрядчик ${String(i + 1).padStart(2, '0')}` }))
 const items = []
@@ -113,7 +116,35 @@ window.__fakeDb = {
     counterparty_contacts: CP_CONTACTS && i % 2 === 0
       ? [{ id: `cpc-${i}`, counterparty_id: cp.id, full_name: 'Сапаров Ержан Болатович', phone: '+7 701 555-12-34; +7 727 300-00-00', email: 'sales@example.invalid' }]
       : [],
+    ...(CP_CARD ? {
+      vat_rate: i === 0 ? 22 : null,
+      vat_exempt: false,
+      notes: i === 0 ? 'Работает только по предоплате' : null,
+    } : {}),
   })),
+  counterparty_relations: CP_CARD ? [{ id: 'rel-1', counterparty_id: 'cp-1', related_counterparty_id: 'cp-2' }] : [],
+  counterparty_audit_log: [],
+  contracts: CP_CARD ? [
+    { id: 'k-1', display_id: 101, record_type: 'dp', parent_contract_id: null, root_contract_id: null, counterparty_id: 'cp-1',
+      status: 'in_work', deleted_at: null, contract_number: 'П-15/26', contract_date: '2026-03-02', contract_amount: 1000000,
+      psdc_total: null, currency: 'RUB', work_name: 'Устройство фасада', changed_fields: [], objects: { name: 'ЖК Северный' } },
+    { id: 'k-1-ds1', display_id: 102, record_type: 'ds_extra', parent_contract_id: 'k-1', root_contract_id: 'k-1', counterparty_id: 'cp-1',
+      status: 'completed', deleted_at: null, contract_number: 'ДС-1', contract_date: '2026-05-10', contract_amount: 250000,
+      psdc_total: null, currency: 'RUB', work_name: 'Доп. отделка', changed_fields: [], objects: { name: 'ЖК Северный' } },
+    { id: 'k-1-ds2', display_id: 103, record_type: 'ds_vor', parent_contract_id: 'k-1', root_contract_id: 'k-1', counterparty_id: 'cp-1',
+      status: 'new_request', deleted_at: null, contract_number: 'ДС-2', contract_date: null, contract_amount: null,
+      psdc_total: null, currency: 'RUB', work_name: null, changed_fields: [], objects: { name: 'ЖК Северный' } },
+    { id: 'k-2', display_id: 104, record_type: 'dp', parent_contract_id: null, root_contract_id: null, counterparty_id: 'cp-3',
+      status: 'completed', deleted_at: null, contract_number: 'Т-7', contract_date: '2025-11-20', contract_amount: 500000,
+      psdc_total: null, currency: 'RUB', work_name: 'Трёхсторонний договор', changed_fields: [], objects: { name: 'БЦ Восток' } },
+    { id: 'k-3', display_id: 105, record_type: 'dp', parent_contract_id: null, root_contract_id: null, counterparty_id: 'cp-4',
+      status: 'in_work', deleted_at: null, contract_number: 'ЧУЖОЙ-1', contract_date: '2026-01-01', contract_amount: 1,
+      psdc_total: null, currency: 'RUB', work_name: 'Не его договор', changed_fields: [], objects: { name: 'Другой объект' } },
+  ] : [],
+  contract_counterparties: CP_CARD ? [
+    { id: 'kc-1', contract_id: 'k-2', counterparty_id: 'cp-3', sort_order: 0, contracts: { id: 'k-2', root_contract_id: null, deleted_at: null } },
+    { id: 'kc-2', contract_id: 'k-2', counterparty_id: 'cp-1', sort_order: 1, contracts: { id: 'k-2', root_contract_id: null, deleted_at: null } },
+  ] : [],
   tender_estimate_items: items,
   tender_counterparty_proposals: proposals,
   tender_vor_supply_rates: [],
