@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 import { db } from '../api'
 import { useRole } from './RoleContext'
+import { chunkList } from '../utils/inChunks'
+import { revisionTitle } from '../utils/supplyVorVersions'
 
 // Уведомления о приближающемся завершении тендеров и договоров.
 // Считаются на лету из дат (без таблицы в БД и без крон-задач): при загрузке
@@ -12,6 +14,8 @@ import { useRole } from './RoleContext'
 //   тендер   → tender_end_date (окончание тендерной процедуры)
 //   договор  → signed_date     (планируемая дата подписания)
 //   задача   → due_date        (крайний срок; просроченные тоже показываем)
+//   ВОР      → сметный отдел обновил ВОР тендера, а снабжение изменения ещё не смотрело (версии ВОР, миграция
+//              20261029) — тем, кто правит «Тендеры на материалы»; снимается, когда изменения отметили просмотренными
 //
 // Ключ уведомления СТАБИЛЕН для конкретной сущности (tender:<id>, contract:<id>,
 // kp_review:<id>:<status>) и НЕ зависит от количества дней до срока. Поэтому один
@@ -68,13 +72,15 @@ function loadReadSet() {
 }
 
 export function NotificationsProvider({ children }) {
-  const { isLoggedIn, isEmployee, canView, scopedObjectIds, user } = useRole()
+  const { isLoggedIn, isEmployee, canView, canEdit, scopedObjectIds, user } = useRole()
   // canView — нестабильная функция (пересоздаётся каждый рендер). Забираем нужные
   // права как примитивы, чтобы refresh/useEffect не уходили в цикл перезапросов.
   const canTenders = canView('tenders')
   const canContracts = canView('contracts')
   // task 433: задачи уведомляют конкретного человека, поэтому нужен его user_id.
   const canTasks = canView('tasks')
+  // Изменения ВОР — снабжению: тем, кто правит расценку в «Тендерах на материалах».
+  const canSupply = canEdit('tenders_materials')
   const userId = user?.id || null
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(false)
@@ -168,12 +174,23 @@ export function NotificationsProvider({ children }) {
           .limit(1000)
         : null
 
-      const [tendersRes, contractsRes, kpReviewRes, myTasksRes, reviewTasksRes] = await Promise.all([
+      // Непросмотренные версии ВОР (миграция 20261029): таблицы нет — без них, остальное как раньше.
+      const supplyQ = canSupply
+        ? db
+          .from('tender_supply_revisions')
+          .select('id, tender_id, estimate_name, kind, old_file_name, new_file_name, positions_after, added, removed, priced_removed, volume_changed, unit_changed, created_at')
+          .is('reviewed_at', null)
+          .order('id', { ascending: true })
+          .limit(1000)
+        : null
+
+      const [tendersRes, contractsRes, kpReviewRes, myTasksRes, reviewTasksRes, supplyRes] = await Promise.all([
         tendersQ ? tendersQ : Promise.resolve({ data: [], error: null }),
         contractsQ ? contractsQ : Promise.resolve({ data: [], error: null }),
         kpReviewQ ? kpReviewQ : Promise.resolve({ data: [], error: null }),
         myTasksQ ? myTasksQ : Promise.resolve({ data: [], error: null }),
         reviewTasksQ ? reviewTasksQ : Promise.resolve({ data: [], error: null }),
+        supplyQ ? supplyQ : Promise.resolve({ data: [], error: null }),
       ])
       if (tendersRes.error) throw tendersRes.error
       if (contractsRes.error) throw contractsRes.error
@@ -291,6 +308,42 @@ export function NotificationsProvider({ children }) {
         }
       }
 
+      // Изменения ВОР — одно уведомление на тендер; ключ — с номером последней версии: новое изменение снова
+      // непрочитано. Номер и объект — из тендера (порциями: длинный .in() не проходит шлюз).
+      if (supplyRes.error) {
+        console.warn('Изменения ВОР не загружены (миграция 20261029?):', supplyRes.error.message)
+      } else if (supplyRes.data?.length) {
+        const byTender = new Map()
+        for (const r of supplyRes.data) {
+          if (!byTender.has(r.tender_id)) byTender.set(r.tender_id, [])
+          byTender.get(r.tender_id).push(r)
+        }
+        const tenders = new Map()
+        for (const chunk of chunkList([...byTender.keys()])) {
+          let q = db.from('tenders').select('id, public_tender_number, work_description, object_id, objects(name)').in('id', chunk).is('deleted_at', null)
+          if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+          const { data } = await q
+          for (const t of data || []) tenders.set(t.id, t)
+        }
+        for (const [tenderId, revs] of byTender) {
+          const t = tenders.get(tenderId)
+          if (!t) continue
+          const last = revs[revs.length - 1]
+          const docs = [...new Set(revs.map((r) => `«${r.estimate_name}»`))].join(', ')
+          out.push({
+            kind: 'supply_vor',
+            id: tenderId,
+            key: `supply_vor:${tenderId}:${last.id}`,
+            objectName: t.objects?.name || 'Тендер',
+            subtitle: revs.length === 1 ? `ВОР ${docs}: ${revisionTitle(last)}` : `ВОР ${docs}: изменений ${revs.length}, последнее — ${revisionTitle(last)}`,
+            badge: t.public_tender_number != null ? `№${t.public_tender_number}` : null,
+            date: last.created_at,
+            days: 0,
+            to: `/tenders/materials/${tenderId}/pricing`,
+          })
+        }
+      }
+
       // Самые срочные (просроченные и «сегодня») — вверху. Проверки КП (days=0)
       // остаются в порядке добавления (по дате проверки, свежие сверху).
       out.sort((a, b) => a.days - b.days)
@@ -301,7 +354,7 @@ export function NotificationsProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }, [isLoggedIn, isEmployee, canTenders, canContracts, canTasks, userId, scopedObjectIds])
+  }, [isLoggedIn, isEmployee, canTenders, canContracts, canTasks, canSupply, userId, scopedObjectIds])
 
   useEffect(() => { refresh() }, [refresh])
 

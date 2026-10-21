@@ -767,3 +767,71 @@
   .sp-di-table td.sp-di-pos, .sp-di-table td.sp-di-now { grid-column: 1 / -1; }
   .sp-di-wrap { max-height: none; }
 }
+
+/* ── Версии ВОР (миграция 20261029): что изменилось, вопросы, перенос цен ─────────────────────────── */
+.sp-rev-note { color: var(--text-primary); }
+.sp-rev-note > svg { flex: 0 0 auto; color: var(--success-color); }
+.sp-rev-note.is-removed > svg { color: var(--warning-color); }
+.sp-rev-actions { gap: 0.75rem; }
+.sp-rev-banner .sp-link-btn, .sp-version-q .sp-link-btn { white-space: nowrap; }
+.sp-version-actions { display: inline-flex; align-items: center; gap: 0.75rem; }
+.sp-version-actions .btn-secondary { height: 1.875rem; padding: 0 0.75rem; font-size: var(--ui-text); }
+.sp-version-pick, .sp-carry-pick select {
+  max-width: 24rem;
+  height: 1.75rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ui-hint);
+}
+.sp-carry-pick { display: inline-flex; align-items: center; gap: 0.375rem; margin-left: 0.375rem; }
+/* Строки: новая позиция — зелёная метка слева, изменённая (объём, ед. изм.) — янтарная. */
+.ui-work.ui-work .sp-table > tbody > tr.is-new > td:first-child { box-shadow: inset 3px 0 0 var(--success-color); }
+.ui-work.ui-work .sp-table > tbody > tr.is-changed > td:first-child { box-shadow: inset 3px 0 0 var(--warning-color); }
+.sp-change { color: var(--warning-color); }
+.sp-change.is-new { color: var(--success-color); }
+.sp-carry { color: var(--text-primary); }
+.sp-carry .sp-link-btn + .sp-link-btn { margin-left: 0.5rem; }
+.sp-was { display: block; color: var(--text-secondary); font-size: var(--ui-hint); line-height: var(--ui-hint-lh); }
+s.sp-was { display: inline; }
+.sp-adopt-list { margin: 0.25rem 0 0.5rem; padding-left: 1.25rem; }
+.sp-adopt-list li { margin: 0.25rem 0; }
+/* Окно «Версии ВОР». */
+.sp-modal-versions { width: min(64rem, 100%); }
+.sp-versions { margin: 0; padding: 0; list-style: none; }
+.sp-versions > li { border-bottom: 1px solid var(--border-color); }
+.sp-versions-item {
+  display: grid;
+  gap: 0.125rem;
+  width: 100%;
+  padding: 0.5rem 0.25rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sp-versions-item:hover, .sp-versions > li.is-open > .sp-versions-item { background: var(--hover-bg); }
+.sp-versions-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; }
+.sp-versions-kind { padding: 0 0.375rem; border-radius: 4px; background: var(--hover-bg); color: var(--text-secondary); font-size: var(--ui-hint); }
+.sp-versions-kind.is-removed { background: var(--warning-light); color: var(--warning-color); }
+.sp-versions-new { color: var(--warning-color); font-size: var(--ui-hint); font-weight: var(--ui-medium); }
+.sp-versions-text { overflow-wrap: anywhere; }
+.sp-versions-detail { padding: 0.25rem 0.25rem 0.75rem; }
+.sp-versions-detail h4 { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.75rem 0 0.375rem; font-size: var(--ui-text); font-weight: var(--ui-semibold); }
+.sp-versions-table { max-height: 20rem; overflow: auto; }
+.ui-work.ui-work .sp-versions-table tr.is-added > td:first-child { box-shadow: inset 3px 0 0 var(--success-color); }
+.ui-work.ui-work .sp-versions-table tr.is-removed > td:first-child { box-shadow: inset 3px 0 0 var(--danger-color); }
+.ui-work.ui-work .sp-versions-table tr:is(.is-volume, .is-unit) > td:first-child { box-shadow: inset 3px 0 0 var(--warning-color); }
+@media (max-width: 640px) {
+  .sp-version-actions { width: 100%; justify-content: space-between; }
+  .sp-version-pick, .sp-carry-pick select { max-width: 100%; }
+  .sp-carry-pick { display: flex; margin: 0.25rem 0 0; }
+  /* Метка изменения на телефоне — у карточки строки, а не у первой ячейки. */
+  .ui-work.ui-work .sp-table > tbody > tr.is-new { box-shadow: inset 3px 0 0 var(--success-color); }
+  .ui-work.ui-work .sp-table > tbody > tr.is-changed { box-shadow: inset 3px 0 0 var(--warning-color); }
+}

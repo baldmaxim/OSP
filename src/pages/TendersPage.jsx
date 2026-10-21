@@ -27,6 +27,7 @@ import VorDocsModal from '../components/VorDocsModal'
 import VorRdModal from '../components/VorRdModal'
 import { VOR_RD_CATEGORIES, countVorRdDocs } from '../services/tenderVorRd'
 import { loadSupplyProgress } from '../services/supplyPricing'
+import { revisionTitle } from '../utils/supplyVorVersions'
 import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIGRATION_HINT } from '../services/stoEmployees'
 import { formatDateRange as formatShortDateRange, breakAfterDash } from '../utils/dateRange'
 import DateRangeCell from '../components/DateRangeCell'
@@ -3421,6 +3422,7 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
                       ) : PRICING_STATUS[supply?.status] && (
                         <span className={`tp-mrow-pricing${PRICING_STATUS[supply.status].cls}`}>Расценка: {PRICING_STATUS[supply.status].text}</span>
                       )}
+                      {supply?.changes?.length > 0 && <span className="tp-mrow-pricing is-warn">ВОР изменён</span>}
                       {kp?.total > 0 && (
                         <span
                           className={kp.proposalProvided === kp.total ? 'tp-mrow-kp-full' : undefined}
@@ -5760,18 +5762,28 @@ function SupplyPricingLink({ tender, progress }) {
   const reasons = st && progress.status === 'issues'
     ? (progress.issues || []).map((i) => `«${i.file_name || i.name || 'ВОР'}»: ${pricingIssueText(i)}`).join('\n')
     : ''
+  // Сметный отдел обновил ВОР, а снабжение изменения ещё не смотрело (версии ВОР, миграция 20261029).
+  const changed = progress?.changes?.length ? supplyChangesText(progress.changes) : ''
   return (
     <Link
       to={`/tenders/materials/${tender.id}/pricing`}
       className={`link tp-pricing-link${has && progress.priced === progress.positions ? ' is-complete' : ''}${st?.cls || ''}`}
-      title={reasons ? `Позиции ВОР не загрузились:\n${reasons}` : 'Расценка материалов ВОР снабжением на сайте'}
+      title={[reasons ? `Позиции ВОР не загрузились:\n${reasons}` : 'Расценка материалов ВОР снабжением на сайте', changed].filter(Boolean).join('\n\n')}
     >
       <span>Расценка: <span className="ui-num">{has ? `${progress.priced} из ${progress.positions}` : (st?.text || 'открыть')}</span></span>
       {has && (
         <span className="tp-pricing-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
       )}
+      {changed && <span className="tp-pricing-changed">ВОР изменён</span>}
     </Link>
   )
+}
+
+// Подсказка «ВОР изменён»: что случилось с каждым ВОР (непросмотренные версии, последние пять).
+function supplyChangesText(changes) {
+  const fmt = (iso) => new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  const lines = changes.slice(-5).reverse().map((r) => `${fmt(r.created_at)} · ВОР «${r.estimate_name}»: ${revisionTitle(r)}`)
+  return `ВОР изменён — снабжение ещё не смотрело:\n${lines.join('\n')}${changes.length > 5 ? `\nи ещё ${changes.length - 5}` : ''}`
 }
 
 // Причина отказа разбора файла ВОР одной фразой (подробно — на странице расценки).

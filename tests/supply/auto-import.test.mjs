@@ -32,6 +32,21 @@ describe('Автозагрузка: файлы ВОР', () => {
     assert.deepEqual(plan.jobs.map((j) => [j.doc.id, j.name, j.existing?.estimate_name]), [['f3', 'ОВ', 'ОВ']])
   })
 
+  it('прежняя версия ВОР (заменена файлом с другим именем, 20261029) — в свой ВОР, где её место уже занял новый файл', () => {
+    const v1 = file('v1', 'ВОР ОВ.xlsx', '2026-10-01T00:00:00Z')
+    const v2 = file('v2', 'ВОР ОВ изм.1.xlsx', '2026-10-20T00:00:00Z')
+    const sources = [src({ estimate_name: 'Отопление', s3_document_id: 'v2', source_version: fileVersion(v2), prior_document_ids: ['v1'] })]
+    assert.equal(targetNameForFile(v1, sources, []), 'Отопление')
+    const { jobs, skipped } = planFileImports([v1, v2], sources, [])
+    assert.deepEqual(jobs, [], 'новый уже загружен, старый — не отдельный ВОР')
+    assert.deepEqual(skipped.map((x) => [x.doc.id, x.name]), [['v1', 'Отопление']])
+    // Без отметки прежнего файла старый завёл бы отдельный ВОР «ВОР ОВ» — так было до 20261029.
+    assert.deepEqual(planFileImports([v1, v2], [{ ...sources[0], prior_document_ids: undefined }], []).jobs.map((j) => j.name), ['ВОР ОВ'])
+    // Новый файл удалили, старый на месте — ВОР возвращается к нему (и это будет новая версия ВОР).
+    const back = planFileImports([v1], [{ ...sources[0], s3_document_id: null }], [])
+    assert.deepEqual(back.jobs.map((j) => [j.doc.id, j.name, !!j.existing]), [['v1', 'Отопление', true]])
+  })
+
   it('два файла в одно имя ВОР — берётся новый, старый отмечается', () => {
     const old = file('a', 'ОВ.xlsx', '2026-10-01T00:00:00Z')
     const fresh = file('b', 'ОВ.XLSX', '2026-10-15T00:00:00Z')

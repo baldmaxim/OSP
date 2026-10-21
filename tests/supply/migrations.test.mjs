@@ -19,6 +19,9 @@ const PAIRS = [
   { name: '20261024_supply_import_state', functions: 0, revoke: /REVOKE ALL ON TABLE public\.tender_supply_import_state FROM PUBLIC, anon, authenticated;/ },
   // Файл документа к позиции и новая похожесть: триггер ссылок, 9 функций похожести и 3 функции подбора.
   { name: '20261025_supply_docs_similarity', functions: 13, revoke: /REVOKE ALL ON FUNCTION public\.supply_name_score\(text\[\], text\[\], text\[\], text\[\], numeric\) FROM PUBLIC, anon;/ },
+  // Версии ВОР: расчёт списка и закрытие (переопределены), позиции по ключу, запись версии, новая версия под другим
+  // именем, перенос цены, «просмотрено».
+  { name: '20261029_supply_vor_versions', functions: 7, revoke: /REVOKE ALL ON TABLE public\.tender_supply_revisions FROM PUBLIC, anon, authenticated;/ },
 ]
 
 // Без комментариев и с одинаковыми пробелами — сравниваются только сами команды.
@@ -60,6 +63,7 @@ for (const pair of PAIRS) {
   it(`${pair.name}: колонки, таблицы, представления, индексы и триггеры совпадают`, () => {
     for (const re of [
       /ALTER TABLE public\.tender_vor_supply_rates ADD COLUMN[^;]*;/g,
+      /ALTER TABLE public\.tender_supply_sources ADD COLUMN[^;]*;/g,
       /CREATE TABLE IF NOT EXISTS public\.\w+ \([^;]*;/g,
       /CREATE OR REPLACE VIEW[^;]*;/g,
       /CREATE (UNIQUE )?INDEX[^;]*;/g,

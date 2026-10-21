@@ -39,7 +39,20 @@ async function withRateColumns(run) {
   return res
 }
 export const SOURCE_COLUMNS = 'id, tender_id, estimate_name, source, s3_document_id, file_name, sheet_name, column_map, '
-  + 'source_version, positions, positions_count, row_version, parsed_by, parsed_at'
+  + 'source_version, positions, positions_count, row_version, parsed_by, parsed_at, created_at'
+// Версии ВОР (миграция 20261029): прежние файлы ВОР и ответ «отдельный ВОР». Колонок ещё нет — списки читаются без них
+// (как до миграции); проверяется один раз за сеанс.
+const VERSION_SOURCE_COLUMNS = ', prior_document_ids, separate_at, separate_by'
+let versionColumns = true
+const sourceColumns = () => (versionColumns ? SOURCE_COLUMNS + VERSION_SOURCE_COLUMNS : SOURCE_COLUMNS)
+async function withSourceColumns(run) {
+  const res = await run(sourceColumns())
+  if (res?.error && versionColumns && isMissingColumn(res.error)) {
+    versionColumns = false
+    return run(sourceColumns())
+  }
+  return res
+}
 const TENDER_COLUMNS = 'id, tender_type, parent_tender_id, public_tender_number, work_description, status, deleted_at, object_id, '
   + 'materials_proposal_start_date, materials_proposal_deadline, materials_resp_user_id, materials_resp_name, materials_priority, '
   + 'objects(name, status)'
@@ -117,13 +130,13 @@ export async function loadPricingContext(id) {
 }
 
 // Всё для таблицы расценки по основному тендеру — одновременно: файлы ВОР, списки позиций, цены, последний
-// номер журнала и (если карточка их не дала) строки вкладки «ВОР».
+// номер журнала, непросмотренные версии ВОР и (если карточка их не дала) строки вкладки «ВОР».
 export async function loadPricingData(mainId, { withItems = false } = {}) {
-  const [files, sources, rates, logId, links, importState, items] = await Promise.all([
+  const [files, sources, rates, logId, links, importState, revisions, items] = await Promise.all([
     loadVorFiles(mainId), loadSources(mainId), loadRates(mainId), loadLogMarker(mainId), loadLinks(mainId), loadImportState(mainId),
-    withItems ? loadEstimateItems(mainId) : null,
+    loadRevisions(mainId), withItems ? loadEstimateItems(mainId) : null,
   ])
-  return { files, sources, rates, logId, links, importState, items }
+  return { files, sources, rates, logId, links, importState, revisions, items }
 }
 
 // Открытие таблицы за два шага к серверу вместо цепочки: тендер, затем всё остальное разом. ctx уже есть
@@ -191,8 +204,8 @@ export function estimateSignatures(items) {
 }
 
 export async function loadSources(mainId) {
-  const { data, error } = await db.from('tender_supply_sources').select(SOURCE_COLUMNS)
-    .eq('tender_id', mainId).order('estimate_name', { ascending: true })
+  const { data, error } = await withSourceColumns((cols) => db.from('tender_supply_sources').select(cols)
+    .eq('tender_id', mainId).order('estimate_name', { ascending: true }))
   if (error) fail(error)
   return data || []
 }
@@ -209,14 +222,14 @@ export async function saveSource({ existing, mainId, estimateName, source, doc, 
     positions,
   }
   if (existing) {
-    const { data, error } = await db.from('tender_supply_sources').update(payload)
-      .eq('id', existing.id).eq('row_version', existing.row_version).select(SOURCE_COLUMNS)
+    const { data, error } = await withSourceColumns((cols) => db.from('tender_supply_sources').update(payload)
+      .eq('id', existing.id).eq('row_version', existing.row_version).select(cols))
     if (error) fail(error)
     if (!data?.length) fail({ code: '23505', message: 'Список позиций этого ВОР уже обновил другой пользователь' })
     return data[0]
   }
-  const { data, error } = await db.from('tender_supply_sources')
-    .insert({ tender_id: mainId, estimate_name: estimateName, ...payload }).select(SOURCE_COLUMNS)
+  const { data, error } = await withSourceColumns((cols) => db.from('tender_supply_sources')
+    .insert({ tender_id: mainId, estimate_name: estimateName, ...payload }).select(cols))
   if (error) fail(error)
   return data[0]
 }
@@ -516,28 +529,34 @@ export async function loadImportState(mainId) {
   return data || { tender_id: mainId, status: null, issues: [] }
 }
 
-// Прогресс по основным тендерам для реестра тендеров на материалы: Map(mainId → { positions, priced, status, issues }).
-// status — состояние разбора службой osp-api (ok | no_vor | issues | locked | pending): статус виден и у тендера,
-// расценку которого ещё не открывали. Нет представления (миграция не применена) — пустая карта; нет таблицы
-// состояния — без status, реестр работает по-старому.
+// Прогресс по основным тендерам для реестра тендеров на материалы: Map(mainId → { positions, priced, status, issues,
+// changes }). status — состояние разбора службой osp-api (ok | no_vor | issues | locked | pending): статус виден и у
+// тендера, расценку которого ещё не открывали; changes — непросмотренные версии ВОР («ВОР изменён»). Нет представления
+// (миграция не применена) — пустая карта; нет таблицы состояния или версий — без них, реестр работает по-старому.
 export async function loadSupplyProgress(mainIds) {
   const out = new Map()
   const ids = [...new Set(mainIds.filter(Boolean))]
   const entry = (id) => {
-    if (!out.has(id)) out.set(id, { positions: 0, priced: 0, status: null, issues: [] })
+    if (!out.has(id)) out.set(id, { positions: 0, priced: 0, status: null, issues: [], changes: [] })
     return out.get(id)
   }
   let statesOn = true
+  let revisionsOn = true
   for (const chunk of chunkList(ids)) {
-    const [progress, states] = await Promise.all([
+    const [progress, states, revisions] = await Promise.all([
       db.from('tender_supply_progress').select('tender_id, positions_count, priced_count').in('tender_id', chunk),
       statesOn ? db.from('tender_supply_import_state').select('tender_id, status, issues').in('tender_id', chunk) : { data: [] },
+      // Непросмотренные версии ВОР (миграция 20261029): «ВОР изменён» в реестре. Таблицы нет — без этого.
+      revisionsOn ? db.from('tender_supply_revisions').select(REVISION_COLUMNS).in('tender_id', chunk).is('reviewed_at', null)
+        .order('id', { ascending: true }).limit(1000) : { data: [] },
     ])
     if (progress.error) {
       if (classifyError(progress.error)?.kind === 'missing') return out
       throw progress.error
     }
     if (states.error) statesOn = false
+    if (revisions.error) revisionsOn = false
+    for (const r of revisions.data || []) entry(r.tender_id).changes.push(r)
     for (const r of progress.data || []) {
       const cur = entry(r.tender_id)
       cur.positions += r.positions_count || 0
@@ -546,6 +565,90 @@ export async function loadSupplyProgress(mainIds) {
     for (const r of states.data || []) Object.assign(entry(r.tender_id), { status: r.status, issues: r.issues || [] })
   }
   return out
+}
+
+// ── Версии ВОР (миграция 20261029) ──────────────────────────────────────────────────────────────────
+// Версия — что изменилось в позициях ВОР (сметный отдел заменил файл, перезагрузил вкладку «ВОР», добавил или удалил
+// файл) и снимок цен на тот момент. Пишет база (триггер), страница только читает и отмечает «просмотрено». Таблицы ещё
+// нет — null: таблица расценки работает как раньше (без подсветки, вопросов и истории версий).
+export const REVISION_COLUMNS = 'id, tender_id, estimate_name, kind, source, old_document_id, new_document_id, old_file_name, new_file_name, '
+  + 'uploaded_by_name, uploaded_at, positions_before, positions_after, added, removed, volume_changed, unit_changed, priced_removed, '
+  + 'created_by, created_at, reviewed_at, reviewed_by'
+
+// Непросмотренные версии тендера — с тем, что изменилось (подсветка в таблице и уведомление в шапке ВОР).
+export async function loadRevisions(mainId) {
+  const { data, error } = await db.from('tender_supply_revisions').select(`${REVISION_COLUMNS}, changes`)
+    .eq('tender_id', mainId).is('reviewed_at', null).order('id', { ascending: true }).limit(500)
+  if (error) {
+    if (classifyError(error)?.kind === 'missing') return null
+    fail(error)
+  }
+  return data || []
+}
+
+// Признак «версии менялись»: номера непросмотренных (новая версия — новый номер, «просмотрено» — номер ушёл).
+export async function loadRevisionsMarker(mainId) {
+  const { data, error } = await db.from('tender_supply_revisions').select('id')
+    .eq('tender_id', mainId).is('reviewed_at', null).order('id', { ascending: true }).limit(500)
+  if (error) fail(error)
+  return (data || []).map((r) => r.id).join(',')
+}
+
+// История версий ВОР тендера (окно «Версии ВОР»): без изменений и снимков — их по одной версии, по требованию.
+export async function loadRevisionHistory(mainId) {
+  const { data, error } = await db.from('tender_supply_revisions').select(REVISION_COLUMNS)
+    .eq('tender_id', mainId).order('id', { ascending: false }).limit(300)
+  if (error) fail(error)
+  return data || []
+}
+
+export async function loadRevisionDetail(id) {
+  const { data, error } = await db.from('tender_supply_revisions').select(`${REVISION_COLUMNS}, changes, prices`).eq('id', id).maybeSingle()
+  if (error) fail(error)
+  return data || null
+}
+
+export async function reviewRevisions(mainId, ids) {
+  const { data, error } = await db.rpc('supply_revisions_review', { p_tender: mainId, p_ids: ids })
+  if (error) fail(error)
+  return Number(data) || 0
+}
+
+// Файл ВОР с другим именем — новая версия прежнего ВОР: прежний ВОР получает файл и позиции нового, цены и документы
+// нового переходят в прежний, список нового убирается. Ответ базы: { moved, replaced, dropped, links }.
+export async function adoptVersion(mainId, newName, oldName) {
+  const { data, error } = await db.rpc('supply_vor_adopt', { p_tender: mainId, p_new: newName, p_old: oldName })
+  if (error) fail(error)
+  return data || {}
+}
+
+// «Отдельный ВОР» — больше не спрашивать, новая ли это версия другого ВОР (время и автор ответа ставит база).
+export async function markSeparate(src) {
+  const { data, error } = await withSourceColumns((cols) => db.from('tender_supply_sources').update({ separate_at: new Date().toISOString() })
+    .eq('id', src.id).eq('row_version', src.row_version).select(cols))
+  if (error) fail(error)
+  if (!data?.length) fail({ code: '23505', message: 'Список позиций этого ВОР уже изменил другой пользователь — обновите страницу' })
+  return data[0]
+}
+
+// Перенести цену (и документ) убранной позиции на позицию ВОР: та же строка цены — день расценки и история прежние.
+// Ответ: { rate (строка), dropped (id убранных подставленных цен у цели), links }.
+export async function carryRate(rate, estimateName, position) {
+  const { data, error } = await db.rpc('supply_rate_carry', {
+    p_rate: rate.id, p_version: rate.row_version, p_estimate: estimateName, p_name: position.name, p_unit: positionUnit(position),
+  })
+  if (error) fail(error)
+  return data || {}
+}
+
+// Цена верна и для новой ед. изм. позиции: у цены — ед. изм. позиции (цена и день расценки не меняются).
+// Ответ — как у saveRate.
+export async function confirmRateUnit(rate, position) {
+  const { data, error } = await withRateColumns((cols) => db.from('tender_vor_supply_rates').update({ unit: positionUnit(position) })
+    .eq('id', rate.id).eq('row_version', rate.row_version).select(cols))
+  if (error) fail(error)
+  if (data?.length) return { status: 'ok', row: data[0] }
+  return { status: 'conflict', current: await currentRate({ id: rate.id }) }
 }
 
 export async function renameEstimate(mainId, from, to) {

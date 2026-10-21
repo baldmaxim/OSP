@@ -102,7 +102,8 @@ select json_build_object(
             where d.owner_type = 'tender' and d.owner_id = t.id and d.doc_category = any($1::text[])),
   'sources', (select coalesce(json_agg(json_build_object('id', s.id, 'estimate_name', s.estimate_name, 'source', s.source,
                 's3_document_id', s.s3_document_id, 'file_name', s.file_name, 'source_version', s.source_version,
-                'row_version', s.row_version, 'column_map', s.column_map, 'positions_count', s.positions_count)), '[]'::json)
+                'row_version', s.row_version, 'column_map', s.column_map, 'positions_count', s.positions_count,
+                'prior_document_ids', to_jsonb(s)->'prior_document_ids')), '[]'::json)
               from public.tender_supply_sources s where s.tender_id = t.id),
   'state', (select to_json(st) from public.tender_supply_import_state st where st.tender_id = t.id)
 ) as tender
@@ -120,7 +121,9 @@ select coalesce(json_agg(json_build_object('estimate_name', i.estimate_name, 'co
          'material_consumption', i.material_consumption, 'is_section', i.is_section) order by i.id), '[]'::json) as items
 from public.tender_estimate_items i where i.tender_id = $1`
 
-const SOURCE_COLUMNS = `id, estimate_name, source, s3_document_id, file_name, source_version, row_version, column_map, positions_count`
+// Прежние файлы ВОР (миграция 20261029) — через to_jsonb: до миграции колонки нет, и запрос не падает (null).
+const SOURCE_COLUMNS = `id, estimate_name, source, s3_document_id, file_name, source_version, row_version, column_map, positions_count,
+  to_jsonb(s)->'prior_document_ids' as prior_document_ids`
 
 // Подпись файлов и вкладки — признак «с прошлого прохода ничего не менялось».
 const filesSignature = (files) => files.map(fileVersion).sort().join(',')
@@ -145,13 +148,13 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
       const values = [source, doc?.id || null, doc?.file_name || null, sheetName || null,
         columnMap ? JSON.stringify(columnMap) : null, version, JSON.stringify(positions)]
       if (existing) {
-        const { rows } = await tx.query(`update public.tender_supply_sources
+        const { rows } = await tx.query(`update public.tender_supply_sources s
             set source = $1, s3_document_id = $2, file_name = $3, sheet_name = $4, column_map = $5::jsonb,
                 source_version = $6, positions = $7::jsonb
           where id = $8 and row_version = $9 returning ${SOURCE_COLUMNS}`, [...values, existing.id, existing.row_version])
         return rows[0] || null
       }
-      const { rows } = await tx.query(`insert into public.tender_supply_sources
+      const { rows } = await tx.query(`insert into public.tender_supply_sources as s
           (source, s3_document_id, file_name, sheet_name, column_map, source_version, positions, tender_id, estimate_name)
           values ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8, $9)
           on conflict (tender_id, estimate_name) do nothing returning ${SOURCE_COLUMNS}`, [...values, tenderId, name])
@@ -160,7 +163,7 @@ export function createSupplyImport({ db, s3, bucket, log = console, parse = pars
   }
 
   async function reloadSources(tenderId) {
-    return db.read(null, async (tx) => (await tx.query(`select ${SOURCE_COLUMNS} from public.tender_supply_sources where tender_id = $1`, [tenderId])).rows)
+    return db.read(null, async (tx) => (await tx.query(`select ${SOURCE_COLUMNS} from public.tender_supply_sources s where tender_id = $1`, [tenderId])).rows)
   }
 
   async function saveState(tenderId, prev, next) {

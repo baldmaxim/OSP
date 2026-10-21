@@ -831,3 +831,15 @@ tr:hover .mat-notes-tools { opacity: 1; }
    цвета ссылок рабочего стиля (:is(.link, .row-link.primary:not(…)) весит как три класса). */
 .ui-work.ui-work .tp-grid a.tp-pricing-link.tp-pricing-link.is-warn, .tp-mrow-pricing.is-warn { color: var(--warning-color); }
 .ui-work.ui-work .tp-grid a.tp-pricing-link.tp-pricing-link.is-muted, .tp-mrow-pricing.is-muted { color: var(--text-secondary); }
+/* «ВОР изменён»: сметный отдел обновил ВОР, снабжение изменения ещё не смотрело (версии ВОР, 20261029). В узкой
+   колонке отметка уходит на следующую строку, а «Расценка: …» не переносится. */
+.ui-work.ui-work .tp-grid .tp-pricing-link:has(.tp-pricing-changed) { flex-wrap: wrap; row-gap: 0.125rem; }
+.tp-pricing-link:has(.tp-pricing-changed) > span:first-child { white-space: nowrap; }
+.tp-pricing-changed {
+  padding: 0 0.375rem;
+  border-radius: 4px;
+  background: var(--warning-light);
+  color: var(--warning-color);
+  font-weight: var(--ui-medium);
+  white-space: nowrap;
+}

@@ -26,6 +26,7 @@ const T = {
   locked: '00000000-0000-4000-8000-00000000e304',  // тендер на материалы «Завершён»
   big: '00000000-0000-4000-8000-00000000e305',     // файл больше предела
   noMat: '00000000-0000-4000-8000-00000000e306',   // основного без тендера на материалы — не берётся
+  heat: '00000000-0000-4000-8000-00000000e309',    // ВОР заменили новой версией с другим именем, прежний файл остался
 }
 const M = Object.fromEntries(Object.entries(T).map(([k, v]) => [k, v.replace('e3', 'f3')]))
 const DOC = {
@@ -235,6 +236,25 @@ describe('Позиции ВОР — заранее, службой osp-api', { s
     const names = sources(T.files).map((s) => s.estimate_name)
     assert.ok(!names.includes('Из вкладки'))
     assert.ok(names.includes('С ценой'))
+  })
+
+  it('прежний файл ВОР (заменён новой версией с другим именем, 20261029) служба не заводит отдельным ВОР и не скачивает', async () => {
+    const OLD = '00000000-0000-4000-8000-00000000a3f7'
+    const NEW = '00000000-0000-4000-8000-00000000a3f8'
+    sql(`insert into public.s3_documents (id, owner_type, owner_id, s3_key, file_name, doc_category, created_at) values
+        ('${OLD}', 'tender', '${T.heat}', 'k/heat1.xlsx', 'ВОР_отопление.xlsx', 'vor_statement', '2026-10-01 09:00:00+00'),
+        ('${NEW}', 'tender', '${T.heat}', 'k/heat2.xlsx', 'ВОР_отопление изм.1.xlsx', 'vor_statement', '2026-10-20 09:00:00+00');
+      insert into public.tender_supply_sources (tender_id, estimate_name, source, s3_document_id, file_name, positions)
+      values ('${T.heat}', 'Отопление', 'vor_file', '${OLD}', 'ВОР_отопление.xlsx', '[{"name":"Радиатор","unit":"шт","volume":1}]');
+      update public.tender_supply_sources set s3_document_id = '${NEW}', file_name = 'ВОР_отопление изм.1.xlsx' where tender_id = '${T.heat}';`)
+    store.set('k/heat1.xlsx', MATERIALS)
+    store.set('k/heat2.xlsx', MATERIALS)
+    assert.deepEqual(sources(T.heat)[0].prior_document_ids, [OLD], 'прежний файл запомнила база')
+    const stats = await job().runOnce()
+    assert.equal(stats.errors, 0, JSON.stringify(stats))
+    assert.deepEqual(sources(T.heat).map((s) => [s.estimate_name, s.s3_document_id]), [['Отопление', NEW]])
+    assert.ok(!calls.includes('GetObjectCommand:k/heat1.xlsx'), 'прежний файл не скачивается')
+    assert.equal(state(T.heat).status, 'ok')
   })
 
   it('настройка: OSP_SUPPLY_IMPORT=1 без базы или хранилища — служба не запускается', async () => {

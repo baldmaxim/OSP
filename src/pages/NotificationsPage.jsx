@@ -42,9 +42,11 @@ const CheckAllIcon = () => (
 // заголовка секции, поэтому бейдж вида не показываем.
 function NotifItem({ n, read, onOpen }) {
   const isReview = n.kind === 'kp_review'
+  const isVor = n.kind === 'supply_vor'
   const dateLabel = isReview ? 'Проверено'
-    : n.kind === 'task' ? (n.taskReview ? 'Сдано на приёмку' : 'Срок')
-      : n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание'
+    : isVor ? 'Изменён'
+      : n.kind === 'task' ? (n.taskReview ? 'Сдано на приёмку' : 'Срок')
+        : n.kind === 'tender' ? 'Окончание процедуры' : 'Планируемое подписание'
   return (
     <li
       className={`notif-item ${isReview ? 'is-review' : urgencyClass(n.days)}${read ? ' is-read' : ''}`}
@@ -61,6 +63,9 @@ function NotifItem({ n, read, onOpen }) {
             <span className={`notif-review-chip ${n.reviewStatus === 'has_remarks' ? 'is-remarks' : 'is-ok'}`}>
               {n.reviewStatus === 'has_remarks' ? 'Есть замечания' : 'Проверено'}
             </span>
+          ) : isVor ? (
+            // ВОР изменён: срока нет, важно посмотреть изменения в расценке.
+            <span className="notif-review-chip is-remarks">ВОР изменён</span>
           ) : n.taskReview ? (
             // Задача сдана исполнителем: срок тут ни при чём, важно само действие.
             <span className="notif-review-chip is-remarks">Ждёт приёмки</span>
@@ -87,7 +92,7 @@ function NotifItem({ n, read, onOpen }) {
 function NotificationsPage() {
   const navigate = useNavigate()
   const { notifications, unreadCount, loading, markAllRead, markRead, isRead } = useNotifications()
-  const [tab, setTab] = useState('tender') // 'tender' | 'contract' | 'kp_review' | 'task'
+  const [tab, setTab] = useState('tender') // 'tender' | 'contract' | 'kp_review' | 'task' | 'supply_vor'
 
   const openItem = (n) => {
     markRead(n.key)
@@ -99,15 +104,18 @@ function NotificationsPage() {
   const contractItems = useMemo(() => notifications.filter(n => n.kind === 'contract'), [notifications])
   const kpReviewItems = useMemo(() => notifications.filter(n => n.kind === 'kp_review'), [notifications])
   const taskItems = useMemo(() => notifications.filter(n => n.kind === 'task'), [notifications])
+  const vorItems = useMemo(() => notifications.filter(n => n.kind === 'supply_vor'), [notifications])
   const tenderUnread = useMemo(() => tenderItems.filter(n => !isRead(n.key)).length, [tenderItems, isRead])
   const contractUnread = useMemo(() => contractItems.filter(n => !isRead(n.key)).length, [contractItems, isRead])
   const kpUnread = useMemo(() => kpReviewItems.filter(n => !isRead(n.key)).length, [kpReviewItems, isRead])
   const taskUnread = useMemo(() => taskItems.filter(n => !isRead(n.key)).length, [taskItems, isRead])
+  const vorUnread = useMemo(() => vorItems.filter(n => !isRead(n.key)).length, [vorItems, isRead])
 
   const activeItems = tab === 'tender' ? tenderItems
     : tab === 'contract' ? contractItems
       : tab === 'task' ? taskItems
-        : kpReviewItems
+        : tab === 'supply_vor' ? vorItems
+          : kpReviewItems
 
   return (
     <div className="notifications-page">
@@ -169,6 +177,18 @@ function NotificationsPage() {
           <span className="notif-toggle-count">{kpReviewItems.length}</span>
           {kpUnread > 0 && <span className="notif-toggle-dot" title={`${kpUnread} непрочитанных`} />}
         </button>
+        {vorItems.length > 0 && (
+          <button
+            role="tab"
+            aria-selected={tab === 'supply_vor'}
+            className={`notif-toggle-btn notif-toggle-review${tab === 'supply_vor' ? ' is-active' : ''}`}
+            onClick={() => setTab('supply_vor')}
+          >
+            <span>Изменения ВОР</span>
+            <span className="notif-toggle-count">{vorItems.length}</span>
+            {vorUnread > 0 && <span className="notif-toggle-dot" title={`${vorUnread} непрочитанных`} />}
+          </button>
+        )}
       </div>
 
       {loading ? (

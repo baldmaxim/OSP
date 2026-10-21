@@ -393,3 +393,120 @@ window.__fakeTriggers.tender_supply_links = (row, old) => {
 if (params.get('noLinks') === '1') {
   window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_supply_links: { code: '42P01', message: 'relation "public.tender_supply_links" does not exist' } }
 }
+
+// Версии ВОР (миграция 20261029). Таблица версий есть всегда (пустая — изменений не было); noVersions=1 — её нет, как
+// до миграции. vorChanges=1 — сметный отдел обновил ВОР «ОВ»: у крана объём 40 → 48 (и цена за «компл», а в ВОР «шт»),
+// у изоляции ед. изм. «м2» → «м», хомут — новая позиция, «Труба медная Ø12,7 (бухта)» убрана, её цена 950 ₽ осталась —
+// похожа на трубу без цены. vorQuestion=1 — файл ВОР ОВ удалён, рядом новый файл с другим именем: новая версия ли это.
+window.__fakeDb.tender_supply_revisions = []
+if (params.get('noVersions') === '1') {
+  window.__fakeErrors = { ...(window.__fakeErrors || {}), tender_supply_revisions: { code: '42P01', message: 'relation "public.tender_supply_revisions" does not exist' } }
+}
+const versionChange = (op, name, extra = {}) => ({ op, k: normName(name), name, ...extra })
+if (params.get('vorChanges') === '1') {
+  window.__fakeDb.tender_vor_supply_rates.push({
+    id: 'rate-p-old', tender_id: 'tender-p', estimate_name: 'ОВ', material_name: 'Труба медная Ø12,7 (бухта)', unit: 'м',
+    supply_price: 950, supply_price_exact: null, supply_total: 1425000, price_input: 'unit', input_value: 950, volume_at_input: 1500,
+    row_version: 1, updated_by: 'user-2', updated_at: '2026-10-12T10:00:00Z', created_at: '2026-10-12T10:00:00Z',
+    material_key: normName('Труба медная Ø12,7 (бухта)'),
+  }, {
+    id: 'rate-p-kran', tender_id: 'tender-p', estimate_name: 'ОВ', material_name: 'Кран шаровой Ду15', unit: 'компл',
+    supply_price: 500, supply_price_exact: null, supply_total: 20000, price_input: 'unit', input_value: 500, volume_at_input: 40,
+    row_version: 1, updated_by: 'user-2', updated_at: '2026-10-12T10:00:00Z', created_at: '2026-10-12T10:00:00Z',
+    material_key: normName('Кран шаровой Ду15'),
+  })
+  window.__fakeDb.tender_supply_revisions.push({
+    id: 7, tender_id: 'tender-p', estimate_name: 'ОВ', kind: 'update', source: 'vor_file', old_document_id: 'doc-vor-p0', new_document_id: 'doc-vor-p',
+    old_file_name: 'ВОР_ОВ.xlsx', new_file_name: 'ВОР_ОВ.xlsx', uploaded_by_name: 'Сметов С. С.', uploaded_at: '2026-10-21T09:55:00Z',
+    positions_before: 4, positions_after: 4, added: 1, removed: 1, volume_changed: 1, unit_changed: 1, priced_removed: 1,
+    changes: [
+      versionChange('volume', 'Кран шаровой Ду15', { unit: 'шт', volume: 48, old_unit: 'шт', old_volume: 40, price: 500, rate_id: 'rate-p-kran' }),
+      versionChange('unit', 'Изоляция K-Flex 13×15', { unit: 'м', volume: 1100, old_unit: 'м2', old_volume: 1100, price: 96, rate_id: 'rate-p-3' }),
+      versionChange('added', 'Хомут монтажный', { unit: 'шт' }),
+      versionChange('removed', 'Труба медная Ø12,7 (бухта)', { old_unit: 'м', old_volume: 1500, price: 950, rate_id: 'rate-p-old' }),
+    ],
+    prices: [
+      { rate_id: 'rate-p-3', k: normName('Изоляция K-Flex 13×15'), name: 'Изоляция K-Flex 13×15', unit: 'м', volume: 1100, price: 96, total: 105600, input: 'unit', date: '2026-10-12' },
+      { rate_id: 'rate-p-kran', k: normName('Кран шаровой Ду15'), name: 'Кран шаровой Ду15', unit: 'компл', volume: 40, price: 500, total: 20000, input: 'unit', date: '2026-10-12' },
+      { rate_id: 'rate-p-old', k: normName('Труба медная Ø12,7 (бухта)'), name: 'Труба медная Ø12,7 (бухта)', unit: 'м', volume: 1500, price: 950, total: 1425000, input: 'unit', date: '2026-10-12' },
+    ],
+    created_by: null, created_at: '2026-10-21T10:00:00Z', reviewed_at: null, reviewed_by: null,
+  }, {
+    // Реестр тендеров на материалы (matTenders=1): у тендера № 1 добавили ВОР, снабжение ещё не смотрело.
+    id: 8, tender_id: 'tender-1', estimate_name: 'ВОР ЭОМ', kind: 'added', source: 'vor_file', new_file_name: 'ВОР ЭОМ.xlsx',
+    positions_before: 0, positions_after: 12, added: 12, removed: 0, volume_changed: 0, unit_changed: 0, priced_removed: 0,
+    changes: [], prices: [], created_by: null, created_at: '2026-10-21T11:00:00Z', reviewed_at: null, reviewed_by: null,
+  })
+}
+if (params.get('vorQuestion') === '1') {
+  // Файл прежней версии удалён из «ВОРов и РД» (ссылка в списке осталась — база обнуляет её, стенд — нет: файла нет в
+  // списке файлов, этого достаточно), рядом — новый файл с другим именем, уже разобранный в свой список.
+  const NEW_AT = '2026-10-21T09:00:00Z'
+  window.__fakeDb.s3_documents = window.__fakeDb.s3_documents.filter((d) => d.id !== 'doc-vor-p')
+  window.__fakeDb.s3_documents.push({ id: 'doc-vor-p3', owner_type: 'tender', owner_id: 'tender-p', doc_category: 'vor_statement',
+    file_name: 'ВОР_ОВ изм.1.xlsx', s3_key: 'tenders/tender-p/x-ВОР_ОВ изм.1.xlsx', created_at: NEW_AT, uploaded_by_name: 'Сметов С. С.' })
+  Object.assign(window.__fakeDb.tender_supply_sources.find((s) => s.id === 'src-p'), { created_at: '2026-10-12T09:05:00Z' })
+  const positions = [
+    { name: 'Труба медная Ø12,7', unit: 'м', volume: 1600, order: 1 },
+    { name: 'Кран шаровой Ду15', unit: 'шт', volume: 48, order: 2 },
+    { name: 'Отвод 90° Ду15', unit: 'шт', volume: 30, order: 3 },
+  ].map((p) => ({ ...p, k: normName(p.name) }))
+  window.__fakeDb.tender_supply_sources.push({
+    id: 'src-p3', tender_id: 'tender-p', estimate_name: 'ВОР_ОВ изм.1', source: 'vor_file', s3_document_id: 'doc-vor-p3', file_name: 'ВОР_ОВ изм.1.xlsx',
+    sheet_name: 'Материалы', column_map: null, source_version: `file:doc-vor-p3:${NEW_AT}`, positions, positions_count: positions.length,
+    row_version: 1, parsed_by: null, parsed_at: NEW_AT, created_at: NEW_AT, prior_document_ids: [], separate_at: null,
+  })
+}
+// Функции базы версий ВОР — та же логика, что в миграции, на данных стенда.
+const fdbv = () => window.__fakeDb
+window.__fakeRpc = {
+  ...(window.__fakeRpc || {}),
+  supply_revisions_review({ p_tender, p_ids }) {
+    let n = 0
+    for (const r of fdbv().tender_supply_revisions) {
+      if (r.tender_id === p_tender && p_ids.includes(r.id) && !r.reviewed_at) { r.reviewed_at = new Date().toISOString(); r.reviewed_by = 'user-1'; n += 1 }
+    }
+    return { data: n, error: null }
+  },
+  supply_rate_carry({ p_rate, p_version, p_estimate, p_name, p_unit }) {
+    const rates = fdbv().tender_vor_supply_rates
+    const rate = rates.find((r) => r.id === p_rate)
+    if (!rate || rate.row_version !== p_version) return { data: null, error: { code: '23505', message: 'Эту цену уже изменили — обновите страницу', hint: 'supply_carry_stale' } }
+    const k = normName(p_name)
+    const at = (r) => r.tender_id === rate.tender_id && r.estimate_name === p_estimate && r.material_key === k
+    if (rates.some((r) => at(r) && r.source_kind !== 'auto')) return { data: null, error: { code: '23505', message: `У позиции «${p_name}» уже есть своя цена` } }
+    const dropped = rates.filter(at).map((r) => r.id)
+    fdbv().tender_vor_supply_rates = rates.filter((r) => !dropped.includes(r.id))
+    const old = { ...rate }
+    Object.assign(rate, { estimate_name: p_estimate, material_name: p_name, unit: p_unit || rate.unit, updated_at: new Date().toISOString() })
+    window.__fakeTriggers.tender_vor_supply_rates(rate, old)
+    window.__fakeAfter.tender_vor_supply_rates('update', rate, old)
+    return { data: { rate: { ...rate }, dropped, links: 0 }, error: null }
+  },
+  supply_vor_adopt({ p_tender, p_new, p_old }) {
+    const db = fdbv()
+    const n = db.tender_supply_sources.find((s) => s.tender_id === p_tender && s.estimate_name === p_new)
+    const o = db.tender_supply_sources.find((s) => s.tender_id === p_tender && s.estimate_name === p_old)
+    if (!n || !o) return { data: null, error: { code: '23505', message: 'ВОР уже изменили — обновите страницу' } }
+    const prior = [...new Set([...(o.prior_document_ids || []), ...(o.s3_document_id ? [o.s3_document_id] : [])])]
+    const oldKeys = new Set(o.positions.map((p) => p.k))
+    const newKeys = new Set(n.positions.map((p) => p.k))
+    const priceOf = (k) => db.tender_vor_supply_rates.find((r) => r.tender_id === p_tender && r.estimate_name === p_old && r.material_key === k)
+    const added = n.positions.filter((p) => !oldKeys.has(p.k)).map((p) => versionChange('added', p.name, { unit: p.unit, volume: p.volume }))
+    const removed = o.positions.filter((p) => !newKeys.has(p.k)).map((p) => versionChange('removed', p.name, {
+      old_unit: p.unit, old_volume: p.volume, price: priceOf(p.k)?.supply_price, rate_id: priceOf(p.k)?.id }))
+    db.tender_supply_revisions.push({
+      id: 100 + db.tender_supply_revisions.length, tender_id: p_tender, estimate_name: p_old, kind: 'update', source: 'vor_file',
+      old_file_name: o.file_name, new_file_name: n.file_name, uploaded_by_name: 'Сметов С. С.', positions_before: o.positions_count,
+      positions_after: n.positions_count, added: added.length, removed: removed.length, volume_changed: 0, unit_changed: 0,
+      priced_removed: removed.filter((c) => c.rate_id).length, changes: [...added, ...removed],
+      prices: [], created_by: 'user-1', created_at: new Date().toISOString(), reviewed_at: null, reviewed_by: null,
+    })
+    Object.assign(o, { s3_document_id: n.s3_document_id, file_name: n.file_name, source_version: n.source_version, positions: n.positions,
+      positions_count: n.positions_count, prior_document_ids: prior, row_version: o.row_version + 1 })
+    let moved = 0
+    for (const r of db.tender_vor_supply_rates) if (r.tender_id === p_tender && r.estimate_name === p_new) { r.estimate_name = p_old; moved += 1 }
+    db.tender_supply_sources = db.tender_supply_sources.filter((s) => s !== n)
+    return { data: { moved, replaced: 0, dropped: 0, links: 0 }, error: null }
+  },
+}

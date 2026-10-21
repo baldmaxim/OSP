@@ -10,10 +10,13 @@ export const fileVersion = (doc) => `file:${doc.id}:${doc.created_at}`
 // шапкой и анкетой ВОР) перечитываются один раз сами — цены не трогаются.
 export const estimateVersion = (sig) => `vor2:${sig.count}:${sig.latest || ''}`
 
-// Имя ВОР для файла: прежняя привязка этого файла → ВОР карточки с тем же именем (без учёта регистра и
-// пробелов) → прежний список с тем же именем файла → имя файла без расширения.
+// Имя ВОР для файла: прежняя привязка этого файла (в том числе как прежней версии ВОР — prior_document_ids, миграция
+// 20261029) → ВОР карточки с тем же именем (без учёта регистра и пробелов) → прежний список с тем же именем файла →
+// имя файла без расширения. Прежняя версия ВОР, которую заменили файлом с другим именем, так не заводит отдельный ВОР:
+// её ВОР уже занят новым файлом, и она отмечается как устаревшая.
 export function targetNameForFile(doc, sources, cardDocNames = []) {
   const bound = sources.find((s) => s.s3_document_id === doc.id)
+    || sources.find((s) => Array.isArray(s.prior_document_ids) && s.prior_document_ids.includes(doc.id))
   if (bound) return bound.estimate_name
   const base = baseName(doc.file_name) || 'ВОР'
   const key = normName(base)

@@ -797,6 +797,11 @@
         "select"
       ]
     },
+    "tender_supply_revisions": {
+      "authenticated": [
+        "select"
+      ]
+    },
     "tender_supply_sources": {
       "authenticated": [
         "delete",
@@ -1072,6 +1077,9 @@
     "supply_norm_number": [
       "authenticated"
     ],
+    "supply_rate_carry": [
+      "authenticated"
+    ],
     "supply_rate_origins": [
       "authenticated"
     ],
@@ -1081,10 +1089,16 @@
     "supply_rates_locked": [
       "authenticated"
     ],
+    "supply_revisions_review": [
+      "authenticated"
+    ],
     "supply_stem_word": [
       "authenticated"
     ],
     "supply_suggestion_counts": [
+      "authenticated"
+    ],
+    "supply_vor_adopt": [
       "authenticated"
     ],
     "touch_last_login": [

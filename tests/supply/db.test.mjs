@@ -48,9 +48,10 @@ describe('Расценка снабжением на сайте: база', { sk
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     for (const m of candidateMigrations()) {
-      // Эта миграция — ниже; 20261022 (ссылки на документы), 20261023 (цены из других тендеров) и 20261025 (файлы и
-      // похожесть) требуют её и проверяются в links-db.test.mjs, reuse-db.test.mjs и docs-similarity-db.test.mjs.
-      if (/^2026102[0235]_/.test(m)) continue
+      // Эта миграция — ниже; 20261022 (ссылки на документы), 20261023 (цены из других тендеров), 20261025 (файлы и
+      // похожесть) и 20261029 (версии ВОР) требуют её и проверяются в links-db.test.mjs, reuse-db.test.mjs,
+      // docs-similarity-db.test.mjs и versions-db.test.mjs.
+      if (/^2026102[02359]_/.test(m)) continue
       psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     }
     psqlAt(db.port, null, { file: MIGRATION })

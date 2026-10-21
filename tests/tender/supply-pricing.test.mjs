@@ -851,6 +851,128 @@ describe('Расценка снабжением: таблица', { skip: !launc
     }
   })
 
+  it('ВОР обновлён: что изменилось — в шапке и строках; цена убранной позиции — перенести по согласию; ед. изм. — подтвердить; «просмотрено»', async () => {
+    const { page, context, errors } = await openPage('&vorChanges=1')
+    try {
+      await page.getByText('Сметный отдел обновил ВОР: «ОВ»', { exact: false }).waitFor()
+      await page.getByText('файл «ВОР_ОВ.xlsx» заменён новым: новых 1 · убрано 1 (с ценой 1) · объём 1 · ед. изм. 1', { exact: false }).waitFor()
+      await page.getByText('загрузил(а) Сметов С. С.', { exact: false }).first().waitFor()
+      // Строки: новая позиция, объём «было», ед. изм. «была», цена за другую единицу.
+      await rowOf(page, 'Хомут монтажный', 'ОВ').getByText('новая позиция в ВОР').waitFor()
+      assert.match(await rowOf(page, 'Хомут монтажный', 'ОВ').getAttribute('class'), /is-new/)
+      const kran = rowOf(page, 'Кран шаровой Ду15', 'ОВ')
+      await kran.getByText('объём изменился — было 40').waitFor()
+      assert.match(await kran.getAttribute('class'), /is-changed/)
+      await rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ').getByText('ед. изм. изменилась — была «м2»').waitFor()
+      assert.equal(await rowOf(page, 'Изоляция K-Flex 13×15', 'ОВ').locator('s.sp-was').innerText(), 'м2')
+      await kran.getByText('цена — за «компл», а в ВОР теперь «шт»', { exact: false }).waitFor()
+      // Фильтр «Изменения ВОР»: только изменённые строки и предложения перенести цену.
+      await page.getByRole('button', { name: 'Изменения ВОР (4)' }).click()
+      assert.equal(await page.getByLabel(price('Кран шаровой Ду15', 'ВК')).count(), 0, 'неизменённые скрыты')
+      await rowOf(page, 'Труба медная Ø12,7', 'ОВ').waitFor()
+      await page.getByRole('button', { name: 'Все', exact: true }).click()
+
+      // Цена убранной «трубы (бухта)» сама на «трубу» не перешла — предложение перенести.
+      assert.equal(await rateOf(page, 'Труба медная Ø12,7', 'ОВ'), null)
+      const pipe = rowOf(page, 'Труба медная Ø12,7', 'ОВ')
+      await pipe.getByText('похоже на убранную из ВОР «Труба медная Ø12,7 (бухта)»', { exact: false }).waitFor()
+      await pipe.getByRole('button', { name: 'Перенести цену «Труба медная Ø12,7 (бухта)» на «Труба медная Ø12,7»' }).click()
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-old')?.material_name === 'Труба медная Ø12,7')
+      await page.waitForFunction((l) => /950,00/.test(document.querySelector(`[aria-label="${l}"]`)?.value || ''), price('Труба медная Ø12,7', 'ОВ'))
+      await page.getByText('перенесена на «Труба медная Ø12,7»', { exact: false }).waitFor()
+      assert.equal(await page.locator('.sp-orphans').count(), 0, 'цен без позиции не осталось')
+      assert.equal((await rateOf(page, 'Труба медная Ø12,7', 'ОВ')).id, 'rate-p-old', 'та же строка цены')
+
+      // Кран: цена верна и за «шт».
+      await kran.getByRole('button', { name: 'цена верна за «шт»' }).click()
+      await page.waitForFunction(() => window.__fakeDb.tender_vor_supply_rates.find((r) => r.id === 'rate-p-kran').unit === 'шт')
+      await kran.getByText('цена — за «компл»', { exact: false }).waitFor({ state: 'detached' })
+
+      // История версий: что изменилось и цены до изменения.
+      await page.getByRole('button', { name: 'Версии ВОР' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Версии ВОР' })
+      await dialog.getByRole('button', { name: /ВОР «ОВ».*ВОР обновлён/ }).click()
+      await dialog.getByText('Цены ВОР до изменения: 3', { exact: false }).waitFor()
+      await dialog.getByRole('cell', { name: 'Труба медная Ø12,7 (бухта)' }).first().waitFor()
+      await dialog.getByRole('button', { name: 'Закрыть' }).click()
+
+      // Просмотрено: подсветка и уведомление уходят, версия — в истории.
+      await page.getByRole('button', { name: 'изменения просмотрены', exact: true }).click()
+      await page.waitForFunction(() => window.__fakeDb.tender_supply_revisions.find((r) => r.id === 7).reviewed_at)
+      await page.getByText('Сметный отдел обновил ВОР', { exact: false }).waitFor({ state: 'detached' })
+      assert.equal(await page.getByText('новая позиция в ВОР').count(), 0)
+      const rpc = await page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.op === 'rpc').map((r) => [r.table, r.args]))
+      assert.deepEqual(rpc.find(([t]) => t === 'rpc:supply_revisions_review')[1], { p_tender: 'tender-p', p_ids: [7] })
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('новый файл ВОР с другим именем: спросить «новая версия или отдельный ВОР»; «да» — после окна с последствиями', async () => {
+    const { page, context, errors } = await openPage('&vorQuestion=1')
+    try {
+      const q = page.locator('.sp-version-q')
+      await q.getByText('Новый файл ВОР «ВОР_ОВ изм.1.xlsx» — это новая версия ВОР «ОВ»?', { exact: false }).waitFor()
+      assert.match(plain(await q.innerText()), /Совпадаетматериалов:2из4·файлпрежнегоВОРудалён/)
+      await q.getByRole('button', { name: 'Да, новая версия' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Новая версия ВОР «ОВ»' })
+      await dialog.getByText('позиций было 4, станет 3', { exact: false }).waitFor()
+      await dialog.getByText('Цена останется сама у позиций с тем же наименованием: 0', { exact: false }).waitFor()
+      await dialog.getByText('позиции с ценой наименования в новом файле нет', { exact: false }).waitFor()
+      assert.match(plain(await dialog.innerText()), /У1позициисценой/)
+      await dialog.getByRole('button', { name: 'Да, это новая версия' }).click()
+      await page.waitForFunction(() => !window.__fakeDb.tender_supply_sources.some((s) => s.estimate_name === 'ВОР_ОВ изм.1'))
+      await q.first().waitFor({ state: 'detached' })
+      await page.getByText('файл «ВОР_ОВ изм.1.xlsx», лист «Материалы»', { exact: false }).waitFor()
+      const rpc = await page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'rpc:supply_vor_adopt').map((r) => r.args))
+      assert.deepEqual(rpc, [{ p_tender: 'tender-p', p_new: 'ВОР_ОВ изм.1', p_old: 'ОВ' }])
+      await page.getByText('ВОР «ОВ» — новая версия из файла «ВОР_ОВ изм.1.xlsx»', { exact: false }).waitFor()
+      // Изоляции в новом файле нет — её цена в «Ценах без позиции», с переносом по согласию.
+      await page.locator('.sp-orphans').getByText('Изоляция K-Flex 13×15', { exact: false }).waitFor()
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+    // «Нет, отдельный ВОР» — ответ запоминается в базе, вопрос уходит.
+    const second = await openPage('&vorQuestion=1')
+    try {
+      await second.page.locator('.sp-version-q').getByRole('button', { name: 'Нет, отдельный ВОР' }).click()
+      await second.page.waitForFunction(() => window.__fakeDb.tender_supply_sources.find((s) => s.id === 'src-p3').separate_at)
+      await second.page.locator('.sp-version-q').waitFor({ state: 'detached' })
+      assert.equal(await second.page.evaluate(() => window.__fakeDb.tender_supply_sources.length), 3, 'оба ВОР остались')
+      assert.deepEqual(second.errors, [])
+    } finally {
+      await second.context.close()
+    }
+  })
+
+  it('реестр тендеров на материалы: «ВОР изменён», пока снабжение не посмотрело изменения', async () => {
+    const { page, context, errors } = await open('&matTenders=1&vorChanges=1', '/tenders/materials')
+    try {
+      const link = page.locator('a.tp-pricing-link[href$="/tenders/materials/mat-1/pricing"]')
+      await link.getByText('ВОР изменён').waitFor({ timeout: 120000 })
+      assert.match(await link.getAttribute('title'), /ВОР «ВОР ЭОМ»: добавлен ВОР из файла «ВОР ЭОМ\.xlsx»: позиций 12/)
+      assert.equal(await page.locator('a.tp-pricing-link[href$="/tenders/materials/mat-2/pricing"]').getByText('ВОР изменён').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('таблицы версий ВОР нет (миграция 20261029 не применена) — расценка работает как раньше', async () => {
+    const { page, context, errors } = await openPage('&noVersions=1')
+    try {
+      await page.getByText('ВОР «ОВ»', { exact: true }).waitFor()
+      assert.equal(await page.getByRole('button', { name: 'Версии ВОР' }).count(), 0)
+      assert.equal(await page.locator('.sp-version-q, .sp-rev-banner').count(), 0)
+      assert.match(await summary(page), /Расценено1из6/)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
   it('миграция не применена — понятное сообщение, страница не падает', async () => {
     const { page, context, errors } = await openPage('&missing=1')
     try {
