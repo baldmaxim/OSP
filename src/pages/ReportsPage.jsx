@@ -7,6 +7,8 @@ import { currencySymbol } from '../utils/estimateImport'
 import { isConstructionTender } from '../utils/tenderDepartments'
 import { isMissingVorRequestsTable } from '../services/vorRequests'
 import EngineersActivity from '../components/reports/EngineersActivity'
+import KpStats from '../components/reports/KpStats'
+import { BarChart, ProgressBar, StatusDonut } from '../components/reports/ReportCharts'
 import './ReportsPage.css'
 
 // «В работе» — только активная процедура; «Не начат» сюда не входит.
@@ -150,20 +152,32 @@ function ReportsPage() {
   const { scopedObjectIds, isSuperAdmin, canView } = useRole()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
+  // Две вкладки: «Тендеры» (внутри — обзор, КП, победители, материалы, планы затрат,
+  // ВОРы и РД, работа инженеров) и «Договоры».
   // Какие отчёты видны роли. С правом «Отчёты: все вкладки» (reports_full, миграция
   // 20260930 выдала его всем ролям, у которых отчёты уже были) — все, как раньше.
   // Без него — только отчёты рабочих разделов: у «Сметный отдел_Руководители»
   // в отчётах остаются одни «ВОРы и РД».
   const fullReports = canView('reports_full')
-  const allowedTabs = fullReports
-    ? ['tenders', 'winners', 'materials', 'cost_plans', 'vors', 'contracts', ...(isSuperAdmin ? ['activity'] : [])]
+  const tenderSubs = fullReports
+    ? ['overview', 'kp', 'winners', 'materials', 'cost_plans', 'vors', ...(isSuperAdmin ? ['activity'] : [])]
     : [
         ...(canView('vors') || canView('tenders') ? ['vors'] : []),
         ...(canView('tenders_materials') ? ['materials'] : []),
       ]
-  const [activeTabState, setActiveTab] = useState(() => allowedTabs[0] || 'tenders')
+  const allowedTabs = [
+    ...(tenderSubs.length > 0 ? ['tenders'] : []),
+    ...(fullReports ? ['contracts'] : []),
+  ]
+  const [activeTabState, setActiveTab] = useState('tenders')
+  const [subTabState, setSubTab] = useState(() => tenderSubs[0] || 'overview')
   // Выбранная вкладка, которой роли не положено (права сменились), подменяется первой доступной.
   const activeTab = allowedTabs.includes(activeTabState) ? activeTabState : allowedTabs[0]
+  const subTab = tenderSubs.includes(subTabState) ? subTabState : tenderSubs[0]
+  const showSub = (key) => activeTab === 'tenders' && subTab === key
+  // КП грузятся при первом открытии подвкладки и дальше не перечитываются при
+  // переключении: тысячи строк незачем тянуть заново на каждый клик.
+  const [kpVisited, setKpVisited] = useState(false)
   // null = обзор, 'construction' | 'warranty' = детализация по выбранному отделу
   const [tDeptView, setTDeptView] = useState(null)
   // task: сырые основные тендеры + момент загрузки (для фильтрации без повторных запросов)
@@ -641,16 +655,21 @@ function ReportsPage() {
       : null
 
   const reportTabs = [
-    { key: 'tenders', label: 'Тендеры', icon: '🏗️', count: s.tTotal },
-    { key: 'winners', label: 'Победители', icon: '🏆', count: s.winners.unique },
-    { key: 'materials', label: 'Материалы', icon: '📦', count: s.mat.total },
-    { key: 'cost_plans', label: 'Планы затрат', icon: '💰', count: s.cp.total },
-    { key: 'vors', label: 'ВОРы и РД', icon: '📐', count: s.vor.construction.total + s.vor.joint.total },
-    { key: 'contracts', label: 'Договоры', icon: '📝', count: s.cTotal },
+    { key: 'tenders', label: 'Тендеры' },
+    { key: 'contracts', label: 'Договоры' },
+  ].filter(tab => allowedTabs.includes(tab.key))
+  const tenderTabs = [
+    { key: 'overview', label: 'Обзор', count: s.tTotal },
+    // Счётчика нет: КП грузятся отдельно, при открытии подвкладки.
+    { key: 'kp', label: 'Коммерческие предложения' },
+    { key: 'winners', label: 'Победители', count: s.winners.unique },
+    { key: 'materials', label: 'Материалы', count: s.mat.total },
+    { key: 'cost_plans', label: 'Планы затрат', count: s.cp.total },
+    { key: 'vors', label: 'ВОРы и РД', count: s.vor.construction.total + s.vor.joint.total },
     // Счётчик не показываем: данные вкладки грузятся отдельно, по выбранному дню.
     // Вкладка только для владельца системы — это персональная активность сотрудников.
-    ...(isSuperAdmin ? [{ key: 'activity', label: 'Работа инженеров', icon: '📞', count: null }] : []),
-  ].filter(tab => allowedTabs.includes(tab.key))
+    { key: 'activity', label: 'Работа инженеров' },
+  ].filter(tab => tenderSubs.includes(tab.key))
   const updatedLabel = loadedAt
     ? `Обновлено: сегодня, ${loadedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
     : null
@@ -660,7 +679,7 @@ function ReportsPage() {
       <div className="reports-header">
         <div>
           <h2>Отчёты</h2>
-          <div className="reports-subtitle">{fullReports ? 'Аналитика по тендерам' : 'Аналитика по вашим разделам'}</div>
+          <div className="reports-subtitle">{fullReports ? 'Аналитика по тендерам и договорам' : 'Аналитика по вашим разделам'}</div>
         </div>
         <div className="report-toolbar">
           {updatedLabel && <span className="reports-updated">{updatedLabel}</span>}
@@ -683,15 +702,37 @@ function ReportsPage() {
             }}
             aria-pressed={activeTab === tab.key}
           >
-            <span className="reports-tab-icon" aria-hidden>{tab.icon}</span>
             <span className="reports-tab-label">{tab.label}</span>
             {tab.count != null && <span className="reports-tab-count">{tab.count}</span>}
           </button>
         ))}
       </nav>
 
-      {/* Фильтр-бар — компактные inline-чипы (только для вкладки «Тендеры») */}
-      {activeTab === 'tenders' && (
+      {/* Отчёты по тендерам — подвкладки. Даже одна (у роли без «Отчёты: все вкладки» бывают
+          одни «ВОРы и РД») показывается: по ней видно, что за отчёт открыт. */}
+      {activeTab === 'tenders' && tenderTabs.length > 0 && (
+        <nav className="reports-subtabs" aria-label="Отчёты по тендерам">
+          {tenderTabs.map(tab => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`reports-subtab ${subTab === tab.key ? 'is-active' : ''}`}
+              onClick={() => {
+                setSubTab(tab.key)
+                if (tab.key === 'kp') setKpVisited(true)
+                if (tab.key !== 'overview') setTDeptView(null)
+              }}
+              aria-pressed={subTab === tab.key}
+            >
+              {tab.label}
+              {tab.count != null && <span className="reports-subtab-count">{tab.count}</span>}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {/* Фильтр-бар — компактные inline-чипы (только для обзора тендеров) */}
+      {showSub('overview') && (
         <div className="reports-filters">
           <label className={`rf-chip ${fPeriod !== 6 ? 'is-active' : ''}`}>
             <span className="rf-chip-key">Период:</span>
@@ -734,7 +775,7 @@ function ReportsPage() {
       )}
 
       <div className="reports-content">
-        {activeTab === 'tenders' && !deptData && (
+        {showSub('overview') && !deptData && (
           <>
             {/* KPI по тендерам */}
             <div className="kpi-grid kpi-grid--5">
@@ -885,7 +926,7 @@ function ReportsPage() {
           </>
         )}
 
-        {activeTab === 'tenders' && deptData && (
+        {showSub('overview') && deptData && (
           <>
             <div className="reports-breadcrumb">
               <button className="reports-back" onClick={() => setTDeptView(null)}>
@@ -934,7 +975,7 @@ function ReportsPage() {
           </>
         )}
 
-        {activeTab === 'winners' && (
+        {showSub('winners') && (
           <>
             <div className="kpi-grid">
               <div className="kpi-card">
@@ -971,7 +1012,7 @@ function ReportsPage() {
           </>
         )}
 
-        {activeTab === 'materials' && (
+        {showSub('materials') && (
           <>
             <div className="kpi-grid">
               <div className="kpi-card">
@@ -1014,7 +1055,7 @@ function ReportsPage() {
           </>
         )}
 
-        {activeTab === 'cost_plans' && (
+        {showSub('cost_plans') && (
           <>
             <div className="kpi-grid">
               <div className="kpi-card">
@@ -1063,7 +1104,7 @@ function ReportsPage() {
           </>
         )}
 
-        {activeTab === 'vors' && (() => {
+        {showSub('vors') && (() => {
           const v = s.vor[vorScope]
           const scopeLabel = vorScope === 'joint' ? 'совместные тендеры' : 'основное строительство'
           return (
@@ -1169,6 +1210,7 @@ function ReportsPage() {
               <section className="report-section contracts-donut-section">
                 <header className="section-head"><h3>Структура по статусам</h3></header>
                 <StatusDonut
+                  label="Статусы договоров"
                   total={s.cTotal}
                   segments={[
                     { label: 'Новая заявка', value: s.cNew, color: '#64748b' },
@@ -1279,97 +1321,19 @@ function ReportsPage() {
         {/* Ежедневная работа инженеров в тендерах — считается по журналу изменений,
             поэтому вкладка грузит свои данные сама и не зависит от fetchStats.
             Проверку isSuperAdmin дублируем здесь: скрытой вкладки мало, содержимое
-            не должно отрисоваться, даже если activeTab окажется 'activity'. */}
-        {activeTab === 'activity' && isSuperAdmin && (
+            не должно отрисоваться, даже если подвкладкой окажется 'activity'. */}
+        {showSub('activity') && isSuperAdmin && (
           <EngineersActivity scopedObjectIds={scopedObjectIds} />
         )}
+
+        {/* Коммерческие предложения: грузит свои данные сам; после первого открытия
+            остаётся смонтированной, чтобы не перечитывать КП на каждом переключении. */}
+        {kpVisited && tenderSubs.includes('kp') && (
+          <div className="reports-subview" hidden={!showSub('kp')}>
+            <KpStats scopedObjectIds={scopedObjectIds} canOpenReview={canView('tenders')} />
+          </div>
+        )}
       </div>
-    </div>
-  )
-}
-
-// task: donut статусов на чистом SVG (без зависимостей). segments суммируются в total.
-function StatusDonut({ total, segments }) {
-  const sum = segments.reduce((a, seg) => a + seg.value, 0) || 1
-  const R = 54
-  const C = 2 * Math.PI * R
-  let offset = 0
-  return (
-    <div className="donut-wrap">
-      <svg viewBox="0 0 140 140" className="donut-svg" role="img" aria-label="Статусы тендеров">
-        <circle cx="70" cy="70" r={R} fill="none" stroke="var(--border-color)" strokeWidth="18" opacity="0.3" />
-        {segments.filter(seg => seg.value > 0).map((seg, i) => {
-          const len = (seg.value / sum) * C
-          const el = (
-            <circle key={i} cx="70" cy="70" r={R} fill="none" stroke={seg.color} strokeWidth="18"
-              strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset}
-              transform="rotate(-90 70 70)" />
-          )
-          offset += len
-          return el
-        })}
-        <text x="70" y="66" textAnchor="middle" className="donut-num">{total}</text>
-        <text x="70" y="86" textAnchor="middle" className="donut-cap">Всего</text>
-      </svg>
-      <ul className="donut-legend">
-        {segments.map((seg, i) => (
-          <li key={i}>
-            <span className="legend-dot" style={{ background: seg.color }} />
-            <span className="legend-label">{seg.label}</span>
-            <span className="legend-val">{seg.value}</span>
-            <span className="legend-pct">{Math.round((seg.value / sum) * 100)}%</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-// task: grouped bar chart динамики на чистом SVG (без зависимостей).
-// data — [{label,total,inWork,closed}]; series — [{key,label,color}].
-function BarChart({ data, series }) {
-  const W = 520, H = 190
-  const pad = { l: 24, r: 10, t: 22, b: 22 }
-  const iw = W - pad.l - pad.r
-  const ih = H - pad.t - pad.b
-  const max = Math.max(1, ...data.flatMap(d => series.map(se => d[se.key])))
-  const n = data.length || 1
-  const groupW = iw / n
-  const barGap = 3
-  const barW = Math.max(4, (groupW * 0.66 - barGap * (series.length - 1)) / series.length)
-  const y = (v) => pad.t + (1 - v / max) * ih
-  return (
-    <div className="bars-wrap">
-      <svg viewBox={`0 0 ${W} ${H}`} className="bars-svg" role="img" aria-label="Динамика тендеров">
-        {[0, 0.5, 1].map((g) => {
-          const yy = pad.t + g * ih
-          return <line key={g} x1={pad.l} x2={W - pad.r} y1={yy} y2={yy} stroke="var(--border-color)" strokeWidth="1" opacity="0.45" />
-        })}
-        {data.map((d, i) => {
-          const gx = pad.l + i * groupW + (groupW - (barW * series.length + barGap * (series.length - 1))) / 2
-          return (
-            <g key={i}>
-              {series.map((se, j) => {
-                const v = d[se.key]
-                const bx = gx + j * (barW + barGap)
-                const by = y(v)
-                return (
-                  <g key={se.key}>
-                    <rect x={bx} y={by} width={barW} height={Math.max(0, pad.t + ih - by)} rx="2" fill={se.color} />
-                    {v > 0 && <text x={bx + barW / 2} y={by - 3} textAnchor="middle" className="bar-val" fill={se.color}>{v}</text>}
-                  </g>
-                )
-              })}
-              <text x={pad.l + i * groupW + groupW / 2} y={H - 6} textAnchor="middle" className="bar-x">{d.label}</text>
-            </g>
-          )
-        })}
-      </svg>
-      <ul className="bars-legend">
-        {series.map(se => (
-          <li key={se.key}><span className="legend-dot" style={{ background: se.color }} />{se.label}</li>
-        ))}
-      </ul>
     </div>
   )
 }
@@ -1467,18 +1431,6 @@ function WinnersTable({ rows, fmtMoney }) {
         ))}
       </tbody>
     </table>
-  )
-}
-
-function ProgressBar({ value, total }) {
-  const pct = total > 0 ? Math.round((value / total) * 100) : 0
-  return (
-    <div className="bar-with-pct">
-      <div className="bar-track">
-        <div className="bar-fill" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="bar-pct">{pct}%</span>
-    </div>
   )
 }
 

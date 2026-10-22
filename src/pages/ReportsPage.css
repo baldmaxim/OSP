@@ -1100,3 +1100,128 @@
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* Вкладки, подвкладки и фильтры обзора стоят над .reports-content — отступ от края как у него
+   (раньше вкладки и фильтры прилипали к рамке страницы). */
+.reports-page > .reports-tabs { padding: 0 1.5rem; }
+.reports-page > .reports-subtabs,
+.reports-page > .reports-filters { margin-left: 1.5rem; margin-right: 1.5rem; }
+@media (max-width: 900px) {
+  .reports-page > .reports-tabs { padding: 0 1rem; }
+  .reports-page > .reports-subtabs,
+  .reports-page > .reports-filters { margin-left: 1rem; margin-right: 1rem; }
+}
+
+/* ===== Подвкладки «Тендеров»: обзор, КП, победители, материалы, планы затрат, ВОРы ===== */
+.reports-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0 0 0.625rem;
+  padding: 0.1875rem;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.reports-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.35rem 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.reports-subtab:hover { color: var(--text-primary); }
+.reports-subtab.is-active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: var(--card-shadow);
+}
+.reports-subtab:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+.reports-subtab-count {
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.reports-subtab.is-active .reports-subtab-count { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+[data-theme='dark'] .reports-subtab.is-active .reports-subtab-count { color: #93c5fd; }
+
+/* Подвкладка, которая остаётся смонтированной (КП), — та же колонка, что и .reports-content */
+.reports-subview { display: flex; flex-direction: column; gap: 1.5rem; }
+.reports-subview[hidden] { display: none; }
+
+/* ===== Подвкладка «Коммерческие предложения» ===== */
+.kps-toolbar { margin-bottom: 0; }
+.kps-toolbar-end { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; flex-wrap: wrap; }
+.kps-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.kps-gran { flex: 0 0 auto; }
+.kps-gran button { padding: 0.2rem 0.55rem; font-size: 0.75rem; }
+
+.kps-table-wrap { overflow-x: auto; }
+/* Узкая таблица: число не уезжает далеко от подписи строки. */
+.kps-matrix { min-width: 34rem; max-width: 64rem; }
+/* Зебра считала бы и строки-заголовки блоков — вместо неё подсветка строки. */
+.dense-table.kps-matrix tbody tr:nth-child(even) td { background: none; }
+.kps-matrix thead th { white-space: nowrap; vertical-align: bottom; }
+.kps-matrix th.num, .kps-matrix td.num { width: 8.5rem; }
+.kps-th-sub {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.dense-table tr.kps-group-row td {
+  padding-top: 0.75rem;
+  background: none;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+.dense-table tbody tr.kps-group-row:hover td { background: none; }
+.dense-table tr.kps-sub-row td:first-child { padding-left: 1.75rem; color: var(--text-secondary); }
+.dense-table tr.kps-sub-row td.num { color: var(--text-secondary); }
+
+.kps-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+.kps-people { min-width: 30rem; }
+.kps-people .kps-col-idx { width: 2.5rem; }
+@media (max-width: 1200px) {
+  .kps-two { grid-template-columns: 1fr; }
+}
+.kps-people td:nth-child(2) { white-space: nowrap; }
+.kps-dyn .dash-card-head { flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+  /* Телефон: подпись строки не дробится на три строки, таблица прокручивается внутри. */
+  .kps-matrix { min-width: 30rem; }
+  .kps-matrix th.num, .kps-matrix td.num { width: 4.5rem; }
+  .kps-matrix td:first-child { min-width: 11rem; }
+}

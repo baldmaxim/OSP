@@ -560,3 +560,45 @@ if (CP_CARD) {
       counterparty_contract_links: { code: 'PGRST205', message: "Could not find the table 'public.counterparty_contract_links' in the schema cache" } }
   }
 }
+
+// ── «Отчёты → Тендеры → Коммерческие предложения» (?route=/reports&kpStats=1) ─────────────────────────
+// Файлы КП за последние 120 дней от «сейчас» браузера: по 3 в день (сегодня — за последние секунды),
+// каждый пятый — новая версия предыдущего КП, старше 90 дней — до «Проверки КП» (review_required=false),
+// на проверке — загруженные за последние 3 дня, каждый седьмой — гарантийный отдел. Встраивания (s3,
+// tenders) лежат в строках.
+if (params.get('kpStats') === '1') {
+  const fdb = window.__fakeDb
+  const now = new Date()
+  const day = (back, hour) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - back, hour).toISOString()
+  const uploaders = ['Архипов А. М.', 'Крюкова Ю. Д.', null]
+  const reviewers = ['Петрова А. С.', 'Смирнов Д. В.']
+  const rows = []
+  for (let back = 0; back < 120; back++) {
+    for (let k = 0; k < 3; k++) {
+      const n = rows.length
+      const tender = registry[n % registry.length]
+      const isVersion = n % 5 === 4 && n > 0
+      const created = back === 0 ? new Date(now.getTime() - (k + 1) * 1000).toISOString() : day(back, 8 + k)
+      const required = back < 90
+      const reviewed = required && back >= 3
+      const remarks = reviewed && n % 3 === 0
+      rows.push({
+        id: `kpf-${n}`, tender_id: tender.id, counterparty_id: `cp-${(n % CPS) + 1}`,
+        proposal_group_id: isVersion ? rows[n - 1].proposal_group_id : `kpg-${n}`,
+        file_kind: 'commercial_proposal', created_at: created,
+        review_required: required,
+        review_status: reviewed ? (remarks ? 'has_remarks' : 'approved') : 'pending',
+        reviewed_at: reviewed ? day(back - 1, 11) : null,
+        reviewed_by: reviewed ? reviewers[n % 2] : null,
+        remarks_send_required: !(remarks && n % 2 === 0),
+        remarks_sent: remarks && back > 10,
+        remarks_sent_at: remarks && back > 10 ? day(back - 2, 12) : null,
+        summary_added: reviewed && back > 5,
+        summary_added_at: reviewed && back > 5 ? day(back - 2, 10) : null,
+        s3: { uploaded_by_name: uploaders[n % 3] },
+        tenders: { object_id: tender.object_id, department: n % 7 === 0 ? 'warranty' : 'construction' },
+      })
+    }
+  }
+  fdb.tender_proposal_files = rows
+}

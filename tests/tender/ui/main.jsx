@@ -1,6 +1,6 @@
 // Стенд тендеров в браузере (данные в памяти).
 //   route   — начальный адрес: /tenders/tender-1 (карточка, по умолчанию), /tenders/construction или
-//             /tenders/materials (реестры);
+//             /tenders/materials (реестры), /reports (отчёты; kpStats=1 — файлы КП для статистики);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -24,6 +24,7 @@ import TenderDetailPage from '../../../src/pages/TenderDetailPage'
 import CounterpartiesPage from '../../../src/pages/CounterpartiesPage'
 import SupplyPricingPage from '../../../src/pages/SupplyPricingPage'
 import VorsPage from '../../../src/pages/VorsPage'
+import ReportsPage from '../../../src/pages/ReportsPage'
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -43,6 +44,7 @@ function NavBridge() {
 const routes = (
   <Routes>
     <Route path="/vors" element={<VorsPage />} />
+    <Route path="/reports" element={<ReportsPage />} />
     <Route path="/tenders/construction" element={<TendersPage department="construction" tenderType="main" />} />
     <Route path="/tenders/materials" element={<TendersPage key="tenders-materials" tenderType="materials" />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />

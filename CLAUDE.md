@@ -18,7 +18,7 @@ npm run preview      # Preview production build
 npm run lint         # Run ESLint (--max-warnings 0)
 npm run check:transport # доступ к серверу только через src/api/ (0 нарушений)
 npm run test:psdc    # ПСДЦ: движок в БД, XLSX, UI (PostgreSQL + Chromium)
-npm run test:tender  # карточка тендера: производительность UI, страница расценки снабжением, карточка контрагента (Chromium)
+npm run test:tender  # карточка тендера: производительность UI, страница расценки снабжением, карточка контрагента, отчёты (Chromium)
 npm run test:supply  # расценка снабжением: база на слепке прода (Docker), лист «Материалы», normName = SQL
 npm run test:contracts # договоры: путь к Larix.CPM, импорт из Excel, суммы «Заявки на ДС» со знаком (без базы и браузера)
 npm run test:release # страховочный релиз: обновление, ошибки чанков, конфиг (Chromium)
@@ -130,7 +130,7 @@ Contractor login also stores `contractorInfo` (id, name) for proposal filtering.
   - `/bsm/supply-rates` - Supply department rates (BSMRatesPage)
   - `/bsm/contractor-rates` - Contractor-specific rates (BSMContractorRatesPage)
 - `/acceptance` - Acceptance page (placeholder)
-- `/reports` - Reports page (placeholder)
+- `/reports` - Отчёты (ReportsPage): две вкладки — «Тендеры» (подвкладки: обзор, коммерческие предложения, победители, материалы, планы затрат, ВОРы и РД, работа инженеров) и «Договоры». «Коммерческие предложения» ([KpStats](src/components/reports/KpStats.jsx), расчёт — [kpStats.js](src/utils/kpStats.js)): загрузка и проверка КП за сегодня / неделю / месяц / всё время, очередь «Проверки КП», динамика, кто загружает и проверяет
 
 ### Theming
 
