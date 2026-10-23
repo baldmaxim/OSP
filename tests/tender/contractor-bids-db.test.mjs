@@ -105,7 +105,7 @@ describe('Кабинет подрядчика: заявки, цены, анке�
     assert.doesNotMatch(out, /^FAIL/m, out)
     assert.equal(out.split('\n').filter((l) => l.startsWith('OK ')).length, 7, out)
     assert.equal(sql('select count(*) from public.bid_form_fields'), '14', 'анкета по умолчанию — один раз')
-    assert.equal(sql(`select kind || ' ' || (options ->> 0) || ' ' || jsonb_array_length(options) from public.bid_form_fields where code = 'vat'`), 'select 22 % 7')
+    assert.equal(sql(`select kind || ' ' || (options ->> 0) || ' ' || jsonb_array_length(options) from public.bid_form_fields where code = 'vat'`), 'select 22 % 4')
   })
 
   it('кабинет: открытые основные тендеры без доступа, закрытые и на материалы — нет; сотруднику и подрядчику без организации — отказ', () => {
@@ -181,9 +181,12 @@ describe('Кабинет подрядчика: заявки, цены, анке�
 
   it('ставка НДС — только из списка; ответ виден в сводке администратора', () => {
     const vat = sql(`select id from public.bid_form_fields where code = 'vat'`)
-    assert.throws(() => as(U.a, `select public.bid_form_save('${T_OPEN}', jsonb_build_object('${vat}', '18 %'))`), /не из списка/)
-    as(U.a, `select public.bid_form_save('${T_OPEN}', jsonb_build_object('${vat}', 'Без НДС'))`)
-    assert.equal(as(U.a, `select answers -> '${vat}' ->> 'value' from public.tender_bid_forms where tender_id = '${T_OPEN}'`), 'Без НДС')
+    assert.equal(sql(`select options::text from public.bid_form_fields where code = 'vat'`), '["22 %", "7 %", "5 %", "0 %"]')
+    for (const gone of ['18 %', '20 %', '10 %', 'Без НДС']) {
+      assert.throws(() => as(U.a, `select public.bid_form_save('${T_OPEN}', jsonb_build_object('${vat}', '${gone}'))`), /не из списка/, gone)
+    }
+    as(U.a, `select public.bid_form_save('${T_OPEN}', jsonb_build_object('${vat}', '5 %'))`)
+    assert.equal(as(U.a, `select answers -> '${vat}' ->> 'value' from public.tender_bid_forms where tender_id = '${T_OPEN}'`), '5 %')
     as(U.a, `select public.bid_form_save('${T_OPEN}', jsonb_build_object('${vat}', '22 %'))`)
     assert.throws(() => sql(`insert into public.bid_form_fields (label, code) values ('Второй НДС', 'vat')`), /duplicate key|повторяющееся/)
     assert.throws(() => sql(`insert into public.bid_form_fields (label, kind) values ('Список без вариантов', 'select')`), /check constraint|нарушает ограничение|violates/)

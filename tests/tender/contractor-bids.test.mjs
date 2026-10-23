@@ -195,8 +195,8 @@ describe('Главный лист и анкета', () => {
     assert.deepEqual(noMain.conditions, [])
   })
 
-  it('ставка НДС: варианты как у контрагентов; «Без НДС» — не 0 %; в т. ч. НДС — сумма × ставка / (100 + ставка)', () => {
-    assert.deepEqual(VAT_OPTIONS, ['22 %', '20 %', '10 %', '7 %', '5 %', '0 %', 'Без НДС'])
+  it('ставка НДС: варианты как у контрагентов (без 20 %, 10 % и «Без НДС»); прежний «Без НДС» — не 0 %; в т. ч. НДС — сумма × ставка / (100 + ставка)', () => {
+    assert.deepEqual(VAT_OPTIONS, ['22 %', '7 %', '5 %', '0 %'])
     assert.deepEqual(parseVatAnswer('22 %'), { rate: 22, exempt: false })
     assert.deepEqual(parseVatAnswer('22'), { rate: 22, exempt: false }, 'как в ячейке Excel')
     assert.deepEqual(parseVatAnswer('без НДС'), { rate: 0, exempt: true })
@@ -212,7 +212,8 @@ describe('Главный лист и анкета', () => {
     assert.deepEqual(vatFromAnswers(fields, { v: '10 %' }), { rate: 10, exempt: false })
     assert.equal(vatFromAnswers([{ id: 'a' }], { a: '10 %' }), null, 'без поля НДС — ставки нет')
     assert.equal(answerAllowed(fields[1], '18 %'), false)
-    assert.equal(answerAllowed(fields[1], 'Без НДС'), true)
+    assert.equal(answerAllowed(fields[1], '5 %'), true)
+    for (const gone of ['20 %', '10 %', 'Без НДС']) assert.equal(answerAllowed(fields[1], gone), false, `${gone} — не из списка`)
     assert.equal(answerAllowed(fields[1], ''), true, 'пусто — убрать ответ')
     assert.equal(answerAllowed({ kind: 'text' }, 'что угодно'), true)
     assert.deepEqual(parseOptions(' да \nнет; да\n\n  частично  '), ['да', 'нет', 'частично'])

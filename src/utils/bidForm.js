@@ -3,12 +3,13 @@
 // Поле — текст или выбор из списка (kind = 'select', options). Поле с кодом 'vat' — ставка НДС подрядчика: в файле
 // ВОР её выбирают из выпадающего списка на «Главном листе» («Указать % НДС из выпадающего списка»), в кабинете — так
 // же; по ней в итогах расценки показывается «в т. ч. НДС», и она — ставка по умолчанию в «Ценах из файла».
-// Ставки — те же, что у контрагентов (utils/counterpartyVat.js): 22, 20, 10, 7, 5, 0 % и «Без НДС».
+// Ставки — те же, что у контрагентов (utils/counterpartyVat.js): 22, 7, 5, 0 %. «Без НДС», 20 и 10 % из выбора убраны
+// (23.10.2026), но прежний ответ «Без НДС» по-прежнему понимается: цены без НДС.
 import { VAT_RATES } from './counterpartyVat.js'
 
 export const VAT_FIELD_CODE = 'vat'
 export const VAT_EXEMPT_TEXT = 'Без НДС'
-export const VAT_OPTIONS = [...VAT_RATES.map((r) => `${r} %`), VAT_EXEMPT_TEXT]
+export const VAT_OPTIONS = VAT_RATES.map((r) => `${r} %`)
 export const FIELD_KINDS = { text: 'Текст', select: 'Выбор из списка' }
 
 // Ответ поля НДС → { rate, exempt } | null (не указан). «22 %», «22», «22%», «Без НДС», «без ндс».

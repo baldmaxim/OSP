@@ -1,6 +1,7 @@
 // Карточка контрагента (/general/counterparties), вкладка «Общая информация»:
 //   • колонки «Примечание» в реестре нет — примечание правится во вкладке и сохраняется в базу;
-//   • НДС: ставка или «без НДС», запись в базу и в журнал «Изменения»; без колонок (миграция 20261026 не
+//   • НДС: выбор — 22, 7, 5, 0 % (20 %, 10 % и «Без НДС» убраны 23.10.2026; уже записанные видны как есть),
+//     запись в базу и в журнал «Изменения»; без колонок (миграция 20261026 не
 //     применена) — подпись вместо списка; без права правки — только текст;
 //   • НДС меняется и в реестре (колонка «НДС»): правка в реестре видна в карточке и наоборот; без права правки —
 //     текст, без колонок НДС в базе — колонки в реестре нет;
@@ -77,17 +78,18 @@ describe('Карточка контрагента: «Общая информац
 
       const vat = page.locator('select.cpg-vat-select')
       assert.equal(await vat.inputValue(), '22')
-      await vat.selectOption('exempt')
-      await page.waitForFunction(() => window.__fakeDb.counterparties.find(c => c.id === 'cp-1').vat_exempt === true)
+      assert.deepEqual(await vat.locator('option').allTextContents(), ['не указан', '22 %', '7 %', '5 %', '0 %'])
+      await vat.selectOption('5')
+      await page.waitForFunction(() => Number(window.__fakeDb.counterparties.find(c => c.id === 'cp-1').vat_rate) === 5)
       const saved = await cp1(page)
-      assert.equal(saved.vat_rate, null)
+      assert.equal(saved.vat_exempt, false)
       const log = await page.evaluate(() => window.__fakeDb.counterparty_audit_log.map(r => r.description))
-      assert.ok(log.includes('НДС: 22 % → Без НДС'), log.join(' | '))
+      assert.ok(log.includes('НДС: 22 % → 5 %'), log.join(' | '))
 
       // Вкладку переключили и вернулись — видно сохранённое, а не снимок строки при открытии.
       await page.locator('.cp-detail-tab', { hasText: 'Документы' }).click()
       await page.locator('.cp-detail-tab', { hasText: 'Общая информация' }).click()
-      assert.equal(await page.locator('select.cpg-vat-select').inputValue(), 'exempt')
+      assert.equal(await page.locator('select.cpg-vat-select').inputValue(), '5')
       assert.equal(await page.locator('textarea.cpg-notes').inputValue(), 'Работает по предоплате 30 %')
       assert.deepEqual(errors, [])
     } finally { await close() }
@@ -103,19 +105,31 @@ describe('Карточка контрагента: «Общая информац
       assert.equal(await rowVat('Подрядчик 01').inputValue(), '22')
       assert.equal(await rowVat('Подрядчик 02').inputValue(), '')
 
+      // 20 %, 10 % и «Без НДС» в выборе нет; уже записанные видны как есть — и только у своего контрагента.
+      assert.deepEqual(await rowVat('Подрядчик 02').locator('option').allTextContents(), ['не указан', '22 %', '7 %', '5 %', '0 %'])
+      assert.equal(await rowVat('Подрядчик 04').inputValue(), 'exempt')
+      assert.deepEqual(await rowVat('Подрядчик 04').locator('option').allTextContents(), ['не указан', 'Без НДС', '22 %', '7 %', '5 %', '0 %'])
+      assert.equal(await rowVat('Подрядчик 05').inputValue(), '20')
+      assert.deepEqual(await rowVat('Подрядчик 05').locator('option').allTextContents(), ['не указан', '22 %', '7 %', '5 %', '0 %', '20 %'])
+
       // Выбор в строке не открывает карточку и пишет в базу и журнал так же, как вкладка.
-      await rowVat('Подрядчик 02').selectOption('10')
-      await page.waitForFunction(() => Number(window.__fakeDb.counterparties.find(c => c.id === 'cp-2').vat_rate) === 10)
+      await rowVat('Подрядчик 02').selectOption('7')
+      await page.waitForFunction(() => Number(window.__fakeDb.counterparties.find(c => c.id === 'cp-2').vat_rate) === 7)
       assert.equal(await page.locator('.cp-detail-modal').count(), 0, 'карточка не открылась')
       const log = await page.evaluate(() => window.__fakeDb.counterparty_audit_log.filter(r => r.counterparty_id === 'cp-2').map(r => r.description))
-      assert.ok(log.includes('НДС: не указан → 10 %'), log.join(' | '))
+      assert.ok(log.includes('НДС: не указан → 7 %'), log.join(' | '))
+
+      // «Без НДС» сменили на ставку — из списка этого контрагента он уходит.
+      await rowVat('Подрядчик 04').selectOption('22')
+      await page.waitForFunction(() => window.__fakeDb.counterparties.find(c => c.id === 'cp-4').vat_exempt === false)
+      assert.deepEqual(await rowVat('Подрядчик 04').locator('option').allTextContents(), ['не указан', '22 %', '7 %', '5 %', '0 %'])
 
       await openCard(page, 'Подрядчик 02')
       const cardVat = page.locator('select.cpg-vat-select')
-      assert.equal(await cardVat.inputValue(), '10')
-      await cardVat.selectOption('exempt')
-      await page.waitForFunction(() => window.__fakeDb.counterparties.find(c => c.id === 'cp-2').vat_exempt === true)
-      assert.equal(await rowVat('Подрядчик 02').inputValue(), 'exempt')
+      assert.equal(await cardVat.inputValue(), '7')
+      await cardVat.selectOption('0')
+      await page.waitForFunction(() => Number(window.__fakeDb.counterparties.find(c => c.id === 'cp-2').vat_rate) === 0)
+      assert.equal(await rowVat('Подрядчик 02').inputValue(), '0')
       assert.deepEqual(errors, [])
     } finally { await close() }
 

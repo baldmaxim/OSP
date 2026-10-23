@@ -74,7 +74,7 @@ const db = window.__fakeDb = {
   tender_bid_forms: [],
   bid_form_fields: [
     { id: 'f-name', label: 'Наименование контрагента', hint: null, kind: 'text', options: null, code: null, sort_order: 10, is_active: true, created_at: '2026-10-23T00:00:00Z' },
-    { id: 'f-vat', label: 'Ставка НДС', hint: 'выберите из списка', kind: 'select', options: ['22 %', '20 %', '10 %', '7 %', '5 %', '0 %', 'Без НДС'], code: 'vat', sort_order: 20, is_active: true, created_at: '2026-10-23T00:00:00Z' },
+    { id: 'f-vat', label: 'Ставка НДС', hint: 'выберите из списка', kind: 'select', options: ['22 %', '7 %', '5 %', '0 %'], code: 'vat', sort_order: 20, is_active: true, created_at: '2026-10-23T00:00:00Z' },
     { id: 'f-old', label: 'Скрытое поле', hint: null, kind: 'text', options: null, code: null, sort_order: 30, is_active: false, created_at: '2026-10-23T00:00:00Z' },
   ],
 }

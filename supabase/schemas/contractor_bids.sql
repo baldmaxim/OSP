@@ -48,7 +48,7 @@ CREATE TABLE public.tender_bid_rates (
 );
 
 -- Поля анкеты «Квалификационная и контактная информация» (список ведёт администратор): текст или выбор из списка.
--- code = 'vat' — ставка НДС подрядчика (22 / 20 / 10 / 7 / 5 / 0 % / «Без НДС»), участвует в итогах расценки.
+-- code = 'vat' — ставка НДС подрядчика (22 / 7 / 5 / 0 %), участвует в итогах расценки.
 CREATE TABLE public.bid_form_fields (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   label text NOT NULL,

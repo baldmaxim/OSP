@@ -63,7 +63,7 @@ const FileTextIcon = () => (
 const PORTALS = [
   { name: 'FOT', url: 'https://fot.su10.ru', description: 'Внутренняя система организации рабочих процессов сотрудника (учёт времени, заявления, контактная информация)' },
   { name: 'Signal', url: 'https://docs.sgnl.pro', description: 'Централизованное хранение документов' },
-  { name: 'Ларикс', url: 'https://cpm.su10.larix.ru', description: 'Договоры с подрядчиками, контроль АВР и документации' },
+  { name: 'Larix', url: 'https://cpm.su10.larix.ru', description: 'Договоры с подрядчиками, контроль АВР и документации' },
   { name: 'Обработка РД (web)', url: 'https://vibe.cloud-ip.cc', description: 'ИИ-ассистент для визуальной обработки рабочей документации' },
 ]
 

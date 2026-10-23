@@ -5,7 +5,8 @@
 //   • цена пишется сама (bid_rates_save) — с ключами позиции и объёмом; сумма и итоги пересчитываются;
 //   • «Цены из файла»: свой прайс сопоставляется с позициями, цены ставятся с отметкой «из файла»;
 //   • анкета — поля из списка администратора (скрытого нет), ответ пишется при уходе из поля; ставка НДС — выбор из
-//     списка: пока не выбрана — «не указана» в итогах, выбрана — «в т. ч. НДС», «Без НДС» — цены без НДС;
+//     списка (22, 7, 5, 0 %; 20 %, 10 % и «Без НДС» убраны 23.10.2026): пока не выбрана — «не указана» в итогах,
+//     выбрана — «в т. ч. НДС» по этой ставке;
 //   • «Особые условия» с «Главного листа» файла ВОР — над вкладками;
 //   • закрытый тендер — только просмотр;
 //   • администратор: реестр расценок → «Расценки подрядчиков (актуальные тендеры)» — сводка без завершённых
@@ -143,7 +144,7 @@ describe('Кабинет подрядчика: расценка на сайте'
       await page.getByLabel('Наименование контрагента').press('Tab')
       await page.locator('.bid-form-state.is-saved').first().waitFor({ timeout: 10000 })
       const vat = page.getByLabel('Ставка НДС')
-      assert.deepEqual(await vat.locator('option').allTextContents(), ['— выберите —', '22 %', '20 %', '10 %', '7 %', '5 %', '0 %', 'Без НДС'])
+      assert.deepEqual(await vat.locator('option').allTextContents(), ['— выберите —', '22 %', '7 %', '5 %', '0 %'])
       await vat.selectOption('22 %')
       await page.locator('.bid-form-state.is-saved').nth(1).waitFor({ timeout: 10000 })
       let saves = await calls(page, 'bid_form_save')
@@ -157,14 +158,12 @@ describe('Кабинет подрядчика: расценка на сайте'
       await concrete.locator('.bid-money-input').fill('1000')
       await concrete.locator('.bid-money-input').press('Enter')
       await page.locator('.bid-sum-cell', { hasText: 'НДС: 22 %' }).filter({ hasText: /23\s532,79/ }).waitFor({ timeout: 10000 })
-      // «Без НДС» — итог и колонки без НДС.
+      // Сменили ставку — «в т. ч. НДС» по новой: 130 500 × 5 / 105 = 6 214,29.
       await page.locator('.bid-tab', { hasText: 'Анкета' }).click()
-      await page.getByLabel('Ставка НДС').selectOption('Без НДС')
-      await page.locator('.bid-sum-label', { hasText: 'Итого, без НДС' }).waitFor({ timeout: 10000 })
+      await page.getByLabel('Ставка НДС').selectOption('5 %')
+      await page.locator('.bid-sum-cell', { hasText: 'НДС: 5 %' }).filter({ hasText: /6\s214,29/ }).waitFor({ timeout: 10000 })
       saves = await calls(page, 'bid_form_save')
-      assert.deepEqual(saves.at(-1).answers, { 'f-vat': 'Без НДС' })
-      await page.locator('.bid-tab', { hasText: 'Материалы' }).click()
-      await page.locator('.bid-table th', { hasText: 'Цена за ед. без НДС' }).waitFor()
+      assert.deepEqual(saves.at(-1).answers, { 'f-vat': '5 %' })
       assert.deepEqual(errors, [])
     } finally {
       await close()
@@ -271,7 +270,13 @@ describe('Кабинет подрядчика: расценка на сайте'
       const vatRow = page.locator('.cbp-field', { has: page.locator('.cbp-chip-vat') })
       assert.equal(await vatRow.getByRole('button', { name: 'Скрыть' }).count(), 0)
       assert.equal(await vatRow.getByRole('button', { name: 'Удалить поле' }).isDisabled(), true)
-      assert.match(await vatRow.getByLabel('Варианты списка').inputValue(), /^22 %\n20 %\n10 %\n7 %\n5 %\n0 %\nБез НДС$/)
+      const vatOptions = vatRow.getByLabel('Варианты списка')
+      assert.match(await vatOptions.inputValue(), /^22 %\n7 %\n5 %\n0 %$/)
+      // Прежний список (20 %, 10 %, «Без НДС») — «вернуть ставки по умолчанию» оставляет 22, 7, 5, 0 %.
+      await vatOptions.fill('22 %\n20 %\n10 %\n7 %\n5 %\n0 %\nБез НДС')
+      await vatRow.getByRole('button', { name: 'вернуть ставки по умолчанию' }).click()
+      assert.match(await vatOptions.inputValue(), /^22 %\n7 %\n5 %\n0 %$/)
+      assert.equal(await vatRow.getByRole('button', { name: 'вернуть ставки по умолчанию' }).count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await close()

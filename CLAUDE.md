@@ -117,7 +117,7 @@ Contractor login also stores `contractorInfo` (id, name) for proposal filtering.
 - `/login` - Role selection
 - `/contractor` - Кабинет подрядчика ([ContractorCabinetPage](src/pages/ContractorCabinetPage.jsx)): тендеры (открытые и свои, расценка ВОР на сайте, анкета) и договоры; прежние `/contractor/proposals` и `/contractor/negotiations` ведут сюда. См. «Кабинет подрядчика: расценка на сайте»
 - `/contractor-bids` - прежний адрес сводки расценок подрядчиков: ведёт в реестр расценок, вкладка «Расценки подрядчиков (актуальные тендеры)» (`/rates-registry?tab=bids`)
-- `/general` - General info hub (GeneralInfoPage): карточки разделов и «Наши порталы» (FOT, Signal, Ларикс, Обработка РД — название-ссылка в новой вкладке, адрес не показывается; список — `PORTALS` в GeneralInfoPage.jsx, тест — `tests/tender/general-portals.test.mjs`)
+- `/general` - General info hub (GeneralInfoPage): карточки разделов и «Наши порталы» (FOT, Signal, Larix, Обработка РД — название-ссылка в новой вкладке, адрес не показывается; список — `PORTALS` в GeneralInfoPage.jsx, тест — `tests/tender/general-portals.test.mjs`)
 - `/general/objects|contacts|counterparties` - General info subpages (employees)
 - `/general/objects/:objectId` - Object detail (5 tabs: info, documents, warranty, warranty retentions, estimate)
 - `/tenders/construction|warranty` - Tender lists by department
@@ -209,8 +209,9 @@ CSS variables defined for `[data-theme="light"]` and `[data-theme="dark"]` in `i
   скрыть, порядок; поле — текст или выбор из списка с вариантами), ответы `tender_bid_forms` (`bid_form_save`: подпись
   поля — слепком, у списка — только вариант из списка), «Подставить ответы из прошлой анкеты». По умолчанию — 14 полей
   «Главного листа» ВОР (снимок 23.10). **Ставка НДС** (`code = 'vat'`, как выпадающий список «Указать % НДС» в файле):
-  22 / 20 / 10 / 7 / 5 / 0 % / «Без НДС» (как у контрагентов, [bidForm.js](src/utils/bidForm.js)); не указана — в итогах
-  «не указана — выбрать», указана — «в т. ч. НДС», «Без НДС» — цены и итог без НДС; ставка по умолчанию в «Ценах из файла»,
+  22 / 7 / 5 / 0 % (как у контрагентов, [bidForm.js](src/utils/bidForm.js); 20 %, 10 % и «Без НДС» убраны 23.10 — прежний
+  список меняет «вернуть ставки по умолчанию» в «Полях анкеты»); не указана — в итогах «не указана — выбрать», указана —
+  «в т. ч. НДС», прежний ответ «Без НДС» — цены и итог без НДС; ставка по умолчанию в «Ценах из файла»,
   колонка «НДС» в сводке администратора. Поле НДС не удалить и не скрыть.
 - **Особые условия** «Главного листа» файла ВОР (блок «Особые условия, которые…»: ГУ, гарантия, шаблон договора) —
   подрядчику над вкладками расценки (`readMainConditions`, строки под заголовком до пустой строки или анкеты).
@@ -267,7 +268,7 @@ const { data } = await db
 |-------|---------|------------------|
 | `objects` | Construction sites | - |
 | `contacts` | Personnel linked to objects | `object_id` |
-| `counterparties` | Contractor directory. Карточка (клик по строке) — вкладка «Общая информация» ([components/counterparty/](src/components/counterparty/)): реквизиты, НДС (`vat_rate` / `vat_exempt` — ставка или «без НДС», миграция 20261026; меняется и в колонке «НДС» реестра — тот же [CounterpartyVatSelect](src/components/counterparty/CounterpartyVatSelect.jsx) и та же запись `handleVatChange`, без колонок в базе колонки нет), примечание (колонки в реестре нет), аффилированные компании — группа `counterparty_relations` (кнопки и окна «Связи» в реестре нет с 21.10 — только здесь), договоры и ДС, где контрагент — сторона (`contracts.counterparty_id` или `contract_counterparties`) или договор прикреплён вручную (`counterparty_contract_links`) | - |
+| `counterparties` | Contractor directory. Карточка (клик по строке) — вкладка «Общая информация» ([components/counterparty/](src/components/counterparty/)): реквизиты, НДС (`vat_rate` / `vat_exempt` — ставка или «без НДС», миграция 20261026; в выборе с 23.10 только 22 / 7 / 5 / 0 %, записанные 20 %, 10 % и «Без НДС» видны как есть, пока их не сменят; меняется и в колонке «НДС» реестра — тот же [CounterpartyVatSelect](src/components/counterparty/CounterpartyVatSelect.jsx) и та же запись `handleVatChange`, без колонок в базе колонки нет), примечание (колонки в реестре нет), аффилированные компании — группа `counterparty_relations` (кнопки и окна «Связи» в реестре нет с 21.10 — только здесь), договоры и ДС, где контрагент — сторона (`contracts.counterparty_id` или `contract_counterparties`) или договор прикреплён вручную (`counterparty_contract_links`) | - |
 | `counterparty_contract_links` | Договор, прикреплённый к контрагенту вручную (миграция 20261031): «Общая информация» карточки → «Договоры и ДС» → «+ Прикрепить договор» (поиск по номеру, предмету, объекту и контрагенту договора), показывается со всеми ДС; администратору — пометка «добавлен вручную» (кто и когда — `created_by` ставит триггер), с правом правки «Контрагентов» — «открепить»; обе записи — в журнал «Изменения». Стороны договора НЕ меняет: реестр договоров и кабинет подрядчика (`is_my_contract`) привязку не видят. Читает сотрудник, прикрепляет и открепляет `osp_can('counterparties','edit')`, UPDATE не выдан. Таблицы ещё нет — раздел как раньше, без кнопки ([counterpartyContracts.js](src/services/counterpartyContracts.js)) | `counterparty_id`, `contract_id` (CASCADE), `UNIQUE(counterparty_id, contract_id)` |
 | `counterparty_contacts` | Contact persons | `counterparty_id` (CASCADE) |
 | `contracts` | Contract registry | `object_id`, `counterparty_id` |

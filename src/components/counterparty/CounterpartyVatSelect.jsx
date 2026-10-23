@@ -7,7 +7,8 @@ import { VAT_EXEMPT, VAT_NONE, VAT_RATES, formatPercent, vatSelectValue } from '
 export default function CounterpartyVatSelect({ counterparty, onSave, className }) {
   const [saving, setSaving] = useState(false)
   const value = vatSelectValue(counterparty)
-  // Ставка не из списка (заведена в базе вручную) — показываем её отдельной строкой списка.
+  // Ставка не из списка (прежние 20 и 10 % или заведена в базе вручную) — показываем её отдельной строкой списка;
+  // «Без НДС» из выбора убран — строка есть, только если он уже записан.
   const rates = VAT_RATES.map(String)
   if (value !== VAT_NONE && value !== VAT_EXEMPT && !rates.includes(value)) rates.push(value)
 
@@ -29,7 +30,7 @@ export default function CounterpartyVatSelect({ counterparty, onSave, className 
       aria-label={`НДС контрагента${counterparty.name ? ` ${counterparty.name}` : ''}`}
     >
       <option value={VAT_NONE}>не указан</option>
-      <option value={VAT_EXEMPT}>Без НДС</option>
+      {value === VAT_EXEMPT && <option value={VAT_EXEMPT}>Без НДС</option>}
       {rates.map(r => <option key={r} value={r}>{formatPercent(r)} %</option>)}
     </select>
   )

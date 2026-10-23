@@ -12,7 +12,7 @@ import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 const PORTALS = [
   ['FOT', 'https://fot.su10.ru/'],
   ['Signal', 'https://docs.sgnl.pro/'],
-  ['Ларикс', 'https://cpm.su10.larix.ru/'],
+  ['Larix', 'https://cpm.su10.larix.ru/'],
   ['Обработка РД (web)', 'https://vibe.cloud-ip.cc/'],
 ]
 
@@ -72,7 +72,7 @@ describe('Общая информация: наши порталы', { skip: !la
       assert.ok(view.nameSize > view.descSize, `название крупнее описания: ${view.nameSize} / ${view.descSize}`)
       assert.notEqual(view.nameBg, view.cardBg, 'у названия своя подложка')
 
-      const larix = page.locator('.portal-name', { hasText: 'Ларикс' })
+      const larix = page.locator('.portal-name', { hasText: 'Larix' })
       const look = () => larix.evaluate((a) => {
         const s = getComputedStyle(a)
         return { color: s.color, background: s.backgroundColor }
