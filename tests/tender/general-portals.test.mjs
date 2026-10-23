@@ -1,7 +1,8 @@
 // «Общая информация» (/general): блок «Наши порталы» под карточками разделов.
 //   • четыре портала — название и описание, название — ссылка в новой вкладке без доступа к окну портала;
 //   • адрес на странице не показывается (ни текстом, ни подсказкой title);
-//   • название при наведении выделяется — цвет и подложка меняются;
+//   • название — по центру, крупнее описания, на своей подложке, без значка-стрелки;
+//     при наведении выделяется — цвет и подложка меняются;
 //   • на телефоне — один столбец, без прокрутки страницы вбок.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -57,6 +58,19 @@ describe('Общая информация: наши порталы', { skip: !la
       for (const [, url] of PORTALS) {
         assert.ok(!text.includes(new URL(url).host), `адрес ${url} не виден на странице`)
       }
+
+      assert.equal(await page.locator('.portal-name svg').count(), 0, 'без стрелки у названия')
+      const view = await page.locator('.portal-item').first().evaluate((li) => {
+        const name = getComputedStyle(li.querySelector('.portal-name'))
+        const desc = getComputedStyle(li.querySelector('.portal-description'))
+        return {
+          align: name.textAlign, nameSize: parseFloat(name.fontSize), descSize: parseFloat(desc.fontSize),
+          nameBg: name.backgroundColor, cardBg: getComputedStyle(li).backgroundColor,
+        }
+      })
+      assert.equal(view.align, 'center', 'название по центру')
+      assert.ok(view.nameSize > view.descSize, `название крупнее описания: ${view.nameSize} / ${view.descSize}`)
+      assert.notEqual(view.nameBg, view.cardBg, 'у названия своя подложка')
 
       const larix = page.locator('.portal-name', { hasText: 'Ларикс' })
       const look = () => larix.evaluate((a) => {
