@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import AutoGrowTextarea from '../AutoGrowTextarea'
 import CounterpartyContracts from './CounterpartyContracts'
-import { VAT_EXEMPT, VAT_NONE, VAT_RATES, formatPercent, vatSelectValue, vatText } from '../../utils/counterpartyVat'
+import CounterpartyVatSelect from './CounterpartyVatSelect'
+import { VAT_NONE, vatSelectValue, vatText } from '../../utils/counterpartyVat'
 import './CounterpartyGeneral.css'
 
 const STATUS_TEXT = { active: 'Активный', blacklist: 'Чёрный список' }
@@ -36,14 +37,10 @@ export default function CounterpartyGeneralTab({
   onOpenCounterparty,
   onContractLinkChange,
 }) {
-  const [vatSaving, setVatSaving] = useState(false)
   const [search, setSearch] = useState('')
   const cp = counterparty
   const contacts = cp.counterparty_contacts || []
   const vatValue = vatSelectValue(cp)
-  // Ставка не из списка (заведена в базе вручную) — показываем её отдельной строкой списка.
-  const vatRates = VAT_RATES.map(String)
-  if (vatValue !== VAT_NONE && vatValue !== VAT_EXEMPT && !vatRates.includes(vatValue)) vatRates.push(vatValue)
 
   const affiliateIds = useMemo(() => new Set(affiliates.map(a => a.id)), [affiliates])
   const candidates = useMemo(() => {
@@ -59,12 +56,6 @@ export default function CounterpartyGeneralTab({
     return out
   }, [search, counterparties, cp.id, affiliateIds])
 
-  const handleVat = async (e) => {
-    setVatSaving(true)
-    await onSaveVat(e.target.value)
-    setVatSaving(false)
-  }
-
   const handleAdd = async (other) => {
     if (await onAddAffiliate(other)) setSearch('')
   }
@@ -79,17 +70,7 @@ export default function CounterpartyGeneralTab({
             <Field label="КПП">{cp.kpp && <span className="cpg-mono">{cp.kpp}</span>}</Field>
             <Field label="НДС">
               {canEdit && vatSupported ? (
-                <select
-                  className={`cpg-vat-select${vatValue === VAT_NONE ? ' is-empty' : ''}`}
-                  value={vatValue}
-                  onChange={handleVat}
-                  disabled={vatSaving}
-                  aria-label="НДС контрагента"
-                >
-                  <option value={VAT_NONE}>не указан</option>
-                  <option value={VAT_EXEMPT}>Без НДС</option>
-                  {vatRates.map(r => <option key={r} value={r}>{formatPercent(r)} %</option>)}
-                </select>
+                <CounterpartyVatSelect counterparty={cp} onSave={onSaveVat} className="cpg-vat-select" />
               ) : vatSupported ? (
                 <span className={vatValue === VAT_NONE ? 'cpg-muted' : undefined}>{vatText(cp)}</span>
               ) : (

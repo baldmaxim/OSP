@@ -13,9 +13,10 @@ import { useIsPhone } from '../hooks/useMediaQuery'
 import { diffWords } from '../utils/textDiff'
 import { shortPersonName } from '../utils/personName'
 import { buildRelationGroups, groupMatesOf, planRemoveFromGroup } from '../utils/counterpartyGroups'
-import { vatFromSelect, vatText } from '../utils/counterpartyVat'
+import { VAT_NONE, vatFromSelect, vatSelectValue, vatText } from '../utils/counterpartyVat'
 import { docTitle } from '../utils/counterpartyDocs'
 import CounterpartyGeneralTab from '../components/counterparty/CounterpartyGeneralTab'
+import CounterpartyVatSelect from '../components/counterparty/CounterpartyVatSelect'
 import './CounterpartiesPage.css'
 import '../components/GeneralInfo.css'
 
@@ -999,8 +1000,9 @@ function CounterpartiesPage() {
     }
   }
 
-  // НДС контрагента — во вкладке «Общая информация» (миграция 20261026). В CP_FIELD_LABEL его нет
-  // намеренно: форма редактирования НДС не отправляет, и сравнение полей формы писало бы ложную правку.
+  // НДС контрагента — колонка «НДС» реестра и вкладка «Общая информация» (миграция 20261026): обе пишут сюда,
+  // в общий список, поэтому показывают одно и то же. В CP_FIELD_LABEL его нет намеренно: форма
+  // редактирования НДС не отправляет, и сравнение полей формы писало бы ложную правку.
   const handleVatChange = async (counterpartyId, selectValue) => {
     const prev = counterpartyById.get(counterpartyId)
     const next = vatFromSelect(selectValue)
@@ -1452,7 +1454,8 @@ function CounterpartiesPage() {
     fetchTenderHistory(counterparty.id) // ленивая загрузка истории (task 196)
   }
 
-  // Колонки НДС появляются с миграцией 20261026; select('*') без них их просто не отдаёт.
+  // Колонки НДС появляются с миграцией 20261026; select('*') без них их просто не отдаёт — тогда колонки «НДС»
+  // в реестре нет, а карточка пишет «появится после обновления базы».
   const vatSupported = counterparties.length === 0 || Object.prototype.hasOwnProperty.call(counterparties[0], 'vat_exempt')
   // Карточка открыта со снимком строки; правки (примечание, НДС) идут в список — показываем свежую.
   const detailCpLive = detailCp ? (counterpartyById.get(detailCp.id) || detailCp) : null
@@ -1817,6 +1820,7 @@ function CounterpartiesPage() {
                     <th className="col-name">Наименование</th>
                     <th className="col-worktype">Вид работ</th>
                     <th className="col-inn">ИНН</th>
+                    {vatSupported && <th className="col-vat">НДС</th>}
                     <th className="col-contact-name">Контакты</th>
                     <th className="col-contact-phone">Телефон</th>
                     <th className="col-contact-email">Email</th>
@@ -1882,6 +1886,22 @@ function CounterpartiesPage() {
                         <td className="col-inn">
                           <span className="inn-value">{counterparty.inn || '--'}</span>
                         </td>
+                        {/* НДС — тот же список и та же запись, что во «Общей информации» карточки */}
+                        {vatSupported && (
+                          <td className="col-vat" onClick={(e) => e.stopPropagation()}>
+                            {canEditCp ? (
+                              <CounterpartyVatSelect
+                                counterparty={counterparty}
+                                onSave={(value) => handleVatChange(counterparty.id, value)}
+                                className="vat-select-mini"
+                              />
+                            ) : vatSelectValue(counterparty) === VAT_NONE ? (
+                              <span className="empty-cell">--</span>
+                            ) : (
+                              <span className="vat-value">{vatText(counterparty)}</span>
+                            )}
+                          </td>
+                        )}
                         {/* task 199: «Контакты» — только Должность + ФИО, телефоны в отдельном столбце */}
                         <td className="col-contact-name" onClick={(e) => e.stopPropagation()}>
                           {contactsCount > 0 ? (
@@ -1997,7 +2017,7 @@ function CounterpartiesPage() {
                   })}
                   {visibleCount < filteredCounterparties.length && (
                     <tr className="show-more-row">
-                      <td colSpan="11">
+                      <td colSpan={vatSupported ? 12 : 11}>
                         <button
                           type="button"
                           className="btn-show-more"

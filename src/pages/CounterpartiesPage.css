@@ -286,6 +286,7 @@
 .compact-table td.col-name,
 .compact-table td.col-worktype,
 .compact-table td.col-inn,
+.compact-table td.col-vat,
 .compact-table td.col-num,
 .compact-table td.col-checkbox,
 .compact-table td.col-website,
@@ -334,14 +335,18 @@
 .col-checkbox { width: 36px; text-align: center; }
 .col-name { width: 22%; }
 .col-worktype { width: 18%; }
-.col-inn { width: 9%; font-size: 0.75rem; }
+/* Узкие колонки — в rem по содержимому, остаток делят наименование, виды работ, контакты и email:
+   в процентах ИНН и статус резались многоточием, как только окно уже ~1700px. */
+.col-inn { width: 7rem; font-size: 0.75rem; }          /* 12 цифр ИНН моноширинным 13px — 94px */
+/* НДС: «не указан» / «Без НДС» / «22 %» — список в строку, без многоточия (78px) */
+.col-vat { width: 6rem; font-size: 0.75rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .col-contact-name { width: 19%; }
 /* task 202: телефон фикс. минимальной ширины — формат +7(000)000-00-00 (16 симв.) */
 .col-contact-phone { width: 132px; font-size: 0.75rem; }
 .col-contact-email { width: 14%; font-size: 0.75rem; }
-.col-website { width: 5%; text-align: center; }
-.col-status { width: 9%; }
-.col-actions { width: 6%; text-align: center; }
+.col-website { width: 4rem; text-align: center; }
+.col-status { width: 6rem; }                           /* «Активный ▾» — 76px */
+.col-actions { width: 4.25rem; text-align: center; }   /* две кнопки по 24px */
 
 /* Row states */
 .table-row {
@@ -526,6 +531,27 @@
   background-color: #450a0a;
   color: #fca5a5;
 }
+
+/* НДС в реестре — тот же список, что во «Общей информации» карточки; нейтральный, чтобы не спорить со статусом */
+.vat-select-mini {
+  width: 100%;
+  padding: 0.125rem 1rem 0.125rem 0.375rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.3125rem center;
+  background-size: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  appearance: none;
+}
+.vat-select-mini.is-empty { color: var(--text-tertiary); }
+.vat-select-mini:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.vat-select-mini:disabled { opacity: 0.6; cursor: progress; }
 
 /* Actions */
 .actions-group {

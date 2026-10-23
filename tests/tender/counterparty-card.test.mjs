@@ -2,6 +2,8 @@
 //   • колонки «Примечание» в реестре нет — примечание правится во вкладке и сохраняется в базу;
 //   • НДС: ставка или «без НДС», запись в базу и в журнал «Изменения»; без колонок (миграция 20261026 не
 //     применена) — подпись вместо списка; без права правки — только текст;
+//   • НДС меняется и в реестре (колонка «НДС»): правка в реестре видна в карточке и наоборот; без права правки —
+//     текст, без колонок НДС в базе — колонки в реестре нет;
 //   • аффилированные компании — группа counterparty_relations: добавить, исключить, открыть карточку компании;
 //     отдельной кнопки и окна «Связи» в реестре больше нет;
 //   • договоры и ДС, где контрагент — сторона (основной или вторая сторона), ДС — под своим договором,
@@ -89,6 +91,51 @@ describe('Карточка контрагента: «Общая информац
       assert.equal(await page.locator('textarea.cpg-notes').inputValue(), 'Работает по предоплате 30 %')
       assert.deepEqual(errors, [])
     } finally { await close() }
+  })
+
+  it('НДС в реестре: правка в строке видна в карточке, правка в карточке — в строке', async () => {
+    const { page, errors, close } = await openPage(`${BASE}&cpCard=1`)
+    try {
+      const rowVat = (name) => page.locator('table.compact-table tbody tr.table-row', { hasText: name }).locator('select.vat-select-mini')
+      await rowVat('Подрядчик 01').waitFor({ timeout: 60000 })
+      const headers = await page.locator('table.compact-table thead th').allInnerTexts()
+      assert.ok(headers.some(h => /^НДС$/i.test(h.trim())), `в реестре есть колонка НДС: ${headers.join(' | ')}`)
+      assert.equal(await rowVat('Подрядчик 01').inputValue(), '22')
+      assert.equal(await rowVat('Подрядчик 02').inputValue(), '')
+
+      // Выбор в строке не открывает карточку и пишет в базу и журнал так же, как вкладка.
+      await rowVat('Подрядчик 02').selectOption('10')
+      await page.waitForFunction(() => Number(window.__fakeDb.counterparties.find(c => c.id === 'cp-2').vat_rate) === 10)
+      assert.equal(await page.locator('.cp-detail-modal').count(), 0, 'карточка не открылась')
+      const log = await page.evaluate(() => window.__fakeDb.counterparty_audit_log.filter(r => r.counterparty_id === 'cp-2').map(r => r.description))
+      assert.ok(log.includes('НДС: не указан → 10 %'), log.join(' | '))
+
+      await openCard(page, 'Подрядчик 02')
+      const cardVat = page.locator('select.cpg-vat-select')
+      assert.equal(await cardVat.inputValue(), '10')
+      await cardVat.selectOption('exempt')
+      await page.waitForFunction(() => window.__fakeDb.counterparties.find(c => c.id === 'cp-2').vat_exempt === true)
+      assert.equal(await rowVat('Подрядчик 02').inputValue(), 'exempt')
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+
+    const ro = await openPage(`${BASE}&cpCard=1&canEdit=0`)
+    try {
+      const cell = ro.page.locator('table.compact-table tbody tr.table-row', { hasText: 'Подрядчик 01' }).locator('td.col-vat')
+      await cell.waitFor({ timeout: 60000 })
+      assert.equal((await cell.innerText()).trim(), '22 %')
+      assert.equal(await ro.page.locator('select.vat-select-mini').count(), 0)
+      assert.deepEqual(ro.errors, [])
+    } finally { await ro.close() }
+
+    const old = await openPage(BASE)
+    try {
+      await old.page.locator('table.compact-table tbody tr.table-row').first().waitFor({ timeout: 60000 })
+      const headers = await old.page.locator('table.compact-table thead th').allInnerTexts()
+      assert.ok(!headers.some(h => /НДС/i.test(h)), `без колонок НДС в базе колонки нет: ${headers.join(' | ')}`)
+      assert.equal(await old.page.locator('td.col-vat').count(), 0)
+      assert.deepEqual(old.errors, [])
+    } finally { await old.close() }
   })
 
   it('аффилированные компании: добавить, исключить, открыть карточку; кнопки «Связи» в реестре нет', async () => {
