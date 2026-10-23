@@ -97,6 +97,8 @@ function builder(table) {
     gt(col, val) { q.filters.push({ op: 'gt', col, val }); return self },
     neq() { return self },
     not() { return self },
+    // Таймаут запроса (окно «ВОРы и РД») — стенд отвечает сам, отменять нечего.
+    abortSignal() { return self },
     // «a.eq.1,b.is.null,c.in.(x,y)» — как PostgREST; прочие операторы стенду не нужны.
     // Запятые внутри списка in.(…) условия не делят.
     or(expr) {

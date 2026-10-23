@@ -125,6 +125,17 @@ export async function loadVorRd(tenderId) {
   }
 }
 
+// Номер и работы тендера — для имени архива «Скачать всё» (utils/vorRdArchive.js).
+export async function fetchTenderArchiveTitle(tenderId) {
+  const { data, error } = await db
+    .from('tenders')
+    .select('public_tender_number, work_description')
+    .eq('id', tenderId)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
 // Новый шифр в общий список тендера (та же таблица, что во вкладке «Шифр РД»).
 export async function addRdCode(tenderId, { code, title }, existingCodes, byName) {
   const trimmed = String(code || '').trim()

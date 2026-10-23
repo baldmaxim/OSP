@@ -7,6 +7,7 @@ import {
 } from '../services/tenderVorRd'
 import S3DocumentList from './S3DocumentList'
 import S3DocumentPreview from './S3DocumentPreview'
+import VorRdZipButton from './VorRdZipButton'
 import './S3DocumentList.css'
 import './TenderVorRdPanel.css'
 
@@ -99,6 +100,7 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
     return m
   }, [data.rdDocs])
   const noCodeCount = data.rdDocs.filter(d => d.codeIds.length === 0).length
+  const fileCount = data.rdDocs.length + data.vorDocs.length + data.legacyDocs.length
 
   const visibleRdDocs = data.rdDocs.filter(d =>
     !codeFilter ? true
@@ -145,6 +147,13 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
 
   return (
     <div className="tvr-panel">
+      {/* «Скачать всё» — файлы всех разделов окна одним архивом, без фильтра по шифру. */}
+      {fileCount > 0 && (
+        <div className="tvr-toolbar">
+          <VorRdZipButton tenderId={tenderId} data={data} />
+        </div>
+      )}
+
       {/* ── 1. Рабочая документация ── */}
       <section className="tvr-section">
         <div className="tvr-section-head">

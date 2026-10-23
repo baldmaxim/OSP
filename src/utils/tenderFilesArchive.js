@@ -34,11 +34,12 @@ export function uniqueName(name, used, { isFile = false } = {}) {
 }
 
 // «125 Устройство монолитных конструкций…»; без работ — объект, без номера — одно название.
-export function archiveBaseName(tender, fallbackTitle = 'Тендер') {
+// suffix — хвост имени («… — ВОР и РД»): обрезаются работы, хвост остаётся целым.
+export function archiveBaseName(tender, fallbackTitle = 'Тендер', { suffix = '' } = {}) {
   const number = tender?.public_tender_number
   const works = String(tender?.work_description ?? '').trim() || fallbackTitle
   const title = number != null ? `${number} ${works}` : works
-  return safeName(title, { max: ARCHIVE_NAME_MAX, fallback: 'Тендер' })
+  return safeName(title, { max: ARCHIVE_NAME_MAX - suffix.length, fallback: 'Тендер' }) + suffix
 }
 
 const newestFirst = (a, b) =>
@@ -119,23 +120,29 @@ function toBytes(data) {
   throw new Error('пустой ответ хранилища')
 }
 
-function failedListText(failed) {
+const PARTICIPANTS_FAILED_HINT =
+  'В архив не попали файлы — скачайте их по одному в карточке тендера (Участники → КП / Документы):'
+
+// Строка пропуска: «компания — файл» у участников, «раздел — файл» в «ВОРах и РД».
+function failedListText(failed, hint) {
   const lines = [
-    'В архив не попали файлы — скачайте их по одному в карточке тендера (Участники → КП / Документы):',
+    hint,
     '',
-    ...failed.map(({ entry, error }) => `${entry.company} — ${entry.fileName}: ${error}`),
+    ...failed.map(({ entry, error }) => `${entry.section ?? entry.company} — ${entry.fileName}: ${error}`),
   ]
   return '﻿' + lines.join('\r\n') + '\r\n'
 }
 
 // Скачивает файлы плана (не больше concurrency одновременно, сбой — повтор) и собирает ZIP.
 // Не скачавшийся файл архив не останавливает: он попадает в «Не скачано.txt» и в failed,
-// чтобы неполный архив не выглядел полным.
+// чтобы неполный архив не выглядел полным. failedHint — первая строка «Не скачано.txt»:
+// где скачать пропущенное по одному.
 export async function buildTenderArchive(entries, fetchBytes, {
   onProgress = null,
   concurrency = 4,
   retries = 1,
   retryDelayMs = 1000,
+  failedHint = PARTICIPANTS_FAILED_HINT,
 } = {}) {
   const results = new Array(entries.length)
   const failed = []
@@ -179,7 +186,7 @@ export async function buildTenderArchive(entries, fetchBytes, {
     added++
   })
   if (!added) return { bytes: null, added, failed }
-  if (failed.length) zip.file(FAILED_LIST_NAME, failedListText(failed))
+  if (failed.length) zip.file(FAILED_LIST_NAME, failedListText(failed, failedHint))
   // xlsx, pdf, docx уже сжаты — DEFLATE лишь замедлил бы сборку.
   return { bytes: zip.generate({ type: 'uint8array', compression: 'STORE' }), added, failed }
 }
