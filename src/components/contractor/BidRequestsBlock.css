@@ -1,0 +1,31 @@
+/* Заявки подрядчиков с сайта в раскрытой строке реестра тендеров. */
+.bidreq {
+  margin: 0 0 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, #d97706 45%, var(--border-color));
+  border-radius: 8px;
+  background: color-mix(in srgb, #d97706 6%, var(--bg-secondary));
+}
+.bidreq-title { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; font-size: 0.8125rem; font-weight: 700; }
+.bidreq-count {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, #d97706 16%, transparent);
+  color: #b45309;
+  font-size: 0.6875rem;
+}
+[data-theme='dark'] .bidreq-count { color: #fcd34d; }
+.bidreq-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
+.bidreq-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.8125rem; }
+.bidreq-item.is-rejected .bidreq-org { color: var(--text-tertiary); }
+.bidreq-meta { display: block; color: var(--text-tertiary); font-size: 0.75rem; }
+.bidreq-actions { display: flex; gap: 0.35rem; }
+.bidreq-actions .btn-primary, .bidreq-actions .btn-secondary { padding: 0.25rem 0.6rem; font-size: 0.75rem; }
+.bidreq-error { margin: 0 0 0.5rem; color: #b91c1c; font-size: 0.75rem; }
+.tenders-page .kp-counter.kp-counter-requests {
+  margin-left: 0.25rem;
+  background: color-mix(in srgb, #d97706 14%, transparent);
+  border-color: color-mix(in srgb, #d97706 40%, transparent);
+  color: #b45309;
+}
+[data-theme='dark'] .tenders-page .kp-counter.kp-counter-requests { color: #fcd34d; }

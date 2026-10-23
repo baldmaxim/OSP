@@ -9,10 +9,11 @@ import { formatAmount, formatAmountLive } from '../../utils/money'
 // закрытии вкладки карточки. Записывается только то, что набрали: проход через поле по Tab ничего не пишет
 // (раньше это давало вторую запись той же строки и ложное «цену уже изменили»). Esc — вернуть значение,
 // которое было до правки (если набранное уже успело сохраниться — записывается прежнее).
+// className — своё оформление поля (кабинет подрядчика), по умолчанию — расценки снабжения.
 export const AUTOSAVE_MS = 1000
 const toRaw = (value) => (value != null && Number.isFinite(value) ? formatAmountLive(String(Math.round(value * 100) / 100)) : '')
 
-export default function SupplyMoneyCell({ value, derived = false, disabled = false, onCommit, cellId, label, title, invalid = false, placeholder = '—' }) {
+export default function SupplyMoneyCell({ value, derived = false, disabled = false, onCommit, cellId, label, title, invalid = false, placeholder = '—', className = 'sp-money-input' }) {
   const [focused, setFocused] = useState(false)
   const [draft, setDraft] = useState('')
   const draftRef = useRef('')
@@ -48,7 +49,7 @@ export default function SupplyMoneyCell({ value, derived = false, disabled = fal
     <input
       type="text"
       inputMode="decimal"
-      className={`sp-money-input${derived ? ' is-derived' : ''}${invalid ? ' is-invalid' : ''}`}
+      className={`${className}${derived ? ' is-derived' : ''}${invalid ? ' is-invalid' : ''}`}
       value={display}
       disabled={disabled}
       placeholder={placeholder}

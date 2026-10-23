@@ -1538,5 +1538,775 @@
     "to": "empty",
     "why": "новая таблица: договор, прикреплённый к контрагенту вручную (карточка контрагента → «Договоры и ДС», на копии пусто); читает сотрудник, прикрепляет и открепляет право правки «Контрагентов», стороны договора не меняет",
     "candidate": "20261031_counterparty_contract_links.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "anon",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "anon",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "anon",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "anon",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "anon",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "err:42501",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "service_role",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "service_role",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "service_role",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "service_role",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "service_role",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "service_role",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "service_role",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "admin",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "admin",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "admin",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "admin",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "yes",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "admin",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "admin",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "admin",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_full",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_full",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_full",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_full",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_full",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_full",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_full",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_none",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_none",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_none",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_none",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_none",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_none",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "employee_none",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "vors_only",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "vors_only",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "vors_only",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "vors_only",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "vors_only",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "vors_only",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "vors_only",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_own",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_own",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_own",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "all",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_own",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_own",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_own",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_own",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_noorg",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_noorg",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_noorg",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_noorg",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_noorg",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_noorg",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "contractor_noorg",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "unapproved",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "unapproved",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "unapproved",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "unapproved",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "unapproved",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "unapproved",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "unapproved",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "blocked",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "blocked",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "blocked",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "blocked",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "blocked",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "blocked",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "blocked",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "no_user_roles",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "no_user_roles",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "no_user_roles",
+    "table": "bid_form_fields",
+    "action": "select",
+    "from": null,
+    "to": "none",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "no_user_roles",
+    "table": "bid_form_fields",
+    "action": "update",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "no_user_roles",
+    "table": "tender_bid_forms",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: анкета подрядчика по тендеру (на копии пусто); читает администратор и сама организация, пишет только функция bid_form_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "no_user_roles",
+    "table": "tender_bid_rates",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: цены подрядчика по позициям ВОР, введённые в кабинете (на копии пусто); читает администратор и сама организация, пишет только функция bid_rates_save",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "no_user_roles",
+    "table": "tender_bid_requests",
+    "action": "select",
+    "from": null,
+    "to": "empty",
+    "why": "новая таблица: заявки подрядчиков на участие с сайта (кабинет подрядчика, на копии пусто); читает сотрудник и сама организация, пишут только функции bid_request / bid_decide",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "anon",
+    "table": "bid_form_fields",
+    "action": "delete",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
+  },
+  {
+    "release": "20261102",
+    "class": "anon",
+    "table": "bid_form_fields",
+    "action": "insert",
+    "from": null,
+    "to": "no",
+    "why": "новая таблица: поля анкеты подрядчика (анкета по умолчанию — 18 полей); читают сотрудник и подрядчик с организацией, правит администратор",
+    "candidate": "20261102_contractor_bids.sql"
   }
 ]

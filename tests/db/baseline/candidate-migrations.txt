@@ -16,3 +16,4 @@
 20261030_site_contacts.sql
 20261031_counterparty_contract_links.sql
 20261101_public_tenders_contact.sql
+20261102_contractor_bids.sql

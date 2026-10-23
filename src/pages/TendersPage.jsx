@@ -54,6 +54,8 @@ import { departmentConfig, objectDeptBadge, tenderObjectName, isConstructionTend
 import { weekKey } from '../utils/weeks'
 import { TENDER_DUTY_NAMES, DUTY_OVERRIDE_KEY, parseDutyOverride, currentDuty } from '../utils/tenderDuty'
 import TenderCallReminder from '../components/TenderCallReminder'
+import BidRequestsBlock from '../components/contractor/BidRequestsBlock'
+import { loadPendingRequestCounts } from '../services/contractorBids'
 import { copyToClipboard } from '../utils/clipboard'
 import { reorderSiblings } from '../utils/appendixTree'
 import { sanitizeUserText, sanitizeDeep } from '../utils/text'
@@ -239,6 +241,8 @@ function TendersPage({ department = 'construction', tenderType = 'main' }) {
   const [tcDragOver, setTcDragOver] = useState(null) // { id, position }
   // Сводка по каждому тендеру: { tenderId: { total, proposalProvided } }
   const [tenderProposalCounts, setTenderProposalCounts] = useState({})
+  // Заявки подрядчиков с сайта, ждущие решения (миграция 20261102): { tenderId: число }.
+  const [bidRequestCounts, setBidRequestCounts] = useState({})
   // Сколько тендеров осталось без счётчика участников из-за ошибки запроса —
   // чтобы пустое место в колонке не выглядело как «участников нет».
   const [countsFailed, setCountsFailed] = useState(0)
@@ -550,6 +554,17 @@ ${ATTACHMENT_BLOCK}
   }
   fetchCountsRef.current = fetchTenderProposalCounts
 
+  // Без таблицы заявок (база не обновлена) — пусто, отметок нет.
+  // partial — пересчитать только эти тендеры, остальные оставить как есть.
+  const fetchBidRequestCounts = (ids, { partial = false } = {}) => {
+    loadPendingRequestCounts(ids)
+      .then((counts) => {
+        const next = Object.fromEntries(ids.map((id) => [id, counts?.[id] || 0]))
+        setBidRequestCounts((prev) => (partial ? { ...prev, ...next } : next))
+      })
+      .catch((err) => console.error('Заявки подрядчиков с сайта:', err.message))
+  }
+
   const fetchTenders = async () => {
     try {
       setLoading(true)
@@ -648,6 +663,7 @@ ${ATTACHMENT_BLOCK}
           .catch((err) => console.error('Ошибка загрузки прогресса расценки снабжения:', err.message))
       }
       fetchTenderProposalCounts()
+      if (!isMaterialsView) fetchBidRequestCounts(tenderIdsRef.current)
     } catch (error) {
       console.error('Ошибка загрузки тендеров:', error.message)
     } finally {
@@ -824,6 +840,19 @@ ${ATTACHMENT_BLOCK}
     </button>
   )
   const renderKpCounter = (tender) => {
+    const requests = bidRequestCounts[tender.id] || 0
+    const counter = renderKpCounterBase(tender)
+    if (!requests) return counter
+    return (
+      <>
+        {counter}
+        <span className="kp-counter kp-counter-requests" title={`Заявки подрядчиков с сайта ждут решения: ${requests}. Раскройте строку тендера.`}>
+          заявки: {requests}
+        </span>
+      </>
+    )
+  }
+  const renderKpCounterBase = (tender) => {
     const c = tenderProposalCounts[tender.id]
     // Три разных состояния, и раньше два последних выглядели
     // одинаково — пустым местом:
@@ -4345,6 +4374,23 @@ ${ATTACHMENT_BLOCK}
                             </button>
                           )}
                         </div>
+                        {!isMaterialsView && (
+                          <BidRequestsBlock
+                            tenderId={tender.id}
+                            canEdit={canEdit('tenders')}
+                            onDecided={({ request, accepted }) => {
+                              fetchBidRequestCounts([tender.id], { partial: true })
+                              if (!accepted) return
+                              fetchTenderCounterparties(tender.id)
+                              fetchTenderProposalCounts([tender.id])
+                              logTenderEvent(tender.id, 'participant_added', {
+                                fieldName: 'participants',
+                                newValue: { id: request.counterparty_id, name: request.counterparties?.name || null },
+                                description: `Добавлен участник по заявке с сайта: ${request.counterparties?.name || '—'}`,
+                              })
+                            }}
+                          />
+                        )}
                         {tenderCounterparties[tender.id] && tenderCounterparties[tender.id].length > 0 ? (
                           <div className="expanded-cp-table-wrap">
                             <table className="data-table" style={{ margin: 0 }}>

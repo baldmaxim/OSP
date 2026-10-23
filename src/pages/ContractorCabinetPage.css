@@ -149,7 +149,24 @@
 [data-theme='dark'] .cab-chip.is-accent { color: #93c5fd; }
 [data-theme='dark'] .cab-chip.is-off { color: #d1d5db; }
 
+/* Группы списка: «Мои тендеры» и «Открытые тендеры» (миграция 20261102) */
+.cab-list-group { display: flex; flex-direction: column; gap: 0.5rem; }
+.cab-list-group + .cab-list-group { margin-top: 0.75rem; }
+.cab-list-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cab-list-title span { font-weight: 600; }
+.cab-card-priced { color: #15803d; }
+[data-theme='dark'] .cab-card-priced { color: #6ee7b7; }
+
 /* ── Содержимое ────────────────────────────────────────────────────────── */
+.cab-head-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+.cab-facts a { color: var(--primary-color); }
+.cab-join { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .cab-head-block,
 .cab-section {
   padding: 1rem 1.15rem;
@@ -280,6 +297,7 @@
   /* Список тендеров сверху, выбранный — под ним: две колонки на 390px нечитаемы. */
   .cab-list { order: -1; }
   .cab-steps li { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+  .cab-join { flex-direction: column; align-items: stretch; }
   .cab-btn { width: 100%; }
   .cab-doc { flex-wrap: wrap; }
   .cab-doc-name { flex: 1 1 100%; white-space: normal; }

@@ -11,6 +11,14 @@
         "update"
       ]
     },
+    "bid_form_fields": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "bsm_contract_rates": {
       "anon": [
         "select"
@@ -690,6 +698,21 @@
         "update"
       ]
     },
+    "tender_bid_forms": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "tender_bid_rates": {
+      "authenticated": [
+        "select"
+      ]
+    },
+    "tender_bid_requests": {
+      "authenticated": [
+        "select"
+      ]
+    },
     "tender_counterparties": {
       "anon": [
         "select"
@@ -907,6 +930,33 @@
       "authenticated"
     ],
     "admin_delete_user": [
+      "authenticated"
+    ],
+    "bid_access": [
+      "authenticated"
+    ],
+    "bid_admin_overview": [
+      "authenticated"
+    ],
+    "bid_can_edit": [
+      "authenticated"
+    ],
+    "bid_contractor_tenders": [
+      "authenticated"
+    ],
+    "bid_decide": [
+      "authenticated"
+    ],
+    "bid_form_save": [
+      "authenticated"
+    ],
+    "bid_rates_save": [
+      "authenticated"
+    ],
+    "bid_request": [
+      "authenticated"
+    ],
+    "bid_tender_open": [
       "authenticated"
     ],
     "can_see_task": [

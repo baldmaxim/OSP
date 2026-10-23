@@ -7,12 +7,19 @@ import { fetchAllRows } from '../utils/fetchAllRows'
 import { requestDownloadUrl } from '../services/s3'
 import { buildProposalWorkbook, matchProposalRows } from '../utils/contractorProposal'
 import S3DocumentPreview from '../components/S3DocumentPreview'
+import { loadCabinetTenders, requestParticipation } from '../services/contractorBids'
+import { phoneHref } from '../utils/siteContacts'
 import './ContractorCabinetPage.css'
 
 const ContractClausesTab = lazy(() => import('../components/ContractClausesTab'))
+const BidWorkspace = lazy(() => import('../components/contractor/BidWorkspace'))
 
-// Кабинет подрядчика: тендеры (пакет документов + загрузка КП) и договоры
+// Кабинет подрядчика: тендеры (пакет документов, расценка ВОР на сайте, анкета, загрузка КП) и договоры
 // (документы + согласование условий).
+//
+// Тендеры (миграция 20261102): открытые — как на /public/tenders — и те, где организация участник или подала
+// заявку (bid_contractor_tenders). Расценивать на сайте может участник или подавший заявку; участником делает
+// инженер. Без миграции — как раньше: только приглашения.
 //
 // Организация берётся из user_roles.counterparty_id (RoleContext), а не из
 // выбора на форме входа. Доступ к данным ограничен политиками БД (миграции
@@ -30,6 +37,36 @@ const PARTICIPATION_CLASS = {
   accepted_for_work: 'is-done',
   declined: 'is-off',
 }
+
+// Доступ организации к тендеру (bid_access): участник, заявка с сайта или ничего.
+const ACCESS_LABEL = {
+  invited: 'Участник',
+  accepted: 'Участник',
+  pending: 'Заявка на рассмотрении',
+  rejected: 'Заявка отклонена',
+}
+const ACCESS_CLASS = { invited: 'is-done', accepted: 'is-done', pending: 'is-wait', rejected: 'is-off' }
+const CAN_PRICE = new Set(['invited', 'pending', 'accepted'])
+
+// Строка bid_contractor_tenders → вид тендера кабинета (как прежние приглашения).
+const fromCabinetRow = (r) => ({
+  id: r.id,
+  public_tender_number: r.public_tender_number,
+  work_description: r.work_description,
+  status: r.tender_status,
+  tender_start_date: r.tender_start_date,
+  tender_end_date: r.tender_end_date,
+  tender_package_link: r.tender_package_link,
+  objects: { name: r.object_name, address: r.object_address },
+  responsible_name: r.responsible_name,
+  responsible_phone: r.responsible_phone,
+  participationStatus: r.invite_status,
+  access: r.access,
+  isOpen: r.is_open,
+  pricedCount: r.priced_count,
+  pricedTotal: r.priced_total == null ? 0 : Number(r.priced_total),
+})
+const isHttp = (url) => /^https?:\/\//i.test(String(url || '').trim())
 
 const DOC_SECTION_LABEL = {
   tender_package: 'Тендерный пакет',
@@ -95,18 +132,38 @@ function ContractorCabinetPage() {
   const [previewDoc, setPreviewDoc] = useState(null)
 
   const cpId = contractorInfo?.id || null
+  const [bidsEnabled, setBidsEnabled] = useState(false)
+  const [joining, setJoining] = useState(false)
 
-  // ── Загрузка: приглашения в тендеры и договоры организации ────────────────
+  // Тендеры кабинета: открытые + свои (миграция 20261102), без неё — только приглашения. Отказ 42501 — просмотр
+  // от имени роли (запросы идут под администратором, у него нет организации): тогда тоже приглашения.
+  const loadTenderList = useCallback(async () => {
+    try {
+      const rows = await loadCabinetTenders()
+      if (rows) return { list: rows.map(fromCabinetRow), bids: true }
+    } catch (err) {
+      if (err?.code !== '42501') throw err
+    }
+    const { data, error } = await db
+      .from('tender_counterparties')
+      .select('tender_id, status, notes, tenders(id, public_tender_number, work_description, status, tender_start_date, tender_end_date, objects(name, address))')
+      .eq('counterparty_id', cpId)
+    if (error) throw error
+    const list = (data || [])
+      .filter(p => p.tenders)
+      .map(p => ({ ...p.tenders, participationStatus: p.status, participationNote: p.notes, access: 'invited' }))
+      .sort((a, b) => (b.tender_end_date || '').localeCompare(a.tender_end_date || ''))
+    return { list, bids: false }
+  }, [cpId])
+
+  // ── Загрузка: тендеры и договоры организации ──────────────────────────────
   const loadAll = useCallback(async () => {
     if (!cpId) { setLoading(false); return }
     setLoading(true)
     setLoadError('')
     try {
-      const [participations, ownContracts, partyRows] = await Promise.all([
-        db
-          .from('tender_counterparties')
-          .select('tender_id, status, notes, tenders(id, public_tender_number, work_description, status, tender_start_date, tender_end_date, objects(name, address))')
-          .eq('counterparty_id', cpId),
+      const [tenderList, ownContracts, partyRows] = await Promise.all([
+        loadTenderList(),
         db
           .from('contracts')
           .select('id, display_id, contract_number, contract_date, work_name, status, contract_amount, currency, objects(name), deleted_at')
@@ -117,14 +174,10 @@ function ContractorCabinetPage() {
           .select('contract_id')
           .eq('counterparty_id', cpId),
       ])
-      if (participations.error) throw participations.error
-
-      const invites = (participations.data || [])
-        .filter(p => p.tenders)
-        .map(p => ({ ...p.tenders, participationStatus: p.status, participationNote: p.notes }))
-        .sort((a, b) => (b.tender_end_date || '').localeCompare(a.tender_end_date || ''))
+      const invites = tenderList.list
+      setBidsEnabled(tenderList.bids)
       setInvitations(invites)
-      setActiveTenderId(prev => prev || invites[0]?.id || null)
+      setActiveTenderId(prev => (prev && invites.some(t => t.id === prev) ? prev : (invites.find(t => t.access) || invites[0])?.id || null))
 
       // Договоры: основная сторона + многосторонние (в contract_counterparties).
       const extraIds = [...new Set((partyRows.data || []).map(r => r.contract_id))]
@@ -158,7 +211,7 @@ function ContractorCabinetPage() {
     } finally {
       setLoading(false)
     }
-  }, [cpId])
+  }, [cpId, loadTenderList])
 
   useEffect(() => { loadAll() }, [loadAll])
 
@@ -167,8 +220,10 @@ function ContractorCabinetPage() {
     () => invitations.find(t => t.id === activeTenderId) || null,
     [invitations, activeTenderId])
 
+  // Файлы и смета — только тендера, к которому у организации есть доступ (участник или заявка).
+  const activeAccess = activeTender?.access || null
   const loadTenderDetails = useCallback(async () => {
-    if (!activeTenderId || !cpId) { setEstimateItems([]); setTenderDocs([]); return }
+    if (!activeTenderId || !cpId || !activeAccess || activeAccess === 'rejected') { setEstimateItems([]); setTenderDocs([]); return }
     setTenderBusy(true)
     try {
       const [items, docs, lastProposal] = await Promise.all([
@@ -205,7 +260,7 @@ function ContractorCabinetPage() {
     } finally {
       setTenderBusy(false)
     }
-  }, [activeTenderId, cpId])
+  }, [activeTenderId, cpId, activeAccess])
 
   useEffect(() => { loadTenderDetails() }, [loadTenderDetails])
 
@@ -325,6 +380,28 @@ function ContractorCabinetPage() {
     }
   }
 
+  // Участвовать в открытом тендере: заявка с сайта (инженер решит, сделать ли участником), расценка — сразу.
+  const handleJoin = async () => {
+    if (!activeTender || joining) return
+    setJoining(true)
+    try {
+      const access = await requestParticipation(activeTender.id)
+      setInvitations(prev => prev.map(t => (t.id === activeTender.id ? { ...t, access } : t)))
+    } catch (err) {
+      alert('Не удалось подать заявку: ' + (err.message || err))
+    } finally {
+      setJoining(false)
+    }
+  }
+
+  // Сводка расценки из рабочего места — в карточку списка без перечитывания.
+  const handleBidSummary = useCallback(({ priced, total }) => {
+    setInvitations(prev => prev.map(t => (t.id === activeTenderId && (t.pricedCount !== priced || t.pricedTotal !== total)
+      ? { ...t, pricedCount: priced, pricedTotal: total } : t)))
+  }, [activeTenderId])
+
+  const tenderNumbers = useMemo(() => new Map(invitations.map(t => [t.id, t.public_tender_number])), [invitations])
+
   const handleLogout = async () => {
     await logout()
     navigate('/partner')
@@ -337,6 +414,14 @@ function ContractorCabinetPage() {
     ;(acc[key] = acc[key] || []).push(d)
     return acc
   }, {})
+
+  // Список: свои тендеры (участник или заявка), затем открытые. Без миграции — одна группа приглашений.
+  const listGroups = bidsEnabled
+    ? [
+        { key: 'mine', title: 'Мои тендеры', items: invitations.filter(t => t.access) },
+        { key: 'open', title: 'Открытые тендеры', items: invitations.filter(t => !t.access) },
+      ].filter(g => g.items.length)
+    : [{ key: 'all', title: '', items: invitations }]
 
   const activeContract = contracts.find(c => c.id === activeContractId) || null
   const deadline = daysLeft(activeTender?.tender_end_date)
@@ -387,38 +472,51 @@ function ContractorCabinetPage() {
       ) : tab === 'tenders' ? (
         invitations.length === 0 ? (
           <div className="cab-state">
-            Приглашений в тендеры пока нет. Как только вас пригласят, тендер появится здесь.
+            {bidsEnabled
+              ? 'Открытых тендеров сейчас нет. Как только отдел объявит тендер, он появится здесь.'
+              : 'Приглашений в тендеры пока нет. Как только вас пригласят, тендер появится здесь.'}
           </div>
         ) : (
           <div className="cab-body">
             <aside className="cab-list">
-              {invitations.map(t => {
-                const left = daysLeft(t.tender_end_date)
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className={`cab-card${t.id === activeTenderId ? ' is-active' : ''}`}
-                    onClick={() => { setActiveTenderId(t.id); setUploadNote(null) }}
-                  >
-                    <span className="cab-card-top">
-                      <span className="cab-card-num">
-                        {t.public_tender_number ? `Тендер № ${t.public_tender_number}` : 'Тендер'}
-                      </span>
-                      <span className={`cab-chip ${PARTICIPATION_CLASS[t.participationStatus] || ''}`}>
-                        {PARTICIPATION_LABEL[t.participationStatus] || t.participationStatus}
-                      </span>
-                    </span>
-                    <span className="cab-card-obj">{t.objects?.name || 'Объект не указан'}</span>
-                    <span className="cab-card-work">{t.work_description}</span>
-                    <span className="cab-card-foot">
-                      до {formatDate(t.tender_end_date)}
-                      {left != null && left >= 0 && left <= 3 && <b className="cab-soon"> · осталось {left} дн.</b>}
-                      {left != null && left < 0 && <b className="cab-late"> · срок истёк</b>}
-                    </span>
-                  </button>
-                )
-              })}
+              {listGroups.map(g => (
+                <div key={g.key} className="cab-list-group">
+                  {bidsEnabled && <div className="cab-list-title">{g.title} <span>{g.items.length}</span></div>}
+                  {g.items.map(t => {
+                    const left = daysLeft(t.tender_end_date)
+                    const chip = t.access ? ACCESS_LABEL[t.access] : null
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        className={`cab-card${t.id === activeTenderId ? ' is-active' : ''}`}
+                        onClick={() => { setActiveTenderId(t.id); setUploadNote(null) }}
+                      >
+                        <span className="cab-card-top">
+                          <span className="cab-card-num">
+                            {t.public_tender_number ? `Тендер № ${t.public_tender_number}` : 'Тендер'}
+                          </span>
+                          {bidsEnabled ? (
+                            chip && <span className={`cab-chip ${ACCESS_CLASS[t.access] || ''}`}>{chip}</span>
+                          ) : (
+                            <span className={`cab-chip ${PARTICIPATION_CLASS[t.participationStatus] || ''}`}>
+                              {PARTICIPATION_LABEL[t.participationStatus] || t.participationStatus}
+                            </span>
+                          )}
+                        </span>
+                        <span className="cab-card-obj">{t.objects?.name || 'Объект не указан'}</span>
+                        <span className="cab-card-work">{t.work_description}</span>
+                        <span className="cab-card-foot">
+                          {t.tender_start_date ? `${formatDate(t.tender_start_date)} — ` : 'до '}{formatDate(t.tender_end_date)}
+                          {t.isOpen !== false && left != null && left >= 0 && left <= 3 && <b className="cab-soon"> · осталось {left} дн.</b>}
+                          {left != null && left < 0 && <b className="cab-late"> · срок истёк</b>}
+                          {t.pricedCount > 0 && <span className="cab-card-priced"> · расценено {t.pricedCount}</span>}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ))}
             </aside>
 
             <main className="cab-main">
@@ -427,21 +525,75 @@ function ContractorCabinetPage() {
               ) : (
                 <>
                   <div className="cab-head-block">
+                    <div className="cab-head-top">
+                      <span className="cab-card-num">
+                        {activeTender.public_tender_number ? `Тендер № ${activeTender.public_tender_number}` : 'Тендер'}
+                      </span>
+                      {bidsEnabled && activeTender.access && (
+                        <span className={`cab-chip ${ACCESS_CLASS[activeTender.access] || ''}`}>{ACCESS_LABEL[activeTender.access]}</span>
+                      )}
+                      {bidsEnabled && activeTender.isOpen === false && <span className="cab-chip is-off">Приём предложений закрыт</span>}
+                    </div>
                     <h2>{activeTender.objects?.name || 'Объект не указан'}</h2>
                     <p className="cab-work">{activeTender.work_description}</p>
                     <div className="cab-facts">
                       <span><b>Приём КП:</b> {formatDate(activeTender.tender_start_date)} — {formatDate(activeTender.tender_end_date)}</span>
-                      {deadline != null && (
+                      {deadline != null && activeTender.isOpen !== false && (
                         <span className={deadline < 0 ? 'cab-late' : deadline <= 3 ? 'cab-soon' : undefined}>
                           {deadline < 0 ? 'Срок подачи истёк' : `Осталось дней: ${deadline}`}
                         </span>
                       )}
                       {activeTender.objects?.address && <span><b>Адрес:</b> {activeTender.objects.address}</span>}
+                      {activeTender.responsible_name && (
+                        <span>
+                          <b>Ответственный:</b> {activeTender.responsible_name}
+                          {activeTender.responsible_phone && (
+                            <>, {phoneHref(activeTender.responsible_phone)
+                              ? <a href={phoneHref(activeTender.responsible_phone)}>{activeTender.responsible_phone}</a>
+                              : activeTender.responsible_phone}</>
+                          )}
+                        </span>
+                      )}
+                      {isHttp(activeTender.tender_package_link) && (
+                        <span><a href={activeTender.tender_package_link.trim()} target="_blank" rel="noopener noreferrer">Тендерный пакет</a></span>
+                      )}
                       {activeTender.uploadedAt && <span><b>КП загружено:</b> {formatDateTime(activeTender.uploadedAt)}</span>}
                     </div>
                   </div>
 
+                  {/* Участие: открытый тендер без заявки — «Участвовать»; заявка — что дальше. */}
+                  {bidsEnabled && !activeTender.access && (
+                    <section className="cab-section cab-join">
+                      <div className="cab-step-text">
+                        <b>Хотите участвовать?</b>
+                        <span>
+                          Откроются файлы ВОР и расценка на сайте. Отдел увидит вашу организацию и решит, включить ли
+                          её в участники тендера.
+                        </span>
+                      </div>
+                      {activeTender.isOpen ? (
+                        <button type="button" className={`cab-btn cab-btn-primary${joining ? ' is-busy' : ''}`} disabled={joining} onClick={handleJoin}>
+                          {joining ? 'Подаём заявку…' : 'Участвовать и расценить'}
+                        </button>
+                      ) : (
+                        <span className="cab-muted">Приём предложений закрыт.</span>
+                      )}
+                    </section>
+                  )}
+                  {bidsEnabled && activeTender.access === 'pending' && (
+                    <div className="cab-note is-ok">
+                      Заявка подана: отдел решит, включить ли вашу организацию в участники. Расценивать можно уже сейчас —
+                      цены сохраняются сами и сразу видны отделу.
+                    </div>
+                  )}
+                  {bidsEnabled && activeTender.access === 'rejected' && (
+                    <div className="cab-note is-warn">
+                      Отдел не включил вашу организацию в участники этого тендера. Введённые цены сохранены, менять их нельзя.
+                    </div>
+                  )}
+
                   {/* Документы тендера: пакет и ВОР/РД */}
+                  {activeTender.access && activeTender.access !== 'rejected' && (
                   <section className="cab-section">
                     <h3>Документы тендера</h3>
                     {tenderBusy && tenderDocs.length === 0 ? (
@@ -472,8 +624,27 @@ function ContractorCabinetPage() {
                       ))
                     )}
                   </section>
+                  )}
 
-                  {/* Подача КП */}
+                  {/* Расценка ВОР на сайте */}
+                  {bidsEnabled && activeTender.access && (
+                    <section className="cab-section">
+                      <h3>Расценка</h3>
+                      <Suspense fallback={<p className="cab-muted">Загрузка расценки…</p>}>
+                        <BidWorkspace
+                          key={activeTender.id}
+                          tender={{ ...activeTender, object_name: activeTender.objects?.name }}
+                          canEdit={activeTender.isOpen === true && CAN_PRICE.has(activeTender.access)}
+                          counterpartyName={contractorInfo?.name || ''}
+                          tenderNumbers={tenderNumbers}
+                          onSummary={handleBidSummary}
+                        />
+                      </Suspense>
+                    </section>
+                  )}
+
+                  {/* Подача КП по шаблону — прежний путь: смета во вкладке «ВОР» карточки (в новых тендерах её нет) */}
+                  {(!bidsEnabled || pricedItems.length > 0) && activeTender.access === 'invited' && (
                   <section className="cab-section">
                     <h3>Коммерческое предложение</h3>
                     {pricedItems.length === 0 ? (
@@ -509,6 +680,7 @@ function ContractorCabinetPage() {
                       </>
                     )}
                   </section>
+                  )}
 
                   {/* Состав сметы — первые позиции, чтобы понять объём работ */}
                   {pricedItems.length > 0 && (
@@ -537,7 +709,7 @@ function ContractorCabinetPage() {
                     </section>
                   )}
 
-                  {activeTender.participationStatus !== 'declined' && (
+                  {activeTender.access === 'invited' && activeTender.participationStatus && activeTender.participationStatus !== 'declined' && (
                     <div className="cab-decline">
                       <button type="button" className="cab-btn cab-btn-ghost" onClick={handleDecline}>
                         Отказаться от участия

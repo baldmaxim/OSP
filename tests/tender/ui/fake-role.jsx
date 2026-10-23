@@ -2,8 +2,9 @@
 // Константы — настоящие, чтобы подделка не отставала от кода.
 export { ROLES, ROLE_LABELS, SECTIONS } from '../../../src/contexts/roleConstants.js'
 // ?canEdit=0 — пользователь без права правки (только просмотр).
+// window.__fakeRole — своя роль стенда (кабинет подрядчика, tests/tender/ui/cabinet-seed.js).
 const READ_ONLY = new URLSearchParams(window.location.search).get('canEdit') === '0'
-const ROLE = {
+const ROLE = window.__fakeRole || {
   role: READ_ONLY ? 'engineer' : 'admin',
   isAdmin: !READ_ONLY,
   isSuperAdmin: false,
