@@ -116,7 +116,7 @@ Contractor login also stores `contractorInfo` (id, name) for proposal filtering.
 
 - `/login` - Role selection
 - `/contractor/proposals` - Contractor portal
-- `/general` - General info hub (GeneralInfoPage)
+- `/general` - General info hub (GeneralInfoPage): карточки разделов и «Наши порталы» (FOT, Signal, Ларикс, Обработка РД — название-ссылка в новой вкладке, адрес не показывается; список — `PORTALS` в GeneralInfoPage.jsx, тест — `tests/tender/general-portals.test.mjs`)
 - `/general/objects|contacts|counterparties` - General info subpages (employees)
 - `/general/objects/:objectId` - Object detail (5 tabs: info, documents, warranty, warranty retentions, estimate)
 - `/tenders/construction|warranty` - Tender lists by department

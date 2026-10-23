@@ -76,6 +76,86 @@
   color: var(--text-secondary);
 }
 
+/* Наши порталы: название — ссылка, при наведении выделяется */
+.portals {
+  padding: 2rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.portals-title {
+  max-width: 56rem;
+  margin: 0 auto 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.portals-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.portal-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.375rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.portal-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: -0.25rem -0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.portal-name svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: color 0.15s, transform 0.15s;
+}
+
+.portal-name:hover,
+.portal-name:focus-visible {
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.portal-name:hover svg,
+.portal-name:focus-visible svg {
+  color: var(--primary-color);
+  transform: translate(2px, -2px);
+}
+
+.portal-name:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.portal-description {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--text-secondary);
+}
+
 /* Dark theme */
 [data-theme='dark'] .section-card {
   background: var(--bg-tertiary);
@@ -88,6 +168,8 @@
 }
 
 @media (max-width: 768px) {
+  .portals-list { grid-template-columns: 1fr; }
+
   .section-cards {
     flex-direction: column;
     align-items: center;
@@ -105,4 +187,6 @@
   .section-selection { padding: 1.25rem 1rem 1.75rem; }
   .section-selection .selection-label { font-size: 1rem; margin-bottom: 1.25rem; }
   .section-card { max-width: none; padding: 1.25rem 1rem; }
+  .portals { padding: 1.25rem 1rem 1.5rem; }
+  .portals-list { gap: 0.75rem; }
 }

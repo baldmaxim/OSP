@@ -59,6 +59,21 @@ const FileTextIcon = () => (
   </svg>
 )
 
+const ExternalLinkIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" width={14} height={14} aria-hidden="true">
+    <path d="M7 17 17 7" />
+    <path d="M8 7h9v9" />
+  </svg>
+)
+
+// Порталы компании: название — ссылка в новой вкладке, адрес на странице не показываем.
+const PORTALS = [
+  { name: 'FOT', url: 'https://fot.su10.ru', description: 'Внутренняя система организации рабочих процессов сотрудника (учёт времени, заявления, контактная информация)' },
+  { name: 'Signal', url: 'https://docs.sgnl.pro', description: 'Централизованное хранение документов' },
+  { name: 'Ларикс', url: 'https://cpm.su10.larix.ru', description: 'Договоры с подрядчиками, контроль АВР и документации' },
+  { name: 'Обработка РД (web)', url: 'https://vibe.cloud-ip.cc', description: 'ИИ-ассистент для визуальной обработки рабочей документации' },
+]
+
 function GeneralInfoPage() {
   const navigate = useNavigate()
   const { canView } = useRole()
@@ -93,6 +108,21 @@ function GeneralInfoPage() {
           ))}
         </div>
       </div>
+
+      <nav className="portals" aria-labelledby="portals-title">
+        <h3 id="portals-title" className="portals-title">Наши порталы</h3>
+        <ul className="portals-list">
+          {PORTALS.map((portal) => (
+            <li key={portal.url} className="portal-item">
+              <a className="portal-name" href={portal.url} target="_blank" rel="noopener noreferrer">
+                {portal.name}
+                <ExternalLinkIcon />
+              </a>
+              <span className="portal-description">{portal.description}</span>
+            </li>
+          ))}
+        </ul>
+      </nav>
     </div>
   )
 }
