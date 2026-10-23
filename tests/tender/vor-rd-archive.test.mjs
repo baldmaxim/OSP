@@ -1,6 +1,7 @@
 // «Скачать всё» в окне «ВОРы и РД» тендера (src/utils/vorRdArchive.js, components/VorRdZipButton.jsx):
-// все файлы окна одним ZIP, папка на раздел, имена файлов — исходные (без переименования, как в
-// «Проверке КП»); в реестре «Основное строительство» — по скрепке в колонке «ВОР».
+// своя кнопка в шапке «Рабочей документации», «Ведомости объёмов работ» и «Загружены ранее» — архив
+// только файлов раздела, без папок, имена файлов — исходные (без переименования, как в «Проверке КП»);
+// в реестре «Основное строительство» — по скрепке в колонке «ВОР».
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -8,8 +9,7 @@ import PizZipNs from 'pizzip'
 import { chromium } from 'playwright'
 import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
-  planVorRdArchive, vorRdArchiveName, buildTenderArchive, FAILED_LIST_NAME,
-  VOR_RD_ARCHIVE_SUFFIX, VOR_RD_FAILED_HINT,
+  planVorRdArchive, vorRdArchiveName, buildTenderArchive, FAILED_LIST_NAME, VOR_RD_FAILED_HINT,
 } from '../../src/utils/vorRdArchive.js'
 import { ARCHIVE_NAME_MAX, ENTRY_PATH_MAX } from '../../src/utils/tenderFilesArchive.js'
 
@@ -23,53 +23,44 @@ function doc(fileName, { size = 10, key } = {}) {
 }
 
 describe('Скачать всё в «ВОРах и РД»: раскладка без браузера', () => {
-  it('папки — разделы окна по порядку, имена файлов — как при загрузке, пустой раздел папки не даёт', () => {
-    const { entries, totalBytes } = planVorRdArchive({
-      rdDocs: [doc('2024-15-АР Изм.1.pdf', { size: 100 }), doc('2024-15-КЖ.pdf', { size: 50 })],
-      vorDocs: [doc('ВОР ОВ (корпус 1).xlsx', { size: 7 })],
-      legacyDocs: [],
-    })
-    assert.deepEqual(entries.map((e) => e.path), [
-      'Рабочая документация/2024-15-АР Изм.1.pdf',
-      'Рабочая документация/2024-15-КЖ.pdf',
-      'Ведомость объёмов работ/ВОР ОВ (корпус 1).xlsx',
-    ])
-    assert.equal(totalBytes, 157)
-    assert.equal(entries[2].section, 'Ведомость объёмов работ')
+  it('архив раздела — его файлы без папок, имена — как при загрузке', () => {
+    const { entries, totalBytes } = planVorRdArchive(
+      [doc('2024-15-АР Изм.1.pdf', { size: 100 }), doc('2024-15-КЖ.pdf', { size: 50 })], 'rd')
+    assert.deepEqual(entries.map((e) => e.path), ['2024-15-АР Изм.1.pdf', '2024-15-КЖ.pdf'])
+    assert.equal(totalBytes, 150)
+    assert.equal(entries[0].section, 'Рабочая документация')
+    assert.equal(planVorRdArchive([doc('ВОР ОВ (корпус 1).xlsx')], 'vor').entries[0].path, 'ВОР ОВ (корпус 1).xlsx')
+    assert.deepEqual(planVorRdArchive([], 'legacy').entries, [])
   })
 
-  it('длинное имя РД не режется, пока путь укладывается; меняются только недопустимые в Windows знаки', () => {
+  it('длинное имя не режется, пока путь укладывается; меняются только недопустимые в Windows знаки', () => {
     const long = `${'Раздел 3 Архитектурные решения Корпус 1 секции 1-5 '.repeat(2).trim()}.pdf`
-    assert.ok(long.length > 80 && long.length < ENTRY_PATH_MAX - 'Рабочая документация/'.length)
-    const { entries } = planVorRdArchive({ rdDocs: [doc(long), doc('АР: лист 1/2 "общий".pdf')] })
-    assert.equal(entries[0].path, `Рабочая документация/${long}`)
-    assert.equal(entries[1].path, "Рабочая документация/АР лист 1 2 'общий'.pdf")
+    assert.ok(long.length > 80 && long.length < ENTRY_PATH_MAX)
+    const { entries } = planVorRdArchive([doc(long), doc('АР: лист 1/2 "общий".pdf')], 'rd')
+    assert.equal(entries[0].path, long)
+    assert.equal(entries[1].path, "АР лист 1 2 'общий'.pdf")
   })
 
-  it('совпадающие имена в папке — «(2)», в разных папках — как есть; путь не длиннее предела', () => {
+  it('совпадающие имена — «(2)» без учёта регистра; слишком длинное — в пределах пути, расширение целое', () => {
     const huge = `${'Очень длинное имя файла ведомости '.repeat(8)}.xlsx`
-    const { entries } = planVorRdArchive({
-      rdDocs: [doc('Общий.pdf')],
-      vorDocs: [doc('ВОР.xlsx'), doc('вор.xlsx'), doc(huge)],
-      legacyDocs: [doc('Общий.pdf')],
-    })
-    assert.deepEqual(entries.map((e) => e.path).slice(0, 3), [
-      'Рабочая документация/Общий.pdf', 'Ведомость объёмов работ/ВОР.xlsx', 'Ведомость объёмов работ/вор (2).xlsx',
-    ])
-    assert.equal(entries.at(-1).path, 'Загружены ранее/Общий.pdf')
-    assert.ok(entries[3].path.length <= ENTRY_PATH_MAX && entries[3].path.endsWith('….xlsx'), entries[3].path)
+    const { entries } = planVorRdArchive([doc('ВОР.xlsx'), doc('вор.xlsx'), doc(huge)], 'vor')
+    assert.deepEqual(entries.map((e) => e.path).slice(0, 2), ['ВОР.xlsx', 'вор (2).xlsx'])
+    assert.ok(entries[2].path.length <= ENTRY_PATH_MAX && entries[2].path.endsWith('….xlsx'), entries[2].path)
   })
 
-  it('имя архива: «№ работы — ВОР и РД», хвост не обрезается; без тендера — «Тендер — ВОР и РД»', () => {
-    assert.equal(vorRdArchiveName({ public_tender_number: 125, work_description: 'Монолитные работы' }), '125 Монолитные работы — ВОР и РД')
-    assert.equal(vorRdArchiveName(null), 'Тендер — ВОР и РД')
-    const name = vorRdArchiveName({ public_tender_number: 7, work_description: 'Устройство фасада '.repeat(20) })
+  it('имя архива: «№ работы — РД» / «— ВОР», хвост не обрезается; без тендера — «Тендер — …»', () => {
+    const tender = { public_tender_number: 125, work_description: 'Монолитные работы' }
+    assert.equal(vorRdArchiveName(tender, 'rd'), '125 Монолитные работы — РД')
+    assert.equal(vorRdArchiveName(tender, 'vor'), '125 Монолитные работы — ВОР')
+    assert.equal(vorRdArchiveName(tender, 'legacy'), '125 Монолитные работы — ВОР и РД (загружены ранее)')
+    assert.equal(vorRdArchiveName(null, 'vor'), 'Тендер — ВОР')
+    const name = vorRdArchiveName({ public_tender_number: 7, work_description: 'Устройство фасада '.repeat(20) }, 'legacy')
     assert.ok(name.length <= ARCHIVE_NAME_MAX, name)
-    assert.ok(name.endsWith(VOR_RD_ARCHIVE_SUFFIX), name)
+    assert.ok(name.endsWith(' — ВОР и РД (загружены ранее)'), name)
   })
 
   it('не скачавшийся файл — в «Не скачано.txt» с разделом и подсказкой про окно «ВОРы и РД»', async () => {
-    const { entries } = planVorRdArchive({ rdDocs: [doc('АР.pdf', { key: 'k-bad' })], vorDocs: [doc('ВОР.xlsx')] })
+    const { entries } = planVorRdArchive([doc('АР.pdf', { key: 'k-bad' }), doc('КЖ.pdf')], 'rd')
     const { bytes, added, failed } = await buildTenderArchive(entries, async (entry) => {
       if (entry.s3Key === 'k-bad') throw new Error('хранилище ответило 403')
       return bytesOf(entry.fileName)
@@ -77,7 +68,7 @@ describe('Скачать всё в «ВОРах и РД»: раскладка б
     assert.equal(added, 1)
     assert.equal(failed.length, 1)
     const zip = new PizZip(bytes)
-    assert.equal(zip.file('Ведомость объёмов работ/ВОР.xlsx').asText(), 'ВОР.xlsx')
+    assert.equal(zip.file('КЖ.pdf').asText(), 'КЖ.pdf')
     const list = zip.file(FAILED_LIST_NAME).asText()
     assert.ok(list.includes(VOR_RD_FAILED_HINT))
     assert.match(list, /Рабочая документация — АР\.pdf: хранилище ответило 403/)
@@ -101,19 +92,18 @@ describe('Скачать всё в «ВОРах и РД»: реестр «Осн
 
   const registryRow = (page, num) => page.locator('table.tenders-registry > tbody > tr')
     .filter({ has: page.locator('.tp-num-value', { hasText: new RegExp(`^${num}$`) }) })
+  const openDocs = (page, num) => registryRow(page, num).locator('button.tp-docs-btn[title="Документы ВОР и РД"]').click()
+  const section = (page, title) => page.locator('.tvr-modal .tvr-section')
+    .filter({ has: page.locator('.tvr-title', { hasText: title }) })
 
-  // Тендер № 200 (tender-1): два файла РД, ВОР и файл прежней категории; содержимое — data: URL хранилища стенда.
-  const seedFiles = () => {
-    const file = (id, category, name, at) => {
-      const key = `tenders/tender-1/${id}-${name}`
-      window.__fakeDb.s3_documents.push({ id, owner_type: 'tender', owner_id: 'tender-1', doc_category: category,
-        file_name: name, s3_key: key, size_bytes: name.length, created_at: at, uploaded_by_name: 'Иванов И. И.' })
+  // Файлы тендеров: [id, категория, имя]; содержимое — data: URL хранилища стенда.
+  const seedFiles = ([tenderId, files]) => {
+    for (const [id, category, name] of files) {
+      const key = `tenders/${tenderId}/${id}-${name}`
+      window.__fakeDb.s3_documents.push({ id, owner_type: 'tender', owner_id: tenderId, doc_category: category,
+        file_name: name, s3_key: key, size_bytes: name.length, created_at: '2026-10-20T10:00:00Z', uploaded_by_name: 'Иванов И. И.' })
       window.__fakeFiles = { ...(window.__fakeFiles || {}), [key]: `data:application/octet-stream;base64,${btoa(unescape(encodeURIComponent(`содержимое ${name}`)))}` }
     }
-    file('rd-1', 'rd', '2024-15-АР Изм.1.pdf', '2026-10-20T10:00:00Z')
-    file('rd-2', 'rd', '2024-15-КЖ.pdf', '2026-10-20T09:00:00Z')
-    file('vor-1', 'vor_statement', 'ВОР фасад.xlsx', '2026-10-21T10:00:00Z')
-    file('old-1', 'vor', 'Старый ВОР.xls', '2026-09-01T10:00:00Z')
   }
 
   const openRegistry = async () => {
@@ -129,37 +119,46 @@ describe('Скачать всё в «ВОРах и РД»: реестр «Осн
     return { page, errors, dialogs, close: () => context.close().catch(() => {}) }
   }
 
-  it('скрепка → «Скачать всё» над разделами → ZIP с папками разделов и исходными именами', async () => {
+  // Скачать архив кнопкой раздела: имя и файлы в нём (без папок).
+  const downloadZip = async (page, button) => {
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), button.click()])
+    const zip = new PizZip(await readFile(await download.path()))
+    await button.locator('xpath=self::*[not(@disabled)]').waitFor({ timeout: 10000 })
+    return { name: download.suggestedFilename(), zip, files: Object.keys(zip.files).sort() }
+  }
+
+  it('скрепка → у РД и у ВОР своя «Скачать всё»: архив только файлов раздела, исходные имена', async () => {
     const { page, errors, dialogs, close } = await openRegistry()
     try {
-      await page.evaluate(seedFiles)
-      await registryRow(page, 200).locator('button.tp-docs-btn[title="Документы ВОР и РД"]').click()
-      const panel = page.locator('.tvr-modal .tvr-panel')
-      const button = panel.locator('.tvr-toolbar .tvr-zip-btn')
-      await button.waitFor({ timeout: 30000 })
+      await page.evaluate(seedFiles, ['tender-1', [
+        ['rd-1', 'rd', '2024-15-АР Изм.1.pdf'],
+        ['rd-2', 'rd', '2024-15-КЖ.pdf'],
+        ['vor-1', 'vor_statement', 'ВОР фасад.xlsx'],
+        ['old-1', 'vor', 'Старый ВОР.xls'],
+      ]])
+      await openDocs(page, 200)
+      const rdButton = section(page, 'Рабочая документация').locator('.tvr-section-head .tvr-zip-btn')
+      const vorButton = section(page, 'Ведомость объёмов работ').locator('.tvr-section-head .tvr-zip-btn')
+      const legacyButton = section(page, 'Загружены ранее').locator('.tvr-section-head .tvr-zip-btn')
+      await rdButton.waitFor({ timeout: 30000 })
+      assert.equal(await page.locator('.tvr-modal .tvr-zip-btn').count(), 3, 'по кнопке на раздел, общей нет')
+      assert.equal(await rdButton.textContent(), 'Скачать всё')
 
-      // Кнопка — над обоими разделами.
-      const order = await panel.evaluate((el) => {
-        const btn = el.querySelector('.tvr-zip-btn')
-        return [...el.querySelectorAll('.tvr-title')].map((t) => ({
-          title: t.textContent, below: !!(btn.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING),
-        }))
-      })
-      assert.ok(order.find((o) => o.title.includes('Рабочая документация'))?.below)
-      assert.ok(order.find((o) => o.title.includes('Ведомость объёмов работ'))?.below)
+      const works = '200 Устройство вентилируемого фасада с облицовкой керамогранитом, секции 1–4'
+      const rd = await downloadZip(page, rdButton)
+      assert.equal(rd.name, `${works} — РД.zip`)
+      assert.deepEqual(rd.files, ['2024-15-АР Изм.1.pdf', '2024-15-КЖ.pdf'])
+      assert.equal(rd.zip.file('2024-15-КЖ.pdf').asText(), 'содержимое 2024-15-КЖ.pdf')
 
-      const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), button.click()])
-      assert.equal(download.suggestedFilename(), '200 Устройство вентилируемого фасада с облицовкой керамогранитом, секции 1–4 — ВОР и РД.zip')
-      const zip = new PizZip(await readFile(await download.path()))
-      const files = Object.keys(zip.files).filter((name) => !zip.files[name].dir).sort()
-      assert.deepEqual(files, [
-        'Ведомость объёмов работ/ВОР фасад.xlsx',
-        'Загружены ранее/Старый ВОР.xls',
-        'Рабочая документация/2024-15-АР Изм.1.pdf',
-        'Рабочая документация/2024-15-КЖ.pdf',
-      ])
-      assert.equal(zip.file('Рабочая документация/2024-15-КЖ.pdf').asText(), 'содержимое 2024-15-КЖ.pdf')
-      await page.locator('.tvr-zip-btn:not([disabled])', { hasText: 'Скачать всё' }).waitFor({ timeout: 10000 })
+      const vor = await downloadZip(page, vorButton)
+      assert.equal(vor.name, `${works} — ВОР.zip`)
+      assert.deepEqual(vor.files, ['ВОР фасад.xlsx'])
+
+      const legacy = await downloadZip(page, legacyButton)
+      // Хвост длиннее — работы обрезаются по слову, хвост целый.
+      assert.equal(legacy.name, '200 Устройство вентилируемого фасада с облицовкой керамогранитом… — ВОР и РД (загружены ранее).zip')
+      assert.deepEqual(legacy.files, ['Старый ВОР.xls'])
+
       assert.deepEqual(dialogs, [])
       assert.deepEqual(errors, [])
     } finally {
@@ -167,12 +166,20 @@ describe('Скачать всё в «ВОРах и РД»: реестр «Осн
     }
   })
 
-  it('без файлов кнопки нет', async () => {
+  it('кнопка — только у раздела с файлами; без файлов кнопок нет', async () => {
     const { page, errors, close } = await openRegistry()
     try {
-      await registryRow(page, 199).locator('button.tp-docs-btn[title="Документы ВОР и РД"]').click()
-      await page.locator('.tvr-modal .tvr-panel .tvr-title', { hasText: 'Ведомость объёмов работ' }).waitFor({ timeout: 30000 })
-      assert.equal(await page.locator('.tvr-zip-btn').count(), 0)
+      await page.evaluate(seedFiles, ['tender-2', [['vor-2', 'vor_statement', 'ВОР отделка.xlsx']]])
+      await openDocs(page, 199)
+      await section(page, 'Ведомость объёмов работ').locator('.tvr-zip-btn').waitFor({ timeout: 30000 })
+      assert.equal(await section(page, 'Рабочая документация').locator('.tvr-zip-btn').count(), 0)
+      assert.equal(await page.locator('.tvr-modal .tvr-zip-btn').count(), 1)
+      await page.locator('.tvr-modal .s3-doc-modal-close').click()
+
+      await openDocs(page, 198)
+      await section(page, 'Ведомость объёмов работ').waitFor({ timeout: 30000 })
+      await page.locator('.tvr-modal .tvr-empty', { hasText: 'Рабочая документация не загружена' }).waitFor({ timeout: 30000 })
+      assert.equal(await page.locator('.tvr-modal .tvr-zip-btn').count(), 0)
       assert.deepEqual(errors, [])
     } finally {
       await close()

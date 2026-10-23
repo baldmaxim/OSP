@@ -100,7 +100,6 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
     return m
   }, [data.rdDocs])
   const noCodeCount = data.rdDocs.filter(d => d.codeIds.length === 0).length
-  const fileCount = data.rdDocs.length + data.vorDocs.length + data.legacyDocs.length
 
   const visibleRdDocs = data.rdDocs.filter(d =>
     !codeFilter ? true
@@ -147,13 +146,7 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
 
   return (
     <div className="tvr-panel">
-      {/* «Скачать всё» — файлы всех разделов окна одним архивом, без фильтра по шифру. */}
-      {fileCount > 0 && (
-        <div className="tvr-toolbar">
-          <VorRdZipButton tenderId={tenderId} data={data} />
-        </div>
-      )}
-
+      {/* «Скачать всё» — в шапке каждого раздела: архив только его файлов (у РД — без фильтра по шифру). */}
       {/* ── 1. Рабочая документация ── */}
       <section className="tvr-section">
         <div className="tvr-section-head">
@@ -161,11 +154,14 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
             <h3 className="tvr-title"><span className="tvr-step">1</span>Рабочая документация</h3>
             <p className="tvr-hint">PDF-файлы РД. У каждого файла указываются шифры — из списка «Шифр РД» этого тендера.</p>
           </div>
-          {canEdit && !adding && !codesUnavailable && (
-            <button type="button" className="s3-doc-btn-primary" onClick={() => setAdding(true)}>
-              + Добавить РД
-            </button>
-          )}
+          <div className="tvr-head-actions">
+            {data.rdDocs.length > 0 && <VorRdZipButton tenderId={tenderId} section="rd" docs={data.rdDocs} />}
+            {canEdit && !adding && !codesUnavailable && (
+              <button type="button" className="s3-doc-btn-primary" onClick={() => setAdding(true)}>
+                + Добавить РД
+              </button>
+            )}
+          </div>
         </div>
 
         {data.linksMissing && (
@@ -303,6 +299,11 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
             <h3 className="tvr-title"><span className="tvr-step">2</span>Ведомость объёмов работ</h3>
             <p className="tvr-hint">Файлы ВОР (Excel, PDF).</p>
           </div>
+          {data.vorDocs.length > 0 && (
+            <div className="tvr-head-actions">
+              <VorRdZipButton tenderId={tenderId} section="vor" docs={data.vorDocs} />
+            </div>
+          )}
         </div>
         <S3DocumentList
           ownerType="tender"
@@ -324,6 +325,9 @@ export default function TenderVorRdPanel({ tenderId, canEdit = false, onChange }
                 Файлы, загруженные до разделения на РД и ВОР. Их можно скачать или удалить;
                 новые файлы добавляйте в разделы выше.
               </p>
+            </div>
+            <div className="tvr-head-actions">
+              <VorRdZipButton tenderId={tenderId} section="legacy" docs={data.legacyDocs} />
             </div>
           </div>
           <S3DocumentList

@@ -7,25 +7,28 @@
   gap: 1rem;
 }
 
-/* «Скачать всё» над разделами — по правому краю, как «+ Добавить РД», ближе к первому разделу. */
-.tvr-toolbar {
+/* Кнопки шапки раздела: «Скачать всё» (своя у каждого раздела), «+ Добавить РД». */
+.tvr-head-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
-  margin-bottom: -0.5rem;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 .tvr-zip-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  height: 28px;
-  padding: 0 0.75rem;
+  /* Высота — как у «+ Добавить РД» рядом (S3DocumentList.css), с учётом рамки. */
+  padding: 0.375rem 0.75rem;
   border: 1px solid var(--border-color);
-  border-radius: 7px;
-  background: var(--bg-secondary);
+  border-radius: 6px;
+  background: var(--bg-primary);
   color: var(--text-primary);
   font: inherit;
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: pointer;
@@ -310,5 +313,6 @@
 @media (max-width: 640px) {
   .tvr-section { padding: 0.8rem; }
   .tvr-section-head { flex-direction: column; }
+  .tvr-head-actions { justify-content: flex-start; }
   .tvr-col-who { display: none; }
 }
