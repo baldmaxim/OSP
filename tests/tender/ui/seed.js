@@ -602,3 +602,42 @@ if (params.get('kpStats') === '1') {
   }
   fdb.tender_proposal_files = rows
 }
+
+// Публичная страница тендеров (/public/tenders) читает только представление public_open_tenders (20261016,
+// ответственный — 20261101). № 369 — с ответственным и телефоном; № 370 — без ответственного, в ссылках
+// javascript: (ссылками не становятся); № 371 — внутренний номер (не ссылка на звонок) и сетевой путь вместо
+// адреса пакета. publicNoContact=1 — колонок ответственного ещё нет: выборка с ними отвечает 42703.
+const PUBLIC_TENDERS = [
+  {
+    id: 'pub-369', public_tender_number: 369, work_description: 'Устройство кровли корпуса 2',
+    start_date: '2026-11-01', end_date: '2026-12-15', tender_start_date: '2026-10-20', tender_end_date: '2026-10-30',
+    tender_package_link: 'https://drive.example.ru/package-369', object_name: 'ЖК «Тёплый стан»',
+    object_address: 'Москва, ул. Тёплый Стан, 1', object_map_link: 'https://yandex.ru/maps/?pt=37.5,55.6',
+    responsible_name: 'Крюкова Юлия Денисовна', responsible_phone: '8 (916) 123-45-67',
+  },
+  {
+    id: 'pub-370', public_tender_number: 370, work_description: 'Фасадные работы',
+    start_date: '2026-11-10', end_date: '2027-02-01', tender_start_date: '2026-10-21', tender_end_date: '2026-11-05',
+    tender_package_link: 'javascript:alert(1)', object_name: 'ЖК «Северный»',
+    object_address: 'Москва, ул. Северная, 5', object_map_link: 'javascript:alert(2)',
+    responsible_name: null, responsible_phone: null,
+  },
+  {
+    id: 'pub-371', public_tender_number: 371, work_description: 'Электромонтажные работы',
+    start_date: null, end_date: null, tender_start_date: null, tender_end_date: null,
+    tender_package_link: '\\\\srv\\tenders\\371', object_name: 'Школа на 1100 мест',
+    object_address: 'Москва, Ленинский пр., 10', object_map_link: null,
+    responsible_name: 'Архипов Антон Михайлович', responsible_phone: 'доб. 214',
+  },
+]
+if (params.get('publicNoContact') === '1') {
+  window.__fakeDb.public_open_tenders = PUBLIC_TENDERS.map((t) => {
+    const row = { ...t }
+    delete row.responsible_name
+    delete row.responsible_phone
+    return row
+  })
+  window.__fakeMissingColumns = { public_open_tenders: ['responsible_name', 'responsible_phone'] }
+} else {
+  window.__fakeDb.public_open_tenders = PUBLIC_TENDERS
+}

@@ -15,3 +15,4 @@
 20261029_supply_vor_versions.sql
 20261030_site_contacts.sql
 20261031_counterparty_contract_links.sql
+20261101_public_tenders_contact.sql

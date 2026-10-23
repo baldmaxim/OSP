@@ -18,10 +18,13 @@ expected as (
     and o.status in ('main_construction', 'warranty_service')
 ),
 checks(n, ok, what) as (
-  select 1, (select names from cols) = array['id', 'public_tender_number', 'work_description', 'start_date', 'end_date',
+  -- После 20261101 в конце ещё ФИО и телефон ответственного — это тоже состояние «20261016 применена»
+  -- (иначе restore-copy.sh накатывал бы 20261016 заново, а она не может убрать колонки представления).
+  select 1, (select names from cols)[1:11] = array['id', 'public_tender_number', 'work_description', 'start_date', 'end_date',
                                              'tender_start_date', 'tender_end_date', 'tender_package_link',
-                                             'object_name', 'object_address', 'object_map_link'],
-         'представление отдаёт только 11 публичных полей: ' || (select array_to_string(names, ', ') from cols)
+                                             'object_name', 'object_address', 'object_map_link']
+            and coalesce((select names from cols)[12:], '{}') <@ array['responsible_name', 'responsible_phone'],
+         'представление отдаёт только публичные поля: ' || (select array_to_string(names, ', ') from cols)
   union all
   select 2, has_table_privilege('anon', (select oid from v), 'SELECT')
             and not has_table_privilege('anon', (select oid from v), 'INSERT')

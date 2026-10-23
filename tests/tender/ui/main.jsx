@@ -1,7 +1,8 @@
 // Стенд тендеров в браузере (данные в памяти).
 //   route   — начальный адрес: /tenders/tender-1 (карточка, по умолчанию), /tenders/construction или
 //             /tenders/materials (реестры), /reports (отчёты; kpStats=1 — файлы КП для статистики),
-//             /general (разделы «Общей информации» и порталы компании);
+//             /general (разделы «Общей информации» и порталы компании), /public/tenders (страница без входа;
+//             publicNoContact=1 — колонок ответственного ещё нет, как до миграции 20261101);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -27,6 +28,7 @@ import SupplyPricingPage from '../../../src/pages/SupplyPricingPage'
 import VorsPage from '../../../src/pages/VorsPage'
 import ReportsPage from '../../../src/pages/ReportsPage'
 import GeneralInfoPage from '../../../src/pages/GeneralInfoPage'
+import PublicTendersPage from '../../../src/pages/PublicTendersPage'
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -50,6 +52,7 @@ const routes = (
     <Route path="/tenders/construction" element={<TendersPage department="construction" tenderType="main" />} />
     <Route path="/tenders/materials" element={<TendersPage key="tenders-materials" tenderType="materials" />} />
     <Route path="/general" element={<GeneralInfoPage />} />
+    <Route path="/public/tenders" element={<PublicTendersPage />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
     <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />
     <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />

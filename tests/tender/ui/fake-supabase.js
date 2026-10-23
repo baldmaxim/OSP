@@ -6,6 +6,8 @@
 // искусственную «сетевую» задержку и учитывается в window.__supabaseStats.
 // window.__fakeTriggers[таблица](строка, прежняя) — подмена триггера «до записи» (расчёт в базе);
 // window.__fakeErrors[таблица] — ответ ошибкой на любой запрос к таблице (например, «таблицы нет»).
+// window.__fakeMissingColumns[таблица] — колонок ещё нет (миграция не применена): выборка, где они названы,
+// отвечает 42703, как PostgREST.
 // window.__fakeUnique[таблица] — колонки уникального ключа: вставка дубля отвечает 23505, как база.
 // window.__fakeAfter[таблица](op, строка, прежняя) — триггер «после записи» (журнал расценок).
 // window.__fakeGenerated[таблица](строка) — вычисляемые колонки (GENERATED): считаются до проверки ключа.
@@ -87,8 +89,8 @@ function applyOrder(rows, orders) {
 function builder(table) {
   const q = { table, filters: [], orders: [], op: 'select', count: null, head: false }
   const self = {
-    select(_cols, opts = {}) {
-      if (q.op === 'select') { q.count = opts.count || null; q.head = !!opts.head } else { q.returning = true }
+    select(cols, opts = {}) {
+      if (q.op === 'select') { q.cols = cols; q.count = opts.count || null; q.head = !!opts.head } else { q.returning = true }
       return self
     },
     eq(col, val) { q.filters.push({ op: 'eq', col, val }); return self },
@@ -142,6 +144,12 @@ async function run(q) {
   stats.active--
   const fakeError = window.__fakeErrors?.[q.table]
   if (fakeError) return { data: null, count: null, error: fakeError }
+  const missing = q.op === 'select' && window.__fakeMissingColumns?.[q.table]
+  if (missing) {
+    const asked = String(q.cols || '*').split(',').map((c) => c.trim())
+    const absent = missing.find((c) => asked.includes(c))
+    if (absent) return { data: null, count: null, error: { code: '42703', message: `column ${q.table}.${absent} does not exist` } }
+  }
   const rows = tableRows(q.table)
   const now = new Date().toISOString()
   const trigger = window.__fakeTriggers?.[q.table]

@@ -48,9 +48,10 @@ export function telegramHref(value) {
   return m ? `https://t.me/${m[1]}` : null
 }
 
-// Ссылка «позвонить» — по первому номеру (их бывает несколько через запятую или «;»).
+// Ссылка «позвонить» — по первому номеру (их бывает несколько через запятую или «;»), без
+// добавочного («доб. 12» набирается уже после ответа).
 export function phoneHref(value) {
-  const first = String(value || '').split(/[,;]/)[0].trim()
+  const first = String(value || '').split(/[,;]|доб|вн\.|ext/i)[0].trim()
   const digits = first.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '')
   return digits.replace(/\D/g, '').length >= 6 ? `tel:${digits}` : null
 }
