@@ -170,6 +170,30 @@ export async function decideBidRequest(requestId, accept) {
 }
 
 // ── Администратор ────────────────────────────────────────────────────────────────────────────────────
+// Статус завершённого тендера: его цены с сайта — уже в реестре «Расценки от подрядчиков (КП)» (миграция 20261103),
+// во вкладке «Расценки подрядчиков (актуальные тендеры)» он не показывается.
+export const BID_TENDER_DONE = 'Завершен'
+
+// Позиции с ценой по актуальным (не завершённым) тендерам — страница списка. null — таблицы ещё нет.
+export async function loadCurrentBidRates({ kind, search = '', page = 0, pageSize = 100 }) {
+  let q = db.from('tender_bid_rates')
+    .select('id, kind, name, unit, volume, price, total, note, source, updated_at, tender_id, counterparty_id, tenders!inner(public_tender_number, work_description, status), counterparties(name)', { count: 'exact' })
+    .eq('kind', kind)
+    .neq('tenders.status', BID_TENDER_DONE)
+    .not('price', 'is', null)
+  const s = search.trim()
+  if (s) q = q.ilike('name', `%${s}%`)
+  const { data, error, count } = await q
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: true })
+    .range(page * pageSize, page * pageSize + pageSize - 1)
+  if (error) {
+    if (isMissingBids(error)) return null
+    throw error
+  }
+  return { rows: data || [], count: count ?? (data || []).length }
+}
+
 export async function loadBidOverview() {
   const { data, error } = await db.rpc('bid_admin_overview')
   if (error) {

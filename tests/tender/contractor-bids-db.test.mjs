@@ -62,7 +62,8 @@ describe('Кабинет подрядчика: заявки, цены, анке�
     db = startSnapshot()
     for (const m of appliedAfter()) psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     for (const m of candidateMigrations()) {
-      if (m.startsWith(NAME)) continue
+      // 20261103 (реестр КП) зависит от этой миграции — здесь не нужна.
+      if (m.startsWith(NAME) || m.startsWith('20261103_')) continue
       psqlAt(db.port, null, { file: path.join(ROOT, 'supabase', 'migrations', m) })
     }
     checkBefore = psqlAt(db.port, null, { file: CHECK })

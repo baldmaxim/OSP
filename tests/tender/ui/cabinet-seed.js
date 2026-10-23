@@ -1,7 +1,8 @@
 // Данные стенда кабинета подрядчика (cabinet.html) и подделки функций базы миграции 20261102: тендеры кабинета,
 // заявка, запись цен и анкеты, сводка администратора, решение инженера. Файл ВОР собирается здесь же (xlsx) и
 // лежит в «хранилище» стенда (window.__fakeFiles) — кабинет скачивает и разбирает его как настоящий.
-//   ?page=cabinet (по умолчанию) — кабинет подрядчика «ООО Альфа»; ?page=admin — «Расценки подрядчиков».
+//   ?page=cabinet (по умолчанию) — кабинет подрядчика «ООО Альфа»; ?page=admin — реестр расценок, вкладка
+//   «Расценки подрядчиков (актуальные тендеры)».
 import * as XLSX from 'xlsx'
 
 const params = new URLSearchParams(window.location.search)
@@ -141,13 +142,21 @@ window.__fakeRpc = {
       invite_status: null, request_id: 'req-t-open', request_status: 'pending', requested_at: '2026-10-23T08:00:00Z',
       materials_priced: 1, works_priced: 1, materials_total: 1017900, works_total: 326250, total: 1344150, notes_count: 0, form_answers: 1,
       vat: '22 %', updated_at: '2026-10-23T09:00:00Z' },
+    // Завершённый тендер — его цены уже в реестре КП, во вкладке актуальных не показывается.
+    { tender_id: 't-done', public_tender_number: 600, work_description: 'Кровля', tender_status: 'Завершен', is_open: false,
+      object_name: 'ЖК Старый', tender_end_date: '2026-09-01', counterparty_id: 'cp-beta', counterparty_name: 'ООО Бета (завершён)', counterparty_inn: null,
+      invite_status: 'proposal_provided', request_id: null, request_status: null, requested_at: null,
+      materials_priced: 3, works_priced: 0, materials_total: 1000, works_total: 0, total: 1000, notes_count: 0, form_answers: 0,
+      vat: null, updated_at: '2026-09-01T09:00:00Z' },
   ]),
 }
 
 if (PAGE === 'admin') {
   db.tender_bid_rates.push(
-    { id: 'r1', tender_id: 't-open', counterparty_id: CP.id, kind: 'material', item_key: 'x', unit_key: 'м3', name: 'Бетон В25 W8', unit: 'м3', volume: 130.5, price: 7800, total: 1017900, note: null, source: 'import', updated_at: '2026-10-23T09:00:00Z' },
-    { id: 'r2', tender_id: 't-open', counterparty_id: CP.id, kind: 'work', item_key: 'y', unit_key: 'м3', name: 'Устройство монолитной плиты', unit: 'м3', volume: 130.5, price: 2500, total: 326250, note: 'с опалубкой', source: 'manual', updated_at: '2026-10-23T09:00:00Z' },
+    { id: 'r1', tender_id: 't-open', counterparty_id: CP.id, kind: 'material', item_key: 'x', unit_key: 'м3', name: 'Бетон В25 W8', unit: 'м3', volume: 130.5, price: 7800, total: 1017900, note: null, source: 'import', updated_at: '2026-10-23T09:00:00Z',
+      tenders: { public_tender_number: 857, work_description: 'Бетонные полы паркинга', status: 'Идет тендерная процедура' }, counterparties: { name: CP.name } },
+    { id: 'r2', tender_id: 't-open', counterparty_id: CP.id, kind: 'work', item_key: 'y', unit_key: 'м3', name: 'Устройство монолитной плиты', unit: 'м3', volume: 130.5, price: 2500, total: 326250, note: 'с опалубкой', source: 'manual', updated_at: '2026-10-23T09:00:00Z',
+      tenders: { public_tender_number: 857, work_description: 'Бетонные полы паркинга', status: 'Идет тендерная процедура' }, counterparties: { name: CP.name } },
   )
   db.tender_bid_forms.push({ id: 'form-1', tender_id: 't-open', counterparty_id: CP.id, answers: { 'f-name': { label: 'Наименование контрагента', value: 'ООО Альфа' } } })
 }

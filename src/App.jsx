@@ -84,7 +84,6 @@ const DcRequestsPage = lazy(() => import('./pages/DcRequestsPage'))
 const DocCheckRequestsPage = lazy(() => import('./pages/DocCheckRequestsPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const PublicTendersPage = lazy(() => import('./pages/PublicTendersPage'))
-const ContractorBidsPage = lazy(() => import('./pages/ContractorBidsPage'))
 
 const PageLoader = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh', color: 'var(--text-tertiary)' }}>
@@ -163,9 +162,9 @@ function EmployeeLayout() {
                 сотруднику. PermissionRoute без section всё равно гейтит загрузку/ошибку
                 роли/тип пользователя. */}
             <Route path="/rates-registry" element={<PermissionRoute section="rates_registry"><RatesRegistryPage /></PermissionRoute>} />
-            {/* Расценки подрядчиков из кабинета (миграция 20261102) — пока только администратору: страница сама
-                проверяет isAdmin, база — is_admin() в bid_admin_overview и правилах цен. */}
-            <Route path="/contractor-bids" element={<PermissionRoute><ContractorBidsPage /></PermissionRoute>} />
+            {/* Расценки подрядчиков из кабинета — вкладка реестра расценок (только администратору); прежний адрес
+                отдельной страницы ведёт туда. */}
+            <Route path="/contractor-bids" element={<Navigate to="/rates-registry?tab=bids" replace />} />
             <Route path="/reports" element={<PermissionRoute section="reports"><ReportsPage /></PermissionRoute>} />
             <Route path="/admin" element={<PermissionRoute section="admin"><AdminPage /></PermissionRoute>} />
             <Route path="/profile" element={<PermissionRoute><ProfilePage /></PermissionRoute>} />

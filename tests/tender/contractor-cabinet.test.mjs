@@ -7,7 +7,9 @@
 //   • анкета — поля из списка администратора (скрытого нет), ответ пишется при уходе из поля; ставка НДС — выбор из
 //     списка: пока не выбрана — «не указана» в итогах, выбрана — «в т. ч. НДС», «Без НДС» — цены без НДС;
 //   • «Особые условия» с «Главного листа» файла ВОР — над вкладками;
-//   • закрытый тендер — только просмотр; администратор видит сводку и подробности организации.
+//   • закрытый тендер — только просмотр;
+//   • администратор: реестр расценок → «Расценки подрядчиков (актуальные тендеры)» — сводка без завершённых
+//     тендеров, подробности организации, позиции списком, поля анкеты.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
@@ -237,11 +239,15 @@ describe('Кабинет подрядчика: расценка на сайте'
     }
   })
 
-  it('администратор: сводка по организациям и подробности — цены, как введены, анкета', async () => {
+  it('администратор: реестр расценок → «Расценки подрядчиков (актуальные тендеры)»: сводка, подробности, позиции, анкета', async () => {
     const { page, errors, close } = await open('&page=admin')
     try {
+      const tab = page.getByRole('tab', { name: 'Расценки подрядчиков (актуальные тендеры)' })
+      await tab.waitFor({ timeout: 120000 })
+      assert.equal(await tab.getAttribute('aria-selected'), 'true', 'открыта по ссылке ?tab=bids')
       const row = page.locator('.cbp-table tbody tr', { hasText: 'ООО Альфа' })
-      await row.waitFor({ timeout: 120000 })
+      await row.waitFor({ timeout: 60000 })
+      assert.equal(await page.getByText('ООО Бета (завершён)').count(), 0, 'завершённый тендер — в реестре КП, не здесь')
       assert.match(await row.textContent(), /Заявка: ждёт решения/)
       assert.match(await row.textContent(), /1\s344\s150,00/)
       assert.match(await row.textContent(), /22 %/)
@@ -252,6 +258,11 @@ describe('Кабинет подрядчика: расценка на сайте'
       await drawer.getByRole('button', { name: /Анкета \(1\)/ }).click()
       await drawer.locator('.cbp-answers dd', { hasText: 'ООО Альфа' }).waitFor()
       await page.keyboard.press('Escape')
+      // Позиции списком: цена, подрядчик, тендер, как введена.
+      await page.getByRole('tab', { name: 'Позиции' }).click()
+      const pos = page.locator('.cbp-table tbody tr', { hasText: 'Бетон В25 W8' })
+      await pos.waitFor({ timeout: 10000 })
+      assert.match(await pos.textContent(), /7\s800,00.*ООО Альфа.*№ 857.*из файла/)
       await page.getByRole('tab', { name: 'Поля анкеты' }).click()
       await page.locator('.cbp-field').first().waitFor()
       assert.equal(await page.locator('.cbp-field').count(), 3, 'администратор видит и скрытые')

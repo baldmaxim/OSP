@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useRole } from '../contexts/RoleContext'
-import AccessDenied from '../components/AccessDenied'
+import { useRole } from '../../contexts/RoleContext'
 import {
   loadBidOverview, loadBidRates, loadBidForm, loadFormFields, createFormField, updateFormField, deleteFormField,
-  BIDS_MIGRATION_HINT,
-} from '../services/contractorBids'
-import { formatAmount } from '../utils/money'
-import { FIELD_KINDS, VAT_FIELD_CODE, VAT_OPTIONS, parseOptions } from '../utils/bidForm'
-import './ContractorBidsPage.css'
+  loadCurrentBidRates, BIDS_MIGRATION_HINT, BID_TENDER_DONE,
+} from '../../services/contractorBids'
+import { formatAmount } from '../../utils/money'
+import { useDebounced } from '../../utils/ratesRegistry'
+import { FIELD_KINDS, VAT_FIELD_CODE, VAT_OPTIONS, parseOptions } from '../../utils/bidForm'
+import './ContractorBidsSection.css'
 
-// Расценки подрядчиков на сайте (миграция 20261102) — пока только администратору (решение пользователя):
-// какая организация в каком тендере что расценила, на какую сумму, заполнена ли анкета, заявка или участник.
-// Вторая вкладка — поля анкеты «Квалификационная и контактная информация», которую подрядчик заполняет в кабинете.
+// Реестр расценок → «Расценки подрядчиков (актуальные тендеры)» (миграция 20261102): цены и анкеты, которые
+// подрядчики вводят в кабинете, по тендерам, которые ещё не завершены. Пока только администратору (решение
+// пользователя). После завершения тендера расценки по позициям уходят во вкладку «Расценки от подрядчиков (КП)»
+// (миграция 20261103, при пересчёте реестра), здесь тендер больше не показывается.
+//   • «Тендеры и подрядчики» — кто в каком тендере что расценил, суммы, НДС, анкета; подробности и выгрузка;
+//   • «Позиции» — все цены актуальных тендеров списком (поиск, вид);
+//   • «Поля анкеты» — «Квалификационная и контактная информация», которую подрядчик заполняет в кабинете.
 
 const fmtDateTime = (v) => {
   if (!v) return '—'
@@ -37,23 +41,28 @@ function participationText(r) {
   return '—'
 }
 
-export default function ContractorBidsPage() {
+const SUBTABS = [
+  ['bids', 'Тендеры и подрядчики'],
+  ['positions', 'Позиции'],
+  ['fields', 'Поля анкеты'],
+]
+
+export default function ContractorBidsSection() {
   const { isAdmin } = useRole()
   const [tab, setTab] = useState('bids')
-  if (!isAdmin) return <AccessDenied />
+  if (!isAdmin) return <div className="cbp-state">Расценки подрядчиков по актуальным тендерам видит администратор.</div>
   return (
-    <div className="cbp-page">
-      <header className="cbp-head">
-        <div>
-          <h1>Расценки подрядчиков</h1>
-          <p className="cbp-muted">Цены и анкеты, которые подрядчики вводят в кабинете. Видно только администратору.</p>
-        </div>
-        <nav className="cbp-tabs" role="tablist">
-          <button type="button" role="tab" aria-selected={tab === 'bids'} className={tab === 'bids' ? 'is-active' : ''} onClick={() => setTab('bids')}>Расценки</button>
-          <button type="button" role="tab" aria-selected={tab === 'fields'} className={tab === 'fields' ? 'is-active' : ''} onClick={() => setTab('fields')}>Поля анкеты</button>
-        </nav>
-      </header>
-      {tab === 'bids' ? <BidsOverview /> : <FormFieldsEditor />}
+    <div className="cbp-section">
+      <p className="cbp-muted">
+        Цены и анкеты, которые подрядчики вводят в кабинете, по тендерам, которые ещё идут. Видно только администратору.
+        После завершения тендера расценки по позициям попадают во вкладку «Расценки от подрядчиков (КП)».
+      </p>
+      <nav className="cbp-tabs" role="tablist">
+        {SUBTABS.map(([k, label]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'is-active' : ''} onClick={() => setTab(k)}>{label}</button>
+        ))}
+      </nav>
+      {tab === 'bids' ? <BidsOverview /> : tab === 'positions' ? <BidPositions /> : <FormFieldsEditor />}
     </div>
   )
 }
@@ -83,6 +92,8 @@ function BidsOverview() {
   const list = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (rows || []).filter((r) => {
+      // Завершённый тендер — уже в «Расценках от подрядчиков (КП)».
+      if (r.tender_status === BID_TENDER_DONE) return false
       if (scope === 'open' && !r.is_open) return false
       if (scope === 'priced' && !(r.materials_priced + r.works_priced)) return false
       if (scope === 'pending' && r.request_status !== 'pending') return false
@@ -114,7 +125,7 @@ function BidsOverview() {
         <input type="search" className="cbp-input" placeholder="№ тендера, объект, организация, ИНН…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Поиск" />
         <select className="cbp-input" value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Отбор">
           <option value="all">Все</option>
-          <option value="open">Только открытые тендеры</option>
+          <option value="open">Только идёт приём предложений</option>
           <option value="priced">Только с ценами</option>
           <option value="pending">Заявки ждут решения</option>
         </select>
@@ -122,7 +133,7 @@ function BidsOverview() {
       </div>
       {error && <div className="cbp-error">Не загрузилось: {error}</div>}
       {list.length === 0 ? (
-        <div className="cbp-state">{rows.length ? 'Ничего не нашлось.' : 'Подрядчики пока ничего не расценили на сайте.'}</div>
+        <div className="cbp-state">{rows.length ? 'Ничего не нашлось.' : 'По актуальным тендерам подрядчики пока ничего не расценили на сайте.'}</div>
       ) : (
         <div className="cbp-table-wrap">
           <table className="cbp-table">
@@ -193,7 +204,7 @@ function BidDetail({ row, onClose }) {
   const shown = (rates || []).filter((r) => (kind === 'form' ? false : r.kind === kind))
   const answers = Object.values(form?.answers || {})
   const exportExcel = async () => {
-    const { downloadRatesWorkbook } = await import('../utils/bidExport')
+    const { downloadRatesWorkbook } = await import('../../utils/bidExport')
     downloadRatesWorkbook({ row, rates: rates || [], form })
   }
 
@@ -263,6 +274,91 @@ function BidDetail({ row, onClose }) {
         </div>
       </aside>
     </div>
+  )
+}
+
+// ── Позиции ──────────────────────────────────────────────────────────────────────────────────────────
+const POSITIONS_PAGE = 100
+
+function BidPositions() {
+  const [kind, setKind] = useState('material')
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounced(search, 400)
+  const [page, setPage] = useState(0)
+  const [data, setData] = useState(null) // { rows, count } | null — загрузка
+  const [missing, setMissing] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { setPage(0) }, [kind, debouncedSearch])
+  useEffect(() => {
+    let cancelled = false
+    setError('')
+    loadCurrentBidRates({ kind, search: debouncedSearch, page, pageSize: POSITIONS_PAGE })
+      .then((res) => {
+        if (cancelled) return
+        if (res === null) { setMissing(true); setData({ rows: [], count: 0 }); return }
+        setData(res)
+      })
+      .catch((e) => { if (!cancelled) { setError(e.message || String(e)); setData({ rows: [], count: 0 }) } })
+    return () => { cancelled = true }
+  }, [kind, debouncedSearch, page])
+
+  if (missing) return <div className="cbp-state">{BIDS_MIGRATION_HINT}</div>
+  const pages = data ? Math.max(1, Math.ceil(data.count / POSITIONS_PAGE)) : 1
+  return (
+    <>
+      <div className="cbp-filters">
+        <input type="search" className="cbp-input" placeholder="Наименование позиции…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Поиск по наименованию" />
+        <select className="cbp-input" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Вид">
+          <option value="material">Материалы</option>
+          <option value="work">Работы</option>
+        </select>
+        {data && <span className="cbp-muted">Найдено: {data.count}</span>}
+      </div>
+      {error && <div className="cbp-error">Не загрузилось: {error}</div>}
+      {!data ? (
+        <div className="cbp-state">Загрузка…</div>
+      ) : data.rows.length === 0 ? (
+        <div className="cbp-state">{debouncedSearch ? 'Ничего не нашлось.' : 'Цен по актуальным тендерам пока нет.'}</div>
+      ) : (
+        <>
+          <div className="cbp-table-wrap">
+            <table className="cbp-table">
+              <thead>
+                <tr>
+                  <th>Наименование</th><th>Ед. изм.</th><th className="num">Объём</th><th className="num">Цена за ед., ₽</th>
+                  <th className="num">Сумма, ₽</th><th>Подрядчик</th><th>Тендер</th><th>Изменено</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.name}{r.note && <span className="cbp-sub">{r.note}</span>}</td>
+                    <td>{r.unit || '—'}</td>
+                    <td className="num">{fmtVolume(r.volume)}</td>
+                    <td className="num cbp-strong">{money(r.price)}</td>
+                    <td className="num">{money(r.total)}</td>
+                    <td>{r.counterparties?.name || '—'}</td>
+                    <td>
+                      <Link to={`/tenders/${r.tender_id}`}>№ {r.tenders?.public_tender_number ?? '—'}</Link>
+                      <span className="cbp-sub cbp-clamp">{r.tenders?.work_description}</span>
+                    </td>
+                    <td className="cbp-date">{fmtDateTime(r.updated_at)}<span className="cbp-sub">{SOURCE[r.source] || r.source}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {pages > 1 && (
+            <div className="cbp-pager">
+              <button type="button" className="cbp-btn" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Назад</button>
+              <span className="cbp-muted">Страница {page + 1} из {pages}</span>
+              <button type="button" className="cbp-btn" disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)}>Вперёд</button>
+            </div>
+          )}
+        </>
+      )}
+    </>
   )
 }
 

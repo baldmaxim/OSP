@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { db } from '../api'
+import { useRole } from '../contexts/RoleContext'
 import FilterDropdown from '../components/FilterDropdown'
 import LarixRegistrySection from './LarixRegistrySection'
 import {
@@ -9,11 +10,17 @@ import {
 } from '../utils/ratesRegistry'
 import './RatesRegistryPage.css'
 
+// Цены подрядчиков из кабинета по идущим тендерам (миграция 20261102) — только администратору.
+const ContractorBidsSection = lazy(() => import('../components/contractor/ContractorBidsSection'))
+
 // task 356/354/411: «Реестр расценок» — общий список расценок из разных источников.
 //   1) От подрядчиков (КП) — представление kp_rates_registry (дедуп на стороне БД).
 //   2) ДП и ДС — в разработке. 3) Снабжение СУ-10 — supply_rates_registry.
 //   4) Договорные расценки (Larix) — таблица larix_contract_rates, загрузка из Larix.CPM раз в день
 //      (server/osp-api/src/lib/larixSync.js), вкладка — LarixRegistrySection.
+//   5) Расценки подрядчиков (актуальные тендеры) — цены из кабинета подрядчика по тендерам, которые ещё идут
+//      (tender_bid_rates), только администратору — ContractorBidsSection. После завершения тендера они попадают
+//      в «От подрядчиков (КП)» (миграция 20261103). Ссылка на вкладку — /rates-registry?tab=bids.
 //
 // task 411: всё серверное — пагинация (.range + count), фильтры (.eq/.gte/.lte),
 // поиск (.ilike по триграммному индексу), сортировка (.order). В браузер грузится
@@ -385,8 +392,15 @@ function SupplyRegistrySection() {
   )
 }
 
+const TOP_TABS = ['kp', 'bids', 'dp_ds', 'supply', 'larix']
+
 function RatesRegistryPage() {
-  const [topTab, setTopTab] = useState('kp')          // 'kp' | 'dp_ds' | 'supply' | 'larix'
+  const { isAdmin } = useRole()
+  const [searchParams] = useSearchParams()
+  const [topTab, setTopTab] = useState(() => {
+    const t = searchParams.get('tab')
+    return TOP_TABS.includes(t) && (t !== 'bids' || isAdmin) ? t : 'kp'
+  })                                                   // 'kp' | 'bids' | 'dp_ds' | 'supply' | 'larix'
   const [kindTab, setKindTab] = useState('materials') // 'materials' | 'works'
 
   // Фильтры. Объект/Подрядчик/Тендер — множественный выбор (пустой массив = не применён).
@@ -674,7 +688,7 @@ function RatesRegistryPage() {
             20260902) и обновляется по расписанию. Кнопка — чтобы не ждать
             расписания после загрузки новых КП. У вкладки Larix свои данные и своя
             отметка свежести (загрузка раз в день) — там этот блок не показываем. */}
-        {topTab !== 'larix' && (
+        {topTab !== 'larix' && topTab !== 'bids' && (
           <>
             <div className="rr-refresh">
               <span className="rr-refresh-stamp">
@@ -702,6 +716,13 @@ function RatesRegistryPage() {
           onClick={() => setTopTab('kp')}>
           Расценки от подрядчиков (КП)
         </button>
+        {isAdmin && (
+          <button type="button" role="tab" aria-selected={topTab === 'bids'}
+            className={`rr-top-tab ${topTab === 'bids' ? 'active' : ''}`}
+            onClick={() => setTopTab('bids')}>
+            Расценки подрядчиков (актуальные тендеры)
+          </button>
+        )}
         <button type="button" role="tab" aria-selected={topTab === 'dp_ds'}
           className={`rr-top-tab ${topTab === 'dp_ds' ? 'active' : ''}`}
           onClick={() => setTopTab('dp_ds')}>
@@ -731,6 +752,10 @@ function RatesRegistryPage() {
         <SupplyRegistrySection />
       ) : topTab === 'larix' ? (
         <LarixRegistrySection />
+      ) : topTab === 'bids' ? (
+        <Suspense fallback={<div className="rr-stub-hint">Загрузка…</div>}>
+          <ContractorBidsSection />
+        </Suspense>
       ) : (
         <>
           {/* Фильтры — все применяются на стороне БД */}

@@ -16,7 +16,6 @@ import {
   IconDcRequest,
   IconDocCheck,
   IconRates,
-  IconContractorBids,
   IconReports,
   IconAdmin,
   IconProfile,
@@ -222,15 +221,6 @@ function Sidebar() {
       Icon: IconRates,
       // task 356: Реестр расценок — общий список расценок из всех источников.
       visible: canView('rates_registry'),
-    },
-    {
-      key: 'contractor-bids',
-      to: '/contractor-bids',
-      label: 'Расценки подрядчиков',
-      tone: 'teal',
-      Icon: IconContractorBids,
-      // Цены и анкеты из кабинета подрядчика (миграция 20261102) — пока только администратору.
-      visible: isAdmin,
     },
     {
       key: 'reports',

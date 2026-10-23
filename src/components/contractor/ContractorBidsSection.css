@@ -1,8 +1,8 @@
-/* «Расценки подрядчиков» (/contractor-bids): сводка цен и анкет из кабинета подрядчика и поля анкеты. */
+/* Реестр расценок → «Расценки подрядчиков (актуальные тендеры)»: сводка цен и анкет из кабинета подрядчика,
+   позиции и поля анкеты. */
 
-.cbp-page { display: flex; flex-direction: column; gap: 1rem; padding: 1.25rem 1.5rem 2rem; }
-.cbp-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; }
-.cbp-head h1 { margin: 0 0 0.25rem; font-size: 1.25rem; line-height: 1.75rem; }
+.cbp-section { display: flex; flex-direction: column; gap: 0.85rem; padding-top: 0.75rem; }
+.cbp-pager { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
 .cbp-muted { margin: 0; color: var(--text-tertiary); font-size: 0.8125rem; line-height: 1.45; }
 .cbp-muted a { color: var(--primary-color); }
 .cbp-state { padding: 2rem 1rem; text-align: center; color: var(--text-tertiary); font-size: 0.875rem; }
@@ -170,7 +170,6 @@
 .cbp-field-add { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto auto; gap: 0.4rem; padding-left: 1.5rem; }
 
 @media (max-width: 640px) {
-  .cbp-page { padding: 0.75rem; }
   .cbp-field-inputs, .cbp-field-add, .cbp-answers > div { grid-template-columns: 1fr; }
   .cbp-field-add { padding-left: 0; }
 }
