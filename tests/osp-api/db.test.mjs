@@ -259,6 +259,18 @@ describe('osp-api: обёртка транзакции — единственн�
     } finally { await secondOk.close() }
   })
 
+  it('зависшая проверка нового соединения закрывает его и отвечает 503', async () => {
+    const db = open({ max: 1, connectionTimeoutMs: 200, recoveryProbe: () => new Promise(() => {}) })
+    try {
+      const started = Date.now()
+      await assert.rejects(db.read(null, (tx) => tx.query('select 1')), (e) => e.code === 'OSP_UNAVAILABLE')
+      const spent = Date.now() - started
+      assert.ok(spent < 1500, `ответ за ${spent} мс`)
+      assert.equal(db.stats().waiting, 0)
+      assert.equal(db.stats().total, 0)
+    } finally { await db.close() }
+  })
+
   it('без строки подключения и с недопустимым именем роли обёртка не создаётся', () => {
     assert.throws(() => createDb({}), /не задана строка подключения/)
     assert.throws(() => createDb({ url, secondLockRole: 'authenticated; drop' }), /недопустимое имя роли/)

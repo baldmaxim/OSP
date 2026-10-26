@@ -7,6 +7,7 @@
 #   bash deploy.sh covers-copy <копия>.covers.csv  # обложки объектов из Supabase — в cloud.ru, журнал сверки
 #   bash deploy.sh larix probe | sync [--force] [--target db|supabase]  # договорные расценки из Larix.CPM
 #   bash deploy.sh api-restart                 # пересоздать API того же выпуска (перечитать secrets/osp-api.env)
+#   bash deploy.sh postgrest-restart           # пересоздать только PostgREST (перечитать secrets/postgrest.env)
 #   bash deploy.sh auth-config                 # режим входа, который отдаёт API (/api/auth/config)
 #
 # Каталог выпуска собирает deploy/docker/build.sh на машине сборки; на сервере ничего не собирается.
@@ -113,24 +114,30 @@ healthy() {
 }
 
 
-# Журнал API переживает замену контейнера. Хвост не больше 20 МБ, в каталоге — 10 последних файлов.
+# Журнал службы переживает замену контейнера. Хвост не больше 20 МБ, в каталоге — 10 последних файлов.
 # Ошибка сохранения не останавливает выкладку: контейнер всё равно надо заменить.
-save_api_logs() {
-  local tag="${1:-}"
-  [ -n "$tag" ] || return 0
+save_service_logs() {
+  local tag="${1:-}" service="${2:-}"
+  [ -n "$tag" ] && [ -n "$service" ] || return 0
+  case "$service" in
+    osp-api|osp-postgrest) ;;
+    *) return 0 ;;
+  esac
   local dir="$OSP_HOME/logs" out
   mkdir -p "$dir"
   chmod 700 "$dir"
-  out="$dir/osp-api-$(date -u +%Y%m%d-%H%M%S).log"
-  dc "$tag" logs --no-color --tail 50000 osp-api > "$out" 2>&1 || true
+  out="$dir/${service}-$(date -u +%Y%m%d-%H%M%S).log"
+  dc "$tag" logs --no-color --tail 50000 "$service" > "$out" 2>&1 || true
   if [ -f "$out" ]; then
     tail -c 20971520 "$out" > "$out.part" && mv -f "$out.part" "$out"
     chmod 600 "$out"
   fi
   local -a old=()
-  mapfile -t old < <(find "$dir" -maxdepth 1 -type f -name 'osp-api-*.log' -printf '%T@ %p\n' | sort -rn | awk 'NR>10 { print $2 }')
+  mapfile -t old < <(find "$dir" -maxdepth 1 -type f -name "${service}-*.log" -printf '%T@ %p\n' | sort -rn | awk 'NR>10 { print $2 }')
   if [ "${#old[@]}" -gt 0 ]; then rm -f -- "${old[@]}"; fi
 }
+
+save_api_logs() { save_service_logs "$1" osp-api; }
 
 switch_to() { # switch_to <метка>; при отказе — назад на прежнюю
   local target="$1" before
@@ -175,6 +182,16 @@ case "${1:-}" in
     [ -n "$cur" ] || die "портал не выложен"
     save_api_logs "$cur"
     dc "$cur" up -d --no-deps --force-recreate osp-api
+    healthy "$cur"
+    ;;
+
+  postgrest-restart)
+    # Срок жизни пула PostgREST читается при создании контейнера. Сайт и API не пересоздаются.
+    preflight
+    cur="$(release_of current)"
+    [ -n "$cur" ] || die "портал не выложен"
+    save_service_logs "$cur" osp-postgrest
+    dc "$cur" up -d --no-deps --force-recreate osp-postgrest
     healthy "$cur"
     ;;
 
@@ -284,7 +301,7 @@ case "${1:-}" in
     ;;
 
   *)
-    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | api-restart | auth-config | covers-copy <копия>.covers.csv | larix probe|sync" >&2
+    echo "Использование: bash deploy.sh install <каталог выпуска> | rollback | status | api-restart | postgrest-restart | auth-config | covers-copy <копия>.covers.csv | larix probe|sync" >&2
     exit 1
     ;;
 esac

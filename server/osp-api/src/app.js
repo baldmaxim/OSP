@@ -406,7 +406,7 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     }
     if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: err.message })
     if (dbUnavailable(err) || dbUnavailable(err?.cause)) {
-      request.log.error({ route: request.routeOptions?.url, code: String(err?.code || err?.cause?.code || '') }, 'db unavailable')
+      request.log.error({ route: request.routeOptions?.url, code: String(err?.code || err?.cause?.code || 'CONNECT') }, 'db unavailable')
       return reply.code(503).send({ error: DB_UNAVAILABLE_TEXT, code: DB_UNAVAILABLE })
     }
     request.log.error({ route: request.routeOptions?.url, msg: err.message }, 'unhandled')

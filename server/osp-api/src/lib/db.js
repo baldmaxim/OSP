@@ -14,7 +14,9 @@
 //   • первая ошибка «не мастер» или реплика на новом подключении выводит из работы все соединения,
 //     открытые раньше: их закрывают при выдаче и при возврате, запросы уже в работе не обрываются;
 //   • база не ответила дольше срока команды — сокет закрывается и слот пула освобождается
-//     (серверный statement_timeout до мёртвого сокета не доходит);
+//     (серверный statement_timeout до мёртвого сокета не доходит); проверка нового соединения
+//     ограничена тем же способом, сроком подключения, и в работу не берётся, пока висит;
+//   • обрыв связи без кода SQLSTATE (текст драйвера) — тот же ответ «недоступна», что и код 08;
 //   • соединение живёт не дольше maxLifetimeSeconds, даже если простой так и не наступил.
 //   • запрос — одна параметризованная команда: несколько команд в одной строке сервер не примет;
 //   • подключений не больше max: учётка базы общая с другими системами, у неё общий лимит;
@@ -57,17 +59,45 @@ export const DB_DEFAULTS = {
 export const DB_UNAVAILABLE = 'OSP_UNAVAILABLE'
 export const DB_UNAVAILABLE_TEXT = 'Сервис временно недоступен, повторите через минуту'
 const WATCHDOG_CODE = 'OSP_DB_WATCHDOG'
+const CONNECT_CODES = new Set([
+  'ECONNRESET', 'ETIMEDOUT', 'EPIPE',
+  'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH',
+])
+// node-postgres 8.23 / pg-pool 3.14 бросают эти тексты без SQLSTATE. «Connection terminated»
+// короче двух соседних, поэтому сравнивается целиком, остальные — с него и начинаются.
+const CONNECT_MESSAGES = [
+  'Connection terminated unexpectedly',
+  'Connection terminated due to connection timeout',
+  'timeout exceeded when trying to connect',
+  'Client has encountered a connection error and is not queryable',
+  'Client was closed and is not queryable',
+]
+
+function messageIsConnect(err) {
+  const message = String(err?.message || '')
+  if (message === 'Connection terminated') return true
+  return CONNECT_MESSAGES.some((text) => message === text || message.startsWith(`${text} `) || message.startsWith(`${text}:`))
+}
 
 // База недоступна или это не мастер: такое соединение в пул не возвращается.
-// 25006 — запись на реплике; 57P01–57P03 — сервер закрывается; 08* — обрыв сеанса.
+// 25006 — запись на реплике; 57P01–57P03 — сервер закрывается; 08* и коды сокета — обрыв сеанса.
+// Обычная ошибка запроса (23505, 57014) сюда не входит: у неё есть свой код, текста связи нет.
 export function dbUnavailable(err) {
-  const code = String(err?.code || '')
-  if (!code) return false
+  if (!err || typeof err !== 'object') return false
+  const code = String(err.code || '')
   if (code === DB_UNAVAILABLE || code === WATCHDOG_CODE) return true
   if (code === '25006' || code === '57P01' || code === '57P02' || code === '57P03') return true
   if (code.startsWith('08')) return true
-  if (code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'EPIPE') return true
+  if (CONNECT_CODES.has(code)) return true
+  if (!code && messageIsConnect(err)) return true
   return false
+}
+
+function failureCode(err) {
+  const code = String(err?.code || err?.cause?.code || '')
+  if (code) return code
+  if (messageIsConnect(err) || messageIsConnect(err?.cause)) return 'CONNECT'
+  return ''
 }
 
 function dbNotMaster(err) {
@@ -167,6 +197,25 @@ export function createDb(options) {
     return res.rows[0]?.r === true
   }
 
+  // Пулер принимает сокет сразу и может не ответить на проверку. Срок — тот же, что у подключения:
+  // сокет закрывается, слот освобождается, попытка считается неудачной.
+  function probeRecovery(client) {
+    const budget = Number(o.connectionTimeoutMs) > 0 ? Number(o.connectionTimeoutMs) : DB_DEFAULTS.connectionTimeoutMs
+    let timer
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const err = new Error('osp-api: база не ответила, подключение закрыто')
+        err.code = WATCHDOG_CODE
+        abandon(client, err)
+        reject(err)
+      }, budget)
+      timer.unref?.()
+    })
+    const work = inRecovery(client)
+    work.catch(() => {})
+    return Promise.race([work, timeout]).finally(() => clearTimeout(timer))
+  }
+
   function unavailable() {
     const err = new Error(DB_UNAVAILABLE_TEXT)
     err.code = DB_UNAVAILABLE
@@ -179,7 +228,14 @@ export function createDb(options) {
   async function acquire() {
     let probes = 0
     for (let n = 0; n < o.max + 3; n++) {
-      const client = await pool.connect()
+      let client
+      try {
+        client = await pool.connect()
+      } catch (err) {
+        log.warn({ code: failureCode(err) }, 'db acquire failed')
+        if (dbUnavailable(err) || dbUnavailable(err?.cause)) throw unavailable()
+        throw err
+      }
       if (stale(client)) {
         drop(client, Object.assign(new Error('osp-api: соединение прошлого поколения'), { code: 'OSP_DB_STALE' }))
         continue
@@ -188,12 +244,13 @@ export function createDb(options) {
       probes += 1
       let recovering = false
       try {
-        recovering = await inRecovery(client)
+        recovering = await probeRecovery(client)
       } catch (err) {
         drop(client, err)
         if (dbNotMaster(err)) retire()
-        log.warn({ code: String(err?.code || '') }, 'db acquire failed')
-        if (!dbUnavailable(err) || probes >= 2) throw dbUnavailable(err) ? unavailable() : err
+        log.warn({ code: failureCode(err) }, 'db acquire failed')
+        if (!dbUnavailable(err) && !dbUnavailable(err?.cause)) throw err
+        if (probes >= 2) throw unavailable()
         continue
       }
       lastRecovery = recovering
