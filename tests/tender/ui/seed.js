@@ -779,3 +779,132 @@ if (CONTRACTS > 0) {
     s3_key: `contracts/${c.id}/ps.pdf`, mime_type: 'application/pdf', size_bytes: 1000, created_at: '2026-09-02T10:00:00Z',
   })))
 }
+
+// ── «Проверка КП» (?route=/kp-review&kpReview=1) ─────────────────────────────────────────────────────────
+// Шесть тендеров всех направлений, в каждом 1–4 КП, все семь этапов проверки. У тендера «Благоустройство двора»
+// нет номера и направления — отдел берётся по статусу объекта. План затрат: ссылка, «Завершён» без ссылки, стадии.
+// Встраивания (s3, counterparties, tenders) лежат в строках, файлы КП — в хранилище стенда (window.__fakeFiles).
+// kpReviewMany=N — ещё N КП на N/4 тендерах (длинный список, виртуализация).
+// kpRole: super — суперпользователь (ручная установка этапа), engineer — инженер (отметки, без проверки),
+// viewer — без прав (только просмотр); без параметра — администратор стенда.
+if (params.get('kpReview') === '1') {
+  const fdb = window.__fakeDb
+  const person = (fullName) => (fullName ? { full_name: fullName } : null)
+  const objNorth = { name: 'ЖК «Северный квартал»', status: 'main_construction' }
+  const objNurly = { name: 'Бизнес-центр «Нурлы»', status: 'warranty_service' }
+  const tender = (id, fields) => ({
+    id, object_id: 'obj-1', objects: objNorth, folder_path: null, cost_plan_link: null, cost_plan_status: null,
+    responsible_contact: null, cost_plan_responsible: null, ...fields,
+  })
+  const kt = {
+    1: tender('kt-1', { public_tender_number: 412, department: 'construction',
+      work_description: 'Устройство кровли корпуса 2 с утеплением и организованным водостоком',
+      folder_path: '\\\\su10-fs\\Тендеры\\ЖК Северный квартал\\412 Кровля',
+      cost_plan_link: 'https://docs.example.ru/plans/412', cost_plan_status: 'in_progress',
+      responsible_contact: person('Архипов Антон Михайлович'), cost_plan_responsible: person('Крюкова Юлия Денисовна') }),
+    2: tender('kt-2', { public_tender_number: 415, department: 'warranty', object_id: 'obj-2', objects: objNurly,
+      work_description: 'Ремонт примыканий фасада по гарантийному обращению', cost_plan_status: 'completed',
+      responsible_contact: person('Сейткали Айгерим Нурлановна') }),
+    3: tender('kt-3', { public_tender_number: 420, department: 'joint',
+      work_description: 'Наружные сети водоснабжения и канализации', folder_path: '\\\\su10-fs\\Тендеры\\Совместные\\420 НВК',
+      cost_plan_status: 'awaiting_kp', responsible_contact: person('Архипов Антон Михайлович'),
+      cost_plan_responsible: person('Крюкова Юлия Денисовна') }),
+    4: tender('kt-4', { public_tender_number: 377, department: 'other', object_id: 'obj-2', objects: objNurly,
+      work_description: 'Поставка и монтаж лифтового оборудования (6 лифтов), пусконаладка и сдача в Ростехнадзор',
+      cost_plan_link: 'https://docs.example.ru/plans/377', cost_plan_status: 'completed',
+      cost_plan_responsible: person('Крюкова Юлия Денисовна') }),
+    5: tender('kt-5', { public_tender_number: null, department: null, work_description: 'Благоустройство двора',
+      responsible_contact: person('Архипов Антон Михайлович') }),
+    6: tender('kt-6', { public_tender_number: 431, department: 'construction',
+      work_description: 'Выполнение комплекса работ по устройству внутренних инженерных систем отопления, вентиляции и кондиционирования воздуха в корпусах 1–3',
+      folder_path: '\\\\su10-fs\\Тендеры\\ЖК Северный квартал\\431 ОВиК',
+      cost_plan_link: 'https://docs.example.ru/plans/431', cost_plan_status: 'in_progress',
+      responsible_contact: person('Крюкова Юлия Денисовна'), cost_plan_responsible: person('Архипов Антон Михайлович') }),
+  }
+  // Этап → поля (как STAGE_FIELDS в src/utils/kpReviewStages.js) с отметками «кто и когда».
+  const reviewed = (by, at) => ({ reviewed_by: by, reviewed_at: at })
+  const stage = {
+    pending: () => ({ review_status: 'pending' }),
+    ok_summary: (by, at) => ({ review_status: 'approved', ...reviewed(by, at) }),
+    ok_done: (by, at) => ({ review_status: 'approved', ...reviewed(by, at),
+      summary_added: true, summary_added_by: by, summary_added_at: at }),
+    remarks_work: (by, at, note) => ({ review_status: 'has_remarks', review_note: note, ...reviewed(by, at) }),
+    remarks_sent: (by, at, note) => ({ review_status: 'has_remarks', review_note: note, ...reviewed(by, at),
+      summary_added: true, summary_added_by: 'Архипов Антон Михайлович', summary_added_at: at,
+      remarks_sent: true, remarks_sent_by: 'Архипов Антон Михайлович', remarks_sent_at: at }),
+    nosend_summary: (by, at, note) => ({ review_status: 'has_remarks', review_note: note, remarks_send_required: false, ...reviewed(by, at) }),
+    nosend_done: (by, at, note) => ({ review_status: 'has_remarks', review_note: note, remarks_send_required: false,
+      ...reviewed(by, at), summary_added: true, summary_added_by: by, summary_added_at: at }),
+  }
+  const files = {}
+  const kp = (id, t, cpName, fileName, createdAt, fields = {}) => {
+    const key = `tenders/${t.id}/${id}-${fileName}`
+    files[key] = `data:application/octet-stream;base64,${btoa(unescape(encodeURIComponent(`КП ${id}`)))}`
+    return {
+      id, tender_id: t.id, counterparty_id: `kcp-${cpName}`, file_kind: 'commercial_proposal', review_required: true,
+      version_label: null, created_at: createdAt, review_status: 'pending', review_note: null, reviewed_at: null, reviewed_by: null,
+      remarks_send_required: true, remarks_sent: false, remarks_sent_at: null, remarks_sent_by: null,
+      summary_added: false, summary_added_at: null, summary_added_by: null, review_note_s3: null,
+      s3: { id: `s3-${id}`, s3_key: key, file_name: fileName, size_bytes: 1000, created_at: createdAt, uploaded_by_name: 'Архипов А. М.' },
+      counterparties: { name: cpName }, tenders: t, ...fields,
+    }
+  }
+  const longNote = 'Не учтены пароизоляция и примыкания к парапетам; расценки на утеплитель завышены на 18–25 % '
+    + 'относительно рынка; нет разбивки на материалы и работы в разделе 3; срок действия КП истекает 30.10.2026.'
+  const rows = [
+    kp('kp-1', kt[1], 'ООО «Альфа-Кровля»', 'КП_Альфа-Кровля_кровля_корпус2_финал.xlsx', '2026-10-24T09:12:00Z'),
+    kp('kp-2', kt[1], 'ТОО «СтройМонтаж-Инжиниринг Казахстан»', 'Коммерческое предложение СМИК от 23.10.2026 (с НДС).pdf',
+      '2026-10-23T15:40:00Z', { ...stage.remarks_work('Петрова Анна Сергеевна', '2026-10-24T11:00:00Z', longNote),
+        summary_added: true, summary_added_by: 'Крюкова Юлия Денисовна', summary_added_at: '2026-10-24T12:00:00Z',
+        review_note_s3: { id: 's3-rem-2', s3_key: 'tenders/kt-1/rem-2.docx', file_name: 'Замечания к КП СМИК, кровля корпуса 2.docx' } }),
+    kp('kp-3', kt[1], 'ИП Жумабеков Р. К.', 'КП.xlsx', '2026-10-22T11:05:00Z', stage.ok_summary('Петрова Анна Сергеевна', '2026-10-23T09:30:00Z')),
+    kp('kp-4', kt[1], 'ООО «Альфа-Кровля»', 'КП_Альфа-Кровля_кровля_корпус2.xlsx', '2026-10-20T08:00:00Z', { version_label: 'исходное' }),
+    kp('kp-5', kt[2], 'ООО «Фасад Сервис»', 'КП Фасад Сервис.xlsx', '2026-10-21T10:30:00Z',
+      stage.nosend_summary('Смирнов Д. В.', '2026-10-22T10:00:00Z', 'Нет НДС в итоговой сумме.')),
+    kp('kp-6', kt[2], 'ТОО «Аквастрой»', 'Аквастрой_КП_гарантия.xlsx', '2026-10-25T07:45:00Z'),
+    kp('kp-7', kt[3], 'ТОО «Аквастрой»', 'КП НВК Аквастрой.xlsx', '2026-10-15T12:00:00Z',
+      stage.remarks_sent('Петрова Анна Сергеевна', '2026-10-16T10:00:00Z', 'Пересчитать объёмы колодцев по ВОР ред. 2.')),
+    kp('kp-8', kt[4], 'ООО «ЛифтТехМонтаж»', 'ЛТМ_КП_лифты_6шт.pdf', '2026-10-12T09:00:00Z', stage.ok_done('Смирнов Д. В.', '2026-10-13T09:00:00Z')),
+    kp('kp-9', kt[4], 'ТОО «Отис-Сервис Центральная Азия»', 'КП лифты.xlsx', '2026-10-13T09:00:00Z',
+      stage.ok_summary('Смирнов Д. В.', '2026-10-14T09:00:00Z')),
+    kp('kp-10', kt[4], 'ООО «КМЗ Лифт»', 'КП_КМЗ.xlsx', '2026-10-14T09:00:00Z',
+      stage.nosend_done('Петрова Анна Сергеевна', '2026-10-15T09:00:00Z', 'Срок поставки не согласован — уточнить на переговорах.')),
+    kp('kp-11', kt[5], 'ИП Ахметов', 'КП благоустройство.xlsx', '2026-10-19T16:20:00Z'),
+    kp('kp-12', kt[6], 'ТОО «Климат Про»', 'КП ОВиК Климат Про.xlsx', '2026-10-25T10:00:00Z'),
+    kp('kp-13', kt[6], 'ООО «Термотехника»', 'Термотехника КП ОВиК корп1-3.xlsx', '2026-10-24T14:00:00Z', { version_label: 'после переторжки' }),
+    kp('kp-14', kt[6], 'ООО «Термотехника»', 'Термотехника КП ОВиК.xlsx', '2026-10-18T14:00:00Z', {
+      ...stage.remarks_work('analyst@example.invalid', '2026-10-19T10:00:00Z', 'Нет расценок на балансировку систем.'), version_label: 'исходное' }),
+    kp('kp-15', kt[6], 'ТОО «ВентМонтаж»', 'ВМ_КП.xlsx', '2026-10-17T10:00:00Z', stage.ok_done('Смирнов Д. В.', '2026-10-18T10:00:00Z')),
+  ]
+  const many = Number(params.get('kpReviewMany') || 0)
+  const depts = ['construction', 'warranty', 'other', 'joint']
+  const stages = Object.keys(stage)
+  for (let i = 0; i < many; i++) {
+    const g = Math.floor(i / 4)
+    const t = tender(`ktm-${g}`, { public_tender_number: 600 + g, department: depts[g % 4],
+      work_description: `Тендер для длинного списка № ${600 + g}: отделочные работы секции ${g + 1}`,
+      responsible_contact: person('Архипов Антон Михайлович') })
+    const at = new Date(Date.UTC(2026, 8, 1) + i * 3600000).toISOString()
+    rows.push(kp(`kpm-${i}`, t, `Подрядчик ${String((i % 9) + 1).padStart(2, '0')}`, `КП ${i}.xlsx`, at,
+      stage[stages[i % stages.length]]('Смирнов Д. В.', at, 'Замечание')))
+  }
+  fdb.tender_proposal_files = rows
+  window.__fakeFiles = { ...(window.__fakeFiles || {}), ...files }
+
+  const role = params.get('kpRole')
+  if (role) {
+    window.__fakeRole = {
+      role: role === 'super' ? 'admin' : role === 'engineer' ? 'engineer' : 'manager',
+      isAdmin: role === 'super',
+      isSuperAdmin: role === 'super',
+      isEmployee: true,
+      isContractor: false,
+      isLoggedIn: true,
+      canEdit: () => role !== 'viewer',
+      user: { id: 'user-1', email: 'test@example.invalid' },
+      canView: () => true,
+      scopedObjectIds: [],
+      userProfile: { full_name: 'Стендов Стенд Стендович' },
+    }
+  }
+}

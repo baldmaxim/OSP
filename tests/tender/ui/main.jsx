@@ -5,7 +5,8 @@
 //             publicNoContact=1 — колонок ответственного ещё нет, как до миграции 20261101);
 //             /general/departments (отделы; departments=missing — таблицы ещё нет), /tasks?task=task-1 (карточка
 //             задачи с чек-листом; taskChecklist=N — ещё N пунктов, taskList=N — ещё N задач), /stand/dgp (блок ДГП вкладки «Смета» объекта), /reports&dcStats=1 (заявки на ДС),
-//             /contracts&contracts=N (реестр «Договоры и ДС», понятийные соглашения);
+//             /contracts&contracts=N (реестр «Договоры и ДС», понятийные соглашения),
+//             /kp-review&kpReview=1 («Проверка КП»; kpReviewMany=N — длинный список, kpRole — роль, см. seed.js);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -39,6 +40,8 @@ import TasksPage from '../../../src/pages/TasksPage'
 const DgpStand = lazy(() => import('./dgp-stand.jsx'))
 // Реестр договоров — так же: его стили (ContractRegistry*.css, MobileCards.css) глобальные.
 const ContractsPage = lazy(() => import('../../../src/pages/ContractsPage'))
+// «Проверка КП» — так же: стили страницы и рабочего слоя (workUi.css) не должны задеть другие стенды.
+const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -68,6 +71,7 @@ const routes = (
     <Route path="/public/tenders" element={<PublicTendersPage />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
     <Route path="/contracts" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
+    <Route path="/kp-review" element={<Suspense fallback={null}><KpReviewPage /></Suspense>} />
     <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />
     <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />
   </Routes>
