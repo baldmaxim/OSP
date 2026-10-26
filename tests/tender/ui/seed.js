@@ -604,6 +604,27 @@ if (params.get('kpStats') === '1') {
   fdb.tender_proposal_files = rows
 }
 
+// ── Файлы участников карточки tender-1 (tcFiles=1) — «Скачать всё» в ячейке «КП / Документы» ─────────────
+// У «Подрядчик 01» две версии одного КП и документ, у «Подрядчик 02» — одно КП, у остальных файлов нет.
+// Встраивание s3 лежит в строках, содержимое файлов — в хранилище стенда (window.__fakeFiles).
+if (params.get('tcFiles') === '1') {
+  const file = (id, counterpartyId, name, extra = {}) => {
+    const key = `tenders/tender-1/${id}-${name}`
+    window.__fakeFiles = { ...(window.__fakeFiles || {}),
+      [key]: `data:application/octet-stream;base64,${btoa(unescape(encodeURIComponent(`содержимое ${name}`)))}` }
+    const createdAt = extra.created_at || '2026-10-20T10:00:00Z'
+    return { id, tender_id: 'tender-1', counterparty_id: counterpartyId, file_kind: 'commercial_proposal', proposal_group_id: null,
+      version_label: null, review_required: false, created_at: createdAt, ...extra,
+      s3: { id: `s3-${id}`, s3_key: key, file_name: name, size_bytes: name.length, created_at: createdAt, uploaded_by_name: 'Иванов И. И.' } }
+  }
+  window.__fakeDb.tender_proposal_files.push(
+    file('tpf-1', 'cp-1', 'КП Подрядчик 01.xlsx', { proposal_group_id: 'g-1', version_label: 'исходное', created_at: '2026-10-18T10:00:00Z' }),
+    file('tpf-2', 'cp-1', 'КП Подрядчик 01.xlsx', { proposal_group_id: 'g-1', created_at: '2026-10-21T10:00:00Z' }),
+    file('tpf-3', 'cp-1', 'Выписка ЕГРЮЛ.pdf', { file_kind: 'attachment' }),
+    file('tpf-4', 'cp-2', 'КП Подрядчик 02.xlsx', { proposal_group_id: 'g-2' }),
+  )
+}
+
 // Публичная страница тендеров (/public/tenders) читает только представление public_open_tenders (20261016,
 // ответственный — 20261101). № 369 — с ответственным и телефоном; № 370 — без ответственного, в ссылках
 // javascript: (ссылками не становятся); № 371 — внутренний номер (не ссылка на звонок) и сетевой путь вместо
@@ -680,6 +701,20 @@ window.__fakeDb.task_checklist_items = [
   { id: 'chk-2', task_id: 'task-1', title: 'Сверить объёмы', is_done: true, sort_order: 10, created_at: '2026-10-20T10:02:00Z' },
   { id: 'chk-3', task_id: 'task-1', title: 'Отправить на согласование', is_done: false, sort_order: 10, created_at: '2026-10-20T10:03:00Z' },
 ]
+// taskChecklist=N — ещё пункты после трёх (chk-4 …): чек-лист длиннее экрана телефона.
+for (let n = 4; n <= 3 + Number(params.get('taskChecklist') || 0); n++) {
+  window.__fakeDb.task_checklist_items.push({ id: `chk-${n}`, task_id: 'task-1', title: `Пункт ${n}`, is_done: false,
+    sort_order: n * 10, created_at: `2026-10-20T11:${String(n).padStart(2, '0')}:00Z` })
+}
+// taskList=N — ещё задачи в списке «Мои» (task-2 …) с объектом, тендером и сроком.
+for (let n = 2; n <= 1 + Number(params.get('taskList') || 0); n++) {
+  window.__fakeDb.tasks.push({
+    ...window.__fakeDb.tasks[0], id: `task-${n}`, title: `Задача ${n}: проверить ведомость объёмов работ по разделу`,
+    priority: n % 3 === 0 ? 'high' : 'normal', status: n % 2 ? 'new' : 'in_progress', due_date: `2026-11-${String(n % 28 + 1).padStart(2, '0')}`,
+    object_id: 'obj-t', objects: { name: 'ЖК «Тёплый стан», корпус 2' }, tender_id: 'tender-1', tenders: { public_tender_number: 100 + n },
+    sort_order: n * 10,
+  })
+}
 window.__fakeDb.task_comments = []
 window.__fakeDb.task_participants = []
 window.__fakeDb.task_audit_log = []

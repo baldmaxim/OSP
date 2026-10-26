@@ -143,6 +143,17 @@
   cursor: not-allowed;
 }
 
+/* «Скачать всё» участника — не «добавить»: рамка сплошная, как у «Скачать всё» над колонкой.
+   Пока собирается архив, на кнопке — «Скачано N из M». */
+.tcpf-zip-btn { border-style: solid; color: var(--text-primary); }
+.tcpf-zip-btn svg { flex: 0 0 auto; }
+.tcpf-zip-btn:hover:not(:disabled) {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: transparent;
+}
+.tcpf-zip-btn:disabled { opacity: 0.75; cursor: progress; }
+
 /* === Статусы загрузки / ошибки / пусто === */
 .tcpf-empty,
 .tcpf-error {

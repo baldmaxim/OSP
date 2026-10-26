@@ -60,6 +60,21 @@ function DueDateInput({ value, onCommit }) {
   )
 }
 
+// Ближайший прокручиваемый предок: на компьютере — левая колонка карточки,
+// на узком экране (одна колонка) — общая прокрутка колонок.
+function scrollParentOf(el) {
+  for (let node = el?.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node)
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node
+  }
+  return null
+}
+
+// Автопрокрутка при перетаскивании пункта: зона у края области прокрутки и
+// наибольший шаг за кадр (у самого края — быстрее).
+const AUTOSCROLL_ZONE = 56
+const AUTOSCROLL_MAX_STEP = 16
+
 function TaskDetailModal({
   task, employees, employeeMap, objectOptions, tenderOptions, contractOptions,
   canEdit, currentUserId, author, onClose, onChanged, onDelete, onRestore,
@@ -78,6 +93,8 @@ function TaskDetailModal({
   const [drag, setDrag] = useState(null)
   const dragRef = useRef(null)
   const checklistRef = useRef(null)
+  // Палец у края области прокрутки: { y, frame } — последняя высота указателя и кадр.
+  const autoScrollRef = useRef({ y: 0, frame: 0 })
   // Пункт в правке: { id, title }. Ref не даёт сохранить дважды (Enter, затем уход из поля).
   const [editingItem, setEditingItem] = useState(null)
   const editingRef = useRef(null)
@@ -246,6 +263,45 @@ function TaskDetailModal({
     dragRef.current = next
     setDrag(next)
   }
+  const updateDropPlace = (clientY) => {
+    const cur = dragRef.current
+    if (!cur) return
+    const place = dropPlace(clientY)
+    if (!place) return
+    // Над самим перетаскиваемым пунктом — не вставка, а «на месте».
+    const next = place.overId === cur.id ? { ...cur, overId: null, position: null } : { ...cur, ...place }
+    if (next.overId !== cur.overId || next.position !== cur.position) setDragState(next)
+  }
+  // Палец держат у верхнего или нижнего края области прокрутки — карточка едет
+  // сама, место вставки пересчитывается: на телефоне чек-лист длиннее экрана,
+  // и без этого пункт не дотащить за видимый край. Цикл кадров идёт, пока
+  // указатель в зоне и есть куда прокручивать; только рефы — замыкание не стареет.
+  const autoScrollStep = () => {
+    const state = autoScrollRef.current
+    state.frame = 0
+    const box = dragRef.current && scrollParentOf(checklistRef.current)
+    if (!box) return
+    const rect = box.getBoundingClientRect()
+    const zone = Math.min(AUTOSCROLL_ZONE, rect.height / 4)
+    const depth = state.y < rect.top + zone ? state.y - (rect.top + zone)
+      : state.y > rect.bottom - zone ? state.y - (rect.bottom - zone) : 0
+    if (!depth) return
+    const step = Math.sign(depth) * Math.min(AUTOSCROLL_MAX_STEP, Math.ceil((Math.abs(depth) / zone) * AUTOSCROLL_MAX_STEP))
+    const before = box.scrollTop
+    box.scrollTop = before + step
+    if (box.scrollTop === before) return
+    updateDropPlace(state.y)
+    state.frame = requestAnimationFrame(autoScrollStep)
+  }
+  const stopAutoScroll = () => {
+    cancelAnimationFrame(autoScrollRef.current.frame)
+    autoScrollRef.current.frame = 0
+  }
+  // Карточку закрыли посреди перетаскивания — кадр не должен пережить окно.
+  useEffect(() => {
+    const state = autoScrollRef.current
+    return () => cancelAnimationFrame(state.frame)
+  }, [])
   const onHandlePointerDown = (e, item) => {
     if (e.button !== 0) return
     e.preventDefault()
@@ -253,16 +309,14 @@ function TaskDetailModal({
     setDragState({ id: item.id, overId: null, position: null })
   }
   const onHandlePointerMove = (e) => {
-    const cur = dragRef.current
-    if (!cur) return
-    const place = dropPlace(e.clientY)
-    if (!place) return
-    // Над самим перетаскиваемым пунктом — не вставка, а «на месте».
-    const next = place.overId === cur.id ? { ...cur, overId: null, position: null } : { ...cur, ...place }
-    if (next.overId !== cur.overId || next.position !== cur.position) setDragState(next)
+    if (!dragRef.current) return
+    updateDropPlace(e.clientY)
+    autoScrollRef.current.y = e.clientY
+    if (!autoScrollRef.current.frame) autoScrollRef.current.frame = requestAnimationFrame(autoScrollStep)
   }
   const onHandlePointerUp = () => {
     const cur = dragRef.current
+    stopAutoScroll()
     setDragState(null)
     if (cur?.overId) saveChecklistOrder(cur.id, cur.overId, cur.position)
   }
@@ -401,7 +455,7 @@ function TaskDetailModal({
                           onPointerDown={(e) => onHandlePointerDown(e, item)}
                           onPointerMove={onHandlePointerMove}
                           onPointerUp={onHandlePointerUp}
-                          onPointerCancel={() => setDragState(null)}
+                          onPointerCancel={() => { stopAutoScroll(); setDragState(null) }}
                           onKeyDown={(e) => onHandleKeyDown(e, item)}
                         >⋮⋮</button>
                       )}

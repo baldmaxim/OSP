@@ -1,10 +1,16 @@
 // «Скачать всё» в разделе «Участники» карточки тендера (src/utils/tenderFilesArchive.js):
-// имена, допустимые в Windows, раскладка по папкам компаний и сборка ZIP с подставной загрузкой.
-import { describe, it } from 'node:test'
+// имена, допустимые в Windows, раскладка по папкам компаний и сборка ZIP с подставной загрузкой;
+// своя «Скачать всё» у каждого участника с файлами (ячейка «КП / Документы») — в Chromium на
+// стенде (tcFiles=1: файлы у двух участников из трёх).
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import PizZipNs from 'pizzip'
+import { chromium } from 'playwright'
+import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 import {
   safeName, safeFileName, uniqueName, archiveBaseName, planTenderArchive, buildTenderArchive,
+  planCounterpartyArchive, counterpartyArchiveName,
   ARCHIVE_NAME_MAX, ENTRY_PATH_MAX, OLDER_VERSIONS_FOLDER, FAILED_LIST_NAME,
 } from '../../src/utils/tenderFilesArchive.js'
 
@@ -112,6 +118,38 @@ describe('Скачать всё: раскладка по папкам', () => {
   })
 })
 
+describe('Скачать всё одного участника', () => {
+  const rows = [
+    fileRow('c1', 'КП.xlsx', { kind: 'commercial_proposal', group: 'g1', at: '2026-10-01T10:00:00Z', label: 'первая' }),
+    fileRow('c1', 'КП.xlsx', { kind: 'commercial_proposal', group: 'g1', at: '2026-10-05T10:00:00Z' }),
+    fileRow('c1', 'Выписка.pdf', { size: 2000 }),
+    fileRow('c3', 'КП другого.xlsx', { kind: 'commercial_proposal', group: 'g9' }),
+  ]
+
+  it('только его файлы, без папки компании; прежние версии — в подпапке', () => {
+    const { entries, totalBytes } = planCounterpartyArchive(rows, { counterpartyId: 'c1', name: 'ООО "Альфа"' })
+    assert.deepEqual(entries.map((e) => e.path), ['КП.xlsx', 'Выписка.pdf', `${OLDER_VERSIONS_FOLDER}/КП (первая).xlsx`])
+    assert.equal(entries[0].createdAt, '2026-10-05T10:00:00Z', 'текущая версия — самая новая')
+    assert.equal(entries[0].company, 'ООО "Альфа"', 'в «Не скачано.txt» — название как в таблице')
+    assert.equal(totalBytes, 10 * 2 + 2000)
+  })
+
+  it('нет файлов — пустой план', () => {
+    assert.deepEqual(planCounterpartyArchive(rows, { counterpartyId: 'c2', name: 'ИП Без файлов' }), { entries: [], totalBytes: 0 })
+  })
+
+  it('имя архива: № и работы, затем компания целиком; работы режутся, предел имени соблюдён', () => {
+    assert.equal(counterpartyArchiveName({ public_tender_number: 125, work_description: 'Устройство кровли' }, 'ООО "Альфа"'),
+      "125 Устройство кровли — ООО 'Альфа'")
+    const long = counterpartyArchiveName({ public_tender_number: 300, work_description: 'Выполнение работ '.repeat(20) },
+      'Общество с ограниченной ответственностью «Строительная компания Север»')
+    assert.ok(long.length <= ARCHIVE_NAME_MAX, long)
+    assert.ok(long.startsWith('300 Выполнение работ'), long)
+    assert.ok(long.endsWith(' — Общество с ограниченной ответственностью «Строительная…'), long)
+    assert.equal(counterpartyArchiveName({ public_tender_number: null, work_description: '' }, '', 'ЖК Север'), 'ЖК Север — Без названия')
+  })
+})
+
 describe('Скачать всё: сборка архива', () => {
   const participants = [{ counterpartyId: 'c1', name: 'ООО Альфа' }, { counterpartyId: 'c2', name: 'ИП Петров' }]
 
@@ -185,5 +223,81 @@ describe('Скачать всё: сборка архива', () => {
       return bytesOf('x')
     }, { concurrency: 3 })
     assert.equal(maxActive, 3)
+  })
+})
+
+const launch = browserLaunchOptions()
+
+describe('Скачать всё у участника: карточка тендера', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
+  let stand
+  let browser
+
+  before(async () => {
+    stand = await startStand(REPO)
+    browser = await chromium.launch({ ...launch, headless: true })
+  })
+  after(async () => {
+    await browser?.close()
+    await stand?.server.close()
+  })
+
+  const openParticipants = async (query = '') => {
+    const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1600, height: 1000 }, acceptDownloads: true })
+    const page = await context.newPage()
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (msg) => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) errors.push(msg.text()) })
+    page.on('dialog', (d) => { errors.push(`окно: ${d.message()}`); d.accept() })
+    await page.goto(`${stand.url}?route=/tenders/tender-1&items=20&cps=3&latency=0&tcFiles=1${query}`)
+    await page.locator('.tender-tab', { hasText: 'Участники' }).click({ timeout: 120000 })
+    await page.locator('.participants-section tbody tr').nth(2).locator('.tcpf-toggle-header').waitFor({ timeout: 30000 })
+    return { page, errors, close: () => context.close().catch(() => {}) }
+  }
+  const row = (page, name) => page.locator('.participants-section tbody tr').filter({ hasText: name })
+
+  it('кнопка — только у участников с файлами, рядом с «+ Документ»; архив — файлы одного участника', async () => {
+    const { page, errors, close } = await openParticipants()
+    try {
+      assert.equal(await row(page, 'Подрядчик 01').locator('.tcpf-zip-btn').count(), 1)
+      assert.equal(await row(page, 'Подрядчик 02').locator('.tcpf-zip-btn').count(), 1)
+      assert.equal(await row(page, 'Подрядчик 03').locator('.tcpf-zip-btn').count(), 0, 'файлов нет — кнопки нет')
+      assert.equal(await page.locator('.participants-section .tc-files-head .tc-zip-btn').count(), 1, 'общая «Скачать всё» на месте')
+      const actions = await row(page, 'Подрядчик 01').locator('.tcpf-quick-actions > button').allTextContents()
+      assert.deepEqual(actions, ['+ КП', '+ Документ', 'Скачать всё'])
+
+      const button = row(page, 'Подрядчик 01').locator('.tcpf-zip-btn')
+      const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), button.click()])
+      const zip = new PizZip(await readFile(await download.path()))
+      const files = Object.keys(zip.files).filter((name) => !zip.files[name].dir).sort()
+      assert.equal(download.suggestedFilename(),
+        '200 Устройство вентилируемого фасада с облицовкой керамогранитом, секции 1–4 — Подрядчик 01.zip')
+      assert.deepEqual(files, [
+        'Выписка ЕГРЮЛ.pdf', 'КП Подрядчик 01.xlsx', `${OLDER_VERSIONS_FOLDER}/КП Подрядчик 01 (исходное).xlsx`,
+      ])
+      assert.equal(zip.file('Выписка ЕГРЮЛ.pdf').asText(), 'содержимое Выписка ЕГРЮЛ.pdf')
+      const requested = await page.evaluate(() => window.__fakePresignRequests || [])
+      assert.ok(requested.length === 3 && requested.every((key) => /tpf-[123]-/.test(key)), `скачаны только его файлы: ${requested}`)
+      await button.locator('xpath=self::*[not(@disabled)]').waitFor({ timeout: 10000 })
+      assert.equal(await button.textContent(), 'Скачать всё')
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
+  it('без права правки: загрузки нет, «Скачать всё» участника — есть', async () => {
+    const { page, errors, close } = await openParticipants('&canEdit=0')
+    try {
+      const actions = await row(page, 'Подрядчик 02').locator('.tcpf-quick-actions > button').allTextContents()
+      assert.deepEqual(actions, ['Скачать всё'])
+      assert.equal(await row(page, 'Подрядчик 03').locator('.tcpf-quick-actions').count(), 0)
+      const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }),
+        row(page, 'Подрядчик 02').locator('.tcpf-zip-btn').click()])
+      const zip = new PizZip(await readFile(await download.path()))
+      assert.deepEqual(Object.keys(zip.files), ['КП Подрядчик 02.xlsx'])
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
   })
 })

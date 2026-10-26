@@ -1,11 +1,15 @@
 // «Скачать всё» над колонкой «КП / Документы» раздела «Участники» карточки тендера:
 // все файлы участников одним ZIP, папка на каждую компанию (utils/tenderFilesArchive.js).
+// С counterparty ({ id, name }) — та же кнопка в ячейке одного участника: архив только его
+// файлов, без папки компании (она — в имени архива).
 // Права — как у скачивания одного файла: та же ссылка из requestDownloadUrl.
 import { useState } from 'react'
 import { saveAs } from 'file-saver'
 import { fetchTenderFilesForArchive } from '../services/tenderProposalFiles'
 import { fetchFileBytes } from '../services/s3'
-import { archiveBaseName, buildTenderArchive, planTenderArchive, FAILED_LIST_NAME } from '../utils/tenderFilesArchive'
+import {
+  archiveBaseName, buildTenderArchive, counterpartyArchiveName, planCounterpartyArchive, planTenderArchive, FAILED_LIST_NAME,
+} from '../utils/tenderFilesArchive'
 import { tenderObjectName } from '../utils/tenderDepartments'
 import { IconDownload } from './icons/ActionIcons'
 
@@ -14,7 +18,7 @@ const LARGE_ARCHIVE_BYTES = 500 * 1024 * 1024
 
 const formatMegabytes = (bytes) => `${(bytes / 1024 / 1024).toFixed(0)} МБ`
 
-export default function TenderFilesZipButton({ tender, participants }) {
+export default function TenderFilesZipButton({ tender, participants, counterparty = null, className = 'tc-zip-btn' }) {
   // null — свободна; { done, total } — идёт сборка (total = 0 — ещё готовим список).
   const [progress, setProgress] = useState(null)
   const busy = progress != null
@@ -23,13 +27,15 @@ export default function TenderFilesZipButton({ tender, participants }) {
     if (busy || !tender?.id) return
     setProgress({ done: 0, total: 0 })
     try {
-      const rows = await fetchTenderFilesForArchive(tender.id)
-      const { entries, totalBytes } = planTenderArchive(rows, (participants || []).map((tc) => ({
-        counterpartyId: tc.counterparty_id,
-        name: tc.counterparties?.name,
-      })))
+      const rows = await fetchTenderFilesForArchive(tender.id, { counterpartyId: counterparty?.id })
+      const { entries, totalBytes } = counterparty
+        ? planCounterpartyArchive(rows, { counterpartyId: counterparty.id, name: counterparty.name })
+        : planTenderArchive(rows, (participants || []).map((tc) => ({
+          counterpartyId: tc.counterparty_id,
+          name: tc.counterparties?.name,
+        })))
       if (!entries.length) {
-        alert('У участников тендера нет файлов')
+        alert(counterparty ? 'У участника нет файлов' : 'У участников тендера нет файлов')
         return
       }
       if (totalBytes > LARGE_ARCHIVE_BYTES && !window.confirm(
@@ -47,7 +53,10 @@ export default function TenderFilesZipButton({ tender, participants }) {
         alert(`Не удалось скачать ни одного файла: ${failed[0]?.error || 'нет ответа хранилища'}`)
         return
       }
-      const name = archiveBaseName(tender, tenderObjectName(tender, 'Тендер'))
+      const objectName = tenderObjectName(tender, 'Тендер')
+      const name = counterparty
+        ? counterpartyArchiveName(tender, counterparty.name, objectName)
+        : archiveBaseName(tender, objectName)
       saveAs(new Blob([bytes], { type: 'application/zip' }), `${name}.zip`)
       if (failed.length) {
         alert(`Архив неполный: не скачано ${failed.length} из ${entries.length}. `
@@ -66,11 +75,13 @@ export default function TenderFilesZipButton({ tender, participants }) {
   return (
     <button
       type="button"
-      className="tc-zip-btn"
+      className={className}
       onClick={handleClick}
       disabled={busy}
       aria-busy={busy}
-      title="Все файлы участников одним ZIP-архивом, по папкам компаний"
+      title={counterparty
+        ? `Все файлы участника «${counterparty.name || 'без названия'}» одним ZIP-архивом: КП, прежние версии и документы`
+        : 'Все файлы участников одним ZIP-архивом, по папкам компаний'}
     >
       <IconDownload size={14} />
       <span>{label}</span>

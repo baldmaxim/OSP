@@ -9,11 +9,15 @@ import {
 import S3DocumentPreview from './S3DocumentPreview'
 import KpReviewModal from './KpReviewModal'
 import KpReviewBadge from './KpReviewBadge'
+import TenderFilesZipButton from './TenderFilesZipButton'
 import './TenderCounterpartyFiles.css'
 
 // Файлы КП и сопутствующие документы одного контрагента в рамках тендера (task 290).
 // Используется и в раскрытой строке списка тендеров, и на детальной странице тендера.
 // Task 300: список свёрнут под тоггл, загрузка КП — через модалку.
+// «Скачать всё» рядом с «+ Документ» — все файлы только этого участника одним ZIP; кнопка
+// есть, только когда файлы есть. tender — для имени архива (№ и работы), counterpartyName —
+// название компании в имени архива.
 
 function formatBytes(bytes) {
   if (bytes == null) return '—'
@@ -86,6 +90,8 @@ export default function TenderCounterpartyFiles({
   tenderId,
   counterpartyId,
   canEdit: canEditProp,
+  tender = null,
+  counterpartyName = '',
 }) {
   const { isEmployee, isAdmin, isSuperAdmin, role } = useRole()
   const canEdit = canEditProp !== undefined ? canEditProp : isEmployee
@@ -231,6 +237,7 @@ export default function TenderCounterpartyFiles({
   const proposalsCount = data.proposals.length
   const attachmentsCount = data.attachments.length
   const isEmpty = proposalsCount === 0 && attachmentsCount === 0
+  const canDownloadAll = !loading && !error && !isEmpty
 
   return (
     <div className="tcpf">
@@ -239,21 +246,33 @@ export default function TenderCounterpartyFiles({
       <input ref={variationRef}   type="file" style={{ display: 'none' }} onChange={handleProposalFile} />
       <input ref={attachmentRef}  type="file" multiple style={{ display: 'none' }} onChange={handleAttachmentFile} />
 
-      {/* Быстрые действия — всегда видны, доступны без раскрытия списка. */}
-      {canEdit && (
+      {/* Быстрые действия — всегда видны, доступны без раскрытия списка. «Скачать всё»
+          видит и тот, кто не может загружать: скачивание одного файла ему тоже доступно. */}
+      {(canEdit || canDownloadAll) && (
         <div className="tcpf-quick-actions">
-          <button
-            type="button"
-            className="tcpf-btn-primary"
-            onClick={() => pickProposal(null)}
-            disabled={uploading || !!uploadModal}
-          >+ КП</button>
-          <button
-            type="button"
-            className="tcpf-btn-secondary"
-            onClick={() => attachmentRef.current?.click()}
-            disabled={uploading || !!uploadModal}
-          >+ Документ</button>
+          {canEdit && (
+            <>
+              <button
+                type="button"
+                className="tcpf-btn-primary"
+                onClick={() => pickProposal(null)}
+                disabled={uploading || !!uploadModal}
+              >+ КП</button>
+              <button
+                type="button"
+                className="tcpf-btn-secondary"
+                onClick={() => attachmentRef.current?.click()}
+                disabled={uploading || !!uploadModal}
+              >+ Документ</button>
+            </>
+          )}
+          {canDownloadAll && (
+            <TenderFilesZipButton
+              tender={tender || { id: tenderId }}
+              counterparty={{ id: counterpartyId, name: counterpartyName }}
+              className="tcpf-btn-secondary tcpf-zip-btn"
+            />
+          )}
         </div>
       )}
 

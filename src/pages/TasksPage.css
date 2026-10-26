@@ -1113,14 +1113,25 @@
 @media (max-width: 1100px) {
   .task-modal-columns {
     grid-template-columns: minmax(0, 1fr);
+    align-content: start;
     /* Одна колонка — прокрутка общая, иначе получилось бы две вложенные. */
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  /* min-height: auto — строки сетки по содержимому. С min-height: 0 окно фиксированной
+     высоты сжимало строки, и свойства наезжали на описание и чек-лист. */
   .task-modal-main,
-  .task-modal-side { overflow: visible; }
+  .task-modal-side { overflow: visible; min-height: auto; }
   /* Свойства уходят под работу, но в две колонки — места хватает. */
   .task-modal-side .task-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Полоса меню телефона (.mobile-topbar в Sidebar.css: fixed, 52px, z-index 1250) лежит
+   поверх .modal-overlay (1000) и закрывала шапку окна, а с ней «×» — единственный способ
+   закрыть карточку задачи. Окна раздела — над полосой, но под панелью выпадашек
+   (FilterDropdown, 1300) и выдвижным меню (1350+). 768px — брейкпоинт полосы. */
+@media (max-width: 768px) {
+  .tasks-page .modal-overlay { z-index: 1260; }
 }
 
 /* ── Телефон ───────────────────────────────────────────────────────────────── */
@@ -1134,17 +1145,34 @@
   .tasks-header-actions { width: 100%; }
   .tasks-header-actions .btn-primary { flex: 1 1 100%; height: 44px; }
 
+  /* Вкладки — одной строкой с прокруткой вбок. Так их листает и mobile.css, но
+     TasksPage.css подгружается со страницей позже и возвращал перенос: шесть
+     вкладок вставали в три ряда и отъедали экран до списка. */
+  .tasks-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .tasks-tabs::-webkit-scrollbar { display: none; }
+  .tasks-tab { flex: 0 0 auto; white-space: nowrap; }
+
   /* Пять фильтров по одному в ряд заняли бы полэкрана до списка. Сетка 2×2
-     вдвое короче, поиск — на всю ширину над ней. */
+     вдвое короче, поиск — на всю ширину над ней. minmax(0, …) и min-width: 0 —
+     иначе подпись с значением распирала ячейку и страница уезжала вбок. */
   .tasks-toolbar {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.5rem;
     align-items: stretch;
   }
   .tasks-search { grid-column: 1 / -1; width: 100%; }
-  .tasks-toolbar .fdrop { width: 100%; }
-  .tasks-toolbar .fdrop-trigger { width: 100%; max-width: none; }
+  .tasks-toolbar .fdrop { width: 100%; min-width: 0; }
+  /* Кнопка фильтра — не поле ввода, Safari её не увеличивает; 14px вместо 16px —
+     чтобы «Приоритет Любой» и «Объект Все объекты» помещались в полэкрана. */
+  .tasks-toolbar .fdrop-trigger {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    gap: 0.35rem;
+    padding: 0 0.6rem;
+    font-size: 0.875rem;
+  }
 
   .tasks-pagination { flex-wrap: wrap; gap: 0.5rem; }
   .tasks-pagination-controls button { min-width: 40px; height: 40px; }
@@ -1152,7 +1180,10 @@
   /* ── Карточка задачи ─────────────────────────────────────────────────────
      mobile.css разворачивает .modal в лист на весь экран, но его max-height
      задан без !important и проигрывает более специфичному .modal.task-modal.
-     Поэтому высоту снимаем здесь. */
+     Поэтому высоту снимаем здесь. Подложку — тоже: ContractRegistry.css
+     подгружается со страницей позже mobile.css и возвращал ей поля 1rem и
+     центровку — лист не доходил до краёв, а верх уходил за край экрана. */
+  .tasks-page .modal-overlay { padding: 0; align-items: stretch; }
   .modal.task-modal { max-height: 100dvh; height: 100dvh; }
   .task-modal-head, .task-modal-foot { border-radius: 0; }
   /* Крестик держался на margin-left:auto и при переносе бейджей уезжал во
@@ -1182,9 +1213,12 @@
   .task-inline-add .btn-secondary { flex: 1 1 100%; height: 40px; }
   .task-modal-foot { flex-wrap: wrap; }
   .task-modal-meta { flex: 1 1 100%; }
-  /* Ручка порядка и карандаш пункта — под палец. */
+  /* Ручка порядка, отметка, карандаш и «×» пункта — под палец. */
   .task-checklist-handle { width: 32px; height: 40px; }
+  .task-checklist li label { min-height: 40px; }
+  .task-checklist li input[type='checkbox'] { width: 20px; height: 20px; flex: 0 0 auto; }
   .task-checklist-edit-btn { width: 36px; height: 40px; }
+  .task-checklist-del { flex: 0 0 auto; width: 36px; height: 40px; }
   .task-checklist-edit { height: 40px; }
 
   /* Высокий приоритет — полоса слева; просрочку красит .mcard-overdue рамкой. */
@@ -1210,7 +1244,6 @@
   .task-field input[type='date'],
   .task-modal-desc,
   .task-modal-title-input,
-  .tasks-toolbar .fdrop-trigger,
   .task-field-picker .fdrop-trigger { font-size: 16px; }
   .tasks-search,
   .task-inline-add input,

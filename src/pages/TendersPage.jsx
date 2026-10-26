@@ -4552,6 +4552,8 @@ ${ATTACHMENT_BLOCK}
                                         tenderId={tender.id}
                                         counterpartyId={tc.counterparty_id}
                                         canEdit={canEditTenders}
+                                        tender={tender}
+                                        counterpartyName={tc.counterparties?.name}
                                       />
                                     </td>
                                     {!hideNotes && (
