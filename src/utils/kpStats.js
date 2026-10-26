@@ -42,7 +42,7 @@ const time = (iso) => {
 }
 
 // Медиана; пусто — null.
-function median(values) {
+export function median(values) {
   if (!values.length) return null
   const s = [...values].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
@@ -215,7 +215,7 @@ export const KP_GRANULARITY = {
 const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 const ddmm = (d) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}`
 
-function bucketStart(t, granularity) {
+export function bucketStart(t, granularity) {
   const d = new Date(t)
   if (granularity === 'month') return startOfMonth(d)
   if (granularity === 'week') return startOfWeek(d)
@@ -227,7 +227,9 @@ function shiftBucket(d, granularity, n) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n * (granularity === 'week' ? 7 : 1))
 }
 
-export function buildKpDynamics(rows, granularity = 'week', now = new Date()) {
+// Столбцы графика: последний — текущий день / неделя / месяц. key — начало столбца (мс);
+// значения fields — нули. Общие для отчётов (КП, заявки на ДС).
+export function makeBuckets(granularity, now = new Date(), fields = []) {
   const g = KP_GRANULARITY[granularity] ? granularity : 'week'
   const count = KP_GRANULARITY[g].count
   const last = bucketStart(now.getTime(), g)
@@ -241,8 +243,13 @@ export function buildKpDynamics(rows, granularity = 'week', now = new Date()) {
       : g === 'week'
         ? `${ddmm(start)}–${ddmm(new Date(end.getTime() - DAY_MS))}.${end.getFullYear()}`
         : `${ddmm(start)}.${start.getFullYear()}`
-    buckets.push({ key: start.getTime(), label, title, uploaded: 0, reviewed: 0 })
+    buckets.push({ key: start.getTime(), label, title, ...Object.fromEntries(fields.map(f => [f, 0])) })
   }
+  return { granularity: g, buckets }
+}
+
+export function buildKpDynamics(rows, granularity = 'week', now = new Date()) {
+  const { granularity: g, buckets } = makeBuckets(granularity, now, ['uploaded', 'reviewed'])
   const idx = new Map(buckets.map((b, i) => [b.key, i]))
   for (const r of rows) {
     const ev = eventsOf(r)

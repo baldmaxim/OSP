@@ -16,6 +16,7 @@ export const UPLOAD_SITES = [
   { file: 'src/pages/ObjectDetailPage.jsx', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/components/ObjectDocumentFileSlot.jsx', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/components/WarrantyActSignModal.jsx', calls: 1, owner: 'object', table: 'objects' },
+  { file: 'src/components/ObjectDgpFiles.jsx', calls: 1, owner: 'object', table: 'objects' }, // ДГП во вкладке «Смета»
   { file: 'src/components/CounterpartyCardChip.jsx', calls: 1, owner: 'counterparty', table: 'counterparties' },
   { file: 'src/pages/DcRequestsPage.jsx', calls: 1, owner: 'dc_request', table: 'dc_requests' },
   { file: 'src/components/ConceptAgreementCell.jsx', calls: 1, owner: 'contract', table: 'contracts' },

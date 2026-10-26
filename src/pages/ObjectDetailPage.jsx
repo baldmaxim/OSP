@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx'
 import { useRole } from '../contexts/RoleContext'
 import { uploadFile, deleteDocument, requestDownloadUrl } from '../services/s3'
 import ObjectDocumentFileSlot from '../components/ObjectDocumentFileSlot'
+import ObjectDgpFiles from '../components/ObjectDgpFiles'
 import S3DocumentPreview from '../components/S3DocumentPreview'
 import WarrantyActSignModal from '../components/WarrantyActSignModal'
 import WarrantyDocSelect from '../components/WarrantyDocSelect'
@@ -2379,6 +2380,8 @@ function ObjectDetailPage() {
       {/* Смета */}
       {activeTab === 'estimate' && (
         <div className={`tab-content estimate-content${isEstimateFullscreen ? ' estimate-fullscreen' : ''}`}>
+          {/* ДГП (единый ПСДЦ) — файлы, отдельно от сметы ниже; в полноэкранной смете не нужен. */}
+          {!isEstimateFullscreen && <ObjectDgpFiles objectId={objectId} canEdit={canEditObj} />}
           <div className="cost-header">
             <span>Смета объекта {estimateItems.length > 0 && `(${estimateItems.filter(i => !i.is_section).length} позиций${estimateVat ? `, НДС ${estimateVat}%` : ''})`}</span>
             <div className="cost-header-actions">

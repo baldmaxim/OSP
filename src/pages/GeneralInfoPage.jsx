@@ -59,12 +59,29 @@ const FileTextIcon = () => (
   </svg>
 )
 
+// Отделы компании: блоки «руководитель → подчинённые» — значок оргструктуры (Lucide network).
+const NetworkIcon = () => (
+  <svg {...sectionIconProps}>
+    <rect x="16" y="16" width="6" height="6" rx="1" />
+    <rect x="2" y="16" width="6" height="6" rx="1" />
+    <rect x="9" y="2" width="6" height="6" rx="1" />
+    <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" />
+    <path d="M12 12V8" />
+  </svg>
+)
+
 // Порталы компании: название — ссылка в новой вкладке, адрес на странице не показываем.
 const PORTALS = [
   { name: 'FOT', url: 'https://fot.su10.ru', description: 'Внутренняя система организации рабочих процессов сотрудника (учёт времени, заявления, контактная информация)' },
   { name: 'Signal', url: 'https://docs.sgnl.pro', description: 'Централизованное хранение документов' },
   { name: 'Larix', url: 'https://cpm.su10.larix.ru', description: 'Договоры с подрядчиками, контроль АВР и документации' },
   { name: 'Обработка РД (web)', url: 'https://vibe.cloud-ip.cc', description: 'ИИ-ассистент для визуальной обработки рабочей документации' },
+  { name: 'BillHub', url: 'https://www.ravek.link', description: 'Заявки на оплату материалов' },
+  { name: 'Estimat', url: 'https://estimat.su10.ru', description: 'Сметный портал' },
+  { name: 'Payhub', url: 'https://payhub.su10.ru', description: 'Письма, приказы, доверенности, центр печати' },
+  { name: 'Финансовый портал', url: 'https://fin.su10.ru', description: 'КС-6; в планах — КС-2 / КС-3, оплата СМР, авансы, чек-листы' },
+  { name: 'АВТО', url: 'https://auto.su10.ru', description: 'Заявки на транспорт, вывоз мусора' },
+  { name: 'Garanthub', url: 'https://garant.su10.ru', description: 'Гарантийные объекты: документы, акты осмотра и ремонта, сдача квартир' },
 ]
 
 function GeneralInfoPage() {
@@ -77,7 +94,9 @@ function GeneralInfoPage() {
     { path: '/general/counterparties', section: 'counterparties', label: 'Контрагенты', icon: <BriefcaseIcon />, description: 'Организации-подрядчики' },
     // task 416: общие документы компании и полезные ссылки
     { path: '/general/documents', section: 'general_documents', label: 'Документы', icon: <FileTextIcon />, description: 'Общие документы, инструкции и полезные ссылки' },
-  ].filter((s) => canView(s.section))
+    // Отделы — справочник для всех сотрудников, без отдельного права.
+    { path: '/general/departments', section: null, label: 'Отделы', icon: <NetworkIcon />, description: 'За что отвечают отделы компании и к кому обращаться' },
+  ].filter((s) => !s.section || canView(s.section))
 
   return (
     <div className="general-info-page">

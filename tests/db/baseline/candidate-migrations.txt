@@ -18,3 +18,4 @@
 20261101_public_tenders_contact.sql
 20261102_contractor_bids.sql
 20261103_kp_registry_site_bids.sql
+20261104_company_departments.sql

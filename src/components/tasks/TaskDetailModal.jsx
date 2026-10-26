@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { db } from '../../api'
 import FilterDropdown from '../FilterDropdown'
 import AutoGrowTextarea from '../AutoGrowTextarea'
 import S3DocumentList from '../S3DocumentList'
 import UserAvatar from './UserAvatar'
+import { IconPencil } from '../icons/ActionIcons'
 import {
   TASK_EVENT_LABEL,
   TASK_FIELD_LABEL,
@@ -21,6 +22,8 @@ import {
   dueLabel,
   formatDateRu,
   formatDateTimeRu,
+  nextChecklistOrder,
+  reorderChecklist,
 } from '../../utils/taskHelpers'
 
 // task 433: карточка задачи. Открывается модальным окном по центру поверх
@@ -70,6 +73,14 @@ function TaskDetailModal({
   const [newChecklistItem, setNewChecklistItem] = useState('')
   const [newComment, setNewComment] = useState('')
   const [busy, setBusy] = useState(false)
+  // Перетаскивание пункта чек-листа: { id, overId, position: 'before' | 'after' }.
+  // Ref — для отпускания: обработчик видит последнее место, а не прошлую отрисовку.
+  const [drag, setDrag] = useState(null)
+  const dragRef = useRef(null)
+  const checklistRef = useRef(null)
+  // Пункт в правке: { id, title }. Ref не даёт сохранить дважды (Enter, затем уход из поля).
+  const [editingItem, setEditingItem] = useState(null)
+  const editingRef = useRef(null)
 
   const isAssignee = task.assignee_user_id === currentUserId
   const isCreator = task.created_by_user_id === currentUserId
@@ -111,17 +122,9 @@ function TaskDetailModal({
 
   useEffect(() => { loadDetails() }, [loadDetails])
 
-  // Escape закрывает карточку — как в остальных модалках проекта.
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  // Клик по подложке закрывает окно, но только если он пришёлся именно в неё:
-  // панель FilterDropdown рендерится порталом в body, и по дереву React её клики
-  // всплывают сюда же — иначе выбор исполнителя закрывал бы карточку.
-  const onOverlayClick = (e) => { if (e.target === e.currentTarget) onClose() }
+  // Карточка закрывается только кнопкой «×» в шапке: ни клик по подложке рядом
+  // с окном, ни Escape её не закрывают — так карточка терялась посреди работы
+  // (промах мимо окна, Escape в поле ввода).
 
   const coassignees = participants.filter(p => p.kind === 'coassignee').map(p => p.user_id)
   const watchers = participants.filter(p => p.kind === 'watcher').map(p => p.user_id)
@@ -160,7 +163,7 @@ function TaskDetailModal({
     const title = newChecklistItem.trim()
     if (!title) return
     const { error } = await db.from('task_checklist_items').insert([{
-      task_id: task.id, title, sort_order: checklist.length * 10,
+      task_id: task.id, title, sort_order: nextChecklistOrder(checklist),
     }])
     if (error) { alert('Не удалось добавить пункт: ' + error.message); return }
     setNewChecklistItem('')
@@ -181,6 +184,101 @@ function TaskDetailModal({
     await onChanged()
   }
 
+  const startEditItem = (item) => {
+    editingRef.current = { id: item.id, title: item.title }
+    setEditingItem(editingRef.current)
+  }
+  const changeEditItem = (title) => {
+    editingRef.current = { ...editingRef.current, title }
+    setEditingItem(editingRef.current)
+  }
+  const cancelEditItem = () => {
+    editingRef.current = null
+    setEditingItem(null)
+  }
+  // Пустой текст пункт не удаляет — для этого есть «×»; правка просто отменяется.
+  const commitEditItem = async () => {
+    const edit = editingRef.current
+    if (!edit) return
+    cancelEditItem()
+    const item = checklist.find(i => i.id === edit.id)
+    const title = edit.title.trim()
+    if (!item || !title || title === item.title) return
+    setChecklist(prev => prev.map(i => (i.id === item.id ? { ...i, title } : i)))
+    const { error } = await db.from('task_checklist_items').update({ title }).eq('id', item.id)
+    if (error) alert('Не удалось изменить пункт: ' + error.message)
+    await loadDetails()
+  }
+
+  // Порядок: сразу на экране, затем в базе — только у пунктов, чей номер изменился.
+  const saveChecklistOrder = async (draggedId, targetId, position) => {
+    const result = reorderChecklist(checklist, draggedId, targetId, position)
+    if (!result) return
+    setChecklist(result.ordered)
+    try {
+      const results = await Promise.all(result.updates.map(u => db
+        .from('task_checklist_items').update({ sort_order: u.sort_order }).eq('id', u.id)))
+      const failed = results.find(r => r.error)
+      if (failed) throw failed.error
+    } catch (err) {
+      alert('Не удалось изменить порядок пунктов: ' + err.message)
+    }
+    await loadDetails()
+  }
+
+  // Ручка двигается указателем (мышь, палец, перо): HTML5-перетаскивание на
+  // телефоне не работает. Место вставки — по строке под указателем: верхняя
+  // половина — перед ней, нижняя — после.
+  const dropPlace = (clientY) => {
+    const rows = [...(checklistRef.current?.querySelectorAll('li[data-item-id]') || [])]
+    if (!rows.length) return null
+    const first = rows[0].getBoundingClientRect()
+    if (clientY < first.top) return { overId: rows[0].dataset.itemId, position: 'before' }
+    for (const li of rows) {
+      const rect = li.getBoundingClientRect()
+      if (clientY <= rect.bottom) {
+        return { overId: li.dataset.itemId, position: clientY - rect.top < rect.height / 2 ? 'before' : 'after' }
+      }
+    }
+    return { overId: rows[rows.length - 1].dataset.itemId, position: 'after' }
+  }
+  const setDragState = (next) => {
+    dragRef.current = next
+    setDrag(next)
+  }
+  const onHandlePointerDown = (e, item) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    setDragState({ id: item.id, overId: null, position: null })
+  }
+  const onHandlePointerMove = (e) => {
+    const cur = dragRef.current
+    if (!cur) return
+    const place = dropPlace(e.clientY)
+    if (!place) return
+    // Над самим перетаскиваемым пунктом — не вставка, а «на месте».
+    const next = place.overId === cur.id ? { ...cur, overId: null, position: null } : { ...cur, ...place }
+    if (next.overId !== cur.overId || next.position !== cur.position) setDragState(next)
+  }
+  const onHandlePointerUp = () => {
+    const cur = dragRef.current
+    setDragState(null)
+    if (cur?.overId) saveChecklistOrder(cur.id, cur.overId, cur.position)
+  }
+  // С клавиатуры: стрелки вверх / вниз на ручке переставляют пункт на одно место.
+  const onHandleKeyDown = (e, item) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+    e.preventDefault()
+    const idx = checklist.findIndex(i => i.id === item.id)
+    const up = e.key === 'ArrowUp'
+    const target = checklist[up ? idx - 1 : idx + 1]
+    if (!target) return
+    saveChecklistOrder(item.id, target.id, up ? 'before' : 'after').then(() => {
+      checklistRef.current?.querySelector(`li[data-item-id="${item.id}"] .task-checklist-handle`)?.focus()
+    })
+  }
+
   // ── Обсуждение ─────────────────────────────────────────────────────────────
   const addComment = async () => {
     const body = newComment.trim()
@@ -197,7 +295,7 @@ function TaskDetailModal({
   const doneCount = checklist.filter(i => i.is_done).length
 
   return (
-    <div className="modal-overlay task-modal-overlay" onClick={onOverlayClick}>
+    <div className="modal-overlay task-modal-overlay">
       <div
         className={`modal task-modal${task.priority === 'high' ? ' is-high' : ''}`}
         role="dialog" aria-modal="true" aria-label="Карточка задачи"
@@ -283,23 +381,70 @@ function TaskDetailModal({
                   <span style={{ width: `${Math.round((doneCount / checklist.length) * 100)}%` }} />
                 </div>
               )}
-              <ul className="task-checklist">
-                {checklist.map(item => (
-                  <li key={item.id} className={item.is_done ? 'is-done' : ''}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={item.is_done}
-                        disabled={isDeleted || !canMove}
-                        onChange={() => toggleChecklistItem(item)}
-                      />
-                      <span>{item.title}</span>
-                    </label>
-                    {canEditFields && !isDeleted && (
-                      <button className="task-checklist-del" onClick={() => removeChecklistItem(item)} title="Удалить пункт">×</button>
-                    )}
-                  </li>
-                ))}
+              <ul className={`task-checklist${drag ? ' is-sorting' : ''}`} ref={checklistRef}>
+                {checklist.map(item => {
+                  const canArrange = canEditFields && !isDeleted
+                  const isEditing = editingItem?.id === item.id
+                  const rowClass = [
+                    item.is_done ? 'is-done' : '',
+                    drag?.id === item.id ? 'is-dragging' : '',
+                    drag?.overId === item.id ? `drop-${drag.position}` : '',
+                  ].filter(Boolean).join(' ')
+                  return (
+                    <li key={item.id} data-item-id={item.id} className={rowClass}>
+                      {canArrange && checklist.length > 1 && (
+                        <button
+                          type="button"
+                          className="task-checklist-handle"
+                          aria-label={`Переместить пункт «${item.title}»`}
+                          title="Перетащите, чтобы изменить порядок (или стрелки ↑ ↓)"
+                          onPointerDown={(e) => onHandlePointerDown(e, item)}
+                          onPointerMove={onHandlePointerMove}
+                          onPointerUp={onHandlePointerUp}
+                          onPointerCancel={() => setDragState(null)}
+                          onKeyDown={(e) => onHandleKeyDown(e, item)}
+                        >⋮⋮</button>
+                      )}
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          className="task-checklist-edit"
+                          aria-label="Текст пункта"
+                          autoFocus
+                          value={editingItem.title}
+                          onChange={(e) => changeEditItem(e.target.value)}
+                          onBlur={commitEditItem}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); commitEditItem() }
+                            if (e.key === 'Escape') { e.preventDefault(); cancelEditItem() }
+                          }}
+                        />
+                      ) : (
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={item.is_done}
+                            disabled={isDeleted || !canMove}
+                            onChange={() => toggleChecklistItem(item)}
+                          />
+                          <span>{item.title}</span>
+                        </label>
+                      )}
+                      {canArrange && !isEditing && (
+                        <button
+                          type="button"
+                          className="task-checklist-edit-btn"
+                          onClick={() => startEditItem(item)}
+                          aria-label={`Изменить пункт «${item.title}»`}
+                          title="Изменить пункт"
+                        ><IconPencil size={14} /></button>
+                      )}
+                      {canArrange && (
+                        <button className="task-checklist-del" onClick={() => removeChecklistItem(item)} title="Удалить пункт">×</button>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
               {canEditFields && !isDeleted && (
                 <div className="task-inline-add">

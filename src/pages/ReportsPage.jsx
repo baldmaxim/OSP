@@ -8,6 +8,7 @@ import { isConstructionTender } from '../utils/tenderDepartments'
 import { isMissingVorRequestsTable } from '../services/vorRequests'
 import EngineersActivity from '../components/reports/EngineersActivity'
 import KpStats from '../components/reports/KpStats'
+import DcRequestStats from '../components/reports/DcRequestStats'
 import { BarChart, ProgressBar, StatusDonut } from '../components/reports/ReportCharts'
 import './ReportsPage.css'
 
@@ -152,8 +153,8 @@ function ReportsPage() {
   const { scopedObjectIds, isSuperAdmin, canView } = useRole()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
-  // Две вкладки: «Тендеры» (внутри — обзор, КП, победители, материалы, планы затрат,
-  // ВОРы и РД, работа инженеров) и «Договоры».
+  // Вкладки: «Тендеры» (внутри — обзор, КП, победители, материалы, планы затрат,
+  // ВОРы и РД, работа инженеров), «Договоры» и «Заявки на ДС».
   // Какие отчёты видны роли. С правом «Отчёты: все вкладки» (reports_full, миграция
   // 20260930 выдала его всем ролям, у которых отчёты уже были) — все, как раньше.
   // Без него — только отчёты рабочих разделов: у «Сметный отдел_Руководители»
@@ -168,6 +169,8 @@ function ReportsPage() {
   const allowedTabs = [
     ...(tenderSubs.length > 0 ? ['tenders'] : []),
     ...(fullReports ? ['contracts'] : []),
+    // Заявки на ДС — тому, кто видит и все отчёты, и сам реестр заявок (его строки отдаёт база).
+    ...(fullReports && canView('dc_requests') ? ['dc_requests'] : []),
   ]
   const [activeTabState, setActiveTab] = useState('tenders')
   const [subTabState, setSubTab] = useState(() => tenderSubs[0] || 'overview')
@@ -178,6 +181,8 @@ function ReportsPage() {
   // КП грузятся при первом открытии подвкладки и дальше не перечитываются при
   // переключении: тысячи строк незачем тянуть заново на каждый клик.
   const [kpVisited, setKpVisited] = useState(false)
+  // То же у «Заявок на ДС»: заявки и журнал статусов грузятся при первом открытии вкладки.
+  const [dcVisited, setDcVisited] = useState(false)
   // null = обзор, 'construction' | 'warranty' = детализация по выбранному отделу
   const [tDeptView, setTDeptView] = useState(null)
   // task: сырые основные тендеры + момент загрузки (для фильтрации без повторных запросов)
@@ -657,6 +662,7 @@ function ReportsPage() {
   const reportTabs = [
     { key: 'tenders', label: 'Тендеры' },
     { key: 'contracts', label: 'Договоры' },
+    { key: 'dc_requests', label: 'Заявки на ДС' },
   ].filter(tab => allowedTabs.includes(tab.key))
   const tenderTabs = [
     { key: 'overview', label: 'Обзор', count: s.tTotal },
@@ -679,7 +685,7 @@ function ReportsPage() {
       <div className="reports-header">
         <div>
           <h2>Отчёты</h2>
-          <div className="reports-subtitle">{fullReports ? 'Аналитика по тендерам и договорам' : 'Аналитика по вашим разделам'}</div>
+          <div className="reports-subtitle">{fullReports ? 'Аналитика по тендерам, договорам и заявкам на ДС' : 'Аналитика по вашим разделам'}</div>
         </div>
         <div className="report-toolbar">
           {updatedLabel && <span className="reports-updated">{updatedLabel}</span>}
@@ -699,6 +705,7 @@ function ReportsPage() {
             onClick={() => {
               setActiveTab(tab.key)
               if (tab.key !== 'tenders') setTDeptView(null)
+              if (tab.key === 'dc_requests') setDcVisited(true)
             }}
             aria-pressed={activeTab === tab.key}
           >
@@ -1331,6 +1338,13 @@ function ReportsPage() {
         {kpVisited && tenderSubs.includes('kp') && (
           <div className="reports-subview" hidden={!showSub('kp')}>
             <KpStats scopedObjectIds={scopedObjectIds} canOpenReview={canView('tenders')} />
+          </div>
+        )}
+
+        {/* Заявки на ДС: свои данные, после первого открытия остаётся смонтированной. */}
+        {(dcVisited || activeTab === 'dc_requests') && allowedTabs.includes('dc_requests') && (
+          <div className="reports-subview" hidden={activeTab !== 'dc_requests'}>
+            <DcRequestStats scopedObjectIds={scopedObjectIds} canOpenRegistry={canView('dc_requests')} />
           </div>
         )}
       </div>

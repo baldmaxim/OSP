@@ -1,5 +1,5 @@
 // «Общая информация» (/general): блок «Наши порталы» под карточками разделов.
-//   • четыре портала — название и описание, название — ссылка в новой вкладке без доступа к окну портала;
+//   • десять порталов — название и описание, название — ссылка в новой вкладке без доступа к окну портала;
 //   • адрес на странице не показывается (ни текстом, ни подсказкой title);
 //   • название — по центру, крупнее описания, на своей подложке, без значка-стрелки;
 //     при наведении выделяется — цвет и подложка меняются;
@@ -14,6 +14,12 @@ const PORTALS = [
   ['Signal', 'https://docs.sgnl.pro/'],
   ['Larix', 'https://cpm.su10.larix.ru/'],
   ['Обработка РД (web)', 'https://vibe.cloud-ip.cc/'],
+  ['BillHub', 'https://www.ravek.link/'],
+  ['Estimat', 'https://estimat.su10.ru/'],
+  ['Payhub', 'https://payhub.su10.ru/'],
+  ['Финансовый портал', 'https://fin.su10.ru/'],
+  ['АВТО', 'https://auto.su10.ru/'],
+  ['Garanthub', 'https://garant.su10.ru/'],
 ]
 
 const launch = browserLaunchOptions()
@@ -53,7 +59,7 @@ describe('Общая информация: наши порталы', { skip: !la
         assert.match(l.rel, /noopener/, l.text)
         assert.equal(l.title, '', `${l.text}: адрес не показывается и подсказкой`)
       }
-      assert.equal(await page.locator('.portal-description').count(), 4)
+      assert.equal(await page.locator('.portal-description').count(), PORTALS.length)
       const text = await page.locator('.portals').innerText()
       for (const [, url] of PORTALS) {
         assert.ok(!text.includes(new URL(url).host), `адрес ${url} не виден на странице`)

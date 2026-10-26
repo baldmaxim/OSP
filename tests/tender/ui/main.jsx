@@ -3,6 +3,8 @@
 //             /tenders/materials (реестры), /reports (отчёты; kpStats=1 — файлы КП для статистики),
 //             /general (разделы «Общей информации» и порталы компании), /public/tenders (страница без входа;
 //             publicNoContact=1 — колонок ответственного ещё нет, как до миграции 20261101);
+//             /general/departments (отделы; departments=missing — таблицы ещё нет), /tasks?task=task-1 (карточка
+//             задачи с чек-листом), /stand/dgp (блок ДГП вкладки «Смета» объекта), /reports&dcStats=1 (заявки на ДС);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -16,6 +18,7 @@
 // window.__navigate(путь) — переход между разделами без перезагрузки (данные в памяти сохраняются):
 //             так проверяется, что правка в одном разделе видна в другом (/tenders/construction ↔ /vors).
 import './seed.js'
+import { lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import '../../../src/index.css'
@@ -29,6 +32,10 @@ import VorsPage from '../../../src/pages/VorsPage'
 import ReportsPage from '../../../src/pages/ReportsPage'
 import GeneralInfoPage from '../../../src/pages/GeneralInfoPage'
 import PublicTendersPage from '../../../src/pages/PublicTendersPage'
+import DepartmentsPage from '../../../src/pages/DepartmentsPage'
+import TasksPage from '../../../src/pages/TasksPage'
+// Блок ДГП — только по требованию: стили карточки объекта (ObjectDetailPage.css) не должны задеть другие стенды.
+const DgpStand = lazy(() => import('./dgp-stand.jsx'))
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -52,6 +59,9 @@ const routes = (
     <Route path="/tenders/construction" element={<TendersPage department="construction" tenderType="main" />} />
     <Route path="/tenders/materials" element={<TendersPage key="tenders-materials" tenderType="materials" />} />
     <Route path="/general" element={<GeneralInfoPage />} />
+    <Route path="/general/departments" element={<DepartmentsPage />} />
+    <Route path="/tasks" element={<TasksPage />} />
+    <Route path="/stand/dgp" element={<Suspense fallback={null}><DgpStand /></Suspense>} />
     <Route path="/public/tenders" element={<PublicTendersPage />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
     <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />

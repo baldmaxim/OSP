@@ -1225,3 +1225,14 @@
   .kps-matrix th.num, .kps-matrix td.num { width: 4.5rem; }
   .kps-matrix td:first-child { min-width: 11rem; }
 }
+
+/* ===== Вкладка «Заявки на ДС» ===== */
+/* Суммы в карточках длинные (миллиарды) — мельче обычного числа и в одну строку. */
+.dcs-kpi .kpi-value.dcs-money { font-size: 1.25rem; line-height: 1.75rem; white-space: nowrap; }
+.dense-table td.dcs-money-cell { white-space: nowrap; }
+.dcs-groups { min-width: 62rem; }
+.dcs-groups td:first-child { min-width: 12rem; }
+.dcs-groups thead th { vertical-align: bottom; }
+.dcs-overdue { min-width: 48rem; }
+.dcs-nowrap { white-space: nowrap; }
+.dcs-more { margin-top: 0.5rem; align-self: flex-start; }

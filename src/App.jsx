@@ -74,6 +74,7 @@ const ContractorCabinetPage = lazy(() => import('./pages/ContractorCabinetPage')
 const BSMPage = lazy(() => import('./pages/BSMPage'))
 const GeneralInfoPage = lazy(() => import('./pages/GeneralInfoPage'))
 const GeneralDocumentsPage = lazy(() => import('./pages/GeneralDocumentsPage'))
+const DepartmentsPage = lazy(() => import('./pages/DepartmentsPage'))
 const TasksPage = lazy(() => import('./pages/TasksPage'))
 const RatesRegistryPage = lazy(() => import('./pages/RatesRegistryPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
@@ -127,6 +128,8 @@ function EmployeeLayout() {
             <Route path="/general/contacts" element={<PermissionRoute section="contacts"><ContactsPage /></PermissionRoute>} />
             <Route path="/general/counterparties" element={<PermissionRoute section="counterparties"><CounterpartiesPage /></PermissionRoute>} />
             <Route path="/general/documents" element={<PermissionRoute section="general_documents"><GeneralDocumentsPage /></PermissionRoute>} />
+            {/* Отделы компании — справочник для любого сотрудника; правит администратор (права — в базе). */}
+            <Route path="/general/departments" element={<PermissionRoute><DepartmentsPage /></PermissionRoute>} />
             {/* task 433: карточка задачи открывается query-параметром ?task=<id>,
                 отдельного маршрута для неё нет — ссылка из уведомления ведёт сюда. */}
             <Route path="/tasks" element={<PermissionRoute section="tasks"><TasksPage /></PermissionRoute>} />

@@ -642,3 +642,77 @@ if (params.get('publicNoContact') === '1') {
 } else {
   window.__fakeDb.public_open_tenders = PUBLIC_TENDERS
 }
+
+// ── «Общая информация» → «Отделы» (?route=/general/departments) ───────────────────────────────────────────
+// Люди и телефоны — вымышленные. departments=missing — таблицы ещё нет (миграция 20261104 не применена).
+if (params.get('departments') === 'missing') {
+  window.__fakeErrors = {
+    ...(window.__fakeErrors || {}),
+    company_departments: { code: '42P01', message: 'relation "public.company_departments" does not exist' },
+  }
+} else {
+  window.__fakeDb.company_departments = [
+    { id: 'dep-1', sort_order: 10, block: 'Обеспечение деятельности компании', name: 'Юридический отдел',
+      duties: 'Правовая экспертиза документов, сопровождение договоров, судебная защита.', note: null,
+      contacts: [{ name: 'Стендов Сергей Сергеевич', position: '', phone: '+7 900 111-22-33' }] },
+    { id: 'dep-2', sort_order: 20, block: 'Обеспечение деятельности компании', name: 'Административно-хозяйственный отдел',
+      duties: 'Хозяйственное обслуживание офисных помещений, корпоративная мобильная связь.', note: 'Руководитель отсутствует',
+      contacts: [{ name: 'Пробный П. П.', position: 'по сим-картам', phone: '+7 900 444-55-66' }] },
+    { id: 'dep-3', sort_order: 30, block: 'Тендеры', name: 'Отдел по сопровождению подрядчиков',
+      duties: 'Проведение тендеров и заключение договоров с подрядчиками.', note: null, contacts: [] },
+    { id: 'dep-4', sort_order: 40, block: 'Финансы', name: 'Финансовый отдел',
+      duties: 'Затраты по объектам строительства; начисление заработной платы.', note: null, contacts: [] },
+  ]
+}
+
+// ── Задачи (?route=/tasks&task=task-1) — карточка задачи с чек-листом из трёх пунктов ───────────────────
+// У второго и третьего пункта одинаковый sort_order — так бывало до перестановки (номер считался по длине списка).
+// taskForeign=1 — задачу поставил другой сотрудник (user-2): пользователь стенда только исполнитель.
+window.__fakeDb.tasks = [{
+  id: 'task-1', title: 'Подготовить сводную КП', description: 'Собрать КП подрядчиков', status: 'in_progress',
+  priority: 'normal', assignee_user_id: 'user-1',
+  created_by_user_id: params.get('taskForeign') === '1' ? 'user-2' : 'user-1', due_date: null,
+  object_id: null, tender_id: null, contract_id: null, sort_order: 0, created_at: '2026-10-20T10:00:00Z',
+  deleted_at: null, completed_at: null, objects: null, tenders: null, contracts: null,
+}]
+window.__fakeDb.task_checklist_items = [
+  { id: 'chk-1', task_id: 'task-1', title: 'Собрать КП', is_done: false, sort_order: 0, created_at: '2026-10-20T10:01:00Z' },
+  { id: 'chk-2', task_id: 'task-1', title: 'Сверить объёмы', is_done: true, sort_order: 10, created_at: '2026-10-20T10:02:00Z' },
+  { id: 'chk-3', task_id: 'task-1', title: 'Отправить на согласование', is_done: false, sort_order: 10, created_at: '2026-10-20T10:03:00Z' },
+]
+window.__fakeDb.task_comments = []
+window.__fakeDb.task_participants = []
+window.__fakeDb.task_audit_log = []
+
+// ── «Отчёты → Заявки на ДС» (?route=/reports&dcStats=1) ──────────────────────────────────────────────────
+// Пять заявок и одна удалённая: этапы, суммы, просрочка (срок — вчера), журнал смены статуса на «Завершено».
+if (params.get('dcStats') === '1') {
+  const day = (offset) => {
+    const d = new Date()
+    d.setDate(d.getDate() + offset)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const iso = (offset) => new Date(Date.now() + offset * 24 * 3600 * 1000).toISOString()
+  const objA = { id: 'obj-1', name: 'ЖК Альфа', status: 'main_construction' }
+  const objB = { id: 'obj-2', name: 'ЖК Бета', status: 'warranty_service' }
+  const base = (id, over) => ({
+    id, object_id: objA.id, objects: objA, counterparty_id: 'cp-1', counterparties: { id: 'cp-1', name: 'Подрядчик 01' },
+    responsible_contact_id: 'c-1', responsible: { id: 'c-1', full_name: 'Юристов Ю. Ю.' }, ds_number: `ДС-${id}`,
+    status: 'in_work', check_status: 'not_checked', checked_at: null, ds_type: 'psdc_change', material_type: null,
+    amount_before: null, amount_after: null, expected_approval_date: null, created_at: iso(-40), deleted_at: null,
+    dc_request_tasks: [], ...over,
+  })
+  window.__fakeDb.dc_requests = [
+    base('d1', { status: 'contract_check', created_at: iso(0), amount_before: 1000000, expected_approval_date: day(3) }),
+    base('d2', { status: 'check_result', check_status: 'matches_with_remarks', checked_at: iso(-1), amount_before: 500000,
+      expected_approval_date: day(-1), dc_request_tasks: [{ id: 't1', is_completed: false }, { id: 't2', is_completed: true }] }),
+    base('d3', { object_id: objB.id, objects: objB, responsible_contact_id: null, responsible: null, check_status: 'matches',
+      checked_at: iso(-30), ds_type: 'extra_out_contract', material_type: 'tolling' }),
+    base('d4', { status: 'completed', check_status: 'matches', checked_at: iso(-35), amount_before: 2000000, amount_after: 1800000 }),
+    base('d5', { status: 'completed', check_status: 'not_matches', checked_at: iso(-200), created_at: iso(-210), amount_after: 300000 }),
+    base('d6', { deleted_at: iso(-5), amount_before: 999999999 }),
+  ]
+  window.__fakeDb.dc_request_audit_log = [
+    { id: 'al-1', dc_request_id: 'd4', event_type: 'status_changed', new_value: 'completed', changed_at: iso(-2) },
+  ]
+}

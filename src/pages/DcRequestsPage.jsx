@@ -21,6 +21,10 @@ import { useIsPhone } from '../hooks/useMediaQuery'
 import useBodyClass from '../hooks/useBodyClass'
 import { copyToClipboard } from '../utils/clipboard'
 import { parseAmount, formatAmount, formatAmountLive, amountChange } from '../utils/money'
+import {
+  CHECK_STATUS_CLASS, CHECK_STATUS_LABEL, CHECK_STATUS_OPTIONS, CHECK_STATUS_SHORT, DS_TYPE_CLASS, DS_TYPE_LABEL,
+  DS_TYPE_OPTIONS, MATERIAL_CLASS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, hasVerdict,
+} from '../utils/dcRequestOptions'
 import '../components/ContractRegistry.css'
 import '../components/MobileCards.css'
 import './DcRequestsPage.css'
@@ -52,62 +56,15 @@ const EMPTY_FORM = {
   ds_type: '',
 }
 
-// Этапы заявки: сверка с договором → итог проверки → работа → готово
-// (миграции 20260823, 20260907).
-const STATUS_OPTIONS = [
-  { value: 'contract_check', label: 'Проверка по договору', className: 'status-contract-check' },
-  { value: 'check_result', label: 'Итог проверки', className: 'status-check-result' },
-  { value: 'in_work', label: 'В работе', className: 'status-in-work' },
-  { value: 'completed', label: 'Завершено', className: 'status-completed' },
-]
-const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS.map(o => [o.value, o.label]))
+// Этапы, исход проверки, тип ДС и тип материала — utils/dcRequestOptions.js (общие с отчётом).
 
 // Категории файлов заявки, у которых свой блок в колонке «Документы»:
 // final — итоговые документы, check_report — отчёт по документам с этапа
 // «Итог проверки». Всё остальное — рабочие файлы.
 const SPECIAL_DOC_CATEGORIES = new Set(['final', 'check_report'])
 
-// Исход сверки заявки с договором (миграции 20260824 + 20260912). Фиксируется
-// в окне «Результат проверки» вместе с заключением юриста и файлами отчёта;
-// без него заявку нельзя увести со стадии «Проверка по договору».
-const CHECK_STATUS_OPTIONS = [
-  { value: 'matches', label: 'Соответствует', short: 'Соответствует', className: 'dcr-verdict-ok' },
-  { value: 'matches_with_remarks', label: 'Соответствует с замечаниями', short: 'С замечаниями', className: 'dcr-verdict-warn' },
-  { value: 'not_matches', label: 'Не соответствует', short: 'Не соответствует', className: 'dcr-verdict-bad' },
-]
-// 'not_checked' остаётся только меткой: в истории правок такие записи уже есть.
-const CHECK_STATUS_LABEL = {
-  not_checked: 'Не проверено',
-  ...Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.label])),
-}
-const CHECK_STATUS_SHORT = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.short]))
-const CHECK_STATUS_CLASS = Object.fromEntries(CHECK_STATUS_OPTIONS.map(o => [o.value, o.className]))
-const hasVerdict = (req) => !!req?.check_status && req.check_status !== 'not_checked'
-
-// Тип дополнительного соглашения (миграции 20260824, 20260923).
-const DS_TYPE_OPTIONS = [
-  { value: 'psdc_change', label: 'Изменение ПСДЦ', className: 'dstype-rd' },
-  { value: 'extra_in_contract', label: 'Доп. работы по текущему договору', className: 'dstype-in' },
-  { value: 'extra_out_contract', label: 'Доп. работы вне договора', className: 'dstype-out' },
-  { value: 'tender_ds', label: 'ДС по тендеру', className: 'dstype-tender' },
-]
-const DS_TYPE_LABEL = {
-  // До миграции 20260923 в базе может оставаться прежнее значение.
-  rd_change: 'Изменение РД',
-  ...Object.fromEntries(DS_TYPE_OPTIONS.map(o => [o.value, o.label])),
-}
-const DS_TYPE_CLASS = Object.fromEntries(DS_TYPE_OPTIONS.map(o => [o.value, o.className]))
-
-// task 370: тип материала по ДС.
-const MATERIAL_OPTIONS = [
-  { value: 'tolling', label: 'Давальческие (М-15)', className: 'material-tolling' },
-  { value: 'realization', label: 'Реализация', className: 'material-realization' },
-]
 // Сколько контрагентов показывать в выпадающем поиске за раз (список большой — 1000+).
 const CP_SEARCH_LIMIT = 50
-
-const MATERIAL_LABEL = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.label]))
-const MATERIAL_CLASS = Object.fromEntries(MATERIAL_OPTIONS.map(o => [o.value, o.className]))
 
 const TABS = [
   { key: 'all', label: 'Все заявки' },

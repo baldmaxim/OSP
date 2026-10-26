@@ -168,3 +168,31 @@ export function matchesDueFilter(task, filter) {
   if (filter === 'week') return days >= 0 && days <= 7
   return true
 }
+
+// ── Порядок пунктов чек-листа ───────────────────────────────────────────────
+// Пункт draggedId встаёт перед (before) или после (after) пункта targetId.
+// items — в порядке показа. Возвращает новый порядок и правки sort_order
+// только у тех пунктов, чей номер изменился; переставлять нечего — null.
+// Номера пересчитываются шагом 10 с нуля: у старых пунктов они бывают
+// одинаковыми (добавление считало номер по длине списка, после удаления
+// пункта два соседа получали один номер).
+export function reorderChecklist(items, draggedId, targetId, position) {
+  if (!draggedId || draggedId === targetId) return null
+  const from = items.findIndex(i => i.id === draggedId)
+  if (from === -1 || !items.some(i => i.id === targetId)) return null
+  const rest = items.filter(i => i.id !== draggedId)
+  let to = rest.findIndex(i => i.id === targetId)
+  if (position === 'after') to += 1
+  rest.splice(to, 0, items[from])
+  if (rest.every((item, idx) => item.id === items[idx].id)) return null
+  const ordered = rest.map((item, idx) => ({ ...item, sort_order: idx * 10 }))
+  const updates = ordered
+    .filter(item => items.find(i => i.id === item.id).sort_order !== item.sort_order)
+    .map(item => ({ id: item.id, sort_order: item.sort_order }))
+  return { ordered, updates }
+}
+
+// Номер нового пункта — в конец списка, после самого большого.
+export function nextChecklistOrder(items) {
+  return items.reduce((max, i) => Math.max(max, (i.sort_order ?? 0) + 10), 0)
+}

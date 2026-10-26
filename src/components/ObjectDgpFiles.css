@@ -1,0 +1,128 @@
+/* ДГП во вкладке «Смета» карточки объекта: две карточки — комплектный и полный. */
+.dgp-block {
+  margin-bottom: 1.25rem;
+  padding: 0.875rem 1rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-primary);
+}
+
+.dgp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.dgp-head-text { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
+.dgp-head-title { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); }
+.dgp-head-meta { font-size: 0.8rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.dgp-head-actions { display: flex; align-items: center; gap: 0.5rem; }
+.dgp-status { font-size: 0.8rem; color: var(--text-secondary); }
+.dgp-upload { border: none; font-family: inherit; }
+.dgp-upload:disabled { opacity: 0.6; cursor: default; }
+
+.dgp-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.15rem;
+  color: var(--text-secondary);
+}
+
+.dgp-error {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #dc2626 35%, var(--border-color));
+  background: color-mix(in srgb, #dc2626 8%, var(--bg-primary));
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.dgp-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.dgp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.dgp-card.is-empty { border-style: dashed; }
+
+.dgp-card-head { display: flex; flex-direction: column; gap: 0.1rem; }
+.dgp-card-kind { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
+.dgp-card-hint { font-size: 0.75rem; color: var(--text-tertiary); }
+.dgp-card-empty { margin: 0.25rem 0 0; font-size: 0.8125rem; color: var(--text-tertiary); }
+
+.dgp-card-title { font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.dgp-card-subtitle { font-size: 0.75rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+
+.dgp-card-total { display: flex; flex-direction: column; }
+.dgp-card-total-label { font-size: 0.75rem; color: var(--text-tertiary); }
+.dgp-card-total-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dgp-card-file { display: flex; flex-direction: column; min-width: 0; }
+.dgp-card-file-name {
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dgp-card-file-meta { font-size: 0.75rem; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+.dgp-card-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.15rem; }
+.dgp-btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+.dgp-btn:disabled { opacity: 0.6; cursor: default; }
+.dgp-card-extra { margin: 0; font-size: 0.75rem; color: var(--text-secondary); }
+
+/* Окно выбора вида */
+.dgp-dialog-body { padding: 1rem 1.25rem 1.25rem; }
+.dgp-dialog-body .modal-footer { margin-top: 1rem; }
+.dgp-dialog-note { margin: 0 0 0.75rem; font-size: 0.85rem; color: var(--text-secondary); }
+.dgp-dialog-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border-color);
+}
+.dgp-dialog-file { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.dgp-dialog-title { font-size: 0.75rem; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.dgp-dialog-kinds { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.dgp-kind-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.dgp-kind-option.is-active { border-color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 10%, transparent); }
+.dgp-dialog-replace { font-size: 0.75rem; color: var(--text-secondary); }
+
+@media (max-width: 640px) {
+  .dgp-cards { grid-template-columns: 1fr; }
+  .dgp-head-actions { width: 100%; }
+  .dgp-upload { flex: 1 1 100%; min-height: 40px; }
+  .dgp-btn { min-height: 40px; }
+}
