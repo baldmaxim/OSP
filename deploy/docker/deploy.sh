@@ -112,9 +112,30 @@ healthy() {
   return 1
 }
 
+
+# Журнал API переживает замену контейнера. Хвост не больше 20 МБ, в каталоге — 10 последних файлов.
+# Ошибка сохранения не останавливает выкладку: контейнер всё равно надо заменить.
+save_api_logs() {
+  local tag="${1:-}"
+  [ -n "$tag" ] || return 0
+  local dir="$OSP_HOME/logs" out
+  mkdir -p "$dir"
+  chmod 700 "$dir"
+  out="$dir/osp-api-$(date -u +%Y%m%d-%H%M%S).log"
+  dc "$tag" logs --no-color --tail 50000 osp-api > "$out" 2>&1 || true
+  if [ -f "$out" ]; then
+    tail -c 20971520 "$out" > "$out.part" && mv -f "$out.part" "$out"
+    chmod 600 "$out"
+  fi
+  local -a old=()
+  mapfile -t old < <(find "$dir" -maxdepth 1 -type f -name 'osp-api-*.log' -printf '%T@ %p\n' | sort -rn | awk 'NR>10 { print $2 }')
+  if [ "${#old[@]}" -gt 0 ]; then rm -f -- "${old[@]}"; fi
+}
+
 switch_to() { # switch_to <метка>; при отказе — назад на прежнюю
   local target="$1" before
   before="$(release_of current)"
+  save_api_logs "$before"
   point current "$target"
   dc "$target" up -d --remove-orphans
   if healthy "$target"; then
@@ -152,6 +173,7 @@ case "${1:-}" in
     preflight
     cur="$(release_of current)"
     [ -n "$cur" ] || die "портал не выложен"
+    save_api_logs "$cur"
     dc "$cur" up -d --no-deps --force-recreate osp-api
     healthy "$cur"
     ;;

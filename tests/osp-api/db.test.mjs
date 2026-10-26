@@ -194,6 +194,71 @@ describe('osp-api: обёртка транзакции — единственн�
     } finally { await db.close() }
   })
 
+  it('запись на реплике (25006) уничтожает соединение: следующая транзакция проходит на новом', async () => {
+    const db = open({ max: 1 })
+    try {
+      await db.write(null, async (tx) => {
+        await tx.query('set default_transaction_read_only = on')
+        await tx.query('create temp table osp_poison (n int)')
+      })
+      await assert.rejects(
+        db.write(null, (tx) => tx.query('insert into public.notes values (80, $1, $2)', [ADMIN.userId, 'реплика'])),
+        (e) => e.code === '25006')
+      await db.write(null, (tx) => tx.query('insert into public.notes values (81, $1, $2)', [ADMIN.userId, 'мастер']))
+      const row = await db.read(null, (tx) => tx.query("select to_regclass('osp_poison') is not null as old, (select count(*)::int from public.notes where id = 81) as n"))
+      assert.equal(row.rows[0].old, false)
+      assert.equal(row.rows[0].n, 1)
+    } finally { await db.close() }
+  })
+
+  it('после ошибки «не мастер» остальные соединения пула при выдаче закрываются', async () => {
+    const db = open({ max: 2 })
+    let releaseHold
+    const gate = new Promise((resolve) => { releaseHold = resolve })
+    const ready = []
+    const grab = () => db.write(null, async (tx) => {
+      await tx.query('create temp table osp_mark (n int)')
+      ready.push(1)
+      await gate
+    })
+    try {
+      const pending = Promise.all([grab(), grab()])
+      await new Promise((resolve, reject) => {
+        const timer = setInterval(() => {
+          if (ready.length >= 2) { clearInterval(timer); resolve() }
+        }, 15)
+        setTimeout(() => { clearInterval(timer); reject(new Error('пул не открыл два соединения')) }, 5000)
+      })
+      releaseHold()
+      await pending
+      await db.write(null, (tx) => tx.query('set default_transaction_read_only = on'))
+      await assert.rejects(
+        db.write(null, (tx) => tx.query('insert into public.notes values (82, $1, $2)', [ADMIN.userId, 'реплика'])),
+        (e) => e.code === '25006')
+      for (let i = 0; i < 2; i++) {
+        const row = await db.read(null, (tx) => tx.query("select to_regclass('osp_mark') is not null as old"))
+        assert.equal(row.rows[0].old, false)
+      }
+    } finally { await db.close() }
+  })
+
+  it('реплика на проверке нового соединения в работу не берётся', async () => {
+    let probes = 0
+    const rejectBoth = open({ max: 1, recoveryProbe: async () => { probes += 1; return true } })
+    try {
+      await assert.rejects(rejectBoth.read(null, (tx) => tx.query('select 1')), (e) => e.code === 'OSP_UNAVAILABLE')
+      assert.equal(probes, 2)
+    } finally { await rejectBoth.close() }
+    probes = 0
+    const secondOk = open({ max: 1, recoveryProbe: async () => { probes += 1; return probes === 1 } })
+    try {
+      const row = await secondOk.read(null, (tx) => tx.query('select 1 as n'))
+      assert.equal(row.rows[0].n, 1)
+      assert.equal(probes, 2)
+      assert.equal(secondOk.recovery(), false)
+    } finally { await secondOk.close() }
+  })
+
   it('без строки подключения и с недопустимым именем роли обёртка не создаётся', () => {
     assert.throws(() => createDb({}), /не задана строка подключения/)
     assert.throws(() => createDb({ url, secondLockRole: 'authenticated; drop' }), /недопустимое имя роли/)

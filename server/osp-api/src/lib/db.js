@@ -9,9 +9,13 @@
 //   • «кто вошёл», таймауты и часовой пояс (UTC) действуют только до конца транзакции и не переходят
 //     к следующему запросу на том же подключении пула; пояс задаётся заново каждый раз, потому что
 //     пулер может выдать подключение с настройками прежнего сеанса;
-//   • любая ошибка — ROLLBACK; не удался ROLLBACK — подключение уничтожается, в пул не возвращается;
+//   • любая ошибка — ROLLBACK; ошибка «не мастер», обрыв связи или неудавшийся ROLLBACK —
+//     подключение уничтожается и в пул не возвращается;
+//   • первая ошибка «не мастер» или реплика на новом подключении выводит из работы все соединения,
+//     открытые раньше: их закрывают при выдаче и при возврате, запросы уже в работе не обрываются;
 //   • база не ответила дольше срока команды — сокет закрывается и слот пула освобождается
 //     (серверный statement_timeout до мёртвого сокета не доходит);
+//   • соединение живёт не дольше maxLifetimeSeconds, даже если простой так и не наступил.
 //   • запрос — одна параметризованная команда: несколько команд в одной строке сервер не примет;
 //   • подключений не больше max: учётка базы общая с другими системами, у неё общий лимит;
 //   • сертификат и имя сервера базы проверяются всегда, кроме базы на этой же машине: строка
@@ -45,6 +49,29 @@ export const DB_DEFAULTS = {
   idlePoolTimeoutMs: 30_000,
   // Запас после statement_timeout: живой сервер успевает прислать отмену, мёртвый сокет — нет.
   queryWatchdogSlackMs: 5_000,
+  // Верхняя граница жизни соединения: опрос сессии не даёт наступлению простоя, а после смены
+  // мастера старый сокет иначе так и остаётся на реплике.
+  maxLifetimeSeconds: 300,
+}
+
+export const DB_UNAVAILABLE = 'OSP_UNAVAILABLE'
+export const DB_UNAVAILABLE_TEXT = 'Сервис временно недоступен, повторите через минуту'
+const WATCHDOG_CODE = 'OSP_DB_WATCHDOG'
+
+// База недоступна или это не мастер: такое соединение в пул не возвращается.
+// 25006 — запись на реплике; 57P01–57P03 — сервер закрывается; 08* — обрыв сеанса.
+export function dbUnavailable(err) {
+  const code = String(err?.code || '')
+  if (!code) return false
+  if (code === DB_UNAVAILABLE || code === WATCHDOG_CODE) return true
+  if (code === '25006' || code === '57P01' || code === '57P02' || code === '57P03') return true
+  if (code.startsWith('08')) return true
+  if (code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'EPIPE') return true
+  return false
+}
+
+function dbNotMaster(err) {
+  return err?.code === '25006'
 }
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost'])
@@ -93,10 +120,21 @@ export function createDb(options) {
     max: o.max,
     connectionTimeoutMillis: o.connectionTimeoutMs,
     idleTimeoutMillis: o.idlePoolTimeoutMs,
+    maxLifetimeSeconds: o.maxLifetimeSeconds,
     application_name: APP_NAME,
   })
   // Обрыв простаивающего подключения — не повод ронять службу: пул откроет новое.
-  pool.on('error', (err) => log.warn({ msg: err?.message }, 'db pool'))
+  pool.on('error', (err) => log.warn({ code: String(err?.code || '') }, 'db pool'))
+
+  // Поколение пула. После «не мастер» или реплики на проверке старые соединения закрываются
+  // при выдаче и при возврате. Пул целиком не пересоздаётся: запрос, который уже идёт, дорабатывает.
+  let generation = 0
+  let lastRecovery = null
+  const retire = () => { generation += 1 }
+  const stale = (client) => Number.isInteger(client._ospGen) && client._ospGen !== generation
+  const drop = (client, err) => {
+    try { client.release(err) } catch { /* уже отдано */ }
+  }
 
   // Одна команда, только с параметрами. queryMode 'extended' — расширенный протокол и при пустом
   // списке параметров: строку из нескольких команд сервер отклоняет. Имени у запроса нет — именованных
@@ -123,11 +161,61 @@ export function createDb(options) {
     return err
   }
 
+  async function inRecovery(client) {
+    if (typeof o.recoveryProbe === 'function') return Boolean(await o.recoveryProbe(client))
+    const res = await client.query('select pg_is_in_recovery() as r')
+    return res.rows[0]?.r === true
+  }
+
+  function unavailable() {
+    const err = new Error(DB_UNAVAILABLE_TEXT)
+    err.code = DB_UNAVAILABLE
+    err.statusCode = 503
+    return err
+  }
+
+  // Новое соединение один раз проверяется: реплика в работу не берётся (две попытки, затем 503).
+  // Соединение прошлого поколения закрывается и не считается попыткой.
+  async function acquire() {
+    let probes = 0
+    for (let n = 0; n < o.max + 3; n++) {
+      const client = await pool.connect()
+      if (stale(client)) {
+        drop(client, Object.assign(new Error('osp-api: соединение прошлого поколения'), { code: 'OSP_DB_STALE' }))
+        continue
+      }
+      if (client._ospRecoveryChecked) return client
+      probes += 1
+      let recovering = false
+      try {
+        recovering = await inRecovery(client)
+      } catch (err) {
+        drop(client, err)
+        if (dbNotMaster(err)) retire()
+        log.warn({ code: String(err?.code || '') }, 'db acquire failed')
+        if (!dbUnavailable(err) || probes >= 2) throw dbUnavailable(err) ? unavailable() : err
+        continue
+      }
+      lastRecovery = recovering
+      if (recovering) {
+        retire()
+        drop(client, Object.assign(new Error('osp-api: база в восстановлении'), { code: '25006' }))
+        if (probes >= 2) throw unavailable()
+        continue
+      }
+      client._ospRecoveryChecked = true
+      client._ospGen = generation
+      return client
+    }
+    throw unavailable()
+  }
+
   async function transaction(mode, who, fn, opts = {}) {
     if (who != null && !UUID.test(String(who.userId || ''))) throw new TypeError('osp-api: у вошедшего нет идентификатора')
-    const client = await pool.connect()
+    const client = await acquire()
     let broken = null
     let finished = false
+    let watchdogHit = null
     // Сервер оборвал подключение посреди операции: без обработчика событие «error» у занятого
     // подключения стало бы необработанной ошибкой и остановило службу. Такое подключение в пул не вернётся.
     const onConnectionError = (err) => { broken = broken || err }
@@ -136,8 +224,10 @@ export function createDb(options) {
     const watchdog = setTimeout(() => {
       if (finished) return
       const err = new Error('osp-api: база не ответила, подключение закрыто')
+      err.code = WATCHDOG_CODE
+      watchdogHit = err
       broken = abandon(client, err)
-      log.warn({ msg: err.message }, 'db query watchdog')
+      log.warn({ code: WATCHDOG_CODE }, 'db query watchdog')
     }, budget)
     watchdog.unref?.()
     try {
@@ -174,18 +264,26 @@ export function createDb(options) {
       await client.query('COMMIT')
       return result
     } catch (err) {
-      try {
-        await client.query('ROLLBACK')
-      } catch (rollbackError) {
-        // Состояние подключения неизвестно: в пул оно не вернётся.
-        broken = rollbackError
-        log.warn({ msg: rollbackError?.message }, 'db rollback failed, connection dropped')
+      const failure = watchdogHit || err
+      if (dbNotMaster(err) || dbNotMaster(failure)) retire()
+      if (dbUnavailable(failure) || dbUnavailable(err)) broken = broken || failure
+      if (!watchdogHit) {
+        try {
+          await client.query('ROLLBACK')
+        } catch (rollbackError) {
+          // Состояние подключения неизвестно: в пул оно не вернётся.
+          broken = rollbackError
+          if (dbNotMaster(rollbackError)) retire()
+          log.warn({ code: String(rollbackError?.code || '') }, 'db rollback failed, connection dropped')
+        }
       }
-      throw err
+      if (dbUnavailable(failure) || dbUnavailable(err)) broken = broken || failure
+      throw failure
     } finally {
       finished = true
       clearTimeout(watchdog)
       client.removeListener('error', onConnectionError)
+      if (stale(client)) broken = broken || Object.assign(new Error('osp-api: соединение прошлого поколения'), { code: 'OSP_DB_STALE' })
       client.release(broken || undefined)
     }
   }
@@ -193,6 +291,7 @@ export function createDb(options) {
   return {
     read: (who, fn, opts) => transaction('read', who, fn, opts),
     write: (who, fn, opts) => transaction('write', who, fn, opts),
+    recovery: () => lastRecovery,
     stats: () => ({ max: o.max, total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }),
     close: () => pool.end(),
   }

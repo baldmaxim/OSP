@@ -35,6 +35,7 @@ out = e['OSP_ENV_OUT']
 user, password, host, port, db = (e['PGUSER'], e['PGPASSWORD'], e['PGHOST'], e.get('PGPORT') or '6432', e['PGDATABASE'])
 auth = f"{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}/{quote(db, safe='')}"
 # PostgREST понимает параметры libpq; osp-api принимает только sslmode=verify-full и свой файл сертификата.
+# target_session_attrs в адрес не добавляется: хост один (*.rw), пулер 6432 по нему мастер сам не выбирает.
 pgrst_uri = f"postgres://{auth}?sslmode=verify-full&sslrootcert={e['OSP_ENV_CA']}&application_name=osp-postgrest"
 api_uri = f"postgres://{auth}?sslmode=verify-full"
 lines = []

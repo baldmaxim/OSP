@@ -25,7 +25,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import Anthropic from '@anthropic-ai/sdk'
 import { configuredParts, checkOwnAuthConfig, READY_PARTS, READY_OPTIONAL } from './config.js'
 import { bearerToken } from './lib/keys.js'
-import { createDb } from './lib/db.js'
+import { createDb, dbUnavailable, DB_UNAVAILABLE, DB_UNAVAILABLE_TEXT } from './lib/db.js'
 import { createTokenVerifier } from './lib/token.js'
 import { createUserStatus, STATUS_DEFAULTS } from './lib/userStatus.js'
 import { createRateLimit, createConcurrency, DEFAULT_LIMITS } from './lib/limits.js'
@@ -405,6 +405,10 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
       return reply.code(413).send({ error: 'Слишком большой запрос' })
     }
     if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: err.message })
+    if (dbUnavailable(err) || dbUnavailable(err?.cause)) {
+      request.log.error({ route: request.routeOptions?.url, code: String(err?.code || err?.cause?.code || '') }, 'db unavailable')
+      return reply.code(503).send({ error: DB_UNAVAILABLE_TEXT, code: DB_UNAVAILABLE })
+    }
     request.log.error({ route: request.routeOptions?.url, msg: err.message }, 'unhandled')
     return reply.code(500).send({ error: 'Internal error' })
   })
@@ -484,7 +488,8 @@ export function buildApp({ config, deps = defaultDeps, logger = { level: 'info' 
     // С какой копией данных работает сервер за шлюзом: rehearsal — репетиция (файлы и учётки входа
     // рабочего портала защищены), final — рабочая, unknown — отметка не читается (защита включена).
     const data = gatewayOn ? { data: (await loadStatus.current())?.status || 'unknown' } : {}
-    return reply.code(ok ? 200 : 503).send({ ok, checks, required, ...data })
+    const recovery = db ? { inRecovery: db.recovery() } : {}
+    return reply.code(ok ? 200 : 503).send({ ok, checks, required, ...data, ...recovery })
   } })
 
   // Очистка своего входа: просроченные сессии, давние неудачи, старый журнал (src/lib/auth/service.js).
