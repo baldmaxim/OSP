@@ -167,6 +167,18 @@ describe('osp-api: обёртка транзакции — единственн�
     } finally { await db.close() }
   })
 
+  it('молчащий сокет закрывается сам и не занимает слот пула', async () => {
+    // statement_timeout длинный, поэтому отмену делает сторож, а не сервер: так ведёт себя
+    // оборванный сокет, до которого серверная отмена не доходит.
+    const db = open({ max: 1, queryWatchdogMs: 400, statementTimeoutMs: 60_000 })
+    try {
+      const started = Date.now()
+      await assert.rejects(db.read(null, (tx) => tx.query('select pg_sleep(5)')))
+      assert.ok(Date.now() - started < 2_500, 'ожидание оборвано сторожем')
+      assert.equal((await db.read(null, (tx) => tx.query('select 1 as n'))).rows[0].n, 1)
+    } finally { await db.close() }
+  })
+
   it('подключений не больше лимита: лишние запросы ждут очереди и все выполняются', async () => {
     const db = open({ max: 2 })
     try {

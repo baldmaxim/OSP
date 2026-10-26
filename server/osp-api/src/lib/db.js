@@ -10,6 +10,8 @@
 //     к следующему запросу на том же подключении пула; пояс задаётся заново каждый раз, потому что
 //     пулер может выдать подключение с настройками прежнего сеанса;
 //   • любая ошибка — ROLLBACK; не удался ROLLBACK — подключение уничтожается, в пул не возвращается;
+//   • база не ответила дольше срока команды — сокет закрывается и слот пула освобождается
+//     (серверный statement_timeout до мёртвого сокета не доходит);
 //   • запрос — одна параметризованная команда: несколько команд в одной строке сервер не примет;
 //   • подключений не больше max: учётка базы общая с другими системами, у неё общий лимит;
 //   • сертификат и имя сервера базы проверяются всегда, кроме базы на этой же машине: строка
@@ -41,6 +43,8 @@ export const DB_DEFAULTS = {
   idleInTransactionTimeoutMs: 10_000,
   connectionTimeoutMs: 5_000,
   idlePoolTimeoutMs: 30_000,
+  // Запас после statement_timeout: живой сервер успевает прислать отмену, мёртвый сокет — нет.
+  queryWatchdogSlackMs: 5_000,
 }
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost'])
@@ -103,14 +107,39 @@ export function createDb(options) {
     return client.query({ text, values, queryMode: 'extended' })
   }
 
+  function watchdogBudget(opts) {
+    const explicit = Number(opts.queryWatchdogMs ?? o.queryWatchdogMs)
+    if (Number.isFinite(explicit) && explicit > 0) return explicit
+    const statement = Number(opts.statementTimeoutMs ?? o.statementTimeoutMs)
+    return statement + o.queryWatchdogSlackMs
+  }
+
+  // Драйвер по своему таймауту чтения отклоняет запрос, но уже отправленную команду с сокета не снимает:
+  // следующий ROLLBACK ждёт ответ, которого не будет, и слот пула не возвращается. Закрытие сокета
+  // снимает ожидание и помечает подключение сломанным.
+  function abandon(client, err) {
+    const stream = client.connection?.stream
+    if (stream && typeof stream.destroy === 'function' && !stream.destroyed) stream.destroy()
+    return err
+  }
+
   async function transaction(mode, who, fn, opts = {}) {
     if (who != null && !UUID.test(String(who.userId || ''))) throw new TypeError('osp-api: у вошедшего нет идентификатора')
     const client = await pool.connect()
     let broken = null
+    let finished = false
     // Сервер оборвал подключение посреди операции: без обработчика событие «error» у занятого
     // подключения стало бы необработанной ошибкой и остановило службу. Такое подключение в пул не вернётся.
     const onConnectionError = (err) => { broken = broken || err }
     client.on('error', onConnectionError)
+    const budget = watchdogBudget(opts)
+    const watchdog = setTimeout(() => {
+      if (finished) return
+      const err = new Error('osp-api: база не ответила, подключение закрыто')
+      broken = abandon(client, err)
+      log.warn({ msg: err.message }, 'db query watchdog')
+    }, budget)
+    watchdog.unref?.()
     try {
       await client.query(mode === 'read' ? 'BEGIN TRANSACTION READ ONLY' : 'BEGIN')
       // Всё — только на эту транзакцию (третий аргумент set_config = true).
@@ -154,6 +183,8 @@ export function createDb(options) {
       }
       throw err
     } finally {
+      finished = true
+      clearTimeout(watchdog)
       client.removeListener('error', onConnectionError)
       client.release(broken || undefined)
     }
