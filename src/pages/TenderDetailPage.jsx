@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { db } from '../api'
 import { fetchAllRowsParallel } from '../utils/fetchAllRows'
 import { getColumnPreviews } from '../utils/parseProposalExcel'
+import { phoneHref } from '../utils/phoneFormat'
 import { normName, supplyKey, rateUnitPrice } from '../utils/supplyRateHelpers'
 import { isWorkItem, aggregateEstimate } from '../utils/vorMaterials'
 import { reorderSiblings } from '../utils/appendixTree'
@@ -2706,7 +2707,7 @@ function TenderDetailPage() {
                             {firstContact?.phone ? (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
                                 {firstContact.phone.split(';').map((ph, i) => (
-                                  ph.trim() && <a key={i} href={`tel:${ph.trim()}`} style={{ color: 'var(--primary-color)', textDecoration: 'none', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>{ph.trim()}</a>
+                                  ph.trim() && <a key={i} href={phoneHref(ph)} style={{ color: 'var(--primary-color)', textDecoration: 'none', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>{ph.trim()}</a>
                                 ))}
                               </div>
                             ) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}

@@ -103,7 +103,9 @@ const DOC_KINDS = [
   { key: 'amendments', label: 'ДС', hint: 'Только ДС отдельными строками: на изменение ВОР и на дополнительные работы' },
 ]
 const DOC_KIND_STORAGE_KEY = 'contracts-doc-kind'
-const docKindOf = (c) => ((c.record_type || DOC_TYPE.CONTRACT) === DOC_TYPE.CONTRACT ? 'contracts' : 'amendments')
+// Понятийные соглашения — файлы договора в s3_documents (ConceptAgreementCell).
+const CONCEPT_DOC_COLUMNS = 'id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at'
+const docKindOf =(c) => ((c.record_type || DOC_TYPE.CONTRACT) === DOC_TYPE.CONTRACT ? 'contracts' : 'amendments')
 
 function readStoredDocKind() {
   try {
@@ -574,7 +576,7 @@ function ContractRegistry() {
         try {
           const caRows = (await Promise.all(idChunks.map(chunk => fetchAllRows((from, to) => db
             .from('s3_documents')
-            .select('id, owner_id, file_name, s3_key, mime_type, size_bytes, created_at')
+            .select(CONCEPT_DOC_COLUMNS)
             .eq('owner_type', 'contract')
             .eq('doc_category', 'concept_agreement')
             .in('owner_id', chunk)
@@ -609,6 +611,31 @@ function ContractRegistry() {
       console.error('Ошибка загрузки договоров:', error.message)
       setLoading(false)
     }
+  }
+
+  // После загрузки или удаления понятийного соглашения — файлы только этого договора.
+  // Раньше перечитывался весь реестр (fetchContracts): таблица пропадала под «Загрузка...»,
+  // заново шли все договоры, приложения и файлы (на 5 тыс. договоров — больше сотни
+  // запросов), затем полная перерисовка — браузер на секунды переставал отвечать.
+  const refreshConceptDocs = async (contractId) => {
+    const { data, error } = await db
+      .from('s3_documents')
+      .select(CONCEPT_DOC_COLUMNS)
+      .eq('owner_type', 'contract')
+      .eq('doc_category', 'concept_agreement')
+      .eq('owner_id', contractId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+    if (error) {
+      console.warn('Не удалось обновить понятийные соглашения:', error.message)
+      return
+    }
+    setConceptDocsByContract(prev => {
+      const next = { ...prev }
+      if (data?.length) next[contractId] = data
+      else delete next[contractId]
+      return next
+    })
   }
 
   const fetchObjects = async () => {
@@ -2444,7 +2471,7 @@ function ContractRegistry() {
                         files={conceptDocsByContract[contract.id] || []}
                         contractId={contract.id}
                         canEdit={canEditContracts}
-                        onChanged={fetchContracts}
+                        onChanged={() => refreshConceptDocs(contract.id)}
                       />
                     )}
                   </td>

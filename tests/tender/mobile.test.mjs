@@ -110,7 +110,7 @@ describe('Телефон: реестр тендеров, контрагенты,
         const atInn = document.elementFromPoint(inn.left + 4, inn.top + inn.height / 2)
         return { href: tel.getAttribute('href'), telHit: tel.contains(atTel), innOpens: !!atInn?.closest('.cp-mrow-open') }
       })
-      assert.equal(hit.href, 'tel:+7 701 555-12-34', 'первый телефон первого контакта')
+      assert.equal(hit.href, 'tel:+77015551234', 'первый телефон первого контакта (только цифры)')
       assert.ok(hit.telHit, 'нажатие на телефон попадает в ссылку, а не в строку')
       assert.ok(hit.innOpens, 'остальная строка открывает карточку')
 

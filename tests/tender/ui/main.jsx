@@ -4,7 +4,8 @@
 //             /general (разделы «Общей информации» и порталы компании), /public/tenders (страница без входа;
 //             publicNoContact=1 — колонок ответственного ещё нет, как до миграции 20261101);
 //             /general/departments (отделы; departments=missing — таблицы ещё нет), /tasks?task=task-1 (карточка
-//             задачи с чек-листом; taskChecklist=N — ещё N пунктов, taskList=N — ещё N задач), /stand/dgp (блок ДГП вкладки «Смета» объекта), /reports&dcStats=1 (заявки на ДС);
+//             задачи с чек-листом; taskChecklist=N — ещё N пунктов, taskList=N — ещё N задач), /stand/dgp (блок ДГП вкладки «Смета» объекта), /reports&dcStats=1 (заявки на ДС),
+//             /contracts&contracts=N (реестр «Договоры и ДС», понятийные соглашения);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -36,6 +37,8 @@ import DepartmentsPage from '../../../src/pages/DepartmentsPage'
 import TasksPage from '../../../src/pages/TasksPage'
 // Блок ДГП — только по требованию: стили карточки объекта (ObjectDetailPage.css) не должны задеть другие стенды.
 const DgpStand = lazy(() => import('./dgp-stand.jsx'))
+// Реестр договоров — так же: его стили (ContractRegistry*.css, MobileCards.css) глобальные.
+const ContractsPage = lazy(() => import('../../../src/pages/ContractsPage'))
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -64,6 +67,7 @@ const routes = (
     <Route path="/stand/dgp" element={<Suspense fallback={null}><DgpStand /></Suspense>} />
     <Route path="/public/tenders" element={<PublicTendersPage />} />
     <Route path="/general/counterparties" element={<CounterpartiesPage />} />
+    <Route path="/contracts" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
     <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />
     <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />
   </Routes>

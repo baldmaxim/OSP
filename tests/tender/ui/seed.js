@@ -5,6 +5,7 @@ const ITEMS = Number(params.get('items') || 5000)
 const CPS = Number(params.get('cps') || 10)
 const DOCS = ['Корпус 1', 'Корпус 2', 'Паркинг']
 const CP_CONTACTS = params.get('cpContacts') === '1'
+const PHONE_EXT = params.get('phoneExt') === '1'
 // ?cpCard=1 — карточка контрагента «Общая информация»: колонки НДС есть (миграция 20261026), у «Подрядчика 01»
 // примечание, ставка 22 %, связь с «Подрядчиком 02», договор с двумя ДС, договор, где он вторая сторона, и чужой договор;
 // у «Подрядчика 04» записан «Без НДС», у «Подрядчика 05» — 20 % (из выбора убраны 23.10.2026, но видны как есть).
@@ -108,14 +109,15 @@ window.__fakeDb = {
     { id: `rd-${i}-2`, tender_id: t.id, code: `2026-${t.public_tender_number}-КЖ`, title: 'Конструкции железобетонные', sort_order: 20 },
   ]),
   tender_counterparties: [...registry.slice(1, 9).map((t, i) => ({ id: `tch-${i}`, tender_id: t.id, counterparty_id: 'cp-1', status: i % 3 === 0 ? 'declined' : 'proposal_provided', sort_order: 0, tenders: { id: t.id, work_description: t.work_description, tender_start_date: t.tender_start_date, tender_end_date: t.tender_end_date, objects: { name: t.objects.name } } })), ...counterparties.map((cp, i) => ({ id: `tc-${i + 1}`, tender_id: 'tender-1', counterparty_id: cp.id, status: 'proposal_provided', sort_order: i, invited_at: '2026-08-01', counterparties: { ...cp, counterparty_contacts: [] } }))],
-  // ?cpContacts=1 — у контрагентов есть контакты с телефонами, третий — в чёрном списке (реестр контрагентов на телефоне).
+  // ?cpContacts=1 — у контрагентов есть контакты с телефонами, третий — в чёрном списке (реестр контрагентов на телефоне);
+  // &phoneExt=1 — у первого номера добавочный («… доб. 123»).
   counterparties: counterparties.map((cp, i) => ({
     ...cp,
     status: CP_CONTACTS && i === 2 ? 'blacklist' : 'active',
     inn: '123456789012',
     work_type: CP_CONTACTS && i % 4 === 1 ? 'Фасадные работы, Кровельные работы, Устройство вентилируемых фасадов, Остекление, Благоустройство территории' : 'Фасадные работы',
     counterparty_contacts: CP_CONTACTS && i % 2 === 0
-      ? [{ id: `cpc-${i}`, counterparty_id: cp.id, full_name: 'Сапаров Ержан Болатович', phone: '+7 701 555-12-34; +7 727 300-00-00', email: 'sales@example.invalid' }]
+      ? [{ id: `cpc-${i}`, counterparty_id: cp.id, full_name: 'Сапаров Ержан Болатович', phone: `+7 701 555-12-34${PHONE_EXT ? ' доб. 123' : ''}; +7 727 300-00-00`, email: 'sales@example.invalid' }]
       : [],
     ...(CP_CARD ? {
       vat_rate: i === 0 ? 22 : i === 4 ? 20 : null,
@@ -750,4 +752,30 @@ if (params.get('dcStats') === '1') {
   window.__fakeDb.dc_request_audit_log = [
     { id: 'al-1', dc_request_id: 'd4', event_type: 'status_changed', new_value: 'completed', changed_at: iso(-2) },
   ]
+}
+
+// ?contracts=N — реестр «Договоры и ДС» (route=/contracts): N договоров, у каждого третьего — ДС, у каждого седьмого —
+// понятийное соглашение (s3_documents, doc_category='concept_agreement').
+const CONTRACTS = Number(params.get('contracts') || 0)
+if (CONTRACTS > 0) {
+  const contracts = []
+  for (let i = 0; i < CONTRACTS; i++) {
+    const obj = objects[i % objects.length]
+    const cp = { id: `cp-${(i % CPS) + 1}`, name: `Подрядчик ${String((i % CPS) + 1).padStart(2, '0')}`, inn: '123456789012' }
+    const parent = i % 3 === 2 ? contracts[i - 1] : null
+    contracts.push({
+      id: `ctr-${i + 1}`, display_id: i + 1, contract_number: `${i + 1}/26`, contract_date: '2026-09-01',
+      status: 'in_work', record_type: parent ? 'change' : 'dp', parent_contract_id: parent?.id || null,
+      root_contract_id: parent?.id || null, object_id: obj.id, objects: { name: obj.name, status: obj.status },
+      counterparty_id: cp.id, counterparties: cp, contract_counterparties: [{ counterparty_id: cp.id, sort_order: 0, counterparties: cp }],
+      tenders: null, responsible: null, work_name: `Работы ${i + 1}`, contract_amount: 1000000 + i, currency: 'RUB',
+      created_at: new Date(Date.UTC(2026, 8, 1) + i * 60000).toISOString(), deleted_at: null, handled_by_us: true,
+    })
+  }
+  window.__fakeDb.contracts = contracts
+  window.__fakeDb.contract_appendices = []
+  window.__fakeDb.s3_documents.push(...contracts.filter((_, i) => i % 7 === 0).map((c) => ({
+    id: `ca-${c.id}`, owner_type: 'contract', owner_id: c.id, doc_category: 'concept_agreement', file_name: `ПС ${c.contract_number}.pdf`,
+    s3_key: `contracts/${c.id}/ps.pdf`, mime_type: 'application/pdf', size_bytes: 1000, created_at: '2026-09-02T10:00:00Z',
+  })))
 }

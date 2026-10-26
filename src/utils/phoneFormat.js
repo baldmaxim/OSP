@@ -28,3 +28,38 @@ export function formatPhone(value) {
 
   return result
 }
+
+// Добавочный номер хранится в той же строке, что и номер: «+7(916)712-69-10 доб. 123».
+// У контакта контрагента несколько номеров через «;» — у каждого свой добавочный.
+// Читаем и прежние записи из Excel: «доб.», «доп.», «вн.», «ext».
+const EXT_RE = /[\s,]*(?:доб|доп|вн|ext)\.?\s*(\d+)\s*$/i
+export const PHONE_EXT_MAX = 6
+
+/** «+7(916)712-69-10 доб. 123» → { number: '+7(916)712-69-10', ext: '123' } */
+export function splitPhoneExt(value) {
+  const s = String(value ?? '').trim()
+  const m = s.match(EXT_RE)
+  return m ? { number: s.slice(0, m.index).trim(), ext: m[1] } : { number: s, ext: '' }
+}
+
+/** Номер и добавочный (только цифры) — обратно в одну строку. */
+export function joinPhoneExt(number, ext) {
+  const n = String(number ?? '').trim()
+  const e = String(ext ?? '').replace(/\D/g, '').slice(0, PHONE_EXT_MAX)
+  if (!e) return n
+  return n ? `${n} доб. ${e}` : `доб. ${e}`
+}
+
+/** Номер в виде +7(XXX)XXX-XX-XX, добавочный — как есть. */
+export function formatPhoneEntry(value) {
+  const { number, ext } = splitPhoneExt(value)
+  return joinPhoneExt(number && formatPhone(number), ext)
+}
+
+/** Ссылка для звонка: добавочный — после паузы («,»), телефон наберёт его сам. Без цифр — undefined. */
+export function phoneHref(value) {
+  const { number, ext } = splitPhoneExt(value)
+  const dial = number.replace(/[^\d+]/g, '')
+  if (!/\d/.test(dial)) return undefined
+  return `tel:${dial}${ext ? ',' + ext : ''}`
+}

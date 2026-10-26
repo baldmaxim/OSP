@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useDeferredValue, useTransition, 
 import { db } from '../api'
 import { fetchAllRows, fetchAllRowsParallel } from '../utils/fetchAllRows'
 import * as XLSX from 'xlsx'
-import { formatPhone } from '../utils/phoneFormat'
+import { formatPhone, formatPhoneEntry, joinPhoneExt, phoneHref, splitPhoneExt, PHONE_EXT_MAX } from '../utils/phoneFormat'
 import { generateUUID } from '../utils/uuid'
 import { useRole } from '../contexts/RoleContext'
 import CounterpartyCardChip from '../components/CounterpartyCardChip'
@@ -135,44 +135,67 @@ const SUB_INPUT_STYLE = { width: '100%', padding: '0.5rem', border: '1px solid #
 
 // Несколько телефонов или адресов почты в одном поле базы — через «;». Два вида: подформа контакта в окне
 // контрагента (form) и отдельное окно контакта (modal, поля — по стилям .form-group).
+// withExt — у каждого номера поле «Добавочный»; пишется в ту же строку: «+7(916)712-69-10 доб. 123».
 const MULTI_STYLES = {
   form: {
-    input: { ...SUB_INPUT_STYLE, width: undefined, flex: 1 },
+    input: { ...SUB_INPUT_STYLE, width: undefined, flex: 1, minWidth: 0 },
+    ext: { ...SUB_INPUT_STYLE, width: undefined, flex: '0 0 7rem', minWidth: 0 },
     remove: { padding: '0 0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: '0.875rem' },
     add: { marginTop: '0.25rem', padding: '0.25rem 0.5rem', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem' },
   },
   modal: {
-    input: { flex: 1 },
+    input: { flex: 1, minWidth: 0 },
+    ext: { flex: '0 0 7rem', minWidth: 0 },
     remove: { padding: '0 0.5rem', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer' },
     add: { marginTop: '0.25rem', padding: '0.25rem 0', border: 'none', background: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.8125rem', textAlign: 'left' },
   },
 }
 
-function MultiValueInput({ value, onChange, type, placeholder, format, addLabel, removeTitle, variant }) {
+function MultiValueInput({ value, onChange, type, placeholder, format, addLabel, removeTitle, variant, withExt = false }) {
   const styles = MULTI_STYLES[variant]
   const items = (value || '').split(';').map(x => x.trim())
+  const setItem = (idx, next) => onChange(items.map((x, i) => (i === idx ? next : x)).join('; '))
   return (
     <>
-      {items.map((item, idx) => (
-        <div key={idx} style={{ display: 'flex', gap: '0.25rem', marginBottom: idx < items.length - 1 ? '0.25rem' : 0 }}>
-          <input
-            type={type}
-            value={item}
-            onChange={(e) => onChange(items.map((x, i) => (i === idx ? (format ? format(e.target.value) : e.target.value) : x)).join('; '))}
-            placeholder={placeholder}
-            style={styles.input}
-          />
-          {items.length > 1 && (
-            <button
-              type="button"
-              onClick={() => onChange(items.filter((_, i) => i !== idx).join('; '))}
-              style={styles.remove}
-              title={removeTitle}
-              aria-label={removeTitle}
-            >×</button>
-          )}
-        </div>
-      ))}
+      {items.map((item, idx) => {
+        const { number, ext } = withExt ? splitPhoneExt(item) : { number: item, ext: '' }
+        return (
+          <div key={idx} style={{ display: 'flex', gap: '0.25rem', marginBottom: idx < items.length - 1 ? '0.25rem' : 0 }}>
+            <input
+              type={type}
+              value={number}
+              onChange={(e) => {
+                const next = format ? format(e.target.value) : e.target.value
+                setItem(idx, withExt ? joinPhoneExt(next, ext) : next)
+              }}
+              placeholder={placeholder}
+              style={styles.input}
+            />
+            {withExt && (
+              <input
+                type="text"
+                inputMode="numeric"
+                value={ext}
+                onChange={(e) => setItem(idx, joinPhoneExt(number, e.target.value))}
+                placeholder="Добавочный"
+                title="Добавочный номер"
+                aria-label="Добавочный номер"
+                maxLength={PHONE_EXT_MAX}
+                style={styles.ext}
+              />
+            )}
+            {items.length > 1 && (
+              <button
+                type="button"
+                onClick={() => onChange(items.filter((_, i) => i !== idx).join('; '))}
+                style={styles.remove}
+                title={removeTitle}
+                aria-label={removeTitle}
+              >×</button>
+            )}
+          </div>
+        )
+      })}
       <button type="button" onClick={() => onChange((value || '') + '; ')} style={styles.add}>{addLabel}</button>
     </>
   )
@@ -1128,7 +1151,9 @@ function CounterpartiesPage() {
         ...(ci === 0 ? baseRow : blankRow),
         contact.full_name || '',
         contact.position || '',
-        contact.phone ? formatPhone(contact.phone) : '',
+        // Каждый номер отдельно: formatPhone по всей строке склеивал цифры всех номеров и
+        // оставлял первые 11 — второй номер и добавочный терялись.
+        (contact.phone || '').split(';').map(p => p.trim()).filter(Boolean).map(formatPhoneEntry).join('; '),
         contact.email || '',
       ]))
     })
@@ -1151,7 +1176,7 @@ function CounterpartiesPage() {
       { wch: 28 },  // Примечание
       { wch: 28 },  // ФИО
       { wch: 22 },  // Должность
-      { wch: 18 },  // Телефон
+      { wch: 26 },  // Телефон (с добавочным)
       { wch: 26 },  // Email
     ]
 
@@ -1781,7 +1806,7 @@ function CounterpartiesPage() {
                         {cp.inn && <span className="cp-mrow-inn">ИНН {cp.inn}</span>}
                         {c0?.full_name && <span className="cp-mrow-person" title={c0.full_name}>{shortPersonName(c0.full_name)}</span>}
                         {phone && (
-                          <a href={`tel:${phone}`} className="cp-mrow-tel" aria-label={`Позвонить: ${phone}`}>
+                          <a href={phoneHref(phone)} className="cp-mrow-tel" aria-label={`Позвонить: ${phone}`}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                             {phone}
                           </a>
@@ -1936,9 +1961,16 @@ function CounterpartiesPage() {
                               {contacts.map((c) => (
                                 c.phone ? (
                                   <div key={c.id} className="phone-cell">
-                                    {c.phone.split(';').map((ph, i) => (
-                                      ph.trim() && <a key={i} href={`tel:${ph.trim()}`} className="contact-link">{ph.trim()}</a>
-                                    ))}
+                                    {/* Добавочный — строкой под номером: колонка узкая, номер не переносится. */}
+                                    {c.phone.split(';').map(ph => ph.trim()).filter(Boolean).map((ph, i) => {
+                                      const { number, ext } = splitPhoneExt(ph)
+                                      return (
+                                        <a key={i} href={phoneHref(ph)} className="contact-link">
+                                          {number}
+                                          {ext && <span className="phone-ext">доб. {ext}</span>}
+                                        </a>
+                                      )
+                                    })}
                                   </div>
                                 ) : (
                                   <span key={c.id} className="empty-cell">--</span>
@@ -2631,6 +2663,7 @@ function CounterpartiesPage() {
                       value={contactFormData.phone}
                       onChange={(phone) => setContactFormData({ ...contactFormData, phone })}
                       format={formatPhone}
+                      withExt
                       placeholder="+7(916)712-69-10"
                       addLabel="+ Ещё номер"
                       removeTitle="Удалить номер"
@@ -2764,6 +2797,7 @@ function CounterpartiesPage() {
                     value={contactFormData.phone}
                     onChange={(phone) => setContactFormData({ ...contactFormData, phone })}
                     format={formatPhone}
+                    withExt
                     placeholder="+7(916)712-69-10"
                     addLabel="+ Ещё номер"
                     removeTitle="Удалить номер"

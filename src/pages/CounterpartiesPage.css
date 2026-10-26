@@ -1346,6 +1346,11 @@
   font-size: 0.78125rem;
   white-space: nowrap;
 }
+/* Добавочный номер — строкой под номером: «+7(…)… доб. 123» в колонку 132px не помещается. */
+.contacts-stack-phones .phone-cell .contact-link .phone-ext {
+  display: block;
+  font-size: 0.75rem;
+}
 
 /* task 302: длинные email не помещаются в колонку и обрезаются — разрешаем
    перенос по любому символу. */

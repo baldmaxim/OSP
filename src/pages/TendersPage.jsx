@@ -32,6 +32,7 @@ import { fetchStoEmployees, vorResponsibleName, isMissingStoColumnError, STO_MIG
 import { formatDateRange as formatShortDateRange, breakAfterDash } from '../utils/dateRange'
 import DateRangeCell from '../components/DateRangeCell'
 import { vorStartDate } from '../utils/vorDates'
+import { phoneHref } from '../utils/phoneFormat'
 import { VOR_DIVISION_LABEL, NO_VOR_DIVISION, vorDivisionLogPayload, vorDivisionSaveError } from '../utils/vorDivisions'
 import {
   SITE_CONTACT_LINE, SITE_CONTACT_MISSING, TENDER_MAILBOX, ATTACHMENT_BLOCK,
@@ -4481,7 +4482,7 @@ ${ATTACHMENT_BLOCK}
                                               {contact.phone && contact.phone.split(';').map(p => p.trim()).filter(Boolean).map((p, pi) => (
                                                 <a
                                                   key={pi}
-                                                  href={`tel:${p.replace(/\s+/g, '')}`}
+                                                  href={phoneHref(p)}
                                                   style={{
                                                     color: 'var(--primary-color)',
                                                     textDecoration: 'none',

@@ -7,7 +7,8 @@ import './ConceptAgreementCell.css'
 // (с визой акционера). Согласований может быть НЕСКОЛЬКО, поэтому это список файлов,
 // хранящихся в S3 как s3_documents(owner_type='contract', doc_category='concept_agreement').
 // Показывается под № договора в реестре: список файлов + добавить / предпросмотр / удалить.
-// Пропсы: files — массив s3_documents; contractId; canEdit; onChanged — колбэк перезагрузки.
+// Пропсы: files — массив s3_documents; contractId; canEdit; onChanged — перечитать файлы
+// этого договора (async; «Загрузка…» держится, пока список не обновится).
 
 const CATEGORY = 'concept_agreement'
 
@@ -58,9 +59,9 @@ export default function ConceptAgreementCell({ files = [], contractId, canEdit =
         failed.push(file.name)
       }
     }
+    await onChanged?.()
     setBusy(false)
     if (failed.length) alert('Не удалось загрузить: ' + failed.join(', '))
-    onChanged?.()
   }
 
   const remove = async (doc) => {
@@ -68,7 +69,7 @@ export default function ConceptAgreementCell({ files = [], contractId, canEdit =
     setBusy(true)
     try {
       await deleteDocument(doc)
-      onChanged?.()
+      await onChanged?.()
     } catch (err) {
       alert('Ошибка удаления: ' + (err.message || err))
     } finally {

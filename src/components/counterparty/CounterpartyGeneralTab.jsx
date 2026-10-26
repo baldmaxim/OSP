@@ -3,6 +3,7 @@ import AutoGrowTextarea from '../AutoGrowTextarea'
 import CounterpartyContracts from './CounterpartyContracts'
 import CounterpartyVatSelect from './CounterpartyVatSelect'
 import { VAT_NONE, vatSelectValue, vatText } from '../../utils/counterpartyVat'
+import { phoneHref } from '../../utils/phoneFormat'
 import './CounterpartyGeneral.css'
 
 const STATUS_TEXT = { active: 'Активный', blacklist: 'Чёрный список' }
@@ -113,7 +114,7 @@ export default function CounterpartyGeneralTab({
                     </div>
                     <div className="cpg-contact-links">
                       {(c.phone || '').split(';').map(p => p.trim()).filter(Boolean).map(p => (
-                        <a key={p} href={`tel:${p}`} className="cpg-link">{p}</a>
+                        <a key={p} href={phoneHref(p)} className="cpg-link">{p}</a>
                       ))}
                       {(c.email || '').split(';').map(m => m.trim()).filter(Boolean).map(m => (
                         <a key={m} href={`mailto:${m}`} className="cpg-link">{m}</a>
