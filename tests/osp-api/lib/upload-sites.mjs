@@ -12,6 +12,7 @@ export const UPLOAD_SITES = [
   { file: 'src/services/tenderVorRd.js', calls: 1, owner: 'tender', table: 'tenders' },
   { file: 'src/services/supplyPricing.js', calls: 1, owner: 'tender', table: 'tenders' }, // счёт / КП поставщика к позициям расценки (основной тендер)
   { file: 'src/services/psdc.js', calls: 1, owner: 'general', table: 'psdc' },
+  { file: 'src/services/sectionTemplates.js', calls: 1, owner: 'general', table: 'section_templates' }, // шаблон раздела (миграция 20261107)
   { file: 'src/pages/GeneralDocumentsPage.jsx', calls: 1, owner: 'general_document', table: 'general_documents' },
   { file: 'src/pages/ObjectDetailPage.jsx', calls: 1, owner: 'object', table: 'objects' },
   { file: 'src/components/ObjectDocumentFileSlot.jsx', calls: 1, owner: 'object', table: 'objects' },

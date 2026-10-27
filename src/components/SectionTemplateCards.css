@@ -1,0 +1,79 @@
+/* Плитка шаблона раздела (SectionTemplateCards) — поверх .tdm-card из TenderDocsModal.css: та же сетка
+   «иконка | название, описание», ниже — файл и кнопки. Плитка не кнопка: нажимаются только кнопки в ней. */
+.tdm-card.tdm-tpl-card {
+  grid-template-areas: 'icon title' 'icon desc' 'icon file';
+  cursor: default;
+}
+.tdm-card.tdm-tpl-card:hover {
+  border-color: var(--border-color);
+  background: var(--bg-primary);
+  transform: none;
+}
+
+.tdm-tpl-file {
+  grid-area: file;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--border-color);
+}
+.tdm-tpl-name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.tdm-tpl-name svg { flex: none; color: var(--text-secondary); }
+.tdm-tpl-meta {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.tdm-tpl-empty { font-size: 0.75rem; color: var(--text-secondary); }
+.tdm-tpl-empty.is-error { color: var(--danger-color); }
+.tdm-tpl-hint { font-size: 0.75rem; line-height: 1.45; color: var(--text-secondary); }
+
+.tdm-tpl-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+.tdm-tpl-actions:empty { display: none; }
+.tdm-tpl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.tdm-tpl-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 45%, transparent);
+  background: var(--bg-secondary);
+}
+.tdm-tpl-btn:disabled { opacity: 0.6; cursor: default; }
+.tdm-tpl-btn.is-primary {
+  border-color: color-mix(in srgb, var(--primary-color, #2563eb) 40%, transparent);
+  color: var(--primary-color, #2563eb);
+}
+.tdm-tpl-btn.is-icon { padding: 0.3rem 0.5rem; }
+.tdm-tpl-btn.is-danger { color: var(--danger-color); }
+.tdm-tpl-btn.is-danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger-color) 45%, transparent);
+}

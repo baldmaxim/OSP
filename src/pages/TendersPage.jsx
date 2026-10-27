@@ -4683,6 +4683,7 @@ ${ATTACHMENT_BLOCK}
           initialTab={docsInitialTab || undefined}
           objects={objects}
           canEditSiteContacts={isAdmin}
+          canEditTemplates={isAdmin}
           initialSiteObjectId={docsSiteObjectId}
           canPreviewReminder={isAdmin}
           onOpenLetterTemplate={() => { setShowDocsMenu(false); setActiveTab('template') }}

@@ -50,7 +50,8 @@ export const FOLDER_BY_OWNER = {
 }
 
 // Где искать владельца файла (uuid-сущность). 'tender' — и сам тендер, и документ вкладки «Документы»
-// тендера (tender_docs: TenderDocumentsTab, TenderFinalDocBlock). 'general' — ПСДЦ или заявка на ВОР.
+// тендера (tender_docs: TenderDocumentsTab, TenderFinalDocBlock). 'general' — ПСДЦ, заявка на ВОР или шаблон
+// раздела (section_templates: «Понятийное соглашение» тендеров, «Шаблон Было-Стало» заявок на ДС).
 // 'customer' из функции Supabase нигде не используется — не поддерживается.
 export const OWNER_TABLES = {
   tender: ['tenders', 'tender_docs'],
@@ -59,7 +60,7 @@ export const OWNER_TABLES = {
   counterparty: ['counterparties'],
   dc_request: ['dc_requests'],
   doc_check_request: ['doc_check_requests'],
-  general: ['psdc', 'vor_requests'],
+  general: ['psdc', 'vor_requests', 'section_templates'],
   general_document: ['general_documents'],
   task: ['tasks'],
 }
@@ -71,6 +72,7 @@ export const OWNER_TABLES = {
 //     «Тендеры», «Тендеры на материалы» или «ВОРы и РД»;
 //   • договор — каждому, кто видит договоры (список файлов в карточке без гейта);
 //   • ПСДЦ — правка договоров (как у psdc_create); заявка на ВОР — правка тендеров или ВОР;
+//   • шаблон раздела — только администратор (osp_can('admin', …) = is_admin()): файл скачивают все разделы;
 //   • задача — тому, кому она видна (RLS задач), без права раздела.
 const TENDER_PAGES = [['tenders', 'view'], ['tenders_materials', 'view'], ['vors', 'view']]
 export const WRITE_RULES = {
@@ -85,6 +87,7 @@ export const WRITE_RULES = {
   tasks: [],
   psdc: [['contracts', 'edit']],
   vor_requests: [['tenders', 'edit'], ['vors', 'edit']],
+  section_templates: [['admin', 'edit']],
 }
 // Строки с владельцем вне списка (старые типы) удаляет только администратор.
 const UNKNOWN_OWNER_RULES = [['admin', 'edit']]

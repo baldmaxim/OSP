@@ -5,12 +5,13 @@ import { db } from '../api'
 import { useRole } from '../contexts/RoleContext'
 import { deleteDocument, requestDownloadUrl, uploadFile } from '../services/s3'
 import S3DocumentPreview from '../components/S3DocumentPreview'
+import DcRequestDocsModal from '../components/DcRequestDocsModal'
 import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import FilterDropdown from '../components/FilterDropdown'
 import IconTile from '../components/IconTile'
 import { IconDcRequest } from '../components/icons/NavIcons'
 import { IconHardHat } from '../components/icons/TenderHubIcons'
-import { IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
+import { IconObject, IconUser, IconSearch, IconDocsStack } from '../components/icons/ToolbarIcons'
 import { IconFileSpreadsheet } from '../components/icons/BsmIcons'
 import { IconPencil as IconEdit, IconTrash, IconRestore, IconChecklist, IconClock, IconCalendar, IconLink, IconCheck as IconCheckMark } from '../components/icons/ActionIcons'
 import ClampText from '../components/ClampText'
@@ -383,6 +384,8 @@ function DcRequestsPage() {
   const [docUploadBusy, setDocUploadBusy] = useState(false)
   // Документ открытый в превью (S3DocumentPreview).
   const [previewDoc, setPreviewDoc] = useState(null)
+  // «Документы раздела» — окно с материалами (шаблон «Было-Стало»), как у тендеров.
+  const [showSectionDocs, setShowSectionDocs] = useState(false)
 
   // task 324: ссылка на общую таблицу с отделами. Хранится в app_settings
   // под ключом 'dc_requests_external_link'. Редактируется через модалку.
@@ -1423,6 +1426,16 @@ function DcRequestsPage() {
           Заявка на ДС
         </h2>
         <div className="dcr-header-actions">
+          {/* Документы раздела — материалы и шаблоны по заявкам (DcRequestDocsModal), как в тендерах. */}
+          <button
+            type="button"
+            className="dcr-link-btn"
+            onClick={() => setShowSectionDocs(true)}
+            title="Материалы раздела: шаблон «Было-Стало»"
+          >
+            <IconDocsStack size={15} />
+            <span>Документы</span>
+          </button>
           {/* task 324: ссылка на общую таблицу с отделами (хранится в app_settings) */}
           {externalLink ? (
             <a
@@ -2613,6 +2626,10 @@ function DcRequestsPage() {
 
       {previewDoc && (
         <S3DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+      )}
+
+      {showSectionDocs && (
+        <DcRequestDocsModal onClose={() => setShowSectionDocs(false)} canEditTemplates={isAdmin} />
       )}
 
       {/* История изменений заявки. Только чтение; закрывается крестиком/«Закрыть». */}

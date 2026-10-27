@@ -21,3 +21,4 @@
 20261104_company_departments.sql
 20261105_bid_form_vat_options.sql
 20261106_dc_request_number.sql
+20261107_section_templates.sql

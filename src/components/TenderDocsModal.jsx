@@ -4,8 +4,10 @@ import {
   JOINT_GUIDE_SOURCE, JOINT_STEPS, JOINT_LONG_LIST, JOINT_PACKAGE,
   JOINT_INCOMING, JOINT_RULES, JOINT_CHECKLIST, JOINT_OPEN_QUESTIONS,
 } from '../utils/jointTenderGuide'
-import { IconMail, IconFolderTree, IconPhone } from './icons/ToolbarIcons'
+import { IconMail, IconFolderTree, IconPhone, IconFileText } from './icons/ToolbarIcons'
 import SiteContactsTab from './SiteContactsTab'
+import SectionTemplateCards from './SectionTemplateCards'
+import { SECTION_TEMPLATE } from '../services/sectionTemplates'
 import './TenderDocsModal.css'
 
 // task 435: «Документы» раздела тендеров — три вкладки в одном окне:
@@ -16,7 +18,8 @@ import './TenderDocsModal.css'
 // В «Основном строительстве» — ещё «Контакт площадки» (SiteContactsTab): кто встречает
 // подрядчика на объекте по каждому подразделению ВОР; назначает администратор, контакт
 // уходит в письмо подрядчикам. В других направлениях вкладки нет: подразделения ВОР — только
-// у основного строительства.
+// у основного строительства. Там же в «Материалах» — шаблон «Понятийное соглашение» (Word):
+// скачивает каждый, прикрепляет и заменяет администратор (SectionTemplateCards, миграция 20261107).
 //
 // В направлении «Совместные тендеры» добавляется четвёртая вкладка со своей
 // инструкцией (utils/jointTenderGuide.js). Она открывается там первой: правила
@@ -78,6 +81,13 @@ const TENDER_ANALYSIS = [
   'Зеркально отражает в тендерной документации вендор-лист Заказчика или Застройщика',
 ]
 
+const CONCEPT_AGREEMENT = [{
+  code: SECTION_TEMPLATE.conceptAgreement,
+  title: 'Понятийное соглашение',
+  desc: 'Шаблон документа в Word — скачать и заполнить по тендеру',
+  icon: <IconFileText size={18} />,
+}]
+
 export default function TenderDocsModal({
   onClose,
   onOpenLetterTemplate,
@@ -89,9 +99,11 @@ export default function TenderDocsModal({
   objects = [],
   canEditSiteContacts = false,
   initialSiteObjectId = null,
+  canEditTemplates = false,
 }) {
   const isJoint = department === 'joint'
   const hasSiteContacts = department === 'construction'
+  const hasConceptAgreement = department === 'construction'
   // По кнопке «Документы» окно открывается как везде — на «Материалах»; на
   // инструкцию по совместным тендерам ведёт отдельная кнопка в шапке раздела
   // (initialTab='joint'), а её вкладка в любом случае стоит первой.
@@ -311,6 +323,10 @@ export default function TenderDocsModal({
                     Как выглядит вторничное окно у инженеров — предпросмотр
                   </span>
                 </button>
+              )}
+
+              {hasConceptAgreement && (
+                <SectionTemplateCards items={CONCEPT_AGREEMENT} canEdit={canEditTemplates} />
               )}
             </div>
           </div>

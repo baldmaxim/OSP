@@ -33,6 +33,7 @@ const TENDER_HIDDEN = 'a0000000-0000-4000-8000-000000000002'
 const GDOC_1 = 'b0000000-0000-4000-8000-000000000001'
 const PSDC_1 = 'd0000000-0000-4000-8000-000000000001'
 const VOR_1 = 'e0000000-0000-4000-8000-000000000001'
+const TPL_1 = 'e1000000-0000-4000-8000-000000000001' // шаблон раздела (section_templates)
 const TDOC_1 = 'a1000000-0000-4000-8000-000000000001' // строка tender_docs (вкладка «Документы» тендера)
 const OBJECT_1 = 'f0000000-0000-4000-8000-000000000001'
 const TASK_1 = 'f1000000-0000-4000-8000-000000000001'
@@ -72,6 +73,7 @@ function supabaseState() {
       general_documents: { [GDOC_1]: 'all' },
       psdc: { [PSDC_1]: [U.emp.id] },
       vor_requests: { [VOR_1]: [U.emp.id] },
+      section_templates: { [TPL_1]: 'all' },
       contracts: { [CONTRACT_MINE]: 'all' },
       objects: { [OBJECT_1]: 'all' },
       tasks: { [TASK_1]: [U.viewer.id] },
@@ -447,9 +449,12 @@ describe('osp-api: маршруты вместо Edge Functions', { skip }, () =
       assert.match(doc.json().s3_key, new RegExp(`^tenders/${TDOC_1}/`))
     })
 
-    it("'general' — ПСДЦ или заявка на ВОР; 'customer' не поддерживается", async () => {
+    it("'general' — ПСДЦ, заявка на ВОР или шаблон раздела; 'customer' не поддерживается", async () => {
       assert.equal((await up(U.emp, 'general', PSDC_1)).statusCode, 200)
       assert.equal((await up(U.emp, 'general', VOR_1)).statusCode, 200)
+      // Шаблон раздела виден каждому сотруднику, а прикрепить файл может только администратор.
+      assert.equal((await up(U.emp, 'general', TPL_1)).statusCode, 403, 'инженер — не администратор')
+      assert.equal((await up(U.admin, 'general', TPL_1)).statusCode, 200)
       assert.equal((await up(U.emp, 'general', GDOC_1)).statusCode, 404, 'документ раздела — не владелец general')
       assert.deepEqual((await up(U.emp, 'customer', GDOC_1)).json(), { error: 'Unsupported owner_type: customer' })
     })

@@ -27,6 +27,20 @@
   line-height: 1.6;
 }
 
+/* Окно с одной короткой вкладкой («Документы» заявок на ДС, DcRequestDocsModal) — по содержимому,
+   а не на всю высоту экрана. Два класса — сильнее общего .modal (ContractRegistry.css на той странице):
+   порядок стилей при ленивой загрузке не гарантирован. */
+.tdm-modal.tdm-modal--fit {
+  width: min(48rem, calc(100vw - 3rem));
+  max-width: none;
+  height: auto;
+  max-height: calc(100vh - 3rem);
+  overflow: hidden;
+  border: none;
+  border-radius: 14px;
+  background: var(--bg-primary);
+}
+
 .tdm-head {
   display: flex;
   align-items: flex-start;
@@ -86,6 +100,8 @@
   grid-template-columns: auto 1fr;
   grid-template-areas: 'icon title' 'icon desc';
   align-items: start;
+  /* Плитки ряда одной высоты (по самой высокой — шаблон с файлом): строки сетки — сверху. */
+  align-content: start;
   gap: 0.15rem 0.7rem;
   padding: 0.9rem 1rem;
   border: 1px solid var(--border-color);
@@ -458,9 +474,19 @@
   border-top: 1px solid var(--border-color);
 }
 
+/* Полоса меню телефона (.mobile-topbar, fixed, z-index 1250, до 768px) лежит поверх окон с z-index 1000 —
+   шапка окна с «×» уходила под неё. Как у задач: выше полосы, ниже выпадающих списков (1300) и меню (1350+).
+   Два класса: общий .modal-overlay (ContractRegistry.css) страница подгружает позже и при равной
+   специфичности он возвращал бы z-index 1000 и поля 1rem. */
+@media (max-width: 768px) {
+  .modal-overlay.tdm-overlay { z-index: 1260; }
+}
+
 @media (max-width: 640px) {
-  .tdm-overlay { padding: 0; }
-  .tdm-modal { width: 100vw; height: 100vh; border-radius: 0; }
+  .tdm-overlay,
+  .modal-overlay.tdm-overlay { padding: 0; }
+  .tdm-modal,
+  .tdm-modal.tdm-modal--fit { width: 100vw; height: 100vh; max-height: none; border-radius: 0; }
   .tdm-head, .tdm-actions { padding-left: 1rem; padding-right: 1rem; }
   /* Пять вкладок в ширину телефона не входят — ряд прокручивается. */
   .tdm-tabs { padding: 0 1rem; gap: 0.5rem; overflow-x: auto; scrollbar-width: none; }

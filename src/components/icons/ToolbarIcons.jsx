@@ -140,6 +140,24 @@ export const IconDocsStack = ({ size }) => (
   </TbSvg>
 )
 
+// Шаблон документа (Word) — лист с загнутым углом и строками
+export const IconFileText = ({ size }) => (
+  <TbSvg size={size}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+    <path d="M14 2v6h6" />
+    <path d="M8 13h8M8 17h5" />
+  </TbSvg>
+)
+
+// Было — стало: две колонки и стрелка между ними
+export const IconCompare = ({ size }) => (
+  <TbSvg size={size}>
+    <rect x="2.5" y="4" width="7" height="16" rx="1.5" />
+    <rect x="14.5" y="4" width="7" height="16" rx="1.5" />
+    <path d="M10.5 12h3M12 10.5l1.5 1.5-1.5 1.5" />
+  </TbSvg>
+)
+
 // Фильтр колонки — воронка
 export const IconFilter = ({ size }) => (
   <TbSvg size={size}>

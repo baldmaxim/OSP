@@ -113,6 +113,7 @@ BSMContractorRatesPage, BSMRatesPage, BSMComparisonPage, BSMSelectionPage, Contr
 | general_document | E(general_documents) |
 | task | **любой зритель задачи** |
 | general (заявки на ВОР, ПСДЦ) | E(tenders\|vors); ПСДЦ — contracts |
+| general (шаблон раздела, `section_templates`, 20261107) | **isAdmin** (osp-api: `osp_can('admin', …)`); строки шаблонов читает сотрудник, писать некому |
 
 ## Кабинет подрядчика (организация — `user_roles.counterparty_id`)
 - **Читает:** свою строку `user_roles`, свою `counterparties`, `roles`, свои `tender_counterparties` (+ тендеры

@@ -1,0 +1,173 @@
+// Шаблоны разделов (section_templates, миграция 20261107): «Понятийное соглашение» в «Документах раздела» →
+// «Материалы» у «Тендеров — Основное строительство» и «Шаблон Было-Стало» в новом окне «Документы» реестра
+// «Заявка на ДС» (одна вкладка «Материалы», как у тендеров). Файл — s3_documents (owner_type 'general',
+// doc_category 'section_template'): скачивает каждый, прикрепляет, заменяет и удаляет администратор; новый файл
+// заменяет прежний. Таблицы ещё нет — файл не прикрепить, администратору подсказка про миграцию.
+import { describe, it, before, after } from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { chromium } from 'playwright'
+import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
+
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const word = (name, text = 'шаблон') => ({ name, mimeType: DOCX, buffer: Buffer.from(text) })
+const TEMPLATES = [
+  { id: 'tpl-concept', code: 'tenders_concept_agreement', title: 'Понятийное соглашение' },
+  { id: 'tpl-was', code: 'dc_was_became', title: 'Шаблон Было-Стало' },
+]
+const read = (f) => fs.readFileSync(path.join(REPO, f), 'utf8')
+
+describe('Шаблоны разделов: миграции и сервер', () => {
+  it('обе базы заводят те же два шаблона; файл шаблона на сервере — только администратору', () => {
+    for (const f of ['supabase/migrations/20261107_section_templates.sql', 'migration/yandex/20261107_section_templates.sql']) {
+      const sql = read(f)
+      assert.match(sql, /\('tenders_concept_agreement', 'Понятийное соглашение'\),\s*\('dc_was_became', 'Шаблон Было-Стало'\)\s*ON CONFLICT \(code\) DO NOTHING/, f)
+      assert.match(sql, /osp_is_employee\(\)/, `${f}: читает сотрудник`)
+      assert.doesNotMatch(sql, /FOR (INSERT|UPDATE|DELETE|ALL) TO (authenticated|PUBLIC)\s+USING \(CASE/, `${f}: правил записи нет`)
+    }
+    assert.match(read('supabase/migrations/20261107_section_templates.sql'), /GRANT SELECT ON TABLE public\.section_templates TO authenticated;/)
+    const presign = read('server/osp-api/src/routes/s3Presign.js')
+    assert.match(presign, /general: \['psdc', 'vor_requests', 'section_templates'\]/)
+    assert.match(presign, /section_templates: \[\['admin', 'edit'\]\]/)
+    const allow = JSON.parse(read('server/osp-api/src/data/allow.json'))
+    assert.deepEqual(allow.tables.section_templates, { authenticated: ['select'] })
+    // Коды в коде страницы — те же, что в миграции.
+    const service = read('src/services/sectionTemplates.js')
+    for (const { code } of TEMPLATES) assert.ok(service.includes(`'${code}'`), code)
+  })
+})
+
+const launch = browserLaunchOptions()
+
+describe('Шаблоны разделов в «Документах» тендеров и заявок на ДС', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
+  let stand
+  let browser
+
+  before(async () => {
+    stand = await startStand(REPO)
+    browser = await chromium.launch({ ...launch, headless: true })
+  })
+  after(async () => {
+    await browser?.close()
+    await stand?.server.close()
+  })
+
+  // ready — селектор загруженной страницы; data — до открытия окна (шаблоны читаются при открытии).
+  const openPage = async (query, ready, { templates = TEMPLATES, files = [], missingTable = false } = {}) => {
+    const context = await browser.newContext({ locale: 'ru-RU', viewport: { width: 1600, height: 1000 }, acceptDownloads: true })
+    const page = await context.newPage()
+    const errors = []
+    const dialogs = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (msg) => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) errors.push(msg.text()) })
+    page.on('dialog', (d) => { dialogs.push(d.message()); d.accept() })
+    await page.goto(`${stand.url}?${query}`)
+    await page.locator(ready).first().waitFor({ timeout: 120000 })
+    await page.evaluate(([t, f, missing]) => {
+      window.__fakeDb.section_templates = t
+      window.__fakeDb.s3_documents.push(...f)
+      if (missing) {
+        window.__fakeErrors = { ...(window.__fakeErrors || {}), section_templates: { code: 'PGRST205', message: "Could not find the table 'public.section_templates' in the schema cache" } }
+      }
+    }, [templates, files, missingTable])
+    return { page, errors, dialogs, close: () => context.close().catch(() => {}) }
+  }
+  const openTenders = (opts, extra = '') => openPage(`route=/tenders/construction&tenders=6&items=20&cps=2&latency=0${extra}`, 'table.tenders-registry > tbody > tr', opts)
+  const openDc = (opts, extra = '') => openPage(`route=/dc-requests&dcStats=1&latency=0${extra}`, '.dcr-table tbody tr', opts)
+  const card = (page, code) => page.locator(`.tdm-tpl-card[data-template="${code}"]`)
+  const templateDocs = (page) => page.evaluate(() => window.__fakeDb.s3_documents
+    .filter((d) => d.doc_category === 'section_template')
+    .map((d) => ({ owner_type: d.owner_type, owner_id: d.owner_id, file_name: d.file_name })))
+
+  it('тендеры: «Понятийное соглашение» в «Материалах» — прикрепить, скачать, заменить, удалить', async () => {
+    const { page, errors, dialogs, close } = await openTenders()
+    try {
+      await page.locator('button.btn-view-toggle', { hasText: 'Документы' }).click()
+      assert.equal(await page.locator('.tdm-tab.is-active').textContent(), 'Материалы')
+      const c = card(page, 'tenders_concept_agreement')
+      await c.locator('.tdm-tpl-empty', { hasText: 'Файл ещё не прикреплён' }).waitFor({ timeout: 10000 })
+      assert.equal(await c.locator('.tdm-card-title').textContent(), 'Понятийное соглашение')
+      // Плитка — рядом с шаблоном письма и структурой хранения, в той же сетке.
+      assert.deepEqual(await page.locator('.tdm-cards > .tdm-card .tdm-card-title').allTextContents(),
+        ['Шаблон письма', 'Структура хранения документов', 'Напоминание об обзвоне', 'Понятийное соглашение'])
+
+      await page.getByTestId('template-input-tenders_concept_agreement').setInputFiles([word('Понятийное соглашение.docx')])
+      await c.locator('.tdm-tpl-name', { hasText: 'Понятийное соглашение.docx' }).waitFor({ timeout: 10000 })
+      assert.deepEqual(await templateDocs(page), [{ owner_type: 'general', owner_id: 'tpl-concept', file_name: 'Понятийное соглашение.docx' }])
+      assert.deepEqual(await c.locator('.tdm-tpl-actions button').allTextContents(), [' Скачать', ' Заменить', ''])
+
+      const download = page.waitForEvent('download')
+      await c.getByRole('button', { name: 'Скачать' }).click()
+      assert.equal((await download).suggestedFilename(), 'Понятийное соглашение.docx')
+
+      // Замена: после подтверждения — новый файл, прежний удалён и из хранилища.
+      const oldKey = await page.evaluate(() => window.__fakeDb.s3_documents.find((d) => d.doc_category === 'section_template').s3_key)
+      await page.getByTestId('template-input-tenders_concept_agreement').setInputFiles([word('ПС ред.2.docx', 'вторая')])
+      await c.locator('.tdm-tpl-name', { hasText: 'ПС ред.2.docx' }).waitFor({ timeout: 10000 })
+      assert.match(dialogs.at(-1), /^Заменить файл шаблона\?\n«Понятийное соглашение\.docx» → «ПС ред\.2\.docx»$/)
+      assert.deepEqual(await templateDocs(page), [{ owner_type: 'general', owner_id: 'tpl-concept', file_name: 'ПС ред.2.docx' }])
+      assert.equal(await page.evaluate((k) => Boolean(window.__fakeFiles?.[k]), oldKey), false, 'прежний файл удалён из хранилища')
+
+      await c.getByRole('button', { name: 'Удалить файл шаблона «Понятийное соглашение»' }).click()
+      await c.locator('.tdm-tpl-empty').waitFor({ timeout: 10000 })
+      assert.deepEqual(await templateDocs(page), [])
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('без права администратора — только «Скачать»; файла нет — его добавит администратор', async () => {
+    const files = [{ id: 'f-was', owner_type: 'general', owner_id: 'tpl-was', doc_category: 'section_template',
+      s3_key: 'general/tpl-was/1-Было-Стало.docx', file_name: 'Было-Стало.docx', size_bytes: 20480, created_at: '2026-10-27T08:00:00Z' }]
+    const { page, errors, close } = await openDc({ files }, '&canEdit=0')
+    try {
+      await page.locator('.dcr-header-actions button', { hasText: 'Документы' }).click()
+      const c = card(page, 'dc_was_became')
+      await c.locator('.tdm-tpl-name', { hasText: 'Было-Стало.docx' }).waitFor({ timeout: 10000 })
+      assert.match(await c.locator('.tdm-tpl-meta').textContent(), /^20 КБ · 27\.10\.2026$/)
+      assert.deepEqual(await c.locator('.tdm-tpl-actions button').allTextContents(), [' Скачать'])
+      assert.equal(await page.getByTestId('template-input-dc_was_became').count(), 0)
+    } finally { await close() }
+
+    const t = await openTenders({}, '&canEdit=0')
+    try {
+      await t.page.locator('button.btn-view-toggle', { hasText: 'Документы' }).click()
+      await card(t.page, 'tenders_concept_agreement').locator('.tdm-tpl-empty', { hasText: 'Файл ещё не прикреплён — его добавит администратор' }).waitFor({ timeout: 10000 })
+      assert.equal(await card(t.page, 'tenders_concept_agreement').locator('button').count(), 0)
+      assert.deepEqual([...errors, ...t.errors], [])
+    } finally { await t.close() }
+  })
+
+  it('заявки на ДС: «Документы» в шапке — окно с одной вкладкой «Материалы» и «Шаблон Было-Стало»', async () => {
+    const { page, errors, close } = await openDc()
+    try {
+      await page.locator('.dcr-header-actions button', { hasText: 'Документы' }).click()
+      const modal = page.getByRole('dialog', { name: 'Документы раздела' })
+      await modal.waitFor({ timeout: 10000 })
+      assert.deepEqual(await modal.locator('.tdm-tab').allTextContents(), ['Материалы'])
+      const c = card(page, 'dc_was_became')
+      assert.equal(await c.locator('.tdm-card-title').textContent(), 'Шаблон Было-Стало')
+      await c.locator('.tdm-tpl-empty', { hasText: 'Файл ещё не прикреплён' }).waitFor({ timeout: 10000 })
+      await page.getByTestId('template-input-dc_was_became').setInputFiles([word('Было-Стало.docx')])
+      await c.locator('.tdm-tpl-name', { hasText: 'Было-Стало.docx' }).waitFor({ timeout: 10000 })
+      assert.deepEqual(await templateDocs(page), [{ owner_type: 'general', owner_id: 'tpl-was', file_name: 'Было-Стало.docx' }])
+      // Фон окна — свой, не общий .modal реестра договоров.
+      assert.equal(await modal.evaluate((el) => getComputedStyle(el).overflow), 'hidden')
+      await page.keyboard.press('Escape')
+      await modal.waitFor({ state: 'detached', timeout: 5000 })
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+
+  it('таблицы шаблонов ещё нет: файл не прикрепить, администратору — подсказка про миграцию', async () => {
+    const { page, errors, close } = await openDc({ missingTable: true })
+    try {
+      await page.locator('.dcr-header-actions button', { hasText: 'Документы' }).click()
+      const c = card(page, 'dc_was_became')
+      await c.locator('.tdm-tpl-hint').waitFor({ timeout: 10000 })
+      assert.match(await c.locator('.tdm-tpl-hint').textContent(), /миграция 20261107_section_templates/)
+      assert.equal(await c.locator('button').count(), 0)
+      assert.deepEqual(errors, [])
+    } finally { await close() }
+  })
+})
