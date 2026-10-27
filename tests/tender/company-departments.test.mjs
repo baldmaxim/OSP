@@ -207,6 +207,25 @@ describe('Отделы: страница', { skip: !launch && 'Нет Chromium/C
     }
   })
 
+  it('окно не прокручивается ниже страницы (подпись «Действия» не выпадает из .main-content)', async () => {
+    const { page, errors, close } = await open('', { width: 1400, height: 420 })
+    try {
+      await page.locator('.dp-actions').first().waitFor()
+      const overflow = await page.evaluate(() => {
+        const main = document.querySelector('.main-content')
+        return {
+          page: document.documentElement.scrollHeight - window.innerHeight,
+          main: main.scrollHeight - main.clientHeight,
+        }
+      })
+      assert.ok(overflow.main > 0, 'стенд должен прокручивать .main-content — иначе проверка ничего не ловит')
+      assert.ok(overflow.page <= 0, `окно прокручивается вниз на ${overflow.page}px`)
+      assert.deepEqual(errors, [])
+    } finally {
+      await close()
+    }
+  })
+
   it('телефон: строки в столбец, без прокрутки вбок; карточка «Отделы» на /general', async () => {
     const { page, errors, close } = await open('', { width: 360, height: 800 })
     try {

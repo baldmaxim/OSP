@@ -47,7 +47,7 @@
   color: var(--text-primary);
 }
 
-.dp-table { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; background: var(--bg-primary); }
+.dp-table { position: relative; border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; background: var(--bg-primary); }
 .dp-row {
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1.35fr) minmax(0, 1fr);
@@ -115,6 +115,11 @@ a.dp-contact-phone:hover { text-decoration: underline; }
 
 .dp-sr-only {
   position: absolute;
+  /* Прижат к углу таблицы (.dp-table — position: relative): без top/left и без
+     позиционированного предка он стоял там, где был бы в потоке, выпадал из
+     прокрутки .main-content и растягивал окно — страница уезжала вниз за край. */
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   overflow: hidden;
