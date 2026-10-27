@@ -1,4 +1,4 @@
-// «Отчёты» в настоящем браузере: три вкладки («Тендеры» с подвкладками, «Договоры», «Заявки на ДС») и подвкладка
+// «Отчёты» в настоящем браузере: две вкладки с подвкладками («Тендеры», «Договоры» — обзор и заявки на ДС) и подвкладка
 // «Коммерческие предложения» — загрузка, проверка и очередь КП. Данные — стенд (tests/tender/ui, kpStats=1):
 // 360 файлов КП за 120 дней, по 3 в день, каждый седьмой — гарантийный отдел.
 import { describe, it, before, after } from 'node:test'
@@ -8,7 +8,7 @@ import { startStand, browserLaunchOptions, REPO } from './lib/stand.mjs'
 
 const launch = browserLaunchOptions()
 
-describe('Отчёты: вкладки «Тендеры», «Договоры», «Заявки на ДС», статистика КП', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
+describe('Отчёты: вкладки «Тендеры», «Договоры», статистика КП', { skip: !launch && 'Нет Chromium/Chrome/Edge', timeout: 300000 }, () => {
   let stand
   let browser
 
@@ -37,10 +37,10 @@ describe('Отчёты: вкладки «Тендеры», «Договоры»,
   const kpRequests = (page) => page.evaluate(() => window.__supabaseStats.requests
     .filter((r) => r.table === 'tender_proposal_files').length)
 
-  it('три вкладки; в «Тендерах» — обзор, КП, победители, материалы, планы затрат, ВОРы', async () => {
+  it('две вкладки; в «Тендерах» — обзор, КП, победители, материалы, планы затрат, ВОРы; в «Договорах» — обзор, заявки на ДС', async () => {
     const { context, page, errors } = await open()
     try {
-      assert.deepEqual(await page.locator('.reports-tab .reports-tab-label').allInnerTexts(), ['Тендеры', 'Договоры', 'Заявки на ДС'])
+      assert.deepEqual(await page.locator('.reports-tab .reports-tab-label').allInnerTexts(), ['Тендеры', 'Договоры'])
       const subs = await page.locator('.reports-subtab').evaluateAll((els) => els.map((e) => e.childNodes[0].textContent))
       assert.deepEqual(subs, ['Обзор', 'Коммерческие предложения', 'Победители', 'Материалы', 'Планы затрат', 'ВОРы и РД'])
       // Обзор открыт сразу, КП не грузятся, пока подвкладку не открыли.
@@ -52,7 +52,8 @@ describe('Отчёты: вкладки «Тендеры», «Договоры»,
 
       await page.locator('.reports-tab', { hasText: 'Договоры' }).click()
       await page.locator('h3', { hasText: 'По ответственным юристам' }).waitFor()
-      assert.equal(await page.locator('.reports-subtabs').count(), 0, 'у «Договоров» подвкладок нет')
+      const contractSubs = await page.locator('.reports-subtab').evaluateAll((els) => els.map((e) => e.childNodes[0].textContent))
+      assert.deepEqual(contractSubs, ['Обзор', 'Заявки на ДС'])
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

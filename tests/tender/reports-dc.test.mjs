@@ -1,4 +1,4 @@
-// «Отчёты → Заявки на ДС» в Chromium (стенд tests/tender/ui, dcStats=1: пять заявок и одна удалённая).
+// «Отчёты → Договоры → Заявки на ДС» в Chromium (стенд tests/tender/ui, dcStats=1: пять заявок и одна удалённая).
 //   • заявки и журнал статусов грузятся при первом открытии вкладки, не раньше;
 //   • карточки: всего, подано / утверждено, просрочка срока; этапы, итог проверки, за период;
 //   • просроченные заявки списком, разрезы по объектам и ответственным; фильтры пересчитывают всё.
@@ -36,6 +36,10 @@ describe('Отчёты: заявки на ДС', { skip: !launch && 'Нет Chro
 
   const dcRequests = (page) => page.evaluate(() => window.__supabaseStats.requests
     .filter((r) => r.table === 'dc_requests' || r.table === 'dc_request_audit_log').length)
+  const openDc = async (page) => {
+    await page.locator('.reports-tab', { hasText: 'Договоры' }).click()
+    await page.locator('.reports-subtab', { hasText: 'Заявки на ДС' }).click()
+  }
   const kpi = (page, label) => page.locator('.kpi-card', { hasText: label }).locator('.kpi-value').innerText()
   const matrixRow = async (page, label) => (await page.locator('.kps-matrix tbody tr', { has: page.locator(`td:text-is("${label}")`) })
     .locator('td.num').allInnerTexts()).map(plain)
@@ -44,8 +48,11 @@ describe('Отчёты: заявки на ДС', { skip: !launch && 'Нет Chro
     const { page, errors, close } = await open()
     try {
       await page.locator('.dept-table').waitFor()
-      assert.equal(await dcRequests(page), 0, 'до открытия вкладки заявки не грузятся')
-      await page.locator('.reports-tab', { hasText: 'Заявки на ДС' }).click()
+      assert.equal(await dcRequests(page), 0, 'до открытия подвкладки заявки не грузятся')
+      await page.locator('.reports-tab', { hasText: 'Договоры' }).click()
+      await page.locator('h3', { hasText: 'По ответственным юристам' }).waitFor()
+      assert.equal(await dcRequests(page), 0, 'обзор договоров заявки не грузит')
+      await page.locator('.reports-subtab', { hasText: 'Заявки на ДС' }).click()
       await page.locator('.dcs-kpi').waitFor({ timeout: 60000 })
 
       assert.equal(await kpi(page, 'Всего заявок'), '5')
@@ -69,10 +76,14 @@ describe('Отчёты: заявки на ДС', { skip: !launch && 'Нет Chro
       const people = page.locator('.report-section', { has: page.locator('h3', { hasText: 'По ответственным' }) }).locator('tbody tr td:first-child')
       assert.deepEqual(await people.allInnerTexts(), ['Юристов Ю. Ю.', 'Не назначен'])
 
-      // Переключение вкладок не перечитывает заявки.
+      // Переключение подвкладок и вкладок не перечитывает заявки.
       const loaded = await dcRequests(page)
+      await page.locator('.reports-subtab', { hasText: 'Обзор' }).click()
+      await page.locator('h3', { hasText: 'По ответственным юристам' }).waitFor()
+      assert.equal(await page.locator('.dcs-kpi').isVisible(), false)
+      await page.locator('.reports-tab', { hasText: 'Тендеры' }).click()
       await page.locator('.reports-tab', { hasText: 'Договоры' }).click()
-      await page.locator('.reports-tab', { hasText: 'Заявки на ДС' }).click()
+      await page.locator('.reports-subtab', { hasText: 'Заявки на ДС' }).click()
       await page.locator('.dcs-kpi').waitFor()
       assert.equal(await dcRequests(page), loaded)
       assert.deepEqual(errors, [])
@@ -84,7 +95,7 @@ describe('Отчёты: заявки на ДС', { skip: !launch && 'Нет Chro
   it('фильтры: отдел и ответственный пересчитывают карточки и таблицы', async () => {
     const { page, errors, close } = await open()
     try {
-      await page.locator('.reports-tab', { hasText: 'Заявки на ДС' }).click()
+      await openDc(page)
       await page.locator('.dcs-kpi').waitFor({ timeout: 60000 })
       await page.locator('.rf-chip', { hasText: 'Отдел' }).locator('select').selectOption('warranty_service')
       assert.equal(await kpi(page, 'Всего заявок'), '1')
@@ -102,7 +113,7 @@ describe('Отчёты: заявки на ДС', { skip: !launch && 'Нет Chro
   it('телефон: страница не прокручивается вбок', async () => {
     const { page, errors, close } = await open({ width: 360, height: 800 })
     try {
-      await page.locator('.reports-tab', { hasText: 'Заявки на ДС' }).click()
+      await openDc(page)
       await page.locator('.dcs-kpi').waitFor({ timeout: 60000 })
       const side = await page.evaluate(() => {
         const main = document.querySelector('.main-content')

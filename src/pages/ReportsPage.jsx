@@ -154,7 +154,7 @@ function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
   // Вкладки: «Тендеры» (внутри — обзор, КП, победители, материалы, планы затрат,
-  // ВОРы и РД, работа инженеров), «Договоры» и «Заявки на ДС».
+  // ВОРы и РД, работа инженеров) и «Договоры» (внутри — обзор и заявки на ДС).
   // Какие отчёты видны роли. С правом «Отчёты: все вкладки» (reports_full, миграция
   // 20260930 выдала его всем ролям, у которых отчёты уже были) — все, как раньше.
   // Без него — только отчёты рабочих разделов: у «Сметный отдел_Руководители»
@@ -166,22 +166,27 @@ function ReportsPage() {
         ...(canView('vors') || canView('tenders') ? ['vors'] : []),
         ...(canView('tenders_materials') ? ['materials'] : []),
       ]
+  const contractSubs = fullReports
+    // Заявки на ДС — тому, кто видит и все отчёты, и сам реестр заявок (его строки отдаёт база).
+    ? ['overview', ...(canView('dc_requests') ? ['dc_requests'] : [])]
+    : []
   const allowedTabs = [
     ...(tenderSubs.length > 0 ? ['tenders'] : []),
-    ...(fullReports ? ['contracts'] : []),
-    // Заявки на ДС — тому, кто видит и все отчёты, и сам реестр заявок (его строки отдаёт база).
-    ...(fullReports && canView('dc_requests') ? ['dc_requests'] : []),
+    ...(contractSubs.length > 0 ? ['contracts'] : []),
   ]
   const [activeTabState, setActiveTab] = useState('tenders')
   const [subTabState, setSubTab] = useState(() => tenderSubs[0] || 'overview')
+  const [contractSubState, setContractSub] = useState('overview')
   // Выбранная вкладка, которой роли не положено (права сменились), подменяется первой доступной.
   const activeTab = allowedTabs.includes(activeTabState) ? activeTabState : allowedTabs[0]
   const subTab = tenderSubs.includes(subTabState) ? subTabState : tenderSubs[0]
+  const contractSub = contractSubs.includes(contractSubState) ? contractSubState : contractSubs[0]
   const showSub = (key) => activeTab === 'tenders' && subTab === key
+  const showContractSub = (key) => activeTab === 'contracts' && contractSub === key
   // КП грузятся при первом открытии подвкладки и дальше не перечитываются при
   // переключении: тысячи строк незачем тянуть заново на каждый клик.
   const [kpVisited, setKpVisited] = useState(false)
-  // То же у «Заявок на ДС»: заявки и журнал статусов грузятся при первом открытии вкладки.
+  // То же у «Заявок на ДС»: заявки и журнал статусов грузятся при первом открытии подвкладки.
   const [dcVisited, setDcVisited] = useState(false)
   // null = обзор, 'construction' | 'warranty' = детализация по выбранному отделу
   const [tDeptView, setTDeptView] = useState(null)
@@ -662,7 +667,6 @@ function ReportsPage() {
   const reportTabs = [
     { key: 'tenders', label: 'Тендеры' },
     { key: 'contracts', label: 'Договоры' },
-    { key: 'dc_requests', label: 'Заявки на ДС' },
   ].filter(tab => allowedTabs.includes(tab.key))
   const tenderTabs = [
     { key: 'overview', label: 'Обзор', count: s.tTotal },
@@ -676,6 +680,11 @@ function ReportsPage() {
     // Вкладка только для владельца системы — это персональная активность сотрудников.
     { key: 'activity', label: 'Работа инженеров' },
   ].filter(tab => tenderSubs.includes(tab.key))
+  const contractTabs = [
+    { key: 'overview', label: 'Обзор', count: s.cTotal },
+    // Счётчика нет: заявки грузятся отдельно, при открытии подвкладки.
+    { key: 'dc_requests', label: 'Заявки на ДС' },
+  ].filter(tab => contractSubs.includes(tab.key))
   const updatedLabel = loadedAt
     ? `Обновлено: сегодня, ${loadedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
     : null
@@ -705,7 +714,6 @@ function ReportsPage() {
             onClick={() => {
               setActiveTab(tab.key)
               if (tab.key !== 'tenders') setTDeptView(null)
-              if (tab.key === 'dc_requests') setDcVisited(true)
             }}
             aria-pressed={activeTab === tab.key}
           >
@@ -718,24 +726,27 @@ function ReportsPage() {
       {/* Отчёты по тендерам — подвкладки. Даже одна (у роли без «Отчёты: все вкладки» бывают
           одни «ВОРы и РД») показывается: по ней видно, что за отчёт открыт. */}
       {activeTab === 'tenders' && tenderTabs.length > 0 && (
-        <nav className="reports-subtabs" aria-label="Отчёты по тендерам">
-          {tenderTabs.map(tab => (
-            <button
-              key={tab.key}
-              type="button"
-              className={`reports-subtab ${subTab === tab.key ? 'is-active' : ''}`}
-              onClick={() => {
-                setSubTab(tab.key)
-                if (tab.key === 'kp') setKpVisited(true)
-                if (tab.key !== 'overview') setTDeptView(null)
-              }}
-              aria-pressed={subTab === tab.key}
-            >
-              {tab.label}
-              {tab.count != null && <span className="reports-subtab-count">{tab.count}</span>}
-            </button>
-          ))}
-        </nav>
+        <ReportSubtabs
+          label="Отчёты по тендерам"
+          tabs={tenderTabs}
+          active={subTab}
+          onSelect={(key) => {
+            setSubTab(key)
+            if (key === 'kp') setKpVisited(true)
+            if (key !== 'overview') setTDeptView(null)
+          }}
+        />
+      )}
+      {activeTab === 'contracts' && contractTabs.length > 0 && (
+        <ReportSubtabs
+          label="Отчёты по договорам"
+          tabs={contractTabs}
+          active={contractSub}
+          onSelect={(key) => {
+            setContractSub(key)
+            if (key === 'dc_requests') setDcVisited(true)
+          }}
+        />
       )}
 
       {/* Фильтр-бар — компактные inline-чипы (только для обзора тендеров) */}
@@ -1174,7 +1185,7 @@ function ReportsPage() {
           )
         })()}
 
-        {activeTab === 'contracts' && (
+        {showContractSub('overview') && (
           <>
             {/* Заголовок сводки: числовые KPI + наглядная структура по статусам */}
             <div className="contracts-overview">
@@ -1342,13 +1353,34 @@ function ReportsPage() {
         )}
 
         {/* Заявки на ДС: свои данные, после первого открытия остаётся смонтированной. */}
-        {(dcVisited || activeTab === 'dc_requests') && allowedTabs.includes('dc_requests') && (
-          <div className="reports-subview" hidden={activeTab !== 'dc_requests'}>
+        {(dcVisited || showContractSub('dc_requests')) && contractSubs.includes('dc_requests') && (
+          <div className="reports-subview" hidden={!showContractSub('dc_requests')}>
             <DcRequestStats scopedObjectIds={scopedObjectIds} canOpenRegistry={canView('dc_requests')} />
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+// Подвкладки раздела отчётов («Тендеры», «Договоры»). Даже одна показывается: по ней видно,
+// что за отчёт открыт.
+function ReportSubtabs({ label, tabs, active, onSelect }) {
+  return (
+    <nav className="reports-subtabs" aria-label={label}>
+      {tabs.map(tab => (
+        <button
+          key={tab.key}
+          type="button"
+          className={`reports-subtab ${active === tab.key ? 'is-active' : ''}`}
+          onClick={() => onSelect(tab.key)}
+          aria-pressed={active === tab.key}
+        >
+          {tab.label}
+          {tab.count != null && <span className="reports-subtab-count">{tab.count}</span>}
+        </button>
+      ))}
+    </nav>
   )
 }
 
