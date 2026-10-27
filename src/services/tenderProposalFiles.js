@@ -4,7 +4,7 @@
 import { db } from '../api'
 import { deleteDocument, uploadFile } from './s3'
 import { fetchAllRows } from '../utils/fetchAllRows'
-import { STAGE_FIELDS } from '../utils/kpReviewStages'
+import { STAGE_FIELDS, ACTIVE_PART_OR, DONE_PART_OR } from '../utils/kpReviewStages'
 
 // task 431: статусы проверки КП аналитиком-экономистом.
 export const KP_REVIEW_STATUS = {
@@ -263,7 +263,13 @@ export async function setRemarksSent(fileId, { sent, sender = '' }) {
 // task 431: очередь КП на проверку (вкладка «Проверка КП»). Тянет все КП-файлы
 // (file_kind='commercial_proposal') с джойном тендера/объекта/контрагента/ответственного.
 // statuses — массив статусов (null = все); objectIds — ограничение по объектам (scope сотрудника).
-export async function fetchProposalFilesForReview({ statuses = null, objectIds = null } = {}) {
+// part — часть очереди: 'active' (рабочие этапы) | 'done' (завершённые) | null (всё).
+// Файлы — только поля, нужные странице: просмотр и скачивание (s3_key, имя, тип),
+// замена и удаление файла замечаний (id). Полная запись s3_documents была
+// трети ответа.
+const REVIEW_FILE_COLS = 'id, s3_key, file_name, mime_type'
+
+export async function fetchProposalFilesForReview({ statuses = null, objectIds = null, part = null } = {}) {
   return fetchAllRows((from, to) => {
     let q = db
       .from('tender_proposal_files')
@@ -272,8 +278,8 @@ export async function fetchProposalFilesForReview({ statuses = null, objectIds =
                remarks_send_required,
                remarks_sent, remarks_sent_at, remarks_sent_by,
                summary_added, summary_added_at, summary_added_by,
-               s3:s3_documents!s3_document_id(*),
-               review_note_s3:s3_documents!review_note_s3_document_id(*),
+               s3:s3_documents!s3_document_id(${REVIEW_FILE_COLS}),
+               review_note_s3:s3_documents!review_note_s3_document_id(${REVIEW_FILE_COLS}),
                counterparties(name),
                tenders!inner(id, public_tender_number, work_description, object_id, department,
                  folder_path, cost_plan_link, cost_plan_status, objects(name, status),
@@ -282,6 +288,8 @@ export async function fetchProposalFilesForReview({ statuses = null, objectIds =
       .eq('file_kind', 'commercial_proposal')
       // Только КП, загруженные с момента запуска (легаси-бэклог в очередь не попадает).
       .eq('review_required', true)
+    if (part === 'active') q = q.or(ACTIVE_PART_OR)
+    else if (part === 'done') q = q.eq('summary_added', true).or(DONE_PART_OR)
     if (statuses && statuses.length) q = q.in('review_status', statuses)
     if (objectIds && objectIds.length) q = q.in('tenders.object_id', objectIds)
     return q.order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to)

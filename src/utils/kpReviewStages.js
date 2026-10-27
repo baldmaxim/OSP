@@ -38,6 +38,20 @@ export function stageOf(r) {
   return 'pending'
 }
 
+// Завершённые этапы — конец ветки, работы по КП больше нет.
+export const DONE_STAGES = ['ok_done', 'remarks_sent', 'nosend_done']
+
+// Очередь грузится двумя частями: рабочие этапы (их открывают каждый день, их
+// немного) и завершённые — история, которая растёт с каждым КП (на 15.10.2026 —
+// 597 из 712). Условия PostgREST — точное дополнение друг друга и повторяют
+// stageOf: «завершено» = внесено в сводную И (без замечаний ИЛИ без отправки ИЛИ
+// отправлено). Все четыре поля в базе NOT NULL. Меняете stageOf — меняйте и их.
+export const ACTIVE_PART_OR = 'summary_added.is.false,review_status.not.in.(approved,has_remarks),'
+  + 'and(review_status.eq.has_remarks,remarks_send_required.is.true,remarks_sent.is.false)'
+// Плюс summary_added = true (отдельным .eq).
+export const DONE_PART_OR = 'review_status.eq.approved,'
+  + 'and(review_status.eq.has_remarks,or(remarks_send_required.is.false,remarks_sent.is.true))'
+
 export const STAGE_KEYS = [
   'pending',
   'ok_summary', 'ok_done',

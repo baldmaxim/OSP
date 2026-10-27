@@ -33,7 +33,9 @@ describe('Проверка КП: группы по тендеру, компак�
     await stand?.server.close()
   })
 
-  async function open({ role = '', extra = '', viewport = { width: 1600, height: 1000 } } = {}) {
+  // init — скрипт до загрузки страницы (например, window.__fakeHold); waitHistory — дождаться и
+  // завершённых КП (вторая часть очереди), а не только рабочих этапов.
+  async function open({ role = '', extra = '', viewport = { width: 1600, height: 1000 }, init = null, waitHistory = true } = {}) {
     // Время — московское: даты стенда в UTC, подписи и подсказки сверяются по местному времени.
     const context = await browser.newContext({ locale: 'ru-RU', timezoneId: 'Europe/Moscow', viewport, acceptDownloads: true })
     const page = await context.newPage()
@@ -41,8 +43,10 @@ describe('Проверка КП: группы по тендеру, компак�
     page.on('pageerror', (e) => errors.push(e.message))
     page.on('console', (msg) => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) errors.push(msg.text()) })
     page.on('dialog', (d) => d.accept())
+    if (init) await (Array.isArray(init) ? page.addInitScript(init[0], init[1]) : page.addInitScript(init))
     await page.goto(`${stand.url}?route=/kp-review&kpReview=1&latency=10${role ? `&kpRole=${role}` : ''}${extra}`)
     await page.locator('.kprv-table, .kprv-empty').first().waitFor({ timeout: 60000 })
+    if (waitHistory) await page.waitForFunction(() => !document.querySelector('.kprv-stage-count.is-wait'))
     return { context, page, errors }
   }
 
@@ -112,6 +116,133 @@ describe('Проверка КП: группы по тендеру, компак�
       assert.equal(await group(page, 'kt-3').locator('.kprv-dept').innerText(), 'Совм.')
       assert.equal(await group(page, 'kt-4').locator('.kprv-dept').innerText(), 'Проч.')
       assert.equal(await group(page, 'kt-2').locator('.kprv-dept').innerText(), 'ГО')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('галочка «Схема веток» раскрывает прежнюю схему: узлы — те же этапы, выбор переживает обновление', async () => {
+    const { context, page, errors } = await open()
+    try {
+      const toggle = page.locator('.kprv-flow-toggle')
+      const flow = page.locator('.kprv-flow')
+      assert.equal(await flow.count(), 0)
+      // Галочка — между последней веткой и «Все», вне списка вкладок.
+      const box = (loc) => loc.evaluate((el) => el.getBoundingClientRect().toJSON())
+      const lastBranch = await box(page.locator('.kprv-stage-grp.is-nosend'))
+      const all = await box(page.locator('.kprv-stage-grp.is-all'))
+      const t = await box(toggle)
+      assert.ok(t.left >= lastBranch.right && t.right <= all.left, `галочка не между ветками и «Все»: ${JSON.stringify({ lastBranch, t, all })}`)
+      assert.equal(await page.locator('[role="tablist"] input').count(), 0)
+
+      await toggle.click()
+      await flow.waitFor()
+      assert.equal(await toggle.locator('input').isChecked(), true)
+      // Развилка: «На проверке» → без замечаний / с замечаниями → для отправки / без отправки.
+      assert.deepEqual(await flow.locator('.kprv-flow-branch').allInnerTexts(),
+        ['без замечаний', 'с замечаниями', 'для отправки подрядчику', 'без отправки подрядчику'])
+      const nodes = await flow.locator('.kprv-flow-step').evaluateAll((els) => els
+        .map((b) => [b.dataset.stage, Number(b.querySelector('.kprv-flow-count').textContent)]))
+      assert.deepEqual(Object.fromEntries(nodes), {
+        pending: 6, ok_summary: 2, ok_done: 2, remarks_work: 2, remarks_sent: 1, nosend_summary: 1, nosend_done: 1,
+      })
+      assert.match(await flow.locator('[data-stage="remarks_work"]').getAttribute('title'), /Делает: инженер · параллельно/)
+
+      // Узел открывает этап — и во вкладках сверху тоже.
+      await flow.locator('[data-stage="remarks_work"]').click()
+      await page.locator('.kprv-stage[data-stage="remarks_work"][aria-selected="true"]').waitFor()
+      assert.equal(await flow.locator('[data-stage="remarks_work"]').getAttribute('aria-pressed'), 'true')
+      assert.equal(await flow.locator('[data-stage="pending"]').getAttribute('aria-pressed'), 'false')
+      await openStage(page, 'ok_done')
+      assert.equal(await flow.locator('[data-stage="ok_done"]').getAttribute('aria-pressed'), 'true')
+
+      assert.equal(await page.evaluate(() => localStorage.getItem('kpReview:flow')), '1')
+      await page.reload()
+      await page.locator('.kprv-table, .kprv-empty').first().waitFor()
+      await flow.waitFor()
+      await toggle.click()
+      assert.equal(await flow.count(), 0)
+      assert.equal(await page.evaluate(() => localStorage.getItem('kpReview:flow')), '0')
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // Вторая часть очереди — завершённые КП (в запросе summary_added = true).
+  const holdDone = (extra) => {
+    window.__fakeHold = (q) => (q.table === 'tender_proposal_files' && q.op === 'select'
+      && q.filters.some((f) => f.op === 'eq' && f.col === 'summary_added' && String(f.val) === 'true')
+      ? (typeof extra === 'number' ? { delay: extra } : (window.__failDone-- > 0 ? { error: { message: 'сбой сети' } } : null))
+      : null)
+    window.__failDone = 1
+  }
+
+  it('очередь грузится двумя частями: рабочие этапы — сразу, завершённые — следом', async () => {
+    const { context, page, errors } = await open({ init: [holdDone, 1500], waitHistory: false })
+    try {
+      // Рабочие этапы уже на экране, у завершённых и «Все» — «…».
+      assert.equal(await page.locator('.kprv-kp').count(), 6)
+      const wait = (stage) => page.locator(`.kprv-stage[data-stage="${stage}"] .kprv-stage-count`).innerText()
+      for (const stage of ['ok_done', 'remarks_sent', 'nosend_done', 'all']) assert.equal(await wait(stage), '…', stage)
+      assert.equal(await wait('remarks_work'), '2')
+      assert.match(await page.locator('.kprv-stage[data-stage="ok_done"]').getAttribute('aria-label'), /загружается/)
+      await openStage(page, 'ok_done')
+      assert.equal(await page.locator('.kprv-empty').innerText(), 'Загрузка завершённых КП…')
+      assert.equal(await page.locator('.kprv-shown').count(), 0)
+
+      await page.locator('.kprv-kp').first().waitFor()
+      assert.equal(await page.locator('.kprv-kp').count(), 2)
+      assert.deepEqual(await counts(page), {
+        pending: 6, ok_summary: 2, ok_done: 2, remarks_work: 2, remarks_sent: 1, nosend_summary: 1, nosend_done: 1, all: 15,
+      })
+      // Два запроса очереди, ушедшие одновременно, — не один общий.
+      const reqs = await page.evaluate(() => window.__supabaseStats.requests.filter((r) => r.table === 'tender_proposal_files' && r.op === 'select').length)
+      assert.equal(reqs, 2)
+      assert.deepEqual(errors, [])
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('завершённые КП не загрузились — «Повторить», рабочие этапы работают', async () => {
+    const { context, page } = await open({ init: [holdDone, 'fail'], waitHistory: false })
+    try {
+      assert.equal(await page.locator('.kprv-kp').count(), 6)
+      await openStage(page, 'all')
+      const err = page.locator('.kprv-error')
+      await err.waitFor()
+      assert.match(await err.innerText(), /Не удалось загрузить завершённые КП/)
+      await err.getByRole('button', { name: 'Повторить' }).click()
+      await page.locator('.kprv-kp').nth(14).waitFor()
+      assert.equal((await counts(page)).all, 15)
+    } finally {
+      await context.close()
+    }
+  })
+
+  it('возврат на страницу — очередь сразу из памяти, свежие данные подтягиваются тихо', async () => {
+    const { context, page, errors } = await open()
+    try {
+      await page.evaluate(() => window.__navigate('/general'))
+      await page.locator('.kprv-page').waitFor({ state: 'detached' })
+      // Пока вкладки не было, КП проверили; запросы очереди теперь идут долго.
+      await page.evaluate(() => {
+        Object.assign(window.__fakeDb.tender_proposal_files.find((f) => f.id === 'kp-1'), { review_status: 'approved', reviewed_by: 'Тестов Т. Т.' })
+        window.__fakeHold = (q) => (q.table === 'tender_proposal_files' ? { delay: 1500 } : null)
+      })
+      const t0 = Date.now()
+      await page.evaluate(() => window.__navigate('/kp-review'))
+      await page.locator('.kprv-table').waitFor()
+      assert.ok(Date.now() - t0 < 1200, `таблица не из памяти: ${Date.now() - t0} мс`)
+      assert.equal(await page.locator('.kprv-empty').count(), 0)
+      assert.deepEqual(await counts(page), {
+        pending: 6, ok_summary: 2, ok_done: 2, remarks_work: 2, remarks_sent: 1, nosend_summary: 1, nosend_done: 1, all: 15,
+      })
+      // Свежие данные пришли — КП ушло из «На проверке».
+      await page.waitForFunction(() => document.querySelector('.kprv-stage[data-stage="pending"] .kprv-stage-count')?.textContent === '5')
+      assert.equal((await counts(page)).ok_summary, 3)
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

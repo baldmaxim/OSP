@@ -135,7 +135,8 @@
   outline: 2px solid var(--primary-color);
   outline-offset: 2px;
 }
-.kprv-dept-chip-box {
+.kprv-dept-chip-box,
+.kprv-flow-toggle-box {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -166,7 +167,8 @@
   background: color-mix(in srgb, #16a34a 10%, var(--bg-secondary));
   color: #166534;
 }
-.kprv-dept-chip.is-on .kprv-dept-chip-box {
+.kprv-dept-chip.is-on .kprv-dept-chip-box,
+.kprv-flow-toggle.is-on .kprv-flow-toggle-box {
   border-color: #16a34a;
   background: #16a34a;
   color: #fff;
@@ -206,8 +208,11 @@
   gap: 0.1875rem;
   padding: 0 0.25rem;
 }
+/* Вкладки без своей коробки: ветки, галочка схемы и «Все» — в одном ряду
+   .kprv-stages, «Все» (последняя по разметке) — после галочки. */
+.kprv-stage-tabs { display: contents; }
 .kprv-stage-grp + .kprv-stage-grp { border-left: 1px solid var(--border-color); }
-.kprv-stage-grp.is-all { margin-left: auto; border-left: 0; }
+.kprv-stage-grp.is-all { order: 2; margin-left: auto; border-left: 0; }
 /* Подпись ветки — плашка тона: ветки видны сразу, а не угадываются по цвету
    мелкого текста. Пустая подпись (начало, «Все») держит высоту, но не видна. */
 .kprv-stage-cap {
@@ -281,19 +286,260 @@
 }
 
 /* Тона этапов и веток: --kprv-tone — линии и заливки, --kprv-tone-text — текст
-   (на ступень темнее, контраст ≥ 4,5:1). Цвета — прежние, у каждого свой смысл. */
-.kprv-stages .is-pending { --kprv-tone: var(--primary-color); --kprv-tone-text: var(--ui-link); }
-.kprv-stages .is-summary { --kprv-tone: #7c3aed; --kprv-tone-text: #6d28d9; }
-.kprv-stages .is-warn { --kprv-tone: #d97706; --kprv-tone-text: #b45309; }
-.kprv-stages .is-sent { --kprv-tone: #0284c7; --kprv-tone-text: #0369a1; }
-.kprv-stages .is-ok { --kprv-tone: #16a34a; --kprv-tone-text: #15803d; }
-.kprv-stages .is-nosend { --kprv-tone: #64748b; --kprv-tone-text: #475569; }
+   (на ступень темнее, контраст ≥ 4,5:1). Цвета — прежние, у каждого свой смысл.
+   Общие для вкладок этапов и схемы веток. */
+:is(.kprv-stages, .kprv-flow) .is-pending { --kprv-tone: var(--primary-color); --kprv-tone-text: var(--ui-link); }
+:is(.kprv-stages, .kprv-flow) .is-summary { --kprv-tone: #7c3aed; --kprv-tone-text: #6d28d9; }
+:is(.kprv-stages, .kprv-flow) .is-warn { --kprv-tone: #d97706; --kprv-tone-text: #b45309; }
+:is(.kprv-stages, .kprv-flow) .is-sent { --kprv-tone: #0284c7; --kprv-tone-text: #0369a1; }
+:is(.kprv-stages, .kprv-flow) .is-ok { --kprv-tone: #16a34a; --kprv-tone-text: #15803d; }
+:is(.kprv-stages, .kprv-flow) .is-nosend { --kprv-tone: #64748b; --kprv-tone-text: #475569; }
 .kprv-stages .is-all { --kprv-tone: var(--text-tertiary); --kprv-tone-text: var(--text-secondary); }
-[data-theme='dark'] .kprv-stages .is-summary { --kprv-tone: #a78bfa; --kprv-tone-text: #c4b5fd; }
-[data-theme='dark'] .kprv-stages .is-warn { --kprv-tone: #fbbf24; --kprv-tone-text: #fbbf24; }
-[data-theme='dark'] .kprv-stages .is-sent { --kprv-tone: #38bdf8; --kprv-tone-text: #7dd3fc; }
-[data-theme='dark'] .kprv-stages .is-ok { --kprv-tone: #4ade80; --kprv-tone-text: #6ee7b7; }
-[data-theme='dark'] .kprv-stages .is-nosend { --kprv-tone: #94a3b8; --kprv-tone-text: #cbd5e1; }
+[data-theme='dark'] :is(.kprv-stages, .kprv-flow) .is-summary { --kprv-tone: #a78bfa; --kprv-tone-text: #c4b5fd; }
+[data-theme='dark'] :is(.kprv-stages, .kprv-flow) .is-warn { --kprv-tone: #fbbf24; --kprv-tone-text: #fbbf24; }
+[data-theme='dark'] :is(.kprv-stages, .kprv-flow) .is-sent { --kprv-tone: #38bdf8; --kprv-tone-text: #7dd3fc; }
+[data-theme='dark'] :is(.kprv-stages, .kprv-flow) .is-ok { --kprv-tone: #4ade80; --kprv-tone-text: #6ee7b7; }
+[data-theme='dark'] :is(.kprv-stages, .kprv-flow) .is-nosend { --kprv-tone: #94a3b8; --kprv-tone-text: #cbd5e1; }
+
+/* Галочка «Схема веток» — сразу за последней веткой, перед «Все»; вид — как у
+   галочек направлений (отмеченная — зелёная). */
+.kprv-flow-toggle {
+  order: 1;
+  position: relative;
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  margin: 0 0 0.125rem 0.75rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+  font-weight: var(--ui-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.kprv-flow-toggle:hover { border-color: var(--border-color-dark); background: var(--hover-bg); }
+.kprv-flow-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.kprv-flow-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+.kprv-flow-toggle.is-on {
+  border-color: #16a34a;
+  background: color-mix(in srgb, #16a34a 10%, var(--bg-secondary));
+  color: #166534;
+}
+[data-theme='dark'] .kprv-flow-toggle.is-on {
+  background: color-mix(in srgb, #16a34a 22%, var(--bg-secondary));
+  color: #86efac;
+}
+
+/* ── Схема веток (прежний вид этапов, раскрывается галочкой) ─────────────────
+   От «На проверке» — развилка на «без замечаний» и «с замечаниями», у второй —
+   своя развилка на «для отправки подрядчику» и «без отправки». Узлы — те же
+   очереди, что вкладки этапов. Не помещается по ширине — листается вбок, не
+   переносится: перенос рвал бы дорожки веток. */
+.kprv-flow-wrap {
+  flex: 0 0 auto;
+  overflow-x: auto;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.kprv-flow {
+  --flow-line: color-mix(in srgb, var(--text-tertiary) 45%, transparent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-primary);
+  font-size: var(--ui-th);
+  line-height: var(--ui-th-lh);
+}
+
+/* Развилка: вертикальный ствол и по отводу в каждую ветку — псевдоэлементами,
+   так линии ровные при любой ширине узлов. */
+.kprv-flow-split {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-left: 18px;
+}
+.kprv-flow-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+/* Отвод от ствола к началу дорожки. */
+.kprv-flow-row::before {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--flow-line);
+}
+/* Ствол собирается из сегментов на самих дорожках: первая тянет линию от своей
+   оси вниз, последняя — сверху до своей оси, средние проходят насквозь. Так
+   развилка не зависит от высоты дорожек (во второй лежит вложенная развилка).
+   -4px — половина зазора между дорожками (0.5rem). */
+.kprv-flow-row::after {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--flow-line);
+}
+.kprv-flow-row:first-child::after { top: 50%; }
+.kprv-flow-row:last-child::after { bottom: 50%; }
+.kprv-flow-row:only-child::after { display: none; }
+
+/* Перемычка от подписи ветки до ствола вложенной развилки. */
+.kprv-flow-stem {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--flow-line);
+}
+
+/* Соединитель между узлами: линия с остриём. */
+.kprv-flow-arrow {
+  position: relative;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--flow-line);
+}
+.kprv-flow-arrow::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--flow-line);
+  border-right: 2px solid var(--flow-line);
+  transform: translateY(-50%) rotate(45deg);
+}
+
+/* Подпись ветки — плашка тона, как подписи веток над вкладками. */
+.kprv-flow-branch {
+  padding: 0.0625rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--kprv-tone) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--kprv-tone) 14%, var(--bg-secondary));
+  color: var(--kprv-tone-text);
+  font-size: var(--ui-hint);
+  line-height: 1rem;
+  font-weight: var(--ui-semibold);
+}
+/* Подветка — без рамки, чтобы уровни различались. */
+.kprv-flow-branch.is-sub {
+  border-color: transparent;
+  font-weight: var(--ui-medium);
+}
+
+/* Узел схемы — он же очередь. Все узлы одной высоты: разнобой ломал линию
+   маршрута сильнее, чем экономил место. */
+.kprv-flow-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.375rem;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.kprv-flow-step:hover {
+  border-color: color-mix(in srgb, var(--kprv-tone) 45%, var(--border-color));
+  background: var(--hover-bg);
+}
+.kprv-flow-step:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+.kprv-flow-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--kprv-tone);
+}
+.kprv-flow-text { display: inline-flex; flex-direction: column; align-items: flex-start; }
+.kprv-flow-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: var(--ui-medium);
+  color: var(--text-primary);
+}
+.kprv-flow-label > svg { flex: 0 0 auto; color: var(--kprv-tone-text); }
+.kprv-flow-actor {
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  color: var(--text-secondary);
+}
+.kprv-flow-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--kprv-tone) 16%, transparent);
+  color: var(--kprv-tone-text);
+  font-size: var(--ui-hint);
+  line-height: var(--ui-hint-lh);
+  font-weight: var(--ui-semibold);
+  font-variant-numeric: tabular-nums;
+}
+/* Пустая очередь не должна притягивать взгляд. */
+.kprv-flow-count.is-zero {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-color);
+  color: var(--text-tertiary);
+  font-weight: var(--ui-medium);
+}
+/* Открытый этап — заливка и рамка своего тона. */
+.kprv-flow-step.is-active {
+  border-color: var(--kprv-tone);
+  background: color-mix(in srgb, var(--kprv-tone) 12%, var(--bg-secondary));
+  box-shadow: inset 0 0 0 1px var(--kprv-tone);
+}
+.kprv-flow-step.is-active .kprv-flow-label { color: var(--kprv-tone-text); }
 
 .kprv-empty, .kprv-error {
   padding: 2.5rem 1.5rem;
@@ -839,6 +1085,8 @@ a.kprv-tender-link:hover {
   .kprv-stages::-webkit-scrollbar { display: none; }
   .kprv-stage-grp { flex: 0 0 auto; }
   .kprv-stage-grp.is-all { margin-left: 0; }
+  .kprv-flow-toggle { flex: 0 0 auto; }
+  .kprv-flow-wrap { padding: 0.5rem 0.75rem; }
 
   .kprv-table { min-width: 0; }
   .kprv-table,

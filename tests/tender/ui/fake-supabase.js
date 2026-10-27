@@ -1,11 +1,13 @@
 // Клиент Supabase в памяти браузера для стенда карточки тендера.
 // Реализует ровно те части PostgREST-построителя, которые использует карточка:
-// select (с count/head), eq/in/is, or (только eq и is.null), order, range/limit, single/maybeSingle,
+// select (с count/head), eq/in/is, or (логическое дерево: eq, in, is, not., and/or), order, range/limit, single/maybeSingle,
 // insert/upsert/update/delete с .select(). Встраивания (objects(name)…) не
 // разбираются — нужные поля заранее лежат в данных. Каждый запрос ждёт
 // искусственную «сетевую» задержку и учитывается в window.__supabaseStats.
 // window.__fakeTriggers[таблица](строка, прежняя) — подмена триггера «до записи» (расчёт в базе);
 // window.__fakeErrors[таблица] — ответ ошибкой на любой запрос к таблице (например, «таблицы нет»).
+// window.__fakeHold({ table, op, filters }) → { delay?, error? } — задержать или уронить отдельный запрос
+// (например, одну из двух частей очереди «Проверки КП»).
 // window.__fakeMissingColumns[таблица] — колонок ещё нет (миграция не применена): выборка, где они названы,
 // отвечает 42703, как PostgREST.
 // window.__fakeUnique[таблица] — колонки уникального ключа: вставка дубля отвечает 23505, как база.
@@ -62,12 +64,49 @@ function applyFilters(rows, filters) {
     if (f.op === 'is') return f.val === null ? r[f.col] == null : r[f.col] === f.val
     if (f.op === 'in') return f.val.map(String).includes(String(r[f.col]))
     if (f.op === 'gt') return r[f.col] > f.val
-    if (f.op === 'or') {
-      return f.conds.some((c) => (c.op === 'is' ? r[c.col] == null
-        : c.op === 'in' ? c.val.includes(String(r[c.col])) : String(r[c.col]) === c.val))
-    }
+    if (f.op === 'or') return f.conds.some((c) => testCond(r, c))
     return true
   }))
+}
+
+// Логическое дерево .or() как у PostgREST: «a.eq.1,b.not.in.(x,y),and(c.is.true,or(d.is.false,e.eq.2))».
+// Операторы — eq, in, is (null / true / false), любой с not.; прочие стенду не нужны — тогда
+// всё условие пропускается, как раньше.
+function splitTop(expr) {
+  const parts = []
+  let depth = 0
+  let cur = ''
+  for (const ch of expr) {
+    if (ch === '(') depth++
+    else if (ch === ')') depth--
+    if (ch === ',' && depth === 0) { parts.push(cur); cur = '' } else cur += ch
+  }
+  if (cur) parts.push(cur)
+  return parts
+}
+
+function parseCond(part) {
+  const logic = /^(and|or)\((.*)\)$/.exec(part)
+  if (logic) {
+    const kids = splitTop(logic[2]).map(parseCond)
+    return kids.includes(null) ? null : { logic: logic[1], kids }
+  }
+  const [col, first, ...rest] = part.split('.')
+  const neg = first === 'not'
+  const op = neg ? rest.shift() : first
+  const val = rest.join('.')
+  if (op === 'in') return { col, op, neg, val: val.replace(/^\(|\)$/g, '').split(',') }
+  if (op === 'eq' || (op === 'is' && ['null', 'true', 'false'].includes(val))) return { col, op, neg, val }
+  return null
+}
+
+function testCond(r, c) {
+  if (c.logic) return c.logic === 'and' ? c.kids.every((k) => testCond(r, k)) : c.kids.some((k) => testCond(r, k))
+  const v = r[c.col]
+  const hit = c.op === 'in' ? c.val.includes(String(v))
+    : c.op === 'is' ? (c.val === 'null' ? v == null : v === (c.val === 'true'))
+      : String(v) === c.val
+  return c.neg ? !hit : hit
 }
 
 function applyOrder(rows, orders) {
@@ -101,15 +140,10 @@ function builder(table) {
     not() { return self },
     // Таймаут запроса (окно «ВОРы и РД») — стенд отвечает сам, отменять нечего.
     abortSignal() { return self },
-    // «a.eq.1,b.is.null,c.in.(x,y)» — как PostgREST; прочие операторы стенду не нужны.
-    // Запятые внутри списка in.(…) условия не делят.
+    // Логическое дерево — parseCond выше; условие с незнакомым оператором пропускается целиком.
     or(expr) {
-      const conds = String(expr).split(/,(?![^(]*\))/).map((part) => {
-        const [col, op, ...rest] = part.split('.')
-        const val = rest.join('.')
-        return op === 'in' ? { col, op, val: val.replace(/^\(|\)$/g, '').split(',') } : { col, op, val }
-      })
-      if (conds.every((c) => c.op === 'eq' || c.op === 'in' || (c.op === 'is' && c.val === 'null'))) q.filters.push({ op: 'or', conds })
+      const conds = splitTop(String(expr)).map(parseCond)
+      if (!conds.includes(null)) q.filters.push({ op: 'or', conds })
       return self
     },
     order(col, opts = {}) { q.orders.push({ col, asc: opts.ascending !== false }); return self },
@@ -140,9 +174,10 @@ async function run(q) {
   // ids — сколько значений в фильтре .in(...): по нему видно, перечитан один тендер или все.
   const inFilter = q.filters.find((f) => f.op === 'in')
   stats.requests.push({ table: q.table, op: q.op, range: q.range || null, count: q.count, ids: inFilter ? inFilter.val.map(String) : null })
-  await new Promise((r) => setTimeout(r, LATENCY_MS))
+  const hold = window.__fakeHold?.({ table: q.table, op: q.op, filters: q.filters }) || {}
+  await new Promise((r) => setTimeout(r, LATENCY_MS + (hold.delay || 0)))
   stats.active--
-  const fakeError = window.__fakeErrors?.[q.table]
+  const fakeError = hold.error || window.__fakeErrors?.[q.table]
   if (fakeError) return { data: null, count: null, error: fakeError }
   const missing = q.op === 'select' && window.__fakeMissingColumns?.[q.table]
   if (missing) {

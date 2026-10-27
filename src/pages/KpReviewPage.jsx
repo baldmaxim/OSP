@@ -2,7 +2,7 @@ import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from 'rea
 import { Link } from 'react-router-dom'
 import { useRole } from '../contexts/RoleContext'
 import { fetchProposalFilesForReview, setRemarksSent, setSummaryAdded, setReviewStage } from '../services/tenderProposalFiles'
-import { stageOf, STAGE_KEYS, STAGE_GROUPS, TAB_META } from '../utils/kpReviewStages'
+import { stageOf, STAGE_KEYS, STAGE_GROUPS, TAB_META, DONE_STAGES } from '../utils/kpReviewStages'
 import { kpDownloadName } from '../utils/kpDownloadName'
 import { plural } from '../utils/taskHelpers'
 import { shortPersonName } from '../utils/personName'
@@ -36,6 +36,30 @@ const VIRTUALIZE_FROM = 150
 
 const HINT = 'Коммерческие предложения контрагентов на проверку. Сюда попадают только КП, '
   + 'загруженные с момента запуска функции; ранее загруженные остаются в тендерах.'
+
+// Очередь грузится двумя частями сразу (fetchProposalFilesForReview, part):
+// рабочие этапы — их немного, они приходят первыми и показываются сразу;
+// завершённые (история, большая часть КП) — следом. Пока история в пути, у
+// завершённых этапов и «Все» вместо числа «…».
+const isDoneRow = (r) => DONE_STAGES.includes(stageOf(r))
+const needsHistory = (tab) => tab === 'all' || DONE_STAGES.includes(tab)
+
+// Строка могла сменить часть между двумя запросами — берём её один раз.
+function mergeParts(active, done) {
+  const seen = new Set(active.map(r => r.id))
+  return [...active, ...done.filter(r => !seen.has(r.id))]
+}
+
+// Последняя загруженная очередь — в памяти вкладки браузера: вернулся на
+// страницу — таблица сразу, свежие данные подтягиваются тихо. Ключ — пользователь
+// и его объекты; старше 10 минут не показываем.
+const CACHE_TTL_MS = 10 * 60 * 1000
+let queueCache = null // { key, at, rows }
+
+function readQueueCache(key) {
+  if (!queueCache || queueCache.key !== key || Date.now() - queueCache.at > CACHE_TTL_MS) return null
+  return queueCache.rows
+}
 
 const pad2 = (x) => String(x).padStart(2, '0')
 
@@ -351,7 +375,9 @@ function SortTh({ label, sortKey, sort, onSort, className = '', title }) {
 function StageTab({ tabKey, tab, counts, onSelect }) {
   const m = TAB_META[tabKey]
   const isActive = tab === tabKey
-  const count = counts[tabKey] ?? 0
+  // null — завершённые КП ещё загружаются.
+  const count = counts[tabKey]
+  const waiting = count == null
   const full = m.title || m.label
   // Очередь — этап, где ждут работы: её непустой счётчик подсвечен тоном.
   const isQueue = !m.terminal && tabKey !== 'all'
@@ -360,7 +386,7 @@ function StageTab({ tabKey, tab, counts, onSelect }) {
       type="button"
       role="tab"
       aria-selected={isActive}
-      aria-label={`${full}: ${count}`}
+      aria-label={`${full}: ${waiting ? 'загружается' : count}`}
       title={m.actor ? `${full}\nДелает: ${m.actor}` : full}
       data-stage={tabKey}
       className={`kprv-stage is-${m.tone}${isActive ? ' is-active' : ''}`}
@@ -368,8 +394,102 @@ function StageTab({ tabKey, tab, counts, onSelect }) {
     >
       {m.terminal && <IconDone />}
       <span className="kprv-stage-label">{m.short || m.label}</span>
-      <span className={`kprv-stage-count${count ? (isQueue ? ' is-work' : '') : ' is-zero'}`}>{count}</span>
+      {waiting
+        ? <span className="kprv-stage-count is-zero is-wait" title="Загружается">…</span>
+        : <span className={`kprv-stage-count${count ? (isQueue ? ' is-work' : '') : ' is-zero'}`}>{count}</span>}
     </button>
+  )
+}
+
+// Схема веток — прежний вид этапов (до 26.10.2026): развилка от «На проверке» на
+// «без замечаний» и «с замечаниями», у второй — подветки «для отправки подрядчику»
+// и «без отправки». Раскрывается галочкой «Схема веток» справа от этапов; узлы
+// открывают тот же этап, что и вкладки. Галочка переживает обновление страницы.
+const FLOW_STORAGE_KEY = 'kpReview:flow'
+
+function loadSavedFlow() {
+  try { return localStorage.getItem(FLOW_STORAGE_KEY) === '1' } catch { return false }
+}
+
+// Узел схемы: кнопка, нажатая — у открытого этапа. Вкладки этапов (tablist) —
+// строкой выше, поэтому здесь не role="tab": второй набор вкладок сбивал бы диктора.
+function FlowNode({ tabKey, tab, counts, onSelect }) {
+  const m = TAB_META[tabKey]
+  const isActive = tab === tabKey
+  const count = counts[tabKey]
+  const waiting = count == null
+  const full = m.title || m.label
+  return (
+    <button
+      type="button"
+      aria-pressed={isActive}
+      aria-label={`${full}: ${waiting ? 'загружается' : count}`}
+      title={m.actor ? `${full}\nДелает: ${m.actor}` : full}
+      data-stage={tabKey}
+      className={`kprv-flow-step is-${m.tone}${isActive ? ' is-active' : ''}`}
+      onClick={() => onSelect(tabKey)}
+    >
+      {/* Точка тона — единственный цветной элемент неактивного узла: маршрут
+          читается по цвету, но пёстрым полотном схема не становится. */}
+      <span className="kprv-flow-dot" aria-hidden />
+      <span className="kprv-flow-text" aria-hidden>
+        <span className="kprv-flow-label">
+          {m.terminal && <IconDone />}
+          {m.label}
+        </span>
+        {m.actor && <small className="kprv-flow-actor">{m.actor}</small>}
+      </span>
+      {/* Нули приглушены — взгляд идёт к очередям, где есть работа. */}
+      <span className={`kprv-flow-count${count ? '' : ' is-zero'}${waiting ? ' is-wait' : ''}`} aria-hidden>
+        {waiting ? '…' : count}
+      </span>
+    </button>
+  )
+}
+
+const FlowArrow = () => <span className="kprv-flow-arrow" aria-hidden />
+
+// Вердикт аналитика («без замечаний» / «с замечаниями») — подпись ветки, а не
+// узел: это не очередь, нажимать на него незачем.
+function FlowScheme(props) {
+  const node = (key) => <FlowNode tabKey={key} {...props} />
+  return (
+    <div className="kprv-flow-wrap">
+      <div className="kprv-flow" role="group" aria-label="Схема веток проверки КП">
+        {node('pending')}
+        <span className="kprv-flow-split">
+          <span className="kprv-flow-row">
+            <span className="kprv-flow-branch is-ok">без замечаний</span>
+            <FlowArrow />
+            {node('ok_summary')}
+            <FlowArrow />
+            {node('ok_done')}
+          </span>
+          {/* Замечания сами по себе развилка: часть уходит подрядчику, часть
+              обрабатывается внутри и заканчивается на сводной таблице. */}
+          <span className="kprv-flow-row">
+            <span className="kprv-flow-branch is-warn">с замечаниями</span>
+            <span className="kprv-flow-stem" aria-hidden />
+            <span className="kprv-flow-split">
+              <span className="kprv-flow-row">
+                <span className="kprv-flow-branch is-sub is-sent">для отправки подрядчику</span>
+                <FlowArrow />
+                {node('remarks_work')}
+                <FlowArrow />
+                {node('remarks_sent')}
+              </span>
+              <span className="kprv-flow-row">
+                <span className="kprv-flow-branch is-sub is-nosend">без отправки подрядчику</span>
+                <FlowArrow />
+                {node('nosend_summary')}
+                <FlowArrow />
+                {node('nosend_done')}
+              </span>
+            </span>
+          </span>
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -402,9 +522,15 @@ function KpReviewPage() {
   const colCount = 7
   const actor = userProfile?.full_name || user?.email || ''
 
-  const [rows, setRows] = useState([])
-  const [loading, setLoading] = useState(true)
+  const cacheKey = `${user?.id || ''}|${scopedObjectIds.join(',')}`
+  const [cachedRows] = useState(() => readQueueCache(cacheKey))
+  const [rows, setRows] = useState(() => cachedRows || [])
+  // loading / error — рабочая часть очереди; history — завершённая:
+  // 'loading' | 'ready' | 'error'.
+  const [loading, setLoading] = useState(!cachedRows)
   const [error, setError] = useState(null)
+  const [history, setHistory] = useState(cachedRows ? 'ready' : 'loading')
+  const historyReady = history === 'ready'
   const [tab, setTab] = useState('pending')
   const [search, setSearch] = useState('')
   // Отмеченные направления (ключи DEPT_BADGE); пустой набор — без отбора.
@@ -412,6 +538,11 @@ function KpReviewPage() {
   useEffect(() => {
     try { localStorage.setItem(DEPTS_STORAGE_KEY, JSON.stringify([...depts])) } catch { /* приватный режим */ }
   }, [depts])
+  // Раскрыта ли схема веток под шапкой (галочка «Схема веток»).
+  const [showFlow, setShowFlow] = useState(loadSavedFlow)
+  useEffect(() => {
+    try { localStorage.setItem(FLOW_STORAGE_KEY, showFlow ? '1' : '0') } catch { /* приватный режим */ }
+  }, [showFlow])
   // По умолчанию — как раньше: свежие КП сверху (и тендер со свежим КП — первым).
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
   // Свёрнутые тендеры (id); не сохраняются между заходами.
@@ -451,33 +582,77 @@ function KpReviewPage() {
   // строки подменяются, когда придут свежие данные.
   // Отметки подряд запускают несколько перечитываний; ответ старого, пришедший
   // позже нового, не должен вернуть только что снятую отметку — берём последний.
+  // Обе части уходят сразу. При первой загрузке рабочая показывается, как только
+  // придёт; тихое перечитывание ждёт обе и подменяет строки разом — иначе КП,
+  // только что ушедшее в «Готово», на миг пропадало бы из счётчиков.
   const loadSeq = useRef(0)
   const load = useCallback(async ({ silent = false } = {}) => {
     const seq = ++loadSeq.current
-    if (!silent) setLoading(true)
+    if (!silent) {
+      setLoading(true)
+      setHistory('loading')
+    }
     setError(null)
+    const objectIds = scopedObjectIds.length ? scopedObjectIds : null
+    const activeReq = fetchProposalFilesForReview({ objectIds, part: 'active' })
+    const doneReq = fetchProposalFilesForReview({ objectIds, part: 'done' })
+    doneReq.catch(() => { /* разбирается ниже; без этого — «необработанный отказ», если первой упала рабочая */ })
+    let active
     try {
-      const data = await fetchProposalFilesForReview({
-        objectIds: scopedObjectIds.length ? scopedObjectIds : null,
-      })
-      if (seq !== loadSeq.current) return
-      setRows(data)
+      active = await activeReq
     } catch (e) {
       if (seq !== loadSeq.current) return
       if (silent) {
         // Действие уже сохранено, не удалось только перечитать список: таблицу
-        // не прячем за экраном ошибки (иначе снова сброс прокрутки).
+        // не прячем за экраном ошибки (иначе снова сброс прокрутки). История,
+        // которая ещё грузилась этим (перебитым) запросом, — с «Повторить».
         console.error('Не удалось обновить список КП:', e.message)
+        setHistory(h => (h === 'loading' ? 'error' : h))
       } else {
         setError(e.message || 'Не удалось загрузить КП на проверку')
         setRows([])
+        setLoading(false)
       }
-    } finally {
-      if (seq === loadSeq.current) setLoading(false)
+      return
+    }
+    if (seq !== loadSeq.current) return
+    if (!silent) {
+      setRows(active)
+      setLoading(false)
+    }
+    try {
+      const done = await doneReq
+      if (seq !== loadSeq.current) return
+      setRows(mergeParts(active, done))
+      setHistory('ready')
+    } catch (e) {
+      if (seq !== loadSeq.current) return
+      if (silent) {
+        // Рабочая часть свежая, завершённые — прежние (если были).
+        setRows(prev => mergeParts(active, prev.filter(isDoneRow)))
+        setHistory(h => (h === 'ready' ? h : 'error'))
+        console.error('Не удалось обновить завершённые КП:', e.message)
+      } else {
+        setHistory('error')
+      }
     }
   }, [scopedObjectIds])
 
-  useEffect(() => { load() }, [load])
+  // Очередь из памяти — уже на экране, её только перечитываем тихо.
+  const silentFirstLoad = useRef(!!cachedRows)
+  useEffect(() => {
+    load({ silent: silentFirstLoad.current })
+    silentFirstLoad.current = false
+  }, [load])
+
+  useEffect(() => {
+    if (!loading && !error && historyReady) queueCache = { key: cacheKey, at: Date.now(), rows }
+  }, [rows, loading, error, historyReady, cacheKey])
+
+  const retryHistory = () => {
+    setHistory('loading')
+    load({ silent: true })
+  }
 
   // Отметка шага: «занесено в сводную» (общий шаг всех веток) или «отправлено
   // подрядчику» (параллельно занесению, только в подветке с отправкой). Ответ базы
@@ -591,8 +766,13 @@ function KpReviewPage() {
       c[st] = (c[st] || 0) + 1
     }
     c.all = all
+    // Завершённые ещё не пришли — их числа неизвестны («…»), а не нули.
+    if (!historyReady) {
+      for (const k of DONE_STAGES) c[k] = null
+      c.all = null
+    }
     return c
-  }, [rows, inDepts])
+  }, [rows, inDepts, historyReady])
 
   // Строки открытого этапа и поиска — без отбора по направлениям.
   const tabRows = useMemo(() => {
@@ -868,11 +1048,23 @@ function KpReviewPage() {
     )
   }
 
+  // Открыт завершённый этап или «Все», а история ещё не пришла — без неё список
+  // неполный, поэтому не показываем.
+  const waitHistory = needsHistory(tab) && !historyReady
   let body = null
   if (loading) {
     body = <div className="kprv-empty">Загрузка…</div>
   } else if (error) {
     body = <div className="kprv-error">Ошибка: {error}</div>
+  } else if (waitHistory && history === 'error') {
+    body = (
+      <div className="kprv-error">
+        Не удалось загрузить завершённые КП.{' '}
+        <button type="button" className="kprv-btn" onClick={retryHistory}>Повторить</button>
+      </div>
+    )
+  } else if (waitHistory) {
+    body = <div className="kprv-empty">Загрузка завершённых КП…</div>
   } else if (groups.length === 0) {
     body = (
       <div className="kprv-empty">
@@ -936,28 +1128,46 @@ function KpReviewPage() {
           Проверка КП
           <span className="kprv-info" role="img" aria-label={HINT} title={HINT}><IconInfo /></span>
         </h2>
-        <div className="kprv-stages" role="tablist" aria-label="Этапы проверки КП">
-          {STAGE_GROUPS.map(g => (
-            <div key={g.title} className={`kprv-stage-grp${g.tone ? ` is-${g.tone}` : ''}`}>
-              <span className="kprv-stage-cap" aria-hidden>{g.caption || ''}</span>
+        <div className="kprv-stages">
+          {/* Список вкладок без своей коробки (display: contents): так галочка
+              схемы встаёт между ветками и «Все», не попадая внутрь tablist. */}
+          <div className="kprv-stage-tabs" role="tablist" aria-label="Этапы проверки КП">
+            {STAGE_GROUPS.map(g => (
+              <div key={g.title} className={`kprv-stage-grp${g.tone ? ` is-${g.tone}` : ''}`}>
+                <span className="kprv-stage-cap" aria-hidden>{g.caption || ''}</span>
+                <div className="kprv-stage-row">
+                  {g.keys.map((key, i) => (
+                    <Fragment key={key}>
+                      {i > 0 && <span className="kprv-stage-step" aria-hidden><IconChevron size={11} /></span>}
+                      <StageTab tabKey={key} tab={tab} counts={counts} onSelect={setTab} />
+                    </Fragment>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="kprv-stage-grp is-all">
+              <span className="kprv-stage-cap" aria-hidden />
               <div className="kprv-stage-row">
-                {g.keys.map((key, i) => (
-                  <Fragment key={key}>
-                    {i > 0 && <span className="kprv-stage-step" aria-hidden><IconChevron size={11} /></span>}
-                    <StageTab tabKey={key} tab={tab} counts={counts} onSelect={setTab} />
-                  </Fragment>
-                ))}
+                <StageTab tabKey="all" tab={tab} counts={counts} onSelect={setTab} />
               </div>
             </div>
-          ))}
-          <div className="kprv-stage-grp is-all">
-            <span className="kprv-stage-cap" aria-hidden />
-            <div className="kprv-stage-row">
-              <StageTab tabKey="all" tab={tab} counts={counts} onSelect={setTab} />
-            </div>
           </div>
+          <label
+            className={`kprv-flow-toggle${showFlow ? ' is-on' : ''}`}
+            title={showFlow ? 'Скрыть схему веток проверки КП' : 'Показать схему веток проверки КП: развилка после проверки и кто делает каждый шаг'}
+          >
+            <input
+              type="checkbox"
+              checked={showFlow}
+              onChange={(e) => setShowFlow(e.target.checked)}
+            />
+            <span className="kprv-flow-toggle-box" aria-hidden><IconCheck /></span>
+            <span>Схема веток</span>
+          </label>
         </div>
       </div>
+
+      {showFlow && <FlowScheme tab={tab} counts={counts} onSelect={setTab} />}
 
       <div className="kprv-toolbar">
         <label className="kprv-search">
@@ -981,7 +1191,7 @@ function KpReviewPage() {
             />
           ))}
         </div>
-        {!loading && !error && (
+        {!loading && !error && !waitHistory && (
           <span className="kprv-shown" aria-live="polite">
             <b>{shownCount}</b> КП · <b>{groups.length}</b> {plural(groups.length, 'тендер', 'тендера', 'тендеров')}
           </span>
