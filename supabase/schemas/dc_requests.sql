@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS dc_requests (
   amount_before NUMERIC(14, 2),
   amount_after  NUMERIC(14, 2),
   material_type TEXT CHECK (material_type IN ('tolling', 'realization')),
+  -- «Статус ОКС» — подаётся ли ДС заказчику, и комментарий к нему; кто и когда сменил — триггер
+  -- dc_requests_submission_stamp (миграция 20261108).
+  submission_check TEXT NOT NULL DEFAULT 'not_checked'
+    CHECK (submission_check IN ('not_checked', 'submitted', 'accepted', 'not_submitted', 'incomplete')),
+  submission_comment TEXT CHECK (char_length(submission_comment) <= 2000),
+  submission_by UUID,
+  submission_by_name TEXT,
+  submission_at TIMESTAMPTZ,
   created_by_name TEXT,
   deleted_at TIMESTAMPTZ,                    -- soft-delete: заявка во вкладке «Удаленные»
   created_at TIMESTAMPTZ DEFAULT NOW(),

@@ -754,6 +754,23 @@ if (params.get('dcStats') === '1') {
     const numbers = { d1: 17, d2: 12, d3: 14, d4: 15, d5: 11, d6: 16 }
     for (const r of window.__fakeDb.dc_requests) r.request_number = numbers[r.id]
   }
+  // ?dcSubmission=1 — колонки «Статуса ОКС» (миграция 20261108): у всех «Не проверено», у d2 — «Подано заказчику» с
+  // письмом и подписью. Подмена триггера базы: «кто и когда» — при смене проверки, ФИО — из user_roles (не со страницы).
+  if (params.get('dcSubmission') === '1') {
+    for (const r of window.__fakeDb.dc_requests) {
+      Object.assign(r, { submission_check: 'not_checked', submission_comment: null, submission_by_name: null, submission_at: null })
+    }
+    Object.assign(window.__fakeDb.dc_requests.find((r) => r.id === 'd2'), {
+      submission_check: 'submitted', submission_comment: 'Письмо № 123', submission_by_name: 'Юристов Юрий Юрьевич', submission_at: iso(-1),
+    })
+    window.__fakeTriggers = { ...(window.__fakeTriggers || {}), dc_requests: (row, old) => {
+      if (old && row.submission_check === old.submission_check) {
+        Object.assign(row, { submission_by_name: old.submission_by_name, submission_at: old.submission_at })
+      } else if (old || row.submission_check !== 'not_checked') {
+        Object.assign(row, { submission_by_name: 'Сметчикова Анна Петровна', submission_at: new Date().toISOString() })
+      }
+    } }
+  }
   window.__fakeDb.dc_request_audit_log = [
     { id: 'al-1', dc_request_id: 'd4', event_type: 'status_changed', new_value: 'completed', changed_at: iso(-2) },
   ]

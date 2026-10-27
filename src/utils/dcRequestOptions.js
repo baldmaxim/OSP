@@ -42,6 +42,25 @@ export const DS_TYPE_LABEL = {
 }
 export const DS_TYPE_CLASS = Object.fromEntries(DS_TYPE_OPTIONS.map(o => [o.value, o.className]))
 
+// «Статус ОКС» — подаётся ли ДС заказчику (миграция 20261108). У всех заявок по умолчанию «Не проверено»; кто и когда
+// сменил — ставит база (submission_by_name / submission_at). hint — что написать в «Комментарии» к этому варианту.
+export const SUBMISSION_DEFAULT = 'not_checked'
+export const SUBMISSION_OPTIONS = [
+  { value: 'submitted', label: 'Подано заказчику', hint: 'Номер письма', className: 'dcr-sub-submitted' },
+  { value: 'accepted', label: 'Принято в работу (будет подаваться)', hint: 'Срок подачи', className: 'dcr-sub-accepted' },
+  { value: 'not_submitted', label: 'Не будет подаваться', hint: 'Причина', className: 'dcr-sub-not-submitted' },
+  { value: 'incomplete', label: 'Неполный комплект', hint: 'Чего не хватает', className: 'dcr-sub-incomplete' },
+  { value: SUBMISSION_DEFAULT, label: 'Не проверено', hint: '', className: 'is-empty' },
+]
+export const SUBMISSION_LABEL = Object.fromEntries(SUBMISSION_OPTIONS.map(o => [o.value, o.label]))
+export const SUBMISSION_HINT = Object.fromEntries(SUBMISSION_OPTIONS.map(o => [o.value, o.hint]))
+export const SUBMISSION_CLASS = Object.fromEntries(SUBMISSION_OPTIONS.map(o => [o.value, o.className]))
+// Колонок нет (миграция не применена) — столбцов «Статус ОКС» и «Комментарий» в реестре нет.
+export const hasSubmissionColumns = (requests) => (requests || []).some(r => r.submission_check !== undefined)
+export const submissionOf = (req) => req?.submission_check || SUBMISSION_DEFAULT
+// Вариант требует пояснения, а комментария нет — поле подсвечивается.
+export const submissionNeedsComment = (req) => !!SUBMISSION_HINT[submissionOf(req)] && !req?.submission_comment?.trim()
+
 // task 370: тип материала по ДС.
 export const MATERIAL_OPTIONS = [
   { value: 'tolling', label: 'Давальческие (М-15)', className: 'material-tolling' },

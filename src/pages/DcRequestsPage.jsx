@@ -25,8 +25,9 @@ import { copyToClipboard } from '../utils/clipboard'
 import { parseAmount, formatAmount, formatAmountLive, amountChange } from '../utils/money'
 import {
   CHECK_STATUS_CLASS, CHECK_STATUS_LABEL, CHECK_STATUS_OPTIONS, CHECK_STATUS_SHORT, DS_TYPE_CLASS, DS_TYPE_LABEL,
-  DS_TYPE_OPTIONS, MATERIAL_CLASS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, hasVerdict,
-  matchesRequestNo, withRequestNumbers,
+  DS_TYPE_OPTIONS, MATERIAL_CLASS, MATERIAL_LABEL, MATERIAL_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, SUBMISSION_CLASS,
+  SUBMISSION_DEFAULT, SUBMISSION_HINT, SUBMISSION_LABEL, SUBMISSION_OPTIONS, hasSubmissionColumns, hasVerdict,
+  matchesRequestNo, submissionNeedsComment, submissionOf, withRequestNumbers,
 } from '../utils/dcRequestOptions'
 import { DC_FILE_PARAM, DOC_SECTIONS, SPECIAL_DOC_CATEGORIES, dcRequestDocRows, dcRequestFileLink } from '../utils/dcRequestDocs'
 import '../components/ContractRegistry.css'
@@ -128,6 +129,8 @@ const AUDIT_FIELD_LABEL = {
   check_status: 'Итог проверки',
   check_result_notes: 'Заключение по проверке',
   ds_type: 'Тип ДС',
+  submission_check: 'Статус ОКС',
+  submission_comment: 'Комментарий к статусу ОКС',
 }
 
 function formatDateTime(ts) {
@@ -295,6 +298,40 @@ function AmountCellInput({ value, disabled, onSave }) {
       onChange={(e) => setDraft(liveAmount(e.target.value))}
       onBlur={() => { setFocused(false); onSave(draft) }}
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+    />
+  )
+}
+
+// «Комментарий» к статусу ОКС: правится прямо в ячейке, сохраняется при уходе из поля (Ctrl+Enter — тоже),
+// Esc — отменить правку. Пока запись идёт, в поле — записываемый текст, а не прежний.
+// missing — у проверки нужен комментарий (номер письма, срок…), а его нет: поле подсвечено.
+const SUBMISSION_COMMENT_MAX = 2000 // ограничение в базе (миграция 20261108)
+function SubmissionCommentInput({ value, hint, missing, onSave }) {
+  const [draft, setDraft] = useState(null)
+  const [pending, setPending] = useState(null)
+  const cancelRef = useRef(false)
+  return (
+    <textarea
+      className={`dcr-sub-comment${missing ? ' is-missing' : ''}`}
+      rows={2}
+      maxLength={SUBMISSION_COMMENT_MAX}
+      value={draft ?? pending ?? (value || '')}
+      placeholder={hint || '—'}
+      title={missing ? `Укажите в комментарии: ${hint.toLowerCase()}` : undefined}
+      aria-label={hint ? `Комментарий к статусу ОКС: ${hint.toLowerCase()}` : 'Комментарий к статусу ОКС'}
+      onFocus={() => { cancelRef.current = false; setDraft(value || '') }}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={async (e) => {
+        const next = e.target.value
+        setDraft(null)
+        if (cancelRef.current) return
+        setPending(next)
+        try { await onSave(next) } finally { setPending(null) }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') { cancelRef.current = true; e.currentTarget.blur() }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) e.currentTarget.blur()
+      }}
     />
   )
 }
@@ -684,6 +721,8 @@ function DcRequestsPage() {
         return CHECK_STATUS_LABEL[value] || String(value)
       case 'ds_type':
         return DS_TYPE_LABEL[value] || String(value)
+      case 'submission_check':
+        return SUBMISSION_LABEL[value] || String(value)
       case 'expected_approval_date':
         return formatShortDate(value) || String(value)
       case 'amount_before':
@@ -990,6 +1029,33 @@ function DcRequestsPage() {
     }
   }
 
+  // «Статус ОКС» и «Комментарий» — прямо из таблицы (миграция 20261108). Кто и когда сменил статус, ставит база
+  // (триггер), поэтому строку берём из ответа, а не подставляем имя со страницы.
+  const handleSaveSubmission = async (id, field, rawValue) => {
+    const req = requests.find(r => r.id === id)
+    if (!req) return
+    const isCheck = field === 'submission_check'
+    const next = isCheck ? (rawValue || SUBMISSION_DEFAULT) : (rawValue.trim() || null)
+    const prevValue = isCheck ? submissionOf(req) : (req.submission_comment ?? null)
+    if (prevValue === next) return
+    try {
+      const { data, error } = await db
+        .from('dc_requests')
+        .update({ [field]: next, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select('submission_check, submission_comment, submission_by_name, submission_at')
+        .single()
+      if (error) throw error
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, ...data } : r))
+      await logFieldChange(id, field, prevValue, next)
+    } catch (err) {
+      // PGRST204 / 42703 — колонок проверки в базе ещё нет.
+      alert((err?.code === 'PGRST204' || err?.code === '42703')
+        ? 'Не удалось сохранить статус ОКС: в базе не применена миграция 20261108_dc_request_submission_check.'
+        : `Ошибка сохранения ${isCheck ? 'статуса ОКС' : 'комментария'}: ${err?.message || err}`)
+    }
+  }
+
   // Путь к папке правится прямо в таблице: открывать форму заявки ради одной
   // строки неудобно, а меняют её чаще, чем остальные поля.
   const handleSaveFolderPath = async (id, value) => {
@@ -1209,6 +1275,8 @@ function DcRequestsPage() {
   }
 
   const isDeletedTab = activeTab === 'deleted'
+  // Столбцы «Статус ОКС» и «Комментарий» — когда в базе есть их колонки (миграция 20261108).
+  const submissionEnabled = hasSubmissionColumns(requests)
 
   // Фильтрация: таб (soft-delete) → статусы → объект → контрагент → ответственный → поиск.
   // Выгрузка в Excel берёт этот же список, поэтому при нескольких выбранных
@@ -1321,6 +1389,13 @@ function DcRequestsPage() {
         'Отчёт по документам': reportCount || '',
         'Итоговые документы': finalCount || '',
         'Путь к папке': req.folder_path || '',
+        // Статус ОКС — как в таблице, в конце (перед сведениями о создании).
+        ...(submissionEnabled ? {
+          'Статус ОКС': SUBMISSION_LABEL[submissionOf(req)] || '',
+          'Комментарий к статусу ОКС': req.submission_comment || '',
+          'Статус ОКС изменил': req.submission_by_name || '',
+          'Дата изменения статуса ОКС': formatShortDate(req.submission_at),
+        } : {}),
         'Создал': req.created_by_name || '',
         'Создано': formatShortDate(req.created_at),
       }
@@ -1332,7 +1407,9 @@ function DcRequestsPage() {
       { wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 14 },
       { wch: 22 }, { wch: 26 }, { wch: 50 }, { wch: 22 }, { wch: 14 },
       { wch: 16 }, { wch: 9 }, { wch: 11 }, { wch: 16 },
-      { wch: 16 }, { wch: 16 }, { wch: 40 }, { wch: 22 }, { wch: 12 },
+      { wch: 16 }, { wch: 16 }, { wch: 40 },
+      ...(submissionEnabled ? [{ wch: 34 }, { wch: 40 }, { wch: 22 }, { wch: 16 }] : []),
+      { wch: 22 }, { wch: 12 },
     ]
     // Второй лист — задачи и ответы по тем же заявкам: в основной строке для
     // них только счётчик, а полный текст нужен, чтобы выгрузка была полной.
@@ -1736,6 +1813,26 @@ function DcRequestsPage() {
                         ) : '—'}
                       </span>
                     </div>
+                    {/* Статус ОКС (подача заказчику) — на телефоне только просмотр, как материал и тип ДС. */}
+                    {submissionEnabled && (
+                      <div className="mcard-row">
+                        <span className="mcard-label">Статус ОКС</span>
+                        <span className="mcard-value">
+                          {SUBMISSION_LABEL[submissionOf(req)]}
+                          {req.submission_at && (
+                            <small className="dcr-sub-mcard-meta">
+                              {[req.submission_by_name, formatShortDate(req.submission_at)].filter(Boolean).join(' · ')}
+                            </small>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                    {submissionEnabled && req.submission_comment && (
+                      <div className="mcard-row">
+                        <span className="mcard-label">Комментарий</span>
+                        <span className="mcard-value"><ClampText text={req.submission_comment} lines={4} /></span>
+                      </div>
+                    )}
                   </div>
                   <div className="mcard-foot">
                     {docsCount > 0 && <span className="mcard-chip" aria-label={`Файлов: ${docsCount}`}><PaperclipIcon size={12} /> {docsCount}</span>}
@@ -1781,7 +1878,7 @@ function DcRequestsPage() {
         )
       ) : (
         <div className="table-container">
-          <table className="dcr-table">
+          <table className={`dcr-table${submissionEnabled ? ' has-sub' : ''}`}>
             {/* Ширины — в DcRequestsPage.css (.dcr-col-*): суммы и номера целиком,
                 описание ДС забирает остаток. task 334: «Задачи» — только
                 счётчик-кнопка, подробности в модалке. */}
@@ -1796,6 +1893,8 @@ function DcRequestsPage() {
               <col className="dcr-col-resp" />
               <col className="dcr-col-tasks" />
               <col className="dcr-col-docs" />
+              {submissionEnabled && <col className="dcr-col-sub" />}
+              {submissionEnabled && <col className="dcr-col-sub-comment" />}
               <col className="dcr-col-actions" />
             </colgroup>
             <thead>
@@ -1811,13 +1910,17 @@ function DcRequestsPage() {
                 <th>Ответственный</th>
                 <th style={{ textAlign: 'center' }}>Задачи</th>
                 <th>Документы</th>
+                {/* Статус ОКС — подаётся ли ДС заказчику; пояснение (номер письма, срок…) — в комментарии.
+                    Оба столбца — перед последним («Действия»). */}
+                {submissionEnabled && <th>Статус ОКС</th>}
+                {submissionEnabled && <th>Комментарий</th>}
                 <th><span className="ui-sr-only">Действия</span></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="11" className="no-data" style={{ textAlign: 'center' }}>
+                  <td colSpan={submissionEnabled ? 13 : 11} className="no-data" style={{ textAlign: 'center' }}>
                     {searchQuery
                       ? 'Ничего не найдено.'
                       : (activeTab === 'all'
@@ -1851,6 +1954,9 @@ function DcRequestsPage() {
                   const amountBefore = req.amount_before
                   const amountAfter = req.amount_after
                   const { diff: amountDiff, pct: amountPct } = amountChange(amountBefore, amountAfter)
+
+                  const submission = submissionOf(req)
+                  const canEditSubmission = canEditDc && !isDeletedTab
 
                   return (
                     <tr key={req.id} className={req.deleted_at ? 'row-deleted' : ''}>
@@ -2270,6 +2376,52 @@ function DcRequestsPage() {
                           </div>
                         )}
                       </td>
+                      {/* Статус ОКС: выбор прямо в ячейке; под ним — кто и когда сменил (ставит база).
+                          Оба столбца — перед последним («Действия»). */}
+                      {submissionEnabled && (
+                        <td className="dcr-cell-sub">
+                          {canEditSubmission ? (
+                            <WrapSelect
+                              faceClassName={`dcr-material-select dcr-sub-select ${SUBMISSION_CLASS[submission] || ''}`}
+                              label={SUBMISSION_LABEL[submission] || submission}
+                              value={submission}
+                              onChange={(e) => handleSaveSubmission(req.id, 'submission_check', e.target.value)}
+                              title="Статус ОКС: подаётся ли ДС заказчику"
+                              aria-label="Статус ОКС"
+                            >
+                              {SUBMISSION_OPTIONS.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </WrapSelect>
+                          ) : (
+                            <span className={`dcr-sub-tag ${SUBMISSION_CLASS[submission] || ''}`}>
+                              {SUBMISSION_LABEL[submission] || submission}
+                            </span>
+                          )}
+                          {req.submission_at && (
+                            <div className="dcr-sub-meta" title={`Статус ОКС изменил: ${req.submission_by_name || 'имя не записано'}, ${formatDateTime(req.submission_at)}`}>
+                              {req.submission_by_name && (
+                                <PersonName full={req.submission_by_name} titlePrefix="Статус ОКС изменил" className="dcr-meta-author" />
+                              )}
+                              <span className="ui-num">{formatShortDate(req.submission_at)}</span>
+                            </div>
+                          )}
+                        </td>
+                      )}
+                      {submissionEnabled && (
+                        <td className="dcr-cell-sub-comment">
+                          {canEditSubmission ? (
+                            <SubmissionCommentInput
+                              value={req.submission_comment}
+                              hint={SUBMISSION_HINT[submission]}
+                              missing={submissionNeedsComment(req)}
+                              onSave={(v) => handleSaveSubmission(req.id, 'submission_comment', v)}
+                            />
+                          ) : req.submission_comment ? (
+                            <ClampText text={req.submission_comment} />
+                          ) : <span className="muted-dash">—</span>}
+                        </td>
+                      )}
                       <td className="actions-cell">
                         {/* История доступна всем, кто видит заявку, — она только для чтения */}
                         <button
