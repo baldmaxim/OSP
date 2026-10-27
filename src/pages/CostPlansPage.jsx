@@ -7,8 +7,9 @@ import FolderPathCell from '../components/FolderPathCell'
 import IconTile from '../components/IconTile'
 import FilterDropdown from '../components/FilterDropdown'
 import RootFolderPathButton from '../components/RootFolderPathButton'
-import { IconCoins, IconObject, IconUser, IconSearch } from '../components/icons/ToolbarIcons'
+import { IconCoins, IconObject, IconUser, IconSearch, IconDocsStack } from '../components/icons/ToolbarIcons'
 import CostPlanInstructionModal from '../components/CostPlanInstructionModal'
+import CostPlanDocsModal from '../components/CostPlanDocsModal'
 import DateRangeCell from '../components/DateRangeCell'
 import ClampText from '../components/ClampText'
 import PersonName from '../components/PersonName'
@@ -33,7 +34,7 @@ const STATUS_OPTIONS = ['not_started', 'in_progress', 'awaiting_kp', 'completed'
 const DONE_STATUSES = ['completed', 'not_required']
 
 function CostPlansPage() {
-  const { scopedObjectIds, userProfile, canEdit } = useRole()
+  const { scopedObjectIds, userProfile, canEdit, isAdmin } = useRole()
   // Путь к папке — поле самого тендера, поэтому и право на правку от тендеров.
   const canEditTenders = canEdit('tenders')
   // Всплывающие списки фильтров и окошко срока рисуются в <body> — им нужен
@@ -88,6 +89,8 @@ function CostPlansPage() {
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   // Инструкция по расчёту плана затрат (иконка «?» в шапке раздела).
   const [showInstruction, setShowInstruction] = useState(false)
+  // «Документы раздела»: экономисты ОСП по объектам (назначает администратор).
+  const [showDocs, setShowDocs] = useState(false)
   // Фильтры множественные: и объектов, и ответственных обычно смотрят пачкой.
   const [responsibleFilters, setResponsibleFilters] = useState([])
   const [searchQuery, setSearchQuery] = useState('') // task 209
@@ -446,13 +449,24 @@ function CostPlansPage() {
             canEdit={canEditTenders}
             placeholder="\\192.168.2.55\SharA_Tender\Отдел Субподряда\Планы затрат"
           />
+          <button
+            type="button"
+            className="btn-view-toggle"
+            onClick={() => setShowDocs(true)}
+            title="Экономисты ОСП по объектам — ответственные за планы затрат"
+          >
+            <IconDocsStack size={15} />
+            <span>Документы</span>
+          </button>
           <div className="page-header-hint">
-            Список тендеров основного строительства. Ответственного за план затрат можно назначить в карточке тендера.
+            Список тендеров основного строительства. Ответственный нового тендера — экономист ОСП объекта
+            («Документы»); сменить можно здесь или в карточке тендера.
           </div>
         </div>
       </div>
 
       {showInstruction && <CostPlanInstructionModal onClose={() => setShowInstruction(false)} />}
+      {showDocs && <CostPlanDocsModal canEdit={isAdmin} onClose={() => setShowDocs(false)} />}
 
       <div className="cost-plans-tabs">
         <button

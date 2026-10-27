@@ -120,15 +120,18 @@ function SupplyRegistrySection() {
     let cancelled = false
     const loadRefs = async () => {
       try {
-        const [objRes, tRes] = await Promise.all([
-          db.from('supply_rates_registry_filter_objects').select('object_id, object_name'),
-          db.from('supply_rates_registry_filter_tenders').select('tender_id, tender_desc'),
+        // Постранично: шлюз отдаёт не больше 1000 строк, а тендеров с ценами снабжения становится всё больше.
+        const [objRows, tRows] = await Promise.all([
+          fetchAllRows((from, to) => db.from('supply_rates_registry_filter_objects').select('object_id, object_name')
+            .order('object_id').order('object_name').range(from, to)),
+          fetchAllRows((from, to) => db.from('supply_rates_registry_filter_tenders').select('tender_id, tender_desc')
+            .order('tender_id').order('tender_desc').order('object_id').range(from, to)),
         ])
         if (cancelled) return
-        setObjects((objRes.data || [])
+        setObjects(objRows
           .filter(o => o.object_id && o.object_name)
           .sort((a, b) => a.object_name.localeCompare(b.object_name, 'ru')))
-        setTenders((tRes.data || [])
+        setTenders(tRows
           .filter(t => t.tender_id && t.tender_desc)
           .sort((a, b) => a.tender_desc.localeCompare(b.tender_desc, 'ru')))
       } catch (err) {
@@ -487,19 +490,24 @@ function RatesRegistryPage() {
     let cancelled = false
     const loadRefs = async () => {
       try {
-        const [objRes, cpRes, tRes] = await Promise.all([
-          db.from('kp_rates_registry_filter_objects').select('object_id, object_name'),
-          db.from('kp_rates_registry_filter_counterparties').select('counterparty_id, counterparty_name'),
-          db.from('kp_rates_registry_filter_tenders').select('tender_id, tender_desc'),
+        // Постранично: шлюз отдаёт не больше 1000 строк, а контрагентов и тендеров с КП — уже около тысячи;
+        // без порядка и страниц в фильтр попадала случайная тысяча.
+        const [objRows, cpRows, tRows] = await Promise.all([
+          fetchAllRows((from, to) => db.from('kp_rates_registry_filter_objects').select('object_id, object_name')
+            .order('object_id').order('object_name').range(from, to)),
+          fetchAllRows((from, to) => db.from('kp_rates_registry_filter_counterparties').select('counterparty_id, counterparty_name')
+            .order('counterparty_id').order('counterparty_name').range(from, to)),
+          fetchAllRows((from, to) => db.from('kp_rates_registry_filter_tenders').select('tender_id, tender_desc')
+            .order('tender_id').order('tender_desc').order('object_id').range(from, to)),
         ])
         if (cancelled) return
-        setObjects((objRes.data || [])
+        setObjects(objRows
           .filter(o => o.object_id && o.object_name)
           .sort((a, b) => a.object_name.localeCompare(b.object_name, 'ru')))
-        setCounterparties((cpRes.data || [])
+        setCounterparties(cpRows
           .filter(c => c.counterparty_id && c.counterparty_name)
           .sort((a, b) => a.counterparty_name.localeCompare(b.counterparty_name, 'ru')))
-        setTenders((tRes.data || [])
+        setTenders(tRows
           .filter(t => t.tender_id && t.tender_desc)
           .sort((a, b) => a.tender_desc.localeCompare(b.tender_desc, 'ru')))
       } catch (err) {

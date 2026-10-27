@@ -19,8 +19,8 @@
 20261102_contractor_bids.sql
 20261103_kp_registry_site_bids.sql
 20261104_company_departments.sql
-20261105_bid_form_vat_options.sql
 20261106_dc_request_number.sql
 20261107_section_templates.sql
 20261108_dc_request_submission_check.sql
 20261109_contracts_dc_requests.sql
+20261110_cost_plan_economists.sql

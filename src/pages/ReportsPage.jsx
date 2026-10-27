@@ -264,16 +264,18 @@ function ReportsPage() {
       // Заявки на ВОР без тендера (миграция 20261003) — считаются в отчёте «ВОРы и РД»
       // вместе с тендерами. Нет таблицы — отчёт строится без них.
       let vorRequests = []
-      {
-        let q = db
-          .from('vor_requests')
-          .select('id, department, object_id, vor_status, vor_end_date, vor_sto_user_id, vor_sto_name')
-          .is('deleted_at', null)
-          .limit(5000)
-        if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
-        const { data: reqData, error: reqError } = await q
-        if (reqError && !isMissingVorRequestsTable(reqError)) console.error('Заявки на ВОР для отчёта:', reqError.message)
-        vorRequests = reqData || []
+      try {
+        // Постранично, как тендеры: шлюз отдаёт не больше 1000 строк, .limit(5000) его не обходит.
+        vorRequests = await fetchAllRows((from, to) => {
+          let q = db
+            .from('vor_requests')
+            .select('id, department, object_id, vor_status, vor_end_date, vor_sto_user_id, vor_sto_name')
+            .is('deleted_at', null)
+          if (scopedObjectIds.length > 0) q = q.in('object_id', scopedObjectIds)
+          return q.order('id', { ascending: true }).range(from, to)
+        })
+      } catch (reqError) {
+        if (!isMissingVorRequestsTable(reqError)) console.error('Заявки на ВОР для отчёта:', reqError.message)
       }
 
       const contractsQuery = (from, to) => {

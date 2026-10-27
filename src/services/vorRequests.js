@@ -6,6 +6,7 @@
 // Файлы — s3_documents с owner_type='general', owner_id = id заявки.
 import { db } from '../api'
 import { chunkList } from '../utils/inChunks'
+import { fetchAllRows } from '../utils/fetchAllRows'
 
 export const VOR_REQUESTS_TABLE = 'vor_requests'
 export const REQUEST_RD_CATEGORY = 'vor_request_rd'
@@ -28,17 +29,20 @@ export function isMissingVorRequestsTable(err) {
 // → { rows, supported }; supported=false — таблицы ещё нет.
 export async function fetchVorRequests(department) {
   const departments = Array.isArray(department) ? department : [department]
-  const { data, error } = await db
-    .from(VOR_REQUESTS_TABLE)
-    .select('*, objects(name, status)')
-    .in('department', departments)
-    .order('created_at', { ascending: false })
-    .limit(5000)
-  if (error) {
+  // Постранично: шлюз отдаёт не больше 1000 строк, .limit(5000) его не обходит.
+  try {
+    const rows = await fetchAllRows((from, to) => db
+      .from(VOR_REQUESTS_TABLE)
+      .select('*, objects(name, status)')
+      .in('department', departments)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to))
+    return { rows, supported: true }
+  } catch (error) {
     if (isMissingVorRequestsTable(error)) return { rows: [], supported: false }
     throw error
   }
-  return { rows: data || [], supported: true }
 }
 
 export async function createVorRequest(payload) {
@@ -60,17 +64,15 @@ export async function updateVorRequest(id, patch) {
 export async function fetchVorRequestDocCounts(ids) {
   const counts = {}
   if (!ids?.length) return counts
-  const parts = await Promise.all(chunkList(ids).map(async (chunk) => {
-    const { data, error } = await db
-      .from('s3_documents')
-      .select('owner_id')
-      .eq('owner_type', REQUEST_OWNER_TYPE)
-      .in('doc_category', REQUEST_DOC_CATEGORIES)
-      .in('owner_id', chunk)
-      .limit(10000)
-    if (error) throw error
-    return data || []
-  }))
+  // В порции — постранично: шлюз отдаёт не больше 1000 строк.
+  const parts = await Promise.all(chunkList(ids).map((chunk) => fetchAllRows((from, to) => db
+    .from('s3_documents')
+    .select('owner_id')
+    .eq('owner_type', REQUEST_OWNER_TYPE)
+    .in('doc_category', REQUEST_DOC_CATEGORIES)
+    .in('owner_id', chunk)
+    .order('id', { ascending: true })
+    .range(from, to))))
   for (const row of parts.flat()) counts[row.owner_id] = (counts[row.owner_id] || 0) + 1
   return counts
 }

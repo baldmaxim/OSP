@@ -39,6 +39,8 @@ import {
   pickSiteContact, fillSiteContact, upgradeLetterTemplate,
 } from '../utils/siteContacts'
 import { fetchSiteContact, fetchObjectManagers } from '../services/siteContacts'
+import { fetchCostPlanEconomists } from '../services/costPlanEconomists'
+import { economistByObject, pickCostPlanResponsible } from '../utils/costPlanEconomists'
 import {
   fetchSupplyEmployees, materialsResponsibleOf, isMissingMaterialsColumnError, SUPPLY_MIGRATION_HINT,
   MATERIALS_PRIORITY_OPTIONS, MATERIALS_PRIORITY_LABEL, personInitials,
@@ -334,6 +336,11 @@ ${ATTACHMENT_BLOCK}
   }, [compactView, compactStorageKey])
   // Родительский тендер при создании дочернего тендера на материалы (preselect)
   const [materialsParentTender, setMaterialsParentTender] = useState(null)
+  // Новый тендер основного строительства: ответственным за план затрат сразу ставится экономист ОСП объекта
+  // (cost_plan_economists, миграция 20261110), пока человек сам не выбрал другого (costPlanTouched).
+  // costPlanEconomists: Map<object_id, contact_id>; null — не загружены или базы без миграции.
+  const [costPlanEconomists, setCostPlanEconomists] = useState(null)
+  const [costPlanTouched, setCostPlanTouched] = useState(false)
   const [sortField, setSortField] = useState(() => savedFilters.sortField || 'start_date') // 'start_date' | 'end_date'
   const [sortOrder, setSortOrder] = useState(() => savedFilters.sortOrder || 'desc') // 'asc' | 'desc'
   // Сохраняем настроенные фильтры при каждом изменении — восстановятся при
@@ -677,18 +684,16 @@ ${ATTACHMENT_BLOCK}
   const fetchVorDocCounts = async (tenderIds) => {
     if (!tenderIds || tenderIds.length === 0) { setVorDocCounts({}); setPackageDocCounts({}); return }
     try {
-      // Порциями id, параллельно: сотни UUID одним IN-списком в URL роняют запрос (inChunks.js).
-      const parts = await Promise.all(chunkList(tenderIds).map(async (chunk) => {
-        const { data, error } = await db
-          .from('s3_documents')
-          .select('owner_id, doc_category')
-          .eq('owner_type', 'tender')
-          .in('doc_category', [...VOR_RD_CATEGORIES, 'tender_package'])
-          .in('owner_id', chunk)
-          .limit(10000)
-        if (error) throw error
-        return data || []
-      }))
+      // Порциями id, параллельно: сотни UUID одним IN-списком в URL роняют запрос (inChunks.js). В порции —
+      // постранично: шлюз отдаёт не больше 1000 строк, и .limit(10000) его не обходит — счётчики занижались бы.
+      const parts = await Promise.all(chunkList(tenderIds).map((chunk) => fetchAllRows((from, to) => db
+        .from('s3_documents')
+        .select('owner_id, doc_category')
+        .eq('owner_type', 'tender')
+        .in('doc_category', [...VOR_RD_CATEGORIES, 'tender_package'])
+        .in('owner_id', chunk)
+        .order('id', { ascending: true })
+        .range(from, to))))
       const vor = {}
       const pkg = {}
       for (const row of parts.flat()) {
@@ -1685,6 +1690,34 @@ ${ATTACHMENT_BLOCK}
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Ответственный за план затрат в форме нового основного тендера ОС: экономист ОСП объекта подставляется сам.
+  // Список экономистов читается при каждом открытии формы — назначения могли смениться.
+  const costPlanAutofill = showModal && !editingTender && !materialsParentTender && !isMaterialsView
+    && department === 'construction'
+  useEffect(() => {
+    if (!costPlanAutofill) return undefined
+    let alive = true
+    setCostPlanTouched(false)
+    fetchCostPlanEconomists()
+      .then(({ rows, supported }) => { if (alive) setCostPlanEconomists(supported ? economistByObject(rows) : null) })
+      .catch((err) => {
+        // Не загрузилось — поле остаётся ручным, тендер создаётся как обычно.
+        console.error('Экономисты ОСП не загрузились:', describeSupabaseError(err))
+        if (alive) setCostPlanEconomists(null)
+      })
+    return () => { alive = false }
+  }, [costPlanAutofill])
+  useEffect(() => {
+    if (!costPlanAutofill) return
+    setFormData((prev) => {
+      const next = pickCostPlanResponsible({
+        objectId: prev.object_id, economists: costPlanEconomists, current: prev.cost_plan_responsible_id, touched: costPlanTouched,
+      })
+      return next === prev.cost_plan_responsible_id ? prev : { ...prev, cost_plan_responsible_id: next }
+    })
+  }, [costPlanAutofill, formData.object_id, costPlanEconomists, costPlanTouched])
+  const objectEconomistId = costPlanAutofill && formData.object_id ? costPlanEconomists?.get(formData.object_id) || null : null
+
   // Поля, которые могут содержать UUID — пустую строку конвертируем в null,
   // иначе Postgres падает на невалидном UUID.
   const UUID_FIELDS = new Set([
@@ -1891,6 +1924,10 @@ ${ATTACHMENT_BLOCK}
           insertPayload.parent_tender_id = materialsParentTender.id
         }
         if (formData.notes) insertPayload.notes = formData.notes
+        // Ответственный за план затрат — экономист ОСП объекта (подставлен формой) или выбранный вручную.
+        if (costPlanAutofill && formData.cost_plan_responsible_id) {
+          insertPayload.cost_plan_responsible_id = formData.cost_plan_responsible_id
+        }
         // task 271: даты тендерной процедуры теперь сохраняются и при создании
         // (поля есть в форме создания, но раньше не попадали в insert).
         if (formData.tender_start_date) insertPayload.tender_start_date = formData.tender_start_date
@@ -2741,15 +2778,13 @@ ${ATTACHMENT_BLOCK}
         return sortOrder === 'asc' ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1)
       })
       const rdTenderIds = [...new Set(list.flatMap(t => [t.id, t.parent_tender_id]).filter(Boolean))]
-      const parts = await Promise.all(chunkList(rdTenderIds).map(async (chunk) => {
-        const { data, error } = await db
-          .from('tender_rd_codes')
-          .select('tender_id, code, title, sort_order')
-          .in('tender_id', chunk)
-          .limit(10000)
-        if (error) throw error
-        return data || []
-      }))
+      // В порции — постранично: шлюз отдаёт не больше 1000 строк, .limit(10000) его не обходит.
+      const parts = await Promise.all(chunkList(rdTenderIds).map((chunk) => fetchAllRows((from, to) => db
+        .from('tender_rd_codes')
+        .select('tender_id, code, title, sort_order')
+        .in('tender_id', chunk)
+        .order('id', { ascending: true })
+        .range(from, to))))
       const rdCodesByTender = new Map()
       for (const code of parts.flat()) {
         if (!rdCodesByTender.has(code.tender_id)) rdCodesByTender.set(code.tender_id, [])
@@ -4986,6 +5021,36 @@ ${ATTACHMENT_BLOCK}
                   />
                 </div>
                 </>
+                )}
+
+                {/* Новый основной тендер ОС: экономист ОСП объекта подставляется сам («Планы затрат» →
+                    «Документы»), его можно сменить здесь и потом. В правке это поле — ниже, среди ссылок. */}
+                {costPlanAutofill && (
+                  <div className="form-group full-width">
+                    <label htmlFor="tender-cost-plan-responsible">Ответственный за план затрат</label>
+                    <select
+                      id="tender-cost-plan-responsible"
+                      name="cost_plan_responsible_id"
+                      value={formData.cost_plan_responsible_id}
+                      onChange={(e) => { setCostPlanTouched(true); handleInputChange(e) }}
+                    >
+                      <option value="">— не назначен —</option>
+                      {responsibleContacts.map((contact) => (
+                        <option key={contact.id} value={contact.id}>
+                          {contact.full_name}{contact.position ? ` — ${contact.position}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {formData.object_id && costPlanEconomists && (
+                      <small className="tender-cost-plan-hint" style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                        {objectEconomistId
+                          ? (formData.cost_plan_responsible_id === objectEconomistId
+                            ? 'Экономист ОСП объекта — подставлен сам, можно сменить'
+                            : 'Выбран не экономист ОСП объекта')
+                          : 'У объекта нет экономиста ОСП — его назначает администратор в «Планах затрат» → «Документы»'}
+                      </small>
+                    )}
+                  </div>
                 )}
 
                 {editingTender && (

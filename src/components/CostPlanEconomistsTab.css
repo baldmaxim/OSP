@@ -1,0 +1,62 @@
+/* «Документы» → «Экономисты ОСП» (CostPlanEconomistsTab): карточки экономистов с объектами и назначение по
+   объектам. Окно и общие классы tdm-* — TenderDocsModal.css. */
+.cpe-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.cpe-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+.cpe-role {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+.cpe-phone {
+  margin-top: 0.1rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.cpe-phone a { color: var(--ui-link, var(--primary-color)); text-decoration: none; }
+.cpe-phone a:hover { text-decoration: underline; }
+.cpe-objects {
+  margin: 0.5rem 0 0;
+  padding: 0.45rem 0 0;
+  border-top: 1px solid var(--border-color);
+  list-style: none;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+.cpe-objects li + li { margin-top: 0.2rem; }
+.cpe-unassigned { margin: 0 0 1rem; }
+
+.cpe-assign-row { grid-template-columns: minmax(9rem, 1fr) minmax(0, 24rem) 5.5rem; }
+.cpe-assign-row select {
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+}
+.cpe-saving { font-size: 0.75rem; color: var(--text-tertiary); }
+
+@media (max-width: 640px) {
+  .cpe-cards { grid-template-columns: 1fr; }
+  .cpe-assign-row { grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
+  .cpe-assign-row select { font-size: 1rem; }
+  .cpe-saving:empty { display: none; }
+}

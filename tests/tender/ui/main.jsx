@@ -11,7 +11,8 @@
 //             dcContracts=1 — договор, ДС и подразделение заявок, миграция 20261109;
 //             dcMany=N — ещё N заявок; dcOldFiles=N — ещё N старых файлов, с maxRows=1000 — потолок строк PostgREST;
 //             /dc-requests?file=<id> — ссылка на файл из выгрузки в Excel),
-//             /kp-review&kpReview=1 («Проверка КП»; kpReviewMany=N — длинный список, kpRole — роль, см. seed.js);
+//             /kp-review&kpReview=1 («Проверка КП»; kpReviewMany=N — длинный список, kpRole — роль, см. seed.js),
+//             /cost-plans («Планы затрат», «Документы» → «Экономисты ОСП»);
 //   items   — позиций ВОР (по умолчанию 5000, три документа, разделы),
 //   cps     — подрядчиков с КП (по умолчанию 10),
 //   tenders — тендеров в реестре (по умолчанию 40),
@@ -49,6 +50,8 @@ const ContractsPage = lazy(() => import('../../../src/pages/ContractsPage'))
 const KpReviewPage = lazy(() => import('../../../src/pages/KpReviewPage'))
 // Реестр заявок на ДС — так же (DcRequestsPage.css, рабочий слой).
 const DcRequestsPage = lazy(() => import('../../../src/pages/DcRequestsPage'))
+// «Планы затрат» — так же (CostPlansPage.css, рабочий слой).
+const CostPlansPage = lazy(() => import('../../../src/pages/CostPlansPage'))
 import { weekKey } from '../../../src/utils/weeks'
 
 const params = new URLSearchParams(window.location.search)
@@ -80,6 +83,7 @@ const routes = (
     <Route path="/contracts" element={<Suspense fallback={null}><ContractsPage /></Suspense>} />
     <Route path="/kp-review" element={<Suspense fallback={null}><KpReviewPage /></Suspense>} />
     <Route path="/dc-requests" element={<Suspense fallback={null}><DcRequestsPage /></Suspense>} />
+    <Route path="/cost-plans" element={<Suspense fallback={null}><CostPlansPage /></Suspense>} />
     <Route path="/tenders/materials/:tenderId/pricing" element={<SupplyPricingPage />} />
     <Route path="/tenders/:tenderId" element={<TenderDetailPage />} />
   </Routes>

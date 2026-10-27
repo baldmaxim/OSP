@@ -463,8 +463,17 @@ export async function loadRateSuggestions(mainId, { estimateName, name, unit }, 
 }
 
 // Откуда скопированы цены тендера: тендер, объект, ВОР, наименование и документ исходной цены, день расценки.
+// Постранично: строка на каждую скопированную цену (у больших ВОР — тысячи), а шлюз отдаёт не больше 1000 строк.
 export async function loadRateOrigins(mainId) {
-  return reuseRpc('supply_rate_origins', { p_tender: mainId })
+  try {
+    return await fetchAllRows((from, to) => db
+      .rpc('supply_rate_origins', { p_tender: mainId })
+      .order('rate_id', { ascending: true })
+      .range(from, to))
+  } catch (error) {
+    if (classifyError(error)?.kind === 'missing') return null
+    fail(error)
+  }
 }
 
 // ── Синхронизация и история ─────────────────────────────────────────────────────────────────────────
@@ -547,8 +556,12 @@ export async function loadSupplyProgress(mainIds) {
       db.from('tender_supply_progress').select('tender_id, positions_count, priced_count').in('tender_id', chunk),
       statesOn ? db.from('tender_supply_import_state').select('tender_id, status, issues').in('tender_id', chunk) : { data: [] },
       // Непросмотренные версии ВОР (миграция 20261029): «ВОР изменён» в реестре. Таблицы нет — без этого.
-      revisionsOn ? db.from('tender_supply_revisions').select(REVISION_COLUMNS).in('tender_id', chunk).is('reviewed_at', null)
-        .order('id', { ascending: true }).limit(1000) : { data: [] },
+      // Постранично: шлюз отдаёт не больше 1000 строк.
+      revisionsOn
+        ? fetchAllRows((from, to) => db.from('tender_supply_revisions').select(REVISION_COLUMNS).in('tender_id', chunk)
+          .is('reviewed_at', null).order('id', { ascending: true }).range(from, to))
+          .then((data) => ({ data, error: null }), (error) => ({ data: null, error }))
+        : { data: [] },
     ])
     if (progress.error) {
       if (classifyError(progress.error)?.kind === 'missing') return out

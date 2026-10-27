@@ -62,6 +62,14 @@
         "select"
       ]
     },
+    "company_departments": {
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
     "contacts": {
       "anon": [
         "select"
@@ -187,6 +195,14 @@
       "anon": [
         "select"
       ],
+      "authenticated": [
+        "delete",
+        "insert",
+        "select",
+        "update"
+      ]
+    },
+    "cost_plan_economists": {
       "authenticated": [
         "delete",
         "insert",
@@ -612,6 +628,11 @@
         "update"
       ]
     },
+    "section_templates": {
+      "authenticated": [
+        "select"
+      ]
+    },
     "supply_rates_registry": {
       "authenticated": [
         "select"
@@ -920,19 +941,6 @@
       ]
     },
     "larix_rates_registry": {
-      "authenticated": [
-        "select"
-      ]
-    },
-    "company_departments": {
-      "authenticated": [
-        "delete",
-        "insert",
-        "select",
-        "update"
-      ]
-    },
-    "section_templates": {
       "authenticated": [
         "select"
       ]

@@ -9,6 +9,8 @@ import {
   numberDepartments, parseContactsList, phoneHref,
 } from '../utils/companyDepartments'
 import { IconPencil, IconTrash } from '../components/icons/ActionIcons'
+import { IconDocsStack } from '../components/icons/ToolbarIcons'
+import CostPlanDocsModal from '../components/CostPlanDocsModal'
 import '../components/GeneralInfo.css'
 import './DepartmentsPage.css'
 
@@ -16,6 +18,7 @@ import './DepartmentsPage.css'
 // с ним связаться. Видят все сотрудники; правит администратор — карточка отдела (блок, название, функции,
 // примечание, руководители и контакты), порядок стрелками и «Руководители списком» — много контактов разом.
 // Данные — company_departments (миграция 20261104); ФИО и телефоны в коде не хранятся.
+// «Документы» в шапке — экономисты ОСП по объектам (то же окно, что в «Планах затрат», CostPlanDocsModal).
 
 const arrowProps = {
   width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
@@ -222,6 +225,7 @@ function DepartmentsPage() {
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState(null) // null | {} (новый) | строка
   const [showList, setShowList] = useState(false)
+  const [showDocs, setShowDocs] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -294,14 +298,20 @@ function DepartmentsPage() {
           <h2>Отделы</h2>
           <div className="dp-subtitle">За что отвечает каждый отдел компании и к кому обращаться</div>
         </div>
-        {canManage && (
-          <div className="dp-header-actions">
-            <button type="button" className="btn-secondary" onClick={() => setShowList(true)} disabled={busy || !rows.length}>
-              Руководители списком
-            </button>
-            <button type="button" className="btn-primary" onClick={() => setEditing({})} disabled={busy}>+ Добавить отдел</button>
-          </div>
-        )}
+        <div className="dp-header-actions">
+          <button type="button" className="btn-secondary dp-docs-btn" onClick={() => setShowDocs(true)}
+            title="Экономисты ОСП по объектам — ответственные за планы затрат">
+            <IconDocsStack size={15} /> Документы
+          </button>
+          {canManage && (
+            <>
+              <button type="button" className="btn-secondary" onClick={() => setShowList(true)} disabled={busy || !rows.length}>
+                Руководители списком
+              </button>
+              <button type="button" className="btn-primary" onClick={() => setEditing({})} disabled={busy}>+ Добавить отдел</button>
+            </>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -376,6 +386,10 @@ function DepartmentsPage() {
       )}
       {showList && (
         <ContactsListModal departments={rows} onClose={() => setShowList(false)} onSave={handleSaveList} />
+      )}
+      {showDocs && (
+        <CostPlanDocsModal canEdit={isAdmin} onClose={() => setShowDocs(false)}
+          sub="Экономисты ОСП — ответственные за планы затрат по объектам" />
       )}
     </div>
   )

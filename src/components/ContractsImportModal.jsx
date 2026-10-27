@@ -149,6 +149,8 @@ function ContractsImportModal({ counterparties = [], objects = [], contacts = []
     fetchAllRows((from, to) => db
       .from('contracts')
       .select('id, display_id, record_type, parent_contract_id, root_contract_id, status, deleted_at, contract_number, counterparty_id, object_id, changed_fields, contract_amount, psdc_total, gp_amount, currency, vat_rate, amount_includes_vat, bsm, work_name, work_start_date, work_end_date, warranty_retention_percent, warranty_retention_period, warranty_period')
+      // Без однозначного порядка страницы после первой тысячи теряли и повторяли строки.
+      .order('id', { ascending: true })
       .range(from, to))
       .then((rows) => {
         if (cancelled) return

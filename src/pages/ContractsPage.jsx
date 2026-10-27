@@ -711,12 +711,15 @@ function ContractRegistry() {
 
   const fetchTenders = async () => {
     try {
-      const { data, error } = await db
+      // Постранично: шлюз отдаёт не больше 1000 строк, а тендеров уже под тысячу — старые выпали бы из выбора
+      // тендера в форме договора и из подстановки работ, объекта и победителя.
+      const data = await fetchAllRows((from, to) => db
         .from('tenders')
         .select('id, object_id, work_description, winner_counterparty_id, status')
         .order('created_at', { ascending: false })
-      if (error) throw error
-      setTenders(data || [])
+        .order('id', { ascending: true })
+        .range(from, to))
+      setTenders(data)
     } catch (error) {
       console.error('Ошибка загрузки тендеров:', error.message)
     }

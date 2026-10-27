@@ -18,7 +18,8 @@
 // window.__fakeFiles[s3_key] — содержимое файла (data: URL): хранилище отдаёт его по ссылке на скачивание;
 // window.__fakeFileRequests — какие файлы запрашивали.
 // window.__fakeRpc[имя](аргументы) → { data, error } — функции базы (db.rpc); функции нет — пустой ответ, как
-// раньше. Вызов учитывается в window.__supabaseStats как { table: 'rpc:<имя>', op: 'rpc' }.
+// раньше. Вызов учитывается в window.__supabaseStats как { table: 'rpc:<имя>', op: 'rpc' }. Набор строк (массив в data)
+// можно упорядочить и читать страницами — .order / .range / .limit, как у PostgREST (fetchAllRows по функции).
 // Загрузка файла (s3-presign upload → PUT по ссылке): ссылка ведёт в «хранилище» стенда — PUT перехватывается здесь,
 // файл ложится в window.__fakeFiles[s3_key] (data: URL) и отдаётся потом по ссылке на скачивание;
 // window.__fakeUploads — что загружали ({ s3_key, size, type }).
@@ -273,17 +274,33 @@ async function run(q) {
 
 export const supabase = {
   from: (table) => builder(table),
-  rpc: async (name, args = {}) => {
-    stats.active++
-    stats.maxActive = Math.max(stats.maxActive, stats.active)
-    stats.requests.push({ table: `rpc:${name}`, op: 'rpc', range: null, count: null, ids: null, args })
-    await new Promise((r) => setTimeout(r, LATENCY_MS))
-    stats.active--
-    const handler = window.__fakeRpc?.[name]
-    if (!handler) return { data: null, error: null }
-    // Функция могла писать в таблицы — кэш выборок сбрасывается весь.
-    sortedCache.clear()
-    return handler(args)
+  rpc: (name, args = {}) => {
+    const q = { orders: [], range: null, limit: null }
+    const run = async () => {
+      stats.active++
+      stats.maxActive = Math.max(stats.maxActive, stats.active)
+      stats.requests.push({ table: `rpc:${name}`, op: 'rpc', range: q.range, count: null, ids: null, args })
+      await new Promise((r) => setTimeout(r, LATENCY_MS))
+      stats.active--
+      const handler = window.__fakeRpc?.[name]
+      if (!handler) return { data: null, error: null }
+      // Функция могла писать в таблицы — кэш выборок сбрасывается весь.
+      sortedCache.clear()
+      const res = await handler(args)
+      if (!Array.isArray(res?.data) || (!q.orders.length && !q.range && q.limit == null)) return res
+      let data = applyOrder(res.data, q.orders)
+      if (q.range) data = data.slice(q.range[0], q.range[1] + 1)
+      if (q.limit != null) data = data.slice(0, q.limit)
+      return { ...res, data }
+    }
+    const self = {
+      order(col, opts = {}) { q.orders.push({ col, asc: opts.ascending !== false }); return self },
+      range(from, to) { q.range = [from, to]; return self },
+      limit(n) { q.limit = n; return self },
+      abortSignal() { return self },
+      then(resolve, reject) { return run().then(resolve, reject) },
+    }
+    return self
   },
   functions: {
     invoke: async (name, opts = {}) => {

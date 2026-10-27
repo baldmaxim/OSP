@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useMemo } 
 import { db } from '../api'
 import { useRole } from './RoleContext'
 import { chunkList } from '../utils/inChunks'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import { revisionTitle } from '../utils/supplyVorVersions'
 
 // Уведомления о приближающемся завершении тендеров и договоров.
@@ -175,13 +176,16 @@ export function NotificationsProvider({ children }) {
         : null
 
       // Непросмотренные версии ВОР (миграция 20261029): таблицы нет — без них, остальное как раньше.
+      // Постранично: шлюз отдаёт не больше 1000 строк, а с .limit(1000) по возрастанию id терялись бы как раз
+      // самые свежие версии. Ошибка — тем же видом { data, error }, что у остальных запросов.
       const supplyQ = canSupply
-        ? db
+        ? fetchAllRows((from, to) => db
           .from('tender_supply_revisions')
           .select('id, tender_id, estimate_name, kind, old_file_name, new_file_name, positions_after, added, removed, priced_removed, volume_changed, unit_changed, created_at')
           .is('reviewed_at', null)
           .order('id', { ascending: true })
-          .limit(1000)
+          .range(from, to))
+          .then((data) => ({ data, error: null }), (error) => ({ data: null, error }))
         : null
 
       const [tendersRes, contractsRes, kpReviewRes, myTasksRes, reviewTasksRes, supplyRes] = await Promise.all([

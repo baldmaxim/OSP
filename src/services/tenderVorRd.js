@@ -8,6 +8,7 @@
 // Шифры — существующая таблица tender_rd_codes, связь — tender_rd_document_codes.
 import { db } from '../api'
 import { chunkList } from '../utils/inChunks'
+import { fetchAllRows } from '../utils/fetchAllRows'
 import { deleteDocument, uploadFile } from './s3'
 
 export const RD_CATEGORY = 'rd'
@@ -95,15 +96,20 @@ export async function loadVorRd(tenderId) {
   let linksMissing = false
   let linksError = null
   if (rdDocs.length > 0) {
-    const { data, error } = await withTimeout(db
-      .from('tender_rd_document_codes')
-      .select('document_id, rd_code_id')
-      .in('document_id', rdDocs.map(d => d.id)))
-    if (error) {
+    // Порциями id (сотни UUID одним IN-списком в адрес не проходят), в порции — постранично: шлюз отдаёт не
+    // больше 1000 строк.
+    try {
+      const parts = await Promise.all(chunkList(rdDocs.map(d => d.id)).map(chunk => fetchAllRows((from, to) => withTimeout(db
+        .from('tender_rd_document_codes')
+        .select('document_id, rd_code_id')
+        .in('document_id', chunk)
+        .order('document_id', { ascending: true })
+        .order('rd_code_id', { ascending: true })
+        .range(from, to)))))
+      links = parts.flat()
+    } catch (error) {
       if (isMissingTableError(error, 'tender_rd_document_codes')) linksMissing = true
       else linksError = describeLoadError(error, 'шифры у файлов РД')
-    } else {
-      links = data || []
     }
   }
 
@@ -212,17 +218,15 @@ export async function setDocumentCodes(documentId, nextCodeIds, prevCodeIds, byN
 export async function fetchVorRdDocCounts(tenderIds) {
   const counts = {}
   if (!tenderIds?.length) return counts
-  const parts = await Promise.all(chunkList(tenderIds).map(async (chunk) => {
-    const { data, error } = await db
-      .from('s3_documents')
-      .select('owner_id')
-      .eq('owner_type', 'tender')
-      .in('doc_category', VOR_RD_CATEGORIES)
-      .in('owner_id', chunk)
-      .limit(10000)
-    if (error) throw error
-    return data || []
-  }))
+  // В порции — постранично: шлюз отдаёт не больше 1000 строк, .limit(10000) его не обходит.
+  const parts = await Promise.all(chunkList(tenderIds).map((chunk) => fetchAllRows((from, to) => db
+    .from('s3_documents')
+    .select('owner_id')
+    .eq('owner_type', 'tender')
+    .in('doc_category', VOR_RD_CATEGORIES)
+    .in('owner_id', chunk)
+    .order('id', { ascending: true })
+    .range(from, to))))
   for (const row of parts.flat()) counts[row.owner_id] = (counts[row.owner_id] || 0) + 1
   return counts
 }
