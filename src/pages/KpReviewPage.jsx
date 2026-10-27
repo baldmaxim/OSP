@@ -238,6 +238,13 @@ function FolderCopyButton({ path }) {
   )
 }
 
+// Имя файла КП в строке: основа и расширение порознь — длинная основа
+// сокращается многоточием (CSS), расширение остаётся видно.
+function splitFileName(name) {
+  const m = /^(.+?)(\.[^.\s]{1,5})$/.exec(name || '')
+  return m ? [m[1], m[2]] : [name || '', '']
+}
+
 // Отметка шага в строке КП («занесено в сводную», «отправлено подрядчику»):
 // флажок для того, кто вправе отметить, у остальных — то же состояние без
 // действия. Кто и когда отметил — в подсказке.
@@ -653,7 +660,10 @@ function KpReviewPage() {
             {num != null ? num : '—'}
           </span>
         </td>
-        <td className="kprv-group-cell" colSpan={colCount - 1}>
+        {/* Сведения тендера кончаются на «Проверке»: под «В сводной» и
+            «Подрядчику» — пустая ячейка, иначе «ПЗ» и ответственный стоят под
+            этими заголовками, как значения со сдвигом. */}
+        <td className="kprv-group-cell" colSpan={colCount - 3}>
           <div className="kprv-group-in">
             {/* Работы и объект — один текст до двух строк (полностью — в подсказке
                 и в карточке тендера); работы — ссылка в карточку. */}
@@ -687,6 +697,7 @@ function KpReviewPage() {
             </div>
           </div>
         </td>
+        <td className="kprv-group-pad" colSpan={2} aria-hidden="true" />
       </tr>
     )
   }
@@ -696,6 +707,7 @@ function KpReviewPage() {
     const remarks = r.review_status === 'has_remarks'
     const sendRequired = remarks && r.remarks_send_required !== false
     const downloading = downloadingIds.has(r.id)
+    const [fileStem, fileExt] = r.s3 ? splitFileName(r.s3.file_name || 'КП') : ['нет файла', '']
     return (
       <tr key={r.id} className={`kprv-kp${isLast ? ' is-last' : ''}`} data-kp={r.id}>
         <td className="kprv-tree" aria-hidden="true" />
@@ -715,7 +727,8 @@ function KpReviewPage() {
               disabled={!r.s3}
             >
               <IconFile />
-              <span>КП</span>
+              <span className="kprv-file-name">{fileStem}</span>
+              {fileExt && <span className="kprv-file-ext">{fileExt}</span>}
             </button>
             {r.s3?.s3_key && (
               <button

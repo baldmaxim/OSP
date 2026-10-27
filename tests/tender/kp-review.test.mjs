@@ -2,7 +2,7 @@
 // направлений, 15 КП на всех семи этапах; kpReviewMany=N — длинный список, kpRole — роль (см. seed.js).
 //   • КП сгруппированы по тендеру: строка тендера (№, направление, работы · объект, ответственный, план затрат,
 //     папка), под ней — КП этого тендера; тендер с самым свежим КП — первым;
-//   • в строке КП — «КП» и «Скачать» вместо имени файла (оно — в подсказке), файл скачивается под именем
+//   • в строке КП — имя файла (длинное — с многоточием, расширение видно) и «Скачать»; файл скачивается под именем
 //     «№ тендера_контрагент_тендер_объект»; даты — «дд.мм.гг», ФИО — «Фамилия И. О.» (полностью — в подсказке);
 //   • план затрат — мини-кнопка «ПЗ» со ссылкой или стадия («ПЗ: нет ссылки», «ПЗ: ожидание КП»);
 //   • этапы и направления (ОС / ГО / Проч. / Совм.) отбирают КП, счётчики сходятся; отметки «В сводной» и
@@ -153,16 +153,32 @@ describe('Проверка КП: группы по тендеру, компак�
     }
   })
 
-  it('строка КП: «КП» и «Скачать» вместо имени файла, даты «дд.мм.гг», проверка — вердикт, кто и когда', async () => {
+  it('строка КП: имя файла (длинное — сокращено) и «Скачать», даты «дд.мм.гг», проверка — вердикт, кто и когда', async () => {
     const { context, page, errors } = await open()
     try {
       await openStage(page, 'all')
       const row = kpRow(page, 'kp-2')
       const fileName = 'Коммерческое предложение СМИК от 23.10.2026 (с НДС).pdf'
-      // Имени файла в строке не видно — только «КП», полное имя — в подсказке.
-      assert.equal(await row.locator('.kprv-file-btn').innerText(), 'КП')
-      assert.equal(await row.locator('.kprv-file-btn').getAttribute('title'), `Открыть КП: ${fileName}`)
-      assert.ok(!(await row.innerText()).includes(fileName))
+      // В строке — имя файла; длинное сокращается многоточием в основе, расширение видно,
+      // кнопка не вылезает из колонки; полное имя — в подсказке.
+      const fileBtn = row.locator('.kprv-file-btn')
+      assert.equal(await fileBtn.textContent(), fileName)
+      assert.equal(await fileBtn.getAttribute('title'), `Открыть КП: ${fileName}`)
+      assert.equal(await row.locator('.kprv-file-ext').innerText(), '.pdf')
+      const clip = (loc) => loc.evaluate((el) => {
+        const name = el.querySelector('.kprv-file-name')
+        const td = el.closest('td').getBoundingClientRect()
+        return { clipped: name.scrollWidth > name.clientWidth, inside: el.parentElement.getBoundingClientRect().right <= td.right }
+      })
+      assert.deepEqual(await clip(fileBtn), { clipped: true, inside: true })
+      // Короткое имя — целиком.
+      assert.equal(await kpRow(page, 'kp-3').locator('.kprv-file-btn').textContent(), 'КП.xlsx')
+      assert.deepEqual(await clip(kpRow(page, 'kp-3').locator('.kprv-file-btn')), { clipped: false, inside: true })
+      // Сведения тендера (ответственный, ПЗ, папка) кончаются на «Проверке» — под «В сводной» и
+      // «Подрядчику» их нет, иначе они читаются как значения этих колонок со сдвигом.
+      const stepsLeft = await page.locator('.kprv-table thead th').nth(5).evaluate((el) => el.getBoundingClientRect().left)
+      const metaRight = await group(page, 'kt-6').locator('.kprv-group-meta').evaluate((el) => el.getBoundingClientRect().right)
+      assert.ok(metaRight <= stepsLeft, `сведения тендера заходят под «В сводной»: ${metaRight} > ${stepsLeft}`)
       // Дата загрузки — год двумя цифрами, полностью и со временем — в подсказке (15:40 UTC = 18:40 Мск).
       assert.equal(await row.locator('.kprv-date').innerText(), '23.10.26')
       assert.equal(await row.locator('.kprv-date').getAttribute('title'), 'Загружено 23.10.2026, 18:40')
